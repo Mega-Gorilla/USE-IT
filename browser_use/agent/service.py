@@ -137,8 +137,6 @@ class Agent:
 			result = self._handle_step_error(e)
 			self._last_result = result
 
-			model_output = None
-
 			if result.error:
 				self.telemetry.capture(
 					AgentStepErrorTelemetryEvent(
@@ -146,8 +144,10 @@ class Agent:
 						error=result.error,
 					)
 				)
-		if state:
-			self._make_history_item(model_output, state, result)
+			model_output = None
+		finally:
+			if state:
+				self._make_history_item(model_output, state, result)
 
 	def _handle_step_error(self, error: Exception) -> ActionResult:
 		"""Handle all types of errors that can occur during a step"""
