@@ -47,7 +47,7 @@ class MessageManager:
 			self.action_descriptions, current_date=datetime.now()
 		).get_system_message()
 		self._add_message_with_tokens(system_message)
-
+		self.system_prompt = system_message
 		task_message = HumanMessage(content=f'Your task is: {task}')
 		self._add_message_with_tokens(task_message)
 

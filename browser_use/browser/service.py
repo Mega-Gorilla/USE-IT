@@ -4,9 +4,12 @@ Playwright browser on steroids.
 
 import asyncio
 import base64
+import json
 import logging
+import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import BrowserContext, ElementHandle, Page, Playwright, async_playwright
@@ -34,9 +37,12 @@ class Browser:
 	MINIMUM_WAIT_TIME = 0.5
 	MAXIMUM_WAIT_TIME = 5
 
-	def __init__(self, headless: bool = False, keep_open: bool = False):
+	def __init__(
+		self, headless: bool = False, keep_open: bool = False, cookies_path: str | None = None
+	):
 		self.headless = headless
 		self.keep_open = keep_open
+		self.cookies_file = cookies_path
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
@@ -109,7 +115,7 @@ class Browser:
 			raise
 
 	async def _create_context(self, browser: PlaywrightBrowser):
-		"""Creates a new browser context with anti-detection measures."""
+		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		context = await browser.new_context(
 			viewport={'width': 1280, 'height': 1024},
 			user_agent=(
@@ -118,6 +124,12 @@ class Browser:
 			),
 			java_script_enabled=True,
 		)
+
+		# Load cookies if they exist
+		if self.cookies_file and os.path.exists(self.cookies_file):
+			with open(self.cookies_file, 'r') as f:
+				cookies = json.load(f)
+				await context.add_cookies(cookies)
 
 		# Expose anti-detection scripts
 		await context.add_init_script(
@@ -182,13 +194,22 @@ class Browser:
 
 	async def close(self, force: bool = False):
 		"""Close the browser instance"""
+
+		# check if already closed
+		if self.session is None:
+			return
+
+		if self.cookies_file:
+			await self.save_cookies()
+
 		if force and not self.keep_open:
 			session = await self.get_session()
 			await session.browser.close()
 			await session.playwright.stop()
+
 		else:
 			# Note: input() is blocking - consider an async alternative if needed
-			# input('Press Enter to close Browser...')
+			input('Press Enter to close Browser...')
 			self.keep_open = False
 			await self.close(force=True)
 
@@ -472,4 +493,15 @@ class Browser:
 			await self.get_xpath(index), timeout=2500, state='visible'
 		)
 
-	# endregion
+	async def save_cookies(self):
+		"""Save current cookies to file"""
+		if self.session and self.session.context and self.cookies_file:
+			try:
+				cookies = await self.session.context.cookies()
+				# maybe file is just a file name then i get
+				if os.path.dirname(self.cookies_file):
+					os.makedirs(os.path.dirname(self.cookies_file), exist_ok=True)
+				with open(self.cookies_file, 'w') as f:
+					json.dump(cookies, f)
+			except Exception as e:
+				logger.error(f'Failed to save cookies: {str(e)}')
