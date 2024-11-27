@@ -129,6 +129,7 @@ class Browser:
 		if self.cookies_file and os.path.exists(self.cookies_file):
 			with open(self.cookies_file, 'r') as f:
 				cookies = json.load(f)
+				logger.info(f'Loaded {len(cookies)} cookies from {self.cookies_file}')
 				await context.add_cookies(cookies)
 
 		# Expose anti-detection scripts
@@ -498,6 +499,7 @@ class Browser:
 		if self.session and self.session.context and self.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
+				logger.info(f'Saving {len(cookies)} cookies to {self.cookies_file}')
 				# maybe file is just a file name then i get
 				if os.path.dirname(self.cookies_file):
 					os.makedirs(os.path.dirname(self.cookies_file), exist_ok=True)

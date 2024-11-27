@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import traceback
-from typing import Optional, Type
+from pathlib import Path
+from typing import Any, Dict, Optional, Type
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
@@ -58,6 +60,14 @@ class AgentHistory(BaseModel):
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
+	def model_dump(self, **kwargs) -> Dict[str, Any]:
+		"""Custom serialization to handle dynamic ActionModel"""
+		data = super().model_dump(**kwargs)
+		if self.model_output:
+			# Serialize model_output directly using its own dump method
+			data['model_output'] = self.model_output.model_dump(**kwargs)
+		return data
+
 
 class AgentHistoryList(BaseModel):
 	"""List of agent history items"""
@@ -71,6 +81,32 @@ class AgentHistoryList(BaseModel):
 	def __repr__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
 		return self.__str__()
+
+	def model_dump(self, **kwargs) -> Dict[str, Any]:
+		"""Custom serialization to handle nested AgentHistory items"""
+		data = super().model_dump(**kwargs)
+		# Manually serialize each history item using its custom model_dump
+		data['history'] = [h.model_dump(**kwargs) if h else None for h in self.history]
+		return data
+
+	def save_to_file(self, filepath: str | Path) -> None:
+		"""Save history to JSON file with proper serialization"""
+		data = self.model_dump(exclude_none=True)
+		with open(filepath, 'w', encoding='utf-8') as f:
+			json.dump(data, f, indent=2)
+
+	@classmethod
+	def load_from_file(
+		cls, filepath: str | Path, output_model: Type[AgentOutput]
+	) -> 'AgentHistoryList':
+		"""Load history from JSON file"""
+		with open(filepath, 'r', encoding='utf-8') as f:
+			data = json.load(f)
+		# loop through history and validate output_model actions to enrich with custom actions
+		for h in data['history']:
+			if h['model_output']:
+				h['model_output'] = output_model.model_validate(h['model_output'])
+		return cls.model_validate(data)
 
 	def last_action(self) -> None | dict:
 		"""Last action in history"""
@@ -126,7 +162,9 @@ class AgentHistoryList(BaseModel):
 			if h.model_output:
 				output = h.model_output.action.model_dump(exclude_none=True)
 				# should have only one key and param_model
-				key = list(output.keys())[0]
+				keys = list(output.keys())
+				assert len(keys) == 1, 'should have only one key'
+				key = keys[0]
 				params = output[key]
 
 				# convert index to xpath if available
