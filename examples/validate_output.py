@@ -6,27 +6,22 @@ Find and apply to jobs.
 Also you have to install PyPDF2 to read pdf files: pip install PyPDF2
 """
 
-import csv
 import os
 import sys
-from pathlib import Path
-
-from PyPDF2 import PdfReader
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
-from typing import List, Optional
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from browser_use import ActionResult, Agent, Browser, Controller
+from browser_use import ActionResult, Agent, BrowserConfig, Controller
 
 load_dotenv()
 
-controller = Controller(keep_open=True)
+controller = Controller(browser_config=BrowserConfig(keep_open=True))
 
 
 class DoneResult(BaseModel):

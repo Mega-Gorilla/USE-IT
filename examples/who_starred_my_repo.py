@@ -54,7 +54,7 @@ async def save_page_info(params: PageSaver, browser: Browser):
 	with open(params.filename, 'w') as f:
 		f.write(f'URL: {state.url}\n')
 		f.write(f'Title: {state.title}\n')
-		f.write(f'HTML: {state.items}\n')
+		# f.write(f'HTML: {state.element_tree}\n')
 
 
 class Job(BaseModel):

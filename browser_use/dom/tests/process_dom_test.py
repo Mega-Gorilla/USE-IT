@@ -2,11 +2,11 @@ import json
 import os
 import time
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 
 
 async def test_process_dom():
-	browser = Browser(headless=False)
+	browser = Browser(config=BrowserConfig(headless=False))
 
 	page = await browser.get_current_page()
 

@@ -3,14 +3,14 @@ import json
 
 import pytest
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 
 
 @pytest.mark.asyncio
 async def test_highlight_elements():
-	browser = Browser(headless=False, keep_open=False, disable_security=True)
+	browser = Browser(config=BrowserConfig(headless=False, keep_open=False, disable_security=True))
 
 	session = await browser.get_session()
 

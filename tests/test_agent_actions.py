@@ -6,6 +6,7 @@ from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
+from browser_use.browser.service import BrowserConfig
 from browser_use.controller.service import Controller
 
 
@@ -26,7 +27,7 @@ def llm():
 @pytest.fixture
 async def agent_with_controller():
 	"""Create agent with controller for testing"""
-	controller = Controller(keep_open=False)
+	controller = Controller(browser_config=BrowserConfig(keep_open=False))
 	print('init controller')
 	try:
 		yield controller

@@ -3,7 +3,7 @@ import logging
 from main_content_extractor import MainContentExtractor
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -23,11 +23,10 @@ logger = logging.getLogger(__name__)
 
 class Controller:
 	def __init__(
-		self, headless: bool = False, keep_open: bool = False, disable_security: bool = False, cookies_path: str | None = None
+		self,
+		browser_config: BrowserConfig = BrowserConfig(),
 	):
-		self.browser = Browser(
-			headless=headless, keep_open=keep_open, disable_security=disable_security, cookies_path=cookies_path
-		)
+		self.browser = Browser(config=browser_config)
 		self.registry = Registry()
 		self._register_default_actions()
 

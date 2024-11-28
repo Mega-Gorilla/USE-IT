@@ -2,12 +2,12 @@ import base64
 
 import pytest
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 
 
 @pytest.fixture
 async def browser():
-	browser_service = Browser(headless=True)
+	browser_service = Browser(config=BrowserConfig(headless=True))
 	yield browser_service
 
 	await browser_service.close()
@@ -34,4 +34,4 @@ def test_take_full_page_screenshot(browser):
 
 
 if __name__ == '__main__':
-	test_take_full_page_screenshot(Browser(headless=False))
+	test_take_full_page_screenshot(Browser(config=BrowserConfig(headless=False)))

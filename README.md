@@ -141,6 +141,20 @@ history: list[AgentHistory] = await agent.run()
 print(history)
 ```
 
+## Browser configuration
+
+You can configure the browser using the `BrowserConfig` class.
+
+The most important options are:
+
+- `headless`: Whether to run the browser in headless mode
+- `keep_open`: Whether to keep the browser open after the script finishes
+- `disable_security`: Whether to disable browser security features (very useful if dealing with cross-origin requests like iFrames)
+- `cookies_file`: Path to a cookies file for persistence
+- `minimum_wait_page_load_time`: Minimum time to wait before getting the page state for the LLM input
+- `wait_for_network_idle_page_load_time`: Time to wait for network requests to finish before getting the page state
+- `maximum_wait_page_load_time`: Maximum time to wait for the page to load before proceeding anyway
+
 ## More examples
 
 For more examples see the [examples](examples) folder or join the [Discord](https://link.browser-use.com/discord) and show off your project.
