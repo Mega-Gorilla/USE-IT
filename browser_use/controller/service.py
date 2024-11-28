@@ -71,7 +71,6 @@ class Controller:
 			state = session.cached_state
 
 			if params.index not in state.selector_map:
-				print(state.selector_map)
 				raise Exception(
 					f'Element with index {params.index} does not exist - retry or use alternative actions'
 				)
