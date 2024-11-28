@@ -21,31 +21,31 @@ from langchain_openai import ChatOpenAI
 from browser_use import ActionModel, Agent, AgentHistoryList, Controller
 from browser_use.agent.views import AgentOutput
 
-llm = ChatOpenAI(model='gpt-4o')
-controller = Controller()
+llm = ChatOpenAI(model='gpt-4o-mini')
+controller = Controller(keep_open=False)
 agent = Agent(
 	# task='Find flights on kayak.com from Zurich to Beijing on 25.12.2024 to 02.02.2025',
-	task='Search for elon musk on google and click the first result',
+	task='Search for elon musk on google and click the first result scroll down',
 	llm=llm,
 	controller=controller,
 )
 
 
 async def main():
-	history: AgentHistoryList = await agent.run(5)
+	history: AgentHistoryList = await agent.run(2)
 	# agent.save_history(file)
+	await controller.browser.close()
 
 	history.save_to_file('AgentHistoryList.json')
 
 	print(f'history: {history}')
-	await controller.browser.close()
 
 	await rerun_task()
 
 
 async def rerun_task():
 	# create new controller and agent
-	controller2 = Controller()
+	controller2 = Controller(keep_open=False)
 	agent2 = Agent(
 		task='',
 		llm=llm,
