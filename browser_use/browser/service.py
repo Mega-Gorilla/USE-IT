@@ -53,9 +53,9 @@ class BrowserConfig:
 	keep_open: bool = False
 	disable_security: bool = False
 	cookies_file: str | None = None
-	minimum_wait_page_load_time: float = 1
+	minimum_wait_page_load_time: float = 0.5
 	wait_for_network_idle_page_load_time: float = 1
-	maximum_wait_page_load_time: float = 10
+	maximum_wait_page_load_time: float = 5
 
 	extra_chromium_args: list[str] = field(default_factory=list)
 	browser_window_size: BrowserWindowSize = field(
