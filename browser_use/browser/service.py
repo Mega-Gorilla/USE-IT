@@ -75,6 +75,7 @@ class Browser:
 			title=await page.title(),
 			screenshot=None,
 			tabs=[],
+			interacted_element=None,
 		)
 
 		self.session = BrowserSession(
@@ -326,6 +327,7 @@ class Browser:
 			title=await page.title(),
 			tabs=await self.get_tabs_info(),
 			screenshot=screenshot_b64,
+			interacted_element=content.interacted_element,
 		)
 
 		return self.current_state

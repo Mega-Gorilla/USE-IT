@@ -10,6 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from browser_use.browser.views import BrowserState
 from browser_use.controller.registry.views import ActionModel
+from browser_use.dom.history_tree_processor import (
+	DOMElementNode,
+	DOMHistoryElement,
+	HistoryTreeProcessor,
+)
+from browser_use.dom.views import SelectorMap
 
 
 class ActionResult(BaseModel):
@@ -60,13 +66,40 @@ class AgentHistory(BaseModel):
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
+	@staticmethod
+	def get_interacted_element(
+		model_output: AgentOutput, selector_map: SelectorMap
+	) -> DOMHistoryElement | None:
+		if model_output:
+			# check if action has index param
+			action_values = model_output.action.model_dump(exclude_unset=True).values()
+			params = next(iter(action_values))
+
+			index_exists = 'index' in params
+			if index_exists:
+				index = params['index']
+				el: DOMElementNode = selector_map[index]
+				return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
+
+		return None
+
 	def model_dump(self, **kwargs) -> Dict[str, Any]:
-		"""Custom serialization to handle dynamic ActionModel"""
-		data = super().model_dump(**kwargs)
+		"""Custom serialization handling circular references"""
+
+		# Handle action serialization
+		model_output_dump = None
 		if self.model_output:
-			# Serialize model_output directly using its own dump method
-			data['model_output'] = self.model_output.model_dump(**kwargs)
-		return data
+			action_dump = self.model_output.action.model_dump(exclude_none=True)
+			model_output_dump = {
+				'current_state': self.model_output.current_state.model_dump(),
+				'action': action_dump,  # This preserves the actual action data
+			}
+
+		return {
+			'model_output': model_output_dump,
+			'result': self.result.model_dump(exclude_none=True),
+			'state': self.state.to_dict(),
+		}
 
 
 class AgentHistoryList(BaseModel):
@@ -82,18 +115,20 @@ class AgentHistoryList(BaseModel):
 		"""Representation of the AgentHistoryList object"""
 		return self.__str__()
 
-	def model_dump(self, **kwargs) -> Dict[str, Any]:
-		"""Custom serialization to handle nested AgentHistory items"""
-		data = super().model_dump(**kwargs)
-		# Manually serialize each history item using its custom model_dump
-		data['history'] = [h.model_dump(**kwargs) if h else None for h in self.history]
-		return data
-
 	def save_to_file(self, filepath: str | Path) -> None:
 		"""Save history to JSON file with proper serialization"""
-		data = self.model_dump(exclude_none=True)
-		with open(filepath, 'w', encoding='utf-8') as f:
-			json.dump(data, f, indent=2)
+		try:
+			data = self.model_dump()
+			with open(filepath, 'w', encoding='utf-8') as f:
+				json.dump(data, f, indent=2)
+		except Exception as e:
+			raise e
+
+	def model_dump(self, **kwargs) -> Dict[str, Any]:
+		"""Custom serialization that properly uses AgentHistory's model_dump"""
+		return {
+			'history': [h.model_dump(**kwargs) for h in self.history],
+		}
 
 	@classmethod
 	def load_from_file(
@@ -105,8 +140,16 @@ class AgentHistoryList(BaseModel):
 		# loop through history and validate output_model actions to enrich with custom actions
 		for h in data['history']:
 			if h['model_output']:
-				h['model_output'] = output_model.model_validate(h['model_output'])
-		return cls.model_validate(data)
+				if isinstance(h['model_output'], dict):
+					h['model_output'] = output_model.model_validate(h['model_output'])
+				else:
+					h['model_output'] = None
+			h['state']['selector_map'] = None
+			h['state']['element_tree'] = None
+			if 'interacted_element' not in h['state']:
+				h['state']['interacted_element'] = None
+		history = cls.model_validate(data)
+		return history
 
 	def last_action(self) -> None | dict:
 		"""Last action in history"""
@@ -158,21 +201,10 @@ class AgentHistoryList(BaseModel):
 	def model_actions(self) -> list[dict]:
 		"""Get all actions from history"""
 		outputs = []
+
 		for h in self.history:
 			if h.model_output:
 				output = h.model_output.action.model_dump(exclude_none=True)
-				# should have only one key and param_model
-				keys = list(output.keys())
-				assert len(keys) == 1, 'should have only one key'
-				key = keys[0]
-				params = output[key]
-
-				# convert index to xpath if available
-				if 'index' in params:
-					selector_map = h.state.selector_map
-					index = params['index']
-					if index in selector_map:
-						params['xpath'] = selector_map[index]
 
 				outputs.append(output)
 		return outputs

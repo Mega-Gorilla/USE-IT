@@ -8,6 +8,7 @@ from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 
 
+# run with: pytest browser_use/browser/tests/test_clicks.py
 @pytest.mark.asyncio
 async def test_highlight_elements():
 	browser = Browser(headless=False, keep_open=False, disable_security=True)
@@ -18,7 +19,8 @@ async def test_highlight_elements():
 
 	page = await browser.get_current_page()
 	# await page.goto('https://immobilienscout24.de')
-	await page.goto('https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/service-plans')
+	# await page.goto('https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/service-plans')
+	await page.goto('https://google.com/search?q=elon+musk')
 	# await page.goto('https://kayak.com')
 	# await page.goto('https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_iframe')
 

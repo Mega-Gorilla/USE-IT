@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -22,14 +22,15 @@ class BrowserState(DOMState):
 	tabs: list[TabInfo]
 	screenshot: Optional[str] = None
 
-	# def model_dump(self) -> dict:
-	# 	dump = super().model_dump()
-	# 	# Add a summary of available tabs
-	# 	if self.tabs:
-	# 		dump['available_tabs'] = [
-	# 			f'Tab {i+1}: {tab.title} ({tab.url})' for i, tab in enumerate(self.tabs)
-	# 		]
-	# 	return dump
+	def to_dict(self) -> dict[str, Any]:
+		data = {}
+		data['tabs'] = [tab.model_dump() for tab in self.tabs]
+		data['screenshot'] = self.screenshot
+		data['element_tree'] = None
+		data['interacted_element'] = None
+		data['url'] = self.url
+		data['title'] = self.title
+		return data
 
 
 class BrowserError(Exception):

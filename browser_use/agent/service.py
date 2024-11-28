@@ -177,7 +177,19 @@ class Agent:
 		result: ActionResult,
 	) -> None:
 		"""Create and store history item"""
+		selector_map = state.selector_map
+		model_output = model_output
+		if model_output and selector_map:
+			interacted_element = AgentHistory.get_interacted_element(model_output, selector_map)
+		else:
+			interacted_element = None
+
+		state.interacted_element = interacted_element
+		state.element_tree = None
+		state.selector_map = None
+
 		history_item = AgentHistory(model_output=model_output, result=result, state=state)
+
 		self.history.history.append(history_item)
 
 	@time_execution_async('--get_next_action')

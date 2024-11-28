@@ -140,8 +140,11 @@ class ElementTreeSerializer:
 
 SelectorMap = dict[int, DOMElementNode]
 
+from browser_use.dom.history_tree_processor import DOMHistoryElement
+
 
 @dataclass
 class DOMState:
-	element_tree: DOMElementNode
-	selector_map: SelectorMap
+	element_tree: DOMElementNode | None
+	interacted_element: DOMHistoryElement | None
+	selector_map: SelectorMap | None

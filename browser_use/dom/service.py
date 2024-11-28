@@ -24,7 +24,9 @@ class DomService:
 		element_tree = await self._build_dom_tree(highlight_elements)
 		selector_map = self._create_selector_map(element_tree)
 
-		return DOMState(element_tree=element_tree, selector_map=selector_map)
+		return DOMState(
+			element_tree=element_tree, selector_map=selector_map, interacted_element=None
+		)
 
 	async def _build_dom_tree(self, highlight_elements: bool) -> DOMElementNode:
 		with open('browser_use/dom/buildDomTree.js', 'r') as f:

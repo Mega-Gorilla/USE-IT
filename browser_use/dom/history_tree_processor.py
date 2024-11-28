@@ -25,6 +25,16 @@ class DOMHistoryElement:
 	attributes: dict[str, str]
 	shadow_root: bool = False
 
+	def model_dump(self) -> dict:
+		return {
+			'tag_name': self.tag_name,
+			'xpath': self.xpath,
+			'highlight_index': self.highlight_index,
+			'entire_parent_branch_path': self.entire_parent_branch_path,
+			'attributes': self.attributes,
+			'shadow_root': self.shadow_root,
+		}
+
 
 class HistoryTreeProcessor:
 	""" "
