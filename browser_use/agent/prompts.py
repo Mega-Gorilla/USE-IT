@@ -112,7 +112,7 @@ Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
 Interactive elements:
-{self.state.dom_items_to_string()}
+{self.state.element_tree.clickable_elements_to_string()}
         """
 
 		if self.result:

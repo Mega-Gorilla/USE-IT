@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 
 class Controller:
 	def __init__(
-		self, headless: bool = False, keep_open: bool = False, cookies_path: str | None = None
+		self, headless: bool = False, keep_open: bool = False, disable_security: bool = False, cookies_path: str | None = None
 	):
-		self.browser = Browser(headless=headless, keep_open=keep_open, cookies_path=cookies_path)
+		self.browser = Browser(
+			headless=headless, keep_open=keep_open, disable_security=disable_security, cookies_path=cookies_path
+		)
 		self.registry = Registry()
 		self._register_default_actions()
 
@@ -39,19 +41,19 @@ class Controller:
 		async def search_google(params: SearchGoogleAction, browser: Browser):
 			page = await browser.get_current_page()
 			await page.goto(f'https://www.google.com/search?q={params.query}')
-			await browser.wait_for_page_load()
+			await page.wait_for_load_state()
 
 		@self.registry.action('Navigate to URL', param_model=GoToUrlAction, requires_browser=True)
 		async def go_to_url(params: GoToUrlAction, browser: Browser):
 			page = await browser.get_current_page()
 			await page.goto(params.url)
-			await browser.wait_for_page_load()
+			await page.wait_for_load_state()
 
 		@self.registry.action('Go back', requires_browser=True)
 		async def go_back(browser: Browser):
 			page = await browser.get_current_page()
 			await page.go_back()
-			await browser.wait_for_page_load()
+			await page.wait_for_load_state()
 
 		# Element Interaction Actions
 		@self.registry.action(
@@ -67,15 +69,15 @@ class Controller:
 					f'Element with index {params.index} does not exist - retry or use alternative actions'
 				)
 
-			xpath = state.selector_map[params.index]
+			element_node = state.selector_map[params.index]
 			initial_pages = len(session.context.pages)
 
 			msg = None
 
 			for _ in range(params.num_clicks):
 				try:
-					await browser._click_element_by_xpath(xpath)
-					msg = f'🖱️  Clicked element {params.index}: {xpath}'
+					await browser._click_element_node(element_node)
+					msg = f'🖱️  Clicked element {params.index}: {element_node.xpath}'
 					if params.num_clicks > 1:
 						msg += f' ({_ + 1}/{params.num_clicks} clicks)'
 				except Exception as e:
@@ -97,9 +99,9 @@ class Controller:
 					f'Element index {params.index} does not exist - retry or use alternative actions'
 				)
 
-			xpath = state.selector_map[params.index]
-			await browser._input_text_by_xpath(xpath, params.text)
-			msg = f'⌨️  Input "{params.text}" into {params.index}: {xpath}'
+			element_node = state.selector_map[params.index]
+			await browser._input_text_element_node(element_node, params.text)
+			msg = f'⌨️  Input "{params.text}" into {params.index}: {element_node.xpath}'
 			return ActionResult(extracted_content=msg)
 
 		# Tab Management Actions
@@ -107,7 +109,8 @@ class Controller:
 		async def switch_tab(params: SwitchTabAction, browser: Browser):
 			await browser.switch_to_tab(params.page_id)
 			# Wait for tab to be ready
-			await browser.wait_for_page_load()
+			page = await browser.get_current_page()
+			await page.wait_for_load_state()
 
 		@self.registry.action('Open new tab', param_model=OpenTabAction, requires_browser=True)
 		async def open_tab(params: OpenTabAction, browser: Browser):

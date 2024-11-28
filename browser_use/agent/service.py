@@ -5,19 +5,14 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime
 from typing import Any, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
-	AIMessage,
 	BaseMessage,
-	HumanMessage,
 	SystemMessage,
 )
-from langchain_openai import ChatOpenAI
 from openai import RateLimitError
 from pydantic import BaseModel, ValidationError
 
@@ -38,7 +33,7 @@ from browser_use.telemetry.views import (
 	AgentRunTelemetryEvent,
 	AgentStepErrorTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_async
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -129,7 +124,7 @@ class Agent:
 			if result.extracted_content:
 				logger.info(f'📄 Result: {result.extracted_content}')
 			if result.is_done:
-				logger.result(f'{result.extracted_content}')  # type: ignore
+				logger.result(f'{result.extracted_content}')  # type:ignore
 
 			self.consecutive_failures = 0
 

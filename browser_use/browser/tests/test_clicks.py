@@ -1,14 +1,16 @@
-import time
+import asyncio
+import json
 
 import pytest
 
 from browser_use.browser.service import Browser
+from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 
 
 @pytest.mark.asyncio
 async def test_highlight_elements():
-	browser = Browser(headless=False, keep_open=False)
+	browser = Browser(headless=False, keep_open=False, disable_security=True)
 
 	session = await browser.get_session()
 
@@ -16,50 +18,52 @@ async def test_highlight_elements():
 
 	page = await browser.get_current_page()
 	# await page.goto('https://immobilienscout24.de')
-	await page.goto('https://kayak.com')
+	await page.goto('https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/service-plans')
+	# await page.goto('https://kayak.com')
+	# await page.goto('https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_iframe')
 
-	time.sleep(3)
-	# browser._click_element_by_xpath(
-	# 	'/html/body/div[5]/div/div[2]/div/div/div[3]/div/div[1]/button[1]'
-	# )
-	# browser._click_element_by_xpath("//button[div/div[text()='Alle akzeptieren']]")
+	await asyncio.sleep(1)
 
 	while True:
-		state = await browser.get_state()
+		try:
+			# await asyncio.sleep(10)
+			state = await browser.get_state()
 
-		await time_execution_sync('highlight_selector_map_elements')(
-			browser.highlight_selector_map_elements
-		)(state.selector_map)
+			with open('./tmp/page.json', 'w') as f:
+				json.dump(
+					ElementTreeSerializer.dom_element_node_to_json(state.element_tree), f, indent=1
+				)
 
-		print(state.dom_items_to_string(use_tabs=False))
-		# print(state.selector_map)
+			# await time_execution_sync('highlight_selector_map_elements')(
+			# 	browser.highlight_selector_map_elements
+			# )(state.selector_map)
 
-		# Find and print duplicate XPaths
-		xpath_counts = {}
-		for selector in state.selector_map.values():
-			if selector in xpath_counts:
-				xpath_counts[selector] += 1
-			else:
-				xpath_counts[selector] = 1
+			# Find and print duplicate XPaths
+			xpath_counts = {}
+			for selector in state.selector_map.values():
+				xpath = selector.xpath
+				if xpath in xpath_counts:
+					xpath_counts[xpath] += 1
+				else:
+					xpath_counts[xpath] = 1
 
-		print('\nDuplicate XPaths found:')
-		for xpath, count in xpath_counts.items():
-			if count > 1:
-				print(f'XPath: {xpath}')
-				print(f'Count: {count}\n')
+			print('\nDuplicate XPaths found:')
+			for xpath, count in xpath_counts.items():
+				if count > 1:
+					print(f'XPath: {xpath}')
+					print(f'Count: {count}\n')
 
-		print(state.selector_map.keys(), 'Selector map keys')
-		action = input('Select next action: ')
+			print(state.selector_map.keys(), 'Selector map keys')
+			print(state.element_tree.clickable_elements_to_string())
+			action = input('Select next action: ')
 
-		await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()
+			await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()
 
-		xpath = state.selector_map[int(action)]
+			node_element = state.selector_map[int(action)]
 
-		# check if index of selector map are the same as index of items in dom_items
+			# check if index of selector map are the same as index of items in dom_items
 
-		indcies = list(state.selector_map.keys())
-		dom_items = state.items
-		dom_indices = [item.index for item in dom_items if not item.is_text_only]
-		assert indcies == dom_indices, 'Indices of selector map and dom items do not match'
+			await browser._click_element_node(node_element)
 
-		await browser._click_element_by_xpath(xpath)
+		except Exception as e:
+			print(e)
