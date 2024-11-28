@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import time
 import uuid
-from typing import Any, Optional, Type, TypeVar
+from pathlib import Path
+from typing import Any, Optional, Tuple, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -25,8 +27,11 @@ from browser_use.agent.views import (
 	AgentHistoryList,
 	AgentOutput,
 )
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserState, BrowserStateHistory
+from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
+from browser_use.dom.history_tree_processor import DOMHistoryElement, HistoryTreeProcessor
+from browser_use.dom.views import DOMElementNode
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
@@ -124,7 +129,7 @@ class Agent:
 			if result.extracted_content:
 				logger.info(f'📄 Result: {result.extracted_content}')
 			if result.is_done:
-				logger.result(f'{result.extracted_content}')  # type:ignore
+				logger.result(f'{result.extracted_content}')  # type: ignore
 
 			self.consecutive_failures = 0
 
@@ -176,7 +181,22 @@ class Agent:
 		result: ActionResult,
 	) -> None:
 		"""Create and store history item"""
-		history_item = AgentHistory(model_output=model_output, result=result, state=state)
+		if model_output:
+			interacted_element = AgentHistory.get_interacted_element(
+				model_output, state.selector_map
+			)
+		else:
+			interacted_element = None
+
+		state_history = BrowserStateHistory(
+			url=state.url,
+			title=state.title,
+			tabs=state.tabs,
+			interacted_element=interacted_element,
+		)
+
+		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)
+
 		self.history.history.append(history_item)
 
 	@time_execution_async('--get_next_action')
@@ -326,3 +346,128 @@ class Agent:
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
+
+	async def rerun_history(
+		self,
+		history: AgentHistoryList,
+		max_retries: int = 3,
+		skip_failures: bool = True,
+		delay_between_actions: float = 2.0,
+	) -> list[ActionResult]:
+		"""
+		Rerun a saved history of actions with error handling and retry logic.
+
+		Args:
+			history: The history to replay
+			max_retries: Maximum number of retries per action
+			skip_failures: Whether to skip failed actions or stop execution
+			delay_between_actions: Delay between actions in seconds
+
+		Returns:
+			List of action results
+		"""
+		results = []
+
+		for i, history_item in enumerate(history.history):
+			goal = (
+				history_item.model_output.current_state.next_goal
+				if history_item.model_output
+				else ''
+			)
+			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
+
+			if not history_item.model_output or not history_item.model_output.action:
+				logger.warning(f'Step {i + 1}: No action to replay, skipping')
+				results.append(ActionResult(error='No action to replay'))
+				continue
+
+			retry_count = 0
+			while retry_count < max_retries:
+				try:
+					result = await self._execute_history_step(history_item, delay_between_actions)
+					results.append(result)
+					break
+
+				except Exception as e:
+					retry_count += 1
+					if retry_count == max_retries:
+						error_msg = f'Step {i + 1} failed after {max_retries} attempts: {str(e)}'
+						logger.error(error_msg)
+						if not skip_failures:
+							results.append(ActionResult(error=error_msg))
+							raise RuntimeError(error_msg)
+					else:
+						logger.warning(
+							f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...'
+						)
+						await asyncio.sleep(delay_between_actions)
+
+		return results
+
+	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> ActionResult:
+		"""Execute a single step from history with element validation"""
+
+		state = await self.controller.browser.get_state()
+		if not state or not history_item.model_output:
+			raise ValueError('Invalid state or model output')
+
+		updated_action = await self._update_action_indices(
+			history_item.state.interacted_element, history_item.model_output.action, state
+		)
+
+		if updated_action is None:
+			raise ValueError('Could not find matching element in current page')
+
+		result = await self.controller.act(updated_action)
+		await asyncio.sleep(delay)
+		return result
+
+	async def _update_action_indices(
+		self,
+		historical_element: Optional[DOMHistoryElement],
+		action: ActionModel,  # Type this properly based on your action model
+		current_state: BrowserState,
+	) -> Optional[ActionModel]:
+		"""
+		Update action indices based on current page state.
+		Returns updated action or None if element cannot be found.
+		"""
+		if not historical_element or not current_state.element_tree:
+			return action
+
+		current_element = HistoryTreeProcessor.find_history_element_in_tree(
+			historical_element, current_state.element_tree
+		)
+
+		if not current_element or current_element.highlight_index is None:
+			return None
+
+		old_index = action.get_index()
+		if old_index != current_element.highlight_index:
+			action.set_index(current_element.highlight_index)
+			logger.info(
+				f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}'
+			)
+
+		return action
+
+	async def load_and_rerun(
+		self, history_file: Optional[str | Path] = None, **kwargs
+	) -> list[ActionResult]:
+		"""
+		Load history from file and rerun it.
+
+		Args:
+			history_file: Path to the history file
+			**kwargs: Additional arguments passed to rerun_history
+		"""
+		if not history_file:
+			history_file = 'AgentHistory.json'
+		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
+		return await self.rerun_history(history, **kwargs)
+
+	def save_history(self, file_path: Optional[str | Path] = None) -> None:
+		"""Save the history to a file"""
+		if not file_path:
+			file_path = 'AgentHistory.json'
+		self.history.save_to_file(file_path)

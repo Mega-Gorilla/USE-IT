@@ -205,6 +205,7 @@ class Browser:
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
 			with open(self.config.cookies_file, 'r') as f:
 				cookies = json.load(f)
+				logger.info(f'Loaded {len(cookies)} cookies from {self.config.cookies_file}')
 				await context.add_cookies(cookies)
 
 		# Expose anti-detection scripts
@@ -386,7 +387,7 @@ class Browser:
 				):
 					break
 				if now - start_time > self.config.maximum_wait_page_load_time:
-					logger.warning(
+					logger.debug(
 						f'Network timeout after {self.config.maximum_wait_page_load_time}s with {len(pending_requests)} '
 						f'pending requests: {[r.url for r in pending_requests]}'
 					)
@@ -437,8 +438,7 @@ class Browser:
 		if self.session is None:
 			return
 
-		if self.config.cookies_file:
-			await self.save_cookies()
+		await self.save_cookies()
 
 		if force and not self.config.keep_open:
 			session = await self.get_session()
@@ -811,10 +811,14 @@ class Browser:
 		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
-				# maybe file is just a file name then i get
-				if os.path.dirname(self.config.cookies_file):
-					os.makedirs(os.path.dirname(self.config.cookies_file), exist_ok=True)
+				logger.info(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
+
+				# Check if the path is a directory and create it if necessary
+				dirname = os.path.dirname(self.config.cookies_file)
+				if dirname:
+					os.makedirs(dirname, exist_ok=True)
+
 				with open(self.config.cookies_file, 'w') as f:
 					json.dump(cookies, f)
 			except Exception as e:
-				logger.error(f'Failed to save cookies: {str(e)}')
+				logger.warning(f'Failed to save cookies: {str(e)}')

@@ -8,6 +8,7 @@ from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 
 
+# run with: pytest browser_use/browser/tests/test_clicks.py
 @pytest.mark.asyncio
 async def test_highlight_elements():
 	browser = Browser(config=BrowserConfig(headless=False, keep_open=False, disable_security=True))
@@ -18,7 +19,8 @@ async def test_highlight_elements():
 
 	page = await browser.get_current_page()
 	# await page.goto('https://immobilienscout24.de')
-	await page.goto('https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/service-plans')
+	# await page.goto('https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/service-plans')
+	await page.goto('https://google.com/search?q=elon+musk')
 	# await page.goto('https://kayak.com')
 	# await page.goto('https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_iframe')
 
@@ -31,7 +33,9 @@ async def test_highlight_elements():
 
 			with open('./tmp/page.json', 'w') as f:
 				json.dump(
-					ElementTreeSerializer.dom_element_node_to_json(state.element_tree), f, indent=1
+					ElementTreeSerializer.dom_element_node_to_json(state.element_tree),
+					f,
+					indent=1,
 				)
 
 			# await time_execution_sync('highlight_selector_map_elements')(
@@ -40,6 +44,8 @@ async def test_highlight_elements():
 
 			# Find and print duplicate XPaths
 			xpath_counts = {}
+			if not state.selector_map:
+				continue
 			for selector in state.selector_map.values():
 				xpath = selector.xpath
 				if xpath in xpath_counts:
@@ -53,7 +59,7 @@ async def test_highlight_elements():
 					print(f'XPath: {xpath}')
 					print(f'Count: {count}\n')
 
-			print(state.selector_map.keys(), 'Selector map keys')
+			print(list(state.selector_map.keys()), 'Selector map keys')
 			print(state.element_tree.clickable_elements_to_string())
 			action = input('Select next action: ')
 

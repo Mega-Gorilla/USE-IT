@@ -38,19 +38,26 @@ async def main():
 	sites = [
 		'https://practice.expandtesting.com/upload',
 	]
-	# task = f'go to {", ".join(sites)} and Upload my file then subbmit and stop '
-	task = f'go to {" ".join(sites)} each in new tabs and Upload my file then subbmit extract the page content and go to google and find elon musk '
+	task = f'go to {" ".join(sites)} each in new tabs and Upload my file then subbmit extract the page content and go to google and find elon musk and stop'
 
-	model = ChatOpenAI(model='gpt-4o-mini')
+	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(
 		task=task,
 		llm=model,
 		controller=controller,
-		save_conversation_path='tmp/examples/file_upload',
-		max_input_tokens=32000,
 	)
 
 	await agent.run()
+
+	history_file_path = 'AgentHistoryList.json'
+	agent.save_history(file_path=history_file_path)
+
+	agent2 = Agent(llm=model, controller=controller, task='')
+	await agent2.load_and_rerun(history_file_path)
+
+	input('Press Enter to close...')
+
+	await controller.browser.close(force=True)
 
 
 if __name__ == '__main__':

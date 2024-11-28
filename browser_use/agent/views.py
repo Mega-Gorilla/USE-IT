@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import json
 import traceback
-from typing import Optional, Type
+from pathlib import Path
+from typing import Any, Dict, Optional, Type
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
+from browser_use.dom.history_tree_processor import (
+	DOMElementNode,
+	DOMHistoryElement,
+	HistoryTreeProcessor,
+)
+from browser_use.dom.views import SelectorMap
 
 
 class ActionResult(BaseModel):
@@ -54,9 +62,38 @@ class AgentHistory(BaseModel):
 
 	model_output: AgentOutput | None
 	result: ActionResult
-	state: BrowserState
+	state: BrowserStateHistory
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
+
+	@staticmethod
+	def get_interacted_element(
+		model_output: AgentOutput, selector_map: SelectorMap
+	) -> DOMHistoryElement | None:
+		index = model_output.action.get_index()
+		if index:
+			el: DOMElementNode = selector_map[index]
+			return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
+
+		return None
+
+	def model_dump(self, **kwargs) -> Dict[str, Any]:
+		"""Custom serialization handling circular references"""
+
+		# Handle action serialization
+		model_output_dump = None
+		if self.model_output:
+			action_dump = self.model_output.action.model_dump(exclude_none=True)
+			model_output_dump = {
+				'current_state': self.model_output.current_state.model_dump(),
+				'action': action_dump,  # This preserves the actual action data
+			}
+
+		return {
+			'model_output': model_output_dump,
+			'result': self.result.model_dump(exclude_none=True),
+			'state': self.state.to_dict(),
+		}
 
 
 class AgentHistoryList(BaseModel):
@@ -71,6 +108,41 @@ class AgentHistoryList(BaseModel):
 	def __repr__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
 		return self.__str__()
+
+	def save_to_file(self, filepath: str | Path) -> None:
+		"""Save history to JSON file with proper serialization"""
+		try:
+			Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+			data = self.model_dump()
+			with open(filepath, 'w', encoding='utf-8') as f:
+				json.dump(data, f, indent=2)
+		except Exception as e:
+			raise e
+
+	def model_dump(self, **kwargs) -> Dict[str, Any]:
+		"""Custom serialization that properly uses AgentHistory's model_dump"""
+		return {
+			'history': [h.model_dump(**kwargs) for h in self.history],
+		}
+
+	@classmethod
+	def load_from_file(
+		cls, filepath: str | Path, output_model: Type[AgentOutput]
+	) -> 'AgentHistoryList':
+		"""Load history from JSON file"""
+		with open(filepath, 'r', encoding='utf-8') as f:
+			data = json.load(f)
+		# loop through history and validate output_model actions to enrich with custom actions
+		for h in data['history']:
+			if h['model_output']:
+				if isinstance(h['model_output'], dict):
+					h['model_output'] = output_model.model_validate(h['model_output'])
+				else:
+					h['model_output'] = None
+			if 'interacted_element' not in h['state']:
+				h['state']['interacted_element'] = None
+		history = cls.model_validate(data)
+		return history
 
 	def last_action(self) -> None | dict:
 		"""Last action in history"""
@@ -122,19 +194,10 @@ class AgentHistoryList(BaseModel):
 	def model_actions(self) -> list[dict]:
 		"""Get all actions from history"""
 		outputs = []
+
 		for h in self.history:
 			if h.model_output:
 				output = h.model_output.action.model_dump(exclude_none=True)
-				# should have only one key and param_model
-				key = list(output.keys())[0]
-				params = output[key]
-
-				# convert index to xpath if available
-				if 'index' in params:
-					selector_map = h.state.selector_map
-					index = params['index']
-					if index in selector_map:
-						params['xpath'] = selector_map[index]
 
 				outputs.append(output)
 		return outputs

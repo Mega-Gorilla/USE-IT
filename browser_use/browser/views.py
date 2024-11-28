@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from browser_use.dom.history_tree_processor import DOMHistoryElement
 from browser_use.dom.views import DOMState
 
 
@@ -22,14 +23,25 @@ class BrowserState(DOMState):
 	tabs: list[TabInfo]
 	screenshot: Optional[str] = None
 
-	# def model_dump(self) -> dict:
-	# 	dump = super().model_dump()
-	# 	# Add a summary of available tabs
-	# 	if self.tabs:
-	# 		dump['available_tabs'] = [
-	# 			f'Tab {i+1}: {tab.title} ({tab.url})' for i, tab in enumerate(self.tabs)
-	# 		]
-	# 	return dump
+
+@dataclass
+class BrowserStateHistory:
+	url: str
+	title: str
+	tabs: list[TabInfo]
+	interacted_element: Optional[DOMHistoryElement] = None
+	screenshot: Optional[str] = None
+
+	def to_dict(self) -> dict[str, Any]:
+		data = {}
+		data['tabs'] = [tab.model_dump() for tab in self.tabs]
+		data['screenshot'] = self.screenshot
+		data['interacted_element'] = (
+			self.interacted_element.to_dict() if self.interacted_element else None
+		)
+		data['url'] = self.url
+		data['title'] = self.title
+		return data
 
 
 class BrowserError(Exception):
