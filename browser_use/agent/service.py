@@ -6,6 +6,7 @@ import logging
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Optional, Tuple, Type, TypeVar
 
 from dotenv import load_dotenv
@@ -375,6 +376,7 @@ class Agent:
 
 			if not history_item.model_output or not history_item.model_output.action:
 				logger.warning(f'Step {i + 1}: No action to replay, skipping')
+				results.append(ActionResult(error='No action to replay'))
 				continue
 
 			retry_count = 0
@@ -390,8 +392,8 @@ class Agent:
 						error_msg = f'Step {i + 1} failed after {max_retries} attempts: {str(e)}'
 						logger.error(error_msg)
 						if not skip_failures:
+							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
-						results.append(ActionResult(error=error_msg))
 					else:
 						logger.warning(
 							f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...'
@@ -442,12 +444,14 @@ class Agent:
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
 			logger.info(
-				f'Updated element index from {old_index} to {current_element.highlight_index}'
+				f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}'
 			)
 
 		return action
 
-	async def load_and_rerun(self, history_file: str, **kwargs) -> list[ActionResult]:
+	async def load_and_rerun(
+		self, history_file: Optional[str | Path] = None, **kwargs
+	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
@@ -455,9 +459,13 @@ class Agent:
 			history_file: Path to the history file
 			**kwargs: Additional arguments passed to rerun_history
 		"""
+		if not history_file:
+			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
 		return await self.rerun_history(history, **kwargs)
 
-	def save_history(self, file_path: str) -> None:
+	def save_history(self, file_path: Optional[str | Path] = None) -> None:
 		"""Save the history to a file"""
+		if not file_path:
+			file_path = 'AgentHistory.json'
 		self.history.save_to_file(file_path)

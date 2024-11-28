@@ -32,24 +32,14 @@ async def secret_text(secret_text: str) -> None:
 
 
 agent = Agent(
-	# task='Go to kayak.com and search for flights from Zurich to Beijing and then done.',
 	task='Find flights on kayak.com from Zurich to Beijing on 25.12.2024 to 02.02.2025',
-	# task='Search for elon musk on google and click the first result scroll down',
 	llm=llm,
 	controller=controller,
 )
 
 
 async def main():
-	# history: AgentHistoryList = await agent.run(5)
-	# await controller.browser.close(force=True)
-
-	history_file_path = 'AgentHistoryList.json'
-	# agent.save_history(file_path=history_file_path)
-
-	agent2 = Agent(llm=llm, controller=controller, task='')
-	await agent2.load_and_rerun(history_file_path)
-
+	history: AgentHistoryList = await agent.run(20)
 	await controller.browser.close(force=True)
 
 
