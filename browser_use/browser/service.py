@@ -546,9 +546,12 @@ class Browser:
 			try:
 				cookies = await self.session.context.cookies()
 				logger.info(f'Saving {len(cookies)} cookies to {self.cookies_file}')
-				# maybe file is just a file name then i get
-				if os.path.dirname(self.cookies_file):
-					os.makedirs(os.path.dirname(self.cookies_file), exist_ok=True)
+
+				# Check if the path is a directory and create it if necessary
+				dirname = os.path.dirname(self.cookies_file)
+				if dirname:
+					os.makedirs(dirname, exist_ok=True)
+
 				with open(self.cookies_file, 'w') as f:
 					json.dump(cookies, f)
 			except Exception as e:
