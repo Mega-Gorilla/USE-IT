@@ -2,7 +2,7 @@ import time
 
 from tokencost import count_string_tokens
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 
 # from browser_use.browser.service import Browser
 from browser_use.dom.service import DomService
@@ -11,7 +11,7 @@ from browser_use.utils import time_execution_sync
 
 # @pytest.mark.skip("slow af")
 async def test_process_html_file():
-	browser = Browser(headless=False)
+	browser = Browser(config=BrowserConfig(headless=False))
 	page = await browser.get_current_page()
 
 	dom_service = DomService(page)
@@ -32,7 +32,7 @@ async def test_process_html_file():
 	elements = dom_state.element_tree
 	selector_map = dom_state.selector_map
 
-	print(elements.clickable_elements_to_string(use_tabs=False))
+	print(elements.clickable_elements_to_string())
 	print('Tokens:', count_string_tokens(elements.clickable_elements_to_string(), model='gpt-4o'))
 	print(len(selector_map.keys()), 'elements highlighted')
 

@@ -1,11 +1,12 @@
 import os
 
 import pytest
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
+from browser_use.browser.service import BrowserConfig
 from browser_use.controller.service import Controller
 
 
@@ -26,7 +27,7 @@ def llm():
 @pytest.fixture
 async def agent_with_controller():
 	"""Create agent with controller for testing"""
-	controller = Controller(keep_open=False)
+	controller = Controller(browser_config=BrowserConfig(keep_open=False))
 	print('init controller')
 	try:
 		yield controller
@@ -95,7 +96,7 @@ async def test_error_recovery(llm, agent_with_controller):
 			assert 'url' in action['go_to_url'], 'url is not in go_to_url'
 			assert action['go_to_url']['url'].endswith(
 				'google.com'
-			), f'url does not end with google.com'
+			), 'url does not end with google.com'
 			break
 
 
@@ -192,8 +193,8 @@ async def test_captcha_solver(llm, agent_with_controller, captcha: CaptchaTest):
 	# Verify the agent solved the captcha
 	solved = False
 	for h in history.history:
-		last = h.state.items
-		if any(captcha.success_text in item.text for item in last):
+		last = h.state.element_tree.get_all_text_till_next_clickable_element()
+		if any(captcha.success_text in item for item in last):
 			solved = True
 			break
 	assert solved, f'Failed to solve {captcha.name}'

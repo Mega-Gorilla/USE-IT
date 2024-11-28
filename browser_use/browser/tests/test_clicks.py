@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 
@@ -11,7 +11,7 @@ from browser_use.utils import time_execution_sync
 # run with: pytest browser_use/browser/tests/test_clicks.py
 @pytest.mark.asyncio
 async def test_highlight_elements():
-	browser = Browser(headless=False, keep_open=False, disable_security=True)
+	browser = Browser(config=BrowserConfig(headless=False, keep_open=False, disable_security=True))
 
 	session = await browser.get_session()
 
@@ -42,9 +42,6 @@ async def test_highlight_elements():
 			# 	browser.highlight_selector_map_elements
 			# )(state.selector_map)
 
-			# print(state.dom_items_to_string(use_tabs=False))
-			# print(state.selector_map)
-
 			# Find and print duplicate XPaths
 			xpath_counts = {}
 			if not state.selector_map:
@@ -64,7 +61,7 @@ async def test_highlight_elements():
 
 			print(list(state.selector_map.keys()), 'Selector map keys')
 			if state.element_tree:
-				print(state.element_tree.clickable_elements_to_string(use_tabs=False))
+				print(state.element_tree.clickable_elements_to_string())
 			action = input('Select next action: ')
 
 			await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()

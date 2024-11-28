@@ -3,7 +3,7 @@ import logging
 from main_content_extractor import MainContentExtractor
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserConfig
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -24,17 +24,9 @@ logger = logging.getLogger(__name__)
 class Controller:
 	def __init__(
 		self,
-		headless: bool = False,
-		keep_open: bool = False,
-		cookies_path: str | None = None,
-		disable_security: bool = False,
+		browser_config: BrowserConfig = BrowserConfig(),
 	):
-		self.browser = Browser(
-			headless=headless,
-			keep_open=keep_open,
-			cookies_path=cookies_path,
-			disable_security=disable_security,
-		)
+		self.browser = Browser(config=browser_config)
 		self.registry = Registry()
 		self._register_default_actions()
 
@@ -70,7 +62,7 @@ class Controller:
 			session = await browser.get_session()
 			state = session.cached_state
 
-			if params.index not in state.selector_map:
+			if state.selector_map is None or params.index not in state.selector_map:
 				raise Exception(
 					f'Element with index {params.index} does not exist - retry or use alternative actions'
 				)
@@ -100,7 +92,7 @@ class Controller:
 			session = await browser.get_session()
 			state = session.cached_state
 
-			if params.index not in state.selector_map:
+			if state.selector_map is None or params.index not in state.selector_map:
 				raise Exception(
 					f'Element index {params.index} does not exist - retry or use alternative actions'
 				)

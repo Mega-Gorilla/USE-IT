@@ -88,18 +88,16 @@ class DOMElementNode(DOMBaseNode):
 		collect_text(self)
 		return '\n'.join(text_parts).strip()
 
-	def clickable_elements_to_string(self, use_tabs: bool = True) -> str:
+	def clickable_elements_to_string(self) -> str:
 		"""Convert the processed DOM content to HTML."""
 		formatted_text = []
 
 		def process_node(node: DOMBaseNode, depth: int) -> None:
-			indent = '\t' * depth if use_tabs else ''
-
 			if isinstance(node, DOMElementNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
 					formatted_text.append(
-						f'{node.highlight_index}[:]{indent}<{node.tag_name}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
+						f'{node.highlight_index}[:]<{node.tag_name}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
 					)
 
 				# Process children regardless
@@ -109,7 +107,7 @@ class DOMElementNode(DOMBaseNode):
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
 				if not node.has_parent_with_highlight_index():
-					formatted_text.append(f'_[:]{indent}{node.text}')
+					formatted_text.append(f'_[:]{node.text}')
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)
@@ -146,5 +144,5 @@ from browser_use.dom.history_tree_processor import DOMHistoryElement
 @dataclass
 class DOMState:
 	element_tree: DOMElementNode | None
-	interacted_element: DOMHistoryElement | None
 	selector_map: SelectorMap | None
+	interacted_element: DOMHistoryElement | None

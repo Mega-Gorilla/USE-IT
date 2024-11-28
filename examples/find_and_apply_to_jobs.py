@@ -13,6 +13,8 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
+from browser_use.browser.service import Browser
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
@@ -22,11 +24,11 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from browser_use import ActionResult, Agent, Browser, Controller
+from browser_use import ActionResult, Agent, BrowserConfig, Controller
 
 load_dotenv()
 
-controller = Controller(keep_open=True)
+controller = Controller(browser_config=BrowserConfig(keep_open=True))
 CV = Path.cwd() / 'cv_04_24.pdf'
 
 

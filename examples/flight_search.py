@@ -23,7 +23,7 @@ from browser_use import ActionModel, Agent, AgentHistoryList, Controller
 from browser_use.agent.views import AgentOutput
 
 llm = ChatOpenAI(model='gpt-4o')
-controller = Controller(keep_open=False, cookies_path='cookies.json')
+controller = Controller()
 
 
 @controller.registry.action(description='Prints the secret text')

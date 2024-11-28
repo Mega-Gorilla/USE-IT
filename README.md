@@ -1,11 +1,13 @@
-# 🌐 Browser Use
+<img src="./static/browser-use.png" alt="Browser Use Logo" width="full"/>
 
-Make websites accessible for AI agents 🤖.
+<br/>
 
 [![GitHub stars](https://img.shields.io/github/stars/gregpr07/browser-use?style=social)](https://github.com/gregpr07/browser-use/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
+
+Make websites accessible for AI agents 🤖.
 
 Browser use is the easiest way to connect your AI agents with the browser. If you have used Browser Use for your project feel free to show it off in our [Discord](https://link.browser-use.com/discord).
 
@@ -37,7 +39,7 @@ async def main():
     )
     result = await agent.run()
     print(result)
-    
+
 if __name__ == "__main__":
     asyncio.run(main())
 ```
@@ -138,6 +140,20 @@ history: list[AgentHistory] = await agent.run()
 
 print(history)
 ```
+
+## Browser configuration
+
+You can configure the browser using the `BrowserConfig` class.
+
+The most important options are:
+
+- `headless`: Whether to run the browser in headless mode
+- `keep_open`: Whether to keep the browser open after the script finishes
+- `disable_security`: Whether to disable browser security features (very useful if dealing with cross-origin requests like iFrames)
+- `cookies_file`: Path to a cookies file for persistence
+- `minimum_wait_page_load_time`: Minimum time to wait before getting the page state for the LLM input
+- `wait_for_network_idle_page_load_time`: Time to wait for network requests to finish before getting the page state
+- `maximum_wait_page_load_time`: Maximum time to wait for the page to load before proceeding anyway
 
 ## More examples
 
