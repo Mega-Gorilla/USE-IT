@@ -11,7 +11,8 @@ from doctest import OutputChecker
 from pprint import pprint
 
 from browser_use.agent.views import AgentBrain
-from browser_use.dom.views import SelectorMap
+from browser_use.dom.history_tree_processor import HistoryTreeProcessor
+from browser_use.dom.views import DOMElementNode, SelectorMap
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
@@ -21,8 +22,8 @@ from langchain_openai import ChatOpenAI
 from browser_use import ActionModel, Agent, AgentHistoryList, Controller
 from browser_use.agent.views import AgentOutput
 
-llm = ChatOpenAI(model='gpt-4o-mini')
-controller = Controller(keep_open=False)
+llm = ChatOpenAI(model='gpt-4o')
+controller = Controller(keep_open=False, cookies_path='cookies.json')
 
 
 @controller.registry.action(description='Prints the secret text')
@@ -31,28 +32,27 @@ async def secret_text(secret_text: str) -> None:
 
 
 agent = Agent(
-	# task='Find flights on kayak.com from Zurich to Beijing on 25.12.2024 to 02.02.2025',
-	task='Search for elon musk on google and click the first result scroll down',
+	# task='Go to kayak.com and search for flights from Zurich to Beijing and then done.',
+	task='Find flights on kayak.com from Zurich to Beijing on 25.12.2024 to 02.02.2025',
+	# task='Search for elon musk on google and click the first result scroll down',
 	llm=llm,
 	controller=controller,
 )
 
 
 async def main():
-	history: AgentHistoryList = await agent.run(2)
+	history: AgentHistoryList = await agent.run(5)
 	# agent.save_history(file)
 	await controller.browser.close(force=True)
 
 	history.save_to_file('AgentHistoryList.json')
-
-	print(f'history: {history}')
 
 	await rerun_task()
 
 
 async def rerun_task():
 	# create new controller and agent
-	controller2 = Controller(keep_open=False)
+	controller2 = Controller(keep_open=False, cookies_path='cookies.json')
 	agent2 = Agent(
 		task='',
 		llm=llm,
@@ -70,44 +70,40 @@ async def rerun_task():
 	print(actions)
 
 	# close controller
-
+	# get all interacted elements
+	interacted_elements = [h.state.interacted_element for h in history2.history]
 	for i, history_item in enumerate(history2.history):
-		print(f'history_item {i}')
+		print(f'{i} {actions[i]} ')
 		ouput = history_item.model_output
 		if ouput and ouput.action:
+			goal = ouput.current_state.next_goal
+			print(f'goal: {goal}')
 			try:
 				# check if state is the same as previous
-				prev_selector_map: SelectorMap = history_item.state.selector_map
+				old_el = history_item.state.interacted_element
 				state = await controller2.browser.get_state()
-				current_selector_map: SelectorMap = state.selector_map
-				# check which values are different
-				diff = [
-					v1
-					for v1, v2 in zip(prev_selector_map.values(), current_selector_map.values())
-					if v1 != v2
-				]
-				# keys unique difference
-				diff = prev_selector_map.keys() - current_selector_map.keys()
-				if diff:
-					print(f'diff: {diff}')
-					continue
+				tree = state.element_tree
 
-				# get exclude unset=True field in action
-				action = ouput.action.model_dump(exclude_unset=True)
-				# get index of clicked if index  param in output.action  e.g. click_element(index=0), input(index=0, value='test'),
-				# check if index is in param of action {'click_element': {'index': 9, 'num_clicks': 1}}
-				params = dict(action.values())
-				index_exists = 'index' in params
-				if index_exists:
-					index = params['index']
-					# get element with index from prev selector map
-					prev_element = prev_selector_map[index]
-					# get element with index from current selector map
-					current_element = current_selector_map[index]
-					if prev_element != current_element:
-						print(f'element changed: {prev_element} -> {current_element}')
+				if old_el and tree:
+					element: DOMElementNode | None = (
+						HistoryTreeProcessor.find_history_element_in_tree(old_el, tree)
+					)
+					if element:
+						index = element.highlight_index
+						old_index = ouput.action.get_index()
+						print(f'same element found with index: {index} and old index: {old_index}')
+
+						if old_index != index and index is not None:
+							ouput.action.set_index(index)
+					else:
+						print(f'old element not found in new tree')
 						continue
-				action_model = await controller2.act(action)
+
+				action_result = await controller2.act(ouput.action)
+				if action_result.error:
+					print(f'Step {i} failed: {action_result.error}')
+				else:
+					print(f'Step {i} succeeded: {action_result.extracted_content}')
 			except Exception as e:
 				print(f'Error executing action {ouput.action}: {e}')
 

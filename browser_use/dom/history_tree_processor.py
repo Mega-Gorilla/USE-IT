@@ -25,7 +25,7 @@ class DOMHistoryElement:
 	attributes: dict[str, str]
 	shadow_root: bool = False
 
-	def model_dump(self) -> dict:
+	def to_dict(self) -> dict:
 		return {
 			'tag_name': self.tag_name,
 			'xpath': self.xpath,

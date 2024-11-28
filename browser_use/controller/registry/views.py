@@ -38,6 +38,28 @@ class ActionModel(BaseModel):
 	#
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
+	def get_index(self) -> int | None:
+		"""Get the index of the action"""
+		# {'clicked_element': {'index':5}}
+		params = self.model_dump(exclude_unset=True).values()
+		if not params:
+			return None
+		for param in params:
+			if 'index' in param:
+				return param['index']
+		return None
+
+	def set_index(self, index: int):
+		"""Overwrite the index of the action"""
+		# Get the action name and params
+		action_data = self.model_dump(exclude_unset=True)
+		action_name = next(iter(action_data.keys()))
+		action_params = getattr(self, action_name)
+
+		# Update the index directly on the model
+		if hasattr(action_params, 'index'):
+			action_params.index = index
+
 
 class ActionRegistry(BaseModel):
 	"""Model representing the action registry"""

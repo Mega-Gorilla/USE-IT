@@ -26,8 +26,9 @@ class BrowserState(DOMState):
 		data = {}
 		data['tabs'] = [tab.model_dump() for tab in self.tabs]
 		data['screenshot'] = self.screenshot
-		data['element_tree'] = None
-		data['interacted_element'] = None
+		data['interacted_element'] = (
+			self.interacted_element.to_dict() if self.interacted_element else None
+		)
 		data['url'] = self.url
 		data['title'] = self.title
 		return data

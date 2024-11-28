@@ -71,13 +71,8 @@ class AgentHistory(BaseModel):
 		model_output: AgentOutput, selector_map: SelectorMap
 	) -> DOMHistoryElement | None:
 		if model_output:
-			# check if action has index param
-			action_values = model_output.action.model_dump(exclude_unset=True).values()
-			params = next(iter(action_values))
-
-			index_exists = 'index' in params
-			if index_exists:
-				index = params['index']
+			index = model_output.action.get_index()
+			if index:
 				el: DOMElementNode = selector_map[index]
 				return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
 

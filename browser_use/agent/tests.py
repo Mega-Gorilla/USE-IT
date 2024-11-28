@@ -29,6 +29,7 @@ def sample_browser_state():
 			children=[],
 		),
 		selector_map={},
+		interacted_element=None,
 	)
 
 
