@@ -236,8 +236,7 @@ class Browser:
 		if self.session is None:
 			return
 
-		if self.cookies_file:
-			await self.save_cookies()
+		await self.save_cookies()
 
 		if force and not self.keep_open:
 			session = await self.get_session()
@@ -557,4 +556,4 @@ class Browser:
 				with open(self.cookies_file, 'w') as f:
 					json.dump(cookies, f)
 			except Exception as e:
-				logger.error(f'Failed to save cookies: {str(e)}')
+				logger.warning(f'Failed to save cookies: {str(e)}')

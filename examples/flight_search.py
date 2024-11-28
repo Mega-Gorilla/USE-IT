@@ -41,75 +41,16 @@ agent = Agent(
 
 
 async def main():
-	history: AgentHistoryList = await agent.run(5)
-	# agent.save_history(file)
+	# history: AgentHistoryList = await agent.run(5)
+	# await controller.browser.close(force=True)
+
+	history_file_path = 'AgentHistoryList.json'
+	# agent.save_history(file_path=history_file_path)
+
+	agent2 = Agent(llm=llm, controller=controller, task='')
+	await agent2.load_and_rerun(history_file_path)
+
 	await controller.browser.close(force=True)
-
-	history.save_to_file('AgentHistoryList.json')
-
-	await rerun_task()
-
-
-async def rerun_task():
-	# create new controller and agent
-	controller2 = Controller(keep_open=False, cookies_path='cookies.json')
-	agent2 = Agent(
-		task='',
-		llm=llm,
-		controller=controller2,
-	)
-	output_model = agent2.AgentOutput
-
-	history2 = AgentHistoryList.load_from_file('AgentHistoryList.json', output_model)
-
-	# pydantic model for actions
-
-	print(f'rerun task')
-	actions = history2.action_names()
-	outputs = history2.model_outputs()
-	print(actions)
-
-	# close controller
-	# get all interacted elements
-	interacted_elements = [h.state.interacted_element for h in history2.history]
-	for i, history_item in enumerate(history2.history):
-		print(f'{i} {actions[i]} ')
-		ouput = history_item.model_output
-		if ouput and ouput.action:
-			goal = ouput.current_state.next_goal
-			print(f'goal: {goal}')
-			try:
-				# check if state is the same as previous
-				old_el = history_item.state.interacted_element
-				state = await controller2.browser.get_state()
-				tree = state.element_tree
-
-				if old_el and tree:
-					element: DOMElementNode | None = (
-						HistoryTreeProcessor.find_history_element_in_tree(old_el, tree)
-					)
-					if element:
-						index = element.highlight_index
-						old_index = ouput.action.get_index()
-						print(f'same element found with index: {index} and old index: {old_index}')
-
-						if old_index != index and index is not None:
-							ouput.action.set_index(index)
-					else:
-						print(f'old element not found in new tree')
-						continue
-
-				action_result = await controller2.act(ouput.action)
-				if action_result.error:
-					print(f'Step {i} failed: {action_result.error}')
-				else:
-					print(f'Step {i} succeeded: {action_result.extracted_content}')
-			except Exception as e:
-				print(f'Error executing action {ouput.action}: {e}')
-
-			# wait
-			await asyncio.sleep(2)
-	print(f'done')
 
 
 asyncio.run(main())
