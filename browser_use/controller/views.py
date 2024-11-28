@@ -15,11 +15,13 @@ class GoToUrlAction(BaseModel):
 class ClickElementAction(BaseModel):
 	index: int
 	num_clicks: int = 1
+	xpath: Optional[str] = None
 
 
 class InputTextAction(BaseModel):
 	index: int
 	text: str
+	xpath: Optional[str] = None
 
 
 class DoneAction(BaseModel):
