@@ -39,14 +39,28 @@ class BrowserConfig:
 	"""
 	Configuration for the Browser.
 
-	DEFAULT:
+	Default values:
 		headless: False
+			Whether to run browser in headless mode
+
 		keep_open: False
+			Keep browser open after script finishes
+
 		disable_security: False
+			Disable browser security features
+
 		cookies_file: None
-		minimum_wait_page_load_time: 1
-		wait_for_network_idle_page_load_time: 1
-		maximum_wait_page_load_time: 15
+			Path to cookies file for persistence
+
+		minimum_wait_page_load_time: 0.5
+			Minimum time to wait before getting page state for LLM input
+
+		wait_for_network_idle_page_load_time: 1.0
+			Time to wait for network requests to finish before getting page state.
+			Lower values may result in incomplete page loads.
+
+		maximum_wait_page_load_time: 5.0
+			Maximum time to wait for page load before proceeding anyway
 	"""
 
 	headless: bool = False
@@ -488,6 +502,11 @@ class Browser:
 		await self._wait_for_page_and_frames_load()
 		session = await self.get_session()
 		session.cached_state = await self._update_state(use_vision=use_vision)
+
+		# Save cookies if a file is specified
+		if self.config.cookies_file:
+			asyncio.create_task(self.save_cookies())
+
 		return session.cached_state
 
 	async def _update_state(self, use_vision: bool = False) -> BrowserState:
