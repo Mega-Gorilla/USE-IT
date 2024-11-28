@@ -31,7 +31,8 @@ async def main():
 
 	print(
 		json.dumps(
-			agent.system_prompt.get_system_message().model_dump(exclude_unset=True), indent=4
+			agent.message_manager.system_prompt.model_dump(exclude_unset=True),
+			indent=4,
 		)
 	)
 

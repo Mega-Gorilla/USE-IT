@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
+	HumanMessage,
+	SystemMessage,
 )
 from openai import RateLimitError
 from pydantic import BaseModel, ValidationError
@@ -52,6 +54,7 @@ class Agent:
 		retry_delay: int = 10,
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
+		validate_output: bool = False,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -89,6 +92,7 @@ class Agent:
 		self.consecutive_failures = 0
 		self.max_failures = max_failures
 		self.retry_delay = retry_delay
+		self.validate_output = validate_output
 
 		if save_conversation_path:
 			logger.info(f'Saving conversation to {save_conversation_path}')
@@ -129,8 +133,6 @@ class Agent:
 			result = self._handle_step_error(e)
 			self._last_result = result
 
-			model_output = None
-
 			if result.error:
 				self.telemetry.capture(
 					AgentStepErrorTelemetryEvent(
@@ -138,8 +140,10 @@ class Agent:
 						error=result.error,
 					)
 				)
-		if state:
-			self._make_history_item(model_output, state, result)
+			model_output = None
+		finally:
+			if state:
+				self._make_history_item(model_output, state, result)
 
 	def _handle_step_error(self, error: Exception) -> ActionResult:
 		"""Handle all types of errors that can occur during a step"""
@@ -257,7 +261,11 @@ class Agent:
 
 				await self.step()
 
-				if self._is_task_complete():
+				if self.history.is_done():
+					if self.validate_output:
+						if not await self._validate_output():
+							continue
+
 					logger.info('✅ Task completed successfully')
 					break
 			else:
@@ -270,7 +278,7 @@ class Agent:
 				AgentEndTelemetryEvent(
 					agent_id=self.agent_id,
 					task=self.task,
-					success=self._is_task_complete(),
+					success=self.history.is_done(),
 					steps=len(self.history.history),
 				)
 			)
@@ -284,6 +292,38 @@ class Agent:
 			return True
 		return False
 
-	def _is_task_complete(self) -> bool:
-		"""Check if the task has been completed successfully"""
-		return bool(self.history.history and self.history.history[-1].result.is_done)
+	async def _validate_output(self) -> bool:
+		"""Validate the output of the last action is what the user wanted"""
+		system_msg = (
+			f'You are a validator of an agent who interacts with a browser. '
+			f'Validate if the output of last action is what the user wanted and if the task is completed. '
+			f'If the task is unclear defined, you can let it pass. '
+			f'Task: {self.task}. Return a JSON object with 2 keys: is_valid and reason. '
+			f'is_valid is a boolean that indicates if the output is correct. '
+			f'reason is a string that explains why it is valid or not.'
+			f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
+		)
+
+		if self.controller.browser.session:
+			state = self.controller.browser.session.cached_state
+			content = AgentMessagePrompt(state=state, result=self._last_result)
+			msg = [SystemMessage(content=system_msg), content.get_user_message()]
+		else:
+			# if no browser session, we can't validate the output
+			return True
+
+		class ValidationResult(BaseModel):
+			is_valid: bool
+			reason: str
+
+		validator = self.llm.with_structured_output(ValidationResult, include_raw=True)
+		response: dict[str, Any] = await validator.ainvoke(msg)  # type: ignore
+		parsed: ValidationResult = response['parsed']
+		is_valid = parsed.is_valid
+		if not is_valid:
+			logger.info(f'❌ Validator decision: {parsed.reason}')
+			msg = f'The ouput is not yet correct. {parsed.reason}.'
+			self._last_result = ActionResult(extracted_content=msg, include_in_memory=True)
+		else:
+			logger.info(f'✅ Validator decision: {parsed.reason}')
+		return is_valid

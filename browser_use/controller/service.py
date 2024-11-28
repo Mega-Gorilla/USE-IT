@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 class Controller:
 	def __init__(
-		self, headless: bool = False, keep_open: bool = False, disable_security: bool = False
+		self, headless: bool = False, keep_open: bool = False, disable_security: bool = False, cookies_path: str | None = None
 	):
 		self.browser = Browser(
-			headless=headless, keep_open=keep_open, disable_security=disable_security
+			headless=headless, keep_open=keep_open, disable_security=disable_security, cookies_path=cookies_path
 		)
 		self.registry = Registry()
 		self._register_default_actions()
