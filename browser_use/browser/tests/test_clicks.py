@@ -38,9 +38,6 @@ async def test_highlight_elements():
 			# 	browser.highlight_selector_map_elements
 			# )(state.selector_map)
 
-			# print(state.dom_items_to_string(use_tabs=False))
-			# print(state.selector_map)
-
 			# Find and print duplicate XPaths
 			xpath_counts = {}
 			for selector in state.selector_map.values():
@@ -57,7 +54,7 @@ async def test_highlight_elements():
 					print(f'Count: {count}\n')
 
 			print(state.selector_map.keys(), 'Selector map keys')
-			print(state.element_tree.clickable_elements_to_string(use_tabs=False))
+			print(state.element_tree.clickable_elements_to_string())
 			action = input('Select next action: ')
 
 			await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()

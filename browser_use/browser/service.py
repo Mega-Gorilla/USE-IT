@@ -373,44 +373,109 @@ class Browser:
 
 	# region - User Actions
 	def _convert_simple_xpath_to_css_selector(self, xpath: str) -> str:
-		"""Converts simple XPath expressions to CSS selectors.
-		Only handles basic XPath patterns like tag names, indices, and attributes.
-		"""
+		"""Converts simple XPath expressions to CSS selectors."""
+		if not xpath:
+			return ''
+
 		# Remove leading slash if present
 		xpath = xpath.lstrip('/')
 
 		# Split into parts
 		parts = xpath.split('/')
-
 		css_parts = []
+
 		for part in parts:
 			if not part:
 				continue
 
 			# Handle index notation [n]
 			if '[' in part:
-				tag = part[: part.find('[')]
-				index = int(part[part.find('[') + 1 : part.find(']')]) - 1
-				css_parts.append(f'{tag}:nth-of-type({index+1})')
+				base_part = part[: part.find('[')]
+				index_part = part[part.find('[') :]
+
+				# Handle multiple indices
+				indices = [i.strip('[]') for i in index_part.split(']')[:-1]]
+
+				for idx in indices:
+					try:
+						# Handle numeric indices
+						if idx.isdigit():
+							index = int(idx) - 1
+							base_part += f':nth-of-type({index+1})'
+						# Handle last() function
+						elif idx == 'last()':
+							base_part += ':last-of-type'
+						# Handle position() functions
+						elif 'position()' in idx:
+							if '>1' in idx:
+								base_part += ':nth-of-type(n+2)'
+					except ValueError:
+						continue
+
+				css_parts.append(base_part)
 			else:
 				css_parts.append(part)
 
-		return ' > '.join(css_parts)
+		base_selector = ' > '.join(css_parts)
+		return base_selector
 
 	def _enhanced_css_selector_for_element(self, element: DOMElementNode) -> str:
-		css_selector = self._convert_simple_xpath_to_css_selector(element.xpath)
+		"""
+		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
 
-		# Handle class attributes first
-		if 'class' in element.attributes:
-			classes = element.attributes['class'].split()
-			css_selector += '.' + '.'.join(classes)
+		Args:
+			element: The DOM element to create a selector for
 
-		# Then add all other attribute selectors
-		for attribute, value in element.attributes.items():
-			if attribute != 'class':  # Skip class since we already handled it
-				css_selector += f'[{attribute}="{value}"]'
+		Returns:
+			A valid CSS selector string
+		"""
+		try:
+			# Get base selector from XPath
+			css_selector = self._convert_simple_xpath_to_css_selector(element.xpath)
 
-		return css_selector
+			# Handle class attributes
+			if 'class' in element.attributes and element.attributes['class']:
+				classes = element.attributes['class'].split()
+				for class_name in classes:
+					# Skip empty class names
+					if not class_name:
+						continue
+
+					# Escape special characters in class names
+					if any(char in class_name for char in ':()[],>+~|.# '):
+						# Use attribute contains for special characters
+						css_selector += f'[class*="{class_name}"]'
+					else:
+						css_selector += f'.{class_name}'
+
+			# Handle other attributes
+			for attribute, value in element.attributes.items():
+				if attribute == 'class':
+					continue
+
+				# Skip invalid attribute names
+				if not attribute.strip():
+					continue
+
+				# Escape special characters in attribute names
+				safe_attribute = attribute.replace(':', r'\:')
+
+				# Handle different value cases
+				if value == '':
+					css_selector += f'[{safe_attribute}]'
+				elif any(char in value for char in '"\'<>`'):
+					# Use contains for values with special characters
+					safe_value = value.replace('"', '\\"')
+					css_selector += f'[{safe_attribute}*="{safe_value}"]'
+				else:
+					css_selector += f'[{safe_attribute}="{value}"]'
+
+			return css_selector
+
+		except Exception:
+			# Fallback to a more basic selector if something goes wrong
+			tag_name = element.tag_name or '*'
+			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
 	async def get_locate_element(self, element: DOMElementNode):
 		current_frame = await self.get_current_page()

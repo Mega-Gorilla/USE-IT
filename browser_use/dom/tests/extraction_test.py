@@ -32,7 +32,7 @@ async def test_process_html_file():
 	elements = dom_state.element_tree
 	selector_map = dom_state.selector_map
 
-	print(elements.clickable_elements_to_string(use_tabs=False))
+	print(elements.clickable_elements_to_string())
 	print('Tokens:', count_string_tokens(elements.clickable_elements_to_string(), model='gpt-4o'))
 	print(len(selector_map.keys()), 'elements highlighted')
 
