@@ -9,7 +9,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -45,12 +44,16 @@ class Browser:
 	MAXIMUM_WAIT_TIME = 5
 
 	def __init__(
-		self, headless: bool = False, keep_open: bool = False, disable_security: bool = False, cookies_path: str | None = None
+		self,
+		headless: bool = False,
+		keep_open: bool = False,
+		disable_security: bool = False,
+		cookies_path: str | None = None,
 	):
 		self.headless = headless
 		self.keep_open = keep_open
 		self.disable_security = disable_security
-    self.cookies_file = cookies_path
+		self.cookies_file = cookies_path
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
