@@ -30,11 +30,13 @@ async def test_highlight_elements():
 		try:
 			# await asyncio.sleep(10)
 			state = await browser.get_state()
-
-			with open('./tmp/page.json', 'w') as f:
-				json.dump(
-					ElementTreeSerializer.dom_element_node_to_json(state.element_tree), f, indent=1
-				)
+			if state.element_tree:
+				with open('./tmp/page.json', 'w') as f:
+					json.dump(
+						ElementTreeSerializer.dom_element_node_to_json(state.element_tree),
+						f,
+						indent=1,
+					)
 
 			# await time_execution_sync('highlight_selector_map_elements')(
 			# 	browser.highlight_selector_map_elements
@@ -45,6 +47,8 @@ async def test_highlight_elements():
 
 			# Find and print duplicate XPaths
 			xpath_counts = {}
+			if not state.selector_map:
+				continue
 			for selector in state.selector_map.values():
 				xpath = selector.xpath
 				if xpath in xpath_counts:
@@ -58,8 +62,9 @@ async def test_highlight_elements():
 					print(f'XPath: {xpath}')
 					print(f'Count: {count}\n')
 
-			print(state.selector_map.keys(), 'Selector map keys')
-			print(state.element_tree.clickable_elements_to_string(use_tabs=False))
+			print(list(state.selector_map.keys()), 'Selector map keys')
+			if state.element_tree:
+				print(state.element_tree.clickable_elements_to_string(use_tabs=False))
 			action = input('Select next action: ')
 
 			await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()
