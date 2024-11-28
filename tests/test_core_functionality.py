@@ -6,6 +6,7 @@ from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
+from browser_use.browser.service import BrowserConfig
 from browser_use.controller.service import Controller
 
 
@@ -26,7 +27,7 @@ def llm():
 @pytest.fixture
 async def controller():
 	"""Initialize the controller with persistent browser"""
-	controller = Controller(keep_open=False, headless=False)
+	controller = Controller(browser_config=BrowserConfig(keep_open=False, headless=False))
 
 	try:
 		yield controller

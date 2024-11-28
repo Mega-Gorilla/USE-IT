@@ -10,7 +10,7 @@ import asyncio
 
 from langchain_openai import ChatOpenAI
 
-from browser_use import Agent
+from browser_use import Agent, BrowserConfig
 from browser_use.agent.views import AgentHistoryList
 
 llm = ChatOpenAI(model='gpt-4o')
@@ -18,7 +18,7 @@ llm = ChatOpenAI(model='gpt-4o')
 agent = Agent(
 	task="go to google.com and type 'OpenAI' click search and give me the first url",
 	llm=llm,
-	controller=Controller(keep_open=True, headless=False),
+	controller=Controller(browser_config=BrowserConfig(keep_open=True, headless=False)),
 )
 
 

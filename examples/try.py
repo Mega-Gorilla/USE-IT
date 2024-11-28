@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 import asyncio
 
-from browser_use import Agent
+from browser_use import Agent, BrowserConfig
 from browser_use.controller.service import Controller
 
 
@@ -47,7 +47,7 @@ llm = get_llm(args.provider)
 agent = Agent(
 	task=args.query,
 	llm=llm,
-	controller=Controller(keep_open=True),
+	controller=Controller(browser_config=BrowserConfig(keep_open=True)),
 	# save_conversation_path='./tmp/try_flight/',
 )
 

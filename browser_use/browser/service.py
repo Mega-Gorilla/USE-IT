@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TypedDict
 
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -28,6 +29,40 @@ from browser_use.utils import time_execution_sync
 logger = logging.getLogger(__name__)
 
 
+class BrowserWindowSize(TypedDict):
+	width: int
+	height: int
+
+
+@dataclass
+class BrowserConfig:
+	"""
+	Configuration for the Browser.
+
+	DEFAULT:
+		headless: False
+		keep_open: False
+		disable_security: False
+		cookies_file: None
+		minimum_wait_page_load_time: 1
+		wait_for_network_idle_page_load_time: 1
+		maximum_wait_page_load_time: 15
+	"""
+
+	headless: bool = False
+	keep_open: bool = False
+	disable_security: bool = False
+	cookies_file: str | None = None
+	minimum_wait_page_load_time: float = 1
+	wait_for_network_idle_page_load_time: float = 1
+	maximum_wait_page_load_time: float = 10
+
+	extra_chromium_args: list[str] = field(default_factory=list)
+	browser_window_size: BrowserWindowSize = field(
+		default_factory=lambda: {'width': 1280, 'height': 1024}
+	)
+
+
 @dataclass
 class BrowserSession:
 	playwright: Playwright
@@ -40,20 +75,13 @@ class BrowserSession:
 
 
 class Browser:
-	MINIMUM_WAIT_TIME = 0.5
 	MAXIMUM_WAIT_TIME = 5
 
 	def __init__(
 		self,
-		headless: bool = False,
-		keep_open: bool = False,
-		disable_security: bool = False,
-		cookies_path: str | None = None,
+		config: BrowserConfig,
 	):
-		self.headless = headless
-		self.keep_open = keep_open
-		self.disable_security = disable_security
-		self.cookies_file = cookies_path
+		self.config = config
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
@@ -113,32 +141,32 @@ class Browser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		try:
 			disable_security_args = []
-			if self.disable_security:
+			if self.config.disable_security:
 				disable_security_args = [
 					'--disable-web-security',
 					'--disable-site-isolation-trials',
 					'--disable-features=IsolateOrigins,site-per-process',
 				]
+
 			browser = await playwright.chromium.launch(
-				headless=self.headless,
-				ignore_default_args=['--enable-automation'],  # Helps with anti-detection
+				headless=self.config.headless,
 				args=[
 					'--no-sandbox',
 					'--disable-blink-features=AutomationControlled',
-					'--disable-extensions',
 					'--disable-infobars',
 					'--disable-background-timer-throttling',
 					'--disable-popup-blocking',
 					'--disable-backgrounding-occluded-windows',
 					'--disable-renderer-backgrounding',
 					'--disable-window-activation',
-					'--disable-focus-on-load',  # Prevents focus on navigation
+					'--disable-focus-on-load',
 					'--no-first-run',
 					'--no-default-browser-check',
-					'--no-startup-window',  # Prevents initial focus
+					'--no-startup-window',
 					'--window-position=0,0',
 				]
-				+ disable_security_args,
+				+ disable_security_args
+				+ self.config.extra_chromium_args,
 			)
 
 			return browser
@@ -149,19 +177,19 @@ class Browser:
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		context = await browser.new_context(
-			viewport={'width': 1280, 'height': 1024},
+			viewport=self.config.browser_window_size,
 			user_agent=(
 				'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 				'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 			),
 			java_script_enabled=True,
-			bypass_csp=self.disable_security,
-			ignore_https_errors=self.disable_security,
+			bypass_csp=self.config.disable_security,
+			ignore_https_errors=self.config.disable_security,
 		)
 
 		# Load cookies if they exist
-		if self.cookies_file and os.path.exists(self.cookies_file):
-			with open(self.cookies_file, 'r') as f:
+		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
+			with open(self.config.cookies_file, 'r') as f:
 				cookies = json.load(f)
 				await context.add_cookies(cookies)
 
@@ -198,26 +226,187 @@ class Browser:
 
 		return context
 
+	async def _wait_for_stable_network(self):
+		page = await self.get_current_page()
+
+		pending_requests = set()
+		last_activity = asyncio.get_event_loop().time()
+
+		# Define relevant resource types and content types
+		RELEVANT_RESOURCE_TYPES = {'document', 'stylesheet', 'image', 'font', 'script', 'iframe'}
+
+		RELEVANT_CONTENT_TYPES = {
+			'text/html',
+			'text/css',
+			'application/javascript',
+			'image/',
+			'font/',
+			'application/json',
+		}
+
+		# Additional patterns to filter out
+		IGNORED_URL_PATTERNS = {
+			# Analytics and tracking
+			'analytics',
+			'tracking',
+			'telemetry',
+			'beacon',
+			'metrics',
+			# Ad-related
+			'doubleclick',
+			'adsystem',
+			'adserver',
+			'advertising',
+			# Social media widgets
+			'facebook.com/plugins',
+			'platform.twitter',
+			'linkedin.com/embed',
+			# Live chat and support
+			'livechat',
+			'zendesk',
+			'intercom',
+			'crisp.chat',
+			'hotjar',
+			# Push notifications
+			'push-notifications',
+			'onesignal',
+			'pushwoosh',
+			# Background sync/heartbeat
+			'heartbeat',
+			'ping',
+			'alive',
+			# WebRTC and streaming
+			'webrtc',
+			'rtmp://',
+			'wss://',
+			# Common CDNs for dynamic content
+			'cloudfront.net',
+			'fastly.net',
+		}
+
+		async def on_request(request):
+			# Filter by resource type
+			if request.resource_type not in RELEVANT_RESOURCE_TYPES:
+				return
+
+			# Filter out streaming, websocket, and other real-time requests
+			if request.resource_type in {'websocket', 'media', 'eventsource', 'manifest', 'other'}:
+				return
+
+			# Filter out by URL patterns
+			url = request.url.lower()
+			if any(pattern in url for pattern in IGNORED_URL_PATTERNS):
+				return
+
+			# Filter out data URLs and blob URLs
+			if url.startswith(('data:', 'blob:')):
+				return
+
+			# Filter out requests with certain headers
+			headers = request.headers
+			if headers.get('purpose') == 'prefetch' or headers.get('sec-fetch-dest') in [
+				'video',
+				'audio',
+			]:
+				return
+
+			nonlocal last_activity
+			pending_requests.add(request)
+			last_activity = asyncio.get_event_loop().time()
+			# logger.debug(f'Request started: {request.url} ({request.resource_type})')
+
+		async def on_response(response):
+			request = response.request
+			if request not in pending_requests:
+				return
+
+			# Filter by content type if available
+			content_type = response.headers.get('content-type', '').lower()
+
+			# Skip if content type indicates streaming or real-time data
+			if any(
+				t in content_type
+				for t in [
+					'streaming',
+					'video',
+					'audio',
+					'webm',
+					'mp4',
+					'event-stream',
+					'websocket',
+					'protobuf',
+				]
+			):
+				pending_requests.remove(request)
+				return
+
+			# Only process relevant content types
+			if not any(ct in content_type for ct in RELEVANT_CONTENT_TYPES):
+				pending_requests.remove(request)
+				return
+
+			# Skip if response is too large (likely not essential for page load)
+			content_length = response.headers.get('content-length')
+			if content_length and int(content_length) > 5 * 1024 * 1024:  # 5MB
+				pending_requests.remove(request)
+				return
+
+			nonlocal last_activity
+			pending_requests.remove(request)
+			last_activity = asyncio.get_event_loop().time()
+			# logger.debug(f'Request resolved: {request.url} ({content_type})')
+
+		# Attach event listeners
+		page.on('request', on_request)
+		page.on('response', on_response)
+
+		try:
+			# Wait for idle time
+			start_time = asyncio.get_event_loop().time()
+			while True:
+				await asyncio.sleep(0.1)
+				now = asyncio.get_event_loop().time()
+				if (
+					len(pending_requests) == 0
+					and (now - last_activity) >= self.config.wait_for_network_idle_page_load_time
+				):
+					break
+				if now - start_time > self.config.maximum_wait_page_load_time:
+					logger.warning(
+						f'Network timeout after {self.config.maximum_wait_page_load_time}s with {len(pending_requests)} '
+						f'pending requests: {[r.url for r in pending_requests]}'
+					)
+					break
+
+		finally:
+			# Clean up event listeners
+			page.remove_listener('request', on_request)
+			page.remove_listener('response', on_response)
+
+		logger.debug(
+			f'Network stabilized for {self.config.wait_for_network_idle_page_load_time} seconds'
+		)
+
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
 		Ensures page is fully loaded before continuing.
-		Waits for either document.readyState to be complete or minimum WAIT_TIME, whichever is longer.
+		Waits for either network to be idle or minimum WAIT_TIME, whichever is longer.
 		"""
-		page = await self.get_current_page()
-
 		# Start timing
 		start_time = time.time()
 
+		# await asyncio.sleep(self.minimum_wait_page_load_time)
+
 		# Wait for page load
 		try:
-			await page.wait_for_load_state('domcontentloaded', timeout=5000)
+			await self._wait_for_stable_network()
 		except Exception:
 			logger.warning('Page load failed, continuing...')
 			pass
 
 		# Calculate remaining time to meet minimum WAIT_TIME
 		elapsed = time.time() - start_time
-		remaining = max((timeout_overwrite or self.MINIMUM_WAIT_TIME) - elapsed, 0)
+		remaining = max((timeout_overwrite or self.config.minimum_wait_page_load_time) - elapsed, 0)
 
 		logger.debug(
 			f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds'
@@ -234,19 +423,13 @@ class Browser:
 		if self.session is None:
 			return
 
-		if self.cookies_file:
+		if self.config.cookies_file:
 			await self.save_cookies()
 
-		if force and not self.keep_open:
+		if force and not self.config.keep_open:
 			session = await self.get_session()
 			await session.browser.close()
 			await session.playwright.stop()
-
-		else:
-			# Note: input() is blocking - consider an async alternative if needed
-			input('Press Enter to close Browser...')
-			self.keep_open = False
-			await self.close(force=True)
 
 	def __del__(self):
 		"""Async cleanup when object is destroyed"""
@@ -606,13 +789,13 @@ class Browser:
 
 	async def save_cookies(self):
 		"""Save current cookies to file"""
-		if self.session and self.session.context and self.cookies_file:
+		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
 				# maybe file is just a file name then i get
-				if os.path.dirname(self.cookies_file):
-					os.makedirs(os.path.dirname(self.cookies_file), exist_ok=True)
-				with open(self.cookies_file, 'w') as f:
+				if os.path.dirname(self.config.cookies_file):
+					os.makedirs(os.path.dirname(self.config.cookies_file), exist_ok=True)
+				with open(self.config.cookies_file, 'w') as f:
 					json.dump(cookies, f)
 			except Exception as e:
 				logger.error(f'Failed to save cookies: {str(e)}')
