@@ -12,11 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from playwright.async_api import Browser as PlaywrightBrowser
-from playwright.async_api import BrowserContext, ElementHandle, Page, Playwright, async_playwright
+from playwright.async_api import (
+	BrowserContext,
+	ElementHandle,
+	FrameLocator,
+	Page,
+	Playwright,
+	async_playwright,
+)
 
 from browser_use.browser.views import BrowserError, BrowserState, TabInfo
 from browser_use.dom.service import DomService
-from browser_use.dom.views import SelectorMap
+from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -38,12 +45,16 @@ class Browser:
 	MAXIMUM_WAIT_TIME = 5
 
 	def __init__(
-		self, headless: bool = False, keep_open: bool = False, cookies_path: str | None = None
+		self,
+		headless: bool = False,
+		keep_open: bool = False,
+		cookies_path: str | None = None,
+		disable_security: bool = False,
 	):
 		self.headless = headless
 		self.keep_open = keep_open
 		self.cookies_file = cookies_path
-
+		self.disable_security = disable_security
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
 
@@ -56,7 +67,9 @@ class Browser:
 
 		# Instead of calling _update_state(), create an empty initial state
 		initial_state = BrowserState(
-			items=[],
+			element_tree=DOMElementNode(
+				tag_name='root', is_visible=True, parent=None, xpath='', attributes={}, children=[]
+			),
 			selector_map={},
 			url=page.url,
 			title=await page.title(),
@@ -72,7 +85,18 @@ class Browser:
 			cached_state=initial_state,
 		)
 
+		await self._add_new_page_listener(context)
+
 		return self.session
+
+	async def _add_new_page_listener(self, context: BrowserContext):
+		async def on_page(page: Page):
+			await page.wait_for_load_state()
+			logger.debug(f'New page opened: {page.url}')
+			if self.session is not None:
+				self.session.current_page = page
+
+		context.on('page', on_page)
 
 	async def get_session(self) -> BrowserSession:
 		"""Lazy initialization of the browser and related components"""
@@ -88,6 +112,13 @@ class Browser:
 	async def _setup_browser(self, playwright: Playwright) -> PlaywrightBrowser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		try:
+			disable_security_args = []
+			if self.disable_security:
+				disable_security_args = [
+					'--disable-web-security',
+					'--disable-site-isolation-trials',
+					'--disable-features=IsolateOrigins,site-per-process',
+				]
 			browser = await playwright.chromium.launch(
 				headless=self.headless,
 				ignore_default_args=['--enable-automation'],  # Helps with anti-detection
@@ -106,7 +137,8 @@ class Browser:
 					'--no-default-browser-check',
 					'--no-startup-window',  # Prevents initial focus
 					'--window-position=0,0',
-				],
+				]
+				+ disable_security_args,
 			)
 
 			return browser
@@ -123,6 +155,8 @@ class Browser:
 				'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 			),
 			java_script_enabled=True,
+			bypass_csp=self.disable_security,
+			ignore_https_errors=self.disable_security,
 		)
 
 		# Load cookies if they exist
@@ -165,7 +199,7 @@ class Browser:
 
 		return context
 
-	async def wait_for_page_load(self, timeout_overwrite: float | None = None):
+	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
 		Ensures page is fully loaded before continuing.
 		Waits for either document.readyState to be complete or minimum WAIT_TIME, whichever is longer.
@@ -177,8 +211,9 @@ class Browser:
 
 		# Wait for page load
 		try:
-			await page.wait_for_load_state('load', timeout=5000)
+			await page.wait_for_load_state('domcontentloaded', timeout=5000)
 		except Exception:
+			logger.warning('Page load failed, continuing...')
 			pass
 
 		# Calculate remaining time to meet minimum WAIT_TIME
@@ -223,25 +258,25 @@ class Browser:
 		"""Navigate to a URL"""
 		page = await self.get_current_page()
 		await page.goto(url)
-		await self.wait_for_page_load()
+		await page.wait_for_load_state()
 
 	async def refresh_page(self):
 		"""Refresh the current page"""
 		page = await self.get_current_page()
 		await page.reload()
-		await self.wait_for_page_load()
+		await page.wait_for_load_state()
 
 	async def go_back(self):
 		"""Navigate back in history"""
 		page = await self.get_current_page()
 		await page.go_back()
-		await self.wait_for_page_load()
+		await page.wait_for_load_state()
 
 	async def go_forward(self):
 		"""Navigate forward in history"""
 		page = await self.get_current_page()
 		await page.go_forward()
-		await self.wait_for_page_load()
+		await page.wait_for_load_state()
 
 	async def close_current_tab(self):
 		"""Close the current tab"""
@@ -268,22 +303,24 @@ class Browser:
 	@time_execution_sync('--get_state')  # This decorator might need to be updated to handle async
 	async def get_state(self, use_vision: bool = False) -> BrowserState:
 		"""Get the current state of the browser"""
+		await self._wait_for_page_and_frames_load()
 		session = await self.get_session()
 		session.cached_state = await self._update_state(use_vision=use_vision)
 		return session.cached_state
 
 	async def _update_state(self, use_vision: bool = False) -> BrowserState:
 		"""Update and return state."""
+		await self.remove_highlights()
 		page = await self.get_current_page()
 		dom_service = DomService(page)
 		content = await dom_service.get_clickable_elements()  # Assuming this is async
 
 		screenshot_b64 = None
 		if use_vision:
-			screenshot_b64 = await self.take_screenshot(selector_map=content.selector_map)
+			screenshot_b64 = await self.take_screenshot()
 
 		self.current_state = BrowserState(
-			items=content.items,
+			element_tree=content.element_tree,
 			selector_map=content.selector_map,
 			url=page.url,
 			title=await page.title(),
@@ -295,16 +332,11 @@ class Browser:
 
 	# region - Browser Actions
 
-	async def take_screenshot(
-		self, selector_map: SelectorMap | None, full_page: bool = False
-	) -> str:
+	async def take_screenshot(self, full_page: bool = False) -> str:
 		"""
 		Returns a base64 encoded screenshot of the current page.
 		"""
 		page = await self.get_current_page()
-
-		if selector_map:
-			await self.highlight_selector_map_elements(selector_map)
 
 		screenshot = await page.screenshot(
 			full_page=full_page,
@@ -313,127 +345,147 @@ class Browser:
 
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 
-		if selector_map:
-			await self.remove_highlights()
+		await self.remove_highlights()
 
 		return screenshot_b64
 
-	async def highlight_selector_map_elements(self, selector_map: SelectorMap):
-		page = await self.get_current_page()
-		await self.remove_highlights()
-
-		script = """
-		const highlights = {
-		"""
-
-		# Build the highlights object with all selectors and indices
-		for index, selector in selector_map.items():
-			# Adjusting the JavaScript code to accept variables
-			script += f'"{index}": "{selector}",\n'
-
-		script += """
-		};
-		
-		for (const [index, selector] of Object.entries(highlights)) {
-			const el = document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-			if (!el) continue;  // Skip if element not found
-			el.style.outline = "2px solid red";
-			el.setAttribute('browser-user-highlight-id', 'playwright-highlight');
-			
-			const label = document.createElement("div");
-			label.className = 'playwright-highlight-label';
-			label.style.position = "fixed";
-			label.style.background = "red";
-			label.style.color = "white";
-			label.style.padding = "2px 6px";
-			label.style.borderRadius = "10px";
-			label.style.fontSize = "12px";
-			label.style.zIndex = "9999999";
-			label.textContent = index;
-			const rect = el.getBoundingClientRect();
-			label.style.top = (rect.top - 20) + "px";
-			label.style.left = rect.left + "px";
-			document.body.appendChild(label);
-		}
-		"""
-
-		await page.evaluate(script)
-
 	async def remove_highlights(self):
 		"""
-		Removes all highlight outlines and labels created by highlight_selector_map_elements
-
+		Removes all highlight overlays and labels created by the highlightElement function.
 		"""
 		page = await self.get_current_page()
 		await page.evaluate(
 			"""
-			// Remove all highlight outlines
-			const highlightedElements = document.querySelectorAll('[browser-user-highlight-id="playwright-highlight"]');
+			// Remove the highlight container and all its contents
+			const container = document.getElementById('playwright-highlight-container');
+			if (container) {
+				container.remove();
+			}
+
+			// Remove highlight attributes from elements
+			const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
 			highlightedElements.forEach(el => {
-				el.style.outline = '';
 				el.removeAttribute('browser-user-highlight-id');
 			});
-			
-
-			// Remove all labels
-			const labels = document.querySelectorAll('.playwright-highlight-label');
-			labels.forEach(label => label.remove());
 			"""
 		)
 
 	# endregion
 
 	# region - User Actions
+	def _convert_simple_xpath_to_css_selector(self, xpath: str) -> str:
+		"""Converts simple XPath expressions to CSS selectors.
+		Only handles basic XPath patterns like tag names, indices, and attributes.
+		"""
+		# Remove leading slash if present
+		xpath = xpath.lstrip('/')
 
-	async def _input_text_by_xpath(self, xpath: str, text: str):
-		page = await self.get_current_page()
+		# Split into parts
+		parts = xpath.split('/')
 
+		css_parts = []
+		for part in parts:
+			if not part:
+				continue
+
+			# Handle index notation [n]
+			if '[' in part:
+				tag = part[: part.find('[')]
+				index = int(part[part.find('[') + 1 : part.find(']')]) - 1
+				css_parts.append(f'{tag}:nth-of-type({index+1})')
+			else:
+				css_parts.append(part)
+
+		return ' > '.join(css_parts)
+
+	def _enhanced_css_selector_for_element(self, element: DOMElementNode) -> str:
+		css_selector = self._convert_simple_xpath_to_css_selector(element.xpath)
+
+		# Handle class attributes first
+		if 'class' in element.attributes:
+			classes = element.attributes['class'].split()
+			css_selector += '.' + '.'.join(classes)
+
+		# Then add all other attribute selectors
+		for attribute, value in element.attributes.items():
+			if attribute != 'class':  # Skip class since we already handled it
+				css_selector += f'[{attribute}="{value}"]'
+
+		return css_selector
+
+	async def get_locate_element(self, element: DOMElementNode):
+		current_frame = await self.get_current_page()
+
+		# Start with the target element and collect all parents
+		parents: list[DOMElementNode] = []
+		current = element
+		while current.parent is not None:
+			parent = current.parent
+			parents.append(parent)
+			current = parent
+			if parent.tag_name == 'iframe':
+				break
+
+		# there can be only one iframe parent (by design of the loop above)
+		iframe_parent = [item for item in parents if item.tag_name == 'iframe']
+		if iframe_parent:
+			parent = iframe_parent[0]
+			css_selector = self._enhanced_css_selector_for_element(parent)
+			current_frame = current_frame.frame_locator(css_selector)
+
+		css_selector = self._enhanced_css_selector_for_element(element)
+
+		if isinstance(current_frame, FrameLocator):
+			return await current_frame.locator(css_selector).element_handle()
+		else:
+			return await current_frame.wait_for_selector(
+				css_selector, timeout=5000, state='visible'
+			)
+
+	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		try:
-			element = await page.wait_for_selector(f'xpath={xpath}', timeout=5000, state='visible')
+			page = await self.get_current_page()
+			element = await self.get_locate_element(element_node)
 
 			if element is None:
-				raise Exception(f'Element with xpath: {xpath} not found')
+				raise Exception(f'Element: {repr(element_node)} not found')
 
 			await element.scroll_into_view_if_needed(timeout=2500)
 			await element.fill('')
 			await element.type(text)
-			await self.wait_for_page_load()
+			await page.wait_for_load_state()
 
 		except Exception as e:
 			raise Exception(
-				f'Failed to input text into element with xpath: {xpath}. Error: {str(e)}'
+				f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}'
 			)
 
-	async def _click_element_by_xpath(self, xpath: str):
+	async def _click_element_node(self, element_node: DOMElementNode):
 		"""
 		Optimized method to click an element using xpath.
 		"""
 		page = await self.get_current_page()
 
 		try:
-			element = await page.wait_for_selector(f'xpath={xpath}', timeout=5000, state='visible')
+			element = await self.get_locate_element(element_node)
 
 			if element is None:
-				raise Exception(f'Element with xpath: {xpath} not found')
+				raise Exception(f'Element: {repr(element_node)} not found')
 
 			# await element.scroll_into_view_if_needed()
 
 			try:
 				await element.click(timeout=2500)
-				await self.wait_for_page_load()
-				return
+				await page.wait_for_load_state()
 			except Exception:
-				pass
-
-			try:
-				await page.evaluate('(el) => el.click()', element)
-				await self.wait_for_page_load()
-				return
-			except Exception as e:
-				raise Exception(f'Failed to click element: {str(e)}')
+				try:
+					await page.evaluate('(el) => el.click()', element)
+					await page.wait_for_load_state()
+				except Exception as e:
+					raise Exception(f'Failed to click element: {str(e)}')
 
 		except Exception as e:
-			raise Exception(f'Failed to click element with xpath: {xpath}. Error: {str(e)}')
+			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
@@ -461,7 +513,7 @@ class Browser:
 		session.current_page = page
 
 		await page.bring_to_front()
-		await self.wait_for_page_load()
+		await page.wait_for_load_state()
 
 	async def create_new_tab(self, url: str | None = None) -> None:
 		"""Create a new tab and optionally navigate to a URL"""
@@ -469,13 +521,13 @@ class Browser:
 		new_page = await session.context.new_page()
 		session.current_page = new_page
 
-		await self.wait_for_page_load()
+		await new_page.wait_for_load_state()
 
 		page = await self.get_current_page()
 
 		if url:
 			await page.goto(url)
-			await self.wait_for_page_load(timeout_overwrite=1)
+			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
 
 	# endregion
 
@@ -484,15 +536,9 @@ class Browser:
 		session = await self.get_session()
 		return session.cached_state.selector_map
 
-	async def get_xpath(self, index: int) -> str:
-		selector_map = await self.get_selector_map()
-		return selector_map[index]
-
 	async def get_element_by_index(self, index: int) -> ElementHandle | None:
-		page = await self.get_current_page()
-		return await page.wait_for_selector(
-			await self.get_xpath(index), timeout=2500, state='visible'
-		)
+		selector_map = await self.get_selector_map()
+		return await self.get_locate_element(selector_map[index])
 
 	async def save_cookies(self):
 		"""Save current cookies to file"""
