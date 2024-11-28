@@ -7,6 +7,7 @@ from pydantic import BaseModel, SecretStr
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.service import BrowserConfig
+from browser_use.browser.views import BrowserState
 from browser_use.controller.service import Controller
 
 
@@ -149,18 +150,13 @@ class CaptchaTest(BaseModel):
 	additional_text: str | None = None
 
 
+# run 3 test: python -m pytest tests/test_agent_actions.py -v -k "test_captcha_solver" --capture=no --log-cli-level=INFO
 # pytest tests/test_agent_actions.py -v -k "test_captcha_solver" --capture=no --log-cli-level=INFO
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
 	'captcha',
 	[
 		# good test for num_clicks
-		CaptchaTest(
-			name='Rotate Captcha',
-			url='https://2captcha.com/demo/rotatecaptcha',
-			success_text='Captcha is passed successfully',
-			additional_text='Use num_clicks with number to click multiple times at once in same direction. click done when image is exact correct position.',
-		),
 		CaptchaTest(
 			name='Text Captcha',
 			url='https://2captcha.com/demo/text',
@@ -172,6 +168,12 @@ class CaptchaTest(BaseModel):
 			success_text='Correct!',
 		),
 		CaptchaTest(
+			name='Rotate Captcha',
+			url='https://2captcha.com/demo/rotatecaptcha',
+			success_text='Captcha is passed successfully',
+			additional_text='Use num_clicks with number to click multiple times at once in same direction. click done when image is exact correct position.',
+		),
+		CaptchaTest(
 			name='MT Captcha',
 			url='https://2captcha.com/demo/mtcaptcha',
 			success_text='Verified Successfully',
@@ -179,7 +181,7 @@ class CaptchaTest(BaseModel):
 		),
 	],
 )
-async def test_captcha_solver(llm, agent_with_controller, captcha: CaptchaTest):
+async def test_captcha_solver(llm, agent_with_controller: Controller, captcha: CaptchaTest):
 	"""Test agent's ability to solve different types of captchas"""
 	agent = Agent(
 		task=f'Go to {captcha.url} and solve the captcha. {captcha.additional_text}',
@@ -190,13 +192,17 @@ async def test_captcha_solver(llm, agent_with_controller, captcha: CaptchaTest):
 
 	history: AgentHistoryList = await agent.run(max_steps=7)
 
-	# Verify the agent solved the captcha
-	solved = False
-	for h in history.history:
-		last = h.state.element_tree.get_all_text_till_next_clickable_element()
-		if any(captcha.success_text in item for item in last):
-			solved = True
-			break
+	state: BrowserState = await agent_with_controller.browser.get_state()
+
+	all_text = state.element_tree.get_all_text_till_next_clickable_element()
+
+	if not all_text:
+		all_text = ''
+
+	if not isinstance(all_text, str):
+		all_text = str(all_text)
+
+	solved = captcha.success_text in all_text
 	assert solved, f'Failed to solve {captcha.name}'
 
 
