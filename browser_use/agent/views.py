@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Type
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.dom.history_tree_processor import (
 	DOMElementNode,
@@ -62,7 +62,7 @@ class AgentHistory(BaseModel):
 
 	model_output: AgentOutput | None
 	result: ActionResult
-	state: BrowserState
+	state: BrowserStateHistory
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
@@ -70,11 +70,10 @@ class AgentHistory(BaseModel):
 	def get_interacted_element(
 		model_output: AgentOutput, selector_map: SelectorMap
 	) -> DOMHistoryElement | None:
-		if model_output:
-			index = model_output.action.get_index()
-			if index:
-				el: DOMElementNode = selector_map[index]
-				return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
+		index = model_output.action.get_index()
+		if index:
+			el: DOMElementNode = selector_map[index]
+			return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
 
 		return None
 
@@ -140,8 +139,6 @@ class AgentHistoryList(BaseModel):
 					h['model_output'] = output_model.model_validate(h['model_output'])
 				else:
 					h['model_output'] = None
-			h['state']['selector_map'] = None
-			h['state']['element_tree'] = None
 			if 'interacted_element' not in h['state']:
 				h['state']['interacted_element'] = None
 		history = cls.model_validate(data)

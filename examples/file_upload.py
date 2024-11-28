@@ -57,6 +57,8 @@ async def main():
 
 	input('Press Enter to close...')
 
+	await controller.browser.close(force=True)
+
 
 if __name__ == '__main__':
 	asyncio.run(main())

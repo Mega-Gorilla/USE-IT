@@ -27,7 +27,7 @@ from browser_use.agent.views import (
 	AgentHistoryList,
 	AgentOutput,
 )
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor import DOMHistoryElement, HistoryTreeProcessor
@@ -181,18 +181,21 @@ class Agent:
 		result: ActionResult,
 	) -> None:
 		"""Create and store history item"""
-		selector_map = state.selector_map
-		model_output = model_output
-		if model_output and selector_map:
-			interacted_element = AgentHistory.get_interacted_element(model_output, selector_map)
+		if model_output:
+			interacted_element = AgentHistory.get_interacted_element(
+				model_output, state.selector_map
+			)
 		else:
 			interacted_element = None
 
-		state.interacted_element = interacted_element
-		state.element_tree = None
-		state.selector_map = None
+		state_history = BrowserStateHistory(
+			url=state.url,
+			title=state.title,
+			tabs=state.tabs,
+			interacted_element=interacted_element,
+		)
 
-		history_item = AgentHistory(model_output=model_output, result=result, state=state)
+		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)
 
 		self.history.history.append(history_item)
 

@@ -117,7 +117,6 @@ class Browser:
 			title=await page.title(),
 			screenshot=None,
 			tabs=[],
-			interacted_element=None,
 		)
 
 		self.session = BrowserSession(
@@ -388,7 +387,7 @@ class Browser:
 				):
 					break
 				if now - start_time > self.config.maximum_wait_page_load_time:
-					logger.warning(
+					logger.debug(
 						f'Network timeout after {self.config.maximum_wait_page_load_time}s with {len(pending_requests)} '
 						f'pending requests: {[r.url for r in pending_requests]}'
 					)
@@ -528,7 +527,6 @@ class Browser:
 			title=await page.title(),
 			tabs=await self.get_tabs_info(),
 			screenshot=screenshot_b64,
-			interacted_element=content.interacted_element,
 		)
 
 		return self.current_state

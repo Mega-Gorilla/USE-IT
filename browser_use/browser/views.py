@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from browser_use.dom.history_tree_processor import DOMHistoryElement
 from browser_use.dom.views import DOMState
 
 
@@ -20,6 +21,15 @@ class BrowserState(DOMState):
 	url: str
 	title: str
 	tabs: list[TabInfo]
+	screenshot: Optional[str] = None
+
+
+@dataclass
+class BrowserStateHistory:
+	url: str
+	title: str
+	tabs: list[TabInfo]
+	interacted_element: Optional[DOMHistoryElement] = None
 	screenshot: Optional[str] = None
 
 	def to_dict(self) -> dict[str, Any]:

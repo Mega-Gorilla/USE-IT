@@ -30,13 +30,13 @@ async def test_highlight_elements():
 		try:
 			# await asyncio.sleep(10)
 			state = await browser.get_state()
-			if state.element_tree:
-				with open('./tmp/page.json', 'w') as f:
-					json.dump(
-						ElementTreeSerializer.dom_element_node_to_json(state.element_tree),
-						f,
-						indent=1,
-					)
+
+			with open('./tmp/page.json', 'w') as f:
+				json.dump(
+					ElementTreeSerializer.dom_element_node_to_json(state.element_tree),
+					f,
+					indent=1,
+				)
 
 			# await time_execution_sync('highlight_selector_map_elements')(
 			# 	browser.highlight_selector_map_elements
@@ -60,8 +60,7 @@ async def test_highlight_elements():
 					print(f'Count: {count}\n')
 
 			print(list(state.selector_map.keys()), 'Selector map keys')
-			if state.element_tree:
-				print(state.element_tree.clickable_elements_to_string())
+			print(state.element_tree.clickable_elements_to_string())
 			action = input('Select next action: ')
 
 			await time_execution_sync('remove_highlight_elements')(browser.remove_highlights)()

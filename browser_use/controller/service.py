@@ -62,7 +62,7 @@ class Controller:
 			session = await browser.get_session()
 			state = session.cached_state
 
-			if state.selector_map is None or params.index not in state.selector_map:
+			if params.index not in state.selector_map:
 				raise Exception(
 					f'Element with index {params.index} does not exist - retry or use alternative actions'
 				)
@@ -92,7 +92,7 @@ class Controller:
 			session = await browser.get_session()
 			state = session.cached_state
 
-			if state.selector_map is None or params.index not in state.selector_map:
+			if params.index not in state.selector_map:
 				raise Exception(
 					f'Element index {params.index} does not exist - retry or use alternative actions'
 				)
