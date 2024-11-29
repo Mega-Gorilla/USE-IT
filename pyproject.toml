@@ -4,7 +4,7 @@ description = "Make websites accessible for AI agents"
 authors = [
     { name = "Gregor Zunic" }
 ]
-version = "0.1.13"
+version = "0.1.14"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
@@ -50,6 +50,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["browser_use"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"browser_use/dom/buildDomTree.js" = "browser_use/dom/buildDomTree.js"
 
 [tool.hatch.build]
 include = [
