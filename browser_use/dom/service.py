@@ -28,7 +28,7 @@ class DomService:
 		return DOMState(element_tree=element_tree, selector_map=selector_map)
 
 	async def _build_dom_tree(self, highlight_elements: bool) -> DOMElementNode:
-		js_code = resources.files('browser_use.dom').joinpath('buildDomTree.js').read_text()
+		js_code = resources.read_text('browser_use.dom', 'buildDomTree.js')
 
 		eval_page = await self.page.evaluate(
 			js_code, [highlight_elements]
