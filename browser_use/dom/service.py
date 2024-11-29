@@ -1,4 +1,5 @@
 import logging
+from importlib import resources
 from typing import Optional
 
 from playwright.async_api import Page
@@ -27,7 +28,7 @@ class DomService:
 		return DOMState(element_tree=element_tree, selector_map=selector_map)
 
 	async def _build_dom_tree(self, highlight_elements: bool) -> DOMElementNode:
-		with open('browser_use/dom/buildDomTree.js', 'r') as f:
+		with resources.files('browser_use.dom').joinpath('buildDomTree.js').open('r') as f:
 			js_code = f.read()
 
 		eval_page = await self.page.evaluate(
