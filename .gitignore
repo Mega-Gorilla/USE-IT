@@ -131,6 +131,7 @@ env.bak/
 venv.bak/
 test_env/
 
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -171,3 +172,5 @@ private_example.py
 private_example
 
 browser_cookies.json
+cookies.json
+AgentHistory.json
