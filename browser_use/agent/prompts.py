@@ -102,9 +102,15 @@ IMPORTANT RULES:
 
 
 class AgentMessagePrompt:
-	def __init__(self, state: BrowserState, result: Optional[ActionResult] = None):
+	def __init__(
+		self,
+		state: BrowserState,
+		result: Optional[ActionResult] = None,
+		max_error_length: int = 400,
+	):
 		self.state = state
 		self.result = result
+		self.max_error_length = max_error_length
 
 	def get_user_message(self) -> HumanMessage:
 		state_description = f"""
@@ -119,7 +125,9 @@ Interactive elements:
 			if self.result.extracted_content:
 				state_description += f'\nResult of last action: {self.result.extracted_content}'
 			if self.result.error:
-				state_description += f'\nError of last action: {self.result.error}'
+				# only use last 300 characters of error
+				error = self.result.error[-self.max_error_length :]
+				state_description += f'\nError of last action: ...{error}'
 
 		if self.state.screenshot:
 			# Format message for vision model

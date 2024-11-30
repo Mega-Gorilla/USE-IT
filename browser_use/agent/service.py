@@ -325,7 +325,9 @@ class Agent:
 
 		if self.controller.browser.session:
 			state = self.controller.browser.session.cached_state
-			content = AgentMessagePrompt(state=state, result=self._last_result)
+			content = AgentMessagePrompt(
+				state=state, result=self._last_result, max_error_length=400
+			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message()]
 		else:
 			# if no browser session, we can't validate the output
