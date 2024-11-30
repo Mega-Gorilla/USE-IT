@@ -111,7 +111,7 @@
         // Base interactive elements and roles
         const interactiveElements = new Set([
             'a', 'button', 'details', 'embed', 'input', 'label',
-            'menu', 'menuitem', 'object', 'select', 'textarea', 'summary'
+            'menu', 'menuitem', 'object', 'select', 'textarea', 'summary', 'th-tds-button-link'
         ]);
 
         const interactiveRoles = new Set([
