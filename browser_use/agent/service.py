@@ -454,18 +454,21 @@ class Agent:
 		return action
 
 	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, **kwargs
+		self, history_file: Optional[str | Path] = None, k: int | None = None, **kwargs
 	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
 		Args:
 			history_file: Path to the history file
+			k: Number of steps to rerun
 			**kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
+		if k:
+			history.history = history.history[:k]
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: Optional[str | Path] = None) -> None:
