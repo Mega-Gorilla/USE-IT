@@ -1,10 +1,20 @@
-(
-    doHighlightElements = true
-) => {
-    let highlightIndex = 0; // Reset highlight index
+(doHighlightElements = true) => {
+    let highlightIndex = 0;
+    const COLORS = [
+        '#FF4444', // Red
+        '#44AA44', // Darker Green
+        '#4444FF', // Blue
+        '#FF44FF', // Magenta
+        '#44CCCC', // Darker Cyan
+        '#FF8844', // Orange
+        '#9944FF', // Purple
+        '#FF4488', // Pink
+    ];
 
-    function highlightElement(element, index, parentIframe = null) {
-        // Create or get highlight container
+    const usedPositions = new Set();
+
+    // Move createHighlightContainer to the top level scope
+    function createHighlightContainer() {
         let container = document.getElementById('playwright-highlight-container');
         if (!container) {
             container = document.createElement('div');
@@ -15,59 +25,205 @@
             container.style.left = '0';
             container.style.width = '100%';
             container.style.height = '100%';
-            container.style.zIndex = '2147483647'; // Maximum z-index value
+            container.style.zIndex = '2147483647';
             document.documentElement.appendChild(container);
         }
+        return container;
+    }
 
-        // Create highlight overlay
-        const overlay = document.createElement('div');
-        overlay.style.position = 'absolute';
-        overlay.style.border = '2px solid red';
-        overlay.style.pointerEvents = 'none';
-        overlay.style.boxSizing = 'border-box';
+    function getIframeOffset(iframe) {
+        let offset = { top: 0, left: 0 };
+        try {
+            if (!iframe) return offset;
+            
+            const rect = iframe.getBoundingClientRect();
+            offset.top = rect.top;
+            offset.left = rect.left;
 
-        // Position overlay based on element
-        const rect = element.getBoundingClientRect();
-        let top = rect.top;
-        let left = rect.left;
+            if (iframe.contentWindow) {
+                offset.top += iframe.contentWindow.scrollY || 0;
+                offset.left += iframe.contentWindow.scrollX || 0;
+            }
 
-        // Adjust position if element is inside an iframe
-        if (parentIframe) {
-            const iframeRect = parentIframe.getBoundingClientRect();
-            top += iframeRect.top;
-            left += iframeRect.left;
+            offset.top += window.scrollY;
+            offset.left += window.scrollX;
+
+            return offset;
+        } catch (e) {
+            console.warn('Error calculating iframe offset:', e);
+            return offset;
         }
+    }
 
-        overlay.style.top = `${top}px`;
-        overlay.style.left = `${left}px`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
+    function getAbsolutePosition(element, parentIframe) {
+        const rect = element.getBoundingClientRect();
+        const iframeOffset = getIframeOffset(parentIframe);
+        
+        return {
+            top: rect.top + iframeOffset.top,
+            left: rect.left + iframeOffset.left,
+            width: rect.width,
+            height: rect.height
+        };
+    }
+
+    function findOptimalLabelPosition(elementPos, viewport) {
+        const isSmallElement = elementPos.width < 30 || elementPos.height < 20;
+        const labelDims = {
+            width: isSmallElement ? 16 : 20,
+            height: isSmallElement ? 14 : 16
+        };
+        const margin = 4;
+    
+        // Helper to check if positions are horizontally adjacent
+        function isHorizontallyAdjacent(pos) {
+            return Array.from(usedPositions).some(usedPos => {
+                const [usedTop, usedLeft] = usedPos.split(',').map(Number);
+                const verticalOverlap = Math.abs(usedTop - pos.top) < labelDims.height;
+                const horizontalProximity = Math.abs(usedLeft - pos.left) < labelDims.width * 2;
+                return verticalOverlap && horizontalProximity;
+            });
+        }
+    
+        // Calculate positions relative to the element
+        const positions = [
+            // Left side (default)
+            {
+                top: elementPos.top + (elementPos.height - labelDims.height) / 2,
+                left: elementPos.left - labelDims.width - margin,
+                score: 100,
+                position: 'left'
+            },
+            // Inside (if large enough)
+            elementPos.width >= 40 && elementPos.height >= 25 ? {
+                top: elementPos.top + margin,
+                left: elementPos.left + margin,
+                score: 90,
+                position: 'inside'
+            } : null,
+            // Above
+            {
+                top: elementPos.top - labelDims.height - margin,
+                left: elementPos.left + (elementPos.width - labelDims.width) / 2,
+                score: 80,
+                position: 'above'
+            },
+            // Below
+            {
+                top: elementPos.top + elementPos.height + margin,
+                left: elementPos.left + (elementPos.width - labelDims.width) / 2,
+                score: 70,
+                position: 'below'
+            },
+            // Right
+            {
+                top: elementPos.top + (elementPos.height - labelDims.height) / 2,
+                left: elementPos.left + elementPos.width + margin,
+                score: 60,
+                position: 'right'
+            }
+        ].filter(Boolean);
+    
+        return positions
+            .map(pos => {
+                let score = pos.score;
+                const posKey = `${Math.round(pos.top)},${Math.round(pos.left)}`;
+    
+                // Check for existing labels
+                if (usedPositions.has(posKey)) {
+                    score -= 100; // Make it very unlikely to overlap
+                }
+    
+                // Heavily penalize horizontally adjacent positions
+                if (isHorizontallyAdjacent(pos)) {
+                    score -= 50;
+                }
+    
+                // Check viewport bounds
+                if (pos.top < 0 || pos.top + labelDims.height > viewport.height ||
+                    pos.left < 0 || pos.left + labelDims.width > viewport.width) {
+                    score -= 60;
+                }
+    
+                // Check for element overlaps
+                try {
+                    const elementsAtPos = document.elementsFromPoint(pos.left, pos.top);
+                    if (elementsAtPos.length > 2) {
+                        score -= 40;
+                    }
+                } catch (e) {
+                    score -= 20;
+                }
+    
+                // Prefer above/below for horizontally adjacent elements
+                if (pos.position === 'above' || pos.position === 'below') {
+                    const hasHorizontalNeighbors = Array.from(usedPositions).some(usedPos => {
+                        const [usedTop, usedLeft] = usedPos.split(',').map(Number);
+                        return Math.abs(usedLeft - elementPos.left) < elementPos.width * 2;
+                    });
+                    if (hasHorizontalNeighbors) {
+                        score += 30;
+                    }
+                }
+    
+                return { ...pos, score };
+            })
+            .sort((a, b) => b.score - a.score)[0];
+    }
+
+    function highlightElement(element, index, parentIframe = null) {
+        const container = createHighlightContainer(); // Now this will work
+        const color = COLORS[index % COLORS.length];
+        const pos = getAbsolutePosition(element, parentIframe);
+        const viewport = {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        // Create highlight box
+        const box = document.createElement('div');
+        Object.assign(box.style, {
+            position: 'absolute',
+            border: `2px solid ${color}`,
+            backgroundColor: `${color}11`,
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+            top: `${pos.top}px`,
+            left: `${pos.left}px`,
+            width: `${pos.width}px`,
+            height: `${pos.height}px`
+        });
 
         // Create label
         const label = document.createElement('div');
-        label.className = 'playwright-highlight-label';
-        label.style.position = 'absolute';
-        label.style.background = 'rgba(255, 0, 0, 0.85)'; // Make background slightly transparent
-        label.style.color = 'white';
-        label.style.padding = '2px 4px';
-        label.style.borderRadius = '10px'; // 10px was too big
-        label.style.fontSize = '10px'; // 12px was too big
+        const isSmallElement = pos.width < 30 || pos.height < 20;
+        Object.assign(label.style, {
+            position: 'absolute',
+            background: color,
+            color: 'white',
+            padding: isSmallElement ? '1px 3px' : '2px 4px',
+            borderRadius: '3px',
+            fontSize: isSmallElement ? '9px' : '10px',
+            lineHeight: '1',
+            whiteSpace: 'nowrap',
+            fontWeight: 'bold',
+            zIndex: 2147483647
+        });
         label.textContent = index;
-        label.style.top = `${top}px`;
-        label.style.left = `${left}px`;
 
+        const labelPos = findOptimalLabelPosition(pos, viewport);
+        Object.assign(label.style, {
+            top: `${labelPos.top}px`,
+            left: `${labelPos.left}px`
+        });
 
-        // Add to container
-        container.appendChild(overlay);
+        usedPositions.add(`${Math.round(labelPos.top)},${Math.round(labelPos.left)}`);
+
+        container.appendChild(box);
         container.appendChild(label);
 
-
-        // Store reference for cleanup
         element.setAttribute('browser-user-highlight-id', `playwright-highlight-${index}`);
-
-        return index + 1;
     }
-
 
     // Helper function to generate XPath as a tree
     function getXPathTree(element, stopAtBoundary = true) {
