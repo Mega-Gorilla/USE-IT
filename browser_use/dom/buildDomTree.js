@@ -47,13 +47,13 @@
         const label = document.createElement('div');
         label.className = 'playwright-highlight-label';
         label.style.position = 'absolute';
-        label.style.background = 'red';
+        label.style.background = 'rgba(255, 0, 0, 0.85)'; // Make background slightly transparent
         label.style.color = 'white';
-        label.style.padding = '2px 6px';
-        label.style.borderRadius = '10px';
-        label.style.fontSize = '12px';
+        label.style.padding = '2px 4px';
+        label.style.borderRadius = '10px'; // 10px was too big
+        label.style.fontSize = '10px'; // 12px was too big
         label.textContent = index;
-        label.style.top = `${top - 20}px`;
+        label.style.top = `${top}px`;
         label.style.left = `${left}px`;
 
 
