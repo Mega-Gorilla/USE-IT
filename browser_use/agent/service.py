@@ -113,6 +113,7 @@ class Agent:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
+		model_output = None
 
 		try:
 			state = await self.controller.browser.get_state(use_vision=self.use_vision)
