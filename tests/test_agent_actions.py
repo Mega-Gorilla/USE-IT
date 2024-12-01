@@ -156,7 +156,6 @@ class CaptchaTest(BaseModel):
 @pytest.mark.parametrize(
 	'captcha',
 	[
-		# good test for num_clicks
 		CaptchaTest(
 			name='Text Captcha',
 			url='https://2captcha.com/demo/text',
@@ -171,7 +170,7 @@ class CaptchaTest(BaseModel):
 			name='Rotate Captcha',
 			url='https://2captcha.com/demo/rotatecaptcha',
 			success_text='Captcha is passed successfully',
-			additional_text='Use num_clicks with number to click multiple times at once in same direction. click done when image is exact correct position.',
+			additional_text='Use multiple clicks at once. click done when image is exact correct position.',
 		),
 		CaptchaTest(
 			name='MT Captcha',

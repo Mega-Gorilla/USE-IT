@@ -72,20 +72,15 @@ class Controller:
 
 			msg = None
 
-			for _ in range(params.num_clicks):
-				try:
-					await browser._click_element_node(element_node)
-					msg = f'🖱️  Clicked element {params.index}: {element_node.xpath}'
-					if params.num_clicks > 1:
-						msg += f' ({_ + 1}/{params.num_clicks} clicks)'
-				except Exception as e:
-					logger.warning(f'Element no longer available after {_ + 1} clicks: {str(e)}')
-					break
-
-			if len(session.context.pages) > initial_pages:
-				await browser.switch_to_tab(-1)
-
-			return ActionResult(extracted_content=f'{msg}')
+			try:
+				await browser._click_element_node(element_node)
+				msg = f'🖱️  Clicked element {params.index}: {element_node.xpath}'
+				if len(session.context.pages) > initial_pages:
+					await browser.switch_to_tab(-1)
+				return ActionResult(extracted_content=msg)
+			except Exception as e:
+				logger.warning(f'Element no longer available: {str(e)}')
+				return ActionResult(error=str(e))
 
 		@self.registry.action('Input text', param_model=InputTextAction, requires_browser=True)
 		async def input_text(params: InputTextAction, browser: Browser):

@@ -14,7 +14,6 @@ class GoToUrlAction(BaseModel):
 
 class ClickElementAction(BaseModel):
 	index: int
-	num_clicks: int = 1
 	xpath: Optional[str] = None
 
 

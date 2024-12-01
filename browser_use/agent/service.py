@@ -228,14 +228,14 @@ class Agent:
 
 	def _log_response(self, response: AgentOutput) -> None:
 		"""Log the model's response"""
-		if 'Success' in response.current_state.valuation_previous_goal:
+		if 'Success' in response.current_state.evaluation_previous_goal:
 			emoji = '👍'
-		elif 'Failed' in response.current_state.valuation_previous_goal:
+		elif 'Failed' in response.current_state.evaluation_previous_goal:
 			emoji = '⚠️'
 		else:
 			emoji = '🤷'
 
-		logger.info(f'{emoji} Evaluation: {response.current_state.valuation_previous_goal}')
+		logger.info(f'{emoji} Evaluation: {response.current_state.evaluation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
 		for action in response.action:
