@@ -185,6 +185,8 @@ class Controller:
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
+					# remove highlights
+					await self.browser.remove_highlights()
 					result = await self.registry.execute_action(
 						action_name, params, browser=self.browser
 					)
