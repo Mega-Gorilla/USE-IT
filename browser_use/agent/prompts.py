@@ -106,8 +106,8 @@ class AgentMessagePrompt:
 		self,
 		state: BrowserState,
 		result: Optional[ActionResult] = None,
-		max_error_length: int = 400,
 		include_attributes: list[str] = [],
+		max_error_length: int = 400,
 	):
 		self.state = state
 		self.result = result
