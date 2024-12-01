@@ -16,7 +16,7 @@ from browser_use.controller.views import (
 	SearchGoogleAction,
 	SwitchTabAction,
 )
-from browser_use.utils import time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +178,16 @@ class Controller:
 		@param description: Describe the LLM what the function does (better description == better function calling)
 		"""
 		return self.registry.action(description, **kwargs)
+
+	@time_execution_async('--multi-act')
+	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
+		"""Execute multiple actions"""
+		results = []
+		for action in actions:
+			results.append(await self.act(action))
+			if results[-1].is_done or results[-1].error:
+				break
+		return results
 
 	@time_execution_sync('--act')
 	async def act(self, action: ActionModel) -> ActionResult:

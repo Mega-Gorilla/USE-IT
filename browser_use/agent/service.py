@@ -121,6 +121,7 @@ class Agent:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
+		model_output = None
 
 		try:
 			state = await self.controller.browser.get_state(use_vision=self.use_vision)
@@ -131,33 +132,34 @@ class Agent:
 			self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 			self.message_manager.add_model_output(model_output)
 
-			result = await self.controller.act(model_output.action)
-			self._last_result = result
+			result: list[ActionResult] = await self.controller.multi_act(model_output.action)
+			self._last_result = result[-1]
 
-			if result.extracted_content:
-				logger.info(f'📄 Result: {result.extracted_content}')
-			if result.is_done:
-				logger.result(f'{result.extracted_content}')  # type: ignore
+			for r in result:
+				if r.is_done:
+					logger.result(f'{r.extracted_content}')
+				elif r.extracted_content:
+					logger.info(f'📄 Result: {r.extracted_content}')
 
 			self.consecutive_failures = 0
 
 		except Exception as e:
 			result = self._handle_step_error(e)
-			self._last_result = result
+			self._last_result = result[-1]
 
-			if result.error:
-				self.telemetry.capture(
-					AgentStepErrorTelemetryEvent(
-						agent_id=self.agent_id,
-						error=result.error,
-					)
-				)
-			model_output = None
 		finally:
+			for r in result:
+				if r.error:
+					self.telemetry.capture(
+						AgentStepErrorTelemetryEvent(
+							agent_id=self.agent_id,
+							error=r.error,
+						)
+					)
 			if state:
 				self._make_history_item(model_output, state, result)
 
-	def _handle_step_error(self, error: Exception) -> ActionResult:
+	def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
 		error_msg = AgentError.format_error(error, include_trace=True)
 		prefix = f'❌ Result failed {self.consecutive_failures + 1}/{self.max_failures} times:\n '
@@ -180,27 +182,30 @@ class Agent:
 			logger.error(f'{prefix}{error_msg}')
 			self.consecutive_failures += 1
 
-		return ActionResult(error=error_msg, include_in_memory=True)
+		return [ActionResult(error=error_msg, include_in_memory=True)]
 
 	def _make_history_item(
 		self,
 		model_output: AgentOutput | None,
 		state: BrowserState,
-		result: ActionResult,
+		result: list[ActionResult],
 	) -> None:
 		"""Create and store history item"""
+		interacted_element = None
+		len_result = len(result)
+
 		if model_output:
-			interacted_element = AgentHistory.get_interacted_element(
+			interacted_elements = AgentHistory.get_interacted_element(
 				model_output, state.selector_map
 			)
 		else:
-			interacted_element = None
+			interacted_elements = [None]
 
 		state_history = BrowserStateHistory(
 			url=state.url,
 			title=state.title,
 			tabs=state.tabs,
-			interacted_element=interacted_element,
+			interacted_element=interacted_elements,
 		)
 
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)
@@ -221,7 +226,7 @@ class Agent:
 
 		return parsed
 
-	def _log_response(self, response: Any) -> None:
+	def _log_response(self, response: AgentOutput) -> None:
 		"""Log the model's response"""
 		if 'Success' in response.current_state.valuation_previous_goal:
 			emoji = '👍'
@@ -233,7 +238,8 @@ class Agent:
 		logger.info(f'{emoji} Evaluation: {response.current_state.valuation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
-		logger.info(f'🛠️ Action: {response.action.model_dump_json(exclude_unset=True)}')
+		for action in response.action:
+			logger.info(f'🛠️ Action: {action.model_dump_json(exclude_unset=True)}')
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
 		"""Save conversation history to file if path is specified"""
@@ -389,7 +395,11 @@ class Agent:
 			)
 			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
-			if not history_item.model_output or not history_item.model_output.action:
+			if (
+				not history_item.model_output
+				or not history_item.model_output.action
+				or history_item.model_output.action == [None]
+			):
 				logger.warning(f'Step {i + 1}: No action to replay, skipping')
 				results.append(ActionResult(error='No action to replay'))
 				continue
@@ -398,7 +408,7 @@ class Agent:
 			while retry_count < max_retries:
 				try:
 					result = await self._execute_history_step(history_item, delay_between_actions)
-					results.append(result)
+					results.extend(result)
 					break
 
 				except Exception as e:
@@ -417,23 +427,27 @@ class Agent:
 
 		return results
 
-	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> ActionResult:
+	async def _execute_history_step(
+		self, history_item: AgentHistory, delay: float
+	) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 
 		state = await self.controller.browser.get_state()
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
+		updated_actions = []
+		for i, action in enumerate(history_item.model_output.action):
+			updated_action = await self._update_action_indices(
+				history_item.state.interacted_element[i],
+				action,
+				state,
+			)
+			updated_actions.append(updated_action)
 
-		updated_action = await self._update_action_indices(
-			history_item.state.interacted_element,
-			history_item.model_output.action,
-			state,
-		)
+			if updated_action is None:
+				raise ValueError(f'Could not find matching element {i} in current page')
 
-		if updated_action is None:
-			raise ValueError('Could not find matching element in current page')
-
-		result = await self.controller.act(updated_action)
+		result = await self.controller.multi_act(updated_actions)
 		await asyncio.sleep(delay)
 		return result
 
