@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional, Type
 
 from pydantic import BaseModel, create_model
 
-from browser_use.browser.browser import Browser
+from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.views import (
 	ActionModel,
 	ActionRegistry,
@@ -78,7 +78,7 @@ class Registry:
 		return decorator
 
 	async def execute_action(
-		self, action_name: str, params: dict, browser: Optional[Browser] = None
+		self, action_name: str, params: dict, browser: Optional[BrowserContext] = None
 	) -> Any:
 		"""Execute a registered action"""
 		if action_name not in self.registry.actions:

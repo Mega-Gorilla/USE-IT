@@ -6,9 +6,13 @@ from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.views import BrowserState
-from browser_use.controller.service import Controller
+
+# browser = Browser(
+# 	config=BrowserConfig(
+# 		# headless=False,
+# 	)
+# )
 
 
 @pytest.fixture
@@ -25,26 +29,20 @@ def llm():
 	# return ChatOpenAI(model='gpt-4o-mini')
 
 
-@pytest.fixture
-async def agent_with_controller():
-	"""Create agent with controller for testing"""
-	controller = Controller(browser_config=BrowserConfig(keep_open=False))
-	print('init controller')
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
+# @pytest.fixture
+# async def context():
+# 	async with await browser.new_context() as context:
+# 		yield context
 
 
 # pytest tests/test_agent_actions.py -v -k "test_ecommerce_interaction" --capture=no
 # @pytest.mark.asyncio
-async def test_ecommerce_interaction(llm, agent_with_controller):
+@pytest.mark.skip(reason='Kinda expensive to run')
+async def test_ecommerce_interaction(llm):
 	"""Test complex ecommerce interaction sequence"""
 	agent = Agent(
 		task="Go to amazon.com, search for 'laptop', filter by 4+ stars, and find the price of the first result",
 		llm=llm,
-		controller=agent_with_controller,
 		save_conversation_path='tmp/test_ecommerce_interaction/conversation',
 	)
 
@@ -77,12 +75,11 @@ async def test_ecommerce_interaction(llm, agent_with_controller):
 
 
 # @pytest.mark.asyncio
-async def test_error_recovery(llm, agent_with_controller):
+async def test_error_recovery(llm):
 	"""Test agent's ability to recover from errors"""
 	agent = Agent(
 		task='Navigate to nonexistent-site.com and then recover by going to google.com ',
 		llm=llm,
-		controller=agent_with_controller,
 	)
 
 	history: AgentHistoryList = await agent.run(max_steps=10)
@@ -102,12 +99,11 @@ async def test_error_recovery(llm, agent_with_controller):
 
 
 # @pytest.mark.asyncio
-async def test_find_contact_email(llm, agent_with_controller):
+async def test_find_contact_email(llm):
 	"""Test agent's ability to find contact email on a website"""
 	agent = Agent(
 		task='Go to https://browser-use.com/ and find out the contact email',
 		llm=llm,
-		controller=agent_with_controller,
 	)
 
 	history: AgentHistoryList = await agent.run(max_steps=10)
@@ -123,12 +119,11 @@ async def test_find_contact_email(llm, agent_with_controller):
 
 
 # @pytest.mark.asyncio
-async def test_agent_finds_installation_command(llm, agent_with_controller):
+async def test_agent_finds_installation_command(llm):
 	"""Test agent's ability to find the pip installation command for browser-use on the web"""
 	agent = Agent(
 		task='Find the pip installation command for the browser-use repo',
 		llm=llm,
-		controller=agent_with_controller,
 	)
 
 	history: AgentHistoryList = await agent.run(max_steps=10)
@@ -181,32 +176,31 @@ class CaptchaTest(BaseModel):
 		),
 	],
 )
-async def test_captcha_solver(llm, agent_with_controller: Controller, captcha: CaptchaTest):
+async def test_captcha_solver(llm, captcha: CaptchaTest):
 	"""Test agent's ability to solve different types of captchas"""
-	agent = Agent(
-		task=f'Go to {captcha.url} and solve the captcha. {captcha.additional_text}',
-		llm=llm,
-		controller=agent_with_controller,
-	)
-	from browser_use.agent.views import AgentHistoryList
+	async with await browser.new_context() as context:
+		agent = Agent(
+			task=f'Go to {captcha.url} and solve the captcha. {captcha.additional_text}',
+			llm=llm,
+			browser_context=context,
+		)
+		from browser_use.agent.views import AgentHistoryList
 
-	history: AgentHistoryList = await agent.run(max_steps=7)
+		history: AgentHistoryList = await agent.run(max_steps=7)
 
-	state: BrowserState = await agent_with_controller.browser.get_state()
+		state: BrowserState = await context.get_state()
 
-	all_text = state.element_tree.get_all_text_till_next_clickable_element()
+		all_text = state.element_tree.get_all_text_till_next_clickable_element()
 
-	if not all_text:
-		all_text = ''
+		if not all_text:
+			all_text = ''
 
-	if not isinstance(all_text, str):
-		all_text = str(all_text)
+		if not isinstance(all_text, str):
+			all_text = str(all_text)
 
-	solved = captcha.success_text in all_text
-	assert solved, f'Failed to solve {captcha.name}'
+		solved = captcha.success_text in all_text
+		assert solved, f'Failed to solve {captcha.name}'
 
+	# python -m pytest tests/test_agent_actions.py -v --capture=no
 
-# python -m pytest tests/test_agent_actions.py -v --capture=no
-
-
-# pytest tests/test_agent_actions.py -v -k "test_captcha_solver" --capture=no --log-cli-level=INFO
+	# pytest tests/test_agent_actions.py -v -k "test_captcha_solver" --capture=no --log-cli-level=INFO

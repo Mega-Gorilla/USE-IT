@@ -8,9 +8,14 @@ from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
-from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.views import BrowserState
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
+
+browser = Browser(
+	config=BrowserConfig(
+		# headless=False,
+	)
+)
 
 
 @pytest.fixture
@@ -23,6 +28,12 @@ def llm():
 		api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
 	)
 	return model
+
+
+@pytest.fixture
+async def context():
+	async with await browser.new_context() as context:
+		yield context
 
 
 def generate_random_text(length: int) -> str:
@@ -40,11 +51,7 @@ async def controller():
 	def get_very_special_text():
 		return large_text
 
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
+	yield controller
 
 
 @pytest.mark.asyncio
@@ -72,13 +79,14 @@ async def test_token_limit_with_multiple_extractions(llm, controller):
 @pytest.mark.slow
 @pytest.mark.parametrize('max_tokens', [4000])  # 8000 20000
 @pytest.mark.asyncio
-async def test_open_3_tabs_and_extract_content(llm, controller: Controller, max_tokens):
+async def test_open_3_tabs_and_extract_content(llm, controller, context, max_tokens):
 	"""Stress test: Open 3 tabs with urls and extract content"""
 	# NOTE: currently we first remove the oldest messages, so the model forgets what it has done already and fails most likely long term tasks - so dont put too much attention to this test
 	agent = Agent(
 		task='Open 3 tabs with https://en.wikipedia.org/wiki/Internet and extract the content from each.',
 		llm=llm,
 		controller=controller,
+		browser_context=context,
 		max_input_tokens=max_tokens,
 		save_conversation_path='tmp/stress_test/test_open_3_tabs_and_extract_content.json',
 	)
@@ -93,4 +101,4 @@ async def test_open_3_tabs_and_extract_content(llm, controller: Controller, max_
 	errors = history.errors()
 	assert len(errors) == 0, 'Errors occurred during the test'
 	# check if 3 tabs were opened
-	assert len(controller.browser.current_state.tabs) >= 3, '3 tabs were not opened'
+	assert len(context.current_state.tabs) >= 3, '3 tabs were not opened'

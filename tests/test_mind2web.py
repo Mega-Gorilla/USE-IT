@@ -7,16 +7,22 @@ import os
 from typing import Any, Dict, List
 
 import pytest
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
-from browser_use.controller.service import Controller
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.utils import logger
 
 # Constants
 MAX_STEPS = 50
 TEST_SUBSET_SIZE = 10
+
+browser = Browser(
+	config=BrowserConfig(
+		# headless=False,
+	)
+)
 
 
 @pytest.fixture(scope='session')
@@ -46,20 +52,16 @@ def llm():
 	)
 
 
-@pytest.fixture(scope='function')
-async def controller():
-	"""Initialize the controller"""
-	controller = Controller()
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
+# @pytest.fixture(scope='function')
+@pytest.fixture
+async def context():
+	async with await browser.new_context() as context:
+		yield context
 
 
 # run with: pytest -s -v tests/test_mind2web.py:test_random_samples
 @pytest.mark.asyncio
-async def test_random_samples(test_cases: List[Dict[str, Any]], llm, controller, validator):
+async def test_random_samples(test_cases: List[Dict[str, Any]], llm, context, validator):
 	"""Test a random sampling of tasks across different websites"""
 	import random
 
@@ -73,7 +75,7 @@ async def test_random_samples(test_cases: List[Dict[str, Any]], llm, controller,
 		logger.info(f'--- Random Sample {i}/{len(samples)} ---')
 		logger.info(f'Task: {task}\n')
 
-		agent = Agent(task, llm, controller)
+		agent = Agent(task, llm, browser_context=context)
 
 		await agent.run()
 

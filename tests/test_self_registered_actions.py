@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
@@ -58,11 +58,7 @@ async def controller():
 	def process_multiple_models(model1: SimpleModel, model2: Address):
 		return f'Processed {model1.name} living at {model2.street}, {model2.city}'
 
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
+	yield controller
 
 
 @pytest.fixture
