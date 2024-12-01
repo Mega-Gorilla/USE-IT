@@ -40,27 +40,27 @@ class BrowserConfig:
 	Configuration for the Browser.
 
 	Default values:
-		headless: False
-			Whether to run browser in headless mode
+	        headless: False
+	                Whether to run browser in headless mode
 
-		keep_open: False
-			Keep browser open after script finishes
+	        keep_open: False
+	                Keep browser open after script finishes
 
-		disable_security: False
-			Disable browser security features
+	        disable_security: False
+	                Disable browser security features
 
-		cookies_file: None
-			Path to cookies file for persistence
+	        cookies_file: None
+	                Path to cookies file for persistence
 
-		minimum_wait_page_load_time: 0.5
-			Minimum time to wait before getting page state for LLM input
+	        minimum_wait_page_load_time: 0.5
+	                Minimum time to wait before getting page state for LLM input
 
-		wait_for_network_idle_page_load_time: 1.0
-			Time to wait for network requests to finish before getting page state.
-			Lower values may result in incomplete page loads.
+	        wait_for_network_idle_page_load_time: 1.0
+	                Time to wait for network requests to finish before getting page state.
+	                Lower values may result in incomplete page loads.
 
-		maximum_wait_page_load_time: 5.0
-			Maximum time to wait for page load before proceeding anyway
+	        maximum_wait_page_load_time: 5.0
+	                Maximum time to wait for page load before proceeding anyway
 	"""
 
 	headless: bool = False
@@ -110,7 +110,12 @@ class Browser:
 		# Instead of calling _update_state(), create an empty initial state
 		initial_state = BrowserState(
 			element_tree=DOMElementNode(
-				tag_name='root', is_visible=True, parent=None, xpath='', attributes={}, children=[]
+				tag_name='root',
+				is_visible=True,
+				parent=None,
+				xpath='',
+				attributes={},
+				children=[],
 			),
 			selector_map={},
 			url=page.url,
@@ -248,7 +253,14 @@ class Browser:
 		last_activity = asyncio.get_event_loop().time()
 
 		# Define relevant resource types and content types
-		RELEVANT_RESOURCE_TYPES = {'document', 'stylesheet', 'image', 'font', 'script', 'iframe'}
+		RELEVANT_RESOURCE_TYPES = {
+			'document',
+			'stylesheet',
+			'image',
+			'font',
+			'script',
+			'iframe',
+		}
 
 		RELEVANT_CONTENT_TYPES = {
 			'text/html',
@@ -305,7 +317,13 @@ class Browser:
 				return
 
 			# Filter out streaming, websocket, and other real-time requests
-			if request.resource_type in {'websocket', 'media', 'eventsource', 'manifest', 'other'}:
+			if request.resource_type in {
+				'websocket',
+				'media',
+				'eventsource',
+				'manifest',
+				'other',
+			}:
 				return
 
 			# Filter out by URL patterns
@@ -511,25 +529,49 @@ class Browser:
 
 	async def _update_state(self, use_vision: bool = False) -> BrowserState:
 		"""Update and return state."""
-		await self.remove_highlights()
-		page = await self.get_current_page()
-		dom_service = DomService(page)
-		content = await dom_service.get_clickable_elements()  # Assuming this is async
+		session = await self.get_session()
 
-		screenshot_b64 = None
-		if use_vision:
-			screenshot_b64 = await self.take_screenshot()
+		# Check if current page is still valid, if not switch to another available page
+		try:
+			page = await self.get_current_page()
+			# Test if page is still accessible
+			await page.evaluate('1')
+		except Exception as e:
+			logger.debug(f'Current page is no longer accessible: {str(e)}')
+			# Get all available pages
+			pages = session.context.pages
+			if pages:
+				session.current_page = pages[-1]
+				page = session.current_page
+				logger.debug(f'Switched to page: {await page.title()}')
+			else:
+				raise BrowserError('No valid pages available')
 
-		self.current_state = BrowserState(
-			element_tree=content.element_tree,
-			selector_map=content.selector_map,
-			url=page.url,
-			title=await page.title(),
-			tabs=await self.get_tabs_info(),
-			screenshot=screenshot_b64,
-		)
+		try:
+			await self.remove_highlights()
+			dom_service = DomService(page)
+			content = await dom_service.get_clickable_elements()
 
-		return self.current_state
+			screenshot_b64 = None
+			if use_vision:
+				screenshot_b64 = await self.take_screenshot()
+
+			self.current_state = BrowserState(
+				element_tree=content.element_tree,
+				selector_map=content.selector_map,
+				url=page.url,
+				title=await page.title(),
+				tabs=await self.get_tabs_info(),
+				screenshot=screenshot_b64,
+			)
+
+			return self.current_state
+		except Exception as e:
+			logger.error(f'Failed to update state: {str(e)}')
+			# Return last known good state if available
+			if hasattr(self, 'current_state'):
+				return self.current_state
+			raise
 
 	# region - Browser Actions
 
@@ -546,30 +588,40 @@ class Browser:
 
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 
-		await self.remove_highlights()
+		# await self.remove_highlights()
 
 		return screenshot_b64
 
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.
+		Handles cases where the page might be closed or inaccessible.
 		"""
-		page = await self.get_current_page()
-		await page.evaluate(
-			"""
-			// Remove the highlight container and all its contents
-			const container = document.getElementById('playwright-highlight-container');
-			if (container) {
-				container.remove();
-			}
+		try:
+			page = await self.get_current_page()
+			await page.evaluate(
+				"""
+                try {
+                    // Remove the highlight container and all its contents
+                    const container = document.getElementById('playwright-highlight-container');
+                    if (container) {
+                        container.remove();
+                    }
 
-			// Remove highlight attributes from elements
-			const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
-			highlightedElements.forEach(el => {
-				el.removeAttribute('browser-user-highlight-id');
-			});
-			"""
-		)
+                    // Remove highlight attributes from elements
+                    const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
+                    highlightedElements.forEach(el => {
+                        el.removeAttribute('browser-user-highlight-id');
+                    });
+                } catch (e) {
+                    console.error('Failed to remove highlights:', e);
+                }
+                """
+			)
+		except Exception as e:
+			logger.debug(f'Failed to remove highlights (this is usually ok): {str(e)}')
+			# Don't raise the error since this is not critical functionality
+			pass
 
 	# endregion
 
@@ -626,10 +678,10 @@ class Browser:
 		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
 
 		Args:
-			element: The DOM element to create a selector for
+		        element: The DOM element to create a selector for
 
 		Returns:
-			A valid CSS selector string
+		        A valid CSS selector string
 		"""
 		try:
 			# Get base selector from XPath
@@ -811,7 +863,7 @@ class Browser:
 		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
-				logger.debug(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
+				logger.info(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
 
 				# Check if the path is a directory and create it if necessary
 				dirname = os.path.dirname(self.config.cookies_file)
