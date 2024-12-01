@@ -88,7 +88,7 @@ class DOMElementNode(DOMBaseNode):
 		collect_text(self)
 		return '\n'.join(text_parts).strip()
 
-	def clickable_elements_to_string(self) -> str:
+	def clickable_elements_to_string(self, include_attributes: list[str] = []) -> str:
 		"""Convert the processed DOM content to HTML."""
 		formatted_text = []
 
@@ -96,8 +96,15 @@ class DOMElementNode(DOMBaseNode):
 			if isinstance(node, DOMElementNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
+					attributes_str = ''
+					if include_attributes:
+						attributes_str = ' ' + ' '.join(
+							f'{key}="{value}"'
+							for key, value in node.attributes.items()
+							if key in include_attributes
+						)
 					formatted_text.append(
-						f'{node.highlight_index}[:]<{node.tag_name}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
+						f'{node.highlight_index}[:]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
 					)
 
 				# Process children regardless

@@ -107,10 +107,12 @@ class AgentMessagePrompt:
 		state: BrowserState,
 		result: Optional[ActionResult] = None,
 		max_error_length: int = 400,
+		include_attributes: list[str] = [],
 	):
 		self.state = state
 		self.result = result
 		self.max_error_length = max_error_length
+		self.include_attributes = include_attributes
 
 	def get_user_message(self) -> HumanMessage:
 		state_description = f"""
@@ -118,7 +120,7 @@ Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
 Interactive elements:
-{self.state.element_tree.clickable_elements_to_string()}
+{self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)}
         """
 
 		if self.result:
