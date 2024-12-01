@@ -91,7 +91,7 @@ async def close_file_dialog(browser: Browser):
 
 async def main():
 	task = (
-		'Read my cv & find machine learning engineer jobs for me. '
+		'Read my cv & find machine learning engineer jobs in Bangalore for me. '
 		'Save them to a file'
 		'then start applying for them in new tabs - please not via job portals like linkedin, indeed, etc. '
 		'If you need more information or help, ask me.'

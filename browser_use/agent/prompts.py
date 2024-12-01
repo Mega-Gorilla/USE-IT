@@ -20,7 +20,7 @@ class SystemPrompt:
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
    {
      "current_state": {
-       "evaluation_previous_goal": "Success|Failed|Unknown-Brief description of why",
+       "evaluation_previous_goal": "Success|Failed|Unknown - Brief description of why",
        "memory": "Brief description of what has been done-What you need to remember until the end of the task",
        "next_goal": "What needs to be done with the next actions"
      },
@@ -70,10 +70,11 @@ class SystemPrompt:
    - Visual context helps verify element locations and relationships
 
 7. ACTION SEQUENCING:
-   - Actions are executed in the order they appear in the list
+   - Actions are executed in the order they appear in the list 
    - Each action should logically follow from the previous one
-   - If the page changes between actions. The sequence is interrupted and you get the new page state.
+   - If the page changes between actions, the sequence is interrupted and you get the new page state.
    - Only provide the action sequence until you think the DOM will change.
+   - Try to be efficient. If the dom changes a little bit we find the right element.
 """
 
 	def input_format(self) -> str:
@@ -152,11 +153,13 @@ Interactive elements:
 		if self.result:
 			for i, result in enumerate(self.result):
 				if result.extracted_content:
-					state_description += f'\nResult of action {i}: {result.extracted_content}'
+					state_description += (
+						f'\nResult of action {i + 1}/{len(self.result)}: {result.extracted_content}'
+					)
 				if result.error:
 					# only use last 300 characters of error
 					error = result.error[-self.max_error_length :]
-					state_description += f'\nError of action {i}: ...{error}'
+					state_description += f'\nError of action {i + 1}/{len(self.result)}: ...{error}'
 
 		if self.state.screenshot:
 			# Format message for vision model

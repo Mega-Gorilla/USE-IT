@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from main_content_extractor import MainContentExtractor
@@ -27,6 +28,7 @@ class Controller:
 		browser_config: BrowserConfig = BrowserConfig(),
 	):
 		self.browser = Browser(config=browser_config)
+		self.wait_between_actions = browser_config.wait_between_actions
 		self.registry = Registry()
 		self._register_default_actions()
 
@@ -79,7 +81,9 @@ class Controller:
 					await browser.switch_to_tab(-1)
 				return ActionResult(extracted_content=msg)
 			except Exception as e:
-				logger.warning(f'Element no longer available: {str(e)}')
+				logger.warning(
+					f'Element no longer available with index {params.index} - most likely the page changed'
+				)
 				return ActionResult(error=str(e))
 
 		@self.registry.action('Input text', param_model=InputTextAction, requires_browser=True)
@@ -182,6 +186,7 @@ class Controller:
 			results.append(await self.act(action))
 			if results[-1].is_done or results[-1].error:
 				break
+			await asyncio.sleep(self.wait_between_actions)
 		return results
 
 	@time_execution_sync('--act')

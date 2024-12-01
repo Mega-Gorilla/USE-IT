@@ -240,7 +240,7 @@ class Agent:
 		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
 		for i, action in enumerate(response.action):
 			logger.info(
-				f'🛠️ Action {i}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
+				f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
 			)
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
