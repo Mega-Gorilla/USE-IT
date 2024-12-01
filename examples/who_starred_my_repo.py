@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 from browser_use.agent.service import Agent
-from browser_use.browser.service import Browser
+from browser_use.browser.browser import Browser
 from browser_use.controller.service import Controller
 
 # Initialize controller first

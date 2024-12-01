@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.dom.views import ElementTreeSerializer
 from browser_use.utils import time_execution_sync
 

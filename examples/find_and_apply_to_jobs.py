@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
-from browser_use.browser.service import Browser
+from browser_use.browser.browser import Browser
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

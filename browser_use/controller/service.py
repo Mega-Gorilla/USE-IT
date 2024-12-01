@@ -3,7 +3,7 @@ import logging
 from main_content_extractor import MainContentExtractor
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,

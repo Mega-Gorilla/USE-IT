@@ -2,7 +2,7 @@ import json
 import os
 import time
 
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig
 
 
 async def test_process_dom():

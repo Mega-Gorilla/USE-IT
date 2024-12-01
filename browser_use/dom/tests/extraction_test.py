@@ -2,7 +2,7 @@ import time
 
 from tokencost import count_string_tokens
 
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig
 
 # from browser_use.browser.service import Browser
 from browser_use.dom.service import DomService

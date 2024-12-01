@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional, Type
 
 from pydantic import BaseModel, create_model
 
-from browser_use.browser.service import Browser
+from browser_use.browser.browser import Browser
 from browser_use.controller.registry.views import (
 	ActionModel,
 	ActionRegistry,

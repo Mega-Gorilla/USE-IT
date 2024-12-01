@@ -6,7 +6,7 @@ from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.service import BrowserConfig
+from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.views import BrowserState
 from browser_use.controller.service import Controller
 
