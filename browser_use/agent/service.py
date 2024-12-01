@@ -30,7 +30,10 @@ from browser_use.agent.views import (
 from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.history_tree_processor import DOMHistoryElement, HistoryTreeProcessor
+from browser_use.dom.history_tree_processor import (
+	DOMHistoryElement,
+	HistoryTreeProcessor,
+)
 from browser_use.dom.views import DOMElementNode
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
@@ -69,7 +72,8 @@ class Agent:
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
 		self._last_result = None
-
+		self.include_attributes = include_attributes
+		self.max_error_length = max_error_length
 		# Controller setup
 		self.controller_injected = controller is not None
 		self.controller = controller or Controller()
@@ -83,9 +87,6 @@ class Agent:
 		self._setup_action_models()
 
 		self.max_input_tokens = max_input_tokens
-
-		self.include_attributes = include_attributes
-		self.max_error_length = max_error_length
 
 		self.message_manager = MessageManager(
 			llm=self.llm,
@@ -120,7 +121,6 @@ class Agent:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
-		model_output = None
 
 		try:
 			state = await self.controller.browser.get_state(use_vision=self.use_vision)
@@ -371,13 +371,13 @@ class Agent:
 		Rerun a saved history of actions with error handling and retry logic.
 
 		Args:
-			history: The history to replay
-			max_retries: Maximum number of retries per action
-			skip_failures: Whether to skip failed actions or stop execution
-			delay_between_actions: Delay between actions in seconds
+		        history: The history to replay
+		        max_retries: Maximum number of retries per action
+		        skip_failures: Whether to skip failed actions or stop execution
+		        delay_between_actions: Delay between actions in seconds
 
 		Returns:
-			List of action results
+		        List of action results
 		"""
 		results = []
 
@@ -425,7 +425,9 @@ class Agent:
 			raise ValueError('Invalid state or model output')
 
 		updated_action = await self._update_action_indices(
-			history_item.state.interacted_element, history_item.model_output.action, state
+			history_item.state.interacted_element,
+			history_item.model_output.action,
+			state,
 		)
 
 		if updated_action is None:
@@ -454,6 +456,7 @@ class Agent:
 
 		if not current_element or current_element.highlight_index is None:
 			return None
+
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
@@ -464,23 +467,18 @@ class Agent:
 		return action
 
 	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, k: Optional[int] = None, **kwargs
+		self, history_file: Optional[str | Path] = None, **kwargs
 	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
 		Args:
-			history_file: Path to the history file
-			**kwargs: Additional arguments passed to rerun_history
-			history_file: Path to the history file
-			k: Number of steps to rerun
-			**kwargs: Additional arguments passed to rerun_history
+		        history_file: Path to the history file
+		        **kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
-		if k:
-			history.history = history.history[:k]
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: Optional[str | Path] = None) -> None:
