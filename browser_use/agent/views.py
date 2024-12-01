@@ -86,7 +86,9 @@ class AgentHistory(BaseModel):
 		# Handle action serialization
 		model_output_dump = None
 		if self.model_output:
-			action_dump = self.model_output.action.model_dump(exclude_none=True)
+			action_dump = [
+				action.model_dump(exclude_none=True) for action in self.model_output.action
+			]
 			model_output_dump = {
 				'current_state': self.model_output.current_state.model_dump(),
 				'action': action_dump,  # This preserves the actual action data
@@ -94,7 +96,7 @@ class AgentHistory(BaseModel):
 
 		return {
 			'model_output': model_output_dump,
-			'result': self.result.model_dump(exclude_none=True),
+			'result': [r.model_dump(exclude_none=True) for r in self.result],
 			'state': self.state.to_dict(),
 		}
 
