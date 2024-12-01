@@ -12,25 +12,6 @@ class SystemPrompt:
 		self.default_action_description = action_description
 		self.current_date = current_date
 
-	def response_format(self) -> str:
-		"""
-		Returns the response format for the agent.
-
-		Returns:
-		    str: Response format
-		"""
-		return """
-{{
-	"current_state": {{
-		"valuation_previous_goal": "String starting with "Success", "Failed:" or "Unknown" to evaluate if the previous next_goal is achieved. If failed or unknown describe why.",
-		"memory": "Your memory with things you need to remeber until the end of the task for the user. You can also store overall progress in a bigger task. You have access to this in the next steps.",
-		"next_goal": "String describing the next immediate goal which can be achieved with one action"
-	}},
-	"action": {{
-		// EXACTLY ONE of the following available actions must be specified
-	}}
-}}"""
-
 	def example_response(self) -> str:
 		"""
 		Returns an example response for the agent.
@@ -85,9 +66,6 @@ You are an AI agent that helps users interact with websites. You receive a list 
 
 INPUT FORMAT:
 {self.input_format()}
-
-You have to respond in the following RESPONSE FORMAT: 
-{self.response_format()}
 
 Your AVAILABLE ACTIONS:
 {self.default_action_description}
