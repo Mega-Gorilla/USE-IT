@@ -54,17 +54,21 @@ class MessageManager:
 		task_message = HumanMessage(content=f'Your task is: {task}')
 		self._add_message_with_tokens(task_message)
 
-	def add_state_message(self, state: BrowserState, result: Optional[ActionResult] = None) -> None:
+	def add_state_message(
+		self, state: BrowserState, result: Optional[List[ActionResult]] = None
+	) -> None:
 		"""Add browser state as human message"""
 
 		# if keep in memory, add to directly to history and add state without result
-		if result and result.include_in_memory:
-			if result.extracted_content:
-				msg = HumanMessage(content=str(result.extracted_content))
-				self._add_message_with_tokens(msg)
-			if result.error:
-				msg = HumanMessage(content=str(result.error)[-self.max_error_length :])
-				self._add_message_with_tokens(msg)
+		if result:
+			for r in result:
+				if r.include_in_memory:
+					if r.extracted_content:
+						msg = HumanMessage(content=str(r.extracted_content))
+						self._add_message_with_tokens(msg)
+					if r.error:
+						msg = HumanMessage(content=str(r.error)[-self.max_error_length :])
+						self._add_message_with_tokens(msg)
 			result = None
 
 		# otherwise add state message and result to next message (which will not stay in memory)

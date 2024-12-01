@@ -133,7 +133,7 @@ class Agent:
 			self.message_manager.add_model_output(model_output)
 
 			result: list[ActionResult] = await self.controller.multi_act(model_output.action)
-			self._last_result = result[-1]
+			self._last_result = result
 
 			for r in result:
 				if r.is_done:
@@ -145,7 +145,7 @@ class Agent:
 
 		except Exception as e:
 			result = self._handle_step_error(e)
-			self._last_result = result[-1]
+			self._last_result = result
 
 		finally:
 			for r in result:
@@ -238,8 +238,10 @@ class Agent:
 		logger.info(f'{emoji} Evaluation: {response.current_state.evaluation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
-		for action in response.action:
-			logger.info(f'🛠️ Action: {action.model_dump_json(exclude_unset=True)}')
+		for i, action in enumerate(response.action):
+			logger.info(
+				f'🛠️ Action {i}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
+			)
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
 		"""Save conversation history to file if path is specified"""
@@ -361,7 +363,7 @@ class Agent:
 		if not is_valid:
 			logger.info(f'❌ Validator decision: {parsed.reason}')
 			msg = f'The ouput is not yet correct. {parsed.reason}.'
-			self._last_result = ActionResult(extracted_content=msg, include_in_memory=True)
+			self._last_result = [ActionResult(extracted_content=msg, include_in_memory=True)]
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
