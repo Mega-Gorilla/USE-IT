@@ -182,11 +182,15 @@ class Controller:
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
+		first_action = True
+		await self.browser.remove_highlights()
+
 		for action in actions:
+			if not first_action:
+				await asyncio.sleep(self.wait_between_actions)
 			results.append(await self.act(action))
 			if results[-1].is_done or results[-1].error:
 				break
-			await asyncio.sleep(self.wait_between_actions)
 		return results
 
 	@time_execution_sync('--act')
@@ -196,7 +200,6 @@ class Controller:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
 					# remove highlights
-					await self.browser.remove_highlights()
 					result = await self.registry.execute_action(
 						action_name, params, browser=self.browser
 					)
