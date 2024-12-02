@@ -37,14 +37,18 @@ class Controller:
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search Google', param_model=SearchGoogleAction, requires_browser=True
+			'Search Google in the current tab',
+			param_model=SearchGoogleAction,
+			requires_browser=True,
 		)
 		async def search_google(params: SearchGoogleAction, browser: Browser):
 			page = await browser.get_current_page()
 			await page.goto(f'https://www.google.com/search?q={params.query}')
 			await page.wait_for_load_state()
 
-		@self.registry.action('Navigate to URL', param_model=GoToUrlAction, requires_browser=True)
+		@self.registry.action(
+			'Navigate to URL in the current tab', param_model=GoToUrlAction, requires_browser=True
+		)
 		async def go_to_url(params: GoToUrlAction, browser: Browser):
 			page = await browser.get_current_page()
 			await page.goto(params.url)
@@ -109,7 +113,9 @@ class Controller:
 			page = await browser.get_current_page()
 			await page.wait_for_load_state()
 
-		@self.registry.action('Open new tab', param_model=OpenTabAction, requires_browser=True)
+		@self.registry.action(
+			'Open url in new tab', param_model=OpenTabAction, requires_browser=True
+		)
 		async def open_tab(params: OpenTabAction, browser: Browser):
 			await browser.create_new_tab(params.url)
 
