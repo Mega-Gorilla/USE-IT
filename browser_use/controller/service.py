@@ -190,12 +190,21 @@ class Controller:
 		results = []
 		first_action = True
 		await self.browser.remove_highlights()
+		session = await self.browser.get_session()
+		cached_selector_map = session.cached_state.selector_map
+		cached_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
 
 		for action in actions:
 			if not first_action:
 				await asyncio.sleep(self.wait_between_actions)
 			results.append(await self.act(action))
 			if results[-1].is_done or results[-1].error:
+				break
+			new_state = await self.browser.get_state()
+			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
+			new_hashes = set(e.hash.attributes_hash for e in new_state.selector_map.values())
+			if not new_hashes.issubset(cached_hashes):
+				logger.debug('New elements on page - stopping')
 				break
 		return results
 
