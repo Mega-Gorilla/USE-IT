@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import Optional, TypedDict
 
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -73,9 +73,7 @@ class BrowserConfig:
 	wait_between_actions: float = 1
 
 	extra_chromium_args: list[str] = field(default_factory=list)
-	browser_window_size: BrowserWindowSize = field(
-		default_factory=lambda: {'width': 1280, 'height': 1024}
-	)
+	browser_window_size: Optional[BrowserWindowSize] = None
 
 
 @dataclass
@@ -198,6 +196,7 @@ class Browser:
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		context = await browser.new_context(
 			viewport=self.config.browser_window_size,
+			no_viewport=True,
 			user_agent=(
 				'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 				'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
@@ -794,7 +793,7 @@ class Browser:
 			# await element.scroll_into_view_if_needed()
 
 			try:
-				await element.click(timeout=2500)
+				await element.click(timeout=1500)
 				await page.wait_for_load_state()
 			except Exception:
 				try:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
-from browser_use.browser.service import Browser
+from browser_use.browser.service import Browser, BrowserWindowSize
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,14 +21,22 @@ import asyncio
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from pydantic import BaseModel, SecretStr
 
 from browser_use import ActionResult, Agent, BrowserConfig, Controller
 
 load_dotenv()
 
-controller = Controller(browser_config=BrowserConfig(keep_open=True, disable_security=True))
+# full screen mode
+controller = Controller(
+	browser_config=BrowserConfig(
+		keep_open=True,
+		disable_security=True,
+		browser_window_size=None,
+		# extra_chromium_args=['--start-maximized'],
+	)
+)
 CV = Path.cwd() / 'cv_04_24.pdf'
 
 
@@ -92,15 +100,20 @@ async def close_file_dialog(browser: Browser):
 async def main():
 	task = (
 		'You are a professional job finder and applyer. '
-		'Read my cv & find 10 machine learning engineer jobs in Bangalore for me + apply me to them. '
+		'Read first my cv & find 10 machine learning engineer jobs in Bangalore for me + apply me to them. '
 		'Save them to a file'
 		'use multiple tabs'
 		'please avoid job portals like linkedin, indeed, etc. '
 		'do everything you should do like uploading cv, motivation letter, etc. '
-		'if you get stuck simply find a new job '
-		'start with https://www.inmobi.com/company/openings/fte/jobid/6115486?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic'
+		'if you get stuck simply find a new job'
+		# 'start with google search'
 	)
-	model = ChatOpenAI(model='gpt-4o')
+	model = AzureChatOpenAI(
+		model='gpt-4o',
+		api_version='2024-10-21',
+		azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
+		api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
+	)
 	agent = Agent(task=task, llm=model, controller=controller)
 
 	await agent.run()
