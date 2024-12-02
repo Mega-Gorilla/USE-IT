@@ -10,7 +10,7 @@ from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.browser import Browser, BrowserConfig
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 def event_loop():
 	"""Create an instance of the default event loop for each test case."""
 	loop = asyncio.get_event_loop_policy().new_event_loop()
@@ -18,7 +18,7 @@ def event_loop():
 	loop.close()
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 async def browser(event_loop):
 	browser_instance = Browser(
 		config=BrowserConfig(
