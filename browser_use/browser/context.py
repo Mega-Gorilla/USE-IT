@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
@@ -61,6 +62,12 @@ class BrowserContextConfig:
 
 		browser_window_size: {'width': 1280, 'height': 1024}
 			Default browser window size
+
+		save_recording_path: None
+			Path to save video recordings
+
+		trace_path: None
+			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 	"""
 
 	cookies_file: str | None = None
@@ -92,7 +99,8 @@ class BrowserContext:
 		browser: 'Browser',
 		config: BrowserContextConfig = BrowserContextConfig(),
 	):
-		logger.debug('Initializing new browser context')
+		self.context_id = str(uuid.uuid4())
+		logger.debug(f'Initializing new browser context with id: {self.context_id}')
 
 		self.config = config
 		self.browser = browser
@@ -120,7 +128,9 @@ class BrowserContext:
 		await self.save_cookies()
 
 		if self.config.trace_path:
-			await self.session.context.tracing.stop(path=self.config.trace_path)
+			await self.session.context.tracing.stop(
+				path=os.path.join(self.config.trace_path, f'{self.context_id}.zip')
+			)
 
 		await self.session.context.close()
 
