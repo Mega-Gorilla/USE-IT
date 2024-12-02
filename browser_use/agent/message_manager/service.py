@@ -33,6 +33,8 @@ class MessageManager:
 		max_input_tokens: int = 128000,
 		estimated_tokens_per_character: int = 3,
 		image_tokens: int = 800,
+		include_attributes: list[str] = [],
+		max_error_length: int = 400,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -42,7 +44,8 @@ class MessageManager:
 		self.action_descriptions = action_descriptions
 		self.ESTIMATED_TOKENS_PER_CHARACTER = estimated_tokens_per_character
 		self.IMG_TOKENS = image_tokens
-
+		self.include_attributes = include_attributes
+		self.max_error_length = max_error_length
 		system_message = self.system_prompt_class(
 			self.action_descriptions, current_date=datetime.now()
 		).get_system_message()
@@ -60,12 +63,17 @@ class MessageManager:
 				msg = HumanMessage(content=str(result.extracted_content))
 				self._add_message_with_tokens(msg)
 			if result.error:
-				msg = HumanMessage(content=str(result.error))
+				msg = HumanMessage(content=str(result.error)[-self.max_error_length :])
 				self._add_message_with_tokens(msg)
 			result = None
 
 		# otherwise add state message and result to next message (which will not stay in memory)
-		state_message = AgentMessagePrompt(state, result).get_user_message()
+		state_message = AgentMessagePrompt(
+			state,
+			result,
+			include_attributes=self.include_attributes,
+			max_error_length=self.max_error_length,
+		).get_user_message()
 		self._add_message_with_tokens(state_message)
 
 	def _remove_last_state_message(self) -> None:

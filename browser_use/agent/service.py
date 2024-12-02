@@ -62,6 +62,8 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
+		include_attributes: list[str] = [],
+		max_error_length: int = 400,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -101,12 +103,17 @@ class Agent:
 
 		self.max_input_tokens = max_input_tokens
 
+		self.include_attributes = include_attributes
+		self.max_error_length = max_error_length
+
 		self.message_manager = MessageManager(
 			llm=self.llm,
 			task=self.task,
 			action_descriptions=self.controller.registry.get_prompt_description(),
 			system_prompt_class=self.system_prompt_class,
 			max_input_tokens=self.max_input_tokens,
+			include_attributes=self.include_attributes,
+			max_error_length=self.max_error_length,
 		)
 
 		# Tracking variables
@@ -132,6 +139,7 @@ class Agent:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
+		model_output = None
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
@@ -347,7 +355,12 @@ class Agent:
 
 		if self.browser_context.session:
 			state = self.browser_context.session.cached_state
-			content = AgentMessagePrompt(state=state, result=self._last_result)
+			content = AgentMessagePrompt(
+				state=state,
+				result=self._last_result,
+				include_attributes=self.include_attributes,
+				max_error_length=self.max_error_length,
+			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message()]
 		else:
 			# if no browser session, we can't validate the output
@@ -463,7 +476,6 @@ class Agent:
 
 		if not current_element or current_element.highlight_index is None:
 			return None
-
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
@@ -474,7 +486,7 @@ class Agent:
 		return action
 
 	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, **kwargs
+		self, history_file: Optional[str | Path] = None, k: Optional[int] = None, **kwargs
 	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
@@ -482,10 +494,15 @@ class Agent:
 		Args:
 			history_file: Path to the history file
 			**kwargs: Additional arguments passed to rerun_history
+			history_file: Path to the history file
+			k: Number of steps to rerun
+			**kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
+		if k:
+			history.history = history.history[:k]
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: Optional[str | Path] = None) -> None:
