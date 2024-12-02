@@ -17,11 +17,11 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from browser_use import ActionResult, Agent, BrowserConfig, Controller
+from browser_use import ActionResult, Agent, Controller
 
 load_dotenv()
 
-controller = Controller(browser_config=BrowserConfig(keep_open=True))
+controller = Controller()
 
 
 class DoneResult(BaseModel):

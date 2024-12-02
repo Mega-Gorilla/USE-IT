@@ -2,21 +2,46 @@
 Test browser automation using Mind2Web dataset tasks with pytest framework.
 """
 
+import asyncio
 import json
 import os
 from typing import Any, Dict, List
 
 import pytest
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
-from browser_use.controller.service import Controller
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.utils import logger
 
 # Constants
 MAX_STEPS = 50
 TEST_SUBSET_SIZE = 10
+
+
+@pytest.fixture(scope='session')
+def event_loop():
+	loop = asyncio.get_event_loop_policy().new_event_loop()
+	yield loop
+	loop.close()
+
+
+@pytest.fixture(scope='session')
+async def browser(event_loop):
+	browser_instance = Browser(
+		config=BrowserConfig(
+			headless=True,
+		)
+	)
+	yield browser_instance
+	await browser_instance.close()
+
+
+@pytest.fixture
+async def context(browser):
+	async with await browser.new_context() as new_context:
+		yield new_context
 
 
 @pytest.fixture(scope='session')
@@ -46,20 +71,9 @@ def llm():
 	)
 
 
-@pytest.fixture(scope='function')
-async def controller():
-	"""Initialize the controller"""
-	controller = Controller()
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
-
-
 # run with: pytest -s -v tests/test_mind2web.py:test_random_samples
 @pytest.mark.asyncio
-async def test_random_samples(test_cases: List[Dict[str, Any]], llm, controller, validator):
+async def test_random_samples(test_cases: List[Dict[str, Any]], llm, context, validator):
 	"""Test a random sampling of tasks across different websites"""
 	import random
 
@@ -73,7 +87,7 @@ async def test_random_samples(test_cases: List[Dict[str, Any]], llm, controller,
 		logger.info(f'--- Random Sample {i}/{len(samples)} ---')
 		logger.info(f'Task: {task}\n')
 
-		agent = Agent(task, llm, controller)
+		agent = Agent(task, llm, browser_context=context)
 
 		await agent.run()
 

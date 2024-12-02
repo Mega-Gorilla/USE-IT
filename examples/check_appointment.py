@@ -31,7 +31,7 @@ async def main():
 	)
 
 	model = ChatOpenAI(model='gpt-4o-mini', api_key=SecretStr(os.getenv('OPENAI_API_KEY', '')))
-	agent = Agent(task, model, controller, use_vision=True)
+	agent = Agent(task, model, controller=controller, use_vision=True)
 
 	result = await agent.run()
 
