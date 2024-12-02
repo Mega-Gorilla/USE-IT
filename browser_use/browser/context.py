@@ -76,6 +76,7 @@ class BrowserContextConfig:
 	)
 
 	save_recording_path: str | None = None
+	trace_path: str | None = None
 
 
 @dataclass
@@ -117,6 +118,9 @@ class BrowserContext:
 			return
 
 		await self.save_cookies()
+
+		if self.config.trace_path:
+			await self.session.context.tracing.stop(path=self.config.trace_path)
 
 		await self.session.context.close()
 
@@ -196,6 +200,9 @@ class BrowserContext:
 			ignore_https_errors=self.config.disable_security,
 			record_video_dir=self.config.save_recording_path,
 		)
+
+		if self.config.trace_path:
+			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
 		# Load cookies if they exist
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
