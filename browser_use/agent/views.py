@@ -250,4 +250,6 @@ class AgentError:
 			return f'{AgentError.VALIDATION_ERROR}\nDetails: {str(error)}'
 		if isinstance(error, RateLimitError):
 			return AgentError.RATE_LIMIT_ERROR
-		return f'Unexpected error: {str(error)}\nStacktrace:\n{traceback.format_exc()}'
+		if include_trace:
+			return f'{str(error)}\nStacktrace:\n{traceback.format_exc()}'
+		return f'{str(error)}'
