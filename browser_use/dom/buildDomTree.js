@@ -36,17 +36,40 @@
         try {
             if (!iframe) return offset;
             
+            // Get iframe's position relative to viewport
             const rect = iframe.getBoundingClientRect();
+            
+            // Start with the iframe's viewport position
             offset.top = rect.top;
             offset.left = rect.left;
 
-            if (iframe.contentWindow) {
-                offset.top += iframe.contentWindow.scrollY || 0;
-                offset.left += iframe.contentWindow.scrollX || 0;
-            }
-
+            // Add parent window scroll
             offset.top += window.scrollY;
             offset.left += window.scrollX;
+
+            // Get the iframe's document
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (iframeDoc) {
+                // Add scroll position within the iframe
+                const html = iframeDoc.documentElement;
+                const body = iframeDoc.body;
+                
+                // Get scroll position, checking both html and body
+                const scrollY = Math.max(
+                    html?.scrollTop || 0,
+                    body?.scrollTop || 0,
+                    iframe.contentWindow?.scrollY || 0
+                );
+                const scrollX = Math.max(
+                    html?.scrollLeft || 0,
+                    body?.scrollLeft || 0,
+                    iframe.contentWindow?.scrollX || 0
+                );
+
+                // Subtract iframe's scroll to fix origin
+                offset.top -= scrollY;
+                offset.left -= scrollX;
+            }
 
             return offset;
         } catch (e) {
@@ -56,15 +79,59 @@
     }
 
     function getAbsolutePosition(element, parentIframe) {
-        const rect = element.getBoundingClientRect();
-        const iframeOffset = getIframeOffset(parentIframe);
-        
-        return {
-            top: rect.top + iframeOffset.top,
-            left: rect.left + iframeOffset.left,
-            width: rect.width,
-            height: rect.height
-        };
+        try {
+            // Get element's position relative to its viewport
+            const rect = element.getBoundingClientRect();
+            
+            // Start with position relative to element's viewport
+            let pos = {
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height
+            };
+
+            if (parentIframe) {
+                // Get iframe's offset
+                const iframeOffset = getIframeOffset(parentIframe);
+                
+                // Add iframe's offset
+                pos.top += iframeOffset.top;
+                pos.left += iframeOffset.left;
+
+                // Add element's own document scroll position
+                const elementDoc = element.ownerDocument;
+                if (elementDoc) {
+                    const html = elementDoc.documentElement;
+                    const body = elementDoc.body;
+                    
+                    pos.top += Math.max(
+                        html?.scrollTop || 0,
+                        body?.scrollTop || 0,
+                        elementDoc.defaultView?.scrollY || 0
+                    );
+                    pos.left += Math.max(
+                        html?.scrollLeft || 0,
+                        body?.scrollLeft || 0,
+                        elementDoc.defaultView?.scrollX || 0
+                    );
+                }
+            } else {
+                // If not in iframe, just add main window scroll
+                pos.top += window.scrollY;
+                pos.left += window.scrollX;
+            }
+
+            return pos;
+        } catch (e) {
+            console.warn('Error calculating absolute position:', e);
+            return {
+                top: 0,
+                left: 0,
+                width: 0,
+                height: 0
+            };
+        }
     }
 
     function findOptimalLabelPosition(elementPos, viewport) {
@@ -172,15 +239,47 @@
     }
 
     function highlightElement(element, index, parentIframe = null) {
-        const container = createHighlightContainer(); // Now this will work
-        const color = COLORS[index % COLORS.length];
-        const pos = getAbsolutePosition(element, parentIframe);
-        const viewport = {
-            width: window.innerWidth,
-            height: window.innerHeight
-        };
+        // Check if element is actually visible in viewport
+        const rect = element.getBoundingClientRect();
+        const isInViewport = (
+            rect.top >= 0 &&
+            rect.left >= 0 &&
+            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+        );
 
-        // Create highlight box
+        // Always set the attribute regardless of visibility
+        element.setAttribute('browser-user-highlight-id', `playwright-highlight-${index}`);
+
+        // Only create visual highlights if element is in viewport
+        if (!isInViewport) {
+            return;
+        }
+
+        const container = createHighlightContainer();
+        const color = COLORS[index % COLORS.length];
+        
+        // Rest of the highlighting code remains the same...
+        function updatePosition() {
+            const pos = getAbsolutePosition(element, parentIframe);
+            
+            Object.assign(box.style, {
+                top: `${pos.top}px`,
+                left: `${pos.left}px`,
+                width: `${pos.width}px`,
+                height: `${pos.height}px`
+            });
+
+            const labelPos = findOptimalLabelPosition(pos, {
+                width: window.innerWidth,
+                height: window.innerHeight
+            });
+            Object.assign(label.style, {
+                top: `${labelPos.top}px`,
+                left: `${labelPos.left}px`
+            });
+        }
+
         const box = document.createElement('div');
         Object.assign(box.style, {
             position: 'absolute',
@@ -188,15 +287,11 @@
             backgroundColor: `${color}11`,
             boxSizing: 'border-box',
             pointerEvents: 'none',
-            top: `${pos.top}px`,
-            left: `${pos.left}px`,
-            width: `${pos.width}px`,
-            height: `${pos.height}px`
+            zIndex: '2147483646'
         });
 
-        // Create label
         const label = document.createElement('div');
-        const isSmallElement = pos.width < 30 || pos.height < 20;
+        const isSmallElement = element.offsetWidth < 30 || element.offsetHeight < 20;
         Object.assign(label.style, {
             position: 'absolute',
             background: color,
@@ -207,22 +302,19 @@
             lineHeight: '1',
             whiteSpace: 'nowrap',
             fontWeight: 'bold',
-            zIndex: 2147483647
+            zIndex: '2147483647'
         });
         label.textContent = index;
 
-        const labelPos = findOptimalLabelPosition(pos, viewport);
-        Object.assign(label.style, {
-            top: `${labelPos.top}px`,
-            left: `${labelPos.left}px`
-        });
+        updatePosition();
 
-        usedPositions.add(`${Math.round(labelPos.top)},${Math.round(labelPos.left)}`);
+        if (parentIframe?.contentWindow) {
+            parentIframe.contentWindow.addEventListener('scroll', updatePosition, { passive: true });
+        }
+        window.addEventListener('scroll', updatePosition, { passive: true });
 
         container.appendChild(box);
         container.appendChild(label);
-
-        element.setAttribute('browser-user-highlight-id', `playwright-highlight-${index}`);
     }
 
     // Helper function to generate XPath as a tree
