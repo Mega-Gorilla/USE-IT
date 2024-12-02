@@ -2,6 +2,7 @@
 Test browser automation using Mind2Web dataset tasks with pytest framework.
 """
 
+import asyncio
 import json
 import os
 from typing import Any, Dict, List
@@ -18,11 +19,29 @@ from browser_use.utils import logger
 MAX_STEPS = 50
 TEST_SUBSET_SIZE = 10
 
-browser = Browser(
-	config=BrowserConfig(
-		# headless=False,
+
+@pytest.fixture(scope='session')
+def event_loop():
+	loop = asyncio.get_event_loop_policy().new_event_loop()
+	yield loop
+	loop.close()
+
+
+@pytest.fixture(scope='session')
+async def browser(event_loop):
+	browser_instance = Browser(
+		config=BrowserConfig(
+			headless=True,
+		)
 	)
-)
+	yield browser_instance
+	await browser_instance.close()
+
+
+@pytest.fixture
+async def context(browser):
+	async with await browser.new_context() as new_context:
+		yield new_context
 
 
 @pytest.fixture(scope='session')
@@ -50,13 +69,6 @@ def llm():
 		azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
 		api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
 	)
-
-
-# @pytest.fixture(scope='function')
-@pytest.fixture
-async def context():
-	async with await browser.new_context() as context:
-		yield context
 
 
 # run with: pytest -s -v tests/test_mind2web.py:test_random_samples

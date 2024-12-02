@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import pytest
@@ -8,18 +9,35 @@ from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.browser import Browser, BrowserConfig
 
-browser = Browser(
-	config=BrowserConfig(
-		# headless=False,
+
+@pytest.fixture(scope='session')
+def event_loop():
+	"""Create an instance of the default event loop for each test case."""
+	loop = asyncio.get_event_loop_policy().new_event_loop()
+	yield loop
+	loop.close()
+
+
+@pytest.fixture(scope='session')
+async def browser(event_loop):
+	browser_instance = Browser(
+		config=BrowserConfig(
+			headless=True,
+		)
 	)
-)
+	yield browser_instance
+	await browser_instance.close()
+
+
+@pytest.fixture
+async def context(browser):
+	async with await browser.new_context() as context:
+		yield context
 
 
 @pytest.fixture
 def llm():
 	"""Initialize language model for testing"""
-
-	# return ChatAnthropic(model_name='claude-3-5-sonnet-20240620', timeout=25, stop=None)
 	return AzureChatOpenAI(
 		model='gpt-4o',
 		api_version='2024-10-21',
@@ -29,12 +47,6 @@ def llm():
 
 
 # pytest -s -k test_search_google
-@pytest.fixture
-async def context():
-	async with await browser.new_context() as context:
-		yield context
-
-
 @pytest.mark.asyncio
 async def test_search_google(llm, context):
 	"""Test 'Search Google' action"""

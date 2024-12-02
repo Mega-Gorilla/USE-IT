@@ -116,21 +116,19 @@ class BrowserContext:
 
 		await self.save_cookies()
 
-		session = await self.get_session()
-		await session.context.close()
+		await self.session.context.close()
 
 	def __del__(self):
-		"""Async cleanup when object is destroyed"""
+		"""Cleanup when object is destroyed"""
 		if self.session is not None:
+			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
-				loop = asyncio.get_running_loop()
-				if loop.is_running():
-					loop.create_task(self.close())
-				else:
-					asyncio.run(self.close())
-			except RuntimeError:
-				# No event loop running
-				asyncio.run(self.close())
+				# Use sync Playwright method for force cleanup
+				if hasattr(self.session.context, '_impl_obj'):
+					self.session.context._impl_obj.close()
+				self.session = None
+			except Exception as e:
+				logger.warning(f'Failed to force close browser context: {e}')
 
 	async def _initialize_session(self):
 		"""Initialize the browser session"""
