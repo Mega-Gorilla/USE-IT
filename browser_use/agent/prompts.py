@@ -74,7 +74,7 @@ class SystemPrompt:
    - Each action should logically follow from the previous one
    - If the page changes between actions, the sequence is interrupted and you get the new page state.
    - Only provide the action sequence until you think the DOM will change.
-   - Try to be efficient. If the dom changes a little bit we find the right element.
+   - Try to be efficient, e.g. accept cookies and direct next action. If the dom changes a little bit we find the right element.
 """
 
 	def input_format(self) -> str:

@@ -28,7 +28,7 @@ from browser_use import ActionResult, Agent, BrowserConfig, Controller
 
 load_dotenv()
 
-controller = Controller(browser_config=BrowserConfig(keep_open=True))
+controller = Controller(browser_config=BrowserConfig(keep_open=True, disable_security=True))
 CV = Path.cwd() / 'cv_04_24.pdf'
 
 
@@ -58,9 +58,9 @@ def read_jobs():
 		return f.read()
 
 
-@controller.action('Ask me for help')
-def ask_human(question: str) -> str:
-	return input(f'\n{question}\nInput: ')
+# @controller.action('Ask me for help')
+# def ask_human(question: str) -> str:
+# 	return input(f'\n{question}\nInput: ')
 
 
 @controller.action('Read my cv for context to fill forms')
@@ -91,10 +91,14 @@ async def close_file_dialog(browser: Browser):
 
 async def main():
 	task = (
-		'Read my cv & find machine learning engineer jobs in Bangalore for me. '
+		'You are a professional job finder and applyer. '
+		'Read my cv & find 10 machine learning engineer jobs in Bangalore for me + apply me to them. '
 		'Save them to a file'
-		'then start applying for them in new tabs - please not via job portals like linkedin, indeed, etc. '
-		'If you need more information or help, ask me.'
+		'use multiple tabs'
+		'please avoid job portals like linkedin, indeed, etc. '
+		'do everything you should do like uploading cv, motivation letter, etc. '
+		'if you get stuck simply find a new job '
+		'start with https://www.inmobi.com/company/openings/fte/jobid/6115486?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic'
 	)
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(task=task, llm=model, controller=controller)
