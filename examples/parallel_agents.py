@@ -8,8 +8,15 @@ from langchain_openai import ChatOpenAI
 
 from browser_use.agent.service import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContextConfig
 
-browser = Browser(config=BrowserConfig(disable_security=True, headless=False))
+browser = Browser(
+	config=BrowserConfig(
+		disable_security=True,
+		headless=True,
+		new_context_config=BrowserContextConfig(save_recording_path='./tmp/recordings'),
+	)
+)
 llm = ChatOpenAI(model='gpt-4o')
 
 
@@ -32,13 +39,14 @@ async def main():
 
 	await asyncio.gather(*[agent.run() for agent in agents])
 
-	async with await browser.new_context() as context:
-		agentX = Agent(
-			task='Go to apple.com and find latest price of macbook pro 14 inch',
-			llm=llm,
-			browser_context=context,
-		)
-		await agentX.run()
+	# async with await browser.new_context() as context:
+	agentX = Agent(
+		task='Go to apple.com and return the title of the page',
+		llm=llm,
+		browser=browser,
+		# browser_context=context,
+	)
+	await agentX.run()
 
 	await browser.close()
 

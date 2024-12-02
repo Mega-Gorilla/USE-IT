@@ -75,6 +75,8 @@ class BrowserContextConfig:
 		default_factory=lambda: {'width': 1280, 'height': 1024}
 	)
 
+	save_recording_path: str | None = None
+
 
 @dataclass
 class BrowserSession:
@@ -125,7 +127,7 @@ class BrowserContext:
 			try:
 				# Use sync Playwright method for force cleanup
 				if hasattr(self.session.context, '_impl_obj'):
-					self.session.context._impl_obj.close()
+					asyncio.run(self.session.context._impl_obj.close())
 				self.session = None
 			except Exception as e:
 				logger.warning(f'Failed to force close browser context: {e}')
@@ -192,6 +194,7 @@ class BrowserContext:
 			java_script_enabled=True,
 			bypass_csp=self.config.disable_security,
 			ignore_https_errors=self.config.disable_security,
+			record_video_dir=self.config.save_recording_path,
 		)
 
 		# Load cookies if they exist
