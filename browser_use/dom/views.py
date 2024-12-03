@@ -1,5 +1,8 @@
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
+
+from browser_use.dom.history_tree_processor.view import HashedDomElement
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -66,6 +69,14 @@ class DOMElementNode(DOMBaseNode):
 			tag_str += f' [{", ".join(extras)}]'
 
 		return tag_str
+
+	@cached_property
+	def hash(self) -> HashedDomElement:
+		from browser_use.dom.history_tree_processor.service import (
+			HistoryTreeProcessor,
+		)
+
+		return HistoryTreeProcessor._hash_dom_element(self)
 
 	def get_all_text_till_next_clickable_element(self) -> str:
 		text_parts = []

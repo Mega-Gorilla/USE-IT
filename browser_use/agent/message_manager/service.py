@@ -69,7 +69,7 @@ class MessageManager:
 					if r.error:
 						msg = HumanMessage(content=str(r.error)[-self.max_error_length :])
 						self._add_message_with_tokens(msg)
-			result = None
+					result = None  # if result in history, we dont want to add it again
 
 		# otherwise add state message and result to next message (which will not stay in memory)
 		state_message = AgentMessagePrompt(

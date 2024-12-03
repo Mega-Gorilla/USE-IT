@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
-from browser_use.dom.history_tree_processor import (
+from browser_use.dom.history_tree_processor.service import (
 	DOMElementNode,
 	DOMHistoryElement,
 	HistoryTreeProcessor,
