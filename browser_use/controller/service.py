@@ -188,24 +188,36 @@ class Controller:
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
-		first_action = True
+		changed = False
 		await self.browser.remove_highlights()
 		session = await self.browser.get_session()
 		cached_selector_map = session.cached_state.selector_map
-		cached_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
+		cached_att_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
+		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
 
-		for action in actions:
-			if not first_action:
-				await asyncio.sleep(self.wait_between_actions)
+		for i, action in enumerate(actions):
+			if changed and action.get_index() is not None:
+				# next action requires index but there are new elements on the page
+				break
+
 			results.append(await self.act(action))
-			if results[-1].is_done or results[-1].error:
+			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 				break
-			new_state = await self.browser.get_state()
+
+			await asyncio.sleep(self.wait_between_actions)
 			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
-			new_hashes = set(e.hash.attributes_hash for e in new_state.selector_map.values())
-			if not new_hashes.issubset(cached_hashes):
-				logger.debug('New elements on page - stopping')
-				break
+
+			new_state = await self.browser.get_state()
+			new_att_hashes = set(e.hash.attributes_hash for e in new_state.selector_map.values())
+
+			if not new_att_hashes.issubset(cached_att_hashes):
+				logger.debug(f'Attributes changed - stopping after {i + 1} actions')
+				changed = True
+			new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
+			if not new_path_hashes.issubset(cached_path_hashes):
+				logger.debug(f'Branch path changed - stopping after {i + 1} actions')
+				changed = True
+
 		return results
 
 	@time_execution_sync('--act')
