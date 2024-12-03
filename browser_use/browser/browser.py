@@ -36,7 +36,7 @@ class BrowserConfig:
 			Connect to a browser instance via WebSocket
 	"""
 
-	headless: bool = True
+	headless: bool = False
 	disable_security: bool = False
 	extra_chromium_args: list[str] = field(default_factory=list)
 	wss_url: str | None = None
