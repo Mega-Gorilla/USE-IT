@@ -16,7 +16,6 @@ llm = ChatOpenAI(model='gpt-4o')
 agent = Agent(
 	task="go to google.com and type 'OpenAI' click search and give me the first url",
 	llm=llm,
-	controller=Controller(),
 )
 
 
