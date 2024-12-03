@@ -26,6 +26,7 @@ agent = Agent(
 
 async def main():
 	await agent.run()
+	input('Press Enter to exit')
 
 
 asyncio.run(main())
