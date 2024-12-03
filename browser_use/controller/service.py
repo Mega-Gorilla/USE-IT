@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from main_content_extractor import MainContentExtractor
+from playwright.async_api import Page
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser.context import BrowserContext
@@ -15,6 +16,7 @@ from browser_use.controller.views import (
 	OpenTabAction,
 	ScrollAction,
 	SearchGoogleAction,
+	SendKeysAction,
 	SwitchTabAction,
 )
 from browser_use.utils import time_execution_async, time_execution_sync
@@ -87,7 +89,11 @@ class Controller:
 				)
 				return ActionResult(error=str(e))
 
-		@self.registry.action('Input text', param_model=InputTextAction, requires_browser=True)
+		@self.registry.action(
+			'Input text into interactive element',
+			param_model=InputTextAction,
+			requires_browser=True,
+		)
 		async def input_text(params: InputTextAction, browser: BrowserContext):
 			session = await browser.get_session()
 			state = session.cached_state
@@ -173,6 +179,259 @@ class Controller:
 				extracted_content=f'Scrolled up the page by {amount} pixels',
 				include_in_memory=True,
 			)
+
+		# send keys
+		@self.registry.action(
+			'Send keys like space, enter, backspace, etc. Split by +',
+			param_model=SendKeysAction,
+			requires_browser=True,
+		)
+		async def send_keys(params: SendKeysAction, browser: BrowserContext):
+			page = await browser.get_current_page()
+			# split by + and send each key
+			for key in params.keys.split('+'):
+				await page.keyboard.press(key.strip())
+
+		@self.registry.action(
+			description='If you dont find something which you want to interact with, scroll to it',
+			requires_browser=True,
+		)
+		async def scroll_to_text(text: str, browser: BrowserContext):  # type: ignore
+			page = await browser.get_current_page()
+			try:
+				# Function to search in a frame and its nested frames
+
+				async def search_in_frame(frame: Page):
+					try:
+						# Search in current frame
+						elements = frame.locator(f"//*[contains(text(), '{text}')]")
+						count = await elements.count()
+						if count > 0:
+							element = elements.first
+							element_handle = await element.element_handle()
+							# Execute JavaScript to scroll to element
+							await frame.evaluate(
+								"element => element.scrollIntoView({behavior: 'smooth', block: 'center'})",
+								element_handle,
+							)
+							return True
+
+						# Search in nested frames
+						child_frames = frame.frames
+						for child_frame in child_frames:
+							if await search_in_frame(child_frame):
+								return True
+
+						return False
+
+					except Exception as e:
+						print(f'Error searching in frame: {str(e)}')
+						return False
+
+				# Start search from main page
+				if await search_in_frame(page):
+					await asyncio.sleep(0.5)  # Wait for scroll to complete
+					return f'Successfully scrolled to text: {text}'
+
+				# If we get here, text wasn't found in any frame
+				return f"Text '{text}' not found on page or in any frame"
+
+			except Exception as e:
+				return f"Failed to scroll to text '{text}': {str(e)}"
+
+		@self.registry.action(
+			description='Get all options from a native dropdown',
+			requires_browser=True,
+		)
+		async def get_dropdown_options(index: int, browser: BrowserContext) -> str:
+			"""Get all options from a native dropdown"""
+			page = await browser.get_current_page()
+			selector_map = await browser.get_selector_map()
+			dom_element = selector_map[index]
+
+			try:
+				# Frame-aware approach since we know it works
+				all_options = []
+				frame_index = 0
+
+				for frame in page.frames:
+					try:
+						options = await frame.evaluate(
+							"""
+							(xpath) => {
+								const select = document.evaluate(xpath, document, null,
+									XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+								if (!select) return null;
+								
+								return {
+									options: Array.from(select.options).map(opt => ({
+										text: opt.text.trim(),
+										value: opt.value,
+										index: opt.index
+									})),
+									id: select.id,
+									name: select.name
+								};
+							}
+						""",
+							dom_element.xpath,
+						)
+
+						if options:
+							logger.debug(f'Found dropdown in frame {frame_index}')
+							logger.debug(f"Dropdown ID: {options['id']}, Name: {options['name']}")
+
+							formatted_options = []
+							for opt in options['options']:
+								formatted_options.append(
+									f"{opt['index']}: {opt['text']} (value={opt['value']})"
+								)
+
+							all_options.extend(formatted_options)
+
+					except Exception as frame_e:
+						logger.debug(f'Frame {frame_index} evaluation failed: {str(frame_e)}')
+
+					frame_index += 1
+
+				if all_options:
+					return '\n'.join(all_options)
+				else:
+					return 'No options found in any frame'
+
+			except Exception as e:
+				logger.error(f'Failed to get dropdown options: {str(e)}')
+				return f'Error getting options: {str(e)}'
+
+		@self.registry.action(
+			description='Select dropdown option for interactive element index by the text of the option you want to select',
+			requires_browser=True,
+		)
+		async def select_dropdown_option(
+			index: int,
+			text: str,
+			browser: BrowserContext,
+		) -> str:
+			"""Select dropdown option by the text of the option you want to select"""
+			page = await browser.get_current_page()
+			selector_map = await browser.get_selector_map()
+			dom_element = selector_map[index]
+
+			# Validate that we're working with a select element
+			if dom_element.tag_name != 'select':
+				logger.error(
+					f'Element is not a select! Tag: {dom_element.tag_name}, Attributes: {dom_element.attributes}'
+				)
+				return f'Cannot select option: Element with index {index} is a {dom_element.tag_name}, not a select'
+
+			logger.debug(f"Attempting to select '{text}' using xpath: {dom_element.xpath}")
+			logger.debug(f'Element attributes: {dom_element.attributes}')
+			logger.debug(f'Element tag: {dom_element.tag_name}')
+
+			try:
+				frame_index = 0
+				for frame in page.frames:
+					try:
+						logger.debug(f'Trying frame {frame_index} URL: {frame.url}')
+
+						# First verify we can find the dropdown in this frame
+						find_dropdown_js = """
+							(xpath) => {
+								try {
+									const select = document.evaluate(xpath, document, null,
+										XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+									if (!select) return null;
+									if (select.tagName.toLowerCase() !== 'select') {
+										return {
+											error: `Found element but it's a ${select.tagName}, not a SELECT`,
+											found: false
+										};
+									}
+									return {
+										id: select.id,
+										name: select.name,
+										found: true,
+										tagName: select.tagName,
+										optionCount: select.options.length,
+										currentValue: select.value,
+										availableOptions: Array.from(select.options).map(o => o.text.trim())
+									};
+								} catch (e) {
+									return {error: e.toString(), found: false};
+								}
+							}
+						"""
+
+						dropdown_info = await frame.evaluate(find_dropdown_js, dom_element.xpath)
+
+						if dropdown_info:
+							if not dropdown_info.get('found'):
+								logger.error(
+									f"Frame {frame_index} error: {dropdown_info.get('error')}"
+								)
+								continue
+
+							logger.debug(f'Found dropdown in frame {frame_index}: {dropdown_info}')
+
+							# Rest of the selection code remains the same...
+							select_option_js = """
+								(params) => {
+									try {
+										const select = document.evaluate(params.xpath, document, null,
+											XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+										if (!select || select.tagName.toLowerCase() !== 'select') {
+											return {success: false, error: 'Select not found or invalid element type'};
+										}
+										
+										const option = Array.from(select.options)
+											.find(opt => opt.text.trim() === params.text);
+										
+										if (!option) {
+											return {
+												success: false, 
+												error: 'Option not found',
+												availableOptions: Array.from(select.options).map(o => o.text.trim())
+											};
+										}
+										
+										select.value = option.value;
+										select.dispatchEvent(new Event('change'));
+										return {
+											success: true, 
+											selectedValue: option.value,
+											selectedText: option.text.trim()
+										};
+									} catch (e) {
+										return {success: false, error: e.toString()};
+									}
+								}
+							"""
+
+							params = {'xpath': dom_element.xpath, 'text': text}
+
+							result = await frame.evaluate(select_option_js, params)
+							logger.debug(f'Selection result: {result}')
+
+							if result.get('success'):
+								return f"Selected option '{text}' (value={result.get('selectedValue')}) in frame {frame_index}"
+							else:
+								logger.error(f"Selection failed: {result.get('error')}")
+								if 'availableOptions' in result:
+									logger.error(f"Available options: {result['availableOptions']}")
+
+					except Exception as frame_e:
+						logger.error(f'Frame {frame_index} attempt failed: {str(frame_e)}')
+						logger.error(f'Frame type: {type(frame)}')
+						logger.error(f'Frame URL: {frame.url}')
+
+					frame_index += 1
+
+				return f"Could not select option '{text}' in any frame"
+
+			except Exception as e:
+				logger.error(f'Selection failed: {str(e)}')
+				logger.error(f'Full error context:', exc_info=True)
+				return f'Failed to select dropdown option: {str(e)}'
 
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
