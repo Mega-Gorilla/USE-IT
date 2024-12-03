@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional, Tuple, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -27,11 +27,12 @@ from browser_use.agent.views import (
 	AgentHistoryList,
 	AgentOutput,
 )
+from browser_use.browser.browser import Browser
+from browser_use.browser.context import BrowserContext
 from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor import DOMHistoryElement, HistoryTreeProcessor
-from browser_use.dom.views import DOMElementNode
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
@@ -51,7 +52,9 @@ class Agent:
 		self,
 		task: str,
 		llm: BaseChatModel,
-		controller: Optional[Controller] = None,
+		browser: Browser | None = None,
+		browser_context: BrowserContext | None = None,
+		controller: Controller = Controller(),
 		use_vision: bool = True,
 		save_conversation_path: Optional[str] = None,
 		max_failures: int = 5,
@@ -59,6 +62,8 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
+		include_attributes: list[str] = [],
+		max_error_length: int = 400,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -69,8 +74,24 @@ class Agent:
 		self._last_result = None
 
 		# Controller setup
-		self.controller_injected = controller is not None
-		self.controller = controller or Controller()
+		self.controller = controller
+
+		# Browser setup
+		self.injected_browser = browser is not None
+		self.injected_browser_context = browser_context is not None
+
+		# Initialize browser first if needed
+		self.browser = browser if browser is not None else (None if browser_context else Browser())
+
+		# Initialize browser context
+		if browser_context:
+			self.browser_context = browser_context
+		elif self.browser:
+			self.browser_context = BrowserContext(browser=self.browser)
+		else:
+			# If neither is provided, create both new
+			self.browser = Browser()
+			self.browser_context = BrowserContext(browser=self.browser)
 
 		self.system_prompt_class = system_prompt_class
 
@@ -82,12 +103,17 @@ class Agent:
 
 		self.max_input_tokens = max_input_tokens
 
+		self.include_attributes = include_attributes
+		self.max_error_length = max_error_length
+
 		self.message_manager = MessageManager(
 			llm=self.llm,
 			task=self.task,
 			action_descriptions=self.controller.registry.get_prompt_description(),
 			system_prompt_class=self.system_prompt_class,
 			max_input_tokens=self.max_input_tokens,
+			include_attributes=self.include_attributes,
+			max_error_length=self.max_error_length,
 		)
 
 		# Tracking variables
@@ -113,9 +139,10 @@ class Agent:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
+		model_output = None
 
 		try:
-			state = await self.controller.browser.get_state(use_vision=self.use_vision)
+			state = await self.browser_context.get_state(use_vision=self.use_vision)
 			self.message_manager.add_state_message(state, self._last_result)
 			input_messages = self.message_manager.get_messages()
 			model_output = await self.get_next_action(input_messages)
@@ -123,7 +150,7 @@ class Agent:
 			self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 			self.message_manager.add_model_output(model_output)
 
-			result = await self.controller.act(model_output.action)
+			result = await self.controller.act(model_output.action, self.browser_context)
 			self._last_result = result
 
 			if result.extracted_content:
@@ -193,6 +220,7 @@ class Agent:
 			title=state.title,
 			tabs=state.tabs,
 			interacted_element=interacted_element,
+			screenshot=state.screenshot,
 		)
 
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)
@@ -301,8 +329,11 @@ class Agent:
 					steps=len(self.history.history),
 				)
 			)
-			if not self.controller_injected:
-				await self.controller.browser.close()
+			if not self.injected_browser_context:
+				await self.browser_context.close()
+
+			if not self.injected_browser and self.browser:
+				await self.browser.close()
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
@@ -323,9 +354,14 @@ class Agent:
 			f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
 		)
 
-		if self.controller.browser.session:
-			state = self.controller.browser.session.cached_state
-			content = AgentMessagePrompt(state=state, result=self._last_result)
+		if self.browser_context.session:
+			state = self.browser_context.session.cached_state
+			content = AgentMessagePrompt(
+				state=state,
+				result=self._last_result,
+				include_attributes=self.include_attributes,
+				max_error_length=self.max_error_length,
+			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message()]
 		else:
 			# if no browser session, we can't validate the output
@@ -407,7 +443,7 @@ class Agent:
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> ActionResult:
 		"""Execute a single step from history with element validation"""
 
-		state = await self.controller.browser.get_state()
+		state = await self.browser_context.get_state()
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 
@@ -418,7 +454,7 @@ class Agent:
 		if updated_action is None:
 			raise ValueError('Could not find matching element in current page')
 
-		result = await self.controller.act(updated_action)
+		result = await self.controller.act(updated_action, self.browser_context)
 		await asyncio.sleep(delay)
 		return result
 
@@ -441,7 +477,6 @@ class Agent:
 
 		if not current_element or current_element.highlight_index is None:
 			return None
-
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
@@ -452,7 +487,7 @@ class Agent:
 		return action
 
 	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, **kwargs
+		self, history_file: Optional[str | Path] = None, k: Optional[int] = None, **kwargs
 	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
@@ -460,10 +495,15 @@ class Agent:
 		Args:
 			history_file: Path to the history file
 			**kwargs: Additional arguments passed to rerun_history
+			history_file: Path to the history file
+			k: Number of steps to rerun
+			**kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
+		if k:
+			history.history = history.history[:k]
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: Optional[str | Path] = None) -> None:

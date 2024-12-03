@@ -40,8 +40,7 @@ async def main():
     result = await agent.run()
     print(result)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
 And don't forget to add your API keys to your `.env` file.
@@ -84,6 +83,7 @@ https://github.com/user-attachments/assets/de73ee39-432c-4b97-b4e8-939fd7f323b3
 - Add custom actions (e.g. save to file, push to database, notify me, get human input)
 - Self-correcting
 - Use any LLM supported by LangChain (e.g. gpt4o, gpt4o mini, claude 3.5 sonnet, llama 3.1 405b, etc.)
+- Parallelize as many agents as you want
 
 ## Register custom actions
 
@@ -131,6 +131,30 @@ agent = Agent(task=task, llm=model, controller=controller)
 await agent.run()
 ```
 
+## Parallelize agents
+
+In 99% cases you should use 1 Browser instance and parallelize the agents with 1 context per agent.
+You can also reuse the context after the agent finishes.
+
+```python
+browser = Browser()
+```
+
+```python
+for i in range(10):
+    # This create a new context and automatically closes it after the agent finishes (with `__aexit__`)
+    async with browser.new_context() as context:
+        agent = Agent(task=f"Task {i}", llm=model, browser_context=context)
+
+        # ... reuse context
+```
+
+If you would like to learn more about how this works under the hood you can learn more at [playwright browser-context](https://playwright.dev/python/docs/api/class-browsercontext).
+
+### Context vs Browser
+
+If you don't specify a `browser` or `browser_context` the agent will create a new browser instance and context.
+
 ## Get XPath history
 
 To get the entire history of everything the agent has done, you can use the output of the `run` method:
@@ -143,7 +167,7 @@ print(history)
 
 ## Browser configuration
 
-You can configure the browser using the `BrowserConfig` class.
+You can configure the browser using the `BrowserConfig` and `BrowserContextConfig` classes.
 
 The most important options are:
 

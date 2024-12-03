@@ -19,10 +19,21 @@
             document.documentElement.appendChild(container);
         }
 
+        // Generate a color based on the index
+        const colors = [
+            '#FF0000', '#00FF00', '#0000FF', '#FFA500', 
+            '#800080', '#008080', '#FF69B4', '#4B0082',
+            '#FF4500', '#2E8B57', '#DC143C', '#4682B4'
+        ];
+        const colorIndex = index % colors.length;
+        const baseColor = colors[colorIndex];
+        const backgroundColor = `${baseColor}1A`; // 10% opacity version of the color
+
         // Create highlight overlay
         const overlay = document.createElement('div');
         overlay.style.position = 'absolute';
-        overlay.style.border = '2px solid red';
+        overlay.style.border = `2px solid ${baseColor}`;
+        overlay.style.backgroundColor = backgroundColor;
         overlay.style.pointerEvents = 'none';
         overlay.style.boxSizing = 'border-box';
 
@@ -47,20 +58,41 @@
         const label = document.createElement('div');
         label.className = 'playwright-highlight-label';
         label.style.position = 'absolute';
-        label.style.background = 'red';
+        label.style.background = baseColor;
         label.style.color = 'white';
-        label.style.padding = '2px 6px';
-        label.style.borderRadius = '10px';
-        label.style.fontSize = '12px';
+        label.style.padding = '1px 4px';
+        label.style.borderRadius = '4px';
+        label.style.fontSize = `${Math.min(12, Math.max(8, rect.height / 2))}px`; // Responsive font size
         label.textContent = index;
-        label.style.top = `${top - 20}px`;
-        label.style.left = `${left}px`;
 
+        // Calculate label position
+        const labelWidth = 20; // Approximate width
+        const labelHeight = 16; // Approximate height
+        
+        // Default position (top-right corner inside the box)
+        let labelTop = top + 2;
+        let labelLeft = left + rect.width - labelWidth - 2;
+
+        // Adjust if box is too small
+        if (rect.width < labelWidth + 4 || rect.height < labelHeight + 4) {
+            // Position outside the box if it's too small
+            labelTop = top - labelHeight - 2;
+            labelLeft = left + rect.width - labelWidth;
+        }
+
+        // Ensure label stays within viewport
+        if (labelTop < 0) labelTop = top + 2;
+        if (labelLeft < 0) labelLeft = left + 2;
+        if (labelLeft + labelWidth > window.innerWidth) {
+            labelLeft = left + rect.width - labelWidth - 2;
+        }
+
+        label.style.top = `${labelTop}px`;
+        label.style.left = `${labelLeft}px`;
 
         // Add to container
         container.appendChild(overlay);
         container.appendChild(label);
-
 
         // Store reference for cleanup
         element.setAttribute('browser-user-highlight-id', `playwright-highlight-${index}`);

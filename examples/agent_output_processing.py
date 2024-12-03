@@ -2,23 +2,21 @@ import os
 import sys
 from pprint import pprint
 
-from browser_use.controller.service import Controller
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 
 from langchain_openai import ChatOpenAI
 
-from browser_use import Agent, BrowserConfig
+from browser_use import Agent
 from browser_use.agent.views import AgentHistoryList
+from browser_use.controller.service import Controller
 
 llm = ChatOpenAI(model='gpt-4o')
 
 agent = Agent(
 	task="go to google.com and type 'OpenAI' click search and give me the first url",
 	llm=llm,
-	controller=Controller(browser_config=BrowserConfig(keep_open=True, headless=False)),
+	controller=Controller(),
 )
 
 

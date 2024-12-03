@@ -13,10 +13,7 @@ from pathlib import Path
 
 from PyPDF2 import PdfReader
 
-from browser_use.browser.service import Browser
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 from typing import List, Optional
 
@@ -24,11 +21,12 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from browser_use import ActionResult, Agent, BrowserConfig, Controller
+from browser_use import ActionResult, Agent, Controller
+from browser_use.browser.context import BrowserContext
 
 load_dotenv()
 
-controller = Controller(browser_config=BrowserConfig(keep_open=True))
+controller = Controller()
 CV = Path.cwd() / 'cv_04_24.pdf'
 
 
@@ -73,7 +71,7 @@ def read_cv():
 
 
 @controller.action('Upload cv to index', requires_browser=True)
-async def upload_cv(index: int, browser: Browser):
+async def upload_cv(index: int, browser: BrowserContext):
 	await close_file_dialog(browser)
 	element = await browser.get_element_by_index(index)
 	if not element:
@@ -84,7 +82,7 @@ async def upload_cv(index: int, browser: Browser):
 
 
 @controller.action('Close file dialog', requires_browser=True)
-async def close_file_dialog(browser: Browser):
+async def close_file_dialog(browser: BrowserContext):
 	page = await browser.get_current_page()
 	await page.keyboard.press('Escape')
 

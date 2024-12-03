@@ -8,17 +8,18 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
-	BrowserContext,
+	BrowserContext as PlaywrightBrowserContext,
+)
+from playwright.async_api import (
 	ElementHandle,
 	FrameLocator,
 	Page,
-	Playwright,
-	async_playwright,
 )
 
 from browser_use.browser.views import BrowserError, BrowserState, TabInfo
@@ -26,31 +27,28 @@ from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
 
+if TYPE_CHECKING:
+	from browser_use.browser.browser import Browser
+
 logger = logging.getLogger(__name__)
 
 
-class BrowserWindowSize(TypedDict):
+class BrowserContextWindowSize(TypedDict):
 	width: int
 	height: int
 
 
 @dataclass
-class BrowserConfig:
+class BrowserContextConfig:
 	"""
-	Configuration for the Browser.
+	Configuration for the BrowserContext.
 
 	Default values:
-		headless: False
-			Whether to run browser in headless mode
-
-		keep_open: False
-			Keep browser open after script finishes
+		cookies_file: None
+			Path to cookies file for persistence
 
 		disable_security: False
 			Disable browser security features
-
-		cookies_file: None
-			Path to cookies file for persistence
 
 		minimum_wait_page_load_time: 0.5
 			Minimum time to wait before getting page state for LLM input
@@ -61,50 +59,100 @@ class BrowserConfig:
 
 		maximum_wait_page_load_time: 5.0
 			Maximum time to wait for page load before proceeding anyway
+
+		browser_window_size: {'width': 1280, 'height': 1024}
+			Default browser window size
+
+		save_recording_path: None
+			Path to save video recordings
+
+		trace_path: None
+			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 	"""
 
-	headless: bool = False
-	keep_open: bool = False
-	disable_security: bool = False
 	cookies_file: str | None = None
 	minimum_wait_page_load_time: float = 0.5
 	wait_for_network_idle_page_load_time: float = 1
 	maximum_wait_page_load_time: float = 5
 
+	disable_security: bool = False
+
 	extra_chromium_args: list[str] = field(default_factory=list)
-	browser_window_size: BrowserWindowSize = field(
+	browser_window_size: BrowserContextWindowSize = field(
 		default_factory=lambda: {'width': 1280, 'height': 1024}
 	)
+
+	save_recording_path: str | None = None
+	trace_path: str | None = None
 
 
 @dataclass
 class BrowserSession:
-	playwright: Playwright
-	browser: PlaywrightBrowser
-	context: BrowserContext
+	context: PlaywrightBrowserContext
 	current_page: Page
 	cached_state: BrowserState
-	# current_page_id: str
-	# opened_tabs: dict[str, TabInfo] = field(default_factory=dict)
 
 
-class Browser:
-	MAXIMUM_WAIT_TIME = 5
-
+class BrowserContext:
 	def __init__(
 		self,
-		config: BrowserConfig,
+		browser: 'Browser',
+		config: BrowserContextConfig = BrowserContextConfig(),
 	):
+		self.context_id = str(uuid.uuid4())
+		logger.debug(f'Initializing new browser context with id: {self.context_id}')
+
 		self.config = config
+		self.browser = browser
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
 
+	async def __aenter__(self):
+		"""Async context manager entry"""
+		await self._initialize_session()
+		return self
+
+	async def __aexit__(self, exc_type, exc_val, exc_tb):
+		"""Async context manager exit"""
+		await self.close()
+
+	async def close(self):
+		"""Close the browser instance"""
+		logger.debug('Closing browser context')
+
+		# check if already closed
+		if self.session is None:
+			return
+
+		await self.save_cookies()
+
+		if self.config.trace_path:
+			await self.session.context.tracing.stop(
+				path=os.path.join(self.config.trace_path, f'{self.context_id}.zip')
+			)
+
+		await self.session.context.close()
+
+	def __del__(self):
+		"""Cleanup when object is destroyed"""
+		if self.session is not None:
+			logger.debug('BrowserContext was not properly closed before destruction')
+			try:
+				# Use sync Playwright method for force cleanup
+				if hasattr(self.session.context, '_impl_obj'):
+					asyncio.run(self.session.context._impl_obj.close())
+				self.session = None
+			except Exception as e:
+				logger.warning(f'Failed to force close browser context: {e}')
+
 	async def _initialize_session(self):
 		"""Initialize the browser session"""
-		playwright = await async_playwright().start()
-		browser = await self._setup_browser(playwright)
-		context = await self._create_context(browser)
+		logger.debug('Initializing browser context')
+
+		playwright_browser = await self.browser.get_playwright_browser()
+
+		context = await self._create_context(playwright_browser)
 		page = await context.new_page()
 
 		# Instead of calling _update_state(), create an empty initial state
@@ -120,8 +168,6 @@ class Browser:
 		)
 
 		self.session = BrowserSession(
-			playwright=playwright,
-			browser=browser,
 			context=context,
 			current_page=page,
 			cached_state=initial_state,
@@ -131,7 +177,7 @@ class Browser:
 
 		return self.session
 
-	async def _add_new_page_listener(self, context: BrowserContext):
+	async def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
@@ -151,43 +197,6 @@ class Browser:
 		session = await self.get_session()
 		return session.current_page
 
-	async def _setup_browser(self, playwright: Playwright) -> PlaywrightBrowser:
-		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
-		try:
-			disable_security_args = []
-			if self.config.disable_security:
-				disable_security_args = [
-					'--disable-web-security',
-					'--disable-site-isolation-trials',
-					'--disable-features=IsolateOrigins,site-per-process',
-				]
-
-			browser = await playwright.chromium.launch(
-				headless=self.config.headless,
-				args=[
-					'--no-sandbox',
-					'--disable-blink-features=AutomationControlled',
-					'--disable-infobars',
-					'--disable-background-timer-throttling',
-					'--disable-popup-blocking',
-					'--disable-backgrounding-occluded-windows',
-					'--disable-renderer-backgrounding',
-					'--disable-window-activation',
-					'--disable-focus-on-load',
-					'--no-first-run',
-					'--no-default-browser-check',
-					'--no-startup-window',
-					'--window-position=0,0',
-				]
-				+ disable_security_args
-				+ self.config.extra_chromium_args,
-			)
-
-			return browser
-		except Exception as e:
-			logger.error(f'Failed to initialize Playwright browser: {str(e)}')
-			raise
-
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		context = await browser.new_context(
@@ -199,7 +208,11 @@ class Browser:
 			java_script_enabled=True,
 			bypass_csp=self.config.disable_security,
 			ignore_https_errors=self.config.disable_security,
+			record_video_dir=self.config.save_recording_path,
 		)
+
+		if self.config.trace_path:
+			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
 		# Load cookies if they exist
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
@@ -430,25 +443,6 @@ class Browser:
 		# Sleep remaining time if needed
 		if remaining > 0:
 			await asyncio.sleep(remaining)
-
-	async def close(self, force: bool = False):
-		"""Close the browser instance"""
-
-		# check if already closed
-		if self.session is None:
-			return
-
-		await self.save_cookies()
-
-		if force and not self.config.keep_open:
-			session = await self.get_session()
-			await session.browser.close()
-			await session.playwright.stop()
-
-	def __del__(self):
-		"""Async cleanup when object is destroyed"""
-		if self.session is not None:
-			asyncio.run(self.close(force=True))
 
 	async def navigate_to(self, url: str):
 		"""Navigate to a URL"""
@@ -811,7 +805,7 @@ class Browser:
 		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
-				logger.info(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
+				logger.debug(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
 
 				# Check if the path is a directory and create it if necessary
 				dirname = os.path.dirname(self.config.cookies_file)
