@@ -10,6 +10,8 @@ import sys
 from doctest import OutputChecker
 from pprint import pprint
 
+from browser_use.browser.browser import Browser, BrowserConfig
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
 
@@ -23,7 +25,7 @@ controller = Controller()
 
 # use this test to ask the model questions about the page like
 # which color do you see for bbox labels, list all with their label
-# whats the smallest bboxes with labels
+# whats the smallest bboxes with labels and
 
 
 @controller.registry.action(description='explain what you see on the screen and ask user for input')
@@ -33,10 +35,17 @@ async def explain_screen(text: str) -> str:
 	return answer
 
 
+@controller.registry.action(description='done')
+async def done(text: str) -> str:
+	# pprint(text)
+	return 'call explain_screen'
+
+
 agent = Agent(
 	task='call explain_screen all the time the user asks you questions e.g. about the page like bbox which you see are labels  - your task is to expalin it and get the next question',
 	llm=llm,
 	controller=controller,
+	browser=Browser(config=BrowserConfig(disable_security=True, headless=False)),
 )
 
 
