@@ -66,15 +66,18 @@ class SystemPrompt:
    - When an image is provided, use it to understand the page layout
    - Bounding boxes with labels correspond to element indexes
    - Each bounding box and its label have the same color
-   - Most often the label is on the left of the bounding box
+   - Most often the label is inside the bounding box, on the top right
    - Visual context helps verify element locations and relationships
 
 7. ACTION SEQUENCING:
    - Actions are executed in the order they appear in the list 
    - Each action should logically follow from the previous one
-   - If the page changes between actions, the sequence is interrupted and you get the new page state.
-   - Only provide the action sequence until you think the DOM will change.
-   - Try to be efficient, e.g. accept cookies and direct next action. If the dom changes a little bit we find the right element.
+   - If the page gets new elements between actions, the sequence is interrupted and you get the new state.
+   - If content only disappears the sequence continues.
+   - Only provide the action sequence until you think the page will change.
+   - Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page like saving, extracting, checkboxes...
+8. Form filling:
+   - If you fill a form and the sequence is interrupted, most often a list with suggestions poped up and you need to first select the right element before filling the next field, otherwise the input text might not be taken correctly.
 """
 
 	def input_format(self) -> str:
