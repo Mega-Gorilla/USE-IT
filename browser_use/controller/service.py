@@ -492,11 +492,12 @@ class Controller:
 		"""Execute multiple actions"""
 		results = []
 		changed = False
-		# await browser_context.remove_highlights()
+
 		session = await browser_context.get_session()
 		cached_selector_map = session.cached_state.selector_map
 		cached_att_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
 		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
+		await browser_context.remove_highlights()
 
 		for i, action in enumerate(actions):
 			if changed and action.get_index() is not None:
@@ -505,6 +506,7 @@ class Controller:
 				break
 
 			results.append(await self.act(action, browser_context))
+
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 				break
