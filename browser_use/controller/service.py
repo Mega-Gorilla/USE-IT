@@ -501,6 +501,7 @@ class Controller:
 		for i, action in enumerate(actions):
 			if changed and action.get_index() is not None:
 				# next action requires index but there are new elements on the page
+				logger.info(f'Something new appeared after action {i}')
 				break
 
 			results.append(await self.act(action, browser_context))
