@@ -83,7 +83,7 @@ class Controller:
 				msg = f'🖱️  Clicked element {params.index}: {element_node.xpath}'
 				if len(session.context.pages) > initial_pages:
 					await browser.switch_to_tab(-1)
-				return ActionResult(extracted_content=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(
 					f'Element no longer available with index {params.index} - most likely the page changed'
@@ -103,7 +103,7 @@ class Controller:
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
 			msg = f'⌨️  Input "{params.text}" into {params.index}: {element_node.xpath}'
-			return ActionResult(extracted_content=msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Tab Management Actions
 		@self.registry.action('Switch tab', param_model=SwitchTabAction, requires_browser=True)
@@ -201,6 +201,7 @@ class Controller:
 				break
 
 			results.append(await self.act(action))
+			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 				break
 
