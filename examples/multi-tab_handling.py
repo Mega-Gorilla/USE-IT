@@ -18,7 +18,7 @@ from browser_use import Agent
 # video: https://preview.screen.studio/share/clenCmS6
 llm = ChatOpenAI(model='gpt-4o')
 agent = Agent(
-	task='open 3 tabs with elon musk, trump, and steve jobs, then go back to the first and click on the first link',
+	task='open 3 tabs with elon musk, trump, and steve jobs, then go back to the first and stop',
 	llm=llm,
 )
 
