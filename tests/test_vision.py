@@ -42,7 +42,6 @@ agent = Agent(
 
 async def main():
 	history: AgentHistoryList = await agent.run(20)
-	await controller.browser.close(force=True)
 
 
 asyncio.run(main())

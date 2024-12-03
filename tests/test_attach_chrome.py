@@ -3,8 +3,6 @@ import asyncio
 
 from playwright.async_api import async_playwright
 
-from browser_use.browser.service import BrowserWindowSize
-
 
 async def test_full_screen(start_fullscreen: bool, maximize: bool):
 	async with async_playwright() as p:

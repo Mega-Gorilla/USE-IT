@@ -4,7 +4,7 @@ import logging
 from main_content_extractor import MainContentExtractor
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -25,10 +25,7 @@ logger = logging.getLogger(__name__)
 class Controller:
 	def __init__(
 		self,
-		browser_config: BrowserConfig = BrowserConfig(),
 	):
-		self.browser = Browser(config=browser_config)
-		self.wait_between_actions = browser_config.wait_between_actions
 		self.registry = Registry()
 		self._register_default_actions()
 
@@ -41,7 +38,7 @@ class Controller:
 			param_model=SearchGoogleAction,
 			requires_browser=True,
 		)
-		async def search_google(params: SearchGoogleAction, browser: Browser):
+		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 			await page.goto(f'https://www.google.com/search?q={params.query}')
 			await page.wait_for_load_state()
@@ -49,13 +46,13 @@ class Controller:
 		@self.registry.action(
 			'Navigate to URL in the current tab', param_model=GoToUrlAction, requires_browser=True
 		)
-		async def go_to_url(params: GoToUrlAction, browser: Browser):
+		async def go_to_url(params: GoToUrlAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 			await page.goto(params.url)
 			await page.wait_for_load_state()
 
 		@self.registry.action('Go back', requires_browser=True)
-		async def go_back(browser: Browser):
+		async def go_back(browser: BrowserContext):
 			page = await browser.get_current_page()
 			await page.go_back()
 			await page.wait_for_load_state()
@@ -64,7 +61,7 @@ class Controller:
 		@self.registry.action(
 			'Click element', param_model=ClickElementAction, requires_browser=True
 		)
-		async def click_element(params: ClickElementAction, browser: Browser):
+		async def click_element(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
 			state = session.cached_state
 
@@ -91,7 +88,7 @@ class Controller:
 				return ActionResult(error=str(e))
 
 		@self.registry.action('Input text', param_model=InputTextAction, requires_browser=True)
-		async def input_text(params: InputTextAction, browser: Browser):
+		async def input_text(params: InputTextAction, browser: BrowserContext):
 			session = await browser.get_session()
 			state = session.cached_state
 
@@ -107,7 +104,7 @@ class Controller:
 
 		# Tab Management Actions
 		@self.registry.action('Switch tab', param_model=SwitchTabAction, requires_browser=True)
-		async def switch_tab(params: SwitchTabAction, browser: Browser):
+		async def switch_tab(params: SwitchTabAction, browser: BrowserContext):
 			await browser.switch_to_tab(params.page_id)
 			# Wait for tab to be ready
 			page = await browser.get_current_page()
@@ -116,7 +113,7 @@ class Controller:
 		@self.registry.action(
 			'Open url in new tab', param_model=OpenTabAction, requires_browser=True
 		)
-		async def open_tab(params: OpenTabAction, browser: Browser):
+		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
 
 		# Content Actions
@@ -125,7 +122,7 @@ class Controller:
 			param_model=ExtractPageContentAction,
 			requires_browser=True,
 		)
-		async def extract_content(params: ExtractPageContentAction, browser: Browser):
+		async def extract_content(params: ExtractPageContentAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 
 			content = MainContentExtractor.extract(  # type: ignore
@@ -135,7 +132,7 @@ class Controller:
 			return ActionResult(extracted_content=content)
 
 		@self.registry.action('Complete task', param_model=DoneAction, requires_browser=True)
-		async def done(params: DoneAction, browser: Browser):
+		async def done(params: DoneAction, browser: BrowserContext):
 			session = await browser.get_session()
 			state = session.cached_state
 			return ActionResult(is_done=True, extracted_content=params.text)
@@ -145,7 +142,7 @@ class Controller:
 			param_model=ScrollAction,
 			requires_browser=True,
 		)
-		async def scroll_down(params: ScrollAction, browser: Browser):
+		async def scroll_down(params: ScrollAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, {params.amount});')
@@ -164,7 +161,7 @@ class Controller:
 			param_model=ScrollAction,
 			requires_browser=True,
 		)
-		async def scroll_up(params: ScrollAction, browser: Browser):
+		async def scroll_up(params: ScrollAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, -{params.amount});')
@@ -185,12 +182,14 @@ class Controller:
 		return self.registry.action(description, **kwargs)
 
 	@time_execution_async('--multi-act')
-	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
+	async def multi_act(
+		self, actions: list[ActionModel], browser_context: BrowserContext
+	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
 		changed = False
-		await self.browser.remove_highlights()
-		session = await self.browser.get_session()
+		await browser_context.remove_highlights()
+		session = await browser_context.get_session()
 		cached_selector_map = session.cached_state.selector_map
 		cached_att_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
 		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
@@ -200,15 +199,15 @@ class Controller:
 				# next action requires index but there are new elements on the page
 				break
 
-			results.append(await self.act(action))
+			results.append(await self.act(action, browser_context))
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 				break
 
-			await asyncio.sleep(self.wait_between_actions)
+			await asyncio.sleep(browser_context.config.wait_between_actions)
 			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
-			new_state = await self.browser.get_state()
+			new_state = await browser_context.get_state()
 			new_att_hashes = set(e.hash.attributes_hash for e in new_state.selector_map.values())
 
 			if not new_att_hashes.issubset(cached_att_hashes):
@@ -222,14 +221,14 @@ class Controller:
 		return results
 
 	@time_execution_sync('--act')
-	async def act(self, action: ActionModel) -> ActionResult:
+	async def act(self, action: ActionModel, browser_context: BrowserContext) -> ActionResult:
 		"""Execute an action"""
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
 					# remove highlights
 					result = await self.registry.execute_action(
-						action_name, params, browser=self.browser
+						action_name, params, browser=browser_context
 					)
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)

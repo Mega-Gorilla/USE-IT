@@ -1,12 +1,38 @@
+import asyncio
 import os
 
 import pytest
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
+from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
+
+
+@pytest.fixture(scope='session')
+def event_loop():
+	loop = asyncio.get_event_loop_policy().new_event_loop()
+	yield loop
+	loop.close()
+
+
+@pytest.fixture(scope='session')
+async def browser(event_loop):
+	browser_instance = Browser(
+		config=BrowserConfig(
+			headless=True,
+		)
+	)
+	yield browser_instance
+	await browser_instance.close()
+
+
+@pytest.fixture
+async def context(browser):
+	async with await browser.new_context() as context:
+		yield context
 
 
 @pytest.fixture
@@ -58,11 +84,7 @@ async def controller():
 	def process_multiple_models(model1: SimpleModel, model2: Address):
 		return f'Processed {model1.name} living at {model2.street}, {model2.city}'
 
-	try:
-		yield controller
-	finally:
-		if controller.browser:
-			await controller.browser.close(force=True)
+	yield controller
 
 
 @pytest.fixture

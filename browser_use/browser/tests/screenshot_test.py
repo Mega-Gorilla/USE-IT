@@ -2,7 +2,7 @@ import base64
 
 import pytest
 
-from browser_use.browser.service import Browser, BrowserConfig
+from browser_use.browser.browser import Browser, BrowserConfig
 
 
 @pytest.fixture
