@@ -23,7 +23,7 @@ class SystemPrompt:
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
    {
      "current_state": {
-       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current website and image to check if the previous goal is achieved and why/why not",
+       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are succesful like intended by the task. Ignore the action result. The website is the ground truth. Shortly state why/why not",
        "memory": "Description of what has been done and what you need to remember until the end of the task",
        "next_goal": "What needs to be done with the next actions"
      },
@@ -76,7 +76,7 @@ class SystemPrompt:
    - sometimes labels overlap, so use the context to verify the correct element
 
 7. Form filling:
-   - If you fill a form and the your action sequence is interrupted, most often a list with suggestions poped up and you need to first select the right element from the suggestion list in the new state before filling the next field, otherwise the input text might not be taken correctly.
+   - If you fill a input field and your action sequence is interrupted, most often a list with suggestions poped up under the field and you need to first select the right element from the suggestion list.
 
 8. ACTION SEQUENCING:
    - Actions are executed in the order they appear in the list 
