@@ -182,15 +182,13 @@ class Controller:
 
 		# send keys
 		@self.registry.action(
-			'Send keys like space, enter, backspace, etc. Split by +',
+			'Send strings of special keys like Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. Be aware of different operating systems and their shortcuts',
 			param_model=SendKeysAction,
 			requires_browser=True,
 		)
 		async def send_keys(params: SendKeysAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-			# split by + and send each key
-			for key in params.keys.split('+'):
-				await page.keyboard.press(key.strip())
+			await page.keyboard.press(params.keys)
 
 		@self.registry.action(
 			description='If you dont find something which you want to interact with, scroll to it',
@@ -447,7 +445,7 @@ class Controller:
 		"""Execute multiple actions"""
 		results = []
 		changed = False
-		await browser_context.remove_highlights()
+		# await browser_context.remove_highlights()
 		session = await browser_context.get_session()
 		cached_selector_map = session.cached_state.selector_map
 		cached_att_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
