@@ -13,7 +13,7 @@ from browser_use.browser.context import BrowserContextConfig
 browser = Browser(
 	config=BrowserConfig(
 		disable_security=True,
-		headless=True,
+		headless=False,
 		new_context_config=BrowserContextConfig(save_recording_path='./tmp/recordings'),
 	)
 )

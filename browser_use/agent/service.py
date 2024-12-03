@@ -220,6 +220,7 @@ class Agent:
 			title=state.title,
 			tabs=state.tabs,
 			interacted_element=interacted_element,
+			screenshot=state.screenshot,
 		)
 
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)

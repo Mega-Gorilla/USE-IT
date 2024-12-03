@@ -28,15 +28,11 @@ agent = Agent(
 	task='Find flights on kayak.com from Zurich to Beijing on 25.12.2024 to 02.02.2025',
 	llm=llm,
 	controller=controller,
-	# browser=browser,
 )
 
 
 async def main():
 	history: AgentHistoryList = await agent.run(2)
-	# await controller.browser.close(force=True)
-
-	# await browser.close()
 
 
 asyncio.run(main())
