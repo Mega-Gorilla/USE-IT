@@ -29,7 +29,6 @@ class DoneResult(BaseModel):
 	hours_since_post: int
 
 
-# we overwrite done() with custom output to demonstrate the validator
 @controller.registry.action('Done with task', param_model=DoneResult)
 async def done(params: DoneResult):
 	result = ActionResult(is_done=True, extracted_content=params.model_dump_json())
@@ -39,7 +38,7 @@ async def done(params: DoneResult):
 async def main():
 	task = 'Go to hackernews show hn and give me the number 1 post in the list'
 	model = ChatOpenAI(model='gpt-4o')
-	agent = Agent(task=task, llm=model, controller=controller, validate_output=True)
+	agent = Agent(task=task, llm=model, controller=controller)
 
 	history = await agent.run()
 

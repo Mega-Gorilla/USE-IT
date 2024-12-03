@@ -44,8 +44,8 @@ async def main():
 	task = 'Go to hackernews hn and give me the top 1 post'
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(task=task, llm=model, controller=controller, validate_output=True)
-
-	await agent.run()
+	# NOTE: this should fail to demonstrate the validator
+	await agent.run(max_steps=5)
 
 
 if __name__ == '__main__':
