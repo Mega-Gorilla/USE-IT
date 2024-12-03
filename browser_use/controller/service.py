@@ -118,7 +118,7 @@ class Controller:
 
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
-			msg = f'⌨️  Input "{params.text}" into {params.index}'
+			msg = f'⌨️  Input "{params.text}" into index {params.index}'
 			logger.info(msg + f' - {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
@@ -161,7 +161,6 @@ class Controller:
 
 		@self.registry.action('Complete task', param_model=DoneAction)
 		async def done(params: DoneAction):
-			logger.info(f'🎉  Task completed\n: {params.text}')
 			return ActionResult(is_done=True, extracted_content=params.text)
 
 		@self.registry.action(

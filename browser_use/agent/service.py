@@ -160,11 +160,8 @@ class Agent:
 			)
 			self._last_result = result
 
-			for r in result:
-				if r.is_done:
-					logger.result(f'{r.extracted_content}')
-				elif r.extracted_content:
-					logger.info(f'📄 Result: {r.extracted_content}')
+			if result[-1].is_done:
+				logger.info(f'📄 Result: {result[-1].extracted_content}')
 
 			self.consecutive_failures = 0
 
