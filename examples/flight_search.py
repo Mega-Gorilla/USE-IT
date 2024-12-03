@@ -10,10 +10,6 @@ import sys
 from doctest import OutputChecker
 from pprint import pprint
 
-from browser_use.agent.views import AgentBrain
-from browser_use.dom.history_tree_processor import HistoryTreeProcessor
-from browser_use.dom.views import DOMElementNode, SelectorMap
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
 
