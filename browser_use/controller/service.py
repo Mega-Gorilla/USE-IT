@@ -44,6 +44,9 @@ class Controller:
 			page = await browser.get_current_page()
 			await page.goto(f'https://www.google.com/search?q={params.query}')
 			await page.wait_for_load_state()
+			msg = f'🔍  Searched for "{params.query}" in Google'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
 			'Navigate to URL in the current tab', param_model=GoToUrlAction, requires_browser=True
@@ -52,12 +55,18 @@ class Controller:
 			page = await browser.get_current_page()
 			await page.goto(params.url)
 			await page.wait_for_load_state()
+			msg = f'🔗  Navigated to {params.url}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action('Go back', requires_browser=True)
 		async def go_back(browser: BrowserContext):
 			page = await browser.get_current_page()
 			await page.go_back()
 			await page.wait_for_load_state()
+			msg = '🔙  Navigated back'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Element Interaction Actions
 		@self.registry.action(
@@ -79,8 +88,12 @@ class Controller:
 
 			try:
 				await browser._click_element_node(element_node)
-				msg = f'🖱️  Clicked element {params.index}: {element_node.xpath}'
+				msg = f'🖱️  Clicked index {params.index}'
+				logger.info(msg + f' - {element_node.xpath}')
 				if len(session.context.pages) > initial_pages:
+					new_tab_msg = 'New tab opened - switching to it'
+					msg += f' - {new_tab_msg}'
+					logger.info(new_tab_msg)
 					await browser.switch_to_tab(-1)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
@@ -105,7 +118,8 @@ class Controller:
 
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
-			msg = f'⌨️  Input "{params.text}" into {params.index}: {element_node.xpath}'
+			msg = f'⌨️  Input "{params.text}" into {params.index}'
+			logger.info(msg + f' - {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Tab Management Actions
@@ -115,12 +129,18 @@ class Controller:
 			# Wait for tab to be ready
 			page = await browser.get_current_page()
 			await page.wait_for_load_state()
+			msg = f'🔄  Switched to tab {params.page_id}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
 			'Open url in new tab', param_model=OpenTabAction, requires_browser=True
 		)
 		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
+			msg = f'🔗  Opened new tab with {params.url}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Content Actions
 		@self.registry.action(
@@ -135,12 +155,13 @@ class Controller:
 				html=await page.content(),
 				output_format=params.value,
 			)
-			return ActionResult(extracted_content=content)
+			msg = f'📄  Extracted page content\n: {content}\n'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg)
 
-		@self.registry.action('Complete task', param_model=DoneAction, requires_browser=True)
-		async def done(params: DoneAction, browser: BrowserContext):
-			session = await browser.get_session()
-			state = session.cached_state
+		@self.registry.action('Complete task', param_model=DoneAction)
+		async def done(params: DoneAction):
+			logger.info(f'🎉  Task completed\n: {params.text}')
 			return ActionResult(is_done=True, extracted_content=params.text)
 
 		@self.registry.action(
@@ -155,9 +176,11 @@ class Controller:
 			else:
 				await page.keyboard.press('PageDown')
 
-			amount = params.amount if params.amount is not None else 'one page'
+			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
+			msg = f'🔍  Scrolled down the page by {amount}'
+			logger.info(msg)
 			return ActionResult(
-				extracted_content=f'Scrolled down the page by {amount} pixels',
+				extracted_content=msg,
 				include_in_memory=True,
 			)
 
@@ -174,9 +197,11 @@ class Controller:
 			else:
 				await page.keyboard.press('PageUp')
 
-			amount = params.amount if params.amount is not None else 'one page'
+			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
+			msg = f'🔍  Scrolled up the page by {amount}'
+			logger.info(msg)
 			return ActionResult(
-				extracted_content=f'Scrolled up the page by {amount} pixels',
+				extracted_content=msg,
 				include_in_memory=True,
 			)
 
@@ -188,7 +213,11 @@ class Controller:
 		)
 		async def send_keys(params: SendKeysAction, browser: BrowserContext):
 			page = await browser.get_current_page()
+
 			await page.keyboard.press(params.keys)
+			msg = f'⌨️  Sent keys: {params.keys}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
 			description='If you dont find something which you want to interact with, scroll to it',
@@ -229,19 +258,25 @@ class Controller:
 				# Start search from main page
 				if await search_in_frame(page):
 					await asyncio.sleep(0.5)  # Wait for scroll to complete
-					return f'Successfully scrolled to text: {text}'
+					msg = f'🔍  Scrolled to text: {text}'
+					logger.info(msg)
+					return ActionResult(extracted_content=msg, include_in_memory=True)
 
 				# If we get here, text wasn't found in any frame
-				return f"Text '{text}' not found on page or in any frame"
+				msg = f"Text '{text}' not found on page or in any frame"
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 
 			except Exception as e:
-				return f"Failed to scroll to text '{text}': {str(e)}"
+				msg = f"Failed to scroll to text '{text}': {str(e)}"
+				logger.error(msg)
+				return ActionResult(error=msg, include_in_memory=True)
 
 		@self.registry.action(
 			description='Get all options from a native dropdown',
 			requires_browser=True,
 		)
-		async def get_dropdown_options(index: int, browser: BrowserContext) -> str:
+		async def get_dropdown_options(index: int, browser: BrowserContext) -> ActionResult:
 			"""Get all options from a native dropdown"""
 			page = await browser.get_current_page()
 			selector_map = await browser.get_selector_map()
@@ -293,13 +328,19 @@ class Controller:
 					frame_index += 1
 
 				if all_options:
-					return '\n'.join(all_options)
+					msg = '\n'.join(all_options)
+					logger.info(msg)
+					return ActionResult(extracted_content=msg, include_in_memory=True)
 				else:
-					return 'No options found in any frame'
+					msg = 'No options found in any frame for dropdown'
+					logger.info(msg)
+					return ActionResult(extracted_content=msg, include_in_memory=True)
 
 			except Exception as e:
 				logger.error(f'Failed to get dropdown options: {str(e)}')
-				return f'Error getting options: {str(e)}'
+				msg = f'Error getting options: {str(e)}'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
 			description='Select dropdown option for interactive element index by the text of the option you want to select',
@@ -309,7 +350,7 @@ class Controller:
 			index: int,
 			text: str,
 			browser: BrowserContext,
-		) -> str:
+		) -> ActionResult:
 			"""Select dropdown option by the text of the option you want to select"""
 			page = await browser.get_current_page()
 			selector_map = await browser.get_selector_map()
@@ -320,7 +361,8 @@ class Controller:
 				logger.error(
 					f'Element is not a select! Tag: {dom_element.tag_name}, Attributes: {dom_element.attributes}'
 				)
-				return f'Cannot select option: Element with index {index} is a {dom_element.tag_name}, not a select'
+				msg = f'Cannot select option: Element with index {index} is a {dom_element.tag_name}, not a select'
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 
 			logger.debug(f"Attempting to select '{text}' using xpath: {dom_element.xpath}")
 			logger.debug(f'Element attributes: {dom_element.attributes}')
@@ -411,7 +453,11 @@ class Controller:
 							logger.debug(f'Selection result: {result}')
 
 							if result.get('success'):
-								return f"Selected option '{text}' (value={result.get('selectedValue')}) in frame {frame_index}"
+								msg = (
+									f"Selected option '{text}' (value={result.get('selectedValue')}"
+								)
+								logger.info(msg + f' in frame {frame_index}')
+								return ActionResult(extracted_content=msg, include_in_memory=True)
 							else:
 								logger.error(f"Selection failed: {result.get('error')}")
 								if 'availableOptions' in result:
@@ -424,12 +470,14 @@ class Controller:
 
 					frame_index += 1
 
-				return f"Could not select option '{text}' in any frame"
+				msg = f"Could not select option '{text}' in any frame"
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 
 			except Exception as e:
-				logger.error(f'Selection failed: {str(e)}')
-				logger.error(f'Full error context:', exc_info=True)
-				return f'Failed to select dropdown option: {str(e)}'
+				msg = f'Selection failed: {str(e)}'
+				logger.error(msg)
+				return ActionResult(error=msg, include_in_memory=True)
 
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
