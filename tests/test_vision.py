@@ -10,6 +10,8 @@ import sys
 from doctest import OutputChecker
 from pprint import pprint
 
+import pytest
+
 from browser_use.browser.browser import Browser, BrowserConfig
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,8 +51,6 @@ agent = Agent(
 )
 
 
-async def main():
+@pytest.mark.skip(reason='this is for local testing only')
+async def test_vision():
 	history: AgentHistoryList = await agent.run(20)
-
-
-asyncio.run(main())

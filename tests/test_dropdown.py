@@ -31,15 +31,11 @@ agent = Agent(
 )
 
 
-async def main():
+async def test_dropdown():
 	history: AgentHistoryList = await agent.run(20)
 	# await controller.browser.close(force=True)
 
 	result = history.final_result()
 	assert result is not None
 	assert 'Duck' in result
-	input('Press Enter to close the browser')
 	# await browser.close()
-
-
-asyncio.run(main())
