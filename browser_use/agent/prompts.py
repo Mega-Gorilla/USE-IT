@@ -20,7 +20,7 @@ class SystemPrompt:
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
    {
      "current_state": {
-       "evaluation_previous_goal": "Success|Failed|Unknown - Brief description of why",
+       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current state and image and check if the previous goal is achieved",
        "memory": "Brief description of what has been done-What you need to remember until the end of the task",
        "next_goal": "What needs to be done with the next actions"
      },
@@ -76,6 +76,7 @@ class SystemPrompt:
    - If content only disappears the sequence continues.
    - Only provide the action sequence until you think the page will change.
    - Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page like saving, extracting, checkboxes...
+   - use maximum 10 actions per sequence
 8. Form filling:
    - If you fill a form and the sequence is interrupted, most often a list with suggestions poped up and you need to first select the right element before filling the next field, otherwise the input text might not be taken correctly.
 """
