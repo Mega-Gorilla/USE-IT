@@ -8,20 +8,23 @@ from browser_use.browser.views import BrowserState
 
 
 class SystemPrompt:
-	def __init__(self, action_description: str, current_date: datetime):
+	def __init__(
+		self, action_description: str, current_date: datetime, max_actions_per_step: int = 10
+	):
 		self.default_action_description = action_description
 		self.current_date = current_date
+		self.max_actions_per_step = max_actions_per_step
 
 	def important_rules(self) -> str:
 		"""
 		Returns the important rules for the agent.
 		"""
-		return """
+		text = """
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
    {
      "current_state": {
-       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current state and image and check if the previous goal is achieved",
-       "memory": "Brief description of what has been done-What you need to remember until the end of the task",
+       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current website and image to check if the previous goal is achieved and why/why not",
+       "memory": "Description of what has been done and what you need to remember until the end of the task",
        "next_goal": "What needs to be done with the next actions"
      },
      "action": [
@@ -43,9 +46,11 @@ class SystemPrompt:
        {"click_element": {"index": 3}}
      ]
    - Navigation and extraction: [
+       {"open_new_tab": {}},
        {"go_to_url": {"url": "https://example.com"}},
        {"extract_page_content": {}}
      ]
+
 
 3. ELEMENT INTERACTION:
    - Only use indexes that exist in the provided element list
@@ -60,7 +65,7 @@ class SystemPrompt:
 5. TASK COMPLETION:
    - Use the done action as the last action as soon as the task is complete
    - Don't hallucinate actions
-   - If the user asks for specific information - make sure to include everything in the done function. This is what the user will see.
+   - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
 
 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
@@ -68,18 +73,22 @@ class SystemPrompt:
    - Each bounding box and its label have the same color
    - Most often the label is inside the bounding box, on the top right
    - Visual context helps verify element locations and relationships
+   - sometimes labels overlap, so use the context to verify the correct element
 
-7. ACTION SEQUENCING:
+7. Form filling:
+   - If you fill a form and the your action sequence is interrupted, most often a list with suggestions poped up and you need to first select the right element from the suggestion list in the new state before filling the next field, otherwise the input text might not be taken correctly.
+
+8. ACTION SEQUENCING:
    - Actions are executed in the order they appear in the list 
    - Each action should logically follow from the previous one
-   - If the page gets new elements between actions, the sequence is interrupted and you get the new state.
+   - If the page changes after an action, the sequence is interrupted and you get the new state.
    - If content only disappears the sequence continues.
    - Only provide the action sequence until you think the page will change.
    - Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page like saving, extracting, checkboxes...
-   - use maximum 10 actions per sequence
-8. Form filling:
-   - If you fill a form and the sequence is interrupted, most often a list with suggestions poped up and you need to first select the right element before filling the next field, otherwise the input text might not be taken correctly.
+   - only use multiple actions if it makes sense. 
 """
+		text += f'   - use maximum {self.max_actions_per_step} actions per sequence'
+		return text
 
 	def input_format(self) -> str:
 		return """
@@ -95,7 +104,7 @@ INPUT STRUCTURE:
 Example:
 33[:]<button>Submit Form</button>
 _[:] Non-interactive text
-    45[:]<input>Email field</input>     # Indented to show hierarchy
+
 
 Notes:
 - Only elements with numeric indexes are interactive
@@ -122,7 +131,7 @@ Current date and time: {time_str}
 
 {self.important_rules()}
 
-Remember: Your responses must be valid JSON matching the specified format. Each action in the sequence must be valid and logically connected."""
+Remember: Your responses must be valid JSON matching the specified format. Each action in the sequence must be valid."""
 		return SystemMessage(content=AGENT_PROMPT)
 
 

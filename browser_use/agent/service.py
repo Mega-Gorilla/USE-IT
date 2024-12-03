@@ -68,6 +68,7 @@ class Agent:
 		validate_output: bool = False,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
+		max_actions_per_step: int = 10,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -80,6 +81,7 @@ class Agent:
 		self.max_error_length = max_error_length
 		# Controller setup
 		self.controller = controller
+		self.max_actions_per_step = max_actions_per_step
 
 		# Browser setup
 		self.injected_browser = browser is not None
@@ -116,6 +118,7 @@ class Agent:
 			max_input_tokens=self.max_input_tokens,
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
+			max_actions_per_step=self.max_actions_per_step,
 		)
 
 		# Tracking variables
@@ -243,7 +246,8 @@ class Agent:
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
 		parsed: AgentOutput = response['parsed']
-
+		# cut the number of actions to max_actions_per_step
+		parsed.action = parsed.action[: self.max_actions_per_step]
 		self._log_response(parsed)
 		self.n_steps += 1
 
@@ -258,9 +262,9 @@ class Agent:
 		else:
 			emoji = '🤷'
 
-		logger.info(f'{emoji} Evaluation: {response.current_state.evaluation_previous_goal}')
+		logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
-		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
+		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 		for i, action in enumerate(response.action):
 			logger.info(
 				f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'

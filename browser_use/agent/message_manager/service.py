@@ -35,6 +35,7 @@ class MessageManager:
 		image_tokens: int = 800,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
+		max_actions_per_step: int = 10,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -46,9 +47,13 @@ class MessageManager:
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
+
 		system_message = self.system_prompt_class(
-			self.action_descriptions, current_date=datetime.now()
+			self.action_descriptions,
+			current_date=datetime.now(),
+			max_actions_per_step=max_actions_per_step,
 		).get_system_message()
+
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
 		task_message = HumanMessage(content=f'Your task is: {task}')
