@@ -69,38 +69,35 @@ def read_cv():
 	return ActionResult(extracted_content=text, include_in_memory=True)
 
 
-@controller.action('Upload cv to element - call this function to upload ', requires_browser=True)
+@controller.action(
+	'Upload cv to element - call this function to upload if element is not found, try with different index of the same upload element',
+	requires_browser=True,
+)
 async def upload_cv(index: int, browser: BrowserContext):
-	page = await browser.get_current_page()
 	path = str(CV.absolute())
-	selector_map = await browser.get_selector_map()
-	file_upload_dom_element = selector_map[index].get_file_upload_element()
+	dom_el = await browser.get_dom_element_by_index(index)
 
-	if file_upload_dom_element is None:
+	if dom_el is None:
+		return ActionResult(error=f'No element found at index {index}')
+
+	file_upload_dom_el = dom_el.get_file_upload_element()
+
+	if file_upload_dom_el is None:
 		return ActionResult(error=f'No file upload element found at index {index}')
 
-	file_upload_element = await browser.get_locate_element(file_upload_dom_element)
-	if file_upload_element is None:
+	file_upload_el = await browser.get_locate_element(file_upload_dom_el)
+
+	if file_upload_el is None:
 		return ActionResult(error=f'No file upload element found at index {index}')
 
-	async def attempt_1():
-		try:
-			await file_upload_element.set_input_files(path)
-			return True
-		except Exception as e:
-			logger.debug(f'Error in set_input_files: {str(e)}')
-			return False
-
-	for attempt_func in [attempt_1]:
-		try:
-			if await attempt_func():
-				logger.info(f'Successfully uploaded file to index {index}')
-				return f'Uploaded file to index {index}'
-
-		except Exception as e:
-			logger.debug(f'Error in {attempt_func.__name__}: {str(e)}')
-
-	return ActionResult(error=f'Failed to upload file to index {index}')
+	try:
+		await file_upload_el.set_input_files(path)
+		msg = f'Successfully uploaded file to index {index}'
+		logger.info(msg)
+		return ActionResult(extracted_content=msg)
+	except Exception as e:
+		logger.debug(f'Error in set_input_files: {str(e)}')
+		return ActionResult(error=f'Failed to upload file to index {index}')
 
 
 browser = Browser(
@@ -119,16 +116,18 @@ async def main():
 		'4. please avoid job portals like linkedin, indeed, etc., do everything you should do like uploading cv, motivation letter, etc, if you get stuck simply find a different job'
 		'Rules: make sure to complete the the application, sometimes you need to scroll down or try a different approach'
 		'Make sure to be on the english version of the page'
+		'You can navigate through pages e.g. by scrolling '
 		'5. companies to search for it:'
 	)
 	tasks = [
 		# ground_task + '\n' + 'Google',
 		# ground_task + '\n' + 'Amazon',
-		# ground_task
-		'\n'
-		# + 'Meta go to https://www.metacareers.com/resume/?req=a1KDp00000E2KF8MAN and upload cv with upload_cv',
-		'go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/ and upload my cv with upload_cv to each file uploader!',
 		# ground_task + '\n' + 'Apple',
+		# ground_task + '\n' + 'Microsoft',
+		ground_task
+		+ '\n'
+		+ 'go to https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Taiwan%2C-Remote/Fulfillment-Analyst---New-College-Graduate-2025_JR1988949/apply/autofillWithResume?workerSubType=0c40f6bd1d8f10adf6dae42e46d44a17&workerSubType=ab40a98049581037a3ada55b087049b7 NVIDIA',
+		# ground_task + '\n' + 'Meta',
 	]
 	model = AzureChatOpenAI(
 		model='gpt-4o',
