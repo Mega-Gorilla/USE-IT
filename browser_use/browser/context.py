@@ -862,6 +862,10 @@ class BrowserContext:
 		selector_map = await self.get_selector_map()
 		return await self.get_locate_element(selector_map[index])
 
+	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
+		selector_map = await self.get_selector_map()
+		return selector_map[index]
+
 	async def save_cookies(self):
 		"""Save current cookies to file"""
 		if self.session and self.session.context and self.config.cookies_file:
