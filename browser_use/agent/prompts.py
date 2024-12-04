@@ -23,7 +23,7 @@ class SystemPrompt:
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
    {
      "current_state": {
-       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are succesful like intended by the task. Ignore the action result. The website is the ground truth. Shortly state why/why not",
+       "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are succesful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happend like new suggestions in an input field. Shortly state why/why not",
        "memory": "Description of what has been done and what you need to remember until the end of the task",
        "next_goal": "What needs to be done with the next actions"
      },
