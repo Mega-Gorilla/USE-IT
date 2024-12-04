@@ -40,11 +40,14 @@ class Job(BaseModel):
 	title: str
 	link: str
 	company: str
-	salary: Optional[str] = None
+	fit_score: float
 	location: Optional[str] = None
+	salary: Optional[str] = None
 
 
-@controller.action('Save jobs to file', param_model=Job)
+@controller.action(
+	'Save jobs to file - with a score how well it fits to my profile', param_model=Job
+)
 def save_jobs(job: Job):
 	with open('jobs.csv', 'a', newline='') as f:
 		writer = csv.writer(f)
@@ -83,11 +86,13 @@ async def upload_cv(index: int, browser: BrowserContext):
 	file_upload_dom_el = dom_el.get_file_upload_element()
 
 	if file_upload_dom_el is None:
+		logger.info(f'No file upload element found at index {index}')
 		return ActionResult(error=f'No file upload element found at index {index}')
 
 	file_upload_el = await browser.get_locate_element(file_upload_dom_el)
 
 	if file_upload_el is None:
+		logger.info(f'No file upload element found at index {index}')
 		return ActionResult(error=f'No file upload element found at index {index}')
 
 	try:
@@ -102,31 +107,43 @@ async def upload_cv(index: int, browser: BrowserContext):
 
 browser = Browser(
 	config=BrowserConfig(
-		chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+		chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		disable_security=True,
 	)
 )
 
 
 async def main():
+	# ground_task = (
+	# 	'You are a professional job finder. '
+	# 	'1. Read my cv with read_cv'
+	# 	'2. Read the saved jobs file '
+	# 	'3. start applying to the first link of Amazon '
+	# 	'You can navigate through pages e.g. by scrolling '
+	# 	'Make sure to be on the english version of the page'
+	# )
 	ground_task = (
-		'You are a professional job finder and applyer. '
+		'You are a professional job finder. '
 		'1. Read my cv with read_cv'
-		'2. find machine learning internships which fit to my profile for the asked company'
-		'3. Save all found internships to a file by calling save_jobs'
-		'4. please avoid job portals like linkedin, indeed, etc., do everything you should do like uploading cv, motivation letter, etc, if you get stuck simply find a different job'
-		'Rules: make sure to complete the the application, sometimes you need to scroll down or try a different approach'
-		'Make sure to be on the english version of the page'
-		'You can navigate through pages e.g. by scrolling '
-		'5. companies to search for it:'
+		# '2. Read the saved jobs file '
+		# '3. start applying to the first link of Amazon '
+		# 'You can navigate through pages e.g. by scrolling '
+		'find ml jobs in zürich'
+		# 'Make sure to be on the english version of the page'
 	)
+	# '5. company to search for it:'
+	# '2. find 10 machine learning internships which fit to my profile for the asked company'
+	# '3. Save all found internships to a file by calling save_jobs'
+	# '4. please avoid job portals like linkedin, indeed, etc., do everything you should do like uploading cv, motivation letter, etc, if you get stuck simply find a different job'
+	# 'Rules: make sure to complete the the application, sometimes you need to scroll down or try a different approach'
 	tasks = [
-		# ground_task + '\n' + 'Google',
+		ground_task + '\n' + 'Google',
 		# ground_task + '\n' + 'Amazon',
 		# ground_task + '\n' + 'Apple',
 		# ground_task + '\n' + 'Microsoft',
-		ground_task
-		+ '\n'
-		+ 'go to https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Taiwan%2C-Remote/Fulfillment-Analyst---New-College-Graduate-2025_JR1988949/apply/autofillWithResume?workerSubType=0c40f6bd1d8f10adf6dae42e46d44a17&workerSubType=ab40a98049581037a3ada55b087049b7 NVIDIA',
+		# ground_task
+		# + '\n'
+		# + 'go to https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Taiwan%2C-Remote/Fulfillment-Analyst---New-College-Graduate-2025_JR1988949/apply/autofillWithResume?workerSubType=0c40f6bd1d8f10adf6dae42e46d44a17&workerSubType=ab40a98049581037a3ada55b087049b7 NVIDIA',
 		# ground_task + '\n' + 'Meta',
 	]
 	model = AzureChatOpenAI(

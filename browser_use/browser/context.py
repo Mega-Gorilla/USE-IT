@@ -785,7 +785,7 @@ class BrowserContext:
 			if parent.tag_name == 'iframe':
 				break
 
-		# there can be only one iframe parent (by design of the loop above)
+		# There can be only one iframe parent (by design of the loop above)
 		iframe_parent = [item for item in parents if item.tag_name == 'iframe']
 		if iframe_parent:
 			parent = iframe_parent[0]
@@ -794,12 +794,18 @@ class BrowserContext:
 
 		css_selector = self._enhanced_css_selector_for_element(element)
 
-		if isinstance(current_frame, FrameLocator):
-			return await current_frame.locator(css_selector).element_handle()
-		else:
-			return await current_frame.wait_for_selector(
-				css_selector, timeout=5000, state='visible'
-			)
+		try:
+			if isinstance(current_frame, FrameLocator):
+				return await current_frame.locator(css_selector).element_handle()
+			else:
+				# Try to scroll into view if hidden
+				element_handle = await current_frame.query_selector(css_selector)
+				if element_handle:
+					await element_handle.scroll_into_view_if_needed()
+					return element_handle
+		except Exception as e:
+			logger.error(f'Failed to locate element: {str(e)}')
+			return None
 
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		try:
