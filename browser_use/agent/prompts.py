@@ -23,7 +23,7 @@ class SystemPrompt:
 {{
 	"current_state": {{
 		"valuation_previous_goal": "String starting with "Success", "Failed:" or "Unknown" to evaluate if the previous next_goal is achieved. If failed or unknown describe why.",
-		"memory": "Your memory with things you need to remeber until the end of the task for the user. You can also store overall progress in a bigger task. You have access to this in the next steps.",
+		"memory": "Your memory with things you need to remember until the end of the task for the user. You can also store overall progress in a bigger task. You have access to this in the next steps.",
 		"next_goal": "String describing the next immediate goal which can be achieved with one action"
 	}},
 	"action": {{
