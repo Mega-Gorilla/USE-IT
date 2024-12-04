@@ -723,18 +723,28 @@ class BrowserContext:
 				'autocomplete',
 			}
 
-			# Handle class attributes first (keeping original logic)
+			# Handle class attributes first
 			if 'class' in element.attributes and element.attributes['class']:
 				classes = element.attributes['class'].split()
+				special_classes = []
+				normal_classes = []
+
 				for class_name in classes:
 					if not class_name:
 						continue
-					# Escape special characters in class names
 					if any(char in class_name for char in ':()[],>+~|.# '):
-						# Use attribute contains for special characters
-						css_selector += f'[class*="{class_name}"]'
+						special_classes.append(class_name)
 					else:
-						css_selector += f'.{class_name}'
+						normal_classes.append(class_name)
+
+				# Add normal classes with dot notation
+				if normal_classes:
+					css_selector += '.' + '.'.join(normal_classes)
+
+				# Combine special classes into a single attribute selector
+				if special_classes:
+					class_selector = ' '.join(special_classes)
+					css_selector += f'[class*="{class_selector}"]'
 
 			# Check for unique identifiers
 			for attr in UNIQUE_IDENTIFIERS:
