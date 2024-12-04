@@ -16,6 +16,7 @@ import asyncio
 
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContextConfig
 from browser_use.controller.service import Controller
 
 
@@ -44,18 +45,23 @@ args = parser.parse_args()
 
 llm = get_llm(args.provider)
 
-browser = Browser(config=BrowserConfig(headless=False))
+browser = Browser(
+	config=BrowserConfig(
+		headless=False,
+		disable_security=True,
+		new_context_config=BrowserContextConfig(disable_security=True),
+	)
+)
 
 agent = Agent(
-	task=args.query,
-	llm=llm,
-	controller=Controller(),
-	browser=browser,
+	task=args.query, llm=llm, controller=Controller(), browser=browser, validate_output=True
 )
 
 
 async def main():
 	await agent.run()
+
+	await browser.close()
 
 
 asyncio.run(main())
