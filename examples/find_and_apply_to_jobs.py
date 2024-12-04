@@ -81,70 +81,55 @@ async def upload_cv(index: int, browser: BrowserContext):
 		raise Exception(f'Could not find element at index {index}')
 
 	async def attempt_1():
-		# Direct input[type="file"] approach using the target element
-		try:
-			# Get all file inputs and find the one closest to our target element
-			file_inputs = await page.query_selector_all('input[type="file"]')
-			for input_element in file_inputs:
-				# Check if this input is associated with our target element
-				is_associated = await page.evaluate(
-					"""
-					([input, target]) => {
-						const inputRect = input.getBoundingClientRect();
-						const targetRect = target.getBoundingClientRect();
-						const distance = Math.hypot(
-							inputRect.left - targetRect.left,
-							inputRect.top - targetRect.top
-						);
-						return distance < 200;
-					}
-				""",
-					[input_element, target_element],
-				)
+		is_visible = await target_element.is_visible()
+		if not is_visible:
+			return False
 
-				if is_associated:
-					await input_element.set_input_files(path)
-					return True
-		except Exception as e:
-			logger.error(f'Attempt 1 failed: {str(e)}')
+		# First check if element is a file input
+		tag_name = await target_element.evaluate('el => el.tagName.toLowerCase()')
+		if tag_name == 'input' and await target_element.evaluate("el => el.type === 'file'"):
+			await target_element.set_input_files(path)
+			return True
+
 		return False
 
 	async def attempt_2():
-		try:
-			is_visible = await target_element.is_visible()
-			if not is_visible:
-				return False
+		# Direct input[type="file"] approach using the target element
+		# Get all file inputs and find the one closest to our target element
+		file_inputs = await page.query_selector_all('input[type="file"]')
 
-			# First check if element is a file input
-			tag_name = await target_element.evaluate('el => el.tagName.toLowerCase()')
-			if tag_name == 'input' and await target_element.evaluate("el => el.type === 'file'"):
-				await target_element.set_input_files(path)
-				return True
+		for input_element in file_inputs:
+			# Check if this input is associated with our target element
+			is_associated = await page.evaluate(
+				"""
+				([input, target]) => {
+					const inputRect = input.getBoundingClientRect();
+					const targetRect = target.getBoundingClientRect();
+					const distance = Math.hypot(
+						inputRect.left - targetRect.left,
+						inputRect.top - targetRect.top
+					);
+					return distance < 200;
+				}
+			""",
+				[input_element, target_element],
+			)
 
-			# If not, try click and file chooser
-			async with page.expect_file_chooser(timeout=5000) as fc_info:
-				await target_element.click()
-				file_chooser = await fc_info.value
-				await file_chooser.set_files(path)
+			if is_associated:
+				await input_element.set_input_files(path)
 				return True
-		except Exception as e:
-			logger.error(f'Attempt 2 failed: {str(e)}')
 		return False
 
-		# Try each method with retries
-
-	for attempt_func in [attempt_2, attempt_1]:
+	for attempt_func in [attempt_1, attempt_2]:
 		try:
 			if await attempt_func():
-				logger.info(
-					f'Successfully uploaded file to index {index} using {attempt_func.__name__}'
-				)
+				logger.info(f'Successfully uploaded file to index {index}')
 				return f'Uploaded file to index {index}'
 
 		except Exception as e:
-			logger.error(f'Error in {attempt_func.__name__}: {str(e)}')
+			logger.debug(f'Error in {attempt_func.__name__}: {str(e)}')
 
-	raise Exception('Failed to upload file to index {index}')
+	return ActionResult(error=f'Failed to upload file to index {index}')
 
 
 browser = Browser(
