@@ -66,7 +66,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		include_attributes: list[str] = [],
+		include_attributes: list[str] = ['title', 'type', 'name'],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 	):
@@ -160,7 +160,7 @@ class Agent:
 			)
 			self._last_result = result
 
-			if result[-1].is_done:
+			if len(result) > 0 and result[-1].is_done:
 				logger.info(f'📄 Result: {result[-1].extracted_content}')
 
 			self.consecutive_failures = 0

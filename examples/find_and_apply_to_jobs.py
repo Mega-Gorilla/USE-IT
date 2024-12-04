@@ -69,58 +69,29 @@ def read_cv():
 	return ActionResult(extracted_content=text, include_in_memory=True)
 
 
-@controller.action(
-	'Upload cv to index - dont click the index - only call this function', requires_browser=True
-)
+@controller.action('Upload cv to element - call this function to upload ', requires_browser=True)
 async def upload_cv(index: int, browser: BrowserContext):
 	page = await browser.get_current_page()
 	path = str(CV.absolute())
-	target_element = await browser.get_element_by_index(index)
+	selector_map = await browser.get_selector_map()
+	file_upload_dom_element = selector_map[index].get_file_upload_element()
 
-	if not target_element:
-		raise Exception(f'Could not find element at index {index}')
+	if file_upload_dom_element is None:
+		return ActionResult(error=f'No file upload element found at index {index}')
+
+	file_upload_element = await browser.get_locate_element(file_upload_dom_element)
+	if file_upload_element is None:
+		return ActionResult(error=f'No file upload element found at index {index}')
 
 	async def attempt_1():
-		is_visible = await target_element.is_visible()
-		if not is_visible:
+		try:
+			await file_upload_element.set_input_files(path)
+			return True
+		except Exception as e:
+			logger.debug(f'Error in set_input_files: {str(e)}')
 			return False
 
-		# First check if element is a file input
-		tag_name = await target_element.evaluate('el => el.tagName.toLowerCase()')
-		if tag_name == 'input' and await target_element.evaluate("el => el.type === 'file'"):
-			await target_element.set_input_files(path)
-			return True
-
-		return False
-
-	async def attempt_2():
-		# Direct input[type="file"] approach using the target element
-		# Get all file inputs and find the one closest to our target element
-		file_inputs = await page.query_selector_all('input[type="file"]')
-
-		for input_element in file_inputs:
-			# Check if this input is associated with our target element
-			is_associated = await page.evaluate(
-				"""
-				([input, target]) => {
-					const inputRect = input.getBoundingClientRect();
-					const targetRect = target.getBoundingClientRect();
-					const distance = Math.hypot(
-						inputRect.left - targetRect.left,
-						inputRect.top - targetRect.top
-					);
-					return distance < 200;
-				}
-			""",
-				[input_element, target_element],
-			)
-
-			if is_associated:
-				await input_element.set_input_files(path)
-				return True
-		return False
-
-	for attempt_func in [attempt_1, attempt_2]:
+	for attempt_func in [attempt_1]:
 		try:
 			if await attempt_func():
 				logger.info(f'Successfully uploaded file to index {index}')

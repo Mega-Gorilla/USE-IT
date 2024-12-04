@@ -34,11 +34,16 @@ class BrowserConfig:
 
 		wss_url: None
 			Connect to a browser instance via WebSocket
+
+		chrome_instance_path: None
+			Path to a Chrome instance to use to connect to your normal browser
+			e.g. '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome'
 	"""
 
 	headless: bool = False
-	disable_security: bool = False
+	disable_security: bool = True
 	extra_chromium_args: list[str] = field(default_factory=list)
+	chrome_instance_path: str | None = None
 	wss_url: str | None = None
 
 	new_context_config: BrowserContextConfig = field(default_factory=BrowserContextConfig)
@@ -91,7 +96,44 @@ class Browser:
 		if self.config.wss_url:
 			browser = await playwright.chromium.connect(self.config.wss_url)
 			return browser
+		elif self.config.chrome_instance_path:
+			import subprocess
 
+			import requests
+
+			try:
+				# Check if browser is already running
+				response = requests.get('http://localhost:9222/json/version', timeout=2)
+				if response.status_code == 200:
+					logger.info('Reusing existing Chrome instance')
+					browser = await playwright.chromium.connect_over_cdp(
+						endpoint_url='http://localhost:9222',
+						timeout=20000,  # 20 second timeout for connection
+					)
+					return browser
+			except requests.ConnectionError:
+				logger.debug('No existing Chrome instance found, starting a new one')
+
+			# Start a new Chrome instance
+			subprocess.Popen(
+				[
+					self.config.chrome_instance_path,
+					'--remote-debugging-port=9222',
+				],
+				stdout=subprocess.DEVNULL,
+				stderr=subprocess.DEVNULL,
+			)
+
+			# Attempt to connect again after starting a new instance
+			try:
+				browser = await playwright.chromium.connect_over_cdp(
+					endpoint_url='http://localhost:9222',
+					timeout=20000,  # 20 second timeout for connection
+				)
+				return browser
+			except Exception as e:
+				logger.error(f'Failed to start a new Chrome instance: {str(e)}')
+				raise
 		else:
 			try:
 				disable_security_args = []
@@ -118,6 +160,7 @@ class Browser:
 						'--no-default-browser-check',
 						'--no-startup-window',
 						'--window-position=0,0',
+						'--window-size=3000,3000',
 					]
 					+ disable_security_args
 					+ self.config.extra_chromium_args,

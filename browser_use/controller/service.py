@@ -84,12 +84,19 @@ class Controller:
 			element_node = state.selector_map[params.index]
 			initial_pages = len(session.context.pages)
 
+			# if element has file uploader then dont click
+			if await browser.is_file_uploader(element_node):
+				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
+
 			msg = None
 
 			try:
 				await browser._click_element_node(element_node)
 				msg = f'🖱️  Clicked index {params.index}'
-				logger.info(msg + f' - {element_node.xpath}')
+				logger.info(msg)
+				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(session.context.pages) > initial_pages:
 					new_tab_msg = 'New tab opened - switching to it'
 					msg += f' - {new_tab_msg}'
@@ -119,7 +126,8 @@ class Controller:
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
 			msg = f'⌨️  Input "{params.text}" into index {params.index}'
-			logger.info(msg + f' - {element_node.xpath}')
+			logger.info(msg)
+			logger.debug(f'Element xpath: {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Tab Management Actions
@@ -500,10 +508,26 @@ class Controller:
 		await browser_context.remove_highlights()
 
 		for i, action in enumerate(actions):
-			if changed and action.get_index() is not None:
-				# next action requires index but there are new elements on the page
-				logger.info(f'Something new appeared after action {i}')
-				break
+			if action.get_index() is not None and i != 0:
+				new_state = await browser_context.get_state()
+				new_att_hashes = set(
+					e.hash.attributes_hash for e in new_state.selector_map.values()
+				)
+
+				if not new_att_hashes.issubset(cached_att_hashes):
+					logger.debug(f'Attributes changed - stopping after {i + 1} actions')
+					changed = True
+				new_path_hashes = set(
+					e.hash.branch_path_hash for e in new_state.selector_map.values()
+				)
+				if not new_path_hashes.issubset(cached_path_hashes):
+					logger.debug(f'Branch path changed - stopping after {i + 1} actions')
+					changed = True
+
+				if changed:
+					# next action requires index but there are new elements on the page
+					logger.info(f'Something new appeared after action {i}')
+					break
 
 			results.append(await self.act(action, browser_context))
 
@@ -513,17 +537,6 @@ class Controller:
 
 			await asyncio.sleep(browser_context.config.wait_between_actions)
 			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
-
-			new_state = await browser_context.get_state()
-			new_att_hashes = set(e.hash.attributes_hash for e in new_state.selector_map.values())
-
-			if not new_att_hashes.issubset(cached_att_hashes):
-				logger.debug(f'Attributes changed - stopping after {i + 1} actions')
-				changed = True
-			new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
-			if not new_path_hashes.issubset(cached_path_hashes):
-				logger.debug(f'Branch path changed - stopping after {i + 1} actions')
-				changed = True
 
 		return results
 

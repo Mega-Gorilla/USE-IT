@@ -170,7 +170,11 @@ class AgentHistoryList(BaseModel):
 
 	def is_done(self) -> bool:
 		"""Check if the agent is done"""
-		if self.history and self.history[-1].result[-1].is_done:
+		if (
+			self.history
+			and len(self.history[-1].result) > 0
+			and self.history[-1].result[-1].is_done
+		):
 			return self.history[-1].result[-1].is_done
 		return False
 

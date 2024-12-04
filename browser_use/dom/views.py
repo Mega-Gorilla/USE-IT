@@ -130,6 +130,16 @@ class DOMElementNode(DOMBaseNode):
 		process_node(self, 0)
 		return '\n'.join(formatted_text)
 
+	def get_file_upload_element(self) -> Optional['DOMElementNode']:
+		if self.tag_name == 'input' and self.attributes.get('type') == 'file':
+			return self
+		for child in self.children:
+			if isinstance(child, DOMElementNode):
+				result = child.get_file_upload_element()
+				if result:
+					return result
+		return None
+
 
 class ElementTreeSerializer:
 	@staticmethod

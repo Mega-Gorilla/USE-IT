@@ -60,9 +60,14 @@ class BrowserContextConfig:
 		maximum_wait_page_load_time: 5.0
 			Maximum time to wait for page load before proceeding anyway
 
+		wait_between_actions: 1.0
+			Time to wait between multiple per step actions
+
 		browser_window_size: {'width': 1280, 'height': 1024}
 			Default browser window size
 
+		no_viewport: False
+			Disable viewport
 		save_recording_path: None
 			Path to save video recordings
 
@@ -78,8 +83,8 @@ class BrowserContextConfig:
 
 	disable_security: bool = False
 
-	extra_chromium_args: list[str] = field(default_factory=list)
 	browser_window_size: Optional[BrowserContextWindowSize] = None
+	no_viewport: bool = True
 
 	save_recording_path: str | None = None
 	trace_path: str | None = None
@@ -203,18 +208,23 @@ class BrowserContext:
 
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
-		context = await browser.new_context(
-			viewport=self.config.browser_window_size,
-			no_viewport=True,
-			user_agent=(
-				'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-				'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-			),
-			java_script_enabled=True,
-			bypass_csp=self.config.disable_security,
-			ignore_https_errors=self.config.disable_security,
-			record_video_dir=self.config.save_recording_path,
-		)
+		if self.browser.config.chrome_instance_path and len(browser.contexts) > 0:
+			# Connect to existing Chrome instance instead of creating new one
+			context = browser.contexts[0]
+		else:
+			# Original code for creating new context
+			context = await browser.new_context(
+				viewport=self.config.browser_window_size,
+				no_viewport=self.config.no_viewport,
+				user_agent=(
+					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+					'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+				),
+				java_script_enabled=True,
+				bypass_csp=self.config.disable_security,
+				ignore_https_errors=self.config.disable_security,
+				record_video_dir=self.config.save_recording_path,
+			)
 
 		if self.config.trace_path:
 			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
@@ -725,7 +735,7 @@ class BrowserContext:
 			tag_name = element.tag_name or '*'
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
-	async def get_locate_element(self, element: DOMElementNode):
+	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
 		current_frame = await self.get_current_page()
 
 		# Start with the target element and collect all parents
@@ -868,3 +878,35 @@ class BrowserContext:
 					json.dump(cookies, f)
 			except Exception as e:
 				logger.warning(f'Failed to save cookies: {str(e)}')
+
+	async def is_file_uploader(
+		self, element_node: DOMElementNode, max_depth: int = 3, current_depth: int = 0
+	) -> bool:
+		"""Check if element or its children are file uploaders"""
+		if current_depth > max_depth:
+			return False
+
+		# Check current element
+		is_uploader = False
+
+		if not isinstance(element_node, DOMElementNode):
+			return False
+
+		# Check for file input attributes
+		if element_node.tag_name == 'input':
+			is_uploader = (
+				element_node.attributes.get('type') == 'file'
+				or element_node.attributes.get('accept') is not None
+			)
+
+		if is_uploader:
+			return True
+
+		# Recursively check children
+		if element_node.children and current_depth < max_depth:
+			for child in element_node.children:
+				if isinstance(child, DOMElementNode):
+					if await self.is_file_uploader(child, max_depth, current_depth + 1):
+						return True
+
+		return False

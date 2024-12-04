@@ -38,9 +38,9 @@ async def close_file_dialog(browser: BrowserContext):
 
 async def main():
 	sites = [
-		'https://practice.expandtesting.com/upload',
+		'https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/',
 	]
-	task = f'go to {" ".join(sites)} each in new tabs and Upload my file then subbmit extract the page content and go to google and find elon musk and stop'
+	task = f'go to {" ".join(sites)} each in new tabs and Upload my file then subbmit and stop'
 
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(
