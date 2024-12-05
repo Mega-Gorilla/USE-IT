@@ -499,34 +499,21 @@ class Controller:
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
-		changed = False
 
 		session = await browser_context.get_session()
 		cached_selector_map = session.cached_state.selector_map
-		cached_att_hashes = set(e.hash.attributes_hash for e in cached_selector_map.values())
 		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
 		await browser_context.remove_highlights()
 
 		for i, action in enumerate(actions):
 			if action.get_index() is not None and i != 0:
 				new_state = await browser_context.get_state()
-				new_att_hashes = set(
-					e.hash.attributes_hash for e in new_state.selector_map.values()
-				)
-
-				if not new_att_hashes.issubset(cached_att_hashes):
-					logger.debug(f'Attributes changed - stopping after {i + 1} actions')
-					changed = True
 				new_path_hashes = set(
 					e.hash.branch_path_hash for e in new_state.selector_map.values()
 				)
 				if not new_path_hashes.issubset(cached_path_hashes):
-					logger.debug(f'Branch path changed - stopping after {i + 1} actions')
-					changed = True
-
-				if changed:
 					# next action requires index but there are new elements on the page
-					logger.info(f'Something new appeared after action {i}')
+					logger.info(f'Something new appeared after action {i + 1} / {len(actions)}')
 					break
 
 			results.append(await self.act(action, browser_context))
