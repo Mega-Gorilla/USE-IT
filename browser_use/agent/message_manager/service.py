@@ -10,14 +10,12 @@ from langchain_core.messages import (
 	AIMessage,
 	BaseMessage,
 	HumanMessage,
-	SystemMessage,
-	get_buffer_string,
 )
 from langchain_openai import ChatOpenAI
 
 from browser_use.agent.message_manager.views import MessageHistory, MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
-from browser_use.agent.views import ActionResult, AgentOutput
+from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo
 from browser_use.browser.views import BrowserState
 
 logger = logging.getLogger(__name__)
@@ -60,7 +58,10 @@ class MessageManager:
 		self._add_message_with_tokens(task_message)
 
 	def add_state_message(
-		self, state: BrowserState, result: Optional[List[ActionResult]] = None
+		self,
+		state: BrowserState,
+		result: Optional[List[ActionResult]] = None,
+		step_info: Optional[AgentStepInfo] = None,
 	) -> None:
 		"""Add browser state as human message"""
 
@@ -82,6 +83,7 @@ class MessageManager:
 			result,
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
+			step_info=step_info,
 		).get_user_message()
 		self._add_message_with_tokens(state_message)
 
@@ -185,7 +187,7 @@ class MessageManager:
 		if isinstance(self.llm, (ChatOpenAI, ChatAnthropic)):
 			try:
 				tokens = self.llm.get_num_tokens(text)
-			except Exception as e:
+			except Exception:
 				tokens = (
 					len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER
 				)  # Rough estimate if no tokenizer available
