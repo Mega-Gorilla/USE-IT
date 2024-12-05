@@ -125,17 +125,9 @@ async def main():
 	ground_task = (
 		'You are a professional job finder. '
 		'1. Read my cv with read_cv'
-		# '2. Read the saved jobs file '
-		# '3. start applying to the first link of Amazon '
-		# 'You can navigate through pages e.g. by scrolling '
-		'find ml jobs in zürich'
-		# 'Make sure to be on the english version of the page'
+		'find ml internships in and save them to a file'
+		'search at company:'
 	)
-	# '5. company to search for it:'
-	# '2. find 10 machine learning internships which fit to my profile for the asked company'
-	# '3. Save all found internships to a file by calling save_jobs'
-	# '4. please avoid job portals like linkedin, indeed, etc., do everything you should do like uploading cv, motivation letter, etc, if you get stuck simply find a different job'
-	# 'Rules: make sure to complete the the application, sometimes you need to scroll down or try a different approach'
 	tasks = [
 		ground_task + '\n' + 'Google',
 		# ground_task + '\n' + 'Amazon',
