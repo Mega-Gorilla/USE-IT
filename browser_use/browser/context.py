@@ -7,9 +7,10 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, TypedDict
 
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -693,19 +694,23 @@ class BrowserContext:
 
 			# Handle class attributes
 			if 'class' in element.attributes and element.attributes['class']:
+				# Define a regex pattern for valid class names in CSS
+				valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*$')
+
+				# Iterate through the class attribute values
 				classes = element.attributes['class'].split()
 				for class_name in classes:
 					# Skip empty class names
-					if not class_name:
+					if not class_name.strip():
 						continue
 
-					# Escape special characters in class names
-					if any(char in class_name for char in ':()[],>+~|.# '):
-						# Use attribute contains for special characters
-						# css_selector += f'[class*="{class_name}"]'
-						continue
-					else:
+					# Check if the class name is valid
+					if valid_class_name_pattern.match(class_name):
+						# Append the valid class name to the CSS selector
 						css_selector += f'.{class_name}'
+					else:
+						# Skip invalid class names
+						continue
 
 			# Expanded set of safe attributes that are stable and useful for selection
 			SAFE_ATTRIBUTES = {
