@@ -5,7 +5,8 @@ Playwright browser on steroids.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-
+from playwright._impl._api_structures import ProxySettings
+    
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
 	Playwright,
@@ -41,6 +42,7 @@ class BrowserConfig:
 	extra_chromium_args: list[str] = field(default_factory=list)
 	wss_url: str | None = None
 
+	proxy: ProxySettings | None = field(default=None)
 	new_context_config: BrowserContextConfig = field(default_factory=BrowserContextConfig)
 
 
@@ -121,6 +123,7 @@ class Browser:
 					]
 					+ disable_security_args
 					+ self.config.extra_chromium_args,
+					proxy=self.config.proxy
 				)
 
 				return browser
