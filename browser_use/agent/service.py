@@ -170,6 +170,8 @@ class Agent:
 			self._last_result = result
 
 		finally:
+			if not result:
+				return
 			for r in result:
 				if r.error:
 					self.telemetry.capture(
