@@ -66,7 +66,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		include_attributes: list[str] = ['title', 'type', 'name', 'role', 'tabindex'],
+		include_attributes: list[str] = ['title', 'type', 'name', 'role', 'tabindex', 'aria-label'],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 	):
