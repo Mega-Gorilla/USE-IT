@@ -233,18 +233,27 @@ class Controller:
 		async def scroll_to_text(text: str, browser: BrowserContext):  # type: ignore
 			page = await browser.get_current_page()
 			try:
-				# Use Playwright's built-in text content selector
-				element = page.get_by_text(text, exact=False)
+				# Try different locator strategies
+				locators = [
+					page.get_by_text(text, exact=False),
+					page.locator(f'text={text}'),
+					page.locator(f"//*[contains(text(), '{text}')]"),
+				]
 
-				# Check if element exists and scroll to it
-				if await element.count() > 0:
-					await element.scroll_into_view_if_needed()
-					await asyncio.sleep(0.5)  # Wait for scroll to complete
-					msg = f'🔍  Scrolled to text: {text}'
-					logger.info(msg)
-					return ActionResult(extracted_content=msg, include_in_memory=True)
+				for locator in locators:
+					try:
+						# First check if element exists and is visible
+						if await locator.count() > 0 and await locator.first.is_visible():
+							await locator.first.scroll_into_view_if_needed()
+							await asyncio.sleep(0.5)  # Wait for scroll to complete
+							msg = f'🔍  Scrolled to text: {text}'
+							logger.info(msg)
+							return ActionResult(extracted_content=msg, include_in_memory=True)
+					except Exception as e:
+						logger.debug(f'Locator attempt failed: {str(e)}')
+						continue
 
-				msg = f"Text '{text}' not found on page"
+				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 
