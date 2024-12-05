@@ -61,6 +61,7 @@ class SystemPrompt:
    - If no suitable elements exist, use other functions to complete the task
    - If stuck, try alternative approaches
    - Handle popups/cookies by accepting or closing them
+   - Use scroll to find elements you are looking for
 
 5. TASK COMPLETION:
    - Use the done action as the last action as soon as the task is complete

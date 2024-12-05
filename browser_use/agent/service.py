@@ -66,7 +66,18 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		include_attributes: list[str] = ['title', 'type', 'name', 'role', 'tabindex', 'aria-label'],
+		include_attributes: list[str] = [
+			'title',
+			'type',
+			'name',
+			'role',
+			'tabindex',
+			'aria-label',
+			'placeholder',
+			'value',
+			'alt',
+			'aria-expanded',
+		],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 	):
@@ -365,7 +376,8 @@ class Agent:
 		system_msg = (
 			f'You are a validator of an agent who interacts with a browser. '
 			f'Validate if the output of last action is what the user wanted and if the task is completed. '
-			f'If the task is unclear defined, you can let it pass. But if something is missing or the image does not show what was requested dont let it pass.'
+			f'If the task is unclear defined, you can let it pass. But if something is missing or the image does not show what was requested dont let it pass. '
+			f'Try to understand the page and help the model with suggestions like scroll, do x, ... to get the solution right. '
 			f'Task to validate: {self.task}. Return a JSON object with 2 keys: is_valid and reason. '
 			f'is_valid is a boolean that indicates if the output is correct. '
 			f'reason is a string that explains why it is valid or not.'
