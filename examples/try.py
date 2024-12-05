@@ -16,7 +16,6 @@ import asyncio
 
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.context import BrowserContextConfig
 from browser_use.controller.service import Controller
 
 
@@ -50,7 +49,7 @@ llm = get_llm(args.provider)
 
 browser = Browser(
 	config=BrowserConfig(
-		chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	)
 )
 
@@ -60,7 +59,7 @@ agent = Agent(
 
 
 async def main():
-	await agent.run()
+	await agent.run(max_steps=25)
 
 	await browser.close()
 

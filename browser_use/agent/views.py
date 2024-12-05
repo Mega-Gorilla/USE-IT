@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from browser_use.browser.views import BrowserState, BrowserStateHistory
+from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.dom.history_tree_processor.service import (
 	DOMElementNode,
@@ -16,6 +17,12 @@ from browser_use.dom.history_tree_processor.service import (
 	HistoryTreeProcessor,
 )
 from browser_use.dom.views import SelectorMap
+
+
+@dataclass
+class AgentStepInfo:
+	step_number: int
+	max_steps: int
 
 
 class ActionResult(BaseModel):

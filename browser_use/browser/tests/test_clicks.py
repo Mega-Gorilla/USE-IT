@@ -20,7 +20,9 @@ async def test_highlight_elements():
 		# await page.goto('https://google.com/search?q=elon+musk')
 		# await page.goto('https://kayak.com')
 		# await page.goto('https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_iframe')
-		await page.goto('https://dictionary.cambridge.org')
+		# await page.goto('https://dictionary.cambridge.org')
+		# await page.goto('https://github.com')
+		await page.goto('https://huggingface.co/')
 
 		await asyncio.sleep(1)
 

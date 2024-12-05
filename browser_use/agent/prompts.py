@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.views import ActionResult, AgentStepInfo
 from browser_use.browser.views import BrowserState
 
 
@@ -66,6 +66,7 @@ class SystemPrompt:
    - Use the done action as the last action as soon as the task is complete
    - Don't hallucinate actions
    - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
+   - If you are running out of steps (current step), think about speeding it up, and ALWAYS use the done action as the last action.
 
 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
@@ -151,14 +152,24 @@ class AgentMessagePrompt:
 		result: Optional[List[ActionResult]] = None,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
+		step_info: Optional[AgentStepInfo] = None,
 	):
 		self.state = state
 		self.result = result
 		self.max_error_length = max_error_length
 		self.include_attributes = include_attributes
+		self.step_info = step_info
 
 	def get_user_message(self) -> HumanMessage:
+		if self.step_info:
+			step_info_description = (
+				f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
+			)
+		else:
+			step_info_description = ''
+
 		state_description = f"""
+{step_info_description}
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}

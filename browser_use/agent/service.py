@@ -26,6 +26,7 @@ from browser_use.agent.views import (
 	AgentHistory,
 	AgentHistoryList,
 	AgentOutput,
+	AgentStepInfo,
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -139,7 +140,7 @@ class Agent:
 		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
 
 	@time_execution_async('--step')
-	async def step(self) -> None:
+	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
@@ -148,7 +149,7 @@ class Agent:
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
-			self.message_manager.add_state_message(state, self._last_result)
+			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
 			model_output = await self.get_next_action(input_messages)
 			self._save_conversation(input_messages, model_output)
@@ -324,7 +325,9 @@ class Agent:
 				await self.step()
 
 				if self.history.is_done():
-					if self.validate_output:
+					if (
+						self.validate_output and step < max_steps - 1
+					):  # if last step, we dont need to validate
 						if not await self._validate_output():
 							continue
 
