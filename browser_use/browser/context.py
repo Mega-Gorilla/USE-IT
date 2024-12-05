@@ -617,7 +617,7 @@ class BrowserContext:
 
 	def _enhanced_css_selector_for_element(self, element: DOMElementNode) -> str:
 		"""
-		Creates a CSS selector for a DOM element, prioritizing unique identifiers.
+		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
 
 		Args:
 			element: The DOM element to create a selector for
@@ -629,94 +629,82 @@ class BrowserContext:
 			# Get base selector from XPath
 			css_selector = self._convert_simple_xpath_to_css_selector(element.xpath)
 
-			# First priority - unique identifiers
-			UNIQUE_IDENTIFIERS = {'id', 'data-testid', 'data-id', 'data-qa', 'data-cy', 'data-test'}
-
-			# Second priority - attributes that often contain unique values
-			SEMI_UNIQUE_ATTRIBUTES = {
-				'href',
-				'src',
-				'value',
-				'name',
-				'for',
-				'aria-controls',
-				'action',
-				'data-url',
-				'data-href',
-			}
-
-			# Third priority - descriptive attributes
-			DESCRIPTIVE_ATTRIBUTES = {
-				'type',
-				'role',
-				'aria-label',
-				'title',
-				'placeholder',
-				'alt',
-				'aria-expanded',
-				'aria-haspopup',
-				'aria-selected',
-				'aria-current',
-				'aria-pressed',
-				'autocomplete',
-			}
-
-			# Handle class attributes first
+			# Handle class attributes
 			if 'class' in element.attributes and element.attributes['class']:
 				classes = element.attributes['class'].split()
-				special_classes = []
-				normal_classes = []
-
 				for class_name in classes:
+					# Skip empty class names
 					if not class_name:
 						continue
+
+					# Escape special characters in class names
 					if any(char in class_name for char in ':()[],>+~|.# '):
-						special_classes.append(class_name)
+						# Use attribute contains for special characters
+						css_selector += f'[class*="{class_name}"]'
 					else:
-						normal_classes.append(class_name)
+						css_selector += f'.{class_name}'
 
-				# Add normal classes with dot notation
-				if normal_classes:
-					css_selector += '.' + '.'.join(normal_classes)
+			# Expanded set of safe attributes that are stable and useful for selection
+			SAFE_ATTRIBUTES = {
+				# Standard HTML attributes
+				'id',
+				'name',
+				'type',
+				'value',
+				'placeholder',
+				# Accessibility attributes
+				'aria-label',
+				'aria-labelledby',
+				'aria-describedby',
+				'role',
+				# Common form attributes
+				'for',
+				'autocomplete',
+				'required',
+				'readonly',
+				# Media attributes
+				'alt',
+				'title',
+				'src',
+				# Data attributes (if they're stable in your application)
+				'data-testid',
+				'data-id',
+				'data-qa',
+				'data-cy',
+				# Custom stable attributes (add any application-specific ones)
+				'href',
+				'target',
+			}
 
-				# Combine special classes into a single attribute selector
-				if special_classes:
-					class_selector = ' '.join(special_classes)
-					css_selector += f'[class*="{class_selector}"]'
+			# Handle other attributes
+			for attribute, value in element.attributes.items():
+				if attribute == 'class':
+					continue
 
-			# Check for unique identifiers
-			for attr in UNIQUE_IDENTIFIERS:
-				if attr in element.attributes and element.attributes[attr]:
-					value = element.attributes[attr].strip()
-					if value:
-						value = value.replace('"', '\\"')
-						return f'{css_selector}[{attr}="{value}"]'
+				# Skip invalid attribute names
+				if not attribute.strip():
+					continue
 
-			# Then check semi-unique attributes
-			for attr in SEMI_UNIQUE_ATTRIBUTES:
-				if attr in element.attributes and element.attributes[attr]:
-					value = element.attributes[attr].strip()
-					if value and len(value) < 100:  # Avoid extremely long values
-						value = value.replace('"', '\\"')
-						css_selector += f'[{attr}="{value}"]'
-						return css_selector  # Return early as these are usually unique enough
+				if attribute not in SAFE_ATTRIBUTES:
+					continue
 
-			# Finally, add descriptive attributes if selector isn't unique enough
-			attr_count = 0
-			for attr in DESCRIPTIVE_ATTRIBUTES:
-				if attr_count >= 2:  # Limit to 2 descriptive attributes
-					break
-				if attr in element.attributes and element.attributes[attr]:
-					value = element.attributes[attr].strip()
-					if value and len(value) < 50:  # Skip very long values
-						value = value.replace('"', '\\"')
-						css_selector += f'[{attr}="{value}"]'
-						attr_count += 1
+				# Escape special characters in attribute names
+				safe_attribute = attribute.replace(':', r'\:')
+
+				# Handle different value cases
+				if value == '':
+					css_selector += f'[{safe_attribute}]'
+				elif any(char in value for char in '"\'<>`'):
+					# Use contains for values with special characters
+					safe_value = value.replace('"', '\\"')
+					css_selector += f'[{safe_attribute}*="{safe_value}"]'
+				else:
+					css_selector += f'[{safe_attribute}="{value}"]'
 
 			return css_selector
 
 		except Exception:
-			# Fallback to a simple but unique selector
+			# Fallback to a more basic selector if something goes wrong
 			tag_name = element.tag_name or '*'
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
