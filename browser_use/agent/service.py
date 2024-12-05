@@ -145,6 +145,7 @@ class Agent:
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
 		model_output = None
+		result: list[ActionResult] = []
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)

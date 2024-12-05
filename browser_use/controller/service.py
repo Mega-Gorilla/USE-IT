@@ -110,7 +110,7 @@ class Controller:
 				return ActionResult(error=str(e))
 
 		@self.registry.action(
-			'Input text into interactive element',
+			'Input text into a input interactive element',
 			param_model=InputTextAction,
 			requires_browser=True,
 		)
@@ -233,44 +233,18 @@ class Controller:
 		async def scroll_to_text(text: str, browser: BrowserContext):  # type: ignore
 			page = await browser.get_current_page()
 			try:
-				# Function to search in a frame and its nested frames
+				# Use Playwright's built-in text content selector
+				element = page.get_by_text(text, exact=False)
 
-				async def search_in_frame(frame: Page):
-					try:
-						# Search in current frame
-						elements = frame.locator(f"//*[contains(text(), '{text}')]")
-						count = await elements.count()
-						if count > 0:
-							element = elements.first
-							element_handle = await element.element_handle()
-							# Execute JavaScript to scroll to element
-							await frame.evaluate(
-								"element => element.scrollIntoView({behavior: 'smooth', block: 'center'})",
-								element_handle,
-							)
-							return True
-
-						# Search in nested frames
-						child_frames = frame.frames
-						for child_frame in child_frames:
-							if await search_in_frame(child_frame):
-								return True
-
-						return False
-
-					except Exception as e:
-						print(f'Error searching in frame: {str(e)}')
-						return False
-
-				# Start search from main page
-				if await search_in_frame(page):
+				# Check if element exists and scroll to it
+				if await element.count() > 0:
+					await element.scroll_into_view_if_needed()
 					await asyncio.sleep(0.5)  # Wait for scroll to complete
 					msg = f'🔍  Scrolled to text: {text}'
 					logger.info(msg)
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 
-				# If we get here, text wasn't found in any frame
-				msg = f"Text '{text}' not found on page or in any frame"
+				msg = f"Text '{text}' not found on page"
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 
