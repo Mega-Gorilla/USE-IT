@@ -31,8 +31,10 @@ def get_llm(provider: str):
 		raise ValueError(f'Unsupported provider: {provider}')
 
 
+task = 'go to https://ui.shadcn.com/examples/forms and fill out the form'
+
 parser = argparse.ArgumentParser()
-parser.add_argument('query', type=str, help='The query to process')
+parser.add_argument('--query', type=str, help='The query to process', default=task)
 parser.add_argument(
 	'--provider',
 	type=str,
@@ -45,11 +47,10 @@ args = parser.parse_args()
 
 llm = get_llm(args.provider)
 
+
 browser = Browser(
 	config=BrowserConfig(
-		headless=False,
-		disable_security=True,
-		new_context_config=BrowserContextConfig(disable_security=True),
+		chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	)
 )
 
