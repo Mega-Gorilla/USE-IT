@@ -640,7 +640,8 @@ class BrowserContext:
 					# Escape special characters in class names
 					if any(char in class_name for char in ':()[],>+~|.# '):
 						# Use attribute contains for special characters
-						css_selector += f'[class*="{class_name}"]'
+						# css_selector += f'[class*="{class_name}"]'
+						continue
 					else:
 						css_selector += f'.{class_name}'
 
