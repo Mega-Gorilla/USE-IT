@@ -36,7 +36,6 @@ from browser_use.dom.history_tree_processor.service import (
 	DOMHistoryElement,
 	HistoryTreeProcessor,
 )
-from browser_use.dom.views import DOMElementNode
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
@@ -66,7 +65,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		include_attributes: list[str] = ['title', 'type', 'name'],
+		include_attributes: list[str] = ['title', 'type', 'name', 'role', 'tabindex'],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 	):
