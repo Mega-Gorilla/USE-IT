@@ -30,7 +30,8 @@ def get_llm(provider: str):
 		raise ValueError(f'Unsupported provider: {provider}')
 
 
-task = 'go to https://ui.shadcn.com/examples/forms and fill out the form'
+task = 'Show the solution of y"(z) + sin(y(z)) = 0 from wolframalpha https://www.wolframalpha.com/'
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--query', type=str, help='The query to process', default=task)
