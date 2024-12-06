@@ -126,18 +126,27 @@ class BrowserContext:
 		"""Close the browser instance"""
 		logger.debug('Closing browser context')
 
-		# check if already closed
-		if self.session is None:
-			return
+		try:
+			# check if already closed
+			if self.session is None:
+				return
 
-		await self.save_cookies()
+			await self.save_cookies()
 
-		if self.config.trace_path:
-			await self.session.context.tracing.stop(
-				path=os.path.join(self.config.trace_path, f'{self.context_id}.zip')
-			)
+			if self.config.trace_path:
+				try:
+					await self.session.context.tracing.stop(
+						path=os.path.join(self.config.trace_path, f'{self.context_id}.zip')
+					)
+				except Exception as e:
+					logger.debug(f'Failed to stop tracing: {e}')
 
-		await self.session.context.close()
+			try:
+				await self.session.context.close()
+			except Exception as e:
+				logger.debug(f'Failed to close context: {e}')
+		finally:
+			self.session = None
 
 	def __del__(self):
 		"""Cleanup when object is destroyed"""
