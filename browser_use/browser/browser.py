@@ -136,6 +136,7 @@ class Browser:
 				raise RuntimeError(
 					' To start chrome in Debug mode, you need to close all existing Chrome instances and try again otherwise we can not connect to the instance.'
 				)
+
 		else:
 			try:
 				disable_security_args = []
@@ -162,7 +163,7 @@ class Browser:
 						'--no-default-browser-check',
 						'--no-startup-window',
 						'--window-position=0,0',
-						'--window-size=3000,3000',
+						# '--window-size=3000,3000',
 					]
 					+ disable_security_args
 					+ self.config.extra_chromium_args,
@@ -175,18 +176,25 @@ class Browser:
 
 	async def close(self):
 		"""Close the browser instance"""
-		if self.playwright_browser:
-			await self.playwright_browser.close()
-		if self.playwright:
-			await self.playwright.stop()
+		try:
+			if self.playwright_browser:
+				await self.playwright_browser.close()
+			if self.playwright:
+				await self.playwright.stop()
+		except Exception as e:
+			logger.debug(f'Failed to close browser properly: {e}')
+		finally:
+			self.playwright_browser = None
+			self.playwright = None
 
 	def __del__(self):
 		"""Async cleanup when object is destroyed"""
 		try:
-			loop = asyncio.get_running_loop()
-			if loop.is_running():
-				loop.create_task(self.close())
-			else:
-				asyncio.run(self.close())
-		except RuntimeError:
-			asyncio.run(self.close())
+			if self.playwright_browser or self.playwright:
+				loop = asyncio.get_running_loop()
+				if loop.is_running():
+					loop.create_task(self.close())
+				else:
+					asyncio.run(self.close())
+		except Exception as e:
+			logger.debug(f'Failed to cleanup browser in destructor: {e}')
