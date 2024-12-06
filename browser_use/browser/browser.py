@@ -35,11 +35,16 @@ class BrowserConfig:
 
 		wss_url: None
 			Connect to a browser instance via WebSocket
+
+		chrome_instance_path: None
+			Path to a Chrome instance to use to connect to your normal browser
+			e.g. '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome'
 	"""
 
-	headless: bool = True
-	disable_security: bool = False
+	headless: bool = False
+	disable_security: bool = True
 	extra_chromium_args: list[str] = field(default_factory=list)
+	chrome_instance_path: str | None = None
 	wss_url: str | None = None
 
 	proxy: ProxySettings | None = field(default=None)
@@ -93,6 +98,46 @@ class Browser:
 		if self.config.wss_url:
 			browser = await playwright.chromium.connect(self.config.wss_url)
 			return browser
+		elif self.config.chrome_instance_path:
+			import subprocess
+
+			import requests
+
+			try:
+				# Check if browser is already running
+				response = requests.get('http://localhost:9222/json/version', timeout=2)
+				if response.status_code == 200:
+					logger.info('Reusing existing Chrome instance')
+					browser = await playwright.chromium.connect_over_cdp(
+						endpoint_url='http://localhost:9222',
+						timeout=20000,  # 20 second timeout for connection
+					)
+					return browser
+			except requests.ConnectionError:
+				logger.debug('No existing Chrome instance found, starting a new one')
+
+			# Start a new Chrome instance
+			subprocess.Popen(
+				[
+					self.config.chrome_instance_path,
+					'--remote-debugging-port=9222',
+				],
+				stdout=subprocess.DEVNULL,
+				stderr=subprocess.DEVNULL,
+			)
+
+			# Attempt to connect again after starting a new instance
+			try:
+				browser = await playwright.chromium.connect_over_cdp(
+					endpoint_url='http://localhost:9222',
+					timeout=20000,  # 20 second timeout for connection
+				)
+				return browser
+			except Exception as e:
+				logger.error(f'Failed to start a new Chrome instance.: {str(e)}')
+				raise RuntimeError(
+					' To start chrome in Debug mode, you need to close all existing Chrome instances and try again otherwise we can not connect to the instance.'
+				)
 
 		else:
 			try:
@@ -120,6 +165,7 @@ class Browser:
 						'--no-default-browser-check',
 						'--no-startup-window',
 						'--window-position=0,0',
+						# '--window-size=3000,3000',
 					]
 					+ disable_security_args
 					+ self.config.extra_chromium_args,
@@ -133,18 +179,25 @@ class Browser:
 
 	async def close(self):
 		"""Close the browser instance"""
-		if self.playwright_browser:
-			await self.playwright_browser.close()
-		if self.playwright:
-			await self.playwright.stop()
+		try:
+			if self.playwright_browser:
+				await self.playwright_browser.close()
+			if self.playwright:
+				await self.playwright.stop()
+		except Exception as e:
+			logger.debug(f'Failed to close browser properly: {e}')
+		finally:
+			self.playwright_browser = None
+			self.playwright = None
 
 	def __del__(self):
 		"""Async cleanup when object is destroyed"""
 		try:
-			loop = asyncio.get_running_loop()
-			if loop.is_running():
-				loop.create_task(self.close())
-			else:
-				asyncio.run(self.close())
-		except RuntimeError:
-			asyncio.run(self.close())
+			if self.playwright_browser or self.playwright:
+				loop = asyncio.get_running_loop()
+				if loop.is_running():
+					loop.create_task(self.close())
+				else:
+					asyncio.run(self.close())
+		except Exception as e:
+			logger.debug(f'Failed to cleanup browser in destructor: {e}')

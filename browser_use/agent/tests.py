@@ -62,7 +62,7 @@ def action_registry():
 @pytest.fixture
 def sample_history(action_registry):
 	# Create actions with nested params structure
-	click_action = action_registry(click_element={'index': 1, 'num_clicks': 1})
+	click_action = action_registry(click_element={'index': 1})
 
 	extract_action = action_registry(extract_page_content={'value': 'text'})
 
@@ -72,54 +72,59 @@ def sample_history(action_registry):
 		AgentHistory(
 			model_output=AgentOutput(
 				current_state=AgentBrain(
-					valuation_previous_goal='None', memory='Started task', next_goal='Click button'
+					evaluation_previous_goal='None', memory='Started task', next_goal='Click button'
 				),
-				action=click_action,
+				action=[click_action],
 			),
-			result=ActionResult(is_done=False),
+			result=[ActionResult(is_done=False)],
 			state=BrowserStateHistory(
 				url='https://example.com',
 				title='Page 1',
 				tabs=[TabInfo(url='https://example.com', title='Page 1', page_id=1)],
 				screenshot='screenshot1.png',
+				interacted_element=[],
 			),
 		),
 		AgentHistory(
 			model_output=AgentOutput(
 				current_state=AgentBrain(
-					valuation_previous_goal='Clicked button',
+					evaluation_previous_goal='Clicked button',
 					memory='Button clicked',
 					next_goal='Extract content',
 				),
-				action=extract_action,
+				action=[extract_action],
 			),
-			result=ActionResult(
-				is_done=False,
-				extracted_content='Extracted text',
-				error='Failed to extract completely',
-			),
+			result=[
+				ActionResult(
+					is_done=False,
+					extracted_content='Extracted text',
+					error='Failed to extract completely',
+				)
+			],
 			state=BrowserStateHistory(
 				url='https://example.com/page2',
 				title='Page 2',
 				tabs=[TabInfo(url='https://example.com/page2', title='Page 2', page_id=2)],
 				screenshot='screenshot2.png',
+				interacted_element=[],
 			),
 		),
 		AgentHistory(
 			model_output=AgentOutput(
 				current_state=AgentBrain(
-					valuation_previous_goal='Extracted content',
+					evaluation_previous_goal='Extracted content',
 					memory='Content extracted',
 					next_goal='Finish task',
 				),
-				action=done_action,
+				action=[done_action],
 			),
-			result=ActionResult(is_done=True, extracted_content='Task completed', error=None),
+			result=[ActionResult(is_done=True, extracted_content='Task completed', error=None)],
 			state=BrowserStateHistory(
 				url='https://example.com/page2',
 				title='Page 2',
 				tabs=[TabInfo(url='https://example.com/page2', title='Page 2', page_id=2)],
 				screenshot='screenshot3.png',
+				interacted_element=[],
 			),
 		),
 	]
@@ -161,7 +166,7 @@ def test_all_screenshots(sample_history: AgentHistoryList):
 def test_all_model_outputs(sample_history: AgentHistoryList):
 	outputs = sample_history.model_actions()
 	assert len(outputs) == 3
-	assert outputs[0] == {'click_element': {'index': 1, 'xpath': '//button[1]', 'num_clicks': 1}}
+	assert outputs[0] == {'click_element': {'index': 1, 'xpath': '//button[1]'}}
 	assert outputs[1] == {'extract_page_content': {'value': 'text'}}
 	assert outputs[2] == {'done': {'text': 'Task completed'}}
 
@@ -182,11 +187,9 @@ def test_empty_history():
 
 # Add a test to verify action creation
 def test_action_creation(action_registry):
-	click_action = action_registry(click_element={'index': 1, 'num_clicks': 1})
+	click_action = action_registry(click_element={'index': 1})
 
-	assert click_action.model_dump(exclude_none=True) == {
-		'click_element': {'index': 1, 'num_clicks': 1}
-	}
+	assert click_action.model_dump(exclude_none=True) == {'click_element': {'index': 1}}
 
 
 # run this with:

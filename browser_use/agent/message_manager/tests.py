@@ -194,11 +194,11 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 
 		output = AgentOutput(
 			current_state=AgentBrain(
-				valuation_previous_goal=f'Success in step {i}',
+				evaluation_previous_goal=f'Success in step {i}',
 				memory=f'Memory from step {i}',
 				next_goal=f'Goal for step {i+1}',
 			),
-			action=ActionModel(),
+			action=[ActionModel()],
 		)
 		message_manager._remove_last_state_message()
 		message_manager.add_model_output(output)

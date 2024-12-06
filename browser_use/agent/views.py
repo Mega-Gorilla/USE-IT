@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import json
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from browser_use.browser.views import BrowserState, BrowserStateHistory
+from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
-from browser_use.dom.history_tree_processor import (
+from browser_use.dom.history_tree_processor.service import (
 	DOMElementNode,
 	DOMHistoryElement,
 	HistoryTreeProcessor,
 )
 from browser_use.dom.views import SelectorMap
+
+
+@dataclass
+class AgentStepInfo:
+	step_number: int
+	max_steps: int
 
 
 class ActionResult(BaseModel):
@@ -30,7 +37,7 @@ class ActionResult(BaseModel):
 class AgentBrain(BaseModel):
 	"""Current state of the agent"""
 
-	valuation_previous_goal: str
+	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
 
@@ -44,7 +51,7 @@ class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	current_state: AgentBrain
-	action: ActionModel
+	action: list[ActionModel]
 
 	@staticmethod
 	def type_with_custom_actions(custom_actions: Type[ActionModel]) -> Type['AgentOutput']:
@@ -52,7 +59,7 @@ class AgentOutput(BaseModel):
 		return create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
-			action=(custom_actions, Field(...)),  # Properly annotated field with no default
+			action=(list[custom_actions], Field(...)),  # Properly annotated field with no default
 			__module__=AgentOutput.__module__,
 		)
 
@@ -61,7 +68,7 @@ class AgentHistory(BaseModel):
 	"""History item for agent actions"""
 
 	model_output: AgentOutput | None
-	result: ActionResult
+	result: list[ActionResult]
 	state: BrowserStateHistory
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
@@ -69,13 +76,16 @@ class AgentHistory(BaseModel):
 	@staticmethod
 	def get_interacted_element(
 		model_output: AgentOutput, selector_map: SelectorMap
-	) -> DOMHistoryElement | None:
-		index = model_output.action.get_index()
-		if index:
-			el: DOMElementNode = selector_map[index]
-			return HistoryTreeProcessor.convert_dom_element_to_history_element(el)
-
-		return None
+	) -> list[DOMHistoryElement | None]:
+		elements = []
+		for action in model_output.action:
+			index = action.get_index()
+			if index and index in selector_map:
+				el: DOMElementNode = selector_map[index]
+				elements.append(HistoryTreeProcessor.convert_dom_element_to_history_element(el))
+			else:
+				elements.append(None)
+		return elements
 
 	def model_dump(self, **kwargs) -> Dict[str, Any]:
 		"""Custom serialization handling circular references"""
@@ -83,7 +93,9 @@ class AgentHistory(BaseModel):
 		# Handle action serialization
 		model_output_dump = None
 		if self.model_output:
-			action_dump = self.model_output.action.model_dump(exclude_none=True)
+			action_dump = [
+				action.model_dump(exclude_none=True) for action in self.model_output.action
+			]
 			model_output_dump = {
 				'current_state': self.model_output.current_state.model_dump(),
 				'action': action_dump,  # This preserves the actual action data
@@ -91,7 +103,7 @@ class AgentHistory(BaseModel):
 
 		return {
 			'model_output': model_output_dump,
-			'result': self.result.model_dump(exclude_none=True),
+			'result': [r.model_dump(exclude_none=True) for r in self.result],
 			'state': self.state.to_dict(),
 		}
 
@@ -147,23 +159,30 @@ class AgentHistoryList(BaseModel):
 	def last_action(self) -> None | dict:
 		"""Last action in history"""
 		if self.history and self.history[-1].model_output:
-			return self.history[-1].model_output.action.model_dump(exclude_none=True)
+			return self.history[-1].model_output.action[-1].model_dump(exclude_none=True)
 		return None
 
 	def errors(self) -> list[str]:
 		"""Get all errors from history"""
-		return [h.result.error for h in self.history if h.result.error]
+		errors = []
+		for h in self.history:
+			errors.extend([r.error for r in h.result if r.error])
+		return errors
 
 	def final_result(self) -> None | str:
 		"""Final result from history"""
-		if self.history and self.history[-1].result.extracted_content:
-			return self.history[-1].result.extracted_content
+		if self.history and self.history[-1].result[-1].extracted_content:
+			return self.history[-1].result[-1].extracted_content
 		return None
 
 	def is_done(self) -> bool:
 		"""Check if the agent is done"""
-		if self.history and self.history[-1].result.is_done:
-			return self.history[-1].result.is_done
+		if (
+			self.history
+			and len(self.history[-1].result) > 0
+			and self.history[-1].result[-1].is_done
+		):
+			return self.history[-1].result[-1].is_done
 		return False
 
 	def has_errors(self) -> bool:
@@ -197,18 +216,24 @@ class AgentHistoryList(BaseModel):
 
 		for h in self.history:
 			if h.model_output:
-				output = h.model_output.action.model_dump(exclude_none=True)
-
-				outputs.append(output)
+				for action in h.model_output.action:
+					output = action.model_dump(exclude_none=True)
+					outputs.append(output)
 		return outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""
-		return [h.result for h in self.history if h.result]
+		results = []
+		for h in self.history:
+			results.extend([r for r in h.result if r])
+		return results
 
 	def extracted_content(self) -> list[str]:
 		"""Get all extracted content from history"""
-		return [h.result.extracted_content for h in self.history if h.result.extracted_content]
+		content = []
+		for h in self.history:
+			content.extend([r.extracted_content for r in h.result if r.extracted_content])
+		return content
 
 	def model_actions_filtered(self, include: list[str] = []) -> list[dict]:
 		"""Get all model actions from history as JSON"""
@@ -236,4 +261,6 @@ class AgentError:
 			return f'{AgentError.VALIDATION_ERROR}\nDetails: {str(error)}'
 		if isinstance(error, RateLimitError):
 			return AgentError.RATE_LIMIT_ERROR
-		return f'Unexpected error: {str(error)}\nStacktrace:\n{traceback.format_exc()}'
+		if include_trace:
+			return f'{str(error)}\nStacktrace:\n{traceback.format_exc()}'
+		return f'{str(error)}'

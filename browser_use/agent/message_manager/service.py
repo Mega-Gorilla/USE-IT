@@ -10,14 +10,12 @@ from langchain_core.messages import (
 	AIMessage,
 	BaseMessage,
 	HumanMessage,
-	SystemMessage,
-	get_buffer_string,
 )
 from langchain_openai import ChatOpenAI
 
 from browser_use.agent.message_manager.views import MessageHistory, MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
-from browser_use.agent.views import ActionResult, AgentOutput
+from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo
 from browser_use.browser.views import BrowserState
 
 logger = logging.getLogger(__name__)
@@ -35,6 +33,7 @@ class MessageManager:
 		image_tokens: int = 800,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
+		max_actions_per_step: int = 10,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -46,26 +45,37 @@ class MessageManager:
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
+
 		system_message = self.system_prompt_class(
-			self.action_descriptions, current_date=datetime.now()
+			self.action_descriptions,
+			current_date=datetime.now(),
+			max_actions_per_step=max_actions_per_step,
 		).get_system_message()
+
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
 		task_message = HumanMessage(content=f'Your task is: {task}')
 		self._add_message_with_tokens(task_message)
 
-	def add_state_message(self, state: BrowserState, result: Optional[ActionResult] = None) -> None:
+	def add_state_message(
+		self,
+		state: BrowserState,
+		result: Optional[List[ActionResult]] = None,
+		step_info: Optional[AgentStepInfo] = None,
+	) -> None:
 		"""Add browser state as human message"""
 
 		# if keep in memory, add to directly to history and add state without result
-		if result and result.include_in_memory:
-			if result.extracted_content:
-				msg = HumanMessage(content=str(result.extracted_content))
-				self._add_message_with_tokens(msg)
-			if result.error:
-				msg = HumanMessage(content=str(result.error)[-self.max_error_length :])
-				self._add_message_with_tokens(msg)
-			result = None
+		if result:
+			for r in result:
+				if r.include_in_memory:
+					if r.extracted_content:
+						msg = HumanMessage(content=str(r.extracted_content))
+						self._add_message_with_tokens(msg)
+					if r.error:
+						msg = HumanMessage(content=str(r.error)[-self.max_error_length :])
+						self._add_message_with_tokens(msg)
+					result = None  # if result in history, we dont want to add it again
 
 		# otherwise add state message and result to next message (which will not stay in memory)
 		state_message = AgentMessagePrompt(
@@ -73,6 +83,7 @@ class MessageManager:
 			result,
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
+			step_info=step_info,
 		).get_user_message()
 		self._add_message_with_tokens(state_message)
 
@@ -176,7 +187,7 @@ class MessageManager:
 		if isinstance(self.llm, (ChatOpenAI, ChatAnthropic)):
 			try:
 				tokens = self.llm.get_num_tokens(text)
-			except Exception as e:
+			except Exception:
 				tokens = (
 					len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER
 				)  # Rough estimate if no tokenizer available

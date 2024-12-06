@@ -26,13 +26,17 @@ from browser_use.agent.views import (
 	AgentHistory,
 	AgentHistoryList,
 	AgentOutput,
+	AgentStepInfo,
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
 from browser_use.browser.views import BrowserState, BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.history_tree_processor import DOMHistoryElement, HistoryTreeProcessor
+from browser_use.dom.history_tree_processor.service import (
+	DOMHistoryElement,
+	HistoryTreeProcessor,
+)
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
@@ -62,8 +66,20 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		include_attributes: list[str] = [],
+		include_attributes: list[str] = [
+			'title',
+			'type',
+			'name',
+			'role',
+			'tabindex',
+			'aria-label',
+			'placeholder',
+			'value',
+			'alt',
+			'aria-expanded',
+		],
 		max_error_length: int = 400,
+		max_actions_per_step: int = 10,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -72,9 +88,11 @@ class Agent:
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
 		self._last_result = None
-
+		self.include_attributes = include_attributes
+		self.max_error_length = max_error_length
 		# Controller setup
 		self.controller = controller
+		self.max_actions_per_step = max_actions_per_step
 
 		# Browser setup
 		self.injected_browser = browser is not None
@@ -103,9 +121,6 @@ class Agent:
 
 		self.max_input_tokens = max_input_tokens
 
-		self.include_attributes = include_attributes
-		self.max_error_length = max_error_length
-
 		self.message_manager = MessageManager(
 			llm=self.llm,
 			task=self.task,
@@ -114,6 +129,7 @@ class Agent:
 			max_input_tokens=self.max_input_tokens,
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
+			max_actions_per_step=self.max_actions_per_step,
 		)
 
 		# Tracking variables
@@ -135,28 +151,29 @@ class Agent:
 		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
 
 	@time_execution_async('--step')
-	async def step(self) -> None:
+	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
 		logger.info(f'\n📍 Step {self.n_steps}')
 		state = None
 		model_output = None
+		result: list[ActionResult] = []
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
-			self.message_manager.add_state_message(state, self._last_result)
+			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
 			model_output = await self.get_next_action(input_messages)
 			self._save_conversation(input_messages, model_output)
 			self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 			self.message_manager.add_model_output(model_output)
 
-			result = await self.controller.act(model_output.action, self.browser_context)
+			result: list[ActionResult] = await self.controller.multi_act(
+				model_output.action, self.browser_context
+			)
 			self._last_result = result
 
-			if result.extracted_content:
-				logger.info(f'📄 Result: {result.extracted_content}')
-			if result.is_done:
-				logger.result(f'{result.extracted_content}')  # type: ignore
+			if len(result) > 0 and result[-1].is_done:
+				logger.info(f'📄 Result: {result[-1].extracted_content}')
 
 			self.consecutive_failures = 0
 
@@ -164,21 +181,24 @@ class Agent:
 			result = self._handle_step_error(e)
 			self._last_result = result
 
-			if result.error:
-				self.telemetry.capture(
-					AgentStepErrorTelemetryEvent(
-						agent_id=self.agent_id,
-						error=result.error,
-					)
-				)
-			model_output = None
 		finally:
+			if not result:
+				return
+			for r in result:
+				if r.error:
+					self.telemetry.capture(
+						AgentStepErrorTelemetryEvent(
+							agent_id=self.agent_id,
+							error=r.error,
+						)
+					)
 			if state:
 				self._make_history_item(model_output, state, result)
 
-	def _handle_step_error(self, error: Exception) -> ActionResult:
+	def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
-		error_msg = AgentError.format_error(error, include_trace=True)
+		include_trace = logger.isEnabledFor(logging.DEBUG)
+		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.consecutive_failures + 1}/{self.max_failures} times:\n '
 
 		if isinstance(error, (ValidationError, ValueError)):
@@ -199,27 +219,30 @@ class Agent:
 			logger.error(f'{prefix}{error_msg}')
 			self.consecutive_failures += 1
 
-		return ActionResult(error=error_msg, include_in_memory=True)
+		return [ActionResult(error=error_msg, include_in_memory=True)]
 
 	def _make_history_item(
 		self,
 		model_output: AgentOutput | None,
 		state: BrowserState,
-		result: ActionResult,
+		result: list[ActionResult],
 	) -> None:
 		"""Create and store history item"""
+		interacted_element = None
+		len_result = len(result)
+
 		if model_output:
-			interacted_element = AgentHistory.get_interacted_element(
+			interacted_elements = AgentHistory.get_interacted_element(
 				model_output, state.selector_map
 			)
 		else:
-			interacted_element = None
+			interacted_elements = [None]
 
 		state_history = BrowserStateHistory(
 			url=state.url,
 			title=state.title,
 			tabs=state.tabs,
-			interacted_element=interacted_element,
+			interacted_element=interacted_elements,
 			screenshot=state.screenshot,
 		)
 
@@ -235,25 +258,29 @@ class Agent:
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
 		parsed: AgentOutput = response['parsed']
-
+		# cut the number of actions to max_actions_per_step
+		parsed.action = parsed.action[: self.max_actions_per_step]
 		self._log_response(parsed)
 		self.n_steps += 1
 
 		return parsed
 
-	def _log_response(self, response: Any) -> None:
+	def _log_response(self, response: AgentOutput) -> None:
 		"""Log the model's response"""
-		if 'Success' in response.current_state.valuation_previous_goal:
+		if 'Success' in response.current_state.evaluation_previous_goal:
 			emoji = '👍'
-		elif 'Failed' in response.current_state.valuation_previous_goal:
+		elif 'Failed' in response.current_state.evaluation_previous_goal:
 			emoji = '⚠️'
 		else:
 			emoji = '🤷'
 
-		logger.info(f'{emoji} Evaluation: {response.current_state.valuation_previous_goal}')
+		logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
-		logger.info(f'🎯 Next Goal: {response.current_state.next_goal}')
-		logger.info(f'🛠️ Action: {response.action.model_dump_json(exclude_unset=True)}')
+		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
+		for i, action in enumerate(response.action):
+			logger.info(
+				f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
+			)
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
 		"""Save conversation history to file if path is specified"""
@@ -309,7 +336,9 @@ class Agent:
 				await self.step()
 
 				if self.history.is_done():
-					if self.validate_output:
+					if (
+						self.validate_output and step < max_steps - 1
+					):  # if last step, we dont need to validate
 						if not await self._validate_output():
 							continue
 
@@ -347,15 +376,16 @@ class Agent:
 		system_msg = (
 			f'You are a validator of an agent who interacts with a browser. '
 			f'Validate if the output of last action is what the user wanted and if the task is completed. '
-			f'If the task is unclear defined, you can let it pass. '
-			f'Task: {self.task}. Return a JSON object with 2 keys: is_valid and reason. '
+			f'If the task is unclear defined, you can let it pass. But if something is missing or the image does not show what was requested dont let it pass. '
+			f'Try to understand the page and help the model with suggestions like scroll, do x, ... to get the solution right. '
+			f'Task to validate: {self.task}. Return a JSON object with 2 keys: is_valid and reason. '
 			f'is_valid is a boolean that indicates if the output is correct. '
 			f'reason is a string that explains why it is valid or not.'
 			f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
 		)
 
 		if self.browser_context.session:
-			state = self.browser_context.session.cached_state
+			state = await self.browser_context.get_state(use_vision=self.use_vision)
 			content = AgentMessagePrompt(
 				state=state,
 				result=self._last_result,
@@ -378,7 +408,7 @@ class Agent:
 		if not is_valid:
 			logger.info(f'❌ Validator decision: {parsed.reason}')
 			msg = f'The ouput is not yet correct. {parsed.reason}.'
-			self._last_result = ActionResult(extracted_content=msg, include_in_memory=True)
+			self._last_result = [ActionResult(extracted_content=msg, include_in_memory=True)]
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
@@ -394,13 +424,13 @@ class Agent:
 		Rerun a saved history of actions with error handling and retry logic.
 
 		Args:
-			history: The history to replay
-			max_retries: Maximum number of retries per action
-			skip_failures: Whether to skip failed actions or stop execution
-			delay_between_actions: Delay between actions in seconds
+		        history: The history to replay
+		        max_retries: Maximum number of retries per action
+		        skip_failures: Whether to skip failed actions or stop execution
+		        delay_between_actions: Delay between actions in seconds
 
 		Returns:
-			List of action results
+		        List of action results
 		"""
 		results = []
 
@@ -412,7 +442,11 @@ class Agent:
 			)
 			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
-			if not history_item.model_output or not history_item.model_output.action:
+			if (
+				not history_item.model_output
+				or not history_item.model_output.action
+				or history_item.model_output.action == [None]
+			):
 				logger.warning(f'Step {i + 1}: No action to replay, skipping')
 				results.append(ActionResult(error='No action to replay'))
 				continue
@@ -421,7 +455,7 @@ class Agent:
 			while retry_count < max_retries:
 				try:
 					result = await self._execute_history_step(history_item, delay_between_actions)
-					results.append(result)
+					results.extend(result)
 					break
 
 				except Exception as e:
@@ -440,21 +474,28 @@ class Agent:
 
 		return results
 
-	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> ActionResult:
+	async def _execute_history_step(
+		self, history_item: AgentHistory, delay: float
+	) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 
 		state = await self.browser_context.get_state()
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
+		updated_actions = []
+		for i, action in enumerate(history_item.model_output.action):
+			updated_action = await self._update_action_indices(
+				history_item.state.interacted_element[i],
+				action,
+				state,
+			)
+			updated_actions.append(updated_action)
 
-		updated_action = await self._update_action_indices(
-			history_item.state.interacted_element, history_item.model_output.action, state
-		)
+			if updated_action is None:
+				raise ValueError(f'Could not find matching element {i} in current page')
 
-		if updated_action is None:
-			raise ValueError('Could not find matching element in current page')
+		result = await self.controller.multi_act(updated_actions, self.browser_context)
 
-		result = await self.controller.act(updated_action, self.browser_context)
 		await asyncio.sleep(delay)
 		return result
 
@@ -477,6 +518,7 @@ class Agent:
 
 		if not current_element or current_element.highlight_index is None:
 			return None
+
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
@@ -487,23 +529,18 @@ class Agent:
 		return action
 
 	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, k: Optional[int] = None, **kwargs
+		self, history_file: Optional[str | Path] = None, **kwargs
 	) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
 		Args:
-			history_file: Path to the history file
-			**kwargs: Additional arguments passed to rerun_history
-			history_file: Path to the history file
-			k: Number of steps to rerun
-			**kwargs: Additional arguments passed to rerun_history
+		        history_file: Path to the history file
+		        **kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
 		history = AgentHistoryList.load_from_file(history_file, self.AgentOutput)
-		if k:
-			history.history = history.history[:k]
 		return await self.rerun_history(history, **kwargs)
 
 	def save_history(self, file_path: Optional[str | Path] = None) -> None:

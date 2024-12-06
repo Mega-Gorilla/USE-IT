@@ -1,5 +1,8 @@
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
+
+from browser_use.dom.history_tree_processor.view import HashedDomElement
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -67,6 +70,14 @@ class DOMElementNode(DOMBaseNode):
 
 		return tag_str
 
+	@cached_property
+	def hash(self) -> HashedDomElement:
+		from browser_use.dom.history_tree_processor.service import (
+			HistoryTreeProcessor,
+		)
+
+		return HistoryTreeProcessor._hash_dom_element(self)
+
 	def get_all_text_till_next_clickable_element(self) -> str:
 		text_parts = []
 
@@ -118,6 +129,28 @@ class DOMElementNode(DOMBaseNode):
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)
+
+	def get_file_upload_element(self, check_siblings: bool = True) -> Optional['DOMElementNode']:
+		# Check if current element is a file input
+		if self.tag_name == 'input' and self.attributes.get('type') == 'file':
+			return self
+
+		# Check children
+		for child in self.children:
+			if isinstance(child, DOMElementNode):
+				result = child.get_file_upload_element(check_siblings=False)
+				if result:
+					return result
+
+		# Check siblings only for the initial call
+		if check_siblings and self.parent:
+			for sibling in self.parent.children:
+				if sibling is not self and isinstance(sibling, DOMElementNode):
+					result = sibling.get_file_upload_element(check_siblings=False)
+					if result:
+						return result
+
+		return None
 
 
 class ElementTreeSerializer:

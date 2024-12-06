@@ -14,14 +14,10 @@ from browser_use import Agent, SystemPrompt
 class MySystemPrompt(SystemPrompt):
 	def important_rules(self) -> str:
 		existing_rules = super().important_rules()
-		new_rules = 'ALWAYS go first to url wikipedia.com no matter the task'
+		new_rules = 'REMEBER the most importnat RULE: ALWAYS open first a new tab and go first to url wikipedia.com no matter the task!!!'
 		return f'{existing_rules}\n{new_rules}'
 
 		# other methods can be overriden as well (not recommended)
-		# example_response -> str
-		# input_format -> str
-		# response_format -> str
-		# get_system_message -> SystemMessage
 
 
 async def main():
