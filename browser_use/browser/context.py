@@ -85,7 +85,7 @@ class BrowserContextConfig:
 	disable_security: bool = False
 
 	browser_window_size: Optional[BrowserContextWindowSize] = None
-	no_viewport: bool = True
+	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
 	trace_path: str | None = None
