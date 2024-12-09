@@ -105,7 +105,9 @@ class Agent:
 		if browser_context:
 			self.browser_context = browser_context
 		elif self.browser:
-			self.browser_context = BrowserContext(browser=self.browser)
+			self.browser_context = BrowserContext(
+				browser=self.browser, config=self.browser.config.new_context_config
+			)
 		else:
 			# If neither is provided, create both new
 			self.browser = Browser()

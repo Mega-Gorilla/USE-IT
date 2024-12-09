@@ -225,7 +225,7 @@ class BrowserContext:
 			# Original code for creating new context
 			context = await browser.new_context(
 				viewport=self.config.browser_window_size,
-				no_viewport=self.config.no_viewport,
+				no_viewport=False,
 				user_agent=(
 					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 					'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
