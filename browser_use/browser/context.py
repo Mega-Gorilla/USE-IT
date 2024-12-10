@@ -10,7 +10,7 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -64,7 +64,10 @@ class BrowserContextConfig:
 		wait_between_actions: 1.0
 			Time to wait between multiple per step actions
 
-		browser_window_size: {'width': 1280, 'height': 1024}
+		browser_window_size: {
+				'width': 1280,
+				'height': 1100,
+			}
 			Default browser window size
 
 		no_viewport: False
@@ -84,7 +87,9 @@ class BrowserContextConfig:
 
 	disable_security: bool = False
 
-	browser_window_size: Optional[BrowserContextWindowSize] = None
+	browser_window_size: BrowserContextWindowSize = field(
+		default_factory=lambda: {'width': 1280, 'height': 1100}
+	)
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None

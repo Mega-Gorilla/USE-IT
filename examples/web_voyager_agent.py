@@ -18,8 +18,8 @@ browser = Browser(
 		disable_security=True,
 		new_context_config=BrowserContextConfig(
 			disable_security=True,
-			minimum_wait_page_load_time=4,
-			maximum_wait_page_load_time=20,
+			minimum_wait_page_load_time=1,  # 3 on prod
+			maximum_wait_page_load_time=10,  # 20 on prod
 			# no_viewport=True,
 			browser_window_size={
 				'width': 1280,
@@ -42,7 +42,7 @@ llm = AzureChatOpenAI(
 # TASK = """
 # Browse Coursera, which universities offer Master of Advanced Study in Engineering degrees? Tell me what is the latest application deadline for this degree? on https://www.coursera.org/"""
 TASK = """
-Find the names of people in ArXiv's Leadership Team. on https://arxiv.org/
+Find and book a hotel in Paris with suitable accommodations for a family of four (two adults and two children) offering free cancellation for the dates of February 14-21, 2025. on https://www.booking.com/
 """
 
 
