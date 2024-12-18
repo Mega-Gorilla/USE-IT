@@ -275,7 +275,7 @@ class Agent:
 		if 'Success' in response.current_state.evaluation_previous_goal:
 			emoji = '👍'
 		elif 'Failed' in response.current_state.evaluation_previous_goal:
-			emoji = '⚠️'
+			emoji = '⚠'
 		else:
 			emoji = '🤷'
 
@@ -559,17 +559,25 @@ class Agent:
 		output_path: str = 'agent_history.gif',
 		duration: int = 2000,
 		show_goals: bool = True,
-		font_size: int = 24,
-		margin: int = 20,
+		show_task: bool = True,
+		show_logo: bool = True,
+		font_size: int = 32,
+		title_font_size: int = 40,
+		goal_font_size: int = 36,  # New larger font size for goals
+		margin: int = 40,
 	) -> None:
 		"""
-		Create a GIF from the agent's history with overlaid goal text.
+		Create a GIF from the agent's history with overlaid task and goal text.
 
 		Args:
 			output_path: Path where to save the GIF
 			duration: Duration for each frame in milliseconds
 			show_goals: Whether to overlay the agent's goals on frames
-			font_size: Size of the font for goal text
+			show_task: Whether to show initial task frame
+			show_logo: Whether to show the browser-use logo
+			font_size: Size of the font for regular text
+			title_font_size: Size of the font for task title
+			goal_font_size: Size of the font for goal text
 			margin: Margin from bottom of image for goal text
 		"""
 		if not self.history.history:
@@ -578,7 +586,38 @@ class Agent:
 
 		images = []
 
-		for item in self.history.history:
+		# Try to load fonts
+		try:
+			regular_font = ImageFont.truetype('Arial', font_size)
+			title_font = ImageFont.truetype('Arial', title_font_size)
+			goal_font = ImageFont.truetype('Arial', goal_font_size)
+		except OSError:
+			regular_font = ImageFont.load_default()
+			title_font = ImageFont.load_default()
+			goal_font = regular_font
+
+		# Load logo if requested
+		logo = None
+		if show_logo:
+			try:
+				logo = Image.open('./static/browser-use.png')
+				# Resize logo to be small (e.g., 50px height)
+				logo_height = 50
+				aspect_ratio = logo.width / logo.height
+				logo_width = int(logo_height * aspect_ratio)
+				logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
+			except Exception as e:
+				logger.warning(f'Could not load logo: {e}')
+
+		# Create task frame if requested
+		if show_task and self.task:
+			task_frame = self._create_task_frame(
+				self.task, self.history.history[0].state.screenshot, title_font, regular_font, logo
+			)
+			images.append(task_frame)
+
+		# Process each history item
+		for i, item in enumerate(self.history.history, 1):
 			if not item.state.screenshot:
 				continue
 
@@ -587,48 +626,15 @@ class Agent:
 			image = Image.open(io.BytesIO(img_data))
 
 			if show_goals and item.model_output:
-				# Create a copy of the image to draw on
-				image = image.convert('RGBA')
-				txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-				draw = ImageDraw.Draw(txt_layer)
-
-				# Get the goal text
-				goal = item.model_output.current_state.next_goal
-
-				# Try to load a nice font, fallback to default if not available
-				try:
-					font = ImageFont.truetype('Arial', font_size)
-				except OSError:
-					font = ImageFont.load_default()
-
-				# Calculate text size and position
-				max_width = image.width - (2 * margin)
-				wrapped_text = self._wrap_text(goal, font, max_width)
-				text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font)
-				text_height = text_bbox[3] - text_bbox[1]
-
-				# Calculate position for text (centered horizontally, near bottom with margin)
-				x = (image.width - (text_bbox[2] - text_bbox[0])) // 2
-				y = image.height - text_height - margin
-
-				# Draw semi-transparent background for text
-				padding = 10
-				bg_bbox = (
-					x - padding,
-					y - padding,
-					x + (text_bbox[2] - text_bbox[0]) + padding,
-					y + text_height + padding,
+				image = self._add_overlay_to_image(
+					image=image,
+					step_number=i,
+					goal_text=item.model_output.current_state.next_goal,
+					regular_font=regular_font,
+					title_font=title_font,
+					margin=margin,
+					logo=logo,
 				)
-				draw.rectangle(bg_bbox, fill=(0, 0, 0, 160))
-
-				# Draw text
-				draw.multiline_text(
-					(x, y), wrapped_text, font=font, fill=(255, 255, 255, 255), align='center'
-				)
-
-				# Composite the text layer onto the image
-				image = Image.alpha_composite(image, txt_layer)
-				image = image.convert('RGB')
 
 			images.append(image)
 
@@ -645,6 +651,133 @@ class Agent:
 			logger.info(f'Created history GIF at {output_path}')
 		else:
 			logger.warning('No images found in history to create GIF')
+
+	def _create_task_frame(
+		self,
+		task: str,
+		first_screenshot: str,
+		title_font: ImageFont.FreeTypeFont,
+		regular_font: ImageFont.FreeTypeFont,
+		logo: Optional[Image.Image] = None,
+	) -> Image.Image:
+		"""Create initial frame showing the task."""
+		img_data = base64.b64decode(first_screenshot)
+		template = Image.open(io.BytesIO(img_data))
+		image = Image.new('RGB', template.size, (255, 255, 255))
+		draw = ImageDraw.Draw(image)
+
+		# Calculate vertical center of image
+		center_y = image.height // 2
+
+		# Draw task text (centered vertically and horizontally)
+		margin = 40
+		max_width = image.width - (2 * margin)
+		wrapped_text = self._wrap_text(task, regular_font, max_width)
+		text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=regular_font)
+		text_height = text_bbox[3] - text_bbox[1]
+
+		# Center the text vertically and horizontally
+		text_x = (image.width - (text_bbox[2] - text_bbox[0])) // 2
+		text_y = center_y - text_height // 2
+
+		draw.multiline_text(
+			(text_x, text_y),
+			wrapped_text,
+			font=regular_font,
+			fill=(0, 0, 0),
+			align='center',
+		)
+
+		# Add logo if provided
+		if logo:
+			logo_margin = 20
+			image.paste(logo, (logo_margin, logo_margin), logo if logo.mode == 'RGBA' else None)
+
+		return image
+
+	def _add_overlay_to_image(
+		self,
+		image: Image.Image,
+		step_number: int,
+		goal_text: str,
+		regular_font: ImageFont.FreeTypeFont,
+		title_font: ImageFont.FreeTypeFont,
+		margin: int,
+		logo: Optional[Image.Image] = None,
+	) -> Image.Image:
+		"""Add step number and goal overlay to an image."""
+		image = image.convert('RGBA')
+		txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+		draw = ImageDraw.Draw(txt_layer)
+
+		# Add step number (bottom left)
+		step_text = str(step_number)  # Just the number
+		step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
+		step_width = step_bbox[2] - step_bbox[0]
+		step_height = step_bbox[3] - step_bbox[1]
+
+		# Position step number in bottom left with margin
+		x_step = margin
+		y_step = image.height - margin - step_height
+
+		# Draw background for step number
+		padding = 10
+		step_bg_bbox = (
+			x_step - padding,
+			y_step - padding,
+			x_step + step_width + padding,
+			y_step + step_height + padding,
+		)
+		draw.rectangle(step_bg_bbox, fill=(0, 0, 0, 180))
+
+		# Draw step number
+		draw.text(
+			(x_step, y_step),
+			step_text,
+			font=title_font,
+			fill=(255, 255, 255, 255),
+		)
+
+		# Draw goal text (centered, bottom)
+		max_width = image.width - (4 * margin)  # More margin for larger text
+		wrapped_goal = self._wrap_text(goal_text, title_font, max_width)
+		goal_bbox = draw.multiline_textbbox((0, 0), wrapped_goal, font=title_font)
+		goal_width = goal_bbox[2] - goal_bbox[0]
+
+		# Center goal text horizontally, place above step number
+		x_goal = (image.width - goal_width) // 2
+		y_goal = y_step - goal_bbox[3] - padding * 2
+
+		# Draw background for goal
+		goal_bg_bbox = (
+			x_goal - padding,
+			y_goal - padding,
+			x_goal + goal_width + padding,
+			y_goal + (goal_bbox[3] - goal_bbox[1]) + padding,
+		)
+		draw.rectangle(goal_bg_bbox, fill=(0, 0, 0, 180))
+
+		# Draw goal text
+		draw.multiline_text(
+			(x_goal, y_goal),
+			wrapped_goal,
+			font=title_font,
+			fill=(255, 255, 255, 255),
+			align='center',
+		)
+
+		# Add logo if provided
+		if logo:
+			logo_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+			logo_margin = 20
+			logo_layer.paste(
+				logo, (logo_margin, logo_margin), logo if logo.mode == 'RGBA' else None
+			)
+			txt_layer = Image.alpha_composite(logo_layer, txt_layer)
+
+		# Composite and convert
+		result = Image.alpha_composite(image, txt_layer)
+		return result.convert('RGB')
 
 	def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
 		"""
