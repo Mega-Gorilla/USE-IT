@@ -23,11 +23,8 @@ agent = Agent(
 
 
 async def main():
-	history = await agent.run(max_steps=3)
-	# save
-	agent.save_history()
+	await agent.run(max_steps=3)
 	agent.create_history_gif()
-	print(history)
 
 
 asyncio.run(main())
