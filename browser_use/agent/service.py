@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import os
@@ -16,6 +18,7 @@ from langchain_core.messages import (
 	SystemMessage,
 )
 from openai import RateLimitError
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.message_manager.service import MessageManager
@@ -550,3 +553,128 @@ class Agent:
 		if not file_path:
 			file_path = 'AgentHistory.json'
 		self.history.save_to_file(file_path)
+
+	def create_history_gif(
+		self,
+		output_path: str = 'agent_history.gif',
+		duration: int = 2000,
+		show_goals: bool = True,
+		font_size: int = 24,
+		margin: int = 20,
+	) -> None:
+		"""
+		Create a GIF from the agent's history with overlaid goal text.
+
+		Args:
+			output_path: Path where to save the GIF
+			duration: Duration for each frame in milliseconds
+			show_goals: Whether to overlay the agent's goals on frames
+			font_size: Size of the font for goal text
+			margin: Margin from bottom of image for goal text
+		"""
+		if not self.history.history:
+			logger.warning('No history to create GIF from')
+			return
+
+		images = []
+
+		for item in self.history.history:
+			if not item.state.screenshot:
+				continue
+
+			# Convert base64 screenshot to PIL Image
+			img_data = base64.b64decode(item.state.screenshot)
+			image = Image.open(io.BytesIO(img_data))
+
+			if show_goals and item.model_output:
+				# Create a copy of the image to draw on
+				image = image.convert('RGBA')
+				txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+				draw = ImageDraw.Draw(txt_layer)
+
+				# Get the goal text
+				goal = item.model_output.current_state.next_goal
+
+				# Try to load a nice font, fallback to default if not available
+				try:
+					font = ImageFont.truetype('Arial', font_size)
+				except OSError:
+					font = ImageFont.load_default()
+
+				# Calculate text size and position
+				max_width = image.width - (2 * margin)
+				wrapped_text = self._wrap_text(goal, font, max_width)
+				text_bbox = draw.multiline_textbbox((0, 0), wrapped_text, font=font)
+				text_height = text_bbox[3] - text_bbox[1]
+
+				# Calculate position for text (centered horizontally, near bottom with margin)
+				x = (image.width - (text_bbox[2] - text_bbox[0])) // 2
+				y = image.height - text_height - margin
+
+				# Draw semi-transparent background for text
+				padding = 10
+				bg_bbox = (
+					x - padding,
+					y - padding,
+					x + (text_bbox[2] - text_bbox[0]) + padding,
+					y + text_height + padding,
+				)
+				draw.rectangle(bg_bbox, fill=(0, 0, 0, 160))
+
+				# Draw text
+				draw.multiline_text(
+					(x, y), wrapped_text, font=font, fill=(255, 255, 255, 255), align='center'
+				)
+
+				# Composite the text layer onto the image
+				image = Image.alpha_composite(image, txt_layer)
+				image = image.convert('RGB')
+
+			images.append(image)
+
+		if images:
+			# Save the GIF
+			images[0].save(
+				output_path,
+				save_all=True,
+				append_images=images[1:],
+				duration=duration,
+				loop=0,
+				optimize=False,
+			)
+			logger.info(f'Created history GIF at {output_path}')
+		else:
+			logger.warning('No images found in history to create GIF')
+
+	def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
+		"""
+		Wrap text to fit within a given width.
+
+		Args:
+			text: Text to wrap
+			font: Font to use for text
+			max_width: Maximum width in pixels
+
+		Returns:
+			Wrapped text with newlines
+		"""
+		words = text.split()
+		lines = []
+		current_line = []
+
+		for word in words:
+			current_line.append(word)
+			line = ' '.join(current_line)
+			bbox = font.getbbox(line)
+			if bbox[2] > max_width:
+				if len(current_line) == 1:
+					lines.append(current_line.pop())
+				else:
+					current_line.pop()
+					lines.append(' '.join(current_line))
+					current_line = [word]
+
+		if current_line:
+			lines.append(' '.join(current_line))
+
+		return '\n'.join(lines)
