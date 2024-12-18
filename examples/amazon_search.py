@@ -15,7 +15,6 @@ from langchain_openai import ChatOpenAI
 
 from browser_use import Agent
 
-# video: https://preview.screen.studio/share/70xBqZyN
 llm = ChatOpenAI(model='gpt-4o')
 agent = Agent(
 	task='Go to amazon.com, search for laptop, sort by best rating, and give me the price of the first result',
@@ -24,7 +23,8 @@ agent = Agent(
 
 
 async def main():
-	await agent.run()
+	await agent.run(max_steps=3)
+	agent.create_history_gif()
 
 
 asyncio.run(main())
