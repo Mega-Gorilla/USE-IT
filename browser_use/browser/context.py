@@ -172,6 +172,7 @@ class BrowserContext:
 		playwright_browser = await self.browser.get_playwright_browser()
 
 		context = await self._create_context(playwright_browser)
+		await self._add_new_page_listener(context)
 		page = await context.new_page()
 
 		# Instead of calling _update_state(), create an empty initial state
@@ -196,9 +197,6 @@ class BrowserContext:
 			current_page=page,
 			cached_state=initial_state,
 		)
-
-		await self._add_new_page_listener(context)
-
 		return self.session
 
 	async def _add_new_page_listener(self, context: PlaywrightBrowserContext):
