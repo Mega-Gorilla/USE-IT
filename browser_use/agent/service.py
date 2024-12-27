@@ -6,8 +6,10 @@ import io
 import json
 import logging
 import os
+import textwrap
 import time
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional, Type, TypeVar
 
@@ -69,6 +71,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
+		generate_gif: bool = True,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -93,6 +96,7 @@ class Agent:
 		self._last_result = None
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
+		self.generate_gif = generate_gif
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -369,6 +373,9 @@ class Agent:
 			if not self.injected_browser and self.browser:
 				await self.browser.close()
 
+			if self.generate_gif:
+				self.create_history_gif()
+
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
 		if self.consecutive_failures >= self.max_failures:
@@ -605,7 +612,7 @@ class Agent:
 			try:
 				logo = Image.open('./static/browser-use.png')
 				# Resize logo to be small (e.g., 40px height)
-				logo_height = 50
+				logo_height = 150
 				aspect_ratio = logo.width / logo.height
 				logo_width = int(logo_height * aspect_ratio)
 				logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
@@ -678,9 +685,11 @@ class Agent:
 		# Calculate vertical center of image
 		center_y = image.height // 2
 
-		# Draw "Task:" title
+		# Draw "Task:" title with larger font
 		title = 'Task:'
-		title_bbox = draw.textbbox((0, 0), title, font=title_font)
+		title_font_size = title_font.size + 20  # Increase title font size by 20
+		larger_title_font = ImageFont.truetype(title_font.path, title_font_size)
+		title_bbox = draw.textbbox((0, 0), title, font=larger_title_font)
 		title_width = title_bbox[2] - title_bbox[0]
 		title_x = (image.width - title_width) // 2
 		title_y = center_y - 150  # Increased spacing from center
@@ -688,17 +697,20 @@ class Agent:
 		draw.text(
 			(title_x, title_y),
 			title,
-			font=title_font,
+			font=larger_title_font,
 			fill=(255, 255, 255),
 		)
 
-		# Draw task text with increased spacing
-		margin = 80  # Increased margin
+		# Draw task text with increased font size
+		margin = 140  # Increased margin
 		max_width = image.width - (2 * margin)
-		wrapped_text = self._wrap_text(task, regular_font, max_width)
+		larger_font = ImageFont.truetype(
+			regular_font.path, regular_font.size + 16
+		)  # Increase font size more
+		wrapped_text = self._wrap_text(task, larger_font, max_width)
 
 		# Calculate line height with spacing
-		line_height = regular_font.size * line_spacing
+		line_height = larger_font.size * line_spacing
 
 		# Split text into lines and draw with custom spacing
 		lines = wrapped_text.split('\n')
@@ -709,13 +721,13 @@ class Agent:
 
 		for line in lines:
 			# Get line width for centering
-			line_bbox = draw.textbbox((0, 0), line, font=regular_font)
+			line_bbox = draw.textbbox((0, 0), line, font=larger_font)
 			text_x = (image.width - (line_bbox[2] - line_bbox[0])) // 2
 
 			draw.text(
 				(text_x, text_y),
 				line,
-				font=regular_font,
+				font=larger_font,
 				fill=(255, 255, 255),
 			)
 			text_y += line_height
@@ -724,7 +736,6 @@ class Agent:
 		if logo:
 			logo_margin = 20
 			logo_x = image.width - logo.width - logo_margin
-
 			image.paste(logo, (logo_x, logo_margin), logo if logo.mode == 'RGBA' else None)
 
 		return image
@@ -754,7 +765,7 @@ class Agent:
 		x_step = margin + 10  # Slight additional offset from edge
 		y_step = image.height - margin - step_height - 10  # Slight offset from bottom
 
-		# Draw background for step number with larger padding
+		# Draw rounded rectangle background for step number
 		padding = 20  # Increased padding
 		step_bg_bbox = (
 			x_step - padding,
@@ -762,7 +773,11 @@ class Agent:
 			x_step + step_width + padding,
 			y_step + step_height + padding,
 		)
-		draw.rectangle(step_bg_bbox, fill=(0, 0, 0, 255))
+		draw.rounded_rectangle(
+			step_bg_bbox,
+			radius=15,  # Add rounded corners
+			fill=(0, 0, 0, 255),
+		)
 
 		# Draw step number
 		draw.text(
@@ -783,15 +798,19 @@ class Agent:
 		x_goal = (image.width - goal_width) // 2
 		y_goal = y_step - goal_height - padding * 4  # More space between step and goal
 
-		# Draw background for goal with larger padding
+		# Draw rounded rectangle background for goal
 		padding_goal = 25  # Increased padding for goal
 		goal_bg_bbox = (
-			x_goal - padding_goal,
+			x_goal - padding_goal,  # Remove extra space for logo
 			y_goal - padding_goal,
 			x_goal + goal_width + padding_goal,
 			y_goal + goal_height + padding_goal,
 		)
-		draw.rectangle(goal_bg_bbox, fill=(0, 0, 0, 255))
+		draw.rounded_rectangle(
+			goal_bg_bbox,
+			radius=15,  # Add rounded corners
+			fill=(0, 0, 0, 255),
+		)
 
 		# Draw goal text
 		draw.multiline_text(
@@ -846,3 +865,112 @@ class Agent:
 			lines.append(' '.join(current_line))
 
 		return '\n'.join(lines)
+
+	def _create_frame(
+		self, screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800
+	) -> Image.Image:
+		"""Create a frame for the GIF with improved styling"""
+
+		# Create base image
+		frame = Image.new('RGB', (width, height), 'white')
+
+		# Load and resize screenshot
+		screenshot_img = Image.open(BytesIO(base64.b64decode(screenshot)))
+		screenshot_img.thumbnail((width - 40, height - 160))  # Leave space for text
+
+		# Calculate positions
+		screenshot_x = (width - screenshot_img.width) // 2
+		screenshot_y = 120  # Leave space for header
+
+		# Draw screenshot
+		frame.paste(screenshot_img, (screenshot_x, screenshot_y))
+
+		# Load browser-use logo
+		logo_size = 100  # Increased size for browser-use logo
+		logo_path = os.path.join(os.path.dirname(__file__), 'assets/browser-use-logo.png')
+		if os.path.exists(logo_path):
+			logo = Image.open(logo_path)
+			logo.thumbnail((logo_size, logo_size))
+			frame.paste(
+				logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None
+			)
+
+		# Create drawing context
+		draw = ImageDraw.Draw(frame)
+
+		# Load fonts
+		try:
+			title_font = ImageFont.truetype('Arial.ttf', 36)  # Increased font size
+			text_font = ImageFont.truetype('Arial.ttf', 24)  # Increased font size
+			number_font = ImageFont.truetype('Arial.ttf', 48)  # Increased font size for step number
+		except:
+			title_font = ImageFont.load_default()
+			text_font = ImageFont.load_default()
+			number_font = ImageFont.load_default()
+
+		# Draw task text with increased spacing
+		margin = 80  # Increased margin
+		max_text_width = width - (2 * margin)
+
+		# Create rounded rectangle for goal text
+		text_padding = 20
+		text_lines = textwrap.wrap(text, width=60)
+		text_height = sum(draw.textsize(line, font=text_font)[1] for line in text_lines)
+		text_box_height = text_height + (2 * text_padding)
+
+		# Draw rounded rectangle background for goal
+		goal_bg_coords = [
+			margin - text_padding,
+			40,  # Top position
+			width - margin + text_padding,
+			40 + text_box_height,
+		]
+		draw.rounded_rectangle(
+			goal_bg_coords,
+			radius=15,  # Increased radius for more rounded corners
+			fill='#f0f0f0',
+		)
+
+		# Draw browser-use small logo in top left of goal box
+		small_logo_size = 30
+		if os.path.exists(logo_path):
+			small_logo = Image.open(logo_path)
+			small_logo.thumbnail((small_logo_size, small_logo_size))
+			frame.paste(
+				small_logo,
+				(margin - text_padding + 10, 45),  # Positioned inside goal box
+				small_logo if 'A' in small_logo.getbands() else None,
+			)
+
+		# Draw text with proper wrapping
+		y = 50  # Starting y position for text
+		for line in text_lines:
+			draw.text((margin + small_logo_size + 20, y), line, font=text_font, fill='black')
+			y += draw.textsize(line, font=text_font)[1] + 5
+
+		# Draw step number with rounded background
+		number_text = str(step_number)
+		number_size = draw.textsize(number_text, font=number_font)
+		number_padding = 20
+		number_box_width = number_size[0] + (2 * number_padding)
+		number_box_height = number_size[1] + (2 * number_padding)
+
+		# Draw rounded rectangle for step number
+		number_bg_coords = [
+			20,  # Left position
+			height - number_box_height - 20,  # Bottom position
+			20 + number_box_width,
+			height - 20,
+		]
+		draw.rounded_rectangle(
+			number_bg_coords,
+			radius=15,
+			fill='#007AFF',  # Blue background
+		)
+
+		# Center number in its background
+		number_x = number_bg_coords[0] + ((number_box_width - number_size[0]) // 2)
+		number_y = number_bg_coords[1] + ((number_box_height - number_size[1]) // 2)
+		draw.text((number_x, number_y), number_text, font=number_font, fill='white')
+
+		return frame
