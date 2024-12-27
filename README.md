@@ -53,9 +53,10 @@ ANTHROPIC_API_KEY=
 
 # Demos
 
-[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/real_browser.py): Letter to my Papa.
+[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/real_browser.py): Letter to Papa.
 
-https://github.com/user-attachments/assets/242ade3e-15bc-41c2-988f-cbc5415a66aa
+![Letter to Papa](https://github.com/user-attachments/assets/242ade3e-15bc-41c2-988f-cbc5415a66aa)
+
 
 
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/find_and_apply_to_jobs.py): Read my CV & find ML jobs, save them to a file, and then start applying for them in new tabs, if you need help, ask me.'
