@@ -53,7 +53,7 @@ ANTHROPIC_API_KEY=
 
 # Demos
 
-[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/real_browser.py): Write in Google Docs a letter to my Papa and thank him for everything, save the document as PDF - Magnus
+[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/real_browser.py): Write a letter in Google Docs to my Papa, thanking him for everything, and save the document as a PDF.
 
 ![Letter to Papa](https://github.com/user-attachments/assets/242ade3e-15bc-41c2-988f-cbc5415a66aa)
 
