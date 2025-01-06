@@ -18,6 +18,8 @@ from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
 from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo
 from browser_use.browser.views import BrowserState
 
+import json
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,8 +99,17 @@ class MessageManager:
 	def add_model_output(self, model_output: AgentOutput) -> None:
 		"""Add model output as AI message"""
 
-		content = model_output.model_dump_json(exclude_unset=True)
-		msg = AIMessage(content=content)
+		msg = AIMessage(
+			content="",
+			tool_calls=[
+				{
+					"name": "AgentOutput",
+					"args": model_output.model_dump(mode="json", exclude_unset=True),
+					"id": "",
+					"type": "tool_call",
+				}
+			],
+		)
 		self._add_message_with_tokens(msg)
 
 	def get_messages(self) -> List[BaseMessage]:
