@@ -56,6 +56,28 @@ class MessageManager:
 
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
+		wait_for_human = AIMessage(
+			content="",
+			additional_kwargs={},
+			response_metadata={},
+			tool_calls=[
+				{
+					"name": "AgentOutput",
+					"args": {
+						"current_state": {
+							"evaluation_previous_goal": "Unknown - No previous actions to evaluate.",
+							"memory": "",
+							"next_goal": "Obtain task from user",
+						},
+						"action": [],
+					},
+					"id": "",
+					"type": "tool_call",
+				}
+			],
+		)
+		self._add_message_with_tokens(wait_for_human)
+
 		task_message = HumanMessage(content=f'Your task is: {task}')
 		self._add_message_with_tokens(task_message)
 
