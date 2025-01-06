@@ -425,7 +425,7 @@ class Controller:
 										}
 										
 										select.value = option.value;
-										select.dispatchEvent(new Event('change'));
+										select.dispatchEvent(new Event('change', { bubbles: true }));
 										return {
 											success: true, 
 											selectedValue: option.value,
