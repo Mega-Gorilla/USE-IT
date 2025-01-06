@@ -18,8 +18,6 @@ from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
 from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo
 from browser_use.browser.views import BrowserState
 
-import json
-
 logger = logging.getLogger(__name__)
 
 
