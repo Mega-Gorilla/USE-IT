@@ -581,7 +581,7 @@ class Agent:
 		duration: int = 3000,
 		show_goals: bool = True,
 		show_task: bool = True,
-		show_logo: bool = True,
+		show_logo: bool = False,
 		font_size: int = 40,
 		title_font_size: int = 56,
 		goal_font_size: int = 44,
