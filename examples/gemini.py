@@ -3,7 +3,6 @@ import os
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_ollama import ChatOllama
 from pydantic import SecretStr
 
 from browser_use import Agent
@@ -13,7 +12,7 @@ api_key = os.getenv('GEMINI_API_KEY')
 if not api_key:
 	raise ValueError('GEMINI_API_KEY is not set')
 
-llm = ChatGoogleGenerativeAI(model='gemini-1.5-pro', api_key=SecretStr(api_key))
+llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash-exp', api_key=SecretStr(api_key))
 
 
 async def run_search():
