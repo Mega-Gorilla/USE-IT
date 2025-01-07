@@ -55,22 +55,22 @@ class MessageManager:
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
 		wait_for_human = AIMessage(
-			content="",
+			content='',
 			additional_kwargs={},
 			response_metadata={},
 			tool_calls=[
 				{
-					"name": "AgentOutput",
-					"args": {
-						"current_state": {
-							"evaluation_previous_goal": "Unknown - No previous actions to evaluate.",
-							"memory": "",
-							"next_goal": "Obtain task from user",
+					'name': 'AgentOutput',
+					'args': {
+						'current_state': {
+							'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
+							'memory': '',
+							'next_goal': 'Obtain task from user',
 						},
-						"action": [],
+						'action': [],
 					},
-					"id": "",
-					"type": "tool_call",
+					'id': '',
+					'type': 'tool_call',
 				}
 			],
 		)
@@ -92,10 +92,12 @@ class MessageManager:
 			for r in result:
 				if r.include_in_memory:
 					if r.extracted_content:
-						msg = HumanMessage(content=str(r.extracted_content))
+						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
 						self._add_message_with_tokens(msg)
 					if r.error:
-						msg = HumanMessage(content=str(r.error)[-self.max_error_length :])
+						msg = HumanMessage(
+							content='Action error: ' + str(r.error)[-self.max_error_length :]
+						)
 						self._add_message_with_tokens(msg)
 					result = None  # if result in history, we dont want to add it again
 
@@ -120,13 +122,13 @@ class MessageManager:
 		"""Add model output as AI message"""
 
 		msg = AIMessage(
-			content="",
+			content='',
 			tool_calls=[
 				{
-					"name": "AgentOutput",
-					"args": model_output.model_dump(mode="json", exclude_unset=True),
-					"id": "",
-					"type": "tool_call",
+					'name': 'AgentOutput',
+					'args': model_output.model_dump(mode='json', exclude_unset=True),
+					'id': '',
+					'type': 'tool_call',
 				}
 			],
 		)
