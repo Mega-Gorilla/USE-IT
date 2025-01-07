@@ -309,9 +309,8 @@ class Controller:
 							for opt in options['options']:
 								# encoding ensures AI uses the exact string in select_dropdown_option
 								encoded_text = json.dumps(opt["text"])
-								encoded_value = json.dumps(opt["value"])
 								formatted_options.append(
-									f"{opt['index']}: text={encoded_text} value={encoded_value}"
+									f"{opt['index']}: text={encoded_text}"
 								)
 
 							all_options.extend(formatted_options)
@@ -323,6 +322,7 @@ class Controller:
 
 				if all_options:
 					msg = '\n'.join(all_options)
+					msg += '\nUse the exact text string in select_dropdown_option'
 					logger.info(msg)
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 				else:
