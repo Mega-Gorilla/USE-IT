@@ -34,6 +34,7 @@ class MessageManager:
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
+		tool_call_in_content: bool = True,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -54,27 +55,35 @@ class MessageManager:
 
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
-		wait_for_human = AIMessage(
-			content='',
-			additional_kwargs={},
-			response_metadata={},
-			tool_calls=[
-				{
-					'name': 'AgentOutput',
-					'args': {
-						'current_state': {
-							'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
-							'memory': '',
-							'next_goal': 'Obtain task from user',
-						},
-						'action': [],
+		self.tool_call_in_content = tool_call_in_content
+		tool_calls = [
+			{
+				'name': 'AgentOutput',
+				'args': {
+					'current_state': {
+						'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
+						'memory': '',
+						'next_goal': 'Obtain task from user',
 					},
-					'id': '',
-					'type': 'tool_call',
-				}
-			],
-		)
-		self._add_message_with_tokens(wait_for_human)
+					'action': [],
+				},
+				'id': '',
+				'type': 'tool_call',
+			}
+		]
+		if self.tool_call_in_content:
+			# openai throws error if tool_calls are not responded -> move to content
+			example_tool_call = AIMessage(
+				content=f'{tool_calls}',
+				tool_calls=[],
+			)
+		else:
+			example_tool_call = AIMessage(
+				content=f'',
+				tool_calls=tool_calls,
+			)
+
+		self._add_message_with_tokens(example_tool_call)
 
 		task_message = HumanMessage(content=f'Your task is: {task}')
 		self._add_message_with_tokens(task_message)
@@ -120,18 +129,25 @@ class MessageManager:
 
 	def add_model_output(self, model_output: AgentOutput) -> None:
 		"""Add model output as AI message"""
+		tool_calls = [
+			{
+				'name': 'AgentOutput',
+				'args': model_output.model_dump(mode='json', exclude_unset=True),
+				'id': '',
+				'type': 'tool_call',
+			}
+		]
+		if self.tool_call_in_content:
+			msg = AIMessage(
+				content=f'{tool_calls}',
+				tool_calls=[],
+			)
+		else:
+			msg = AIMessage(
+				content='',
+				tool_calls=tool_calls,
+			)
 
-		msg = AIMessage(
-			content='',
-			tool_calls=[
-				{
-					'name': 'AgentOutput',
-					'args': model_output.model_dump(mode='json', exclude_unset=True),
-					'id': '',
-					'type': 'tool_call',
-				}
-			],
-		)
 		self._add_message_with_tokens(msg)
 
 	def get_messages(self) -> List[BaseMessage]:

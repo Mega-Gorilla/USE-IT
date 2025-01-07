@@ -86,6 +86,7 @@ class Agent:
 		],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
+		tool_call_in_content: bool = True,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -139,6 +140,7 @@ class Agent:
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
+			tool_call_in_content=tool_call_in_content,
 		)
 
 		# Tracking variables
@@ -592,6 +594,10 @@ class Agent:
 			return
 
 		images = []
+		# if history is empty or first screenshot is None, we can't create a gif
+		if not self.history.history or not self.history.history[0].state.screenshot:
+			logger.warning('No history or first screenshot to create GIF from')
+			return
 
 		# Try to load nicer fonts
 		try:
@@ -675,7 +681,7 @@ class Agent:
 				loop=0,
 				optimize=False,
 			)
-			logger.info(f'Created history GIF at {output_path}')
+			logger.info(f'Created GIF at {output_path}')
 		else:
 			logger.warning('No images found in history to create GIF')
 
@@ -696,22 +702,6 @@ class Agent:
 
 		# Calculate vertical center of image
 		center_y = image.height // 2
-
-		# Draw "Task:" title with larger font
-		title = 'Task:'
-		title_font_size = title_font.size + 20  # Increase title font size by 20
-		larger_title_font = ImageFont.truetype(title_font.path, title_font_size)
-		title_bbox = draw.textbbox((0, 0), title, font=larger_title_font)
-		title_width = title_bbox[2] - title_bbox[0]
-		title_x = (image.width - title_width) // 2
-		title_y = center_y - 150  # Increased spacing from center
-
-		draw.text(
-			(title_x, title_y),
-			title,
-			font=larger_title_font,
-			fill=(255, 255, 255),
-		)
 
 		# Draw task text with increased font size
 		margin = 140  # Increased margin
