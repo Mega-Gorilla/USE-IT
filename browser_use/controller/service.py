@@ -407,7 +407,8 @@ class Controller:
 
 							# "label" because we are selecting by text
 							# nth(0) to disable error thrown by strict mode
-							selected_option_values = await frame.locator("//" + dom_element.xpath).nth(0).select_option(label=text) 
+							# timeout=1000 because we are already waiting for all network events, therefore ideally we don't need to wait a lot here (default 30s)
+							selected_option_values = await frame.locator("//" + dom_element.xpath).nth(0).select_option(label=text, timeout=1000) 
 
 							msg = f"selected option {text} with value {selected_option_values}"
 							logger.info(msg + f' in frame {frame_index}')
