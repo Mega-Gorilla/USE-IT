@@ -12,6 +12,7 @@ import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional, Type, TypeVar
+import platform
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -607,6 +608,9 @@ class Agent:
 
 			for font_name in font_options:
 				try:
+					if platform.system() == "Windows":
+						# Need to specify the abs font path on Windows
+						font_name = os.path.join(os.getenv("WIN_FONT_DIR", "C:\\Windows\\Fonts"), font_name + ".ttf")
 					regular_font = ImageFont.truetype(font_name, font_size)
 					title_font = ImageFont.truetype(font_name, title_font_size)
 					goal_font = ImageFont.truetype(font_name, goal_font_size)
