@@ -57,6 +57,20 @@ OPENAI_API_KEY=
 
 For other settings, models, and more, check out the [documentation 📕](https://docs.browser-use.com).
 
+### Test with UI
+
+You can test [browser-use with a UI repository](https://github.com/browser-use/web-ui)
+
+Or simply run the gradio example:
+
+```
+uv pip install gradio
+```
+
+```bash
+python examples/gradio.py
+```
+
 # Demos
 
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/real_browser.py): Write a letter in Google Docs to my Papa, thanking him for everything, and save the document as a PDF.
