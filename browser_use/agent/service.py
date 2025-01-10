@@ -608,7 +608,7 @@ class Agent:
 
 			for font_name in font_options:
 				try:
-					if platform.platform() == "Windows":
+					if platform.system() == "Windows":
 						# Need to specify the abs font path on Windows
 						font_name = os.path.join(os.getenv("WIN_FONT_DIR", "C:\\Windows\\Fonts"), font_name + ".ttf")
 					regular_font = ImageFont.truetype(font_name, font_size)
