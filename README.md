@@ -100,6 +100,10 @@ https://github.com/user-attachments/assets/de73ee39-432c-4b97-b4e8-939fd7f323b3
 
 For more examples see the [examples](examples) folder or join the [Discord](https://link.browser-use.com/discord) and show off your project.
 
+# Vision
+
+We’re creating a future where you tell your computer what to do, and it gets it done.
+
 # Contributing
 
 Contributions are welcome! Feel free to open issues for bugs or feature requests.
