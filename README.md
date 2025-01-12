@@ -102,7 +102,7 @@ For more examples see the [examples](examples) folder or join the [Discord](http
 
 # Vision
 
-We’re creating a future where you tell your computer what to do, and it gets it done.
+Tell your computer what to do, and it gets it done.
 
 # Contributing
 
