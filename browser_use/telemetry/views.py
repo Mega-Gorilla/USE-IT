@@ -35,7 +35,7 @@ class AgentStepTelemetryEvent(BaseTelemetryEvent):
 	step: int
 	step_error: list[str]
 	consecutive_failures: int
-	actions: Optional[list[ActionModel]] = None
+	actions: list[dict]
 	name: str = 'agent_step'
 
 

@@ -200,11 +200,16 @@ class Agent:
 			self._last_result = result
 
 		finally:
+			actions = (
+				[a.model_dump(exclude_unset=True) for a in model_output.action]
+				if model_output
+				else []
+			)
 			self.telemetry.capture(
 				AgentStepTelemetryEvent(
 					agent_id=self.agent_id,
 					step=self.n_steps,
-					actions=model_output.action if model_output else None,
+					actions=actions,
 					consecutive_failures=self.consecutive_failures,
 					step_error=[r.error for r in result if r.error] if result else ['No result'],
 				)
