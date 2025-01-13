@@ -36,7 +36,7 @@ class OpenTabAction(BaseModel):
 
 
 class ExtractPageContentAction(BaseModel):
-	include_links: bool = False
+	include_links: Optional[bool] = None
 
 
 class ScrollAction(BaseModel):
