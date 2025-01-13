@@ -153,18 +153,18 @@ class Controller:
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to get the text or markdown ',
+			'Extract page content to get the pure text or markdown with links if include_links is set to true',
 			param_model=ExtractPageContentAction,
 			requires_browser=True,
 		)
 		async def extract_content(params: ExtractPageContentAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-
+			output_format = 'markdown' if params.include_links else 'text'
 			content = MainContentExtractor.extract(  # type: ignore
 				html=await page.content(),
-				output_format=params.value,
+				output_format=output_format,
 			)
-			msg = f'📄  Extracted page content\n: {content}\n'
+			msg = f'📄  Extracted page as {output_format}\n: {content}\n'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg)
 
