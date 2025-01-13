@@ -88,6 +88,8 @@ class SystemPrompt:
    - Only provide the action sequence until you think the page will change.
    - Try to be efficient, e.g. fill forms at once, or chain actions where nothing changes on the page like saving, extracting, checkboxes...
    - only use multiple actions if it makes sense. 
+
+
 """
 		text += f'   - use maximum {self.max_actions_per_step} actions per sequence'
 		return text
@@ -174,9 +176,12 @@ class AgentMessagePrompt:
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
-Interactive elements:
+Interactive elements from current page view:
+
+... Cut off - use extract content or scroll to get more ...
 {self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)}
-        """
+... Cut off - use extract content or scroll to get more ...
+"""
 
 		if self.result:
 			for i, result in enumerate(self.result):

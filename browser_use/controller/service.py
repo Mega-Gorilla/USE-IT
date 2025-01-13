@@ -94,7 +94,8 @@ class Controller:
 
 			try:
 				await browser._click_element_node(element_node)
-				msg = f'🖱️  Clicked index {params.index}'
+				msg = f'🖱️  Clicked index {params.index}, with text: {element_node.get_all_text_till_next_clickable_element()}'
+
 				logger.info(msg)
 				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(session.context.pages) > initial_pages:
@@ -302,12 +303,12 @@ class Controller:
 
 						if options:
 							logger.debug(f'Found dropdown in frame {frame_index}')
-							logger.debug(f"Dropdown ID: {options['id']}, Name: {options['name']}")
+							logger.debug(f'Dropdown ID: {options["id"]}, Name: {options["name"]}')
 
 							formatted_options = []
 							for opt in options['options']:
 								formatted_options.append(
-									f"{opt['index']}: {opt['text']} (value={opt['value']})"
+									f'{opt["index"]}: {opt["text"]} (value={opt["value"]})'
 								)
 
 							all_options.extend(formatted_options)
@@ -397,7 +398,7 @@ class Controller:
 						if dropdown_info:
 							if not dropdown_info.get('found'):
 								logger.error(
-									f"Frame {frame_index} error: {dropdown_info.get('error')}"
+									f'Frame {frame_index} error: {dropdown_info.get("error")}'
 								)
 								continue
 
@@ -449,9 +450,9 @@ class Controller:
 								logger.info(msg + f' in frame {frame_index}')
 								return ActionResult(extracted_content=msg, include_in_memory=True)
 							else:
-								logger.error(f"Selection failed: {result.get('error')}")
+								logger.error(f'Selection failed: {result.get("error")}')
 								if 'availableOptions' in result:
-									logger.error(f"Available options: {result['availableOptions']}")
+									logger.error(f'Available options: {result["availableOptions"]}')
 
 					except Exception as frame_e:
 						logger.error(f'Frame {frame_index} attempt failed: {str(frame_e)}')
@@ -496,7 +497,7 @@ class Controller:
 				)
 				if not new_path_hashes.issubset(cached_path_hashes):
 					# next action requires index but there are new elements on the page
-					logger.info(f'Something new appeared after action {i } / {len(actions)}')
+					logger.info(f'Something new appeared after action {i} / {len(actions)}')
 					break
 
 			results.append(await self.act(action, browser_context))
