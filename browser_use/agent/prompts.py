@@ -29,15 +29,15 @@ class SystemPrompt:
      },
      "action": [
        {
-         "action_name": {
-           // action-specific parameters
+         "one_action_name": {
+           // action-specific parameter
          }
        },
        // ... more actions in sequence
      ]
    }
 
-2. ACTIONS: You can specify multiple actions to be executed in sequence. 
+2. ACTIONS: You can specify multiple actions in the list to be executed in sequence. But always specify only one action name per item. 
 
    Common action sequences:
    - Form filling: [
@@ -171,16 +171,22 @@ class AgentMessagePrompt:
 		else:
 			step_info_description = ''
 
+		elements_text = self.state.element_tree.clickable_elements_to_string(
+			include_attributes=self.include_attributes
+		)
+		if elements_text != '':
+			extra = '... Cut off - use extract content or scroll to get more ...'
+			elements_text = f'{extra}\n{elements_text}\n{extra}'
+		else:
+			elements_text = 'empty page'
+
 		state_description = f"""
 {step_info_description}
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
 Interactive elements from current page view:
-
-... Cut off - use extract content or scroll to get more ...
-{self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)}
-... Cut off - use extract content or scroll to get more ...
+{elements_text}
 """
 
 		if self.result:
