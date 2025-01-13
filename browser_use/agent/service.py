@@ -361,11 +361,11 @@ class Agent:
 			model_name = 'Unknown'
 
 		try:
-			import browser_use
+			import pkg_resources
 
-			version = browser_use.__version__  # type: ignore
+			version = pkg_resources.get_distribution('browser-use').version
 			source = 'pip'
-		except AttributeError:
+		except Exception:
 			try:
 				import subprocess
 
@@ -376,7 +376,7 @@ class Agent:
 			except Exception:
 				version = 'unknown'
 				source = 'unknown'
-
+		logger.debug(f'Version: {version}, Source: {source}')
 		self.telemetry.capture(
 			AgentRunTelemetryEvent(
 				agent_id=self.agent_id,
