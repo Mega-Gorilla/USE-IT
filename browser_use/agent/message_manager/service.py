@@ -85,8 +85,13 @@ class MessageManager:
 
 		self._add_message_with_tokens(example_tool_call)
 
-		task_message = HumanMessage(content=f'Your task is: {task}')
+		task_message = self.task_instructions(task)
 		self._add_message_with_tokens(task_message)
+
+	@staticmethod
+	def task_instructions(task: str) -> HumanMessage:
+		content = f'Your ultimate task is: {task}. If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
+		return HumanMessage(content=content)
 
 	def add_state_message(
 		self,
