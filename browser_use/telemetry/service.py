@@ -17,12 +17,6 @@ logger = logging.getLogger(__name__)
 
 POSTHOG_EVENT_SETTINGS = {
 	'process_person_profile': True,
-	'geoip_city_name': None,
-	'geoip_country_name': None,
-	'geoip_country_code': None,
-	'geoip_continent_name': None,
-	'geoip_continent_code': None,
-	'geoip_time_zone': None,
 }
 
 
