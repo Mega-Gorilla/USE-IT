@@ -205,6 +205,7 @@ class Agent:
 					agent_id=self.agent_id,
 					step=self.n_steps,
 					actions=model_output.action if model_output else None,
+					consecutive_failures=self.consecutive_failures,
 					step_error=[r.error for r in result if r.error] if result else ['No result'],
 				)
 			)
@@ -354,16 +355,22 @@ class Agent:
 		else:
 			model_name = 'Unknown'
 
-		# Check installation source and version
 		try:
-			import pkg_resources
+			import browser_use
 
-			dist = pkg_resources.get_distribution('browser-use')
-			version = dist.version
+			version = browser_use.__version__  # type: ignore
 			source = 'pip'
-		except pkg_resources.DistributionNotFound:
-			source = 'git'
-			version = 'unknown'
+		except AttributeError:
+			try:
+				import subprocess
+
+				version = (
+					subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+				)
+				source = 'git'
+			except Exception:
+				version = 'unknown'
+				source = 'unknown'
 
 		self.telemetry.capture(
 			AgentRunTelemetryEvent(
