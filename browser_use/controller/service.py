@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 
 from main_content_extractor import MainContentExtractor
 from playwright.async_api import Page
@@ -289,7 +290,7 @@ class Controller:
 								
 								return {
 									options: Array.from(select.options).map(opt => ({
-										text: opt.text.trim(),
+										text: opt.text, //do not trim, because we are doing exact match in select_dropdown_option
 										value: opt.value,
 										index: opt.index
 									})),
@@ -307,8 +308,10 @@ class Controller:
 
 							formatted_options = []
 							for opt in options['options']:
+								# encoding ensures AI uses the exact string in select_dropdown_option
+								encoded_text = json.dumps(opt["text"])
 								formatted_options.append(
-									f'{opt["index"]}: {opt["text"]} (value={opt["value"]})'
+									f"{opt['index']}: text={encoded_text}"
 								)
 
 							all_options.extend(formatted_options)
@@ -320,6 +323,7 @@ class Controller:
 
 				if all_options:
 					msg = '\n'.join(all_options)
+					msg += '\nUse the exact text string in select_dropdown_option'
 					logger.info(msg)
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 				else:
@@ -415,13 +419,13 @@ class Controller:
 										}
 										
 										const option = Array.from(select.options)
-											.find(opt => opt.text.trim() === params.text);
+											.find(opt => opt.text === params.text);
 										
 										if (!option) {
 											return {
 												success: false, 
 												error: 'Option not found',
-												availableOptions: Array.from(select.options).map(o => o.text.trim())
+												availableOptions: Array.from(select.options).map(o => o.text)
 											};
 										}
 										
@@ -430,7 +434,7 @@ class Controller:
 										return {
 											success: true, 
 											selectedValue: option.value,
-											selectedText: option.text.trim()
+											selectedText: option.text
 										};
 									} catch (e) {
 										return {success: false, error: e.toString()};
@@ -445,7 +449,7 @@ class Controller:
 
 							if result.get('success'):
 								msg = (
-									f"Selected option '{text}' (value={result.get('selectedValue')}"
+									f"Selected option {json.dumps(text)} (value={result.get('selectedValue')}"
 								)
 								logger.info(msg + f' in frame {frame_index}')
 								return ActionResult(extracted_content=msg, include_in_memory=True)
