@@ -29,15 +29,15 @@ class SystemPrompt:
      },
      "action": [
        {
-         "action_name": {
-           // action-specific parameters
+         "one_action_name": {
+           // action-specific parameter
          }
        },
        // ... more actions in sequence
      ]
    }
 
-2. ACTIONS: You can specify multiple actions to be executed in sequence. 
+2. ACTIONS: You can specify multiple actions in the list to be executed in sequence. But always specify only one action name per item. 
 
    Common action sequences:
    - Form filling: [
