@@ -72,7 +72,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		generate_gif: bool = True,
+		generate_gif: bool | str = True,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -389,7 +389,11 @@ class Agent:
 				await self.browser.close()
 
 			if self.generate_gif:
-				self.create_history_gif()
+				output_path: str = 'agent_history.gif'
+				if isinstance(self.generate_gif, str): 
+					output_path = self.generate_gif
+
+				self.create_history_gif(output_path=output_path)
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
