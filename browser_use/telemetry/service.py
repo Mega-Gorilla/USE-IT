@@ -14,7 +14,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-POSTHOG_EVENT_SETTINGS = {'$process_person_profile': False}
+
+POSTHOG_EVENT_SETTINGS = {
+	'process_person_profile': True,
+}
 
 
 @singleton
@@ -40,11 +43,12 @@ class ProductTelemetry:
 			self._posthog_client = None
 		else:
 			logging.info(
-				'Anonymized telemetry enabled. See https://github.com/gregpr07/browser-use for more information.'
+				'Anonymized telemetry enabled. See https://github.com/browser-use/browser-use for more information.'
 			)
 			self._posthog_client = Posthog(
 				project_api_key=self.PROJECT_API_KEY,
 				host=self.HOST,
+				disable_geoip=False,
 			)
 
 			# Silence posthog's logging

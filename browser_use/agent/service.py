@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import os
+import platform
 import textwrap
 import time
 import uuid
@@ -46,7 +47,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
 	AgentRunTelemetryEvent,
-	AgentStepErrorTelemetryEvent,
+	AgentStepTelemetryEvent,
 )
 from browser_use.utils import time_execution_async
 
@@ -66,7 +67,7 @@ class Agent:
 		controller: Controller = Controller(),
 		use_vision: bool = True,
 		save_conversation_path: Optional[str] = None,
-		max_failures: int = 5,
+		max_failures: int = 3,
 		retry_delay: int = 10,
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
@@ -86,6 +87,7 @@ class Agent:
 		],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
+		tool_call_in_content: bool = True,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -129,6 +131,7 @@ class Agent:
 		self._setup_action_models()
 
 		self.max_input_tokens = max_input_tokens
+		self.tool_call_in_content = tool_call_in_content
 
 		self.message_manager = MessageManager(
 			llm=self.llm,
@@ -139,6 +142,7 @@ class Agent:
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
+			tool_call_in_content=tool_call_in_content,
 		)
 
 		# Tracking variables
@@ -171,10 +175,15 @@ class Agent:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
 			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
-			model_output = await self.get_next_action(input_messages)
-			self._save_conversation(input_messages, model_output)
-			self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
-			self.message_manager.add_model_output(model_output)
+			try:
+				model_output = await self.get_next_action(input_messages)
+				self._save_conversation(input_messages, model_output)
+				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
+				self.message_manager.add_model_output(model_output)
+			except Exception as e:
+				# model call failed, remove last state message from history
+				self.message_manager._remove_last_state_message()
+				raise e
 
 			result: list[ActionResult] = await self.controller.multi_act(
 				model_output.action, self.browser_context
@@ -191,16 +200,23 @@ class Agent:
 			self._last_result = result
 
 		finally:
+			actions = (
+				[a.model_dump(exclude_unset=True) for a in model_output.action]
+				if model_output
+				else []
+			)
+			self.telemetry.capture(
+				AgentStepTelemetryEvent(
+					agent_id=self.agent_id,
+					step=self.n_steps,
+					actions=actions,
+					consecutive_failures=self.consecutive_failures,
+					step_error=[r.error for r in result if r.error] if result else ['No result'],
+				)
+			)
 			if not result:
 				return
-			for r in result:
-				if r.error:
-					self.telemetry.capture(
-						AgentStepErrorTelemetryEvent(
-							agent_id=self.agent_id,
-							error=r.error,
-						)
-					)
+
 			if state:
 				self._make_history_item(model_output, state, result)
 
@@ -219,6 +235,10 @@ class Agent:
 					f'Cutting tokens from history - new max input tokens: {self.message_manager.max_input_tokens}'
 				)
 				self.message_manager.cut_messages()
+			elif 'Could not parse response' in error_msg:
+				# give model a hint how output should look like
+				error_msg += '\n\nReturn a valid JSON object with the required fields.'
+
 			self.consecutive_failures += 1
 		elif isinstance(error, RateLimitError):
 			logger.warning(f'{prefix}{error_msg}')
@@ -267,6 +287,9 @@ class Agent:
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
 		parsed: AgentOutput = response['parsed']
+		if parsed is None:
+			raise ValueError(f'Could not parse response.')
+
 		# cut the number of actions to max_actions_per_step
 		parsed.action = parsed.action[: self.max_actions_per_step]
 		self._log_response(parsed)
@@ -326,17 +349,51 @@ class Agent:
 		f.write(' RESPONSE\n')
 		f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
 
+	def _log_agent_run(self) -> None:
+		"""Log the agent run"""
+		logger.info(f'🚀 Starting task: {self.task}')
+		# model_name is eiter model or model_name
+		if hasattr(self.llm, 'model_name'):
+			model_name = self.llm.model_name  # type: ignore
+		elif hasattr(self.llm, 'model'):
+			model_name = self.llm.model  # type: ignore
+		else:
+			model_name = 'Unknown'
+
+		try:
+			import pkg_resources
+
+			version = pkg_resources.get_distribution('browser-use').version
+			source = 'pip'
+		except Exception:
+			try:
+				import subprocess
+
+				version = (
+					subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+				)
+				source = 'git'
+			except Exception:
+				version = 'unknown'
+				source = 'unknown'
+		logger.debug(f'Version: {version}, Source: {source}')
+		self.telemetry.capture(
+			AgentRunTelemetryEvent(
+				agent_id=self.agent_id,
+				use_vision=self.use_vision,
+				tool_call_in_content=self.tool_call_in_content,
+				task=self.task,
+				model_name=model_name,
+				chat_model_library=self.llm.__class__.__name__,
+				version=version,
+				source=source,
+			)
+		)
+
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
-			logger.info(f'🚀 Starting task: {self.task}')
-
-			self.telemetry.capture(
-				AgentRunTelemetryEvent(
-					agent_id=self.agent_id,
-					task=self.task,
-				)
-			)
+			self._log_agent_run()
 
 			for step in range(max_steps):
 				if self._too_many_failures():
@@ -362,9 +419,10 @@ class Agent:
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
 					agent_id=self.agent_id,
-					task=self.task,
 					success=self.history.is_done(),
-					steps=len(self.history.history),
+					steps=self.n_steps,
+					max_steps_reached=self.n_steps >= max_steps,
+					errors=self.history.errors(),
 				)
 			)
 			if not self.injected_browser_context:
@@ -419,7 +477,7 @@ class Agent:
 		is_valid = parsed.is_valid
 		if not is_valid:
 			logger.info(f'❌ Validator decision: {parsed.reason}')
-			msg = f'The ouput is not yet correct. {parsed.reason}.'
+			msg = f'The output is not yet correct. {parsed.reason}.'
 			self._last_result = [ActionResult(extracted_content=msg, include_in_memory=True)]
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
@@ -567,7 +625,7 @@ class Agent:
 		duration: int = 3000,
 		show_goals: bool = True,
 		show_task: bool = True,
-		show_logo: bool = True,
+		show_logo: bool = False,
 		font_size: int = 40,
 		title_font_size: int = 56,
 		goal_font_size: int = 44,
@@ -580,6 +638,10 @@ class Agent:
 			return
 
 		images = []
+		# if history is empty or first screenshot is None, we can't create a gif
+		if not self.history.history or not self.history.history[0].state.screenshot:
+			logger.warning('No history or first screenshot to create GIF from')
+			return
 
 		# Try to load nicer fonts
 		try:
@@ -589,6 +651,11 @@ class Agent:
 
 			for font_name in font_options:
 				try:
+					if platform.system() == 'Windows':
+						# Need to specify the abs font path on Windows
+						font_name = os.path.join(
+							os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf'
+						)
 					regular_font = ImageFont.truetype(font_name, font_size)
 					title_font = ImageFont.truetype(font_name, title_font_size)
 					goal_font = ImageFont.truetype(font_name, goal_font_size)
@@ -663,7 +730,7 @@ class Agent:
 				loop=0,
 				optimize=False,
 			)
-			logger.info(f'Created history GIF at {output_path}')
+			logger.info(f'Created GIF at {output_path}')
 		else:
 			logger.warning('No images found in history to create GIF')
 
@@ -684,22 +751,6 @@ class Agent:
 
 		# Calculate vertical center of image
 		center_y = image.height // 2
-
-		# Draw "Task:" title with larger font
-		title = 'Task:'
-		title_font_size = title_font.size + 20  # Increase title font size by 20
-		larger_title_font = ImageFont.truetype(title_font.path, title_font_size)
-		title_bbox = draw.textbbox((0, 0), title, font=larger_title_font)
-		title_width = title_bbox[2] - title_bbox[0]
-		title_x = (image.width - title_width) // 2
-		title_y = center_y - 150  # Increased spacing from center
-
-		draw.text(
-			(title_x, title_y),
-			title,
-			font=larger_title_font,
-			fill=(255, 255, 255),
-		)
 
 		# Draw task text with increased font size
 		margin = 140  # Increased margin

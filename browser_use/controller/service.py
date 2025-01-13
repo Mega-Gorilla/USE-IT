@@ -43,7 +43,7 @@ class Controller:
 		)
 		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-			await page.goto(f'https://www.google.com/search?q={params.query}')
+			await page.goto(f'https://www.google.com/search?q={params.query}&udm=14')
 			await page.wait_for_load_state()
 			msg = f'🔍  Searched for "{params.query}" in Google'
 			logger.info(msg)
@@ -95,7 +95,8 @@ class Controller:
 
 			try:
 				await browser._click_element_node(element_node)
-				msg = f'🖱️  Clicked index {params.index}'
+				msg = f'🖱️  Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+
 				logger.info(msg)
 				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(session.context.pages) > initial_pages:
@@ -153,18 +154,18 @@ class Controller:
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to get the text or markdown ',
+			'Extract page content to get the pure text or markdown with links if include_links is set to true',
 			param_model=ExtractPageContentAction,
 			requires_browser=True,
 		)
 		async def extract_content(params: ExtractPageContentAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-
+			output_format = 'markdown' if params.include_links else 'text'
 			content = MainContentExtractor.extract(  # type: ignore
 				html=await page.content(),
-				output_format=params.value,
+				output_format=output_format,
 			)
-			msg = f'📄  Extracted page content\n: {content}\n'
+			msg = f'📄  Extracted page as {output_format}\n: {content}\n'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg)
 
@@ -303,7 +304,7 @@ class Controller:
 
 						if options:
 							logger.debug(f'Found dropdown in frame {frame_index}')
-							logger.debug(f"Dropdown ID: {options['id']}, Name: {options['name']}")
+							logger.debug(f'Dropdown ID: {options["id"]}, Name: {options["name"]}')
 
 							formatted_options = []
 							for opt in options['options']:
@@ -401,7 +402,7 @@ class Controller:
 						if dropdown_info:
 							if not dropdown_info.get('found'):
 								logger.error(
-									f"Frame {frame_index} error: {dropdown_info.get('error')}"
+									f'Frame {frame_index} error: {dropdown_info.get("error")}'
 								)
 								continue
 
@@ -453,9 +454,9 @@ class Controller:
 								logger.info(msg + f' in frame {frame_index}')
 								return ActionResult(extracted_content=msg, include_in_memory=True)
 							else:
-								logger.error(f"Selection failed: {result.get('error')}")
+								logger.error(f'Selection failed: {result.get("error")}')
 								if 'availableOptions' in result:
-									logger.error(f"Available options: {result['availableOptions']}")
+									logger.error(f'Available options: {result["availableOptions"]}')
 
 					except Exception as frame_e:
 						logger.error(f'Frame {frame_index} attempt failed: {str(frame_e)}')
@@ -500,7 +501,7 @@ class Controller:
 				)
 				if not new_path_hashes.issubset(cached_path_hashes):
 					# next action requires index but there are new elements on the page
-					logger.info(f'Something new appeared after action {i } / {len(actions)}')
+					logger.info(f'Something new appeared after action {i} / {len(actions)}')
 					break
 
 			results.append(await self.act(action, browser_context))
