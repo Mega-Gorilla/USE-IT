@@ -73,6 +73,7 @@ class Agent:
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
 		generate_gif: bool = True,
+		gif_filename: str = 'agent_history.gif',
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -99,6 +100,7 @@ class Agent:
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
+		self.gif_filename = gif_filename
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -432,7 +434,7 @@ class Agent:
 				await self.browser.close()
 
 			if self.generate_gif:
-				self.create_history_gif()
+				self.create_history_gif(output_path=self.gif_filename)
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
