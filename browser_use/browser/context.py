@@ -77,6 +77,9 @@ class BrowserContextConfig:
 
 		trace_path: None
 			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
+
+     		locale: None
+       			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
 	"""
 
 	cookies_file: str | None = None
@@ -94,6 +97,7 @@ class BrowserContextConfig:
 
 	save_recording_path: str | None = None
 	trace_path: str | None = None
+	locale: str | None = None
 
 
 @dataclass
@@ -237,6 +241,7 @@ class BrowserContext:
 				bypass_csp=self.config.disable_security,
 				ignore_https_errors=self.config.disable_security,
 				record_video_dir=self.config.save_recording_path,
+				locale=self.config.locale
 			)
 
 		if self.config.trace_path:
