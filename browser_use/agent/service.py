@@ -802,43 +802,46 @@ class Agent:
 		title_font: ImageFont.FreeTypeFont,
 		margin: int,
 		logo: Optional[Image.Image] = None,
+		display_step: bool = True,
+		text_color: tuple[int,int,int,int] = (255, 255, 255, 255),
+		text_box_color: tuple[int, int, int, int] = (0, 0, 0, 255),
 	) -> Image.Image:
 		"""Add step number and goal overlay to an image."""
 		image = image.convert('RGBA')
 		txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
 		draw = ImageDraw.Draw(txt_layer)
+		if display_step:
+			# Add step number (bottom left)
+			step_text = str(step_number)
+			step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
+			step_width = step_bbox[2] - step_bbox[0]
+			step_height = step_bbox[3] - step_bbox[1]
 
-		# Add step number (bottom left)
-		step_text = str(step_number)
-		step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
-		step_width = step_bbox[2] - step_bbox[0]
-		step_height = step_bbox[3] - step_bbox[1]
+			# Position step number in bottom left
+			x_step = margin + 10  # Slight additional offset from edge
+			y_step = image.height - margin - step_height - 10  # Slight offset from bottom
 
-		# Position step number in bottom left
-		x_step = margin + 10  # Slight additional offset from edge
-		y_step = image.height - margin - step_height - 10  # Slight offset from bottom
+			# Draw rounded rectangle background for step number
+			padding = 20  # Increased padding
+			step_bg_bbox = (
+				x_step - padding,
+				y_step - padding,
+				x_step + step_width + padding,
+				y_step + step_height + padding,
+			)
+			draw.rounded_rectangle(
+				step_bg_bbox,
+				radius=15,  # Add rounded corners
+				fill=text_box_color,
+			)
 
-		# Draw rounded rectangle background for step number
-		padding = 20  # Increased padding
-		step_bg_bbox = (
-			x_step - padding,
-			y_step - padding,
-			x_step + step_width + padding,
-			y_step + step_height + padding,
-		)
-		draw.rounded_rectangle(
-			step_bg_bbox,
-			radius=15,  # Add rounded corners
-			fill=(0, 0, 0, 255),
-		)
-
-		# Draw step number
-		draw.text(
-			(x_step, y_step),
-			step_text,
-			font=title_font,
-			fill=(255, 255, 255, 255),
-		)
+			# Draw step number
+			draw.text(
+				(x_step, y_step),
+				step_text,
+				font=title_font,
+				fill=text_color,
+			)
 
 		# Draw goal text (centered, bottom)
 		max_width = image.width - (4 * margin)
@@ -862,7 +865,7 @@ class Agent:
 		draw.rounded_rectangle(
 			goal_bg_bbox,
 			radius=15,  # Add rounded corners
-			fill=(0, 0, 0, 255),
+			fill=text_box_color,
 		)
 
 		# Draw goal text
@@ -870,7 +873,7 @@ class Agent:
 			(x_goal, y_goal),
 			wrapped_goal,
 			font=title_font,
-			fill=(255, 255, 255, 255),
+			fill=text_color,
 			align='center',
 		)
 
