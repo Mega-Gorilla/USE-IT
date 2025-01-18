@@ -39,10 +39,21 @@ class DiscordBot(commands.Bot):
        if message.author == self.user: # Ignore the bot's messages
             return
        if message.content.strip().startswith("$bu "):
-            await message.channel.send("Starting browser use task...")
+            
+            # await message.reply(
+            #         "Starting browser use task...",
+            #         mention_author=True  # Don't ping the user
+            #     )
+
             # run browser-use
             agent_message = await self.run_agent(message.content.replace("$bu ", "").strip())
-            await message.channel.send(f"{agent_message}")
+
+            await message.channel.send(
+                    content=f"{agent_message}",
+                    reference=message,
+                    mention_author=True
+                )
+            
     #    await self.process_commands(message)  # Needed to process bot commands
 
     async def run_agent(self, task: str) -> str:
