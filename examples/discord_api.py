@@ -30,54 +30,74 @@ class DiscordBot(commands.Bot):
 
     async def on_ready(self):
         """Called when the bot is ready."""
-        print(f'We have logged in as {self.user}')
-        cmds = await self.tree.sync() # Sync the command tree with discord
-        print(f"Synced commands: {cmds}")
+        try:
+            print(f'We have logged in as {self.user}')
+            cmds = await self.tree.sync() # Sync the command tree with discord
+            print(f"Synced commands: {cmds}")
+        except Exception as e:
+            print(f"Error during bot startup: {e}")
 
     async def on_message(self, message):
        """Called when a message is received."""
-       if message.author == self.user: # Ignore the bot's messages
-            return
-       if message.content.strip().startswith("$bu "):
-            
-            # await message.reply(
-            #         "Starting browser use task...",
-            #         mention_author=True  # Don't ping the user
-            #     )
+       try:
+           if message.author == self.user: # Ignore the bot's messages
+                return
+           if message.content.strip().startswith("$bu "):
+                # try:
+                #     await message.reply(
+                #         "Starting browser use task...",
+                #         mention_author=True  # Don't ping the user
+                #     )
+                # except Exception as e:
+                #     print(f"Error sending start message: {e}")
 
-            # run browser-use
-            agent_message = await self.run_agent(message.content.replace("$bu ", "").strip())
-
-            await message.channel.send(
-                    content=f"{agent_message}",
-                    reference=message,
-                    mention_author=True
-                )
+                try:
+                    agent_message = await self.run_agent(message.content.replace("$bu ", "").strip())
+                    await message.channel.send(
+                            content=f"{agent_message}",
+                            reference=message,
+                            mention_author=True
+                        )
+                except Exception as e:
+                    await message.channel.send(
+                            content=f"Error during task execution: {str(e)}",
+                            reference=message,
+                            mention_author=True
+                        )
+                    
+       except Exception as e:
+           print(f"Error in message handling: {e}")
             
     #    await self.process_commands(message)  # Needed to process bot commands
 
     async def run_agent(self, task: str) -> str:
-        # Browser configuration
-        config = BrowserConfig(
-            headless=True,
-            disable_security=True
-        )
-        browser = Browser(config)
-
-        agent = Agent(
-                task=(
-                    task
-                ),
-                llm=self.llm,
-                browser=browser
+        try:
+            # Browser configuration
+            config = BrowserConfig(
+                headless=True,
+                disable_security=True
             )
+            browser = Browser(config)
 
-        result = await agent.run()
-        return result.history[-1].result[0].extracted_content
+            agent = Agent(
+                    task=(
+                        task
+                    ),
+                    llm=self.llm,
+                    browser=browser
+                )
+            
+            result = await agent.run()
+            return result.history[-1].result[0].extracted_content
+        except Exception as e:
+            raise Exception(f"Browser-use task failed: {str(e)}")
 
-    @app_commands.command(name="bu", description="Starts a Browser-Use task.")
-    async def bu(self, interaction: discord.Interaction):
-        """Handles the /bu slash command."""
-        await interaction.response.send_message("Starting browser use task...", ephemeral=True)
-         # run browser-use
-        await interaction.followup.send(f"Result: is here")
+    # trying to implement slash commands; the following don't seem to work
+    # @app_commands.command(name="bu", description="Starts a Browser-Use task.")
+    # async def bu(self, interaction: discord.Interaction):
+    #     """Handles the /bu slash command."""
+    #     try:
+    #         await interaction.response.send_message("Starting browser use task...", ephemeral=True)
+    #         await interaction.followup.send(f"Result: is here")
+    #     except Exception as e:
+    #         await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
