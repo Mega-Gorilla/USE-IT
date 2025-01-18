@@ -86,9 +86,14 @@ class DiscordBot(commands.Bot):
                     llm=self.llm,
                     browser=browser
                 )
-            
             result = await agent.run()
-            return result.history[-1].result[0].extracted_content
+
+            if result.is_done():
+                agent_message = result.history[-1].result[0].extracted_content
+            else:
+                agent_message = "Oops! Something went wrong while running Browser-Use."
+            
+            return agent_message
         except Exception as e:
             raise Exception(f"Browser-use task failed: {str(e)}")
 
