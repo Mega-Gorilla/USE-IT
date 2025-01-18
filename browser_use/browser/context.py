@@ -788,7 +788,7 @@ class BrowserContext:
 			tag_name = element.tag_name or '*'
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
-	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:			
+	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
 		current_frame = await self.get_current_page()
 
 		# Start with the target element and collect all parents
