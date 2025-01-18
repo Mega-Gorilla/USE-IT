@@ -544,7 +544,7 @@ class BrowserContext:
 
 		return session.cached_state
 
-	async def _update_state(self, use_vision: bool = False) -> BrowserState:
+	async def _update_state(self, use_vision: bool = False, focus_element: int = -1) -> BrowserState:
 		"""Update and return state."""
 		session = await self.get_session()
 
@@ -567,7 +567,7 @@ class BrowserContext:
 		try:
 			await self.remove_highlights()
 			dom_service = DomService(page)
-			content = await dom_service.get_clickable_elements()
+			content = await dom_service.get_clickable_elements(focus_element=focus_element)
 
 			screenshot_b64 = None
 			if use_vision:
@@ -788,7 +788,7 @@ class BrowserContext:
 			tag_name = element.tag_name or '*'
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
-	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
+	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:			
 		current_frame = await self.get_current_page()
 
 		# Start with the target element and collect all parents
@@ -825,6 +825,10 @@ class BrowserContext:
 
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		try:
+			# Highlight before typing
+			if element_node.highlight_index is not None:
+				await self._update_state(focus_element=element_node.highlight_index)
+
 			page = await self.get_current_page()
 			element = await self.get_locate_element(element_node)
 
@@ -848,6 +852,10 @@ class BrowserContext:
 		page = await self.get_current_page()
 
 		try:
+			# Highlight before clicking
+			if element_node.highlight_index is not None:
+				await self._update_state(focus_element=element_node.highlight_index)
+
 			element = await self.get_locate_element(element_node)
 
 			if element is None:
