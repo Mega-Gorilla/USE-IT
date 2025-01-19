@@ -779,10 +779,12 @@ class BrowserContext:
 				# Handle different value cases
 				if value == '':
 					css_selector += f'[{safe_attribute}]'
-				elif any(char in value for char in '"\'<>`\n\r'):
+				elif any(char in value for char in '"\'<>`\n\r\t'):
 					# Use contains for values with special characters
-					# Replace newlines with spaces to avoid selector syntax errors
-					safe_value = value.replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
+					# Regex-substitute *any* whitespace with a single space, then strip.
+					collapsed_value = re.sub(r'\s+', ' ', value).strip()
+					# Escape embedded double-quotes.
+					safe_value = collapsed_value.replace('"', '\\"')
 					css_selector += f'[{safe_attribute}*="{safe_value}"]'
 				else:
 					css_selector += f'[{safe_attribute}="{value}"]'
