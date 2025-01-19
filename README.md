@@ -26,7 +26,7 @@ With pip:
 pip install browser-use
 ```
 
-(optional) install playwright:
+install playwright:
 
 ```bash
 playwright install
