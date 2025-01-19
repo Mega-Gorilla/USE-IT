@@ -1,12 +1,8 @@
-import os
-
 from langchain_core.language_models.chat_models import BaseChatModel
 from dotenv import load_dotenv
-from dataclasses import field
 
 import discord
 from discord.ext import commands
-from discord import app_commands
 
 from browser_use.agent.service import Agent, Browser
 from browser_use import BrowserConfig
@@ -16,6 +12,32 @@ from browser_use import BrowserConfig
 load_dotenv()  
 
 class DiscordBot(commands.Bot):
+    """Discord bot implementation for Browser-Use tasks.
+    
+    This bot allows users to run browser automation tasks through Discord messages.
+    Messages must start with the configured prefix (default: "$bu") followed by the task description.
+    
+    Args:
+        llm (BaseChatModel): Language model instance to use for task processing
+        prefix (str, optional): Command prefix for triggering browser tasks. Defaults to "$bu"
+        ack (bool, optional): Whether to acknowledge task receipt with a message. Defaults to False
+        browser_config (BrowserConfig, optional): Browser configuration settings. 
+            Defaults to headless mode
+    
+    Usage:
+        ```python
+        from langchain_openai import ChatOpenAI
+        
+        llm = ChatOpenAI()
+        bot = DiscordBot(llm=llm, prefix="$bu", ack=True)
+        bot.run("YOUR_DISCORD_TOKEN")
+        ```
+    
+    Discord Usage:
+        Send messages starting with the prefix:
+        "$bu search for python tutorials"
+    """
+    
     def __init__(
             self, 
             llm: BaseChatModel, 
@@ -84,12 +106,6 @@ class DiscordBot(commands.Bot):
 
     async def run_agent(self, task: str) -> str:
         try:
-            # # Browser configuration
-            # config = BrowserConfig(
-            #     headless=self.headless,
-            #     disable_security=True
-            # )
-
             browser = Browser(config=self.browser_config)
             agent = Agent(
                     task=(
@@ -108,13 +124,3 @@ class DiscordBot(commands.Bot):
             return agent_message
         except Exception as e:
             raise Exception(f"Browser-use task failed: {str(e)}")
-
-    # trying to implement slash commands; the following don't seem to work
-    # @app_commands.command(name="bu", description="Starts a Browser-Use task.")
-    # async def bu(self, interaction: discord.Interaction):
-    #     """Handles the /bu slash command."""
-    #     try:
-    #         await interaction.response.send_message("Starting browser use task...", ephemeral=True)
-    #         await interaction.followup.send(f"Result: is here")
-    #     except Exception as e:
-    #         await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
