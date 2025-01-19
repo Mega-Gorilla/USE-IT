@@ -148,6 +148,12 @@ class MessageManager:
 
 		self._add_message_with_tokens(msg)
 		# empty tool response
+		tool_message = ToolMessage(
+			content='',
+			tool_call_id=str(self.tool_id),
+		)
+		self._add_message_with_tokens(tool_message)
+		self.tool_id += 1
 
 	def get_messages(self) -> List[BaseMessage]:
 		"""Get current message list, potentially trimmed to max tokens"""
