@@ -43,7 +43,6 @@ class AgentStepTelemetryEvent(BaseTelemetryEvent):
 class AgentRunTelemetryEvent(BaseTelemetryEvent):
 	agent_id: str
 	use_vision: bool
-	tool_call_in_content: bool
 	task: str
 	model_name: str
 	chat_model_library: str
