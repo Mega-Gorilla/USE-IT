@@ -677,7 +677,7 @@ class BrowserContext:
 						# Handle numeric indices
 						if idx.isdigit():
 							index = int(idx) - 1
-							base_part += f':nth-of-type({index+1})'
+							base_part += f':nth-of-type({index + 1})'
 						# Handle last() function
 						elif idx == 'last()':
 							base_part += ':last-of-type'
@@ -803,13 +803,13 @@ class BrowserContext:
 			parent = current.parent
 			parents.append(parent)
 			current = parent
-			if parent.tag_name == 'iframe':
-				break
 
-		# There can be only one iframe parent (by design of the loop above)
-		iframe_parent = [item for item in parents if item.tag_name == 'iframe']
-		if iframe_parent:
-			parent = iframe_parent[0]
+		# Reverse the parents list to process from top to bottom
+		parents.reverse()
+
+		# Process all iframe parents in sequence
+		iframes = [item for item in parents if item.tag_name == 'iframe']
+		for parent in iframes:
 			css_selector = self._enhanced_css_selector_for_element(parent)
 			current_frame = current_frame.frame_locator(css_selector)
 
