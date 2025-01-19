@@ -38,9 +38,9 @@ class BrowserContextWindowSize(TypedDict):
 	width: int
 	height: int
 
-
 @dataclass
 class BrowserContextConfig:
+
 	"""
 	Configuration for the BrowserContext.
 
@@ -80,6 +80,9 @@ class BrowserContextConfig:
 
      		locale: None
        			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+		
+		user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+			custom user agent to use.
 	"""
 
 	cookies_file: str | None = None
@@ -98,7 +101,8 @@ class BrowserContextConfig:
 	save_recording_path: str | None = None
 	trace_path: str | None = None
 	locale: str | None = None
-
+	user_agent: str = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+		
 
 @dataclass
 class BrowserSession:
@@ -233,10 +237,7 @@ class BrowserContext:
 			context = await browser.new_context(
 				viewport=self.config.browser_window_size,
 				no_viewport=False,
-				user_agent=(
-					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-					'(KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-				),
+				user_agent=self.config.user_agent,
 				java_script_enabled=True,
 				bypass_csp=self.config.disable_security,
 				ignore_https_errors=self.config.disable_security,
