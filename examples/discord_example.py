@@ -12,7 +12,7 @@ Five Steps to create and invite a Discord bot:
     *   Navigate to the "Bot" tab on the left side of the screen.
     *   Make sure "Public Bot" is ticked if you want others to invite your bot.
 	*	Generate your bot token by clicking on "Reset Token", Copy the token and save it securely.
-    	*   Do not share the bot token. Treat it like a password. If the token is leaked, regenerate it.
+        *   Do not share the bot token. Treat it like a password. If the token is leaked, regenerate it.
 3. Enable Privileged Intents:
     *   Scroll down to the "Privileged Gateway Intents" section.
     *   Enable the necessary intents (e.g., "Server Members Intent" and "Message Content Intent").
@@ -28,27 +28,26 @@ Five Steps to create and invite a Discord bot:
     *   Choose a server to invite the bot to.
     *   Click “Authorize”.
    -->  Note: The person adding the bot needs "Manage Server" permissions.
-
-After the steps above are completed, you can run the code below to start the bot with your bot token.
+6. Run the code below to start the bot with your bot token.
+7. Write e.g. "/bu whats the weather in Tokyo?" to start a browser-use task and get a response inside the Discord channel.
 """
 
 import os
+
 from dotenv import load_dotenv
-
-from pydantic import SecretStr
+from integrations.discord_api import DiscordBot
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import SecretStr
 
-from browser_use.agent.service import Agent
 from browser_use import BrowserConfig
-
-from integrations.discord_api import DiscordBot 
+from browser_use.agent.service import Agent
 
 load_dotenv()
 
 # load credentials from environment variables
-bot_token = os.getenv("DISCORD_BOT_TOKEN")
+bot_token = os.getenv('DISCORD_BOT_TOKEN')
 if not bot_token:
-	raise ValueError("Discord bot token not found in .env file.")
+	raise ValueError('Discord bot token not found in .env file.')
 
 api_key = os.getenv('GEMINI_API_KEY')
 if not api_key:
@@ -57,12 +56,14 @@ if not api_key:
 llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash-exp', api_key=SecretStr(api_key))
 
 bot = DiscordBot(
-	llm=llm,				# required; instance of BaseChatModel
-	prefix="$talha-bot",	# optional; prefix of messages to trigger browser-use, defaults to "$bu" 
-	ack=True,				# optional; whether to acknowledge task receipt with a message, defaults to False
-	browser_config=BrowserConfig(headless=False) # optional; useful for changing headless mode or other browser configs, defaults to headless mode
+	llm=llm,  # required; instance of BaseChatModel
+	prefix='$bu',  # optional; prefix of messages to trigger browser-use, defaults to "$bu"
+	ack=True,  # optional; whether to acknowledge task receipt with a message, defaults to False
+	browser_config=BrowserConfig(
+		headless=False
+	),  # optional; useful for changing headless mode or other browser configs, defaults to headless mode
 )
 
 bot.run(
-	token=bot_token,		# required; Discord bot token
+	token=bot_token,  # required; Discord bot token
 )
