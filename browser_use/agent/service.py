@@ -20,6 +20,7 @@ from langchain_core.messages import (
 	BaseMessage,
 	SystemMessage,
 )
+from lmnr import observe
 from openai import RateLimitError
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
@@ -338,7 +339,7 @@ class Agent:
 
 		parsed: AgentOutput = response['parsed']
 		if parsed is None:
-			raise ValueError(f'Could not parse response.')
+			raise ValueError('Could not parse response.')
 
 		# cut the number of actions to max_actions_per_step
 		parsed.action = parsed.action[: self.max_actions_per_step]
@@ -420,6 +421,7 @@ class Agent:
 			)
 		)
 
+	@observe(name='agent.run')
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
