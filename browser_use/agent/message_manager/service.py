@@ -193,7 +193,7 @@ class MessageManager:
 
 	def _count_text_tokens(self, text: str) -> int:
 		"""Count tokens in a text string"""
-		if isinstance(self.llm, (ChatOpenAI, ChatAnthropic)):
+		if isinstance(self.llm, (ChatOpenAI)):
 			try:
 				tokens = self.llm.get_num_tokens(text)
 			except Exception:
