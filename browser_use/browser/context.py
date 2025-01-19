@@ -38,9 +38,9 @@ class BrowserContextWindowSize(TypedDict):
 	width: int
 	height: int
 
+
 @dataclass
 class BrowserContextConfig:
-
 	"""
 	Configuration for the BrowserContext.
 
@@ -78,9 +78,9 @@ class BrowserContextConfig:
 		trace_path: None
 			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 
-     		locale: None
-       			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
-		
+		locale: None
+			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+
 		user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 			custom user agent to use.
 	"""
@@ -102,7 +102,7 @@ class BrowserContextConfig:
 	trace_path: str | None = None
 	locale: str | None = None
 	user_agent: str = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-		
+
 
 @dataclass
 class BrowserSession:
@@ -242,7 +242,7 @@ class BrowserContext:
 				bypass_csp=self.config.disable_security,
 				ignore_https_errors=self.config.disable_security,
 				record_video_dir=self.config.save_recording_path,
-				locale=self.config.locale
+				locale=self.config.locale,
 			)
 
 		if self.config.trace_path:
@@ -550,7 +550,9 @@ class BrowserContext:
 
 		return session.cached_state
 
-	async def _update_state(self, use_vision: bool = False, focus_element: int = -1) -> BrowserState:
+	async def _update_state(
+		self, use_vision: bool = False, focus_element: int = -1
+	) -> BrowserState:
 		"""Update and return state."""
 		session = await self.get_session()
 
@@ -780,9 +782,12 @@ class BrowserContext:
 				# Handle different value cases
 				if value == '':
 					css_selector += f'[{safe_attribute}]'
-				elif any(char in value for char in '"\'<>`'):
+				elif any(char in value for char in '"\'<>`\n\r\t'):
 					# Use contains for values with special characters
-					safe_value = value.replace('"', '\\"')
+					# Regex-substitute *any* whitespace with a single space, then strip.
+					collapsed_value = re.sub(r'\s+', ' ', value).strip()
+					# Escape embedded double-quotes.
+					safe_value = collapsed_value.replace('"', '\\"')
 					css_selector += f'[{safe_attribute}*="{safe_value}"]'
 				else:
 					css_selector += f'[{safe_attribute}="{value}"]'
