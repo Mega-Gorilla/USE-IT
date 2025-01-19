@@ -1,5 +1,4 @@
 from langchain_core.language_models.chat_models import BaseChatModel
-from dotenv import load_dotenv
 
 import discord
 from discord.ext import commands
@@ -7,14 +6,15 @@ from discord.ext import commands
 from browser_use.agent.service import Agent, Browser
 from browser_use import BrowserConfig
 
-
+from dotenv import load_dotenv
 
 load_dotenv()  
 
 class DiscordBot(commands.Bot):
     """Discord bot implementation for Browser-Use tasks.
     
-    This bot allows users to run browser automation tasks through Discord messages.
+    This bot allows users to run browser automation tasks through Discord messages. 
+    Processes tasks asynchronously and sends the result back to the user in response to the message.
     Messages must start with the configured prefix (default: "$bu") followed by the task description.
     
     Args:
@@ -66,7 +66,7 @@ class DiscordBot(commands.Bot):
         try:
             print(f'We have logged in as {self.user}')
             cmds = await self.tree.sync() # Sync the command tree with discord
-            print(f"Synced commands: {cmds}")
+            
         except Exception as e:
             print(f"Error during bot startup: {e}")
 
