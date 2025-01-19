@@ -78,8 +78,8 @@ class BrowserContextConfig:
 		trace_path: None
 			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 
-     		locale: None
-       			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+	        locale: None
+	                Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
 	"""
 
 	cookies_file: str | None = None
@@ -241,7 +241,7 @@ class BrowserContext:
 				bypass_csp=self.config.disable_security,
 				ignore_https_errors=self.config.disable_security,
 				record_video_dir=self.config.save_recording_path,
-				locale=self.config.locale
+				locale=self.config.locale,
 			)
 
 		if self.config.trace_path:
@@ -677,7 +677,7 @@ class BrowserContext:
 						# Handle numeric indices
 						if idx.isdigit():
 							index = int(idx) - 1
-							base_part += f':nth-of-type({index+1})'
+							base_part += f':nth-of-type({index + 1})'
 						# Handle last() function
 						elif idx == 'last()':
 							base_part += ':last-of-type'
@@ -779,9 +779,10 @@ class BrowserContext:
 				# Handle different value cases
 				if value == '':
 					css_selector += f'[{safe_attribute}]'
-				elif any(char in value for char in '"\'<>`'):
+				elif any(char in value for char in '"\'<>`\n\r'):
 					# Use contains for values with special characters
-					safe_value = value.replace('"', '\\"')
+					# Replace newlines with spaces to avoid selector syntax errors
+					safe_value = value.replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
 					css_selector += f'[{safe_attribute}*="{safe_value}"]'
 				else:
 					css_selector += f'[{safe_attribute}="{value}"]'
