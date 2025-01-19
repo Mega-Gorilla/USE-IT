@@ -1,7 +1,11 @@
 (
-    doHighlightElements = true
+    args = { doHighlightElements: true, focusHighlightIndex: -1 }
 ) => {
+    const { doHighlightElements, focusHighlightIndex } = args;
     let highlightIndex = 0; // Reset highlight index
+
+    // Quick check to confirm the script receives focusHighlightIndex
+    console.log('focusHighlightIndex:', focusHighlightIndex);
 
     function highlightElement(element, index, parentIframe = null) {
         // Create or get highlight container
@@ -377,7 +381,13 @@
             if (isInteractive && isVisible && isTop) {
                 nodeData.highlightIndex = highlightIndex++;
                 if (doHighlightElements) {
-                    highlightElement(node, nodeData.highlightIndex, parentIframe);
+                    if(focusHighlightIndex >= 0){
+                        if(focusHighlightIndex === nodeData.highlightIndex){
+                            highlightElement(node, nodeData.highlightIndex, parentIframe);
+                        }
+                    } else {
+                        highlightElement(node, nodeData.highlightIndex, parentIframe);
+                    }
                 }
             }
         }
