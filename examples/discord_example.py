@@ -10,6 +10,8 @@ from pydantic import SecretStr
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from browser_use.agent.service import Agent
+from browser_use import BrowserConfig
+
 from discord_api import DiscordBot
 
 
@@ -27,5 +29,10 @@ if not api_key:
 
 llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash-exp', api_key=SecretStr(api_key))
 
-bot = DiscordBot(llm=llm)
+bot = DiscordBot(
+	llm=llm,
+	prefix="$ta",
+	ack=True,
+	browser_config=BrowserConfig(headless=False)
+)
 bot.run(bot_token)

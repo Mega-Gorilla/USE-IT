@@ -2,6 +2,7 @@ import os
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from dotenv import load_dotenv
+from dataclasses import field
 
 import discord
 from discord.ext import commands
@@ -15,8 +16,18 @@ from browser_use import BrowserConfig
 load_dotenv()  
 
 class DiscordBot(commands.Bot):
-    def __init__(self, llm: BaseChatModel):
+    def __init__(
+            self, 
+            llm: BaseChatModel, 
+            prefix: str = "$bu", 
+            ack: bool = False, 
+            browser_config: BrowserConfig = BrowserConfig(headless=True)
+    ):
+        
         self.llm = llm
+        self.prefix = prefix.strip()
+        self.ack = ack
+        self.browser_config = browser_config
 
         # Define intents.
         intents = discord.Intents.default()
@@ -42,17 +53,18 @@ class DiscordBot(commands.Bot):
        try:
            if message.author == self.user: # Ignore the bot's messages
                 return
-           if message.content.strip().startswith("$bu "):
-                # try:
-                #     await message.reply(
-                #         "Starting browser use task...",
-                #         mention_author=True  # Don't ping the user
-                #     )
-                # except Exception as e:
-                #     print(f"Error sending start message: {e}")
+           if message.content.strip().startswith(f"{self.prefix} "):
+                if self.ack:
+                    try:
+                        await message.reply(
+                            "Starting browser use task...",
+                            mention_author=True  # Don't ping the user
+                        )
+                    except Exception as e:
+                        print(f"Error sending start message: {e}")
 
                 try:
-                    agent_message = await self.run_agent(message.content.replace("$bu ", "").strip())
+                    agent_message = await self.run_agent(message.content.replace(f"{self.prefix} ", "").strip())
                     await message.channel.send(
                             content=f"{agent_message}",
                             reference=message,
@@ -72,13 +84,13 @@ class DiscordBot(commands.Bot):
 
     async def run_agent(self, task: str) -> str:
         try:
-            # Browser configuration
-            config = BrowserConfig(
-                headless=True,
-                disable_security=True
-            )
-            browser = Browser(config)
+            # # Browser configuration
+            # config = BrowserConfig(
+            #     headless=self.headless,
+            #     disable_security=True
+            # )
 
+            browser = Browser(config=self.browser_config)
             agent = Agent(
                     task=(
                         task
