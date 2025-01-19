@@ -10,6 +10,7 @@ from langchain_core.messages import (
 	AIMessage,
 	BaseMessage,
 	HumanMessage,
+	ToolMessage,
 )
 from langchain_openai import ChatOpenAI
 
@@ -34,7 +35,6 @@ class MessageManager:
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
-		tool_call_in_content: bool = True,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -55,7 +55,7 @@ class MessageManager:
 
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
-		self.tool_call_in_content = tool_call_in_content
+		self.tool_id = 1
 		tool_calls = [
 			{
 				'name': 'AgentOutput',
@@ -63,28 +63,26 @@ class MessageManager:
 					'current_state': {
 						'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
 						'memory': '',
-						'next_goal': 'Obtain task from user',
+						'next_goal': 'Start browser',
 					},
 					'action': [],
 				},
-				'id': '',
+				'id': str(self.tool_id),
 				'type': 'tool_call',
 			}
 		]
-		if self.tool_call_in_content:
-			# openai throws error if tool_calls are not responded -> move to content
-			example_tool_call = AIMessage(
-				content=f'{tool_calls}',
-				tool_calls=[],
-			)
-		else:
-			example_tool_call = AIMessage(
-				content=f'',
-				tool_calls=tool_calls,
-			)
 
+		example_tool_call = AIMessage(
+			content=f'',
+			tool_calls=tool_calls,
+		)
 		self._add_message_with_tokens(example_tool_call)
-
+		tool_message = ToolMessage(
+			content=f'Browser started',
+			tool_call_id=str(self.tool_id),
+		)
+		self._add_message_with_tokens(tool_message)
+		self.tool_id += 1
 		task_message = self.task_instructions(task)
 		self._add_message_with_tokens(task_message)
 
@@ -138,22 +136,18 @@ class MessageManager:
 			{
 				'name': 'AgentOutput',
 				'args': model_output.model_dump(mode='json', exclude_unset=True),
-				'id': '',
+				'id': str(self.tool_id),
 				'type': 'tool_call',
 			}
 		]
-		if self.tool_call_in_content:
-			msg = AIMessage(
-				content=f'{tool_calls}',
-				tool_calls=[],
-			)
-		else:
-			msg = AIMessage(
-				content='',
-				tool_calls=tool_calls,
-			)
+
+		msg = AIMessage(
+			content='',
+			tool_calls=tool_calls,
+		)
 
 		self._add_message_with_tokens(msg)
+		# empty tool response
 
 	def get_messages(self) -> List[BaseMessage]:
 		"""Get current message list, potentially trimmed to max tokens"""
