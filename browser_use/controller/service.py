@@ -287,7 +287,7 @@ class Controller:
 								const select = document.evaluate(xpath, document, null,
 									XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 								if (!select) return null;
-								
+
 								return {
 									options: Array.from(select.options).map(opt => ({
 										text: opt.text, //do not trim, because we are doing exact match in select_dropdown_option

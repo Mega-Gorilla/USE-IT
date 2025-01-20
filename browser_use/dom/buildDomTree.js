@@ -25,7 +25,7 @@
 
         // Generate a color based on the index
         const colors = [
-            '#FF0000', '#00FF00', '#0000FF', '#FFA500', 
+            '#FF0000', '#00FF00', '#0000FF', '#FFA500',
             '#800080', '#008080', '#FF69B4', '#4B0082',
             '#FF4500', '#2E8B57', '#DC143C', '#4682B4'
         ];
@@ -72,7 +72,7 @@
         // Calculate label position
         const labelWidth = 20; // Approximate width
         const labelHeight = 16; // Approximate height
-        
+
         // Default position (top-right corner inside the box)
         let labelTop = top + 2;
         let labelLeft = left + rect.width - labelWidth - 2;
@@ -155,7 +155,7 @@
             'slider', 'tab', 'tabpanel', 'textbox', 'combobox', 'grid',
             'listbox', 'option', 'progressbar', 'scrollbar', 'searchbox',
             'switch', 'tree', 'treeitem', 'spinbutton', 'tooltip', 'a-button-inner', 'a-dropdown-button', 'click',
-            'menuitemcheckbox', 'menuitemradio', 'a-button-text', 'button-text', 'button-icon', 'button-icon-only', 'button-text-icon-only', 'dropdown', 'combobox' 
+            'menuitemcheckbox', 'menuitemradio', 'a-button-text', 'button-text', 'button-icon', 'button-icon-only', 'button-text-icon-only', 'dropdown', 'combobox'
         ]);
 
         const tagName = element.tagName.toLowerCase();
