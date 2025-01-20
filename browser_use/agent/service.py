@@ -102,6 +102,7 @@ class Agent:
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
+
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -117,9 +118,7 @@ class Agent:
 		if browser_context:
 			self.browser_context = browser_context
 		elif self.browser:
-			self.browser_context = BrowserContext(
-				browser=self.browser, config=self.browser.config.new_context_config
-			)
+			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
 		else:
 			# If neither is provided, create both new
 			self.browser = Browser()
@@ -171,9 +170,7 @@ class Agent:
 			try:
 				import subprocess
 
-				version = (
-					subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
-				)
+				version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
 				source = 'git'
 			except Exception:
 				version = 'unknown'
@@ -231,9 +228,7 @@ class Agent:
 				self.message_manager._remove_last_state_message()
 				raise e
 
-			result: list[ActionResult] = await self.controller.multi_act(
-				model_output.action, self.browser_context
-			)
+			result: list[ActionResult] = await self.controller.multi_act(model_output.action, self.browser_context)
 			self._last_result = result
 
 			if len(result) > 0 and result[-1].is_done:
@@ -246,11 +241,7 @@ class Agent:
 			self._last_result = result
 
 		finally:
-			actions = (
-				[a.model_dump(exclude_unset=True) for a in model_output.action]
-				if model_output
-				else []
-			)
+			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
 			self.telemetry.capture(
 				AgentStepTelemetryEvent(
 					agent_id=self.agent_id,
@@ -277,9 +268,7 @@ class Agent:
 			if 'Max token limit reached' in error_msg:
 				# cut tokens from history
 				self.message_manager.max_input_tokens = self.max_input_tokens - 500
-				logger.info(
-					f'Cutting tokens from history - new max input tokens: {self.message_manager.max_input_tokens}'
-				)
+				logger.info(f'Cutting tokens from history - new max input tokens: {self.message_manager.max_input_tokens}')
 				self.message_manager.cut_messages()
 			elif 'Could not parse response' in error_msg:
 				# give model a hint how output should look like
@@ -307,9 +296,7 @@ class Agent:
 		len_result = len(result)
 
 		if model_output:
-			interacted_elements = AgentHistory.get_interacted_element(
-				model_output, state.selector_map
-			)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
 		else:
 			interacted_elements = [None]
 
@@ -331,9 +318,7 @@ class Agent:
 		if self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
 		else:
-			structured_llm = self.llm.with_structured_output(
-				self.AgentOutput, include_raw=True, method=self.tool_calling_method
-			)
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
@@ -361,9 +346,7 @@ class Agent:
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 		for i, action in enumerate(response.action):
-			logger.info(
-				f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
-			)
+			logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
 		"""Save conversation history to file if path is specified"""
@@ -434,9 +417,7 @@ class Agent:
 				await self.step()
 
 				if self.history.is_done():
-					if (
-						self.validate_output and step < max_steps - 1
-					):  # if last step, we dont need to validate
+					if self.validate_output and step < max_steps - 1:  # if last step, we dont need to validate
 						if not await self._validate_output():
 							continue
 
@@ -465,7 +446,7 @@ class Agent:
 
 			if self.generate_gif:
 				output_path: str = 'agent_history.gif'
-				if isinstance(self.generate_gif, str): 
+				if isinstance(self.generate_gif, str):
 					output_path = self.generate_gif
 
 				self.create_history_gif(output_path=output_path)
@@ -541,11 +522,7 @@ class Agent:
 		results = []
 
 		for i, history_item in enumerate(history.history):
-			goal = (
-				history_item.model_output.current_state.next_goal
-				if history_item.model_output
-				else ''
-			)
+			goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
 			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
 			if (
@@ -573,16 +550,12 @@ class Agent:
 							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
 					else:
-						logger.warning(
-							f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...'
-						)
+						logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 
 		return results
 
-	async def _execute_history_step(
-		self, history_item: AgentHistory, delay: float
-	) -> list[ActionResult]:
+	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 
 		state = await self.browser_context.get_state()
@@ -618,9 +591,7 @@ class Agent:
 		if not historical_element or not current_state.element_tree:
 			return action
 
-		current_element = HistoryTreeProcessor.find_history_element_in_tree(
-			historical_element, current_state.element_tree
-		)
+		current_element = HistoryTreeProcessor.find_history_element_in_tree(historical_element, current_state.element_tree)
 
 		if not current_element or current_element.highlight_index is None:
 			return None
@@ -628,15 +599,11 @@ class Agent:
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
-			logger.info(
-				f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}'
-			)
+			logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
 
 		return action
 
-	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, **kwargs
-	) -> list[ActionResult]:
+	async def load_and_rerun(self, history_file: Optional[str | Path] = None, **kwargs) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
@@ -689,9 +656,7 @@ class Agent:
 				try:
 					if platform.system() == 'Windows':
 						# Need to specify the abs font path on Windows
-						font_name = os.path.join(
-							os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf'
-						)
+						font_name = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf')
 					regular_font = ImageFont.truetype(font_name, font_size)
 					title_font = ImageFont.truetype(font_name, title_font_size)
 					goal_font = ImageFont.truetype(font_name, goal_font_size)
@@ -791,9 +756,7 @@ class Agent:
 		# Draw task text with increased font size
 		margin = 140  # Increased margin
 		max_width = image.width - (2 * margin)
-		larger_font = ImageFont.truetype(
-			regular_font.path, regular_font.size + 16
-		)  # Increase font size more
+		larger_font = ImageFont.truetype(regular_font.path, regular_font.size + 16)  # Increase font size more
 		wrapped_text = self._wrap_text(task, larger_font, max_width)
 
 		# Calculate line height with spacing
@@ -956,9 +919,7 @@ class Agent:
 
 		return '\n'.join(lines)
 
-	def _create_frame(
-		self, screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800
-	) -> Image.Image:
+	def _create_frame(self, screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800) -> Image.Image:
 		"""Create a frame for the GIF with improved styling"""
 
 		# Create base image
@@ -981,9 +942,7 @@ class Agent:
 		if os.path.exists(logo_path):
 			logo = Image.open(logo_path)
 			logo.thumbnail((logo_size, logo_size))
-			frame.paste(
-				logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None
-			)
+			frame.paste(logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None)
 
 		# Create drawing context
 		draw = ImageDraw.Draw(frame)
