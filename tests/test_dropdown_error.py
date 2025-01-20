@@ -22,7 +22,7 @@ llm = ChatOpenAI(model='gpt-4o')
 
 agent = Agent(
 	task=(
-		'go to https://codepen.io/shyam-king/pen/pvzpByJ and first get all options for the dropdown and then select the json option'
+		'go to https://codepen.io/shyam-king/pen/emOyjKm and select number "4" and return the output of "selected value"'
 	),
 	llm=llm,
 	browser_context=BrowserContext(
@@ -37,8 +37,7 @@ async def test_dropdown():
 
 	result = history.final_result()
 	assert result is not None
+	assert '4' in result
+	print(result)
+
 	# await browser.close()
-
-
-if __name__ == '__main__':
-	asyncio.run(test_dropdown())
