@@ -87,7 +87,7 @@ class BrowserContextConfig:
 		highlight_elements: True
 			Highlight elements in the DOM on the screen
 
-		viewport_expansion: 800
+		viewport_expansion: 500
 			Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
 	"""
 
@@ -110,7 +110,7 @@ class BrowserContextConfig:
 	)
 
 	highlight_elements: bool = True
-	viewport_expansion: int = 800
+	viewport_expansion: int = 500
 
 
 @dataclass
