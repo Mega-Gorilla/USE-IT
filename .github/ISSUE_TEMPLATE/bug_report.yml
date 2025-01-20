@@ -22,8 +22,8 @@ body:
       label: Reproduction Steps
       description: Steps to reproduce the behavior
       placeholder: |
-        1. Install browser-use version X.X.X
-        2. Run the following code...
+        1. Install browser-use...
+        2. Run the following task...
         3. See error...
     validations:
       required: true
@@ -37,16 +37,12 @@ body:
     validations:
       required: true
 
-  - type: dropdown
+  - type: input
     id: version
     attributes:
       label: Version
-      description: What version of browser-use are you running?
-      options:
-        - 0.1.19 (Latest)
-        - 0.1.18
-        - 0.1.17
-        - Other (specify in description)
+      description: What version of browser-use are you using? (Run `uv pip show browser-use` to find out)
+      placeholder: "e.g., pip 0.1.26, or git main branch"
     validations:
       required: true
 
