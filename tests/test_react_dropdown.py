@@ -22,7 +22,7 @@ llm = ChatOpenAI(model='gpt-4o')
 
 agent = Agent(
 	task=(
-		'go to https://codepen.io/shyam-king/pen/pvzpByJ and first get all options for the dropdown and then select the json option'
+		'go to https://codepen.io/shyam-king/pen/ByBJoOv and select "Tiger" dropdown and read the text given in "Selected Animal" box (it can be empty as well)'
 	),
 	llm=llm,
 	browser_context=BrowserContext(
@@ -32,11 +32,12 @@ agent = Agent(
 
 
 async def test_dropdown():
-	history: AgentHistoryList = await agent.run(20)
+	history: AgentHistoryList = await agent.run(10)
 	# await controller.browser.close(force=True)
 
 	result = history.final_result()
 	assert result is not None
+	print('result: ', result)
 	# await browser.close()
 
 

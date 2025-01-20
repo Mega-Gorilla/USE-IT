@@ -1,6 +1,6 @@
 import asyncio
-import logging
 import json
+import logging
 
 from main_content_extractor import MainContentExtractor
 from playwright.async_api import Page
@@ -309,10 +309,8 @@ class Controller:
 							formatted_options = []
 							for opt in options['options']:
 								# encoding ensures AI uses the exact string in select_dropdown_option
-								encoded_text = json.dumps(opt["text"])
-								formatted_options.append(
-									f"{opt['index']}: text={encoded_text}"
-								)
+								encoded_text = json.dumps(opt['text'])
+								formatted_options.append(f'{opt["index"]}: text={encoded_text}')
 
 							all_options.extend(formatted_options)
 
@@ -363,6 +361,8 @@ class Controller:
 			logger.debug(f'Element attributes: {dom_element.attributes}')
 			logger.debug(f'Element tag: {dom_element.tag_name}')
 
+			xpath = '//' + dom_element.xpath
+
 			try:
 				frame_index = 0
 				for frame in page.frames:
@@ -408,55 +408,19 @@ class Controller:
 
 							logger.debug(f'Found dropdown in frame {frame_index}: {dropdown_info}')
 
-							# Rest of the selection code remains the same...
-							select_option_js = """
-								(params) => {
-									try {
-										const select = document.evaluate(params.xpath, document, null,
-											XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-										if (!select || select.tagName.toLowerCase() !== 'select') {
-											return {success: false, error: 'Select not found or invalid element type'};
-										}
-										
-										const option = Array.from(select.options)
-											.find(opt => opt.text === params.text);
-										
-										if (!option) {
-											return {
-												success: false, 
-												error: 'Option not found',
-												availableOptions: Array.from(select.options).map(o => o.text)
-											};
-										}
-										
-										select.value = option.value;
-										select.dispatchEvent(new Event('change'));
-										return {
-											success: true, 
-											selectedValue: option.value,
-											selectedText: option.text
-										};
-									} catch (e) {
-										return {success: false, error: e.toString()};
-									}
-								}
-							"""
+							# "label" because we are selecting by text
+							# nth(0) to disable error thrown by strict mode
+							# timeout=1000 because we are already waiting for all network events, therefore ideally we don't need to wait a lot here (default 30s)
+							selected_option_values = (
+								await frame.locator('//' + dom_element.xpath)
+								.nth(0)
+								.select_option(label=text, timeout=1000)
+							)
 
-							params = {'xpath': dom_element.xpath, 'text': text}
+							msg = f'selected option {text} with value {selected_option_values}'
+							logger.info(msg + f' in frame {frame_index}')
 
-							result = await frame.evaluate(select_option_js, params)
-							logger.debug(f'Selection result: {result}')
-
-							if result.get('success'):
-								msg = (
-									f"Selected option {json.dumps(text)} (value={result.get('selectedValue')}"
-								)
-								logger.info(msg + f' in frame {frame_index}')
-								return ActionResult(extracted_content=msg, include_in_memory=True)
-							else:
-								logger.error(f'Selection failed: {result.get("error")}')
-								if 'availableOptions' in result:
-									logger.error(f'Available options: {result["availableOptions"]}')
+							return ActionResult(extracted_content=msg, include_in_memory=True)
 
 					except Exception as frame_e:
 						logger.error(f'Frame {frame_index} attempt failed: {str(frame_e)}')
