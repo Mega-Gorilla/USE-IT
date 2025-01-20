@@ -8,9 +8,7 @@ from browser_use.browser.views import BrowserState
 
 
 class SystemPrompt:
-	def __init__(
-		self, action_description: str, current_date: datetime, max_actions_per_step: int = 10
-	):
+	def __init__(self, action_description: str, current_date: datetime, max_actions_per_step: int = 10):
 		self.default_action_description = action_description
 		self.current_date = current_date
 		self.max_actions_per_step = max_actions_per_step
@@ -165,18 +163,28 @@ class AgentMessagePrompt:
 
 	def get_user_message(self) -> HumanMessage:
 		if self.step_info:
-			step_info_description = (
-				f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
-			)
+			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
 		else:
 			step_info_description = ''
 
-		elements_text = self.state.element_tree.clickable_elements_to_string(
-			include_attributes=self.include_attributes
-		)
+		elements_text = self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
+
+		has_content_above = (self.state.pixels_above or 0) > 0
+		has_content_below = (self.state.pixels_below or 0) > 0
+
 		if elements_text != '':
-			extra = '... Cut off - use extract content or scroll to get more ...'
-			elements_text = f'{extra}\n{elements_text}\n{extra}'
+			if has_content_above:
+				elements_text = (
+					f'... {self.state.pixels_above} pixels above - scroll or extract content to see more ...\n{elements_text}'
+				)
+			else:
+				elements_text = f'[Start of page]\n{elements_text}'
+			if has_content_below:
+				elements_text = (
+					f'{elements_text}\n... {self.state.pixels_below} pixels below - scroll or extract content to see more ...'
+				)
+			else:
+				elements_text = f'{elements_text}\n[End of page]'
 		else:
 			elements_text = 'empty page'
 
@@ -192,9 +200,7 @@ Interactive elements from current page view:
 		if self.result:
 			for i, result in enumerate(self.result):
 				if result.extracted_content:
-					state_description += (
-						f'\nAction result {i + 1}/{len(self.result)}: {result.extracted_content}'
-					)
+					state_description += f'\nAction result {i + 1}/{len(self.result)}: {result.extracted_content}'
 				if result.error:
 					# only use last 300 characters of error
 					error = result.error[-self.max_error_length :]

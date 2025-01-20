@@ -83,6 +83,12 @@ class BrowserContextConfig:
 
 		user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 			custom user agent to use.
+
+		highlight_elements: True
+			Highlight elements in the DOM on the screen
+
+		viewport_expansion: 500
+			Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
 	"""
 
 	cookies_file: str | None = None
@@ -102,6 +108,9 @@ class BrowserContextConfig:
 	user_agent: str = (
 		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
 	)
+
+	highlight_elements: bool = True
+	viewport_expansion: int = 500
 
 
 @dataclass
@@ -196,6 +205,8 @@ class BrowserContext:
 			title=await page.title(),
 			screenshot=None,
 			tabs=[],
+			pixels_above=0,
+			pixels_below=0,
 		)
 
 		self.session = BrowserSession(
@@ -283,6 +294,12 @@ class BrowserContext:
 					Promise.resolve({ state: Notification.permission }) :
 					originalQuery(parameters)
 			);
+			(function () {
+				const originalAttachShadow = Element.prototype.attachShadow;
+				Element.prototype.attachShadow = function attachShadow(options) {
+					return originalAttachShadow.call(this, { ...options, mode: "open" });
+				};
+			})();
 			"""
 		)
 
@@ -566,12 +583,16 @@ class BrowserContext:
 		try:
 			await self.remove_highlights()
 			dom_service = DomService(page)
-			content = await dom_service.get_clickable_elements(focus_element=focus_element)
+			content = await dom_service.get_clickable_elements(
+				focus_element=focus_element,
+				viewport_expansion=self.config.viewport_expansion,
+				highlight_elements=self.config.highlight_elements,
+			)
 
 			screenshot_b64 = None
 			if use_vision:
 				screenshot_b64 = await self.take_screenshot()
-
+			pixels_above, pixels_below = await self.get_scroll_info(page)
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
 				selector_map=content.selector_map,
@@ -579,6 +600,8 @@ class BrowserContext:
 				title=await page.title(),
 				tabs=await self.get_tabs_info(),
 				screenshot=screenshot_b64,
+				pixels_above=pixels_above,
+				pixels_below=pixels_below,
 			)
 
 			return self.current_state
@@ -976,3 +999,12 @@ class BrowserContext:
 						return True
 
 		return False
+
+	async def get_scroll_info(self, page: Page) -> tuple[int, int]:
+		"""Get scroll position information for the current page."""
+		scroll_y = await page.evaluate('window.scrollY')
+		viewport_height = await page.evaluate('window.innerHeight')
+		total_height = await page.evaluate('document.documentElement.scrollHeight')
+		pixels_above = scroll_y
+		pixels_below = total_height - (scroll_y + viewport_height)
+		return pixels_above, pixels_below
