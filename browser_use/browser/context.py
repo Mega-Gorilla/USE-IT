@@ -93,15 +93,15 @@ class BrowserContextConfig:
 
 	disable_security: bool = False
 
-	browser_window_size: BrowserContextWindowSize = field(
-		default_factory=lambda: {'width': 1280, 'height': 1100}
-	)
+	browser_window_size: BrowserContextWindowSize = field(default_factory=lambda: {'width': 1280, 'height': 1100})
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
 	trace_path: str | None = None
 	locale: str | None = None
-	user_agent: str = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+	user_agent: str = (
+		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+	)
 
 
 @dataclass
@@ -148,9 +148,7 @@ class BrowserContext:
 
 			if self.config.trace_path:
 				try:
-					await self.session.context.tracing.stop(
-						path=os.path.join(self.config.trace_path, f'{self.context_id}.zip')
-					)
+					await self.session.context.tracing.stop(path=os.path.join(self.config.trace_path, f'{self.context_id}.zip'))
 				except Exception as e:
 					logger.debug(f'Failed to stop tracing: {e}')
 
@@ -229,7 +227,9 @@ class BrowserContext:
 
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
-		if self.browser.config.chrome_instance_path and len(browser.contexts) > 0:
+		if self.browser.config.cdp_url and len(browser.contexts) > 0:
+			context = browser.contexts[0]
+		elif self.browser.config.chrome_instance_path and len(browser.contexts) > 0:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
 		else:
@@ -441,10 +441,7 @@ class BrowserContext:
 			while True:
 				await asyncio.sleep(0.1)
 				now = asyncio.get_event_loop().time()
-				if (
-					len(pending_requests) == 0
-					and (now - last_activity) >= self.config.wait_for_network_idle_page_load_time
-				):
+				if len(pending_requests) == 0 and (now - last_activity) >= self.config.wait_for_network_idle_page_load_time:
 					break
 				if now - start_time > self.config.maximum_wait_page_load_time:
 					logger.debug(
@@ -458,9 +455,7 @@ class BrowserContext:
 			page.remove_listener('request', on_request)
 			page.remove_listener('response', on_response)
 
-		logger.debug(
-			f'Network stabilized for {self.config.wait_for_network_idle_page_load_time} seconds'
-		)
+		logger.debug(f'Network stabilized for {self.config.wait_for_network_idle_page_load_time} seconds')
 
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
@@ -483,9 +478,7 @@ class BrowserContext:
 		elapsed = time.time() - start_time
 		remaining = max((timeout_overwrite or self.config.minimum_wait_page_load_time) - elapsed, 0)
 
-		logger.debug(
-			f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds'
-		)
+		logger.debug(f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds')
 
 		# Sleep remaining time if needed
 		if remaining > 0:
@@ -550,9 +543,7 @@ class BrowserContext:
 
 		return session.cached_state
 
-	async def _update_state(
-		self, use_vision: bool = False, focus_element: int = -1
-	) -> BrowserState:
+	async def _update_state(self, use_vision: bool = False, focus_element: int = -1) -> BrowserState:
 		"""Update and return state."""
 		session = await self.get_session()
 
@@ -852,9 +843,7 @@ class BrowserContext:
 			await page.wait_for_load_state()
 
 		except Exception as e:
-			raise Exception(
-				f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}'
-			)
+			raise Exception(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
 
 	async def _click_element_node(self, element_node: DOMElementNode):
 		"""
@@ -961,9 +950,7 @@ class BrowserContext:
 			except Exception as e:
 				logger.warning(f'Failed to save cookies: {str(e)}')
 
-	async def is_file_uploader(
-		self, element_node: DOMElementNode, max_depth: int = 3, current_depth: int = 0
-	) -> bool:
+	async def is_file_uploader(self, element_node: DOMElementNode, max_depth: int = 3, current_depth: int = 0) -> bool:
 		"""Check if element or its children are file uploaders"""
 		if current_depth > max_depth:
 			return False
@@ -976,10 +963,7 @@ class BrowserContext:
 
 		# Check for file input attributes
 		if element_node.tag_name == 'input':
-			is_uploader = (
-				element_node.attributes.get('type') == 'file'
-				or element_node.attributes.get('accept') is not None
-			)
+			is_uploader = element_node.attributes.get('type') == 'file' or element_node.attributes.get('accept') is not None
 
 		if is_uploader:
 			return True
