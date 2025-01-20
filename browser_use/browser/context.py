@@ -205,6 +205,8 @@ class BrowserContext:
 			title=await page.title(),
 			screenshot=None,
 			tabs=[],
+			pixels_above=0,
+			pixels_below=0,
 		)
 
 		self.session = BrowserSession(
@@ -590,7 +592,7 @@ class BrowserContext:
 			screenshot_b64 = None
 			if use_vision:
 				screenshot_b64 = await self.take_screenshot()
-
+			pixels_above, pixels_below = await self.get_scroll_info(page)
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
 				selector_map=content.selector_map,
@@ -598,6 +600,8 @@ class BrowserContext:
 				title=await page.title(),
 				tabs=await self.get_tabs_info(),
 				screenshot=screenshot_b64,
+				pixels_above=pixels_above,
+				pixels_below=pixels_below,
 			)
 
 			return self.current_state
@@ -995,3 +999,12 @@ class BrowserContext:
 						return True
 
 		return False
+
+	async def get_scroll_info(self, page: Page) -> tuple[int, int]:
+		"""Get scroll position information for the current page."""
+		scroll_y = await page.evaluate('window.scrollY')
+		viewport_height = await page.evaluate('window.innerHeight')
+		total_height = await page.evaluate('document.documentElement.scrollHeight')
+		pixels_above = scroll_y
+		pixels_below = total_height - (scroll_y + viewport_height)
+		return pixels_above, pixels_below
