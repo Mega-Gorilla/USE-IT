@@ -12,7 +12,7 @@ import time
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -90,6 +90,7 @@ class Agent:
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 		tool_calling_method: Optional[str] = 'auto',
+		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -156,7 +157,7 @@ class Agent:
 		self.max_failures = max_failures
 		self.retry_delay = retry_delay
 		self.validate_output = validate_output
-
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		if save_conversation_path:
 			logger.info(f'Saving conversation to {save_conversation_path}')
 
@@ -410,6 +411,11 @@ class Agent:
 		try:
 			self._log_agent_run()
 
+			# Execute initial actions if provided
+			if self.initial_actions:
+				result = await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+				self._last_result = result
+
 			for step in range(max_steps):
 				if self._too_many_failures():
 					break
@@ -427,7 +433,6 @@ class Agent:
 				logger.info('❌ Failed to complete task in maximum steps')
 
 			return self.history
-
 		finally:
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
@@ -1023,3 +1028,25 @@ class Agent:
 		draw.text((number_x, number_y), number_text, font=number_font, fill='white')
 
 		return frame
+
+	def _convert_initial_actions(self, actions: List[Dict[str, Dict[str, Any]]]) -> List[ActionModel]:
+		"""Convert dictionary-based actions to ActionModel instances"""
+		converted_actions = []
+		action_model = self.ActionModel
+		for action_dict in actions:
+			# Each action_dict should have a single key-value pair
+			action_name = next(iter(action_dict))
+			params = action_dict[action_name]
+
+			# Get the parameter model for this action from registry
+			action_info = self.controller.registry.registry.actions[action_name]
+			param_model = action_info.param_model
+
+			# Create validated parameters using the appropriate param model
+			validated_params = param_model(**params)
+
+			# Create ActionModel instance with the validated parameters
+			action_model = self.ActionModel(**{action_name: validated_params})
+			converted_actions.append(action_model)
+
+		return converted_actions
