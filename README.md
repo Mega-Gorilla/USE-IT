@@ -38,6 +38,8 @@ Spin up your agent:
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
 import asyncio
+from dotenv import load_dotenv
+load_dotenv()
 
 async def main():
     agent = Agent(
@@ -111,6 +113,11 @@ Contributions are welcome! Feel free to open issues for bugs or feature requests
 ## Local Setup
 
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
+
+## Cooperations
+We are forming a commission to define best practices for UI/UX design for browser agents. [Email tbiddle@loop11.com](mailto:tbiddle@loop11.com) to apply for a seat on the committee. 
+
+Together, we're exploring how software redesign improves the performance of AI agents and gives these companies a competitive advantage by designing their existing software to be at the forefront of the agent age. 
 
 ---
 
