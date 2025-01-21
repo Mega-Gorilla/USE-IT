@@ -28,8 +28,10 @@ logger = logging.getLogger(__name__)
 class Controller:
 	def __init__(
 		self,
+		exclude_actions: list[str] = [],
 	):
-		self.registry = Registry()
+		self.exclude_actions = exclude_actions
+		self.registry = Registry(exclude_actions)
 		self._register_default_actions()
 
 	def _register_default_actions(self):
