@@ -115,9 +115,24 @@ Contributions are welcome! Feel free to open issues for bugs or feature requests
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
 
 ## Cooperations
-We are forming a commission to define best practices for UI/UX design for browser agents. [Email tbiddle@loop11.com](mailto:tbiddle@loop11.com) to apply for a seat on the committee. 
-
+We are forming a commission to define best practices for UI/UX design for browser agents. 
 Together, we're exploring how software redesign improves the performance of AI agents and gives these companies a competitive advantage by designing their existing software to be at the forefront of the agent age. 
+
+Email [tbiddle@loop11.com](mailto:tbiddle@loop11.com) to apply for a seat on the committee. 
+
+## Citation
+
+If you use Browser Use in your research or project, please cite:
+
+```bibtex
+@software{browser_use2024,
+  author = {Müller, Magnus and Žunič, Gregor},
+  title = {Browser Use: Enable AI to control your browser},
+  year = {2024},
+  publisher = {GitHub},
+  url = {https://github.com/browser-use/browser-use}
+}
+```
 
 ---
 
