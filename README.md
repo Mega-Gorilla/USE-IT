@@ -131,7 +131,7 @@ Tell your computer what to do, and it gets it done.
 
 ## Contributing
 
-Contributions are welcome! Feel free to open issues for bugs or feature requests.
+We love contributions! Feel free to open issues for bugs or feature requests.
 
 ## Local Setup
 
