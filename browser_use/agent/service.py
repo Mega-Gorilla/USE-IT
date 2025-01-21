@@ -160,6 +160,9 @@ class Agent:
 		if save_conversation_path:
 			logger.info(f'Saving conversation to {save_conversation_path}')
 
+		self._paused = False
+		self._stopped = False
+
 	def _set_version_and_source(self) -> None:
 		try:
 			import pkg_resources
@@ -414,10 +417,14 @@ class Agent:
 				if self._too_many_failures():
 					break
 
+				# Check control flags before each step
+				if not await self._handle_control_flags():
+					break
+
 				await self.step()
 
 				if self.history.is_done():
-					if self.validate_output and step < max_steps - 1:  # if last step, we dont need to validate
+					if self.validate_output and step < max_steps - 1:
 						if not await self._validate_output():
 							continue
 
@@ -457,6 +464,19 @@ class Agent:
 			logger.error(f'❌ Stopping due to {self.max_failures} consecutive failures')
 			return True
 		return False
+
+	async def _handle_control_flags(self) -> bool:
+		"""Handle pause and stop flags. Returns True if execution should continue."""
+		if self._stopped:
+			logger.info('Agent stopped')
+			return False
+
+		while self._paused:
+			await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
+			if self._stopped:  # Allow stopping while paused
+				return False
+
+		return True
 
 	async def _validate_output(self) -> bool:
 		"""Validate the output of the last action is what the user wanted"""
@@ -1023,3 +1043,18 @@ class Agent:
 		draw.text((number_x, number_y), number_text, font=number_font, fill='white')
 
 		return frame
+
+	def pause(self) -> None:
+		"""Pause the agent before the next step"""
+		logger.info('🔄 Agent pausing before next step')
+		self._paused = True
+
+	def resume(self) -> None:
+		"""Resume the agent"""
+		logger.info('▶️ Agent resuming')
+		self._paused = False
+
+	def stop(self) -> None:
+		"""Stop the agent"""
+		logger.info('⏹️ Agent stopping')
+		self._stopped = True
