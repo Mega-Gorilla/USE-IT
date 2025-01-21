@@ -106,7 +106,30 @@ For more examples see the [examples](examples) folder or join the [Discord](http
 
 Tell your computer what to do, and it gets it done.
 
-# Contributing
+## Roadmap
+
+- [ ] Improve memory management 
+- [ ] Enhance planning capabilities
+- [ ] Improve self-correction
+- [ ] Fine-tune model for better performance
+- [ ] Create datasets for complex tasks
+- [ ] Sandbox browser-use for specific websites
+- [ ] Implement deterministic script rerun with LLM fallback
+- [ ] Cloud-hosted version
+- [ ] Add stop/pause functionality
+- [ ] Improved authentication handling
+- [ ] Reduce token consumption
+- [ ] Implement long-term memory
+- [ ] Handle repetitive tasks reliably
+- [ ] Third-party integrations (Slack, etc.)
+- [ ] Include more interactive elements
+- [ ] Human in the loop execution
+- [ ] Benchmark various models against each other
+- [ ] Let the user record a workflow and browser-use will execute it
+- [ ] Improve the generated gif quality
+- [ ] Create various demos for Tutorial execution, Job application, QA Testing, Social Media, etc.
+
+## Contributing
 
 Contributions are welcome! Feel free to open issues for bugs or feature requests.
 
