@@ -38,6 +38,8 @@ Spin up your agent:
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
 import asyncio
+from dotenv import load_dotenv
+load_dotenv()
 
 async def main():
     agent = Agent(
@@ -104,13 +106,56 @@ For more examples see the [examples](examples) folder or join the [Discord](http
 
 Tell your computer what to do, and it gets it done.
 
-# Contributing
+## Roadmap
 
-Contributions are welcome! Feel free to open issues for bugs or feature requests.
+- [ ] Improve memory management 
+- [ ] Enhance planning capabilities
+- [ ] Improve self-correction
+- [ ] Fine-tune model for better performance
+- [ ] Create datasets for complex tasks
+- [ ] Sandbox browser-use for specific websites
+- [ ] Implement deterministic script rerun with LLM fallback
+- [ ] Cloud-hosted version
+- [ ] Add stop/pause functionality
+- [ ] Improved authentication handling
+- [ ] Reduce token consumption
+- [ ] Implement long-term memory
+- [ ] Handle repetitive tasks reliably
+- [ ] Third-party integrations (Slack, etc.)
+- [ ] Include more interactive elements
+- [ ] Human in the loop execution
+- [ ] Benchmark various models against each other
+- [ ] Let the user record a workflow and browser-use will execute it
+- [ ] Improve the generated gif quality
+- [ ] Create various demos for Tutorial execution, Job application, QA Testing, Social Media, etc.
+
+## Contributing
+
+We love contributions! Feel free to open issues for bugs or feature requests.
 
 ## Local Setup
 
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
+
+## Cooperations
+We are forming a commission to define best practices for UI/UX design for browser agents. 
+Together, we're exploring how software redesign improves the performance of AI agents and gives these companies a competitive advantage by designing their existing software to be at the forefront of the agent age. 
+
+Email [tbiddle@loop11.com](mailto:tbiddle@loop11.com) to apply for a seat on the committee. 
+
+## Citation
+
+If you use Browser Use in your research or project, please cite:
+
+```bibtex
+@software{browser_use2024,
+  author = {Müller, Magnus and Žunič, Gregor},
+  title = {Browser Use: Enable AI to control your browser},
+  year = {2024},
+  publisher = {GitHub},
+  url = {https://github.com/browser-use/browser-use}
+}
+```
 
 ---
 
