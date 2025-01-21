@@ -22,6 +22,8 @@ class BrowserState(DOMState):
 	title: str
 	tabs: list[TabInfo]
 	screenshot: Optional[str] = None
+	pixels_above: int = 0
+	pixels_below: int = 0
 
 
 @dataclass
@@ -36,9 +38,7 @@ class BrowserStateHistory:
 		data = {}
 		data['tabs'] = [tab.model_dump() for tab in self.tabs]
 		data['screenshot'] = self.screenshot
-		data['interacted_element'] = [
-			el.to_dict() if el else None for el in self.interacted_element
-		]
+		data['interacted_element'] = [el.to_dict() if el else None for el in self.interacted_element]
 		data['url'] = self.url
 		data['title'] = self.title
 		return data

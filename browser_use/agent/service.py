@@ -12,7 +12,7 @@ import time
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -20,6 +20,7 @@ from langchain_core.messages import (
 	BaseMessage,
 	SystemMessage,
 )
+from lmnr import observe
 from openai import RateLimitError
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
@@ -47,7 +48,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
 	AgentRunTelemetryEvent,
-	AgentStepErrorTelemetryEvent,
+	AgentStepTelemetryEvent,
 )
 from browser_use.utils import time_execution_async
 
@@ -67,12 +68,13 @@ class Agent:
 		controller: Controller = Controller(),
 		use_vision: bool = True,
 		save_conversation_path: Optional[str] = None,
+		save_conversation_path_encoding: Optional[str] = 'utf-8',
 		max_failures: int = 3,
 		retry_delay: int = 10,
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
-		generate_gif: bool = True,
+		generate_gif: bool | str = True,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -88,9 +90,11 @@ class Agent:
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 		tool_call_in_content: bool = True,
-		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None]
-		| None = None,
+		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
+		# Cloud Callbacks
+		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None] | None = None,
 		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
+		tool_calling_method: Optional[str] = 'auto',
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -98,10 +102,12 @@ class Agent:
 		self.use_vision = use_vision
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
+		self.save_conversation_path_encoding = save_conversation_path_encoding
 		self._last_result = None
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
+
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -117,9 +123,7 @@ class Agent:
 		if browser_context:
 			self.browser_context = browser_context
 		elif self.browser:
-			self.browser_context = BrowserContext(
-				browser=self.browser, config=self.browser.config.new_context_config
-			)
+			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
 		else:
 			# If neither is provided, create both new
 			self.browser = Browser()
@@ -132,8 +136,12 @@ class Agent:
 
 		# Action and output models setup
 		self._setup_action_models()
-
+		self._set_version_and_source()
 		self.max_input_tokens = max_input_tokens
+
+		self._set_model_names()
+
+		self.tool_calling_method = self.set_tool_calling_method(tool_calling_method)
 
 		self.message_manager = MessageManager(
 			llm=self.llm,
@@ -144,7 +152,6 @@ class Agent:
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
-			tool_call_in_content=tool_call_in_content,
 		)
 
 		# Step callback
@@ -158,9 +165,40 @@ class Agent:
 		self.max_failures = max_failures
 		self.retry_delay = retry_delay
 		self.validate_output = validate_output
-
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		if save_conversation_path:
 			logger.info(f'Saving conversation to {save_conversation_path}')
+
+		self._paused = False
+		self._stopped = False
+
+	def _set_version_and_source(self) -> None:
+		try:
+			import pkg_resources
+
+			version = pkg_resources.get_distribution('browser-use').version
+			source = 'pip'
+		except Exception:
+			try:
+				import subprocess
+
+				version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+				source = 'git'
+			except Exception:
+				version = 'unknown'
+				source = 'unknown'
+		logger.debug(f'Version: {version}, Source: {source}')
+		self.version = version
+		self.source = source
+
+	def _set_model_names(self) -> None:
+		self.chat_model_library = self.llm.__class__.__name__
+		if hasattr(self.llm, 'model_name'):
+			self.model_name = self.llm.model_name  # type: ignore
+		elif hasattr(self.llm, 'model'):
+			self.model_name = self.llm.model  # type: ignore
+		else:
+			self.model_name = 'Unknown'
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from controller's registry"""
@@ -168,6 +206,17 @@ class Agent:
 		self.ActionModel = self.controller.registry.create_action_model()
 		# Create output model with the dynamic actions
 		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+
+	def set_tool_calling_method(self, tool_calling_method: Optional[str]) -> Optional[str]:
+		if tool_calling_method == 'auto':
+			if self.chat_model_library == 'ChatGoogleGenerativeAI':
+				return None
+			elif self.chat_model_library == 'ChatOpenAI':
+				return 'function_calling'
+			elif self.chat_model_library == 'AzureChatOpenAI':
+				return 'function_calling'
+			else:
+				return None
 
 	@time_execution_async('--step')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
@@ -196,9 +245,7 @@ class Agent:
 				self.message_manager._remove_last_state_message()
 				raise e
 
-			result: list[ActionResult] = await self.controller.multi_act(
-				model_output.action, self.browser_context
-			)
+			result: list[ActionResult] = await self.controller.multi_act(model_output.action, self.browser_context)
 			self._last_result = result
 
 			if len(result) > 0 and result[-1].is_done:
@@ -211,16 +258,19 @@ class Agent:
 			self._last_result = result
 
 		finally:
+			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
+			self.telemetry.capture(
+				AgentStepTelemetryEvent(
+					agent_id=self.agent_id,
+					step=self.n_steps,
+					actions=actions,
+					consecutive_failures=self.consecutive_failures,
+					step_error=[r.error for r in result if r.error] if result else ['No result'],
+				)
+			)
 			if not result:
 				return
-			for r in result:
-				if r.error:
-					self.telemetry.capture(
-						AgentStepErrorTelemetryEvent(
-							agent_id=self.agent_id,
-							error=r.error,
-						)
-					)
+
 			if state:
 				self._make_history_item(model_output, state, result)
 
@@ -235,9 +285,7 @@ class Agent:
 			if 'Max token limit reached' in error_msg:
 				# cut tokens from history
 				self.message_manager.max_input_tokens = self.max_input_tokens - 500
-				logger.info(
-					f'Cutting tokens from history - new max input tokens: {self.message_manager.max_input_tokens}'
-				)
+				logger.info(f'Cutting tokens from history - new max input tokens: {self.message_manager.max_input_tokens}')
 				self.message_manager.cut_messages()
 			elif 'Could not parse response' in error_msg:
 				# give model a hint how output should look like
@@ -265,9 +313,7 @@ class Agent:
 		len_result = len(result)
 
 		if model_output:
-			interacted_elements = AgentHistory.get_interacted_element(
-				model_output, state.selector_map
-			)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
 		else:
 			interacted_elements = [None]
 
@@ -286,11 +332,14 @@ class Agent:
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
+		if self.tool_calling_method is None:
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
+		else:
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 
-		structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
-		parsed: AgentOutput = response['parsed']
+		parsed: AgentOutput | None = response['parsed']
 		if parsed is None:
 			raise ValueError('Could not parse response.')
 
@@ -314,9 +363,7 @@ class Agent:
 		logger.info(f'🧠 Memory: {response.current_state.memory}')
 		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 		for i, action in enumerate(response.action):
-			logger.info(
-				f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}'
-			)
+			logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
 
 	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
 		"""Save conversation history to file if path is specified"""
@@ -326,7 +373,11 @@ class Agent:
 		# create folders if not exists
 		os.makedirs(os.path.dirname(self.save_conversation_path), exist_ok=True)
 
-		with open(self.save_conversation_path + f'_{self.n_steps}.txt', 'w') as f:
+		with open(
+			self.save_conversation_path + f'_{self.n_steps}.txt',
+			'w',
+			encoding=self.save_conversation_path_encoding,
+		) as f:
 			self._write_messages_to_file(f, input_messages)
 			self._write_response_to_file(f, response)
 
@@ -353,28 +404,46 @@ class Agent:
 		f.write(' RESPONSE\n')
 		f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
 
+	def _log_agent_run(self) -> None:
+		"""Log the agent run"""
+		logger.info(f'🚀 Starting task: {self.task}')
+
+		logger.debug(f'Version: {self.version}, Source: {self.source}')
+		self.telemetry.capture(
+			AgentRunTelemetryEvent(
+				agent_id=self.agent_id,
+				use_vision=self.use_vision,
+				task=self.task,
+				model_name=self.model_name,
+				chat_model_library=self.chat_model_library,
+				version=self.version,
+				source=self.source,
+			)
+		)
+
+	@observe(name='agent.run')
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
-			logger.info(f'🚀 Starting task: {self.task}')
+			self._log_agent_run()
 
-			self.telemetry.capture(
-				AgentRunTelemetryEvent(
-					agent_id=self.agent_id,
-					task=self.task,
-				)
-			)
+			# Execute initial actions if provided
+			if self.initial_actions:
+				result = await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+				self._last_result = result
 
 			for step in range(max_steps):
 				if self._too_many_failures():
 					break
 
+				# Check control flags before each step
+				if not await self._handle_control_flags():
+					break
+
 				await self.step()
 
 				if self.history.is_done():
-					if (
-						self.validate_output and step < max_steps - 1
-					):  # if last step, we dont need to validate
+					if self.validate_output and step < max_steps - 1:
 						if not await self._validate_output():
 							continue
 
@@ -386,14 +455,14 @@ class Agent:
 				logger.info('❌ Failed to complete task in maximum steps')
 
 			return self.history
-
 		finally:
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
 					agent_id=self.agent_id,
-					task=self.task,
 					success=self.history.is_done(),
-					steps=len(self.history.history),
+					steps=self.n_steps,
+					max_steps_reached=self.n_steps >= max_steps,
+					errors=self.history.errors(),
 				)
 			)
 			if not self.injected_browser_context:
@@ -403,7 +472,11 @@ class Agent:
 				await self.browser.close()
 
 			if self.generate_gif:
-				self.create_history_gif()
+				output_path: str = 'agent_history.gif'
+				if isinstance(self.generate_gif, str):
+					output_path = self.generate_gif
+
+				self.create_history_gif(output_path=output_path)
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
@@ -411,6 +484,19 @@ class Agent:
 			logger.error(f'❌ Stopping due to {self.max_failures} consecutive failures')
 			return True
 		return False
+
+	async def _handle_control_flags(self) -> bool:
+		"""Handle pause and stop flags. Returns True if execution should continue."""
+		if self._stopped:
+			logger.info('Agent stopped')
+			return False
+
+		while self._paused:
+			await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
+			if self._stopped:  # Allow stopping while paused
+				return False
+
+		return True
 
 	async def _validate_output(self) -> bool:
 		"""Validate the output of the last action is what the user wanted"""
@@ -476,11 +562,7 @@ class Agent:
 		results = []
 
 		for i, history_item in enumerate(history.history):
-			goal = (
-				history_item.model_output.current_state.next_goal
-				if history_item.model_output
-				else ''
-			)
+			goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
 			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
 			if (
@@ -508,16 +590,12 @@ class Agent:
 							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
 					else:
-						logger.warning(
-							f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...'
-						)
+						logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 
 		return results
 
-	async def _execute_history_step(
-		self, history_item: AgentHistory, delay: float
-	) -> list[ActionResult]:
+	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 
 		state = await self.browser_context.get_state()
@@ -553,9 +631,7 @@ class Agent:
 		if not historical_element or not current_state.element_tree:
 			return action
 
-		current_element = HistoryTreeProcessor.find_history_element_in_tree(
-			historical_element, current_state.element_tree
-		)
+		current_element = HistoryTreeProcessor.find_history_element_in_tree(historical_element, current_state.element_tree)
 
 		if not current_element or current_element.highlight_index is None:
 			return None
@@ -563,15 +639,11 @@ class Agent:
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
-			logger.info(
-				f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}'
-			)
+			logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
 
 		return action
 
-	async def load_and_rerun(
-		self, history_file: Optional[str | Path] = None, **kwargs
-	) -> list[ActionResult]:
+	async def load_and_rerun(self, history_file: Optional[str | Path] = None, **kwargs) -> list[ActionResult]:
 		"""
 		Load history from file and rerun it.
 
@@ -622,9 +694,9 @@ class Agent:
 
 			for font_name in font_options:
 				try:
-					if platform.system() == "Windows":
+					if platform.system() == 'Windows':
 						# Need to specify the abs font path on Windows
-						font_name = os.path.join(os.getenv("WIN_FONT_DIR", "C:\\Windows\\Fonts"), font_name + ".ttf")
+						font_name = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf')
 					regular_font = ImageFont.truetype(font_name, font_size)
 					title_font = ImageFont.truetype(font_name, title_font_size)
 					goal_font = ImageFont.truetype(font_name, goal_font_size)
@@ -724,9 +796,7 @@ class Agent:
 		# Draw task text with increased font size
 		margin = 140  # Increased margin
 		max_width = image.width - (2 * margin)
-		larger_font = ImageFont.truetype(
-			regular_font.path, regular_font.size + 16
-		)  # Increase font size more
+		larger_font = ImageFont.truetype(regular_font.path, regular_font.size + 16)  # Increase font size more
 		wrapped_text = self._wrap_text(task, larger_font, max_width)
 
 		# Calculate line height with spacing
@@ -769,43 +839,46 @@ class Agent:
 		title_font: ImageFont.FreeTypeFont,
 		margin: int,
 		logo: Optional[Image.Image] = None,
+		display_step: bool = True,
+		text_color: tuple[int, int, int, int] = (255, 255, 255, 255),
+		text_box_color: tuple[int, int, int, int] = (0, 0, 0, 255),
 	) -> Image.Image:
 		"""Add step number and goal overlay to an image."""
 		image = image.convert('RGBA')
 		txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
 		draw = ImageDraw.Draw(txt_layer)
+		if display_step:
+			# Add step number (bottom left)
+			step_text = str(step_number)
+			step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
+			step_width = step_bbox[2] - step_bbox[0]
+			step_height = step_bbox[3] - step_bbox[1]
 
-		# Add step number (bottom left)
-		step_text = str(step_number)
-		step_bbox = draw.textbbox((0, 0), step_text, font=title_font)
-		step_width = step_bbox[2] - step_bbox[0]
-		step_height = step_bbox[3] - step_bbox[1]
+			# Position step number in bottom left
+			x_step = margin + 10  # Slight additional offset from edge
+			y_step = image.height - margin - step_height - 10  # Slight offset from bottom
 
-		# Position step number in bottom left
-		x_step = margin + 10  # Slight additional offset from edge
-		y_step = image.height - margin - step_height - 10  # Slight offset from bottom
+			# Draw rounded rectangle background for step number
+			padding = 20  # Increased padding
+			step_bg_bbox = (
+				x_step - padding,
+				y_step - padding,
+				x_step + step_width + padding,
+				y_step + step_height + padding,
+			)
+			draw.rounded_rectangle(
+				step_bg_bbox,
+				radius=15,  # Add rounded corners
+				fill=text_box_color,
+			)
 
-		# Draw rounded rectangle background for step number
-		padding = 20  # Increased padding
-		step_bg_bbox = (
-			x_step - padding,
-			y_step - padding,
-			x_step + step_width + padding,
-			y_step + step_height + padding,
-		)
-		draw.rounded_rectangle(
-			step_bg_bbox,
-			radius=15,  # Add rounded corners
-			fill=(0, 0, 0, 255),
-		)
-
-		# Draw step number
-		draw.text(
-			(x_step, y_step),
-			step_text,
-			font=title_font,
-			fill=(255, 255, 255, 255),
-		)
+			# Draw step number
+			draw.text(
+				(x_step, y_step),
+				step_text,
+				font=title_font,
+				fill=text_color,
+			)
 
 		# Draw goal text (centered, bottom)
 		max_width = image.width - (4 * margin)
@@ -829,7 +902,7 @@ class Agent:
 		draw.rounded_rectangle(
 			goal_bg_bbox,
 			radius=15,  # Add rounded corners
-			fill=(0, 0, 0, 255),
+			fill=text_box_color,
 		)
 
 		# Draw goal text
@@ -837,7 +910,7 @@ class Agent:
 			(x_goal, y_goal),
 			wrapped_goal,
 			font=title_font,
-			fill=(255, 255, 255, 255),
+			fill=text_color,
 			align='center',
 		)
 
@@ -886,9 +959,7 @@ class Agent:
 
 		return '\n'.join(lines)
 
-	def _create_frame(
-		self, screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800
-	) -> Image.Image:
+	def _create_frame(self, screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800) -> Image.Image:
 		"""Create a frame for the GIF with improved styling"""
 
 		# Create base image
@@ -911,9 +982,7 @@ class Agent:
 		if os.path.exists(logo_path):
 			logo = Image.open(logo_path)
 			logo.thumbnail((logo_size, logo_size))
-			frame.paste(
-				logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None
-			)
+			frame.paste(logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None)
 
 		# Create drawing context
 		draw = ImageDraw.Draw(frame)
@@ -994,3 +1063,40 @@ class Agent:
 		draw.text((number_x, number_y), number_text, font=number_font, fill='white')
 
 		return frame
+
+	def pause(self) -> None:
+		"""Pause the agent before the next step"""
+		logger.info('🔄 Agent pausing before next step')
+		self._paused = True
+
+	def resume(self) -> None:
+		"""Resume the agent"""
+		logger.info('▶️ Agent resuming')
+		self._paused = False
+
+	def stop(self) -> None:
+		"""Stop the agent"""
+		logger.info('⏹️ Agent stopping')
+		self._stopped = True
+
+	def _convert_initial_actions(self, actions: List[Dict[str, Dict[str, Any]]]) -> List[ActionModel]:
+		"""Convert dictionary-based actions to ActionModel instances"""
+		converted_actions = []
+		action_model = self.ActionModel
+		for action_dict in actions:
+			# Each action_dict should have a single key-value pair
+			action_name = next(iter(action_dict))
+			params = action_dict[action_name]
+
+			# Get the parameter model for this action from registry
+			action_info = self.controller.registry.registry.actions[action_name]
+			param_model = action_info.param_model
+
+			# Create validated parameters using the appropriate param model
+			validated_params = param_model(**params)
+
+			# Create ActionModel instance with the validated parameters
+			action_model = self.ActionModel(**{action_name: validated_params})
+			converted_actions.append(action_model)
+
+		return converted_actions

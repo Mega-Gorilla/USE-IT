@@ -2,7 +2,7 @@ import asyncio
 from inspect import iscoroutinefunction, signature
 from typing import Any, Callable, Optional, Type
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 
 from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.views import (
@@ -20,9 +20,10 @@ from browser_use.telemetry.views import (
 class Registry:
 	"""Service for registering and managing actions"""
 
-	def __init__(self):
+	def __init__(self, exclude_actions: list[str] = []):
 		self.registry = ActionRegistry()
 		self.telemetry = ProductTelemetry()
+		self.exclude_actions = exclude_actions
 
 	def _create_param_model(self, function: Callable) -> Type[BaseModel]:
 		"""Creates a Pydantic model from function signature"""
@@ -34,7 +35,7 @@ class Registry:
 		}
 		# TODO: make the types here work
 		return create_model(
-			f'{function.__name__}Params',
+			f'{function.__name__}_parameters',
 			__base__=ActionModel,
 			**params,  # type: ignore
 		)
@@ -48,6 +49,10 @@ class Registry:
 		"""Decorator for registering actions"""
 
 		def decorator(func: Callable):
+			# Skip registration if action is in exclude_actions
+			if func.__name__ in self.exclude_actions:
+				return func
+
 			# Create param model from function if not provided
 			actual_param_model = param_model or self._create_param_model(func)
 
@@ -77,9 +82,7 @@ class Registry:
 
 		return decorator
 
-	async def execute_action(
-		self, action_name: str, params: dict, browser: Optional[BrowserContext] = None
-	) -> Any:
+	async def execute_action(self, action_name: str, params: dict, browser: Optional[BrowserContext] = None) -> Any:
 		"""Execute a registered action"""
 		if action_name not in self.registry.actions:
 			raise ValueError(f'Action {action_name} not found')
@@ -114,7 +117,10 @@ class Registry:
 	def create_action_model(self) -> Type[ActionModel]:
 		"""Creates a Pydantic model from registered actions"""
 		fields = {
-			name: (Optional[action.param_model], None)
+			name: (
+				Optional[action.param_model],
+				Field(default=None, description=action.description),
+			)
 			for name, action in self.registry.actions.items()
 		}
 
