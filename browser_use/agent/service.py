@@ -12,7 +12,7 @@ import time
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -89,8 +89,12 @@ class Agent:
 		],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
-		tool_calling_method: Optional[str] = 'auto',
+		tool_call_in_content: bool = True,
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
+		# Cloud Callbacks
+		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None] | None = None,
+		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
+		tool_calling_method: Optional[str] = 'auto',
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 
@@ -149,6 +153,10 @@ class Agent:
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
 		)
+
+		# Step callback
+		self.register_new_step_callback = register_new_step_callback
+		self.register_done_callback = register_done_callback
 
 		# Tracking variables
 		self.history: AgentHistoryList = AgentHistoryList(history=[])
@@ -222,8 +230,13 @@ class Agent:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
 			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
+
 			try:
 				model_output = await self.get_next_action(input_messages)
+
+				if self.register_new_step_callback:
+					self.register_new_step_callback(state, model_output, self.n_steps)
+
 				self._save_conversation(input_messages, model_output)
 				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 				self.message_manager.add_model_output(model_output)
@@ -326,7 +339,7 @@ class Agent:
 
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
-		parsed: AgentOutput = response['parsed']
+		parsed: AgentOutput | None = response['parsed']
 		if parsed is None:
 			raise ValueError('Could not parse response.')
 
@@ -435,6 +448,8 @@ class Agent:
 							continue
 
 					logger.info('✅ Task completed successfully')
+					if self.register_done_callback:
+						self.register_done_callback(self.history)
 					break
 			else:
 				logger.info('❌ Failed to complete task in maximum steps')

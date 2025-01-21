@@ -202,7 +202,7 @@ class BrowserContext:
 			),
 			selector_map={},
 			url=page.url,
-			title=await page.title(),
+			title='',
 			screenshot=None,
 			tabs=[],
 			pixels_above=0,
