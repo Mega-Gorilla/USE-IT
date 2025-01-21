@@ -107,27 +107,27 @@ For more examples see the [examples](examples) folder or join the [Discord](http
 Tell your computer what to do, and it gets it done.
 
 ## Roadmap
-
 - [ ] Improve memory management 
 - [ ] Enhance planning capabilities
 - [ ] Improve self-correction
-- [ ] Fine-tune model for better performance
+- [ ] Fine-tune the model for better performance
 - [ ] Create datasets for complex tasks
 - [ ] Sandbox browser-use for specific websites
 - [ ] Implement deterministic script rerun with LLM fallback
 - [ ] Cloud-hosted version
 - [ ] Add stop/pause functionality
-- [ ] Improved authentication handling
+- [ ] Improve authentication handling
 - [ ] Reduce token consumption
 - [ ] Implement long-term memory
 - [ ] Handle repetitive tasks reliably
 - [ ] Third-party integrations (Slack, etc.)
 - [ ] Include more interactive elements
-- [ ] Human in the loop execution
+- [ ] Human-in-the-loop execution
 - [ ] Benchmark various models against each other
 - [ ] Let the user record a workflow and browser-use will execute it
-- [ ] Improve the generated gif quality
-- [ ] Create various demos for Tutorial execution, Job application, QA Testing, Social Media, etc.
+- [ ] Improve the generated GIF quality
+- [ ] Create various demos for tutorial execution, job application, QA testing, social media, etc.
+
 
 ## Contributing
 
@@ -141,7 +141,7 @@ To learn more about the library, check out the [local setup 📕](https://docs.b
 We are forming a commission to define best practices for UI/UX design for browser agents. 
 Together, we're exploring how software redesign improves the performance of AI agents and gives these companies a competitive advantage by designing their existing software to be at the forefront of the agent age. 
 
-Email [tbiddle@loop11.com](mailto:tbiddle@loop11.com) to apply for a seat on the committee. 
+Email [Toby](mailto:tbiddle@loop11.com?subject=I%20want%20to%20join%20the%20UI/UX%20commission%20for%20AI%20agents&body=Hi%20Toby%2C%0A%0AI%20found%20you%20in%20the%20browser-use%20GitHub%20README.%0A%0A) to apply for a seat on the committee. 
 
 ## Citation
 
@@ -162,3 +162,5 @@ If you use Browser Use in your research or project, please cite:
 <div align="center">
   Made with ❤️ in Zurich and San Francisco
 </div>
+
+[Email me](mailto:tobi@browser.use?subject=I%20want%20to%20join%20the%20UI/UX%20commission%20for%20AI%20agents&body=Hi%20Toby%2C%0A%0AI%20found%20you%20in%20the%20browser-use%20GitHub%20README.%0A%0A)
