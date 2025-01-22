@@ -1,0 +1,68 @@
+---
+title: "Quickstart"
+description: "Start using Browser Use with this quickstart guide"
+icon: "rocket"
+---
+
+{/* You can install Browser Use from PyPI or clone it from Github. */}
+
+## Prepare the environment
+
+Browser Use requires Python 3.11 or higher.
+
+First, we recommend using [uv](https://docs.astral.sh/uv/) to setup the Python environment.
+
+```bash
+uv venv --python 3.11
+```
+
+and activate it with:
+
+```bash
+source .venv/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+uv pip install browser-use
+```
+
+Then install playwright:
+
+```bash
+playwright install
+```
+
+## Create an agent
+
+Then you can use the agent as follows:
+
+```python agent.py
+from langchain_openai import ChatOpenAI
+from browser_use import Agent
+import asyncio
+
+llm = ChatOpenAI(model="gpt-4o")
+
+async def main():
+    agent = Agent(
+        task="Find a one-way flight from Bali to Oman on 12 January 2025 on Google Flights. Return me the cheapest option.",
+        llm=llm,
+    )
+    result = await agent.run()
+    print(result)
+
+asyncio.run(main())
+```
+
+### Set up your LLM API keys
+
+`ChatOpenAI` and other Langchain chat models require specific API keys. For example, for OpenAI and Anthropic, you can set the API keys in your `.env` file, such as.
+
+```bash .env
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+```
+
+For other LLM models you can refer to the [Langchain documentation](https://python.langchain.com/docs/integrations/chat/) to find how to set them up with their specific API keys.
