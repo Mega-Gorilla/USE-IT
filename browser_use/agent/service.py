@@ -8,7 +8,6 @@ import logging
 import os
 import platform
 import textwrap
-import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -254,7 +253,7 @@ class Agent:
 			self.consecutive_failures = 0
 
 		except Exception as e:
-			result = self._handle_step_error(e)
+			result = await self._handle_step_error(e)
 			self._last_result = result
 
 		finally:
@@ -274,7 +273,7 @@ class Agent:
 			if state:
 				self._make_history_item(model_output, state, result)
 
-	def _handle_step_error(self, error: Exception) -> list[ActionResult]:
+	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
 		include_trace = logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
@@ -294,7 +293,7 @@ class Agent:
 			self.consecutive_failures += 1
 		elif isinstance(error, RateLimitError):
 			logger.warning(f'{prefix}{error_msg}')
-			time.sleep(self.retry_delay)
+			await asyncio.sleep(self.retry_delay)
 			self.consecutive_failures += 1
 		else:
 			logger.error(f'{prefix}{error_msg}')
@@ -465,6 +464,7 @@ class Agent:
 					errors=self.history.errors(),
 				)
 			)
+
 			if not self.injected_browser_context:
 				await self.browser_context.close()
 
