@@ -7,16 +7,16 @@ load_dotenv()
 llm = ChatOpenAI(model='gpt-4o')
 
 initial_actions = [
-	{'open_tab': {'url': 'https://www.amazon.com'}},
-	{'scroll_down': {'amount': 1000}},
-	{'scroll_down': {'amount': 1000}},
-	{'click_element': {'index': 5}},
-	{'click_element': {'index': 1}},
 	{'open_tab': {'url': 'https://www.google.com'}},
-	{'click_element': {'index': 1}},
+	{'input_text': {'index': 5, 'text': 'Whats the next hot AI company?'}},
+	{'send_keys': {'keys': 'Enter'}},
+	{'extract_content': {'include_links': True}},
 ]
-
-agent = Agent(task='Your task description', llm=llm, initial_actions=initial_actions)
+agent = Agent(
+	task='Go to each company and quickly summarize what they do.',
+	initial_actions=initial_actions,
+	llm=llm,
+)
 
 
 async def main():
