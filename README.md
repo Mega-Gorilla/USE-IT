@@ -163,4 +163,4 @@ If you use Browser Use in your research or project, please cite:
   Made with ❤️ in Zurich and San Francisco
 </div>
 
-[Email me](mailto:tobi@browser.use?subject=I%20want%20to%20join%20the%20UI/UX%20commission%20for%20AI%20agents&body=Hi%20Toby%2C%0A%0AI%20found%20you%20in%20the%20browser-use%20GitHub%20README.%0A%0A)
+
