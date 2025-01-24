@@ -47,3 +47,7 @@ class BrowserStateHistory:
 
 class BrowserError(Exception):
 	"""Base class for all browser errors"""
+
+
+class URLNotAllowedError(BrowserError):
+	"""Error raised when a URL is not allowed"""

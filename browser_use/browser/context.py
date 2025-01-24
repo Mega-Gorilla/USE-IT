@@ -23,7 +23,7 @@ from playwright.async_api import (
 	Page,
 )
 
-from browser_use.browser.views import BrowserError, BrowserState, TabInfo
+from browser_use.browser.views import BrowserError, BrowserState, TabInfo, URLNotAllowedError
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
@@ -495,7 +495,8 @@ class BrowserContext:
 			# Check if the loaded URL is allowed
 			page = await self.get_current_page()
 			await self._check_and_handle_navigation(page)
-
+		except URLNotAllowedError as e:
+			raise e
 		except Exception:
 			logger.warning('Page load failed, continuing...')
 			pass
@@ -539,10 +540,10 @@ class BrowserContext:
 		if not self._is_url_allowed(page.url):
 			logger.warning(f'Navigation to non-allowed URL detected: {page.url}')
 			try:
-				await page.go_back()
+				await self.go_back()
 			except Exception as e:
 				logger.error(f'Failed to go back after detecting non-allowed URL: {str(e)}')
-			raise BrowserError(f'Navigation to non-allowed URL: {page.url}')
+			raise URLNotAllowedError(f'Navigation to non-allowed URL: {page.url}')
 
 	async def navigate_to(self, url: str):
 		"""Navigate to a URL"""
@@ -562,8 +563,13 @@ class BrowserContext:
 	async def go_back(self):
 		"""Navigate back in history"""
 		page = await self.get_current_page()
-		await page.go_back()
-		await page.wait_for_load_state()
+		try:
+			# Add timeout and catch any timeout errors
+			await page.go_back(timeout=5000, wait_until='domcontentloaded')
+			await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
+		except Exception as e:
+			logger.warning(f'Error during go_back: {e}')
+			# Continue even if there's an error since the navigation might have succeeded
 
 	async def go_forward(self):
 		"""Navigate forward in history"""
@@ -938,15 +944,21 @@ class BrowserContext:
 				await page.wait_for_load_state()
 				# Check if navigation occurred and if the new URL is allowed
 				await self._check_and_handle_navigation(page)
+			except URLNotAllowedError as e:
+				raise e
 			except Exception:
 				try:
 					await page.evaluate('(el) => el.click()', element)
 					await page.wait_for_load_state()
 					# Check if navigation occurred and if the new URL is allowed
 					await self._check_and_handle_navigation(page)
+				except URLNotAllowedError as e:
+					raise e
 				except Exception as e:
 					raise Exception(f'Failed to click element: {str(e)}')
 
+		except URLNotAllowedError as e:
+			raise e
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 

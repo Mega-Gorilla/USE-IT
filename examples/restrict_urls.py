@@ -15,7 +15,9 @@ from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
 
 llm = ChatOpenAI(model='gpt-4o', temperature=0.0)
-task = 'go to google.com and search for openai.com and click on the first link'
+task = (
+	'go to google.com and search for openai.com and click on the first link then extract content and scroll down - whats there?'
+)
 
 allowed_domains = ['google.com']
 
