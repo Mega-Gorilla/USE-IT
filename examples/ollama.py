@@ -1,4 +1,4 @@
-import os
+# import os
 
 # Optional: Disable telemetry
 # os.environ["ANONYMIZED_TELEMETRY"] = "false"
@@ -8,10 +8,11 @@ import os
 
 import asyncio
 from browser_use import Agent
+from browser_use.agent.views import AgentHistoryList
 from langchain_ollama import ChatOllama
 
 
-async def run_search() -> str:
+async def run_search() -> AgentHistoryList:
     agent = Agent(
         task="Search for a 'browser use' post on the r/LocalLLaMA subreddit and open it.",
         llm=ChatOllama(
