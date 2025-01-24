@@ -23,7 +23,7 @@ from playwright.async_api import (
 	Page,
 )
 
-from browser_use.browser.views import BrowserError, BrowserState, TabInfo
+from browser_use.browser.views import BrowserError, BrowserState, TabInfo, URLNotAllowedError
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
@@ -89,6 +89,10 @@ class BrowserContextConfig:
 
 		viewport_expansion: 500
 			Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
+
+		allowed_domains: None
+			List of allowed domains that can be accessed. If None, all domains are allowed.
+			Example: ['example.com', 'api.example.com']
 	"""
 
 	cookies_file: str | None = None
@@ -111,6 +115,7 @@ class BrowserContextConfig:
 
 	highlight_elements: bool = True
 	viewport_expansion: int = 500
+	allowed_domains: list[str] | None = None
 
 
 @dataclass
@@ -478,15 +483,20 @@ class BrowserContext:
 		"""
 		Ensures page is fully loaded before continuing.
 		Waits for either network to be idle or minimum WAIT_TIME, whichever is longer.
+		Also checks if the loaded URL is allowed.
 		"""
 		# Start timing
 		start_time = time.time()
 
-		# await asyncio.sleep(self.minimum_wait_page_load_time)
-
 		# Wait for page load
 		try:
 			await self._wait_for_stable_network()
+
+			# Check if the loaded URL is allowed
+			page = await self.get_current_page()
+			await self._check_and_handle_navigation(page)
+		except URLNotAllowedError as e:
+			raise e
 		except Exception:
 			logger.warning('Page load failed, continuing...')
 			pass
@@ -501,8 +511,45 @@ class BrowserContext:
 		if remaining > 0:
 			await asyncio.sleep(remaining)
 
+	def _is_url_allowed(self, url: str) -> bool:
+		"""Check if a URL is allowed based on the whitelist configuration."""
+		if not self.config.allowed_domains:
+			return True
+
+		try:
+			from urllib.parse import urlparse
+
+			parsed_url = urlparse(url)
+			domain = parsed_url.netloc.lower()
+
+			# Remove port number if present
+			if ':' in domain:
+				domain = domain.split(':')[0]
+
+			# Check if domain matches any allowed domain pattern
+			return any(
+				domain == allowed_domain.lower() or domain.endswith('.' + allowed_domain.lower())
+				for allowed_domain in self.config.allowed_domains
+			)
+		except Exception as e:
+			logger.error(f'Error checking URL allowlist: {str(e)}')
+			return False
+
+	async def _check_and_handle_navigation(self, page: Page) -> None:
+		"""Check if current page URL is allowed and handle if not."""
+		if not self._is_url_allowed(page.url):
+			logger.warning(f'Navigation to non-allowed URL detected: {page.url}')
+			try:
+				await self.go_back()
+			except Exception as e:
+				logger.error(f'Failed to go back after detecting non-allowed URL: {str(e)}')
+			raise URLNotAllowedError(f'Navigation to non-allowed URL: {page.url}')
+
 	async def navigate_to(self, url: str):
 		"""Navigate to a URL"""
+		if not self._is_url_allowed(url):
+			raise BrowserError(f'Navigation to non-allowed URL: {url}')
+
 		page = await self.get_current_page()
 		await page.goto(url)
 		await page.wait_for_load_state()
@@ -516,8 +563,13 @@ class BrowserContext:
 	async def go_back(self):
 		"""Navigate back in history"""
 		page = await self.get_current_page()
-		await page.go_back()
-		await page.wait_for_load_state()
+		try:
+			# Add timeout and catch any timeout errors
+			await page.go_back(timeout=5000, wait_until='domcontentloaded')
+			await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
+		except Exception as e:
+			logger.warning(f'Error during go_back: {e}')
+			# Continue even if there's an error since the navigation might have succeeded
 
 	async def go_forward(self):
 		"""Navigate forward in history"""
@@ -593,6 +645,7 @@ class BrowserContext:
 			if use_vision:
 				screenshot_b64 = await self.take_screenshot()
 			pixels_above, pixels_below = await self.get_scroll_info(page)
+
 			self.current_state = BrowserState(
 				element_tree=content.element_tree,
 				selector_map=content.selector_map,
@@ -889,13 +942,23 @@ class BrowserContext:
 			try:
 				await element.click(timeout=1500)
 				await page.wait_for_load_state()
+				# Check if navigation occurred and if the new URL is allowed
+				await self._check_and_handle_navigation(page)
+			except URLNotAllowedError as e:
+				raise e
 			except Exception:
 				try:
 					await page.evaluate('(el) => el.click()', element)
 					await page.wait_for_load_state()
+					# Check if navigation occurred and if the new URL is allowed
+					await self._check_and_handle_navigation(page)
+				except URLNotAllowedError as e:
+					raise e
 				except Exception as e:
 					raise Exception(f'Failed to click element: {str(e)}')
 
+		except URLNotAllowedError as e:
+			raise e
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 
@@ -922,6 +985,11 @@ class BrowserContext:
 			raise BrowserError(f'No tab found with page_id: {page_id}')
 
 		page = pages[page_id]
+
+		# Check if the tab's URL is allowed before switching
+		if not self._is_url_allowed(page.url):
+			raise BrowserError(f'Cannot switch to tab with non-allowed URL: {page.url}')
+
 		session.current_page = page
 
 		await page.bring_to_front()
@@ -929,6 +997,9 @@ class BrowserContext:
 
 	async def create_new_tab(self, url: str | None = None) -> None:
 		"""Create a new tab and optionally navigate to a URL"""
+		if url and not self._is_url_allowed(url):
+			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
+
 		session = await self.get_session()
 		new_page = await session.context.new_page()
 		session.current_page = new_page

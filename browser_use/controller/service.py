@@ -62,9 +62,7 @@ class Controller:
 
 		@self.registry.action('Go back', requires_browser=True)
 		async def go_back(browser: BrowserContext):
-			page = await browser.get_current_page()
-			await page.go_back()
-			await page.wait_for_load_state()
+			await browser.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -102,7 +100,7 @@ class Controller:
 					await browser.switch_to_tab(-1)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
-				logger.warning(f'Element no longer available with index {params.index} - most likely the page changed')
+				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
 				return ActionResult(error=str(e))
 
 		@self.registry.action(
