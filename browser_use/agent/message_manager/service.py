@@ -30,7 +30,7 @@ class MessageManager:
 		action_descriptions: str,
 		system_prompt_class: Type[SystemPrompt],
 		max_input_tokens: int = 128000,
-		estimated_tokens_per_character: int = 3,
+		estimated_characters_per_token: int = 3,
 		image_tokens: int = 800,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
@@ -42,7 +42,7 @@ class MessageManager:
 		self.history = MessageHistory()
 		self.task = task
 		self.action_descriptions = action_descriptions
-		self.ESTIMATED_TOKENS_PER_CHARACTER = estimated_tokens_per_character
+		self.estimated_characters_per_token = estimated_characters_per_token
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
@@ -107,9 +107,7 @@ class MessageManager:
 						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
 						self._add_message_with_tokens(msg)
 					if r.error:
-						msg = HumanMessage(
-							content='Action error: ' + str(r.error)[-self.max_error_length :]
-						)
+						msg = HumanMessage(content='Action error: ' + str(r.error)[-self.max_error_length :])
 						self._add_message_with_tokens(msg)
 					result = None  # if result in history, we dont want to add it again
 
@@ -125,9 +123,7 @@ class MessageManager:
 
 	def _remove_last_state_message(self) -> None:
 		"""Remove last state message from history"""
-		if len(self.history.messages) > 2 and isinstance(
-			self.history.messages[-1].message, HumanMessage
-		):
+		if len(self.history.messages) > 2 and isinstance(self.history.messages[-1].message, HumanMessage):
 			self.history.remove_message()
 
 	def add_model_output(self, model_output: AgentOutput) -> None:
@@ -193,17 +189,8 @@ class MessageManager:
 
 	def _count_text_tokens(self, text: str) -> int:
 		"""Count tokens in a text string"""
-		if isinstance(self.llm, (ChatOpenAI)):
-			try:
-				tokens = self.llm.get_num_tokens(text)
-			except Exception:
-				tokens = (
-					len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER
-				)  # Rough estimate if no tokenizer available
-		else:
-			tokens = (
-				len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER
-			)  # Rough estimate if no tokenizer available
+
+		tokens = len(text) // self.estimated_characters_per_token  # Rough estimate if no tokenizer available
 		return tokens
 
 	def cut_messages(self):
