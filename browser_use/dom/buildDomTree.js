@@ -147,7 +147,7 @@
             'button', 'menu', 'menuitem', 'link', 'checkbox', 'radio',
             'slider', 'tab', 'tabpanel', 'textbox', 'combobox', 'grid',
             'listbox', 'option', 'progressbar', 'scrollbar', 'searchbox',
-            'switch', 'tree', 'treeitem', 'spinbutton', 'tooltip', 'a-button-inner', 'a-dropdown-button', 'click',
+            'switch', 'tree', 'treeitem', 'spinbutton', 'tooltip', 'a-button-inner', 'a-dropdown-button', 'click', 
             'menuitemcheckbox', 'menuitemradio', 'a-button-text', 'button-text', 'button-icon', 'button-icon-only', 'button-text-icon-only', 'dropdown', 'combobox'
         ]);
 
@@ -156,8 +156,12 @@
         const ariaRole = element.getAttribute('aria-role');
         const tabIndex = element.getAttribute('tabindex');
 
+        // Add check for specific class
+        const hasAddressInputClass = element.classList.contains('address-input__container__input');
+
         // Basic role/attribute checks
-        const hasInteractiveRole = interactiveElements.has(tagName) ||
+        const hasInteractiveRole = hasAddressInputClass ||
+            interactiveElements.has(tagName) ||
             interactiveRoles.has(role) ||
             interactiveRoles.has(ariaRole) ||
             (tabIndex !== null && tabIndex !== '-1') ||
