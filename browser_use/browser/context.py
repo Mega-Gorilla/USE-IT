@@ -276,7 +276,7 @@ class BrowserContext:
 
 			// Languages
 			Object.defineProperty(navigator, 'languages', {
-				get: () => ['en-US', 'en']
+				get: () => ['en-US']
 			});
 
 			// Plugins
