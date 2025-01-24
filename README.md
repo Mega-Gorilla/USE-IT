@@ -71,7 +71,7 @@ uv pip install gradio
 ```
 
 ```bash
-python examples/gradio.py
+python examples/gradio_demo.py
 ```
 
 # Demos
