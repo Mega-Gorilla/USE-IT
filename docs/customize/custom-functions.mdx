@@ -118,5 +118,12 @@ await agent2.run()
 
 
 
+## Exclude functions
+If you want less actions to be used by the agent, you can exclude them from the controller.
+```python
+controller = Controller(exclude_actions=['open_tab', 'google_search'])
+```
+
+
 For more examples like file upload or notifications, visit [examples/custom-functions](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions).
 

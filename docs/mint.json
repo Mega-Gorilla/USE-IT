@@ -49,6 +49,7 @@
         "customize/langchain-models",
         "customize/agent-settings",
         "customize/browser-settings",
+        "customize/output-format",
         "customize/system-prompt",
         "customize/real-browser",
         "customize/custom-functions"
