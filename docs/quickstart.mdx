@@ -19,7 +19,11 @@ uv venv --python 3.11
 and activate it with:
 
 ```bash
+# For Mac/Linux:
 source .venv/bin/activate
+
+# For Windows:
+.venv\Scripts\activate
 ```
 
 Install the dependencies:
@@ -41,13 +45,16 @@ Then you can use the agent as follows:
 ```python agent.py
 from langchain_openai import ChatOpenAI
 from browser_use import Agent
+from dotenv import load_dotenv
+load_dotenv()
+
 import asyncio
 
 llm = ChatOpenAI(model="gpt-4o")
 
 async def main():
     agent = Agent(
-        task="Find a one-way flight from Bali to Oman on 12 January 2025 on Google Flights. Return me the cheapest option.",
+        task="Compare the price of gpt-4o and DeepSeek-V3",
         llm=llm,
     )
     result = await agent.run()
@@ -56,9 +63,10 @@ async def main():
 asyncio.run(main())
 ```
 
-### Set up your LLM API keys
+## Set up your LLM API keys
 
-`ChatOpenAI` and other Langchain chat models require specific API keys. For example, for OpenAI and Anthropic, you can set the API keys in your `.env` file, such as.
+`ChatOpenAI` and other Langchain chat models require API keys. You should store these in your `.env` file. For example, for OpenAI and Anthropic, you can set the API keys in your `.env` file, such as:
+
 
 ```bash .env
 OPENAI_API_KEY=
