@@ -35,20 +35,22 @@
     "name": "Join Discord",
     "url": "https://link.browser-use.com/discord"
   },
-
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["introduction", "quickstart"]
+      "pages": [
+        "introduction",
+        "quickstart"
+      ]
     },
     {
       "group": "Customize",
       "pages": [
+        "customize/langchain-models",
         "customize/agent-settings",
         "customize/browser-settings",
-        "customize/custom-functions",
-        "customize/langchain-models",
-        "customize/system-prompt"
+        "customize/system-prompt",
+        "customize/custom-functions"
       ]
     },
     {
