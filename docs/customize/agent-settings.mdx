@@ -163,3 +163,22 @@ The `AgentHistoryList` provides many helper methods to analyze the execution:
 </Note>
 
 
+
+## Run initial actions without LLM
+With [this example](https://github.com/browser-use/browser-use/blob/main/examples/features/initial_actions.py) you can run initial actions without the LLM.
+Specify the action as a dictionary where the key is the action name and the value is the action parameters. You can find all our actions in the [Controller](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py) source code.
+```python
+
+initial_actions = [
+	{'open_tab': {'url': 'https://www.google.com'}},
+	{'open_tab': {'url': 'https://en.wikipedia.org/wiki/Randomness'}},
+	{'scroll_down': {'amount': 1000}},
+	{'extract_content': {'include_links': False}},
+]
+agent = Agent(
+	task='What theories are displayed on the page?',
+	initial_actions=initial_actions,
+	llm=llm,
+)
+```
+
