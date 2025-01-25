@@ -6,6 +6,7 @@ Show how to use custom outputs.
 
 import os
 import sys
+from typing import List
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -19,24 +20,23 @@ from browser_use import ActionResult, Agent, Controller
 
 load_dotenv()
 
-controller = Controller()
 
-
-class DoneResult(BaseModel):
+class Post(BaseModel):
 	post_title: str
 	post_url: str
 	num_comments: int
 	hours_since_post: int
 
 
-@controller.registry.action('Done with task', param_model=DoneResult)
-async def done(params: DoneResult):
-	result = ActionResult(is_done=True, extracted_content=params.model_dump_json())
-	return result
+class Posts(BaseModel):
+	posts: List[Post]
+
+
+controller = Controller(output_model=Posts)
 
 
 async def main():
-	task = 'Go to hackernews show hn and give me the number 1 post in the list'
+	task = 'Go to hackernews show hn and give me the first  5 posts'
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(task=task, llm=model, controller=controller)
 
@@ -44,12 +44,16 @@ async def main():
 
 	result = history.final_result()
 	if result:
-		parsed = DoneResult.model_validate_json(result)
-		print('--------------------------------')
-		print(f'Title: {parsed.post_title}')
-		print(f'URL: {parsed.post_url}')
-		print(f'Comments: {parsed.num_comments}')
-		print(f'Hours since post: {parsed.hours_since_post}')
+		parsed: Posts = Posts.model_validate_json(result)
+
+		for post in parsed.posts:
+			print('\n--------------------------------')
+			print(f'Title:            {post.post_title}')
+			print(f'URL:              {post.post_url}')
+			print(f'Comments:         {post.num_comments}')
+			print(f'Hours since post: {post.hours_since_post}')
+	else:
+		print('No result')
 
 
 if __name__ == '__main__':
