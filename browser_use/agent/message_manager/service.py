@@ -30,7 +30,7 @@ class MessageManager:
 		action_descriptions: str,
 		system_prompt_class: Type[SystemPrompt],
 		max_input_tokens: int = 128000,
-		estimated_tokens_per_character: int = 3,
+		estimated_characters_per_token: int = 3,
 		image_tokens: int = 800,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
@@ -43,7 +43,7 @@ class MessageManager:
 		self.history = MessageHistory()
 		self.task = task
 		self.action_descriptions = action_descriptions
-		self.ESTIMATED_TOKENS_PER_CHARACTER = estimated_tokens_per_character
+		self.estimated_characters_per_token = estimated_characters_per_token
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
@@ -196,13 +196,8 @@ class MessageManager:
 
 	def _count_text_tokens(self, text: str) -> int:
 		"""Count tokens in a text string"""
-		if isinstance(self.llm, (ChatOpenAI)):
-			try:
-				tokens = self.llm.get_num_tokens(text)
-			except Exception:
-				tokens = len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER  # Rough estimate if no tokenizer available
-		else:
-			tokens = len(text) // self.ESTIMATED_TOKENS_PER_CHARACTER  # Rough estimate if no tokenizer available
+
+		tokens = len(text) // self.estimated_characters_per_token  # Rough estimate if no tokenizer available
 		return tokens
 
 	def cut_messages(self):

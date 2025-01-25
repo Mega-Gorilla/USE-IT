@@ -14,9 +14,7 @@ from browser_use.dom.views import DOMElementNode, DOMTextNode
 	params=[
 		ChatOpenAI(model='gpt-4o-mini'),
 		AzureChatOpenAI(model='gpt-4o', api_version='2024-02-15-preview'),
-		ChatAnthropic(
-			model_name='claude-3-5-sonnet-20240620', timeout=100, temperature=0.0, stop=None
-		),
+		ChatAnthropic(model_name='claude-3-5-sonnet-20240620', timeout=100, temperature=0.0, stop=None),
 	],
 	ids=['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet'],
 )
@@ -30,7 +28,7 @@ def message_manager(request: pytest.FixtureRequest):
 		action_descriptions=action_descriptions,
 		system_prompt_class=SystemPrompt,
 		max_input_tokens=1000,
-		estimated_tokens_per_character=3,
+		estimated_characters_per_token=3,
 		image_tokens=800,
 	)
 
@@ -196,7 +194,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 			current_state=AgentBrain(
 				evaluation_previous_goal=f'Success in step {i}',
 				memory=f'Memory from step {i}',
-				next_goal=f'Goal for step {i+1}',
+				next_goal=f'Goal for step {i + 1}',
 			),
 			action=[ActionModel()],
 		)

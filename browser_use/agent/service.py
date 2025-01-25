@@ -8,11 +8,10 @@ import logging
 import os
 import platform
 import textwrap
-import time
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -90,6 +89,11 @@ class Agent:
 		],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
+		tool_call_in_content: bool = True,
+		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
+		# Cloud Callbacks
+		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None] | None = None,
+		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
 		tool_calling_method: Optional[str] = 'auto',
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
@@ -152,6 +156,10 @@ class Agent:
 			message_context=self.message_context,
 		)
 
+		# Step callback
+		self.register_new_step_callback = register_new_step_callback
+		self.register_done_callback = register_done_callback
+
 		# Tracking variables
 		self.history: AgentHistoryList = AgentHistoryList(history=[])
 		self.n_steps = 1
@@ -159,9 +167,12 @@ class Agent:
 		self.max_failures = max_failures
 		self.retry_delay = retry_delay
 		self.validate_output = validate_output
-
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		if save_conversation_path:
 			logger.info(f'Saving conversation to {save_conversation_path}')
+
+		self._paused = False
+		self._stopped = False
 
 	def _set_version_and_source(self) -> None:
 		try:
@@ -219,12 +230,27 @@ class Agent:
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
+
+			if self._stopped or self._paused:
+				logger.debug('Agent paused after getting state')
+				raise InterruptedError
+
 			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
+
 			try:
 				model_output = await self.get_next_action(input_messages)
+
+				if self.register_new_step_callback:
+					self.register_new_step_callback(state, model_output, self.n_steps)
+
 				self._save_conversation(input_messages, model_output)
 				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
+
+				if self._stopped or self._paused:
+					logger.debug('Agent paused after getting next action')
+					raise InterruptedError
+
 				self.message_manager.add_model_output(model_output)
 			except Exception as e:
 				# model call failed, remove last state message from history
@@ -239,8 +265,11 @@ class Agent:
 
 			self.consecutive_failures = 0
 
+		except InterruptedError:
+			logger.debug('Agent paused')
+			return
 		except Exception as e:
-			result = self._handle_step_error(e)
+			result = await self._handle_step_error(e)
 			self._last_result = result
 
 		finally:
@@ -260,7 +289,7 @@ class Agent:
 			if state:
 				self._make_history_item(model_output, state, result)
 
-	def _handle_step_error(self, error: Exception) -> list[ActionResult]:
+	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
 		include_trace = logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
@@ -280,7 +309,7 @@ class Agent:
 			self.consecutive_failures += 1
 		elif isinstance(error, RateLimitError):
 			logger.warning(f'{prefix}{error_msg}')
-			time.sleep(self.retry_delay)
+			await asyncio.sleep(self.retry_delay)
 			self.consecutive_failures += 1
 		else:
 			logger.error(f'{prefix}{error_msg}')
@@ -325,7 +354,7 @@ class Agent:
 
 		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
-		parsed: AgentOutput = response['parsed']
+		parsed: AgentOutput | None = response['parsed']
 		if parsed is None:
 			raise ValueError('Could not parse response.')
 
@@ -413,24 +442,34 @@ class Agent:
 		try:
 			self._log_agent_run()
 
+			# Execute initial actions if provided
+			if self.initial_actions:
+				result = await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+				self._last_result = result
+
 			for step in range(max_steps):
 				if self._too_many_failures():
+					break
+
+				# Check control flags before each step
+				if not await self._handle_control_flags():
 					break
 
 				await self.step()
 
 				if self.history.is_done():
-					if self.validate_output and step < max_steps - 1:  # if last step, we dont need to validate
+					if self.validate_output and step < max_steps - 1:
 						if not await self._validate_output():
 							continue
 
 					logger.info('✅ Task completed successfully')
+					if self.register_done_callback:
+						self.register_done_callback(self.history)
 					break
 			else:
 				logger.info('❌ Failed to complete task in maximum steps')
 
 			return self.history
-
 		finally:
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
@@ -441,6 +480,7 @@ class Agent:
 					errors=self.history.errors(),
 				)
 			)
+
 			if not self.injected_browser_context:
 				await self.browser_context.close()
 
@@ -460,6 +500,18 @@ class Agent:
 			logger.error(f'❌ Stopping due to {self.max_failures} consecutive failures')
 			return True
 		return False
+
+	async def _handle_control_flags(self) -> bool:
+		"""Handle pause and stop flags. Returns True if execution should continue."""
+		if self._stopped:
+			logger.info('Agent stopped')
+			return False
+
+		while self._paused:
+			await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
+			if self._stopped:  # Allow stopping while paused
+				return False
+		return True
 
 	async def _validate_output(self) -> bool:
 		"""Validate the output of the last action is what the user wanted"""
@@ -1026,3 +1078,40 @@ class Agent:
 		draw.text((number_x, number_y), number_text, font=number_font, fill='white')
 
 		return frame
+
+	def pause(self) -> None:
+		"""Pause the agent before the next step"""
+		logger.info('🔄 pausing Agent ')
+		self._paused = True
+
+	def resume(self) -> None:
+		"""Resume the agent"""
+		logger.info('▶️ Agent resuming')
+		self._paused = False
+
+	def stop(self) -> None:
+		"""Stop the agent"""
+		logger.info('⏹️ Agent stopping')
+		self._stopped = True
+
+	def _convert_initial_actions(self, actions: List[Dict[str, Dict[str, Any]]]) -> List[ActionModel]:
+		"""Convert dictionary-based actions to ActionModel instances"""
+		converted_actions = []
+		action_model = self.ActionModel
+		for action_dict in actions:
+			# Each action_dict should have a single key-value pair
+			action_name = next(iter(action_dict))
+			params = action_dict[action_name]
+
+			# Get the parameter model for this action from registry
+			action_info = self.controller.registry.registry.actions[action_name]
+			param_model = action_info.param_model
+
+			# Create validated parameters using the appropriate param model
+			validated_params = param_model(**params)
+
+			# Create ActionModel instance with the validated parameters
+			action_model = self.ActionModel(**{action_name: validated_params})
+			converted_actions.append(action_model)
+
+		return converted_actions

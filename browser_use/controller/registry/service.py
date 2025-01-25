@@ -20,9 +20,10 @@ from browser_use.telemetry.views import (
 class Registry:
 	"""Service for registering and managing actions"""
 
-	def __init__(self):
+	def __init__(self, exclude_actions: list[str] = []):
 		self.registry = ActionRegistry()
 		self.telemetry = ProductTelemetry()
+		self.exclude_actions = exclude_actions
 
 	def _create_param_model(self, function: Callable) -> Type[BaseModel]:
 		"""Creates a Pydantic model from function signature"""
@@ -48,6 +49,10 @@ class Registry:
 		"""Decorator for registering actions"""
 
 		def decorator(func: Callable):
+			# Skip registration if action is in exclude_actions
+			if func.__name__ in self.exclude_actions:
+				return func
+
 			# Create param model from function if not provided
 			actual_param_model = param_model or self._create_param_model(func)
 

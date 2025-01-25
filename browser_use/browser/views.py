@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ class BrowserState(DOMState):
 	screenshot: Optional[str] = None
 	pixels_above: int = 0
 	pixels_below: int = 0
+	browser_errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -46,3 +47,7 @@ class BrowserStateHistory:
 
 class BrowserError(Exception):
 	"""Base class for all browser errors"""
+
+
+class URLNotAllowedError(BrowserError):
+	"""Error raised when a URL is not allowed"""
