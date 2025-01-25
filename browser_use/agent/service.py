@@ -220,12 +220,22 @@ class Agent:
 
 		try:
 			state = await self.browser_context.get_state(use_vision=self.use_vision)
+
+			if self._stopped or self._paused:
+				logger.debug('Agent paused after getting state')
+				raise InterruptedError
+
 			self.message_manager.add_state_message(state, self._last_result, step_info)
 			input_messages = self.message_manager.get_messages()
 			try:
 				model_output = await self.get_next_action(input_messages)
 				self._save_conversation(input_messages, model_output)
 				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
+
+				if self._stopped or self._paused:
+					logger.debug('Agent paused after getting next action')
+					raise InterruptedError
+
 				self.message_manager.add_model_output(model_output)
 			except Exception as e:
 				# model call failed, remove last state message from history
@@ -240,6 +250,9 @@ class Agent:
 
 			self.consecutive_failures = 0
 
+		except InterruptedError:
+			logger.debug('Agent paused')
+			return
 		except Exception as e:
 			result = self._handle_step_error(e)
 			self._last_result = result
@@ -480,7 +493,6 @@ class Agent:
 			await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
 			if self._stopped:  # Allow stopping while paused
 				return False
-
 		return True
 
 	async def _validate_output(self) -> bool:
@@ -1051,7 +1063,7 @@ class Agent:
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		logger.info('🔄 Agent pausing before next step')
+		logger.info('🔄 pausing Agent ')
 		self._paused = True
 
 	def resume(self) -> None:
