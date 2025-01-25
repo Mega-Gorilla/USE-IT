@@ -34,7 +34,6 @@ async def done(params: DoneResult):
 	result = ActionResult(is_done=True, extracted_content=params.model_dump_json())
 	print(result)
 	# NOTE: this is clearly wrong - to demonstrate the validator
-	# return result
 	return 'blablabla'
 
 
