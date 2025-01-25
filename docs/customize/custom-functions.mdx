@@ -10,13 +10,14 @@ Functions can be either `sync` or `async`. Keep them focused and single-purpose.
 
 ```python
 from browser_use.controller.service import Controller
-
+from browser_use import ActionResult
 # Initialize the controller
 controller = Controller()
 
 @controller.action('Ask user for information')
-def ask_human(question: str, display_question: bool) -> str:
-    return input(f'\n{question}\nInput: ')
+def ask_human(question: str) -> str:
+    answer = input(f'\n{question}\nInput: ')
+    return ActionResult(extracted_content=answer)
 ```
 
 <Note>
@@ -50,6 +51,7 @@ from browser_use.browser.service import Browser
 async def open_website(url: str, browser: Browser):
     page = browser.get_current_page()
     await page.goto(url)
+    return ActionResult(extracted_content='Website opened')
 ```
 
 ## Structured Parameters with Pydantic
@@ -110,3 +112,8 @@ await agent2.run()
   The controller is stateless and can be used to register multiple actions and
   multiple agents.
 </Note>
+
+
+
+For more examples like file upload or notifications, visit [examples/custom-functions](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions).
+

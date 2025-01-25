@@ -50,6 +50,7 @@
         "customize/agent-settings",
         "customize/browser-settings",
         "customize/system-prompt",
+        "customize/real-browser",
         "customize/custom-functions"
       ]
     },
