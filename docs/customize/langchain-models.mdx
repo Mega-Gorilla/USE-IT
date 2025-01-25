@@ -173,10 +173,7 @@ from pydantic import SecretStr
 
 
 # Initialize the model
-llm=ChatOllama(
-            model="qwen2.5",
-            num_ctx=32000,
-        )
+llm=ChatOllama(model="qwen2.5", num_ctx=32000)
 
 # Create agent with the model
 agent = Agent(
