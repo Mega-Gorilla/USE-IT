@@ -73,6 +73,7 @@ class Agent:
 		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
+		message_context: Optional[str] = None,
 		generate_gif: bool | str = True,
 		include_attributes: list[str] = [
 			'title',
@@ -114,6 +115,7 @@ class Agent:
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
+		self.message_context = message_context
 
 		# Initialize browser first if needed
 		self.browser = browser if browser is not None else (None if browser_context else Browser())
@@ -151,6 +153,7 @@ class Agent:
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
+			message_context=self.message_context,
 		)
 
 		# Step callback

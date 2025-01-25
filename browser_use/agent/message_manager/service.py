@@ -35,6 +35,7 @@ class MessageManager:
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
+		message_context: Optional[str] = None,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -46,6 +47,7 @@ class MessageManager:
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
+		self.message_context = message_context
 
 		system_message = self.system_prompt_class(
 			self.action_descriptions,
@@ -55,6 +57,11 @@ class MessageManager:
 
 		self._add_message_with_tokens(system_message)
 		self.system_prompt = system_message
+
+		if self.message_context:
+			context_message = HumanMessage(content=self.message_context)
+			self._add_message_with_tokens(context_message)
+
 		task_message = self.task_instructions(task)
 		self._add_message_with_tokens(task_message)
 		self.tool_id = 1
