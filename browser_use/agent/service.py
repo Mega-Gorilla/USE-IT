@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import platform
+import re
 import textwrap
 import uuid
 from io import BytesIO
@@ -349,6 +350,12 @@ class Agent:
 
 		self.history.history.append(history_item)
 
+	THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
+
+	def _remove_think_tags(self, text: str) -> str:
+		"""Remove think tags from text"""
+		return re.sub(self.THINK_TAGS, '', text)
+
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
@@ -356,6 +363,7 @@ class Agent:
 			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
 			merged_input_messages = self.message_manager.merge_successive_human_messages(converted_input_messages)
 			output = self.llm.invoke(merged_input_messages)
+			output.content = self._remove_think_tags(output.content)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			try:
 				parsed_json = self.message_manager.extract_json_from_model_output(output.content)
