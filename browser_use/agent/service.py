@@ -226,7 +226,7 @@ class Agent:
 	@time_execution_async('--step')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
-		logger.info(f'\n📍 Step {self.n_steps}')
+		logger.info(f'📍 Step {self.n_steps}')
 		state = None
 		model_output = None
 		result: list[ActionResult] = []
