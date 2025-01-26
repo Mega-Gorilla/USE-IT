@@ -347,14 +347,31 @@ class Agent:
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
-		if self.tool_calling_method is None:
-			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
+
+		if self.model_name == 'deepseek-reasoner':
+			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
+			merged_input_messages = self.message_manager.merge_successive_human_messages(converted_input_messages)
+			output = self.llm.invoke(merged_input_messages)
+			# TODO: currently invoke does not return reasoning_content, we should override it
+			# print(f'reasoning_content: {output.reasoning_content}')
+			print(f'content: {output.content}')
+			try:
+				parsed_json = self.message_manager.extract_json_from_model_output(output.content)
+				parsed = self.AgentOutput(**parsed_json)
+			except (ValueError, ValidationError) as e:
+				logger.warning(f'Failed to parse model output: {str(e)}')
+				raise ValueError('Could not parse response.')
 		else:
-			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
+			if self.tool_calling_method is None:
+				structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
+			else:
+				structured_llm = self.llm.with_structured_output(
+					self.AgentOutput, include_raw=True, method=self.tool_calling_method
+				)
 
-		response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
-		parsed: AgentOutput | None = response['parsed']
+			parsed: AgentOutput | None = response['parsed']
 		if parsed is None:
 			raise ValueError('Could not parse response.')
 
