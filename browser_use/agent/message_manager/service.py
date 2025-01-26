@@ -295,7 +295,10 @@ class MessageManager:
 			if isinstance(message, HumanMessage):
 				streak += 1
 				if streak > 1:
-					merged_messages[-1].content += message.content
+					if isinstance(message.content, list):
+						merged_messages[-1].content += message.content[0]['text']
+					else:
+						merged_messages[-1].content += message.content
 				else:
 					merged_messages.append(message)
 			else:
@@ -307,7 +310,7 @@ class MessageManager:
 		"""Extract JSON from model output, handling both plain JSON and code-block-wrapped JSON."""
 		try:
 			# If content is wrapped in code blocks, extract just the JSON part
-			if content.startswith('```'):
+			if '```' in content:
 				# Find the JSON content between code blocks
 				content = content.split('```')[1]
 				# Remove language identifier if present (e.g., 'json\n')
@@ -316,5 +319,5 @@ class MessageManager:
 			# Parse the cleaned content
 			return json.loads(content)
 		except json.JSONDecodeError as e:
-			logger.warning(f'Failed to parse model output: {str(e)}')
+			logger.warning(f'Failed to parse model output: {content} {str(e)}')
 			raise ValueError('Could not parse response.')
