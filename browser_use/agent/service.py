@@ -219,6 +219,8 @@ class Agent:
 				return 'function_calling'
 			else:
 				return None
+		else:
+			return tool_calling_method
 
 	def add_new_task(self, new_task: str) -> None:
 		self.message_manager.add_new_task(new_task)
