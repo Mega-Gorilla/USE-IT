@@ -35,7 +35,7 @@ Five Steps to create and invite a Discord bot:
 import os
 
 from dotenv import load_dotenv
-from integrations.discord_api import DiscordBot
+from integrations.discord.discord_api import DiscordBot
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
 
