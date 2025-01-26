@@ -4,7 +4,6 @@ import logging
 from typing import Optional, Type
 
 from main_content_extractor import MainContentExtractor
-from playwright.async_api import Page
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -16,6 +15,7 @@ from browser_use.controller.views import (
 	ExtractPageContentAction,
 	GoToUrlAction,
 	InputTextAction,
+	NoParamsAction,
 	OpenTabAction,
 	ScrollAction,
 	SearchGoogleAction,
@@ -75,8 +75,8 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action('Go back', requires_browser=True)
-		async def go_back(browser: BrowserContext):
+		@self.registry.action('Go back', param_model=NoParamsAction, requires_browser=True)
+		async def go_back(_: NoParamsAction, browser: BrowserContext):
 			await browser.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
