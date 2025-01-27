@@ -9,15 +9,16 @@
 [![GitHub stars](https://img.shields.io/github/stars/gregpr07/browser-use?style=social)](https://github.com/gregpr07/browser-use/stargazers)
 [![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
 [![Documentation](https://img.shields.io/badge/Documentation-📕-blue)](https://docs.browser-use.com)
+[![Cloud](https://img.shields.io/badge/Cloud-☁️-blue)](https://cloud.browser-use.com)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/gregpr07)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/mamagnus00)
 
 
+🌐 Browser-use is the easiest way to connect your AI agents with the browser. 
 
-Browser use is the easiest way to connect your AI agents with the browser. 
 💡 See what others are building and share your projects in our [Discord](https://link.browser-use.com/discord) - we'd love to see what you create!
 
-To learn more about the library, check out the [documentation 📕](https://docs.browser-use.com).
+🌩️ Skip the setup - try our hosted version for instant browser automation! [Try it now](https://cloud.browser-use.com).
 
 # Quick start
 
@@ -60,6 +61,7 @@ OPENAI_API_KEY=
 ```
 
 For other settings, models, and more, check out the [documentation 📕](https://docs.browser-use.com).
+
 
 ### Test with UI
 
