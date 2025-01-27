@@ -4,7 +4,7 @@
   <img alt="Shows a black Browser Use Logo in light color mode and a white one in dark color mode." src="./static/browser-use.png"  width="full">
 </picture>
 
-<br/>
+<h1 align="center">Enable AI to control your browser 🤖</h1>
 
 [![GitHub stars](https://img.shields.io/github/stars/gregpr07/browser-use?style=social)](https://github.com/gregpr07/browser-use/stargazers)
 [![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
@@ -12,9 +12,10 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/gregpr07)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/mamagnus00)
 
-Enable AI to control your browser 🤖.
 
-Browser use is the easiest way to connect your AI agents with the browser. If you have used Browser Use for your project feel free to show it off in our [Discord](https://link.browser-use.com/discord).
+
+Browser use is the easiest way to connect your AI agents with the browser. 
+💡 See what others are building and share your projects in our [Discord](https://link.browser-use.com/discord) - we'd love to see what you create!
 
 To learn more about the library, check out the [documentation 📕](https://docs.browser-use.com).
 
@@ -43,7 +44,7 @@ load_dotenv()
 
 async def main():
     agent = Agent(
-        task="Go to Reddit, search for 'browser-use' in the search bar, click on the first post and return the first comment.",
+        task="Go to Reddit, search for 'browser-use', click on the first post and return the first comment.",
         llm=ChatOpenAI(model="gpt-4o"),
     )
     result = await agent.run()
@@ -52,7 +53,7 @@ async def main():
 asyncio.run(main())
 ```
 
-And don't forget to add your API keys to your `.env` file.
+Add your API keys for the provider you want to use to your `.env` file.
 
 ```bash
 OPENAI_API_KEY=
@@ -71,7 +72,7 @@ uv pip install gradio
 ```
 
 ```bash
-python examples/gradio_demo.py
+python examples/ui/gradio_demo.py
 ```
 
 # Demos
