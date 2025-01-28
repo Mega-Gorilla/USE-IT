@@ -1084,3 +1084,29 @@ class BrowserContext:
 		pixels_above = scroll_y
 		pixels_below = total_height - (scroll_y + viewport_height)
 		return pixels_above, pixels_below
+
+	async def reset_context(self):
+		session = await self.get_session()
+
+		pages = session.context.pages
+		for page in pages:
+			await page.close()
+
+		session.cached_state = BrowserState(
+			element_tree=DOMElementNode(
+				tag_name='root',
+				is_visible=True,
+				parent=None,
+				xpath='',
+				attributes={},
+				children=[],
+			),
+			selector_map={},
+			url='',
+			title='',
+			screenshot=None,
+			tabs=[],
+		)
+		session.current_page = await session.context.new_page()
+		self.session = BrowserSession(context=session, current_page=session.current_page, cached_state=session.cached_state)
+		return session
