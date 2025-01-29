@@ -35,13 +35,17 @@
     "name": "Join Discord",
     "url": "https://link.browser-use.com/discord"
   },
+  "tabs": [
+    {
+      "name": "Cloud API",
+      "url": "/cloud-api",
+      "openapi": "https://api.browser-use.com/openapi.json"
+    }
+  ],
   "navigation": [
     {
       "group": "Get Started",
-      "pages": [
-        "introduction",
-        "quickstart"
-      ]
+      "pages": ["introduction", "quickstart"]
     },
     {
       "group": "Customize",
