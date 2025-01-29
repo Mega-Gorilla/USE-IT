@@ -1,12 +1,3 @@
-"""
-This script creates a Gradio interface to run browser tasks using OpenAI models.
-By default, it uses regular OpenAI. To use Azure OpenAI, set the AZURE_ENDPOINT environment variable:
-
-- AZURE_ENDPOINT: Your Azure OpenAI endpoint URL
-
-The script will automatically detect this variable and switch to using Azure OpenAI if it is set.
-"""
-
 import asyncio
 import os
 from dataclasses import dataclass
@@ -18,14 +9,6 @@ from langchain_openai import ChatOpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-
-from browser_use import Agent
-
-# Conditionally import AzureChatOpenAI or ChatOpenAI based on the presence of the AZURE_ENDPOINT environment variable
-if os.getenv("AZURE_ENDPOINT"):
-    from langchain_openai import AzureChatOpenAI as ChatOpenAI  # Use Azure if environment variable is set
-else:
-    from langchain_openai import ChatOpenAI  # Use regular OpenAI otherwise
 
 from browser_use import Agent
 
@@ -66,48 +49,26 @@ def parse_agent_history(history_str: str) -> None:
 
 
 async def run_browser_task(
-    task: str,
-    api_key: str,
-    model: str = 'gpt-4',
-    headless: bool = True,
+	task: str,
+	api_key: str,
+	model: str = 'gpt-4o',
+	headless: bool = True,
 ) -> str:
-    if not api_key.strip():
-        return 'Please provide an API key'
+	if not api_key.strip():
+		return 'Please provide an API key'
 
-    azure_endpoint = os.getenv("AZURE_ENDPOINT")
+	os.environ['OPENAI_API_KEY'] = api_key
 
-    if azure_endpoint:
-        os.environ['AZURE_API_KEY'] = api_key
-        os.environ['AZURE_ENDPOINT'] = azure_endpoint
-        os.environ['OPENAI_API_VERSION'] = '2024-08-01-preview'  # Set the API version globally for Azure OpenAI
-
-        try:
-            agent = Agent(
-                task=task,
-                llm=ChatOpenAI(
-                    model_name=model,
-                    openai_api_key=api_key,
-                    azure_endpoint=azure_endpoint,
-                    deployment_name=model,
-                    api_version='2024-08-01-preview'  # Explicitly set the API version
-                ),
-            )
-        except Exception as e:
-            return f'Error: {str(e)}'
-    else:
-        os.environ['OPENAI_API_KEY'] = api_key
-
-        try:
-            agent = Agent(
-                task=task,
-                llm=ChatOpenAI(model=model),
-            )
-        except Exception as e:
-            return f'Error: {str(e)}'
-
-    result = await agent.run()
-    return result
-	
+	try:
+		agent = Agent(
+			task=task,
+			llm=ChatOpenAI(model='gpt-4o'),
+		)
+		result = await agent.run()
+		#  TODO: The result cloud be parsed better
+		return result
+	except Exception as e:
+		return f'Error: {str(e)}'
 
 
 def create_ui():
@@ -123,7 +84,7 @@ def create_ui():
 					lines=3,
 				)
 				model = gr.Dropdown(
-					choices=['gpt-4o', 'gpt-4', 'gpt-3.5-turbo'],  # Added gpt-4o
+					choices=['gpt-4', 'gpt-3.5-turbo'], label='Model', value='gpt-4'
 				)
 				headless = gr.Checkbox(label='Run Headless', value=True)
 				submit_btn = gr.Button('Run Task')
