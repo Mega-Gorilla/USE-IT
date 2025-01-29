@@ -592,6 +592,10 @@ class Agent:
 		Returns:
 		        List of action results
 		"""
+		# Execute initial actions if provided
+		if self.initial_actions:
+			await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+		
 		results = []
 
 		for i, history_item in enumerate(history.history):
