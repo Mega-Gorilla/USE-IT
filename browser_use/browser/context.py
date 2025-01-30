@@ -76,6 +76,9 @@ class BrowserContextConfig:
 		save_recording_path: None
 			Path to save video recordings
 
+		save_downloads_path: None
+	        Path to save downloads to
+
 		trace_path: None
 			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 
@@ -108,6 +111,7 @@ class BrowserContextConfig:
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
+	save_downloads_path: str | None = None
 	trace_path: str | None = None
 	locale: str | None = None
 	user_agent: str = (
@@ -908,7 +912,7 @@ class BrowserContext:
 		except Exception as e:
 			raise Exception(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
 
-	async def _click_element_node(self, element_node: DOMElementNode):
+	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
 		"""
 		Optimized method to click an element using xpath.
 		"""
@@ -924,21 +928,40 @@ class BrowserContext:
 			if element is None:
 				raise Exception(f'Element: {repr(element_node)} not found')
 
+			async def perform_click(click_func):
+				"""Performs the actual click, handling both download
+				and navigation scenarios."""
+				if self.config.save_downloads_path:
+					try:
+						# Try short-timeout expect_download to detect a file download has been been triggered
+						async with page.expect_download(timeout=5000) as download_info:
+							await click_func()
+						download = await download_info.value
+						# If the download succeeds, save to disk
+						download_path = os.path.join(self.config.save_downloads_path, download.suggested_filename)
+						await download.save_as(download_path)
+						logger.debug(f'Download triggered. Saved file to: {download_path}')
+						return download_path
+					except TimeoutError:
+						# If no download is triggered, treat as normal click
+						logger.debug('No download triggered within timeout. Checking navigation...')
+						await page.wait_for_load_state()
+						await self._check_and_handle_navigation(page)
+				else:
+					# Standard click logic if no download is expected
+					await click_func()
+					await page.wait_for_load_state()
+					await self._check_and_handle_navigation(page)
+
 			# await element.scroll_into_view_if_needed()
 
 			try:
-				await element.click(timeout=1500)
-				await page.wait_for_load_state()
-				# Check if navigation occurred and if the new URL is allowed
-				await self._check_and_handle_navigation(page)
+				return await perform_click(lambda: element.click(timeout=1500))
 			except URLNotAllowedError as e:
 				raise e
 			except Exception:
 				try:
-					await page.evaluate('(el) => el.click()', element)
-					await page.wait_for_load_state()
-					# Check if navigation occurred and if the new URL is allowed
-					await self._check_and_handle_navigation(page)
+					return await perform_click(lambda: page.evaluate('(el) => el.click()', element))
 				except URLNotAllowedError as e:
 					raise e
 				except Exception as e:

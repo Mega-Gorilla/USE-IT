@@ -103,8 +103,11 @@ class Controller:
 			msg = None
 
 			try:
-				await browser._click_element_node(element_node)
-				msg = f'🖱️  Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+				download_path = await browser._click_element_node(element_node)
+				if download_path:
+					msg = f'💾  Downloaded file to {download_path}'
+				else:
+					msg = f'🖱️  Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
 
 				logger.info(msg)
 				logger.debug(f'Element xpath: {element_node.xpath}')
