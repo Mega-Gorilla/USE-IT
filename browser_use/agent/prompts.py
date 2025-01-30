@@ -161,7 +161,7 @@ class AgentMessagePrompt:
 		self.include_attributes = include_attributes
 		self.step_info = step_info
 
-	def get_user_message(self) -> HumanMessage:
+	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
 		if self.step_info:
 			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
 		else:
@@ -206,7 +206,7 @@ Interactive elements from current page view:
 					error = result.error[-self.max_error_length :]
 					state_description += f'\nAction error {i + 1}/{len(self.result)}: ...{error}'
 
-		if self.state.screenshot:
+		if self.state.screenshot and use_vision == True:
 			# Format message for vision model
 			return HumanMessage(
 				content=[
