@@ -39,8 +39,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
 
 from browser_use import BrowserConfig
-from browser_use.agent.service import Agent
-from examples.integrations.discord_api import DiscordBot
+from examples.integrations.discord.discord_api import DiscordBot
 
 load_dotenv()
 
