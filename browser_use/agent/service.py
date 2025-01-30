@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
+from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
@@ -313,7 +314,7 @@ class Agent:
 				error_msg += '\n\nReturn a valid JSON object with the required fields.'
 
 			self.consecutive_failures += 1
-		elif isinstance(error, RateLimitError):
+		elif isinstance(error, RateLimitError) or isinstance(error, ResourceExhausted):
 			logger.warning(f'{prefix}{error_msg}')
 			await asyncio.sleep(self.retry_delay)
 			self.consecutive_failures += 1
@@ -602,7 +603,7 @@ class Agent:
 		# Execute initial actions if provided
 		if self.initial_actions:
 			await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
-		
+
 		results = []
 
 		for i, history_item in enumerate(history.history):
