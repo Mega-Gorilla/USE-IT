@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from browser_use.dom.history_tree_processor.view import HashedDomElement
+from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -45,6 +45,9 @@ class DOMElementNode(DOMBaseNode):
 	is_top_element: bool = False
 	shadow_root: bool = False
 	highlight_index: Optional[int] = None
+	viewport_coordinates: Optional[CoordinateSet] = None
+	page_coordinates: Optional[CoordinateSet] = None
+	viewport_info: Optional[ViewportInfo] = None
 
 	def __repr__(self) -> str:
 		tag_str = f'<{self.tag_name}'
@@ -86,11 +89,7 @@ class DOMElementNode(DOMBaseNode):
 				return
 
 			# Skip this branch if we hit a highlighted element (except for the current node)
-			if (
-				isinstance(node, DOMElementNode)
-				and node != self
-				and node.highlight_index is not None
-			):
+			if isinstance(node, DOMElementNode) and node != self and node.highlight_index is not None:
 				return
 
 			if isinstance(node, DOMTextNode):
@@ -113,9 +112,7 @@ class DOMElementNode(DOMBaseNode):
 					attributes_str = ''
 					if include_attributes:
 						attributes_str = ' ' + ' '.join(
-							f'{key}="{value}"'
-							for key, value in node.attributes.items()
-							if key in include_attributes
+							f'{key}="{value}"' for key, value in node.attributes.items() if key in include_attributes
 						)
 					formatted_text.append(
 						f'{node.highlight_index}[:]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
@@ -154,6 +151,11 @@ class DOMElementNode(DOMBaseNode):
 						return result
 
 		return None
+
+	def get_advanced_css_selector(self) -> str:
+		from browser_use.browser.context import BrowserContext
+
+		return BrowserContext._enhanced_css_selector_for_element(self)
 
 
 class ElementTreeSerializer:

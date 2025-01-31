@@ -16,6 +16,7 @@ class HistoryTreeProcessor:
 	@staticmethod
 	def convert_dom_element_to_history_element(dom_element: DOMElementNode) -> DOMHistoryElement:
 		parent_branch_path = HistoryTreeProcessor._get_parent_branch_path(dom_element)
+		css_selector = dom_element.get_advanced_css_selector()
 		return DOMHistoryElement(
 			dom_element.tag_name,
 			dom_element.xpath,
@@ -23,15 +24,15 @@ class HistoryTreeProcessor:
 			parent_branch_path,
 			dom_element.attributes,
 			dom_element.shadow_root,
+			css_selector=css_selector,
+			page_coordinates=dom_element.page_coordinates,
+			viewport_coordinates=dom_element.viewport_coordinates,
+			viewport_info=dom_element.viewport_info,
 		)
 
 	@staticmethod
-	def find_history_element_in_tree(
-		dom_history_element: DOMHistoryElement, tree: DOMElementNode
-	) -> Optional[DOMElementNode]:
-		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(
-			dom_history_element
-		)
+	def find_history_element_in_tree(dom_history_element: DOMHistoryElement, tree: DOMElementNode) -> Optional[DOMElementNode]:
+		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(dom_history_element)
 
 		def process_node(node: DOMElementNode):
 			if node.highlight_index is not None:
@@ -48,21 +49,15 @@ class HistoryTreeProcessor:
 		return process_node(tree)
 
 	@staticmethod
-	def compare_history_element_and_dom_element(
-		dom_history_element: DOMHistoryElement, dom_element: DOMElementNode
-	) -> bool:
-		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(
-			dom_history_element
-		)
+	def compare_history_element_and_dom_element(dom_history_element: DOMHistoryElement, dom_element: DOMElementNode) -> bool:
+		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(dom_history_element)
 		hashed_dom_element = HistoryTreeProcessor._hash_dom_element(dom_element)
 
 		return hashed_dom_history_element == hashed_dom_element
 
 	@staticmethod
 	def _hash_dom_history_element(dom_history_element: DOMHistoryElement) -> HashedDomElement:
-		branch_path_hash = HistoryTreeProcessor._parent_branch_path_hash(
-			dom_history_element.entire_parent_branch_path
-		)
+		branch_path_hash = HistoryTreeProcessor._parent_branch_path_hash(dom_history_element.entire_parent_branch_path)
 		attributes_hash = HistoryTreeProcessor._attributes_hash(dom_history_element.attributes)
 		xpath_hash = HistoryTreeProcessor._xpath_hash(dom_history_element.xpath)
 
