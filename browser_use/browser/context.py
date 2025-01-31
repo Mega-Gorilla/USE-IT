@@ -97,6 +97,9 @@ class BrowserContextConfig:
 		allowed_domains: None
 			List of allowed domains that can be accessed. If None, all domains are allowed.
 			Example: ['example.com', 'api.example.com']
+
+		include_dynamic_attributes: bool = True
+			Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
 	"""
 
 	cookies_file: str | None = None
@@ -121,6 +124,7 @@ class BrowserContextConfig:
 	highlight_elements: bool = True
 	viewport_expansion: int = 500
 	allowed_domains: list[str] | None = None
+	include_dynamic_attributes: bool = True
 
 
 @dataclass
@@ -761,7 +765,7 @@ class BrowserContext:
 		return base_selector
 
 	@classmethod
-	def _enhanced_css_selector_for_element(cls, element: DOMElementNode) -> str:
+	def _enhanced_css_selector_for_element(cls, element: DOMElementNode, include_dynamic_attributes: bool = True) -> str:
 		"""
 		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
 
@@ -776,7 +780,7 @@ class BrowserContext:
 			css_selector = cls._convert_simple_xpath_to_css_selector(element.xpath)
 
 			# Handle class attributes
-			if 'class' in element.attributes and element.attributes['class']:
+			if 'class' in element.attributes and element.attributes['class'] and include_dynamic_attributes:
 				# Define a regex pattern for valid class names in CSS
 				valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*$')
 
@@ -797,11 +801,11 @@ class BrowserContext:
 
 			# Expanded set of safe attributes that are stable and useful for selection
 			SAFE_ATTRIBUTES = {
-				# Standard HTML attributes
+				# Data attributes (if they're stable in your application)
 				'id',
+				# Standard HTML attributes
 				'name',
 				'type',
-				'value',
 				'placeholder',
 				# Accessibility attributes
 				'aria-label',
@@ -817,15 +821,19 @@ class BrowserContext:
 				'alt',
 				'title',
 				'src',
-				# Data attributes (if they're stable in your application)
-				'data-testid',
-				'data-id',
-				'data-qa',
-				'data-cy',
 				# Custom stable attributes (add any application-specific ones)
 				'href',
 				'target',
 			}
+
+			if include_dynamic_attributes:
+				dynamic_attributes = {
+					'data-id',
+					'data-qa',
+					'data-cy',
+					'data-testid',
+				}
+				SAFE_ATTRIBUTES.update(dynamic_attributes)
 
 			# Handle other attributes
 			for attribute, value in element.attributes.items():
@@ -879,10 +887,14 @@ class BrowserContext:
 		# Process all iframe parents in sequence
 		iframes = [item for item in parents if item.tag_name == 'iframe']
 		for parent in iframes:
-			css_selector = self._enhanced_css_selector_for_element(parent)
+			css_selector = self._enhanced_css_selector_for_element(
+				parent, include_dynamic_attributes=self.config.include_dynamic_attributes
+			)
 			current_frame = current_frame.frame_locator(css_selector)
 
-		css_selector = self._enhanced_css_selector_for_element(element)
+		css_selector = self._enhanced_css_selector_for_element(
+			element, include_dynamic_attributes=self.config.include_dynamic_attributes
+		)
 
 		try:
 			if isinstance(current_frame, FrameLocator):
