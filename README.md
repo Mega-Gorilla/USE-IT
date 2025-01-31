@@ -20,7 +20,9 @@
 
 🌩️ Skip the setup - try our hosted version for instant browser automation! [Try it now](https://cloud.browser-use.com).
 
+
 # Quick start
+Minimum Python requirement of 3.11
 
 With pip:
 
