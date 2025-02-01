@@ -168,11 +168,16 @@ class Controller:
 
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
-
-			output = page_extraction_llm.invoke(template.format(goal=goal, page=content))
-			msg = f'📄  Extracted from page\n: {output.content}\n'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True)
+			try:
+				output = page_extraction_llm.invoke(template.format(goal=goal, page=content))
+				msg = f'📄  Extracted from page\n: {output.content}\n'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				logger.debug(f'Error extracting content: {e}')
+				msg = f'📄  Extracted from page\n: {content}\n'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg)
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',
