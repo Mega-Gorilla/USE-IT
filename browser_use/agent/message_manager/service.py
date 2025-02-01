@@ -54,7 +54,6 @@ class MessageManager:
 		self.sensitive_data = sensitive_data
 		system_message = self.system_prompt_class(
 			self.action_descriptions,
-			current_date=datetime.now(),
 			max_actions_per_step=max_actions_per_step,
 		).get_system_message()
 
@@ -62,7 +61,7 @@ class MessageManager:
 		self.system_prompt = system_message
 
 		if self.message_context:
-			context_message = HumanMessage(content=self.message_context)
+			context_message = HumanMessage(content='Context for the task' + self.message_context)
 			self._add_message_with_tokens(context_message)
 
 		task_message = self.task_instructions(task)
@@ -74,14 +73,17 @@ class MessageManager:
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message)
 
+		placeholder_message = HumanMessage(content='Example output:')
+		self._add_message_with_tokens(placeholder_message)
+
 		self.tool_id = 1
 		tool_calls = [
 			{
 				'name': 'AgentOutput',
 				'args': {
 					'current_state': {
-						'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
-						'memory': '',
+						'evaluation_previous_goal': 'Success - No previous actions to evaluate.',
+						'memory': 'Starting with the new task 0/10 done',
 						'next_goal': 'Start browser',
 					},
 					'action': [],
@@ -104,15 +106,16 @@ class MessageManager:
 
 		self.tool_id += 1
 
+		placeholder_message = HumanMessage(content='Task history starts here:')
+		self._add_message_with_tokens(placeholder_message)
+
 	@staticmethod
 	def task_instructions(task: str) -> HumanMessage:
-		content = f'Your ultimate task is: {task}. If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
+		content = f'Your ultimate task is: """{task}""". If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
 		return HumanMessage(content=content)
 
 	def add_new_task(self, new_task: str) -> None:
-		content = (
-			f'Your new ultimate task is: {new_task}. Take the previous context into account and finish your new ultimate task. '
-		)
+		content = f'Your new ultimate task is: """{new_task}""". Take the previous context into account and finish your new ultimate task. '
 		msg = HumanMessage(content=content)
 		self._add_message_with_tokens(msg)
 

@@ -115,7 +115,7 @@ class DOMElementNode(DOMBaseNode):
 							f'{key}="{value}"' for key, value in node.attributes.items() if key in include_attributes
 						)
 					formatted_text.append(
-						f'{node.highlight_index}[:]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
+						f'[{node.highlight_index}]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
 					)
 
 				# Process children regardless
@@ -125,7 +125,7 @@ class DOMElementNode(DOMBaseNode):
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
 				if not node.has_parent_with_highlight_index():
-					formatted_text.append(f'_[:]{node.text}')
+					formatted_text.append(f'[]{node.text}')
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)

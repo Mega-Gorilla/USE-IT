@@ -1,3 +1,4 @@
+import datetime
 from datetime import datetime
 from typing import List, Optional
 
@@ -8,9 +9,8 @@ from browser_use.browser.views import BrowserState
 
 
 class SystemPrompt:
-	def __init__(self, action_description: str, current_date: datetime, max_actions_per_step: int = 10):
+	def __init__(self, action_description: str, max_actions_per_step: int = 10):
 		self.default_action_description = action_description
-		self.current_date = current_date
 		self.max_actions_per_step = max_actions_per_step
 
 	def important_rules(self) -> str:
@@ -22,7 +22,7 @@ class SystemPrompt:
    {
      "current_state": {
        "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
-       "memory": "Description of what has been done and what you need to remember until the end of the task",
+       "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
        "next_goal": "What needs to be done with the next actions"
      },
      "action": [
@@ -52,8 +52,8 @@ class SystemPrompt:
 
 3. ELEMENT INTERACTION:
    - Only use indexes that exist in the provided element list
-   - Each element has a unique index number (e.g., "33[:]<button>")
-   - Elements marked with "_[:]" are non-interactive (for context only)
+   - Each element has a unique index number (e.g., "[33]<button>")
+   - Elements marked with "[]Non-interactive text" are non-interactive (for context only)
 
 4. NAVIGATION & ERROR HANDLING:
    - If no suitable elements exist, use other functions to complete the task
@@ -62,10 +62,11 @@ class SystemPrompt:
    - Use scroll to find elements you are looking for
 
 5. TASK COMPLETION:
-   - Use the done action as the last action as soon as the task is complete
+   - Use the done action as the last action as soon as the ultimate task is complete
+   - Dont use "done" before you are done with everything the user asked you. 
+   - If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
    - Don't hallucinate actions
    - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
-   - If you are running out of steps (current step), think about speeding it up, and ALWAYS use the done action as the last action.
 
 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
@@ -104,13 +105,13 @@ INPUT STRUCTURE:
    - element_text: Visible text or element description
 
 Example:
-33[:]<button>Submit Form</button>
-_[:] Non-interactive text
+[33]<button>Submit Form</button>
+[] Non-interactive text
 
 
 Notes:
-- Only elements with numeric indexes are interactive
-- _[:] elements provide context but cannot be interacted with
+- Only elements with numeric indexes inside [] are interactive
+- [] elements provide context but cannot be interacted with
 """
 
 	def get_system_message(self) -> SystemMessage:
@@ -120,14 +121,12 @@ Notes:
 		Returns:
 		    str: Formatted system prompt
 		"""
-		time_str = self.current_date.strftime('%Y-%m-%d %H:%M')
 
 		AGENT_PROMPT = f"""You are a precise browser automation agent that interacts with websites through structured commands. Your role is to:
 1. Analyze the provided webpage elements and structure
 2. Plan a sequence of actions to accomplish the given task
 3. Respond with valid JSON containing your action sequence and state assessment
 
-Current date and time: {time_str}
 
 {self.input_format()}
 
@@ -162,11 +161,6 @@ class AgentMessagePrompt:
 		self.step_info = step_info
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-		if self.step_info:
-			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
-		else:
-			step_info_description = ''
-
 		elements_text = self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
 		has_content_above = (self.state.pixels_above or 0) > 0
@@ -188,13 +182,21 @@ class AgentMessagePrompt:
 		else:
 			elements_text = 'empty page'
 
+		if self.step_info:
+			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
+		else:
+			step_info_description = ''
+		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+		step_info_description += f'Current date and time: {time_str}'
+
 		state_description = f"""
-{step_info_description}
+
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
-Interactive elements from current page view:
+Interactive elements from current page:
 {elements_text}
+{step_info_description}
 """
 
 		if self.result:
