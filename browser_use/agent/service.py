@@ -77,6 +77,7 @@ class Agent:
 		validate_output: bool = False,
 		message_context: Optional[str] = None,
 		generate_gif: bool | str = True,
+		sensitive_data: Optional[Dict[str, str]] = None,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -100,7 +101,7 @@ class Agent:
 		page_extraction_llm: Optional[BaseChatModel] = None,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
-
+		self.sensitive_data = sensitive_data
 		if not page_extraction_llm:
 			self.page_extraction_llm = llm
 		else:
@@ -162,6 +163,7 @@ class Agent:
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
 			message_context=self.message_context,
+			sensitive_data=self.sensitive_data,
 		)
 
 		# Step callback
@@ -271,7 +273,10 @@ class Agent:
 				raise e
 
 			result: list[ActionResult] = await self.controller.multi_act(
-				model_output.action, self.browser_context, page_extraction_llm=self.page_extraction_llm
+				model_output.action,
+				self.browser_context,
+				page_extraction_llm=self.page_extraction_llm,
+				sensitive_data=self.sensitive_data,
 			)
 			self._last_result = result
 

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Type
+from typing import Dict, Optional, Type
 
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel
@@ -133,7 +133,7 @@ class Controller:
 
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
-			msg = f'⌨️  Input "{params.text}" into index {params.index}'
+			msg = f'⌨️  Input text into index {params.index}'
 			logger.info(msg)
 			logger.debug(f'Element xpath: {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -446,6 +446,7 @@ class Controller:
 		browser_context: BrowserContext,
 		check_for_new_elements: bool = True,
 		page_extraction_llm: Optional[BaseChatModel] = None,
+		sensitive_data: Optional[Dict[str, str]] = None,
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
@@ -464,7 +465,7 @@ class Controller:
 					logger.info(f'Something new appeared after action {i} / {len(actions)}')
 					break
 
-			results.append(await self.act(action, browser_context, page_extraction_llm))
+			results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data))
 
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
@@ -481,6 +482,7 @@ class Controller:
 		action: ActionModel,
 		browser_context: BrowserContext,
 		page_extraction_llm: Optional[BaseChatModel] = None,
+		sensitive_data: Optional[Dict[str, str]] = None,
 	) -> ActionResult:
 		"""Execute an action"""
 		try:
@@ -488,7 +490,11 @@ class Controller:
 				if params is not None:
 					# remove highlights
 					result = await self.registry.execute_action(
-						action_name, params, browser=browser_context, page_extraction_llm=page_extraction_llm
+						action_name,
+						params,
+						browser=browser_context,
+						page_extraction_llm=page_extraction_llm,
+						sensitive_data=sensitive_data,
 					)
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)

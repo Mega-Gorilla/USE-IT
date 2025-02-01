@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
@@ -38,6 +38,7 @@ class MessageManager:
 		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 		message_context: Optional[str] = None,
+		sensitive_data: Optional[Dict[str, str]] = None,
 	):
 		self.llm = llm
 		self.system_prompt_class = system_prompt_class
@@ -50,7 +51,7 @@ class MessageManager:
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
 		self.message_context = message_context
-
+		self.sensitive_data = sensitive_data
 		system_message = self.system_prompt_class(
 			self.action_descriptions,
 			current_date=datetime.now(),
@@ -66,6 +67,13 @@ class MessageManager:
 
 		task_message = self.task_instructions(task)
 		self._add_message_with_tokens(task_message)
+
+		if self.sensitive_data:
+			info = f'Here are placeholders for sensitve data: {list(self.sensitive_data.keys())}'
+			info += 'To use them, write <secret>the placeholder name</secret>'
+			info_message = HumanMessage(content=info)
+			self._add_message_with_tokens(info_message)
+
 		self.tool_id = 1
 		tool_calls = [
 			{
@@ -93,6 +101,7 @@ class MessageManager:
 			tool_call_id=str(self.tool_id),
 		)
 		self._add_message_with_tokens(tool_message)
+
 		self.tool_id += 1
 
 	@staticmethod
@@ -112,7 +121,7 @@ class MessageManager:
 		state: BrowserState,
 		result: Optional[List[ActionResult]] = None,
 		step_info: Optional[AgentStepInfo] = None,
-		use_vision = True,
+		use_vision=True,
 	) -> None:
 		"""Add browser state as human message"""
 
