@@ -22,7 +22,7 @@ class SystemPrompt:
    {
      "current_state": {
        "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
-       "memory": "Description of what has been done and what you need to remember until the end of the task",
+       "memory": "Description of what has been done and what you need to remember. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
        "next_goal": "What needs to be done with the next actions"
      },
      "action": [
@@ -63,7 +63,8 @@ class SystemPrompt:
 
 5. TASK COMPLETION:
    - Use the done action as the last action as soon as the ultimate task is complete
-   - Dont stop earlier. If you have to do something multiple times, count inside your memory how many times you have and dont stop until you are done with all.
+   - Dont use "done" before you are done with everything the user asked you. 
+   - If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
    - Don't hallucinate actions
    - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
 
