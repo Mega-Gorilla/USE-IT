@@ -1,3 +1,4 @@
+import datetime
 from datetime import datetime
 from typing import List, Optional
 
@@ -8,9 +9,8 @@ from browser_use.browser.views import BrowserState
 
 
 class SystemPrompt:
-	def __init__(self, action_description: str, current_date: datetime, max_actions_per_step: int = 10):
+	def __init__(self, action_description: str, max_actions_per_step: int = 10):
 		self.default_action_description = action_description
-		self.current_date = current_date
 		self.max_actions_per_step = max_actions_per_step
 
 	def important_rules(self) -> str:
@@ -120,14 +120,12 @@ Notes:
 		Returns:
 		    str: Formatted system prompt
 		"""
-		time_str = self.current_date.strftime('%Y-%m-%d %H:%M')
 
 		AGENT_PROMPT = f"""You are a precise browser automation agent that interacts with websites through structured commands. Your role is to:
 1. Analyze the provided webpage elements and structure
 2. Plan a sequence of actions to accomplish the given task
 3. Respond with valid JSON containing your action sequence and state assessment
 
-Current date and time: {time_str}
 
 {self.input_format()}
 
@@ -162,11 +160,6 @@ class AgentMessagePrompt:
 		self.step_info = step_info
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-		if self.step_info:
-			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
-		else:
-			step_info_description = ''
-
 		elements_text = self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
 		has_content_above = (self.state.pixels_above or 0) > 0
@@ -188,13 +181,21 @@ class AgentMessagePrompt:
 		else:
 			elements_text = 'empty page'
 
+		if self.step_info:
+			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}'
+		else:
+			step_info_description = ''
+		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+		step_info_description += f'Current date and time: {time_str}'
+
 		state_description = f"""
-{step_info_description}
+
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
-Interactive elements from current page view:
+Interactive elements from current page:
 {elements_text}
+{step_info_description}
 """
 
 		if self.result:

@@ -54,7 +54,6 @@ class MessageManager:
 		self.sensitive_data = sensitive_data
 		system_message = self.system_prompt_class(
 			self.action_descriptions,
-			current_date=datetime.now(),
 			max_actions_per_step=max_actions_per_step,
 		).get_system_message()
 
