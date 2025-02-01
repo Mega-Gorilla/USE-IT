@@ -62,10 +62,10 @@ class SystemPrompt:
    - Use scroll to find elements you are looking for
 
 5. TASK COMPLETION:
-   - Use the done action as the last action as soon as the task is complete
+   - Use the done action as the last action as soon as the ultimate task is complete
+   - Dont stop earlier. If you have to do something multiple times, count inside your memory how many times you have and dont stop until you are done with all.
    - Don't hallucinate actions
    - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
-   - If you are running out of steps (current step), think about speeding it up, and ALWAYS use the done action as the last action.
 
 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
