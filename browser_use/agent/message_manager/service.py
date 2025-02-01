@@ -193,9 +193,33 @@ class MessageManager:
 
 	def _add_message_with_tokens(self, message: BaseMessage) -> None:
 		"""Add message with token count metadata"""
+
+		# filter out sensitive data from the message
+		if self.sensitive_data:
+			message = self._filter_sensitive_data(message)
+
 		token_count = self._count_tokens(message)
 		metadata = MessageMetadata(input_tokens=token_count)
 		self.history.add_message(message, metadata)
+
+	def _filter_sensitive_data(self, message: BaseMessage) -> BaseMessage:
+		"""Filter out sensitive data from the message"""
+
+		def replace_sensitive(value: str) -> str:
+			if not self.sensitive_data:
+				return value
+			for key, val in self.sensitive_data.items():
+				value = value.replace(val, f'<secret>{key}</secret>')
+			return value
+
+		if isinstance(message.content, str):
+			message.content = replace_sensitive(message.content)
+		elif isinstance(message.content, list):
+			for i, item in enumerate(message.content):
+				if isinstance(item, dict) and 'text' in item:
+					item['text'] = replace_sensitive(item['text'])
+					message.content[i] = item
+		return message
 
 	def _count_tokens(self, message: BaseMessage) -> int:
 		"""Count tokens in a message using the model's tokenizer"""

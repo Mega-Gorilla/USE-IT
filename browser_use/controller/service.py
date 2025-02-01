@@ -133,7 +133,7 @@ class Controller:
 
 			element_node = state.selector_map[params.index]
 			await browser._input_text_element_node(element_node, params.text)
-			msg = f'⌨️  Input text into index {params.index}'
+			msg = f'⌨️  Input {params.text} into index {params.index}'
 			logger.info(msg)
 			logger.debug(f'Element xpath: {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
