@@ -1,6 +1,10 @@
 import os
-import pytest
 import sys
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
+from langchain_core.language_models.chat_models import BaseChatModel
+from pydantic import BaseModel
 
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.service import Agent
@@ -11,11 +15,9 @@ from browser_use.browser.views import BrowserState
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from langchain_core.language_models.chat_models import BaseChatModel
-from pydantic import BaseModel
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 # run with python -m pytest tests/test_service.py
+
 
 # run test with:
 # python -m pytest tests/test_service.py
@@ -125,93 +127,97 @@ class TestAgent:
 			assert 'Test error' in agent._last_result[0].error
 			assert agent._last_result[0].include_in_memory == True
 
+
 class TestRegistry:
-    @pytest.fixture
-    def registry_with_excludes(self):
-        return Registry(exclude_actions=['excluded_action'])
+	@pytest.fixture
+	def registry_with_excludes(self):
+		return Registry(exclude_actions=['excluded_action'])
 
-    def test_action_decorator_with_excluded_action(self, registry_with_excludes):
-        """
-        Test that the action decorator does not register an action
-        if it's in the exclude_actions list.
-        """
-        # Define a function to be decorated
-        def excluded_action():
-            pass
+	def test_action_decorator_with_excluded_action(self, registry_with_excludes):
+		"""
+		Test that the action decorator does not register an action
+		if it's in the exclude_actions list.
+		"""
 
-        # Apply the action decorator
-        decorated_func = registry_with_excludes.action(description="This should be excluded")(excluded_action)
+		# Define a function to be decorated
+		def excluded_action():
+			pass
 
-        # Assert that the decorated function is the same as the original
-        assert decorated_func == excluded_action
+		# Apply the action decorator
+		decorated_func = registry_with_excludes.action(description='This should be excluded')(excluded_action)
 
-        # Assert that the action was not added to the registry
-        assert 'excluded_action' not in registry_with_excludes.registry.actions
+		# Assert that the decorated function is the same as the original
+		assert decorated_func == excluded_action
 
-        # Define another function that should be included
-        def included_action():
-            pass
+		# Assert that the action was not added to the registry
+		assert 'excluded_action' not in registry_with_excludes.registry.actions
 
-        # Apply the action decorator to an included action
-        registry_with_excludes.action(description="This should be included")(included_action)
+		# Define another function that should be included
+		def included_action():
+			pass
 
-        # Assert that the included action was added to the registry
-        assert 'included_action' in registry_with_excludes.registry.actions
+		# Apply the action decorator to an included action
+		registry_with_excludes.action(description='This should be included')(included_action)
 
-    @pytest.mark.asyncio
-    async def test_execute_action_with_and_without_browser_context(self):
-        """
-        Test that the execute_action method correctly handles actions with and without a browser context.
-        This test ensures that:
-        1. An action requiring a browser context is executed correctly.
-        2. An action not requiring a browser context is executed correctly.
-        3. The browser context is passed to the action function when required.
-        4. The action function receives the correct parameters.
-        5. The method raises an error when a browser context is required but not provided.
-        """
-        registry = Registry()
+		# Assert that the included action was added to the registry
+		assert 'included_action' in registry_with_excludes.registry.actions
 
-        # Define a mock action model
-        class TestActionModel(BaseModel):
-            param1: str
+	@pytest.mark.asyncio
+	async def test_execute_action_with_and_without_browser_context(self):
+		"""
+		Test that the execute_action method correctly handles actions with and without a browser context.
+		This test ensures that:
+		1. An action requiring a browser context is executed correctly.
+		2. An action not requiring a browser context is executed correctly.
+		3. The browser context is passed to the action function when required.
+		4. The action function receives the correct parameters.
+		5. The method raises an error when a browser context is required but not provided.
+		"""
+		registry = Registry()
 
-        # Define mock action functions
-        async def test_action_with_browser(param1: str, browser):
-            return f"Action executed with {param1} and browser"
+		# Define a mock action model
+		class TestActionModel(BaseModel):
+			param1: str
 
-        async def test_action_without_browser(param1: str):
-            return f"Action executed with {param1}"
+		# Define mock action functions
+		async def test_action_with_browser(param1: str, browser):
+			return f'Action executed with {param1} and browser'
 
-        # Register the actions
-        registry.registry.actions['test_action_with_browser'] = MagicMock(
-            requires_browser=True,
-            function=AsyncMock(side_effect=test_action_with_browser),
-            param_model=TestActionModel,
-            description="Test action with browser"
-        )
+		async def test_action_without_browser(param1: str):
+			return f'Action executed with {param1}'
 
-        registry.registry.actions['test_action_without_browser'] = MagicMock(
-            requires_browser=False,
-            function=AsyncMock(side_effect=test_action_without_browser),
-            param_model=TestActionModel,
-            description="Test action without browser"
-        )
+		# Register the actions
+		registry.registry.actions['test_action_with_browser'] = MagicMock(
+			function=AsyncMock(side_effect=test_action_with_browser),
+			param_model=TestActionModel,
+			description='Test action with browser',
+		)
 
-        # Mock BrowserContext
-        mock_browser = MagicMock()
+		registry.registry.actions['test_action_without_browser'] = MagicMock(
+			function=AsyncMock(side_effect=test_action_without_browser),
+			param_model=TestActionModel,
+			description='Test action without browser',
+		)
 
-        # Execute the action with a browser context
-        result_with_browser = await registry.execute_action('test_action_with_browser', {'param1': 'test_value'}, browser=mock_browser)
-        assert result_with_browser == "Action executed with test_value and browser"
+		# Mock BrowserContext
+		mock_browser = MagicMock()
 
-        # Execute the action without a browser context
-        result_without_browser = await registry.execute_action('test_action_without_browser', {'param1': 'test_value'})
-        assert result_without_browser == "Action executed with test_value"
+		# Execute the action with a browser context
+		result_with_browser = await registry.execute_action(
+			'test_action_with_browser', {'param1': 'test_value'}, browser=mock_browser
+		)
+		assert result_with_browser == 'Action executed with test_value and browser'
 
-        # Test error when browser is required but not provided
-        with pytest.raises(RuntimeError, match="Action test_action_with_browser requires browser but none provided"):
-            await registry.execute_action('test_action_with_browser', {'param1': 'test_value'})
+		# Execute the action without a browser context
+		result_without_browser = await registry.execute_action('test_action_without_browser', {'param1': 'test_value'})
+		assert result_without_browser == 'Action executed with test_value'
 
-        # Verify that the action functions were called with correct parameters
-        registry.registry.actions['test_action_with_browser'].function.assert_called_once_with(param1='test_value', browser=mock_browser)
-        registry.registry.actions['test_action_without_browser'].function.assert_called_once_with(param1='test_value')
+		# Test error when browser is required but not provided
+		with pytest.raises(RuntimeError, match='Action test_action_with_browser requires browser but none provided'):
+			await registry.execute_action('test_action_with_browser', {'param1': 'test_value'})
+
+		# Verify that the action functions were called with correct parameters
+		registry.registry.actions['test_action_with_browser'].function.assert_called_once_with(
+			param1='test_value', browser=mock_browser
+		)
+		registry.registry.actions['test_action_without_browser'].function.assert_called_once_with(param1='test_value')

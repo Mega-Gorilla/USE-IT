@@ -97,8 +97,14 @@ class Agent:
 		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None] | None = None,
 		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
 		tool_calling_method: Optional[str] = 'auto',
+		page_extraction_llm: Optional[BaseChatModel] = None,
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
+
+		if not page_extraction_llm:
+			self.page_extraction_llm = llm
+		else:
+			self.page_extraction_llm = page_extraction_llm
 
 		self.task = task
 		self.use_vision = use_vision
@@ -264,7 +270,9 @@ class Agent:
 				self.message_manager._remove_last_state_message()
 				raise e
 
-			result: list[ActionResult] = await self.controller.multi_act(model_output.action, self.browser_context)
+			result: list[ActionResult] = await self.controller.multi_act(
+				model_output.action, self.browser_context, page_extraction_llm=self.page_extraction_llm
+			)
 			self._last_result = result
 
 			if len(result) > 0 and result[-1].is_done:
@@ -470,7 +478,12 @@ class Agent:
 
 			# Execute initial actions if provided
 			if self.initial_actions:
-				result = await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+				result = await self.controller.multi_act(
+					self.initial_actions,
+					self.browser_context,
+					check_for_new_elements=False,
+					page_extraction_llm=self.page_extraction_llm,
+				)
 				self._last_result = result
 
 			for step in range(max_steps):
@@ -558,7 +571,7 @@ class Agent:
 				state=state,
 				result=self._last_result,
 				include_attributes=self.include_attributes,
-				max_error_length=self.max_error_length
+				max_error_length=self.max_error_length,
 			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message(self.use_vision)]
 		else:
@@ -658,7 +671,9 @@ class Agent:
 			if updated_action is None:
 				raise ValueError(f'Could not find matching element {i} in current page')
 
-		result = await self.controller.multi_act(updated_actions, self.browser_context)
+		result = await self.controller.multi_act(
+			updated_actions, self.browser_context, page_extraction_llm=self.page_extraction_llm
+		)
 
 		await asyncio.sleep(delay)
 		return result

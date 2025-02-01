@@ -30,7 +30,6 @@ controller = Controller()
 
 @controller.action(
 	'Upload file to element ',
-	requires_browser=True,
 )
 async def upload_file(index: int, browser: BrowserContext):
 	path = str(CV.absolute())
@@ -61,17 +60,14 @@ async def upload_file(index: int, browser: BrowserContext):
 		return ActionResult(error=f'Failed to upload file to index {index}')
 
 
-@controller.action('Close file dialog', requires_browser=True)
+@controller.action('Close file dialog')
 async def close_file_dialog(browser: BrowserContext):
 	page = await browser.get_current_page()
 	await page.keyboard.press('Escape')
 
 
 async def main():
-	task = (
-		f'go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/'
-		f' and upload to each upload field my file'
-	)
+	task = f'go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/ and upload to each upload field my file'
 
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(
