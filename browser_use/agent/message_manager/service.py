@@ -61,7 +61,7 @@ class MessageManager:
 		self.system_prompt = system_message
 
 		if self.message_context:
-			context_message = HumanMessage(content=self.message_context)
+			context_message = HumanMessage(content='Context for the task' + self.message_context)
 			self._add_message_with_tokens(context_message)
 
 		task_message = self.task_instructions(task)
@@ -73,14 +73,17 @@ class MessageManager:
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message)
 
+		placeholder_message = HumanMessage(content='Example output:')
+		self._add_message_with_tokens(placeholder_message)
+
 		self.tool_id = 1
 		tool_calls = [
 			{
 				'name': 'AgentOutput',
 				'args': {
 					'current_state': {
-						'evaluation_previous_goal': 'Unknown - No previous actions to evaluate.',
-						'memory': '',
+						'evaluation_previous_goal': 'Success - No previous actions to evaluate.',
+						'memory': 'Starting with the new task 0/10 done',
 						'next_goal': 'Start browser',
 					},
 					'action': [],
@@ -102,6 +105,9 @@ class MessageManager:
 		self._add_message_with_tokens(tool_message)
 
 		self.tool_id += 1
+
+		placeholder_message = HumanMessage(content='Task history starts here:')
+		self._add_message_with_tokens(placeholder_message)
 
 	@staticmethod
 	def task_instructions(task: str) -> HumanMessage:
