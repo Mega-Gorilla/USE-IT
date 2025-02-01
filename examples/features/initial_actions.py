@@ -10,7 +10,6 @@ initial_actions = [
 	{'open_tab': {'url': 'https://www.google.com'}},
 	{'open_tab': {'url': 'https://en.wikipedia.org/wiki/Randomness'}},
 	{'scroll_down': {'amount': 1000}},
-	{'extract_content': {'include_links': False}},
 ]
 agent = Agent(
 	task='What theories are displayed on the page?',

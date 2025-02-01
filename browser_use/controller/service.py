@@ -3,6 +3,7 @@ import json
 import logging
 from typing import Optional, Type
 
+from langchain_core.prompts import PromptTemplate
 from main_content_extractor import MainContentExtractor
 from pydantic import BaseModel
 
@@ -12,7 +13,6 @@ from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
 	DoneAction,
-	ExtractPageContentAction,
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
@@ -25,6 +25,7 @@ from browser_use.controller.views import (
 from browser_use.utils import time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
+from langchain_core.language_models.chat_models import BaseChatModel
 
 
 class Controller:
@@ -32,11 +33,13 @@ class Controller:
 		self,
 		exclude_actions: list[str] = [],
 		output_model: Optional[Type[BaseModel]] = None,
+		llm: Optional[BaseChatModel] = None,
 	):
 		self.exclude_actions = exclude_actions
 		self.output_model = output_model
 		self.registry = Registry(exclude_actions)
 		self._register_default_actions()
+		self.llm = llm
 
 	def _register_default_actions(self):
 		"""Register all default browser actions"""
@@ -160,20 +163,28 @@ class Controller:
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to get the pure text or markdown with links if include_links is set to true',
-			param_model=ExtractPageContentAction,
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 			requires_browser=True,
 		)
-		async def extract_content(params: ExtractPageContentAction, browser: BrowserContext):
+		async def extract_content(goal: str, browser: BrowserContext):
 			page = await browser.get_current_page()
-			output_format = 'markdown' if params.include_links else 'text'
-			content = MainContentExtractor.extract(  # type: ignore
-				html=await page.content(),
-				output_format=output_format,
-			)
-			msg = f'📄  Extracted page as {output_format}\n: {content}\n'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg)
+			import markdownify
+
+			content = markdownify.markdownify(await page.content())
+			# logger.debug(f'Page content: {content}')
+
+			if self.llm is not None:
+				prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
+				template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
+
+				output = self.llm.invoke(template.format(goal=goal, page=content))
+				msg = f'📄  Extracted from page\n: {output.content}\n'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
+			else:
+				msg = f'📄  Extracted page as markdown\n: {content}\n'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg)
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',

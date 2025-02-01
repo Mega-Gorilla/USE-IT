@@ -35,10 +35,6 @@ class OpenTabAction(BaseModel):
 	url: str
 
 
-class ExtractPageContentAction(BaseModel):
-	include_links: bool
-
-
 class ScrollAction(BaseModel):
 	amount: Optional[int] = None  # The number of pixels to scroll. If None, scroll down/up one page
 
