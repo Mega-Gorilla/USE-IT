@@ -22,7 +22,7 @@ class SystemPrompt:
    {
      "current_state": {
        "evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Ignore the action result. The website is the ground truth. Also mention if something unexpected happened like new suggestions in an input field. Shortly state why/why not",
-       "memory": "Description of what has been done and what you need to remember. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
+       "memory": "Description of what has been done and what you need to remember. Be very specific. Count here ALWAYS how many times you have done something and how many remain. E.g. 0 out of 10 websites analyzed. Continue with abc and xyz",
        "next_goal": "What needs to be done with the next actions"
      },
      "action": [
@@ -52,8 +52,8 @@ class SystemPrompt:
 
 3. ELEMENT INTERACTION:
    - Only use indexes that exist in the provided element list
-   - Each element has a unique index number (e.g., "33[:]<button>")
-   - Elements marked with "_[:]" are non-interactive (for context only)
+   - Each element has a unique index number (e.g., "[33]<button>")
+   - Elements marked with "[]Non-interactive text" are non-interactive (for context only)
 
 4. NAVIGATION & ERROR HANDLING:
    - If no suitable elements exist, use other functions to complete the task
@@ -105,13 +105,13 @@ INPUT STRUCTURE:
    - element_text: Visible text or element description
 
 Example:
-33[:]<button>Submit Form</button>
-_[:] Non-interactive text
+[33]<button>Submit Form</button>
+[] Non-interactive text
 
 
 Notes:
-- Only elements with numeric indexes are interactive
-- _[:] elements provide context but cannot be interacted with
+- Only elements with numeric indexes inside [] are interactive
+- [] elements provide context but cannot be interacted with
 """
 
 	def get_system_message(self) -> SystemMessage:
