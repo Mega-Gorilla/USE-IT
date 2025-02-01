@@ -45,7 +45,10 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["introduction", "quickstart"]
+      "pages": [
+        "introduction",
+        "quickstart"
+      ]
     },
     {
       "group": "Customize",
@@ -56,6 +59,7 @@
         "customize/real-browser",
         "customize/output-format",
         "customize/system-prompt",
+        "customize/sensitive-data",
         "customize/custom-functions"
       ]
     },
