@@ -28,7 +28,7 @@ def copy_to_clipboard(text: str):
 	return ActionResult(extracted_content=text)
 
 
-@controller.registry.action('Paste text from clipboard', requires_browser=True)
+@controller.registry.action('Paste text from clipboard')
 async def paste_from_clipboard(browser: BrowserContext):
 	text = pyperclip.paste()
 	# send text to browser
@@ -39,9 +39,7 @@ async def paste_from_clipboard(browser: BrowserContext):
 
 
 async def main():
-	task = (
-		f'Copy the text "Hello, world!" to the clipboard, then go to google.com and paste the text'
-	)
+	task = f'Copy the text "Hello, world!" to the clipboard, then go to google.com and paste the text'
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(
 		task=task,

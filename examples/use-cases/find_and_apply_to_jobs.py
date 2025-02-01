@@ -77,7 +77,6 @@ def read_cv():
 
 @controller.action(
 	'Upload cv to element - call this function to upload if element is not found, try with different index of the same upload element',
-	requires_browser=True,
 )
 async def upload_cv(index: int, browser: BrowserContext):
 	path = str(CV.absolute())

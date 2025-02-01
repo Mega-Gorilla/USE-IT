@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional, Type
 
-from main_content_extractor import MainContentExtractor
+from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -12,7 +12,6 @@ from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
 	DoneAction,
-	ExtractPageContentAction,
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
@@ -25,6 +24,7 @@ from browser_use.controller.views import (
 from browser_use.utils import time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
+from langchain_core.language_models.chat_models import BaseChatModel
 
 
 class Controller:
@@ -56,7 +56,6 @@ class Controller:
 		@self.registry.action(
 			'Search Google in the current tab',
 			param_model=SearchGoogleAction,
-			requires_browser=True,
 		)
 		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
 			page = await browser.get_current_page()
@@ -66,7 +65,7 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction, requires_browser=True)
+		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction)
 		async def go_to_url(params: GoToUrlAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 			await page.goto(params.url)
@@ -75,7 +74,7 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action('Go back', param_model=NoParamsAction, requires_browser=True)
+		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser: BrowserContext):
 			await browser.go_back()
 			msg = '🔙  Navigated back'
@@ -83,7 +82,7 @@ class Controller:
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Element Interaction Actions
-		@self.registry.action('Click element', param_model=ClickElementAction, requires_browser=True)
+		@self.registry.action('Click element', param_model=ClickElementAction)
 		async def click_element(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
 			state = session.cached_state
@@ -124,7 +123,6 @@ class Controller:
 		@self.registry.action(
 			'Input text into a input interactive element',
 			param_model=InputTextAction,
-			requires_browser=True,
 		)
 		async def input_text(params: InputTextAction, browser: BrowserContext):
 			session = await browser.get_session()
@@ -141,7 +139,7 @@ class Controller:
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Tab Management Actions
-		@self.registry.action('Switch tab', param_model=SwitchTabAction, requires_browser=True)
+		@self.registry.action('Switch tab', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser: BrowserContext):
 			await browser.switch_to_tab(params.page_id)
 			# Wait for tab to be ready
@@ -151,7 +149,7 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action('Open url in new tab', param_model=OpenTabAction, requires_browser=True)
+		@self.registry.action('Open url in new tab', param_model=OpenTabAction)
 		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
 			msg = f'🔗  Opened new tab with {params.url}'
@@ -160,25 +158,25 @@ class Controller:
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to get the pure text or markdown with links if include_links is set to true',
-			param_model=ExtractPageContentAction,
-			requires_browser=True,
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(params: ExtractPageContentAction, browser: BrowserContext):
+		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
-			output_format = 'markdown' if params.include_links else 'text'
-			content = MainContentExtractor.extract(  # type: ignore
-				html=await page.content(),
-				output_format=output_format,
-			)
-			msg = f'📄  Extracted page as {output_format}\n: {content}\n'
+			import markdownify
+
+			content = markdownify.markdownify(await page.content())
+
+			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
+			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
+
+			output = page_extraction_llm.invoke(template.format(goal=goal, page=content))
+			msg = f'📄  Extracted from page\n: {output.content}\n'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if no amount is specified, scroll down one page',
 			param_model=ScrollAction,
-			requires_browser=True,
 		)
 		async def scroll_down(params: ScrollAction, browser: BrowserContext):
 			page = await browser.get_current_page()
@@ -199,7 +197,6 @@ class Controller:
 		@self.registry.action(
 			'Scroll up the page by pixel amount - if no amount is specified, scroll up one page',
 			param_model=ScrollAction,
-			requires_browser=True,
 		)
 		async def scroll_up(params: ScrollAction, browser: BrowserContext):
 			page = await browser.get_current_page()
@@ -220,7 +217,6 @@ class Controller:
 		@self.registry.action(
 			'Send strings of special keys like Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. Be aware of different operating systems and their shortcuts',
 			param_model=SendKeysAction,
-			requires_browser=True,
 		)
 		async def send_keys(params: SendKeysAction, browser: BrowserContext):
 			page = await browser.get_current_page()
@@ -232,7 +228,6 @@ class Controller:
 
 		@self.registry.action(
 			description='If you dont find something which you want to interact with, scroll to it',
-			requires_browser=True,
 		)
 		async def scroll_to_text(text: str, browser: BrowserContext):  # type: ignore
 			page = await browser.get_current_page()
@@ -268,7 +263,6 @@ class Controller:
 
 		@self.registry.action(
 			description='Get all options from a native dropdown',
-			requires_browser=True,
 		)
 		async def get_dropdown_options(index: int, browser: BrowserContext) -> ActionResult:
 			"""Get all options from a native dropdown"""
@@ -339,7 +333,6 @@ class Controller:
 
 		@self.registry.action(
 			description='Select dropdown option for interactive element index by the text of the option you want to select',
-			requires_browser=True,
 		)
 		async def select_dropdown_option(
 			index: int,
@@ -443,7 +436,11 @@ class Controller:
 
 	@time_execution_async('--multi-act')
 	async def multi_act(
-		self, actions: list[ActionModel], browser_context: BrowserContext, check_for_new_elements: bool = True
+		self,
+		actions: list[ActionModel],
+		browser_context: BrowserContext,
+		check_for_new_elements: bool = True,
+		page_extraction_llm: Optional[BaseChatModel] = None,
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
@@ -462,7 +459,7 @@ class Controller:
 					logger.info(f'Something new appeared after action {i} / {len(actions)}')
 					break
 
-			results.append(await self.act(action, browser_context))
+			results.append(await self.act(action, browser_context, page_extraction_llm))
 
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
@@ -474,13 +471,20 @@ class Controller:
 		return results
 
 	@time_execution_sync('--act')
-	async def act(self, action: ActionModel, browser_context: BrowserContext) -> ActionResult:
+	async def act(
+		self,
+		action: ActionModel,
+		browser_context: BrowserContext,
+		page_extraction_llm: Optional[BaseChatModel] = None,
+	) -> ActionResult:
 		"""Execute an action"""
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
 					# remove highlights
-					result = await self.registry.execute_action(action_name, params, browser=browser_context)
+					result = await self.registry.execute_action(
+						action_name, params, browser=browser_context, page_extraction_llm=page_extraction_llm
+					)
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)
 					elif isinstance(result, ActionResult):
