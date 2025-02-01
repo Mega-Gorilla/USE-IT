@@ -12,9 +12,9 @@ llm = ChatOpenAI(
 	model='gpt-4o',
 	temperature=0.0,
 )
-# the llm will never see the values of your sensitve data, it will only see the keys. Internally we replace after the llm the keys with the values.
-sensitive_data = {'x_name': 'mamagnus00', 'x_password': '12345678'}
-task = 'go to x and login with x_name and x_password then find interesting posts and like them'
+# the model will see x_name and x_password, but never the actual values.
+sensitive_data = {'x_name': 'my_x_name', 'x_password': 'my_x_password'}
+task = 'go to x.com and login with x_name and x_password then find interesting posts and like them'
 
 agent = Agent(task=task, llm=llm, sensitive_data=sensitive_data)
 
