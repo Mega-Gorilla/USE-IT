@@ -236,13 +236,13 @@ class Agent:
 		result: list[ActionResult] = []
 
 		try:
-			state = await self.browser_context.get_state(use_vision=self.use_vision)
+			state = await self.browser_context.get_state()
 
 			if self._stopped or self._paused:
 				logger.debug('Agent paused after getting state')
 				raise InterruptedError
 
-			self.message_manager.add_state_message(state, self._last_result, step_info)
+			self.message_manager.add_state_message(state, self._last_result, step_info, self.use_vision)
 			input_messages = self.message_manager.get_messages()
 
 			try:
@@ -553,14 +553,14 @@ class Agent:
 		)
 
 		if self.browser_context.session:
-			state = await self.browser_context.get_state(use_vision=self.use_vision)
+			state = await self.browser_context.get_state()
 			content = AgentMessagePrompt(
 				state=state,
 				result=self._last_result,
 				include_attributes=self.include_attributes,
-				max_error_length=self.max_error_length,
+				max_error_length=self.max_error_length
 			)
-			msg = [SystemMessage(content=system_msg), content.get_user_message()]
+			msg = [SystemMessage(content=system_msg), content.get_user_message(self.use_vision)]
 		else:
 			# if no browser session, we can't validate the output
 			return True
