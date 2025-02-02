@@ -13,8 +13,8 @@ class GoToUrlAction(BaseModel):
 
 
 class WaitForElementAction(BaseModel):
-    selector: Optional[str] = None
-    timeout: int  # Timeout in milliseconds
+    selector: str
+    timeout: Optional[int] = 10000  # Timeout in milliseconds
 
 class ClickElementAction(BaseModel):
 	index: int
