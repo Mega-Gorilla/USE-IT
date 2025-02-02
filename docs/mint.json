@@ -38,7 +38,7 @@
   "tabs": [
     {
       "name": "Cloud API",
-      "url": "/cloud",
+      "url": "cloud",
       "openapi": "https://api.browser-use.com/openapi.json"
     }
   ],
