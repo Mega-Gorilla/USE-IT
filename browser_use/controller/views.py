@@ -12,6 +12,10 @@ class GoToUrlAction(BaseModel):
 	url: str
 
 
+class WaitForElementAction(BaseModel):
+    selector: Optional[str] = None
+    timeout: int  # Timeout in milliseconds
+
 class ClickElementAction(BaseModel):
 	index: int
 	xpath: Optional[str] = None
