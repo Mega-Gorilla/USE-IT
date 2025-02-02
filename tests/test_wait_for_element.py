@@ -25,7 +25,7 @@ load_dotenv()
 llm = ChatOpenAI(model='gpt-4o')
 controller = Controller()
 
-@pytest.mark.asyncio
+@pytest.mark.skip(reason='this is for local testing only')
 async def test_wait_for_element():
     """Test 'Wait for element' action."""
     
