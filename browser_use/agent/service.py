@@ -19,15 +19,17 @@ from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
+	HumanMessage,
 	SystemMessage,
 )
+from langchain_openai import ChatOpenAI
 from lmnr import observe
 from openai import RateLimitError
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
+from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
 	AgentError,
@@ -68,6 +70,7 @@ class Agent:
 		browser_context: BrowserContext | None = None,
 		controller: Controller = Controller(),
 		use_vision: bool = True,
+		use_vision_for_planner: bool = False,
 		save_conversation_path: Optional[str] = None,
 		save_conversation_path_encoding: Optional[str] = 'utf-8',
 		max_failures: int = 3,
@@ -99,6 +102,8 @@ class Agent:
 		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
 		tool_calling_method: Optional[str] = 'auto',
 		page_extraction_llm: Optional[BaseChatModel] = None,
+		planner_llm: Optional[BaseChatModel] = None,
+		planning_interval: int = 1,  # Run planner every N steps
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 		self.sensitive_data = sensitive_data
@@ -109,6 +114,7 @@ class Agent:
 
 		self.task = task
 		self.use_vision = use_vision
+		self.use_vision_for_planner = use_vision_for_planner
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
 		self.save_conversation_path_encoding = save_conversation_path_encoding
@@ -184,6 +190,12 @@ class Agent:
 		self._paused = False
 		self._stopped = False
 
+		# Initialize planner
+		self.planner_llm = planner_llm
+		self.planning_interval = planning_interval
+		self.last_plan = None
+		self.action_descriptions = self.controller.registry.get_prompt_description()
+
 	def _set_version_and_source(self) -> None:
 		try:
 			import pkg_resources
@@ -253,8 +265,14 @@ class Agent:
 			state = await self.browser_context.get_state()
 
 			self._check_if_stopped_or_paused()
-
 			self.message_manager.add_state_message(state, self._last_result, step_info, self.use_vision)
+
+			# Run planner at specified intervals if planner is configured
+			if self.planner_llm and self.n_steps % self.planning_interval == 0:
+				plan = await self._run_planner()
+				# add plan before last state message
+				self.message_manager.add_plan(plan, position=-1)
+
 			input_messages = self.message_manager.get_messages()
 
 			self._check_if_stopped_or_paused()
@@ -621,17 +639,22 @@ class Agent:
 		Rerun a saved history of actions with error handling and retry logic.
 
 		Args:
-		        history: The history to replay
-		        max_retries: Maximum number of retries per action
-		        skip_failures: Whether to skip failed actions or stop execution
-		        delay_between_actions: Delay between actions in seconds
+				history: The history to replay
+				max_retries: Maximum number of retries per action
+				skip_failures: Whether to skip failed actions or stop execution
+				delay_between_actions: Delay between actions in seconds
 
 		Returns:
-		        List of action results
+				List of action results
 		"""
 		# Execute initial actions if provided
 		if self.initial_actions:
-			await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+			await self.controller.multi_act(
+				self.initial_actions,
+				self.browser_context,
+				check_for_new_elements=False,
+				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+			)
 
 		results = []
 
@@ -671,7 +694,6 @@ class Agent:
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-
 		state = await self.browser_context.get_state()
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
@@ -688,7 +710,10 @@ class Agent:
 				raise ValueError(f'Could not find matching element {i} in current page')
 
 		result = await self.controller.multi_act(
-			updated_actions, self.browser_context, page_extraction_llm=self.page_extraction_llm
+			updated_actions,
+			self.browser_context,
+			page_extraction_llm=self.page_extraction_llm,
+			check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
 		)
 
 		await asyncio.sleep(delay)
@@ -724,8 +749,8 @@ class Agent:
 		Load history from file and rerun it.
 
 		Args:
-		        history_file: Path to the history file
-		        **kwargs: Additional arguments passed to rerun_history
+				history_file: Path to the history file
+				**kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
@@ -1176,3 +1201,37 @@ class Agent:
 			converted_actions.append(action_model)
 
 		return converted_actions
+
+	async def _run_planner(self) -> Optional[str]:
+		"""Run the planner to analyze state and suggest next steps"""
+		# Skip planning if no planner_llm is set
+		if not self.planner_llm:
+			return None
+
+		# Create planner message history using full message history
+		planner_messages = [
+			PlannerPrompt(self.action_descriptions).get_system_message(),
+			*self.message_manager.get_messages()[1:],  # Use full message history except the first
+		]
+		if not self.use_vision_for_planner and self.use_vision:
+			last_state_message = planner_messages[-1]
+			# remove image from last state message
+			new_msg = ''
+			if isinstance(last_state_message, list):
+				for msg in last_state_message:
+					if msg['type'] == 'image':
+						continue
+					new_msg += msg['content']
+
+			planner_messages[-1] = new_msg
+
+		# Get planner output
+		response = await self.planner_llm.ainvoke(planner_messages)
+		plan = response.content
+		try:
+			plan_json = json.loads(plan)
+			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
+		except json.JSONDecodeError:
+			logger.info(f'Planning Analysis:\n{plan}')
+
+		return plan
