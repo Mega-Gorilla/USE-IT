@@ -631,7 +631,13 @@ class Agent:
 		"""
 		# Execute initial actions if provided
 		if self.initial_actions:
-			await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+			await self.controller.multi_act(
+				self.initial_actions,
+				self.browser_context,
+				check_for_new_elements=False,
+				page_extraction_llm=self.page_extraction_llm,
+				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+			)
 
 		results = []
 
@@ -688,7 +694,8 @@ class Agent:
 				raise ValueError(f'Could not find matching element {i} in current page')
 
 		result = await self.controller.multi_act(
-			updated_actions, self.browser_context, page_extraction_llm=self.page_extraction_llm
+			updated_actions, self.browser_context, page_extraction_llm=self.page_extraction_llm, 
+			check_break_if_paused=lambda: self._check_if_stopped_or_paused()
 		)
 
 		await asyncio.sleep(delay)
