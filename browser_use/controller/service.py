@@ -4,6 +4,7 @@ import logging
 from typing import Callable, Dict, Optional, Type
 
 from langchain_core.prompts import PromptTemplate
+from lmnr import Laminar, observe
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -188,7 +189,7 @@ class Controller:
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, {params.amount});')
 			else:
-				await page.keyboard.press('PageDown')
+				await page.evaluate('window.scrollBy(0, window.innerHeight);')
 
 			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍  Scrolled down the page by {amount}'
@@ -208,7 +209,7 @@ class Controller:
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, -{params.amount});')
 			else:
-				await page.keyboard.press('PageUp')
+				await page.evaluate('window.scrollBy(0, -window.innerHeight);')
 
 			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍  Scrolled up the page by {amount}'
@@ -439,6 +440,7 @@ class Controller:
 		"""
 		return self.registry.action(description, **kwargs)
 
+	@observe(name='controller.multi_act')
 	@time_execution_async('--multi-act')
 	async def multi_act(
 		self,
@@ -493,17 +495,28 @@ class Controller:
 		sensitive_data: Optional[Dict[str, str]] = None,
 	) -> ActionResult:
 		"""Execute an action"""
+
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
-					# remove highlights
-					result = await self.registry.execute_action(
-						action_name,
-						params,
-						browser=browser_context,
-						page_extraction_llm=page_extraction_llm,
-						sensitive_data=sensitive_data,
-					)
+					with Laminar.start_as_current_span(
+						name=action_name,
+						input={
+							'action': action_name,
+							'params': params,
+						},
+						span_type='TOOL',
+					):
+						result = await self.registry.execute_action(
+							action_name,
+							params,
+							browser=browser_context,
+							page_extraction_llm=page_extraction_llm,
+							sensitive_data=sensitive_data,
+						)
+
+						Laminar.set_span_output(result)
+
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)
 					elif isinstance(result, ActionResult):

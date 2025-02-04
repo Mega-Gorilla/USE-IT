@@ -241,6 +241,7 @@ class Agent:
 			raise InterruptedError
 		return False
 
+	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
@@ -485,7 +486,7 @@ class Agent:
 			)
 		)
 
-	@observe(name='agent.run')
+	@observe(name='agent.run', ignore_output=True)
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
