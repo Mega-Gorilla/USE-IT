@@ -111,6 +111,8 @@ class Agent:
 		self.use_vision = use_vision
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
+		if self.save_conversation_path and '/' not in self.save_conversation_path:
+			self.save_conversation_path = f'{self.save_conversation_path}/'
 		self.save_conversation_path_encoding = save_conversation_path_encoding
 		self._last_result = None
 		self.include_attributes = include_attributes
