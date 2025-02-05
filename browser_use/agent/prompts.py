@@ -69,7 +69,7 @@ class SystemPrompt:
    - Dont use "done" before you are done with everything the user asked you. 
    - If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
    - Don't hallucinate actions
-   - If the task requires specific information - make sure to include everything in the done function. This is what the user will see.
+   - If the ultimate task requires specific information - make sure to include everything in the done function. This is what the user will see. Do not just say you are done, but include the requested information of the task.
 
 6. VISUAL CONTEXT:
    - When an image is provided, use it to understand the page layout
