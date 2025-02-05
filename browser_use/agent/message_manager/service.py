@@ -330,12 +330,12 @@ class MessageManager:
 				raise ValueError(f'Unknown message type: {type(message)}')
 		return output_messages
 
-	def merge_successive_human_messages(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+	def merge_successive_messages(self, messages: list[BaseMessage], class_to_merge: Type[BaseMessage]) -> list[BaseMessage]:
 		"""Some models like deepseek-reasoner dont allow multiple human messages in a row. This function merges them into one."""
 		merged_messages = []
 		streak = 0
 		for message in messages:
-			if isinstance(message, HumanMessage):
+			if isinstance(message, class_to_merge):
 				streak += 1
 				if streak > 1:
 					if isinstance(message.content, list):
