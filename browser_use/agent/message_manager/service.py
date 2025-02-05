@@ -120,6 +120,11 @@ class MessageManager:
 		msg = HumanMessage(content=content)
 		self._add_message_with_tokens(msg)
 
+	def add_plan(self, plan: Optional[str], position: Optional[int] = None) -> None:
+		if plan:
+			msg = AIMessage(content=plan)
+			self._add_message_with_tokens(msg, position)
+
 	def add_state_message(
 		self,
 		state: BrowserState,
@@ -195,7 +200,7 @@ class MessageManager:
 
 		return msg
 
-	def _add_message_with_tokens(self, message: BaseMessage) -> None:
+	def _add_message_with_tokens(self, message: BaseMessage, position: Optional[int] = None) -> None:
 		"""Add message with token count metadata"""
 
 		# filter out sensitive data from the message
@@ -204,7 +209,7 @@ class MessageManager:
 
 		token_count = self._count_tokens(message)
 		metadata = MessageMetadata(input_tokens=token_count)
-		self.history.add_message(message, metadata)
+		self.history.add_message(message, metadata, position)
 
 	def _filter_sensitive_data(self, message: BaseMessage) -> BaseMessage:
 		"""Filter out sensitive data from the message"""
