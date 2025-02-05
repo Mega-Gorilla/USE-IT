@@ -18,11 +18,11 @@ from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
+	AIMessage,
 	BaseMessage,
 	HumanMessage,
 	SystemMessage,
 )
-from langchain_openai import ChatOpenAI
 from lmnr import observe
 from openai import RateLimitError
 from PIL import Image, ImageDraw, ImageFont
@@ -123,6 +123,10 @@ class Agent:
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
 
+		# Initialize planner
+		self.planner_llm = planner_llm
+		self.planning_interval = planner_interval
+		self.last_plan = None
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -190,10 +194,6 @@ class Agent:
 		self._paused = False
 		self._stopped = False
 
-		# Initialize planner
-		self.planner_llm = planner_llm
-		self.planning_interval = planner_interval
-		self.last_plan = None
 		self.action_descriptions = self.controller.registry.get_prompt_description()
 
 	def _set_version_and_source(self) -> None:
@@ -223,6 +223,16 @@ class Agent:
 			self.model_name = self.llm.model  # type: ignore
 		else:
 			self.model_name = 'Unknown'
+
+		if self.planner_llm:
+			if hasattr(self.planner_llm, 'model_name'):
+				self.planner_model_name = self.planner_llm.model_name  # type: ignore
+			elif hasattr(self.planner_llm, 'model'):
+				self.planner_model_name = self.planner_llm.model  # type: ignore
+			else:
+				self.planner_model_name = 'Unknown'
+		else:
+			self.planner_model_name = None
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from controller's registry"""
@@ -399,13 +409,24 @@ class Agent:
 		"""Remove think tags from text"""
 		return re.sub(self.THINK_TAGS, '', text)
 
+	def _convert_input_messages(self, input_messages: list[BaseMessage], model_name: Optional[str]) -> list[BaseMessage]:
+		"""Convert input messages to a format that is compatible with the planner model"""
+		if model_name is None:
+			return input_messages
+		if model_name == 'deepseek-reasoner' or model_name.startswith('deepseek-r1'):
+			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
+			merged_input_messages = self.message_manager.merge_successive_messages(converted_input_messages, HumanMessage)
+			merged_input_messages = self.message_manager.merge_successive_messages(merged_input_messages, AIMessage)
+			return merged_input_messages
+		return input_messages
+
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
+		converted_input_messages = self._convert_input_messages(input_messages, self.model_name)
+
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
-			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
-			merged_input_messages = self.message_manager.merge_successive_human_messages(converted_input_messages)
-			output = self.llm.invoke(merged_input_messages)
+			output = self.llm.invoke(converted_input_messages)
 			output.content = self._remove_think_tags(output.content)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			try:
@@ -1215,25 +1236,36 @@ class Agent:
 			PlannerPrompt(self.action_descriptions).get_system_message(),
 			*self.message_manager.get_messages()[1:],  # Use full message history except the first
 		]
+
 		if not self.use_vision_for_planner and self.use_vision:
 			last_state_message = planner_messages[-1]
 			# remove image from last state message
 			new_msg = ''
-			if isinstance(last_state_message, list):
-				for msg in last_state_message:
-					if msg['type'] == 'image':
+			if isinstance(last_state_message.content, list):
+				for msg in last_state_message.content:
+					if msg['type'] == 'text':
+						new_msg += msg['text']
+					elif msg['type'] == 'image_url':
 						continue
-					new_msg += msg['content']
+			else:
+				new_msg = last_state_message.content
 
-			planner_messages[-1] = new_msg
+			planner_messages[-1] = HumanMessage(content=new_msg)
 
+		planner_messages = self._convert_input_messages(planner_messages, self.planner_model_name)
 		# Get planner output
 		response = await self.planner_llm.ainvoke(planner_messages)
 		plan = response.content
+		# if deepseek-reasoner, remove think tags
+		if self.planner_model_name == 'deepseek-reasoner':
+			plan = self._remove_think_tags(plan)
 		try:
 			plan_json = json.loads(plan)
 			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
 		except json.JSONDecodeError:
 			logger.info(f'Planning Analysis:\n{plan}')
+		except Exception as e:
+			logger.debug(f'Error parsing planning analysis: {e}')
+			logger.info(f'Plan: {plan}')
 
 		return plan
