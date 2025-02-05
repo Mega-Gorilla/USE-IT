@@ -54,7 +54,7 @@ class Controller:
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search Google in the current tab',
+			'Search the query in Google in the current tab, the query should be a search query like humans search in Google, concrete and not vague or super long. More the single most important items. ',
 			param_model=SearchGoogleAction,
 		)
 		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
@@ -468,7 +468,9 @@ class Controller:
 				new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
 				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
 					# next action requires index but there are new elements on the page
-					logger.info(f'Something new appeared after action {i} / {len(actions)}')
+					msg = f'Something new appeared after action {i} / {len(actions)}'
+					logger.info(msg)
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
 					break
 
 			check_break_if_paused()
