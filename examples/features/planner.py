@@ -17,7 +17,7 @@ planner_llm = ChatOpenAI(
 )
 task = 'find all information you find about the browser-use founders (minimum 10 links) and write a short message to them'
 
-agent = Agent(task=task, llm=llm, planner_llm=planner_llm, use_vision_for_planner=False)
+agent = Agent(task=task, llm=llm, planner_llm=planner_llm, use_vision_for_planner=False, planner_interval=4)
 
 
 async def main():

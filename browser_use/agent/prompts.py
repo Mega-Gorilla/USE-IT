@@ -61,6 +61,8 @@ class SystemPrompt:
    - If stuck, try alternative approaches - like going back to a previous page, new search, new tab etc.
    - Handle popups/cookies by accepting or closing them
    - Use scroll to find elements you are looking for
+   - If you want to research something, open a new tab instead of using the current tab
+   - If captcha pops up, and you cant solve it, either ask for human help or try to continue the task on a different page.
 
 5. TASK COMPLETION:
    - Use the done action as the last action as soon as the ultimate task is complete

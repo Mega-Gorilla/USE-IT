@@ -103,7 +103,7 @@ class Agent:
 		tool_calling_method: Optional[str] = 'auto',
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		planner_llm: Optional[BaseChatModel] = None,
-		planning_interval: int = 1,  # Run planner every N steps
+		planner_interval: int = 1,  # Run planner every N steps
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 		self.sensitive_data = sensitive_data
@@ -192,7 +192,7 @@ class Agent:
 
 		# Initialize planner
 		self.planner_llm = planner_llm
-		self.planning_interval = planning_interval
+		self.planning_interval = planner_interval
 		self.last_plan = None
 		self.action_descriptions = self.controller.registry.get_prompt_description()
 
