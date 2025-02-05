@@ -6,15 +6,13 @@ from browser_use.agent.views import ActionResult
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
+import logging
 
 from langchain_openai import ChatOpenAI
 
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
-
-CV = Path.cwd() / 'examples/test_cv.txt'
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +29,13 @@ controller = Controller()
 @controller.action(
 	'Upload file to element ',
 )
-async def upload_file(index: int, browser: BrowserContext):
-	path = str(CV.absolute())
+async def upload_file(index: int, path: str, browser: BrowserContext, available_file_paths: list[str]):
+	if path not in available_file_paths:
+		return ActionResult(error=f'File path {path} is not available')
+
+	if not os.path.exists(path):
+		return ActionResult(error=f'File {path} does not exist')
+
 	dom_el = await browser.get_dom_element_by_index(index)
 
 	if dom_el is None:
@@ -66,8 +69,18 @@ async def close_file_dialog(browser: BrowserContext):
 	await page.keyboard.press('Escape')
 
 
+def create_file(file_type: str = 'txt'):
+	with open(f'tmp.{file_type}', 'w') as f:
+		f.write('test')
+	file_path = Path.cwd() / f'tmp.{file_type}'
+	print(f'Created file: {file_path}')
+	return str(file_path)
+
+
 async def main():
-	task = f'go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/ and upload to each upload field my file'
+	task = f'Go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/ and upload one file to each upload field'
+
+	available_file_paths = [create_file('txt'), create_file('pdf'), create_file('csv')]
 
 	model = ChatOpenAI(model='gpt-4o')
 	agent = Agent(
@@ -75,6 +88,7 @@ async def main():
 		llm=model,
 		controller=controller,
 		browser=browser,
+		available_file_paths=available_file_paths,
 	)
 
 	await agent.run()
