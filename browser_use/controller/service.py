@@ -450,6 +450,7 @@ class Controller:
 		check_for_new_elements: bool = True,
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results = []
@@ -477,7 +478,7 @@ class Controller:
 
 			check_break_if_paused()
 
-			results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data))
+			results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data, available_file_paths))
 
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
@@ -495,6 +496,7 @@ class Controller:
 		browser_context: BrowserContext,
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
 	) -> ActionResult:
 		"""Execute an action"""
 
@@ -515,6 +517,7 @@ class Controller:
 							browser=browser_context,
 							page_extraction_llm=page_extraction_llm,
 							sensitive_data=sensitive_data,
+							available_file_paths=available_file_paths,
 						)
 
 						Laminar.set_span_output(result)

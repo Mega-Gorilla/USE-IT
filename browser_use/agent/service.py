@@ -81,6 +81,7 @@ class Agent:
 		message_context: Optional[str] = None,
 		generate_gif: bool | str = True,
 		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -111,7 +112,7 @@ class Agent:
 			self.page_extraction_llm = llm
 		else:
 			self.page_extraction_llm = page_extraction_llm
-
+		self.available_file_paths = available_file_paths
 		self.task = task
 		self.use_vision = use_vision
 		self.use_vision_for_planner = use_vision_for_planner
@@ -175,7 +176,8 @@ class Agent:
 			message_context=self.message_context,
 			sensitive_data=self.sensitive_data,
 		)
-
+		if self.available_file_paths:
+			self.message_manager.add_file_paths(self.available_file_paths)
 		# Step callback
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
@@ -311,6 +313,7 @@ class Agent:
 				page_extraction_llm=self.page_extraction_llm,
 				sensitive_data=self.sensitive_data,
 				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+				available_file_paths=self.available_file_paths,
 			)
 			self._last_result = result
 
@@ -539,6 +542,7 @@ class Agent:
 					check_for_new_elements=False,
 					page_extraction_llm=self.page_extraction_llm,
 					check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+					available_file_paths=self.available_file_paths,
 				)
 				self._last_result = result
 
@@ -677,6 +681,7 @@ class Agent:
 				check_for_new_elements=False,
 				page_extraction_llm=self.page_extraction_llm,
 				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+				available_file_paths=self.available_file_paths,
 			)
 
 		results = []
