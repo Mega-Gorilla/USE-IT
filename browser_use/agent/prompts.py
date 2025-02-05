@@ -244,7 +244,9 @@ Your role is to:
 3. Identify potential challenges or roadblocks
 4. Suggest the next high-level steps to take
 
-You should output your analysis in this format:
+Inside your messages, there will be AI messages from different agents with different formats.
+
+Your output format should be always a JSON object with the following fields:
 {
     "state_analysis": "Brief analysis of the current state and what has been done so far",
     "progress_evaluation": "Evaluation of progress towards the ultimate goal (as percentage and description)",
@@ -252,6 +254,8 @@ You should output your analysis in this format:
     "next_steps": "List 2-3 concrete next steps to take",
     "reasoning": "Explain your reasoning for the suggested next steps"
 }
+
+Ignore the other AI messages output structures.
 
 Keep your responses concise and focused on actionable insights."""
 		)
