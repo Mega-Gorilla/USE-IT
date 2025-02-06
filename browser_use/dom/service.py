@@ -1,8 +1,11 @@
 import logging
+import time
 from importlib import resources
 from typing import Optional
 
+from memory_profiler import memory_usage
 from playwright.async_api import Page
+from pympler import asizeof
 
 from browser_use.dom.history_tree_processor.view import Coordinates
 from browser_use.dom.views import (
@@ -22,6 +25,8 @@ class DomService:
 	def __init__(self, page: Page):
 		self.page = page
 		self.xpath_cache = {}
+
+		self._iter = 0
 
 	# region - Clickable elements
 	async def get_clickable_elements(
@@ -49,11 +54,35 @@ class DomService:
 			'viewportExpansion': viewport_expansion,
 		}
 
+		self._iter += 1
+		logger.info(f'Iteration {self._iter} --------------------------------')
+
+		mem_before = memory_usage(-1, interval=0.1, timeout=1)[0]
+
+		logger.info(f'Eval Memory Usage: {mem_before} MB')
 		eval_page = await self.page.evaluate(js_code, args)  # This is quite big, so be careful
-		html_to_dict = self._parse_node(eval_page)
+
+		start_time = time.time()
+
+		eval_page_deep_size = asizeof.asizeof(eval_page)
+		logger.info(f'Deep size of eval_page: {eval_page_deep_size / 1024 / 1024:.2f} MB')
+
+		mem_after = memory_usage(-1, interval=0.1, timeout=1)[0]
+
+		logger.info(f'Eval Memory Usage: {mem_after} MB')
+
+		html_to_dict = self._parse_node_iterative(eval_page)
+		mem_after = memory_usage(-1, interval=0.1, timeout=1)[0]
+		logger.info(f'Parse Memory Usage: {mem_after} MB')
 
 		if html_to_dict is None or not isinstance(html_to_dict, DOMElementNode):
 			raise ValueError('Failed to parse HTML to dictionary')
+
+		html_to_dict_deep_size = asizeof.asizeof(html_to_dict)
+		logger.info(f'Deep size of html_to_dict: {html_to_dict_deep_size / 1024 / 1024:.2f} MB')
+
+		end_time = time.time()
+		logger.info(f'Time taken: {end_time - start_time} seconds')
 
 		return html_to_dict
 
@@ -71,84 +100,104 @@ class DomService:
 		process_node(element_tree)
 		return selector_map
 
-	def _parse_node(
+	# @profile
+	def _parse_node_iterative(
 		self,
-		node_data: dict,
+		root_data: dict,
 		parent: Optional[DOMElementNode] = None,
 	) -> Optional[DOMBaseNode]:
-		if not node_data:
+		if not root_data:
 			return None
 
-		if node_data.get('type') == 'TEXT_NODE':
+		# Process text nodes immediately
+		if root_data.get('type') == 'TEXT_NODE':
 			text_node = DOMTextNode(
-				text=node_data['text'],
-				is_visible=node_data['isVisible'],
+				text=root_data['text'],
+				is_visible=root_data['isVisible'],
 				parent=parent,
 			)
 			return text_node
 
-		tag_name = node_data['tagName']
+		# A helper to create the DOMElementNode like in your original code
+		def create_element_node(node_data: dict, parent: Optional[DOMElementNode]) -> DOMElementNode:
+			# Process coordinates if they exist for element nodes
+			viewport_coordinates = None
+			page_coordinates = None
+			viewport_info = None
 
-		# Parse coordinates if they exist
-		viewport_coordinates = None
-		page_coordinates = None
-		viewport_info = None
+			if 'viewportCoordinates' in node_data:
+				viewport_coordinates = CoordinateSet(
+					top_left=Coordinates(**node_data['viewportCoordinates']['topLeft']),
+					top_right=Coordinates(**node_data['viewportCoordinates']['topRight']),
+					bottom_left=Coordinates(**node_data['viewportCoordinates']['bottomLeft']),
+					bottom_right=Coordinates(**node_data['viewportCoordinates']['bottomRight']),
+					center=Coordinates(**node_data['viewportCoordinates']['center']),
+					width=node_data['viewportCoordinates']['width'],
+					height=node_data['viewportCoordinates']['height'],
+				)
+			if 'pageCoordinates' in node_data:
+				page_coordinates = CoordinateSet(
+					top_left=Coordinates(**node_data['pageCoordinates']['topLeft']),
+					top_right=Coordinates(**node_data['pageCoordinates']['topRight']),
+					bottom_left=Coordinates(**node_data['pageCoordinates']['bottomLeft']),
+					bottom_right=Coordinates(**node_data['pageCoordinates']['bottomRight']),
+					center=Coordinates(**node_data['pageCoordinates']['center']),
+					width=node_data['pageCoordinates']['width'],
+					height=node_data['pageCoordinates']['height'],
+				)
+			if 'viewport' in node_data:
+				viewport_info = ViewportInfo(
+					scroll_x=node_data['viewport']['scrollX'],
+					scroll_y=node_data['viewport']['scrollY'],
+					width=node_data['viewport']['width'],
+					height=node_data['viewport']['height'],
+				)
 
-		if 'viewportCoordinates' in node_data:
-			viewport_coordinates = CoordinateSet(
-				top_left=Coordinates(**node_data['viewportCoordinates']['topLeft']),
-				top_right=Coordinates(**node_data['viewportCoordinates']['topRight']),
-				bottom_left=Coordinates(**node_data['viewportCoordinates']['bottomLeft']),
-				bottom_right=Coordinates(**node_data['viewportCoordinates']['bottomRight']),
-				center=Coordinates(**node_data['viewportCoordinates']['center']),
-				width=node_data['viewportCoordinates']['width'],
-				height=node_data['viewportCoordinates']['height'],
+			return DOMElementNode(
+				tag_name=node_data['tagName'],
+				xpath=node_data['xpath'],
+				attributes=node_data.get('attributes', {}),
+				children=[],  # initially empty
+				is_visible=node_data.get('isVisible', False),
+				is_interactive=node_data.get('isInteractive', False),
+				is_top_element=node_data.get('isTopElement', False),
+				highlight_index=node_data.get('highlightIndex'),
+				shadow_root=node_data.get('shadowRoot', False),
+				parent=parent,
+				viewport_coordinates=viewport_coordinates,
+				page_coordinates=page_coordinates,
+				viewport_info=viewport_info,
 			)
 
-		if 'pageCoordinates' in node_data:
-			page_coordinates = CoordinateSet(
-				top_left=Coordinates(**node_data['pageCoordinates']['topLeft']),
-				top_right=Coordinates(**node_data['pageCoordinates']['topRight']),
-				bottom_left=Coordinates(**node_data['pageCoordinates']['bottomLeft']),
-				bottom_right=Coordinates(**node_data['pageCoordinates']['bottomRight']),
-				center=Coordinates(**node_data['pageCoordinates']['center']),
-				width=node_data['pageCoordinates']['width'],
-				height=node_data['pageCoordinates']['height'],
-			)
+		# Create the root element node
+		root_node = create_element_node(root_data, parent)
 
-		if 'viewport' in node_data:
-			viewport_info = ViewportInfo(
-				scroll_x=node_data['viewport']['scrollX'],
-				scroll_y=node_data['viewport']['scrollY'],
-				width=node_data['viewport']['width'],
-				height=node_data['viewport']['height'],
-			)
+		# Stack will hold tuples of (node_data, DOMElementNode) where
+		# node_data is the dict that might have children and DOMElementNode is
+		# the parent node to attach those children to.
+		stack: list[tuple[dict, DOMElementNode]] = [(root_data, root_node)]
 
-		element_node = DOMElementNode(
-			tag_name=tag_name,
-			xpath=node_data['xpath'],
-			attributes=node_data.get('attributes', {}),
-			children=[],  # Initialize empty, will fill later
-			is_visible=node_data.get('isVisible', False),
-			is_interactive=node_data.get('isInteractive', False),
-			is_top_element=node_data.get('isTopElement', False),
-			highlight_index=node_data.get('highlightIndex'),
-			shadow_root=node_data.get('shadowRoot', False),
-			parent=parent,
-			viewport_coordinates=viewport_coordinates,
-			page_coordinates=page_coordinates,
-			viewport_info=viewport_info,
-		)
+		while stack:
+			current_data, current_node = stack.pop()
 
-		children: list[DOMBaseNode] = []
-		for child in node_data.get('children', []):
-			if child is not None:
-				child_node = self._parse_node(child, parent=element_node)
-				if child_node is not None:
-					children.append(child_node)
+			# Iterate over children in order (to maintain ordering, use normal order)
+			# If you need the original order in the final children list, you can reverse the order in which you push
+			for child_data in current_data.get('children', []):
+				if child_data is None:
+					continue
 
-		element_node.children = children
+				if child_data.get('type') == 'TEXT_NODE':
+					# Immediately create text nodes and attach them as children
+					text_node = DOMTextNode(
+						text=child_data['text'],
+						is_visible=child_data['isVisible'],
+						parent=current_node,
+					)
+					current_node.children.append(text_node)
+				else:
+					# Create element node and push it to the stack for further processing
+					child_node = create_element_node(child_data, current_node)
+					current_node.children.append(child_node)
+					stack.append((child_data, child_node))
 
-		return element_node
-
-	# endregion
+		return root_node
