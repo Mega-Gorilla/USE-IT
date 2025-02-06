@@ -10,6 +10,8 @@
 
   /**
    * Hash map of DOM nodes indexed by their highlight index.
+   *
+   * @type {Object<string, any>}
    */
   const DOM_HASH_MAP = {};
 
@@ -511,7 +513,7 @@
       if (textContent && isTextNodeVisible(node)) {
         const id = ID.current++;
 
-        DOM_HASH_MAP[id] = {
+        DOM_HASH_MAP[`${id}`] = {
           type: "TEXT_NODE",
           text: textContent,
           isVisible: true,
@@ -679,7 +681,7 @@
 
     // NOTE: We register the node to the hash map.
     const id = ID.current++;
-    DOM_HASH_MAP[id] = nodeData;
+    DOM_HASH_MAP[`${id}`] = nodeData;
 
     return id;
   }

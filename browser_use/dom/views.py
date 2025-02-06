@@ -9,14 +9,14 @@ if TYPE_CHECKING:
 	from .views import DOMElementNode
 
 
-@dataclass(frozen=False)
+@dataclass(slots=True, frozen=False)
 class DOMBaseNode:
 	is_visible: bool
 	# Use None as default and set parent later to avoid circular reference issues
 	parent: Optional['DOMElementNode']
 
 
-@dataclass(frozen=False)
+@dataclass(slots=True, frozen=False)
 class DOMTextNode(DOMBaseNode):
 	text: str
 	type: str = 'TEXT_NODE'
@@ -30,7 +30,7 @@ class DOMTextNode(DOMBaseNode):
 		return False
 
 
-@dataclass(frozen=False)
+@dataclass(slots=True, frozen=False)
 class DOMElementNode(DOMBaseNode):
 	"""
 	xpath: the xpath of the element from the last root node (shadow root or iframe OR document if no shadow root or iframe).
@@ -161,7 +161,7 @@ class DOMElementNode(DOMBaseNode):
 SelectorMap = dict[int, DOMElementNode]
 
 
-@dataclass
+@dataclass(slots=True, frozen=False)
 class DOMState:
 	element_tree: DOMElementNode
 	selector_map: SelectorMap

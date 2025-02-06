@@ -1,8 +1,9 @@
+import gc
 import logging
+import time
 from importlib import resources
 from typing import Optional
 
-from memory_profiler import profile
 from playwright.async_api import Page
 
 from browser_use.dom.history_tree_processor.view import Coordinates
@@ -35,33 +36,23 @@ class DomService:
 		focus_element: int = -1,
 		viewport_expansion: int = 0,
 	) -> DOMState:
-		element_tree = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
-		selector_map = self._create_selector_map(element_tree)
+		start = time.time()
+		element_tree, selector_map = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
+		dom_state = DOMState(element_tree=element_tree, selector_map=selector_map)
 
-		return DOMState(element_tree=element_tree, selector_map=selector_map)
+		end = time.time()
 
-	def _create_selector_map(self, element_tree: DOMElementNode) -> SelectorMap:
-		selector_map = {}
+		print(f'[clickable] Time taken: {end - start} seconds')
 
-		def process_node(node: DOMBaseNode):
-			if isinstance(node, DOMElementNode):
-				if node.highlight_index is not None:
-					selector_map[node.highlight_index] = node
+		return dom_state
 
-				for child in node.children:
-					process_node(child)
-
-		process_node(element_tree)
-
-		return selector_map
-
-	@profile
+	# @profile
 	async def _build_dom_tree(
 		self,
 		highlight_elements: bool,
 		focus_element: int,
 		viewport_expansion: int,
-	) -> DOMElementNode:
+	) -> tuple[DOMElementNode, SelectorMap]:
 		self._iter += 1
 		logger.info(f'Iteration {self._iter} --------------------------------')
 
@@ -73,39 +64,46 @@ class DomService:
 			'focusHighlightIndex': focus_element,
 			'viewportExpansion': viewport_expansion,
 		}
+
 		eval_page = await self.page.evaluate(self.js_code, args)
 
 		js_node_map = eval_page['map']
 		js_root_id = eval_page['rootId']
 
+		selector_map = {}
 		node_map = {}
 
-		for _id, node_data in js_node_map.items():
-			id = str(_id)
+		for id, node_data in js_node_map.items():
 			node, children_ids = self._parse_node(node_data)
 			if node is None:
-				print(f'Node {id} is None!')
-				print(node_data)
 				continue
+
 			node_map[id] = node
 
+			if isinstance(node, DOMElementNode) and node.highlight_index is not None:
+				selector_map[node.highlight_index] = node
+
 			# NOTE: We know that we are building the tree bottom up!
-			for _child_id in children_ids:
-				child_id = str(_child_id)
+			for child_id in children_ids:
 				child_node = node_map[child_id]
 
 				if child_id not in node_map:
-					print(f'Child node {child_id} not found!')
 					continue
 
 				node_map[id].children.append(child_node)
 
-		html_to_dict = node_map[str(js_root_id)]
+		html_to_dict = node_map[js_root_id]
+
+		del node_map
+		del js_node_map
+		del js_root_id
+
+		gc.collect()
 
 		if html_to_dict is None or not isinstance(html_to_dict, DOMElementNode):
 			raise ValueError('Failed to parse HTML to dictionary')
 
-		return html_to_dict
+		return html_to_dict, selector_map
 
 	def _parse_node(
 		self,
