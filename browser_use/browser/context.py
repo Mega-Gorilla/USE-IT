@@ -13,7 +13,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
-from memory_profiler import profile
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
 	BrowserContext as PlaywrightBrowserContext,
@@ -610,7 +609,6 @@ class BrowserContext:
 
 		return session.cached_state
 
-	@profile
 	async def _update_state(self, focus_element: int = -1) -> BrowserState:
 		"""Update and return state."""
 		session = await self.get_session()
