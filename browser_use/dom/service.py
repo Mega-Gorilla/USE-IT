@@ -1,6 +1,5 @@
 import gc
 import logging
-import time
 from importlib import resources
 from typing import Optional
 
@@ -34,13 +33,8 @@ class DomService:
 		focus_element: int = -1,
 		viewport_expansion: int = 0,
 	) -> DOMState:
-		start = time.time()
 		element_tree, selector_map = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
 		dom_state = DOMState(element_tree=element_tree, selector_map=selector_map)
-
-		end = time.time()
-
-		print(f'[clickable] Time taken: {end - start} seconds')
 
 		return dom_state
 
