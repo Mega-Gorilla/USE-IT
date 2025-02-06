@@ -5,28 +5,22 @@
     viewportExpansion: 0,
   }
 ) => {
-  const getMemoryUsage = () => {
-    if (window.performance && window.performance.memory) {
-      const memory = window.performance.memory;
-      return {
-        usedJSHeapSize: Math.round(memory.usedJSHeapSize / (1024 * 1024)), // MB
-        totalJSHeapSize: Math.round(memory.totalJSHeapSize / (1024 * 1024)), // MB
-        jsHeapSizeLimit: Math.round(memory.jsHeapSizeLimit / (1024 * 1024)), // MB
-      };
-    }
-    return null;
-  };
-
-  const memory = [];
-
-  memory.push(["start", getMemoryUsage()]);
-
   const { doHighlightElements, focusHighlightIndex, viewportExpansion } = args;
   let highlightIndex = 0; // Reset highlight index
+
+  /**
+   * Hash map of DOM nodes indexed by their highlight index.
+   */
+  const DOM_HASH_MAP = {};
+
+  const ID = { current: 0 };
 
   // Quick check to confirm the script receives focusHighlightIndex
   console.log("focusHighlightIndex:", focusHighlightIndex);
 
+  /**
+   * Highlights an element in the DOM and returns the index of the next element.
+   */
   function highlightElement(element, index, parentIframe = null) {
     // Create or get highlight container
     let container = document.getElementById("playwright-highlight-container");
@@ -129,7 +123,9 @@
     return index + 1;
   }
 
-  // Helper function to generate XPath as a tree
+  /**
+   * Returns an XPath tree string for an element.
+   */
   function getXPathTree(element, stopAtBoundary = true) {
     const segments = [];
     let currentElement = element;
@@ -178,7 +174,9 @@
     return !leafElementDenyList.has(element.tagName.toLowerCase());
   }
 
-  // Helper function to check if element is interactive
+  /**
+   * Checks if an element is interactive.
+   */
   function isInteractiveElement(element) {
     // Immediately return false for body tag
     if (element.tagName.toLowerCase() === "body") {
@@ -361,7 +359,9 @@
     );
   }
 
-  // Helper function to check if element is visible
+  /**
+   * Checks if an element is visible.
+   */
   function isElementVisible(element) {
     const style = window.getComputedStyle(element);
     return (
@@ -372,7 +372,9 @@
     );
   }
 
-  // Helper function to check if element is the top element at its position
+  /**
+   * Checks if an element is the top element at its position.
+   */
   function isTopElement(element) {
     // Find the correct document context and root element
     let doc = element.ownerDocument;
@@ -474,7 +476,9 @@
     }
   }
 
-  // Helper function to check if text node is visible
+  /**
+   * Checks if a text node is visible.
+   */
   function isTextNodeVisible(textNode) {
     const range = document.createRange();
     range.selectNodeContents(textNode);
@@ -492,7 +496,10 @@
     );
   }
 
-  // Function to traverse the DOM and create nested JSON
+  /**
+   * Creates a node data object for a given node and its descendants and returns
+   * the identifier of the node in the hash map or null if the node is not accepted.
+   */
   function buildDomTree(node, parentIframe = null) {
     if (!node) {
       return null;
@@ -502,11 +509,15 @@
     if (node.nodeType === Node.TEXT_NODE) {
       const textContent = node.textContent.trim();
       if (textContent && isTextNodeVisible(node)) {
-        return {
+        const id = ID.current++;
+
+        DOM_HASH_MAP[id] = {
           type: "TEXT_NODE",
           text: textContent,
           isVisible: true,
         };
+
+        return id;
       }
       return null;
     }
@@ -647,29 +658,33 @@
       try {
         const iframeDoc = node.contentDocument || node.contentWindow.document;
         if (iframeDoc) {
-          const iframeChildren = Array.from(iframeDoc.body.childNodes).map(
-            (child) => buildDomTree(child, node)
-          );
-          nodeData.children.push(...iframeChildren);
+          for (const child of iframeDoc.body.childNodes) {
+            const domElement = buildDomTree(child, node);
+            if (domElement) {
+              nodeData.children.push(domElement);
+            }
+          }
         }
       } catch (e) {
         console.warn("Unable to access iframe:", node);
       }
     } else {
-      const children = Array.from(node.childNodes).map((child) =>
-        buildDomTree(child, parentIframe)
-      );
-      nodeData.children.push(...children);
+      for (const child of node.childNodes) {
+        const domElement = buildDomTree(child, parentIframe);
+        if (domElement) {
+          nodeData.children.push(domElement);
+        }
+      }
     }
 
-    return nodeData;
+    // NOTE: We register the node to the hash map.
+    const id = ID.current++;
+    DOM_HASH_MAP[id] = nodeData;
+
+    return id;
   }
 
-  memory.push(["postbuild", getMemoryUsage()]);
+  const rootId = buildDomTree(document.body);
 
-  const tree = buildDomTree(document.body);
-
-  memory.push(["posttree", getMemoryUsage()]);
-
-  return { ...tree, memory };
+  return { rootId, map: DOM_HASH_MAP };
 };
