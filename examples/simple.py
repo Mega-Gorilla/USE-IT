@@ -2,6 +2,7 @@ import asyncio
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from memory_profiler import profile
 
 from browser_use import Agent
 
@@ -12,11 +13,12 @@ llm = ChatOpenAI(
 	model='gpt-4o',
 	temperature=0.0,
 )
-task = 'Find the founders of browser-use and draft them a short personalized message'
+task = 'Go to apple.com and find the latest iphone model and return the link so i can buy it.'
 
 agent = Agent(task=task, llm=llm)
 
 
+@profile
 async def main():
 	await agent.run()
 

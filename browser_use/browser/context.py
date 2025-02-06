@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
+from memory_profiler import profile
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
 	BrowserContext as PlaywrightBrowserContext,
@@ -597,6 +598,7 @@ class BrowserContext:
 		return await page.evaluate(script)
 
 	@time_execution_sync('--get_state')  # This decorator might need to be updated to handle async
+	@profile
 	async def get_state(self) -> BrowserState:
 		"""Get the current state of the browser"""
 		await self._wait_for_page_and_frames_load()

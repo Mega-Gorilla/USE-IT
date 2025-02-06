@@ -9,14 +9,14 @@ if TYPE_CHECKING:
 	from .views import DOMElementNode
 
 
-@dataclass(slots=True, frozen=False)
+@dataclass(frozen=False)
 class DOMBaseNode:
 	is_visible: bool
 	# Use None as default and set parent later to avoid circular reference issues
 	parent: Optional['DOMElementNode']
 
 
-@dataclass(slots=True, frozen=False)
+@dataclass(frozen=False)
 class DOMTextNode(DOMBaseNode):
 	text: str
 	type: str = 'TEXT_NODE'
@@ -30,7 +30,7 @@ class DOMTextNode(DOMBaseNode):
 		return False
 
 
-@dataclass(slots=True, frozen=False)
+@dataclass(frozen=False)
 class DOMElementNode(DOMBaseNode):
 	"""
 	xpath: the xpath of the element from the last root node (shadow root or iframe OR document if no shadow root or iframe).
@@ -158,10 +158,33 @@ class DOMElementNode(DOMBaseNode):
 		return BrowserContext._enhanced_css_selector_for_element(self)
 
 
+class ElementTreeSerializer:
+	@staticmethod
+	def serialize_clickable_elements(element_tree: DOMElementNode) -> str:
+		return element_tree.clickable_elements_to_string()
+
+	@staticmethod
+	def dom_element_node_to_json(element_tree: DOMElementNode) -> dict:
+		def node_to_dict(node: DOMBaseNode) -> dict:
+			if isinstance(node, DOMTextNode):
+				return {'type': 'text', 'text': node.text}
+			elif isinstance(node, DOMElementNode):
+				return {
+					'type': 'element',
+					'tag_name': node.tag_name,
+					'attributes': node.attributes,
+					'highlight_index': node.highlight_index,
+					'children': [node_to_dict(child) for child in node.children],
+				}
+			return {}
+
+		return node_to_dict(element_tree)
+
+
 SelectorMap = dict[int, DOMElementNode]
 
 
-@dataclass(slots=True, frozen=False)
+@dataclass
 class DOMState:
 	element_tree: DOMElementNode
 	selector_map: SelectorMap

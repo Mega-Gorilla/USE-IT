@@ -24,6 +24,7 @@ from langchain_core.messages import (
 	SystemMessage,
 )
 from lmnr import observe
+from memory_profiler import profile
 from openai import RateLimitError
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
@@ -267,6 +268,7 @@ class Agent:
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
+	@profile
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
 		logger.info(f'📍 Step {self.n_steps}')
@@ -529,6 +531,7 @@ class Agent:
 		)
 
 	@observe(name='agent.run', ignore_output=True)
+	@profile
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
