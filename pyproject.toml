@@ -30,11 +30,7 @@ dependencies = [
     "playwright>=1.49.0",
     "setuptools>=75.8.0",
     "lmnr[langchain]>=0.4.59",
-    "markdownify==0.14.1",
-    "psutil>=6.1.1",
-    "aiohttp>=3.11.11",
-    "memory-profiler>=0.61.0",
-    "pympler>=1.1",
+    "markdownify==0.14.1"
 ]
 
 [project.optional-dependencies]
