@@ -219,7 +219,7 @@ Interactive elements from current page:
 					error = result.error[-self.max_error_length :]
 					state_description += f'\nAction error {i + 1}/{len(self.result)}: ...{error}'
 
-		if self.state.screenshot and use_vision:
+		if self.state.screenshot and use_vision == True:
 			# Format message for vision model
 			return HumanMessage(
 				content=[

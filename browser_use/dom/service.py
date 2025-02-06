@@ -25,8 +25,6 @@ class DomService:
 		self.page = page
 		self.xpath_cache = {}
 
-		self._iter = 0
-
 		self.js_code = resources.read_text('browser_use.dom', 'buildDomTree.js')
 
 	# region - Clickable elements
@@ -53,9 +51,6 @@ class DomService:
 		focus_element: int,
 		viewport_expansion: int,
 	) -> tuple[DOMElementNode, SelectorMap]:
-		self._iter += 1
-		logger.info(f'Iteration {self._iter} --------------------------------')
-
 		# NOTE: We execute JS code in the browser to extract important DOM information.
 		#       The returned hash map contains information about the DOM tree and the
 		#       relationship between the DOM elements.
@@ -83,14 +78,17 @@ class DomService:
 			if isinstance(node, DOMElementNode) and node.highlight_index is not None:
 				selector_map[node.highlight_index] = node
 
-			# NOTE: We know that we are building the tree bottom up!
-			for child_id in children_ids:
-				child_node = node_map[child_id]
+			# NOTE: We know that we are building the tree bottom up
+			#       and all children are already processed.
+			if isinstance(node, DOMElementNode):
+				for child_id in children_ids:
+					if child_id not in node_map:
+						continue
 
-				if child_id not in node_map:
-					continue
+					child_node = node_map[child_id]
 
-				node_map[id].children.append(child_node)
+					child_node.parent = node
+					node.children.append(child_node)
 
 		html_to_dict = node_map[js_root_id]
 

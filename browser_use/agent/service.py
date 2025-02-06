@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import gc
 import io
 import json
 import logging
@@ -10,13 +9,11 @@ import os
 import platform
 import re
 import textwrap
-import tracemalloc
 import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
-import psutil
 from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -200,8 +197,6 @@ class Agent:
 		self._stopped = False
 
 		self.action_descriptions = self.controller.registry.get_prompt_description()
-
-		self._memory_tracker = None
 
 	def _set_version_and_source(self) -> None:
 		try:
@@ -536,9 +531,6 @@ class Agent:
 	@observe(name='agent.run', ignore_output=True)
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
-		self._start_memory_tracking()
-		self._log_memory_usage('start')
-
 		try:
 			self._log_agent_run()
 
@@ -600,13 +592,6 @@ class Agent:
 					output_path = self.generate_gif
 
 				self.create_history_gif(output_path=output_path)
-
-			self._log_memory_usage('end')
-			# Force garbage collection
-			gc.collect()
-			self._log_memory_usage('after gc')
-
-			tracemalloc.stop()
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
@@ -1289,41 +1274,3 @@ class Agent:
 			logger.info(f'Plan: {plan}')
 
 		return plan
-
-	def _start_memory_tracking(self):
-		"""Start tracking memory usage"""
-		tracemalloc.start()
-		self._memory_tracker = psutil.Process(os.getpid())
-		self._initial_memory = self._memory_tracker.memory_info().rss
-
-	def _log_memory_usage(self, stage: str):
-		"""Log memory usage at different stages"""
-		if self._memory_tracker:
-			current_memory = self._memory_tracker.memory_info().rss
-			delta = current_memory - self._initial_memory
-			logger.info(f'Memory usage at {stage}: {current_memory / 1024 / 1024:.2f} MB (Delta: {delta / 1024 / 1024:.2f} MB)')
-
-			# Get memory snapshot
-			snapshot = tracemalloc.take_snapshot()
-			top_stats = snapshot.statistics('lineno')
-			logger.debug('Top 10 memory allocations:')
-			for stat in top_stats[:10]:
-				logger.debug(stat)
-
-	async def __aenter__(self):
-		"""Async context manager entry"""
-		return self
-
-	async def __aexit__(self, exc_type, exc_val, exc_tb):
-		"""Async context manager exit with cleanup"""
-		await self.cleanup()
-
-	async def cleanup(self):
-		"""Cleanup resources"""
-		if not self.injected_browser_context:
-			await self.browser_context.close()
-		if not self.injected_browser and self.browser:
-			await self.browser.close()
-
-		# Clear references that might hold memory
-		print('Cleaning up')
