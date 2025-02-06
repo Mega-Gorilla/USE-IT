@@ -34,6 +34,7 @@ class DomService:
 		viewport_expansion: int = 0,
 	) -> DOMState:
 		element_tree, selector_map = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
+
 		dom_state = DOMState(element_tree=element_tree, selector_map=selector_map)
 
 		return dom_state

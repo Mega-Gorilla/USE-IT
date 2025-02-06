@@ -519,7 +519,7 @@
           isVisible: true,
         };
 
-        return id;
+        return `${id}`;
       }
       return null;
     }
@@ -683,7 +683,7 @@
     const id = ID.current++;
     DOM_HASH_MAP[`${id}`] = nodeData;
 
-    return id;
+    return `${id}`;
   }
 
   const rootId = buildDomTree(document.body);
