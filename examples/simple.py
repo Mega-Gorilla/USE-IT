@@ -12,7 +12,7 @@ llm = ChatOpenAI(
 	model='gpt-4o',
 	temperature=0.0,
 )
-task = 'Go to apple.com and find the latest iphone model and return the link so i can buy it.'
+task = 'Find the founders of browser-use and draft them a short personalized message'
 
 agent = Agent(task=task, llm=llm)
 
