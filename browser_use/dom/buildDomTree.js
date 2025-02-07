@@ -20,15 +20,17 @@
   // Quick check to confirm the script receives focusHighlightIndex
   console.log("focusHighlightIndex:", focusHighlightIndex);
 
+  const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
+
   /**
    * Highlights an element in the DOM and returns the index of the next element.
    */
   function highlightElement(element, index, parentIframe = null) {
     // Create or get highlight container
-    let container = document.getElementById("playwright-highlight-container");
+    let container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
     if (!container) {
       container = document.createElement("div");
-      container.id = "playwright-highlight-container";
+      container.id = HIGHLIGHT_CONTAINER_ID;
       container.style.position = "absolute";
       container.style.pointerEvents = "none";
       container.style.top = "0";
@@ -36,6 +38,7 @@
       container.style.width = "100%";
       container.style.height = "100%";
       container.style.zIndex = "2147483647"; // Maximum z-index value
+
       document.body.appendChild(container);
     }
 
@@ -504,6 +507,12 @@
    */
   function buildDomTree(node, parentIframe = null) {
     if (!node) {
+      return null;
+    }
+
+    // NOTE: We skip highlight container nodes from the DOM tree
+    //       by ignoring the container element itself and all its children.
+    if (node.id === HIGHLIGHT_CONTAINER_ID) {
       return null;
     }
 
