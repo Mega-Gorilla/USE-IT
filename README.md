@@ -94,10 +94,11 @@ python examples/ui/gradio_demo.py
 
 
 <br/><br/>
+
+
 Prompt: Add my latest LinkedIn follower to my leads in Salesforce.
 
 ![LinkedIn to Salesforce](https://github.com/user-attachments/assets/1440affc-a552-442e-b702-d0d3b277b0ae)
-
 
 <br/><br/>
 
