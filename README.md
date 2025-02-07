@@ -80,6 +80,10 @@ python examples/ui/gradio_demo.py
 
 # Demos
 
+
+
+
+
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/browser/real_browser.py): Write a letter in Google Docs to my Papa, thanking him for everything, and save the document as a PDF.
 
 ![Letter to Papa](https://github.com/user-attachments/assets/242ade3e-15bc-41c2-988f-cbc5415a66aa)
@@ -101,6 +105,16 @@ Prompt: Find flights on kayak.com from Zurich to Beijing from 25.12.2024 to 02.0
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/custom-functions/save_to_file_hugging_face.py): Look up models with a license of cc-by-sa-4.0 and sort by most likes on Hugging face, save top 5 to file.
 
 https://github.com/user-attachments/assets/de73ee39-432c-4b97-b4e8-939fd7f323b3
+
+
+<br/><br/>
+
+[Prompt](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/shopping.py): Add grocery items to cart, and checkout.
+
+
+[![Migros Shopping Demo](https://img.youtube.com/vi/L2Ya9PYNns8/0.jpg)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
+
+<br/><br/>
 
 ## More examples
 
