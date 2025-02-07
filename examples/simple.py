@@ -2,7 +2,6 @@ import asyncio
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from memory_profiler import profile
 
 from browser_use import Agent
 
@@ -18,7 +17,6 @@ task = 'Go to apple.com and find the latest iphone model and return the link so 
 agent = Agent(task=task, llm=llm)
 
 
-@profile
 async def main():
 	await agent.run()
 

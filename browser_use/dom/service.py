@@ -3,7 +3,6 @@ import logging
 from importlib import resources
 from typing import Optional
 
-from memory_profiler import profile
 from playwright.async_api import Page
 
 from browser_use.dom.history_tree_processor.view import Coordinates
@@ -29,7 +28,6 @@ class DomService:
 
 	# region - Clickable elements
 
-	@profile
 	async def get_clickable_elements(
 		self,
 		highlight_elements: bool = True,
@@ -42,7 +40,6 @@ class DomService:
 
 		return dom_state
 
-	# @profile
 	async def _build_dom_tree(
 		self,
 		highlight_elements: bool,
