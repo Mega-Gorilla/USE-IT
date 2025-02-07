@@ -520,15 +520,15 @@
     if (node.nodeType === Node.TEXT_NODE) {
       const textContent = node.textContent.trim();
       if (textContent && isTextNodeVisible(node)) {
-        const id = ID.current++;
+        const id = `${ID.current++}`;
 
-        DOM_HASH_MAP[`${id}`] = {
+        DOM_HASH_MAP[id] = {
           type: "TEXT_NODE",
           text: textContent,
           isVisible: true,
         };
 
-        return `${id}`;
+        return id;
       }
       return null;
     }
@@ -691,10 +691,10 @@
     }
 
     // NOTE: We register the node to the hash map.
-    const id = ID.current++;
-    DOM_HASH_MAP[`${id}`] = nodeData;
+    const id = `${ID.current++}`;
+    DOM_HASH_MAP[id] = nodeData;
 
-    return `${id}`;
+    return id;
   }
 
   const rootId = buildDomTree(document.body);
