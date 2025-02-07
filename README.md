@@ -111,12 +111,7 @@ https://github.com/user-attachments/assets/de73ee39-432c-4b97-b4e8-939fd7f323b3
 
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/shopping.py): Add grocery items to cart, and checkout.
 
-
-[![Migros Shopping Demo](https://img.youtube.com/vi/L2Ya9PYNns8/0.jpg)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
-
-
-![AI Did My Groceries Prompt to Table (5)](https://github.com/user-attachments/assets/d9359085-bde6-41d4-aa4e-6520d0221872)
-
+[![AI Did My Groceries](https://github.com/user-attachments/assets/d9359085-bde6-41d4-aa4e-6520d0221872)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
 
 <br/><br/>
 
