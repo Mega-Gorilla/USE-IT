@@ -658,10 +658,12 @@
 
     // Handle shadow DOM
     if (node.shadowRoot) {
-      const shadowChildren = Array.from(node.shadowRoot.childNodes).map(
-        (child) => buildDomTree(child, parentIframe)
-      );
-      nodeData.children.push(...shadowChildren);
+      for (const child of node.shadowRoot.childNodes) {
+        const domElement = buildDomTree(child, parentIframe);
+        if (domElement) {
+          nodeData.children.push(domElement);
+        }
+      }
     }
 
     // Handle iframes
