@@ -92,6 +92,12 @@ python examples/ui/gradio_demo.py
 
 [![AI Did My Groceries](https://github.com/user-attachments/assets/d9359085-bde6-41d4-aa4e-6520d0221872)](https://www.youtube.com/watch?v=L2Ya9PYNns8)
 
+
+<br/><br/>
+Prompt: Add my latest LinkedIn follower to my leads in Salesforce.
+
+
+
 <br/><br/>
 
 [Prompt](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/find_and_apply_to_jobs.py): Read my CV & find ML jobs, save them to a file, and then start applying for them in new tabs, if you need help, ask me.'
