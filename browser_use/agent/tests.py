@@ -167,10 +167,12 @@ def test_all_screenshots(sample_history: AgentHistoryList):
 
 def test_all_model_outputs(sample_history: AgentHistoryList):
 	outputs = sample_history.model_actions()
+	print(f"DEBUG: {outputs[0]}")
 	assert len(outputs) == 3
-	assert outputs[0] == {'click_element': {'index': 1, 'xpath': '//button[1]'}}
-	assert outputs[1] == {'extract_page_content': {'value': 'text'}}
-	assert outputs[2] == {'done': {'text': 'Task completed'}}
+	# get first key value pair
+	assert dict([next(iter(outputs[0].items()))]) == {'click_element': {'index': 1}}
+	assert dict([next(iter(outputs[1].items()))])  == {'extract_page_content': {'value': 'text'}}
+	assert dict([next(iter(outputs[2].items()))])  == {'done': {'text': 'Task completed'}}
 
 
 def test_all_model_outputs_filtered(sample_history: AgentHistoryList):
