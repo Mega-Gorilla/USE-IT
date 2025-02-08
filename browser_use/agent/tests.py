@@ -88,6 +88,7 @@ def sample_history(action_registry):
 		AgentHistory(
 			model_output=AgentOutput(
 				current_state=AgentBrain(
+					page_summary="This is a sample page summary.",
 					evaluation_previous_goal='Clicked button',
 					memory='Button clicked',
 					next_goal='Extract content',
