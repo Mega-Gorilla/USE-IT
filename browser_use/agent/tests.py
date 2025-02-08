@@ -82,7 +82,7 @@ def sample_history(action_registry):
 				title='Page 1',
 				tabs=[TabInfo(url='https://example.com', title='Page 1', page_id=1)],
 				screenshot='screenshot1.png',
-				interacted_element=[],
+				interacted_element=[{'xpath': '//button[1]'}],
 			),
 		),
 		AgentHistory(
@@ -106,7 +106,7 @@ def sample_history(action_registry):
 				title='Page 2',
 				tabs=[TabInfo(url='https://example.com/page2', title='Page 2', page_id=2)],
 				screenshot='screenshot2.png',
-				interacted_element=[],
+				interacted_element=[{'xpath': '//div[1]'}],
 			),
 		),
 		AgentHistory(
@@ -125,7 +125,7 @@ def sample_history(action_registry):
 				title='Page 2',
 				tabs=[TabInfo(url='https://example.com/page2', title='Page 2', page_id=2)],
 				screenshot='screenshot3.png',
-				interacted_element=[],
+				interacted_element=[{'xpath': '//div[1]'}],
 			),
 		),
 	]
