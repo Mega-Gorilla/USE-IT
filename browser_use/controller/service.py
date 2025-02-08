@@ -17,12 +17,16 @@ from browser_use.controller.views import (
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
+	ReadPdfAction,
 	ScrollAction,
 	SearchGoogleAction,
 	SendKeysAction,
 	SwitchTabAction,
 )
 from browser_use.utils import time_execution_async, time_execution_sync
+from io import BytesIO
+from PyPDF2 import PdfReader
+import requests
 
 logger = logging.getLogger(__name__)
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -432,6 +436,37 @@ class Controller:
 				msg = f'Selection failed: {str(e)}'
 				logger.error(msg)
 				return ActionResult(error=msg, include_in_memory=True)
+		
+		@self.registry.action(
+            'Read the contents of a PDF file from a given URL. This action streams the PDF file and extracts its text content. Use this when you need to analyze or extract information from PDF documents available online.',
+            param_model=ReadPdfAction
+        )
+		async def read_pdf_content(params: ReadPdfAction) -> ActionResult:
+			try:
+                # Stream the PDF file
+				response = requests.get(params.url, stream=True)
+				response.raise_for_status()
+
+                # Read the PDF content
+				pdf_content = BytesIO(response.content)
+				pdf_reader = PdfReader(pdf_content)
+                
+				text_content = ""
+				for page in pdf_reader.pages:
+					text_content += page.extract_text() + "\n"
+
+				msg = f"📄 Successfully read PDF from {params.url}. Content length: {len(text_content)} characters."
+				logger.info(msg)
+				
+				return ActionResult(
+					extracted_content=text_content,
+					include_in_memory=True
+				)
+			except Exception as e:
+				error_msg = f"Failed to read PDF from {params.url}: {str(e)}"
+				logger.error(error_msg)
+				return ActionResult(error=error_msg, include_in_memory=True)
+
 
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions

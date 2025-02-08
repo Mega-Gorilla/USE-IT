@@ -42,6 +42,8 @@ class ScrollAction(BaseModel):
 class SendKeysAction(BaseModel):
 	keys: str
 
+class ReadPdfAction(BaseModel):
+	url: str
 
 class NoParamsAction(BaseModel):
 	"""
