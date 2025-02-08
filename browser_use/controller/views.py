@@ -42,7 +42,9 @@ class ScrollAction(BaseModel):
 class SendKeysAction(BaseModel):
 	keys: str
 
-
+class ExtractPageContentAction(BaseModel):
+    value: str
+	
 class NoParamsAction(BaseModel):
 	"""
 	Accepts absolutely anything in the incoming data
