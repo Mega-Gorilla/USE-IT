@@ -8,27 +8,30 @@ Also you have to install PyPDF2 to read pdf files: pip install PyPDF2
 
 import csv
 import os
-import re
 import sys
 from pathlib import Path
-
-from PyPDF2 import PdfReader
-
-from browser_use.browser.browser import Browser, BrowserConfig
+import logging
+from typing import List, Optional
+import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import asyncio
-from typing import List, Optional
 
 from dotenv import load_dotenv
+from PyPDF2 import PdfReader
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from pydantic import BaseModel, SecretStr
 
 from browser_use import ActionResult, Agent, Controller
 from browser_use.browser.context import BrowserContext
+from browser_use.browser.browser import Browser, BrowserConfig
 
 load_dotenv()
-import logging
+
+# Validate required environment variables
+required_env_vars = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"]
+for var in required_env_vars:
+    if not os.getenv(var):
+        raise ValueError(f"{var} is not set. Please add it to your environment variables.")
 
 logger = logging.getLogger(__name__)
 # full screen mode

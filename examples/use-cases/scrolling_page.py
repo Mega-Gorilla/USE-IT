@@ -1,15 +1,19 @@
 import os
 import sys
-
-from browser_use.browser.browser import Browser, BrowserConfig
+import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import asyncio
-
 from langchain_openai import ChatOpenAI
-
 from browser_use import Agent
+from dotenv import load_dotenv
+
+from browser_use.browser.browser import Browser, BrowserConfig
+
+load_dotenv()
+
+if not os.getenv('OPENAI_API_KEY'):
+	raise ValueError('OPENAI_API_KEY is not set')
 
 """
 Example: Using the 'Scroll down' action.

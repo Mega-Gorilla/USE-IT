@@ -8,7 +8,6 @@ from pydantic import SecretStr
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
-from browser_use.controller.service import Controller
 
 load_dotenv()
 api_key = os.getenv('GEMINI_API_KEY')

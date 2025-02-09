@@ -1,13 +1,18 @@
 import os
 import sys
-
-from langchain_openai import ChatOpenAI
+import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import asyncio
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
-from browser_use import Agent, Browser, Controller
+from browser_use import Agent, Browser
+
+load_dotenv()
+
+if not os.getenv('OPENAI_API_KEY'):
+    raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')
 
 async def main():
     browser = Browser()

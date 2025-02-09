@@ -1,15 +1,16 @@
 import asyncio
 import os
 
-import dotenv
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.controller.service import Controller
 
-dotenv.load_dotenv()
-
+load_dotenv()
+if not os.getenv('OPENAI_API_KEY'):
+    raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')
 
 controller = Controller()
 
