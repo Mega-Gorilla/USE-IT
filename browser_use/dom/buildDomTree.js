@@ -538,9 +538,14 @@
                 console.warn('Unable to access iframe:', node);
             }
         } else {
-            const children = Array.from(node.childNodes).map(child =>
-                buildDomTree(child, parentIframe)
-            );
+            const children = Array.from(node.childNodes)
+                .map(child => buildDomTree(child, parentIframe))
+                .filter(child => child !== null);
+            // If it's an <a> element and has no visible content, return null
+            if (nodeData.tagName === 'a' && children.length === 0) {
+                return null;
+            }
+
             nodeData.children.push(...children);
         }
 
