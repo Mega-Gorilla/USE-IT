@@ -433,7 +433,6 @@ class Controller:
 				logger.error(msg)
 				return ActionResult(error=msg, include_in_memory=True)
 
-
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
 
