@@ -1,3 +1,5 @@
+# Goal: Automates webpage scrolling with various scrolling actions and text search functionality.
+
 import os
 import sys
 import asyncio

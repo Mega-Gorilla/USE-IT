@@ -1,3 +1,5 @@
+# Goal: A general-purpose web navigation agent for tasks like flight booking and course searching.
+
 import os
 import sys
 import asyncio

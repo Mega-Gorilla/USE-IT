@@ -1,8 +1,7 @@
 """
-Find and apply to jobs.
+Goal: Searches for job listings, evaluates relevance based on a CV, and applies 
 
 @dev You need to add OPENAI_API_KEY to your environment variables.
-
 Also you have to install PyPDF2 to read pdf files: pip install PyPDF2
 """
 

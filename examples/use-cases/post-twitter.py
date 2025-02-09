@@ -1,4 +1,6 @@
 """
+Goal: Provides a template for automated posting on X (Twitter), including new tweets, tagging, and replies.
+
 X Posting Template using browser-use
 ----------------------------------------
 

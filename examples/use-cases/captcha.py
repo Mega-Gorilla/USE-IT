@@ -1,6 +1,8 @@
 """
-Simple try of the agent.
+Goal: Automates CAPTCHA solving on a demo website.
 
+
+Simple try of the agent.
 @dev You need to add OPENAI_API_KEY to your environment variables.
 NOTE: captchas are hard. For this example it works. But e.g. for iframes it does not.
 for this example it helps to zoom in.

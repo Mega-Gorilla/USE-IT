@@ -1,3 +1,5 @@
+# Goal: Implements a multi-agent system for online code editors, with separate agents for coding and execution.
+
 import os
 import sys
 import asyncio

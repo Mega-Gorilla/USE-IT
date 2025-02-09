@@ -1,3 +1,5 @@
+# Goal: Checks for available visa appointment slots on the Greece MFA website.
+
 import asyncio
 import os
 
