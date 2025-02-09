@@ -26,7 +26,7 @@ file_path = os.path.join(os.path.dirname(__file__), 'twitter_cookies.txt')
 context = BrowserContext(browser=browser, config=BrowserContextConfig(cookies_file=file_path))
 
 
-async def run_search():
+async def main():
 	agent = Agent(
 		browser_context=context,
 		task=('go to https://x.com. write a new post with the text "browser-use ftw", and submit it'),
@@ -37,5 +37,5 @@ async def run_search():
 	input('Press Enter to close the browser...')
 
 
-if __name__ == '__main__':
-	asyncio.run(run_search())
+if __name__ == "__main__":
+	asyncio.run(main())

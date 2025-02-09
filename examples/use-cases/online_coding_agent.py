@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 
 from browser_use import Agent, Browser
 
+# Load environment variables
 load_dotenv()
-
 if not os.getenv('OPENAI_API_KEY'):
     raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')
 
@@ -40,4 +40,5 @@ async def main():
         await executor.run()
         await coder.run()
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -20,18 +20,21 @@ Any issues, contact me on X @defichemist95
 import os
 import sys
 from typing import Optional
-from dataclasses import dataclass
-from dotenv import load_dotenv
-
-load_dotenv()
+import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import asyncio
+from dataclasses import dataclass
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use import Agent, Controller
 
+# Load environment variables
+load_dotenv()
+if not os.getenv('OPENAI_API_KEY'):
+    raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')
 
 # ============ Configuration Section ============
 @dataclass
@@ -114,9 +117,9 @@ async def post_tweet(agent: Agent):
         print(f"Error posting tweet: {str(e)}")
 
 
-def main():
+async def main():
     agent = create_twitter_agent(config)
-    asyncio.run(post_tweet(agent))
+    await agent.run()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

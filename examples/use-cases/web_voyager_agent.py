@@ -66,5 +66,5 @@ async def main():
 	history.save_to_file('./tmp/history.json')
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 	asyncio.run(main())

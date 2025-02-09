@@ -25,9 +25,8 @@ from browser_use import ActionResult, Agent, Controller
 from browser_use.browser.context import BrowserContext
 from browser_use.browser.browser import Browser, BrowserConfig
 
-load_dotenv()
-
 # Validate required environment variables
+load_dotenv()
 required_env_vars = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"]
 for var in required_env_vars:
     if not os.getenv(var):
@@ -102,7 +101,7 @@ async def upload_cv(index: int, browser: BrowserContext):
 
 	try:
 		await file_upload_el.set_input_files(path)
-		msg = f'Successfully uploaded file to index {index}'
+		msg = f'Successfully uploaded file "{path}" to index {index}'
 		logger.info(msg)
 		return ActionResult(extracted_content=msg)
 	except Exception as e:
@@ -158,5 +157,5 @@ async def main():
 	await asyncio.gather(*[agent.run() for agent in agents])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 	asyncio.run(main())
