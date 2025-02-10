@@ -307,7 +307,7 @@ class Agent:
 				self.message_manager._remove_last_state_message()
 				raise e
 
-			result: list[ActionResult] = await self.controller.multi_act(
+			result: list[ActionResult] = await self.multi_act(
 				model_output.action,
 				self.browser_context,
 				page_extraction_llm=self.page_extraction_llm,
@@ -536,7 +536,7 @@ class Agent:
 
 			# Execute initial actions if provided
 			if self.initial_actions:
-				result = await self.controller.multi_act(
+				result = await self.multi_act(
 					self.initial_actions,
 					self.browser_context,
 					check_for_new_elements=False,
@@ -592,6 +592,57 @@ class Agent:
 					output_path = self.generate_gif
 
 				self.create_history_gif(output_path=output_path)
+
+	@observe(name='controller.multi_act')
+	@time_execution_async('--multi-act')
+	async def multi_act(
+		self,
+		actions: list[ActionModel],
+		browser_context: BrowserContext,
+		check_break_if_paused: Callable[[], bool],
+		check_for_new_elements: bool = True,
+		page_extraction_llm: Optional[BaseChatModel] = None,
+		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
+	) -> list[ActionResult]:
+		"""Execute multiple actions"""
+		results = []
+
+		session = await browser_context.get_session()
+		cached_selector_map = session.cached_state.selector_map
+		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
+
+		check_break_if_paused()
+
+		await browser_context.remove_highlights()
+
+		for i, action in enumerate(actions):
+			check_break_if_paused()
+
+			if action.get_index() is not None and i != 0:
+				new_state = await browser_context.get_state()
+				new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
+				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
+					# next action requires index but there are new elements on the page
+					msg = f'Something new appeared after action {i} / {len(actions)}'
+					logger.info(msg)
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+					break
+
+			check_break_if_paused()
+
+			results.append(
+				await self.controller.act(action, browser_context, page_extraction_llm, sensitive_data, available_file_paths)
+			)
+
+			logger.debug(f'Executed action {i + 1} / {len(actions)}')
+			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
+				break
+
+			await asyncio.sleep(browser_context.config.wait_between_actions)
+			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
+
+		return results
 
 	def _too_many_failures(self) -> bool:
 		"""Check if we should stop due to too many failures"""
@@ -675,7 +726,7 @@ class Agent:
 		"""
 		# Execute initial actions if provided
 		if self.initial_actions:
-			await self.controller.multi_act(
+			await self.multi_act(
 				self.initial_actions,
 				self.browser_context,
 				check_for_new_elements=False,
@@ -737,7 +788,7 @@ class Agent:
 			if updated_action is None:
 				raise ValueError(f'Could not find matching element {i} in current page')
 
-		result = await self.controller.multi_act(
+		result = await self.multi_act(
 			updated_actions,
 			self.browser_context,
 			page_extraction_llm=self.page_extraction_llm,

@@ -1,10 +1,10 @@
 import asyncio
 import json
 import logging
-from typing import Callable, Dict, Optional, Type
+from typing import Dict, Optional, Type
 
 from langchain_core.prompts import PromptTemplate
-from lmnr import Laminar, observe
+from lmnr import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -22,7 +22,7 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	SwitchTabAction,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -439,55 +439,6 @@ class Controller:
 		@param description: Describe the LLM what the function does (better description == better function calling)
 		"""
 		return self.registry.action(description, **kwargs)
-
-	@observe(name='controller.multi_act')
-	@time_execution_async('--multi-act')
-	async def multi_act(
-		self,
-		actions: list[ActionModel],
-		browser_context: BrowserContext,
-		check_break_if_paused: Callable[[], bool],
-		check_for_new_elements: bool = True,
-		page_extraction_llm: Optional[BaseChatModel] = None,
-		sensitive_data: Optional[Dict[str, str]] = None,
-		available_file_paths: Optional[list[str]] = None,
-	) -> list[ActionResult]:
-		"""Execute multiple actions"""
-		results = []
-
-		session = await browser_context.get_session()
-		cached_selector_map = session.cached_state.selector_map
-		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
-
-		check_break_if_paused()
-
-		await browser_context.remove_highlights()
-
-		for i, action in enumerate(actions):
-			check_break_if_paused()
-
-			if action.get_index() is not None and i != 0:
-				new_state = await browser_context.get_state()
-				new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}'
-					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
-					break
-
-			check_break_if_paused()
-
-			results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data, available_file_paths))
-
-			logger.debug(f'Executed action {i + 1} / {len(actions)}')
-			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
-				break
-
-			await asyncio.sleep(browser_context.config.wait_between_actions)
-			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
-
-		return results
 
 	@time_execution_sync('--act')
 	async def act(
