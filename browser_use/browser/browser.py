@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BrowserConfig:
-	"""
+	r"""
 	Configuration for the Browser.
 
 	Default values:
