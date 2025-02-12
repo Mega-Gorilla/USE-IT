@@ -202,7 +202,15 @@ class BrowserContext:
 
 		context = await self._create_context(playwright_browser)
 		self._add_new_page_listener(context)
-		page = await context.new_page()
+
+		# Check if there's an existing page we can use
+		existing_pages = context.pages
+		if existing_pages:
+			page = existing_pages[-1]  # Use the last existing page
+			logger.debug('Reusing existing page')
+		else:
+			page = await context.new_page()
+			logger.debug('Created new page')
 
 		# Instead of calling _update_state(), create an empty initial state
 		initial_state = self._get_initial_state(page)
