@@ -216,6 +216,8 @@ class BrowserContext:
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
+			if self.browser.config.cdp_url:
+                		await page.reload() # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
