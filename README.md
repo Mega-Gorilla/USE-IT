@@ -21,9 +21,11 @@
 
 🌩️ Skip the setup - try our hosted version for instant browser automation! [Try it now](https://cloud.browser-use.com).
 
+
 # Quick start
 
-With pip:
+
+With pip (Python>=3.11):
 
 ```bash
 pip install browser-use
