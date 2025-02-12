@@ -688,6 +688,10 @@
           nodeData.children.push(domElement);
         }
       }
+      // If it's an <a> element and has no visible content, return null
+      if (nodeData.tagName === 'a' && nodeData.children.length === 0) {
+        return null;
+      }
     }
 
     // NOTE: We register the node to the hash map.
