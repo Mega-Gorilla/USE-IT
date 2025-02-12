@@ -41,7 +41,7 @@ class DomService:
 		focus_element: int,
 		viewport_expansion: int,
 	) -> DOMElementNode:
-		if await page.evaluate("1+1") != 2:
+		if await self.page.evaluate('1+1') != 2:
 			raise ValueError('The page cannot evaluate javascript code properly')
 
 		js_code = resources.read_text('browser_use.dom', 'buildDomTree.js')
