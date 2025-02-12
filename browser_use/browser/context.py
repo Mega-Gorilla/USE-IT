@@ -1168,3 +1168,5 @@ class BrowserContext:
 			screenshot=None,
 			tabs=[],
 		)
+	
+	# endregion

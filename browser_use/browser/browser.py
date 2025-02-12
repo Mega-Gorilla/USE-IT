@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BrowserConfig:
-	"""
+	r"""
 	Configuration for the Browser.
 
 	Default values:
@@ -147,7 +147,7 @@ class Browser:
 			[
 				self.config.chrome_instance_path,
 				'--remote-debugging-port=9222',
-			],
+			] + self.config.extra_chromium_args,
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.DEVNULL,
 		)
