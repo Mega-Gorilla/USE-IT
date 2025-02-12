@@ -926,39 +926,27 @@ class BrowserContext:
 				raise BrowserError(f'Element: {repr(element_node)} not found')
 
 			# Ensure element is ready for input
-			await element_handle.wait_for_element_state('stable', timeout=2500)
-			await element_handle.scroll_into_view_if_needed(timeout=2500)
-			
+			await element_handle.wait_for_element_state('stable', timeout=2000)
+			await element_handle.scroll_into_view_if_needed(timeout=2100)
+
 			# Get element properties to determine input method
 			is_contenteditable = await element_handle.get_property('isContentEditable')
-			tag_name = await element_handle.get_property('tagName')
-			input_type = await element_handle.get_attribute('type')
-			
+
 			# Different handling for contenteditable vs input fields
-			if await is_contenteditable.json_value():
-				await element_handle.evaluate('el => el.textContent = ""')
-				await element_handle.type(text, delay=50)
-			else:
-				try:
+			try:
+				if await is_contenteditable.json_value():
+					await element_handle.evaluate('el => el.textContent = ""')
+					await element_handle.type(text, delay=5)
+				else:
 					await element_handle.fill(text)
-				except Exception as fill_error:
-					logger.debug(f'Fill failed, trying type method. Error: {str(fill_error)}')
-					await element_handle.click()
-					await element_handle.press_sequentially(text, delay=50)
+			except Exception:
+				logger.debug(f'Could not type text into element. Trying to click and type.')
+				await element_handle.click()
+				await element_handle.type(text, delay=5)
 
-			# Wait for input to be processed
-			await page.wait_for_load_state('networkidle', timeout=2500)
-			
-			# Verify input was successful
-			if input_type != 'password':  # Don't verify passwords for security
-				value = await element_handle.input_value()
-				if not value and text:
-					raise BrowserError('Input verification failed: text not present in element after input')
-
-		except BrowserError as e:
-			raise e
 		except Exception as e:
-			raise BrowserError(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
 		"""
@@ -1168,5 +1156,5 @@ class BrowserContext:
 			screenshot=None,
 			tabs=[],
 		)
-	
+
 	# endregion
