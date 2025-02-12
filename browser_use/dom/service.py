@@ -46,6 +46,9 @@ class DomService:
 		focus_element: int,
 		viewport_expansion: int,
 	) -> tuple[DOMElementNode, SelectorMap]:
+		if await self.page.evaluate('1+1') != 2:
+			raise ValueError('The page cannot evaluate javascript code properly')
+
 		# NOTE: We execute JS code in the browser to extract important DOM information.
 		#       The returned hash map contains information about the DOM tree and the
 		#       relationship between the DOM elements.
