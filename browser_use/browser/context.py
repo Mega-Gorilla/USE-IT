@@ -23,7 +23,12 @@ from playwright.async_api import (
 	Page,
 )
 
-from browser_use.browser.views import BrowserError, BrowserState, TabInfo, URLNotAllowedError
+from browser_use.browser.views import (
+	BrowserError,
+	BrowserState,
+	TabInfo,
+	URLNotAllowedError,
+)
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
@@ -45,61 +50,61 @@ class BrowserContextConfig:
 	Configuration for the BrowserContext.
 
 	Default values:
-		cookies_file: None
-			Path to cookies file for persistence
+	    cookies_file: None
+	        Path to cookies file for persistence
 
 	        disable_security: False
 	                Disable browser security features
 
-		minimum_wait_page_load_time: 0.5
-			Minimum time to wait before getting page state for LLM input
+	    minimum_wait_page_load_time: 0.5
+	        Minimum time to wait before getting page state for LLM input
 
 	        wait_for_network_idle_page_load_time: 1.0
 	                Time to wait for network requests to finish before getting page state.
 	                Lower values may result in incomplete page loads.
 
-		maximum_wait_page_load_time: 5.0
-			Maximum time to wait for page load before proceeding anyway
+	    maximum_wait_page_load_time: 5.0
+	        Maximum time to wait for page load before proceeding anyway
 
-		wait_between_actions: 1.0
-			Time to wait between multiple per step actions
+	    wait_between_actions: 1.0
+	        Time to wait between multiple per step actions
 
-		browser_window_size: {
-				'width': 1280,
-				'height': 1100,
-			}
-			Default browser window size
+	    browser_window_size: {
+	            'width': 1280,
+	            'height': 1100,
+	        }
+	        Default browser window size
 
-		no_viewport: False
-			Disable viewport
+	    no_viewport: False
+	        Disable viewport
 
-		save_recording_path: None
-			Path to save video recordings
+	    save_recording_path: None
+	        Path to save video recordings
 
-		save_downloads_path: None
+	    save_downloads_path: None
 	        Path to save downloads to
 
-		trace_path: None
-			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
+	    trace_path: None
+	        Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 
-		locale: None
-			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+	    locale: None
+	        Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
 
-		user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-			custom user agent to use.
+	    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+	        custom user agent to use.
 
-		highlight_elements: True
-			Highlight elements in the DOM on the screen
+	    highlight_elements: True
+	        Highlight elements in the DOM on the screen
 
-		viewport_expansion: 500
-			Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
+	    viewport_expansion: 500
+	        Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
 
-		allowed_domains: None
-			List of allowed domains that can be accessed. If None, all domains are allowed.
-			Example: ['example.com', 'api.example.com']
+	    allowed_domains: None
+	        List of allowed domains that can be accessed. If None, all domains are allowed.
+	        Example: ['example.com', 'api.example.com']
 
-		include_dynamic_attributes: bool = True
-			Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
+	    include_dynamic_attributes: bool = True
+	        Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
 	"""
 
 	cookies_file: str | None = None
@@ -270,38 +275,38 @@ class BrowserContext:
 		# Expose anti-detection scripts
 		await context.add_init_script(
 			"""
-			// Webdriver property
-			Object.defineProperty(navigator, 'webdriver', {
-				get: () => undefined
-			});
+            // Webdriver property
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
 
-			// Languages
-			Object.defineProperty(navigator, 'languages', {
-				get: () => ['en-US']
-			});
+            // Languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US']
+            });
 
-			// Plugins
-			Object.defineProperty(navigator, 'plugins', {
-				get: () => [1, 2, 3, 4, 5]
-			});
+            // Plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
 
-			// Chrome runtime
-			window.chrome = { runtime: {} };
+            // Chrome runtime
+            window.chrome = { runtime: {} };
 
-			// Permissions
-			const originalQuery = window.navigator.permissions.query;
-			window.navigator.permissions.query = (parameters) => (
-				parameters.name === 'notifications' ?
-					Promise.resolve({ state: Notification.permission }) :
-					originalQuery(parameters)
-			);
-			(function () {
-				const originalAttachShadow = Element.prototype.attachShadow;
-				Element.prototype.attachShadow = function attachShadow(options) {
-					return originalAttachShadow.call(this, { ...options, mode: "open" });
-				};
-			})();
-			"""
+            // Permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            (function () {
+                const originalAttachShadow = Element.prototype.attachShadow;
+                Element.prototype.attachShadow = function attachShadow(options) {
+                    return originalAttachShadow.call(this, { ...options, mode: "open" });
+                };
+            })();
+            """
 		)
 
 		return context
@@ -888,7 +893,8 @@ class BrowserContext:
 		iframes = [item for item in parents if item.tag_name == 'iframe']
 		for parent in iframes:
 			css_selector = self._enhanced_css_selector_for_element(
-				parent, include_dynamic_attributes=self.config.include_dynamic_attributes
+				parent,
+				include_dynamic_attributes=self.config.include_dynamic_attributes,
 			)
 			current_frame = current_frame.frame_locator(css_selector)
 
@@ -975,8 +981,10 @@ class BrowserContext:
 						async with page.expect_download(timeout=5000) as download_info:
 							await click_func()
 						download = await download_info.value
-						# If the download succeeds, save to disk
-						download_path = os.path.join(self.config.save_downloads_path, download.suggested_filename)
+						# Determine file path
+						suggested_filename = download.suggested_filename
+						unique_filename = await self._get_unique_filename(self.config.save_downloads_path, suggested_filename)
+						download_path = os.path.join(self.config.save_downloads_path, unique_filename)
 						await download.save_as(download_path)
 						logger.debug(f'Download triggered. Saved file to: {download_path}')
 						return download_path
@@ -1158,4 +1166,15 @@ class BrowserContext:
 			screenshot=None,
 			tabs=[],
 		)
-	# endregion
+
+
+	async def _get_unique_filename(self, directory, filename):
+		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
+		base, ext = os.path.splitext(filename)
+		counter = 1
+		new_filename = filename
+		while os.path.exists(os.path.join(directory, new_filename)):
+			new_filename = f'{base} ({counter}){ext}'
+			counter += 1
+		return new_filename
+
