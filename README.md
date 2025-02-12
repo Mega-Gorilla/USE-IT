@@ -22,9 +22,9 @@
 
 
 # Quick start
-Minimum Python requirement of 3.11
 
-With pip:
+
+With pip (Python>=3.11):
 
 ```bash
 pip install browser-use
