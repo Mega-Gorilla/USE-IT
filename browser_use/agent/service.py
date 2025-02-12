@@ -18,7 +18,9 @@ from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
+	AIMessage,
 	BaseMessage,
+	HumanMessage,
 	SystemMessage,
 )
 from lmnr import observe
@@ -27,7 +29,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
+from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
 	AgentError,
@@ -68,6 +70,7 @@ class Agent:
 		browser_context: BrowserContext | None = None,
 		controller: Controller = Controller(),
 		use_vision: bool = True,
+		use_vision_for_planner: bool = False,
 		save_conversation_path: Optional[str] = None,
 		save_conversation_path_encoding: Optional[str] = 'utf-8',
 		max_failures: int = 3,
@@ -78,6 +81,7 @@ class Agent:
 		message_context: Optional[str] = None,
 		generate_gif: bool | str = True,
 		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
 		include_attributes: list[str] = [
 			'title',
 			'type',
@@ -99,6 +103,8 @@ class Agent:
 		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
 		tool_calling_method: Optional[str] = 'auto',
 		page_extraction_llm: Optional[BaseChatModel] = None,
+		planner_llm: Optional[BaseChatModel] = None,
+		planner_interval: int = 1,  # Run planner every N steps
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
 		self.sensitive_data = sensitive_data
@@ -106,17 +112,24 @@ class Agent:
 			self.page_extraction_llm = llm
 		else:
 			self.page_extraction_llm = page_extraction_llm
-
+		self.available_file_paths = available_file_paths
 		self.task = task
 		self.use_vision = use_vision
+		self.use_vision_for_planner = use_vision_for_planner
 		self.llm = llm
 		self.save_conversation_path = save_conversation_path
+		if self.save_conversation_path and '/' not in self.save_conversation_path:
+			self.save_conversation_path = f'{self.save_conversation_path}/'
 		self.save_conversation_path_encoding = save_conversation_path_encoding
 		self._last_result = None
 		self.include_attributes = include_attributes
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
 
+		# Initialize planner
+		self.planner_llm = planner_llm
+		self.planning_interval = planner_interval
+		self.last_plan = None
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -165,7 +178,8 @@ class Agent:
 			message_context=self.message_context,
 			sensitive_data=self.sensitive_data,
 		)
-
+		if self.available_file_paths:
+			self.message_manager.add_file_paths(self.available_file_paths)
 		# Step callback
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
@@ -183,6 +197,8 @@ class Agent:
 
 		self._paused = False
 		self._stopped = False
+
+		self.action_descriptions = self.controller.registry.get_prompt_description()
 
 	def _set_version_and_source(self) -> None:
 		try:
@@ -205,16 +221,28 @@ class Agent:
 
 	def _set_model_names(self) -> None:
 		self.chat_model_library = self.llm.__class__.__name__
-		if hasattr(self.llm, 'model_name'):
-			self.model_name = self.llm.model_name  # type: ignore
-		elif hasattr(self.llm, 'model'):
-			self.model_name = self.llm.model  # type: ignore
+		self.model_name = "Unknown"
+		# Check for 'model_name' attribute first
+		if hasattr(self.llm, "model_name"):
+			model = self.llm.model_name
+			self.model_name = model if model is not None else "Unknown"
+		# Fallback to 'model' attribute if needed
+		elif hasattr(self.llm, "model"):
+			model = self.llm.model
+			self.model_name = model if model is not None else "Unknown"
+
+		if self.planner_llm:
+			if hasattr(self.planner_llm, 'model_name'):
+				self.planner_model_name = self.planner_llm.model_name  # type: ignore
+			elif hasattr(self.planner_llm, 'model'):
+				self.planner_model_name = self.planner_llm.model  # type: ignore
+			else:
+				self.planner_model_name = 'Unknown'
 		else:
-			self.model_name = 'Unknown'
+			self.planner_model_name = None
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from controller's registry"""
-		# Get the dynamic action model from controller's registry
 		self.ActionModel = self.controller.registry.create_action_model()
 		# Create output model with the dynamic actions
 		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
@@ -241,6 +269,7 @@ class Agent:
 			raise InterruptedError
 		return False
 
+	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
@@ -253,8 +282,14 @@ class Agent:
 			state = await self.browser_context.get_state()
 
 			self._check_if_stopped_or_paused()
-
 			self.message_manager.add_state_message(state, self._last_result, step_info, self.use_vision)
+
+			# Run planner at specified intervals if planner is configured
+			if self.planner_llm and self.n_steps % self.planning_interval == 0:
+				plan = await self._run_planner()
+				# add plan before last state message
+				self.message_manager.add_plan(plan, position=-1)
+
 			input_messages = self.message_manager.get_messages()
 
 			self._check_if_stopped_or_paused()
@@ -282,6 +317,7 @@ class Agent:
 				page_extraction_llm=self.page_extraction_llm,
 				sensitive_data=self.sensitive_data,
 				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+				available_file_paths=self.available_file_paths,
 			)
 			self._last_result = result
 
@@ -380,13 +416,24 @@ class Agent:
 		"""Remove think tags from text"""
 		return re.sub(self.THINK_TAGS, '', text)
 
+	def _convert_input_messages(self, input_messages: list[BaseMessage], model_name: Optional[str]) -> list[BaseMessage]:
+		"""Convert input messages to a format that is compatible with the planner model"""
+		if model_name is None:
+			return input_messages
+		if model_name == 'deepseek-reasoner' or model_name.startswith('deepseek-r1'):
+			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
+			merged_input_messages = self.message_manager.merge_successive_messages(converted_input_messages, HumanMessage)
+			merged_input_messages = self.message_manager.merge_successive_messages(merged_input_messages, AIMessage)
+			return merged_input_messages
+		return input_messages
+
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
+		converted_input_messages = self._convert_input_messages(input_messages, self.model_name)
+
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
-			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
-			merged_input_messages = self.message_manager.merge_successive_human_messages(converted_input_messages)
-			output = self.llm.invoke(merged_input_messages)
+			output = self.llm.invoke(converted_input_messages)
 			output.content = self._remove_think_tags(output.content)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			try:
@@ -485,7 +532,7 @@ class Agent:
 			)
 		)
 
-	@observe(name='agent.run')
+	@observe(name='agent.run', ignore_output=True)
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
@@ -499,6 +546,7 @@ class Agent:
 					check_for_new_elements=False,
 					page_extraction_llm=self.page_extraction_llm,
 					check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+					available_file_paths=self.available_file_paths,
 				)
 				self._last_result = result
 
@@ -595,6 +643,9 @@ class Agent:
 			return True
 
 		class ValidationResult(BaseModel):
+			"""
+			Validation results.
+			"""
 			is_valid: bool
 			reason: str
 
@@ -621,17 +672,24 @@ class Agent:
 		Rerun a saved history of actions with error handling and retry logic.
 
 		Args:
-		        history: The history to replay
-		        max_retries: Maximum number of retries per action
-		        skip_failures: Whether to skip failed actions or stop execution
-		        delay_between_actions: Delay between actions in seconds
+				history: The history to replay
+				max_retries: Maximum number of retries per action
+				skip_failures: Whether to skip failed actions or stop execution
+				delay_between_actions: Delay between actions in seconds
 
 		Returns:
-		        List of action results
+				List of action results
 		"""
 		# Execute initial actions if provided
 		if self.initial_actions:
-			await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
+			await self.controller.multi_act(
+				self.initial_actions,
+				self.browser_context,
+				check_for_new_elements=False,
+				page_extraction_llm=self.page_extraction_llm,
+				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+				available_file_paths=self.available_file_paths,
+			)
 
 		results = []
 
@@ -671,7 +729,6 @@ class Agent:
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-
 		state = await self.browser_context.get_state()
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
@@ -688,7 +745,10 @@ class Agent:
 				raise ValueError(f'Could not find matching element {i} in current page')
 
 		result = await self.controller.multi_act(
-			updated_actions, self.browser_context, page_extraction_llm=self.page_extraction_llm
+			updated_actions,
+			self.browser_context,
+			page_extraction_llm=self.page_extraction_llm,
+			check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
 		)
 
 		await asyncio.sleep(delay)
@@ -724,8 +784,8 @@ class Agent:
 		Load history from file and rerun it.
 
 		Args:
-		        history_file: Path to the history file
-		        **kwargs: Additional arguments passed to rerun_history
+				history_file: Path to the history file
+				**kwargs: Additional arguments passed to rerun_history
 		"""
 		if not history_file:
 			history_file = 'AgentHistory.json'
@@ -1176,3 +1236,48 @@ class Agent:
 			converted_actions.append(action_model)
 
 		return converted_actions
+
+	async def _run_planner(self) -> Optional[str]:
+		"""Run the planner to analyze state and suggest next steps"""
+		# Skip planning if no planner_llm is set
+		if not self.planner_llm:
+			return None
+
+		# Create planner message history using full message history
+		planner_messages = [
+			PlannerPrompt(self.action_descriptions).get_system_message(),
+			*self.message_manager.get_messages()[1:],  # Use full message history except the first
+		]
+
+		if not self.use_vision_for_planner and self.use_vision:
+			last_state_message = planner_messages[-1]
+			# remove image from last state message
+			new_msg = ''
+			if isinstance(last_state_message.content, list):
+				for msg in last_state_message.content:
+					if msg['type'] == 'text':
+						new_msg += msg['text']
+					elif msg['type'] == 'image_url':
+						continue
+			else:
+				new_msg = last_state_message.content
+
+			planner_messages[-1] = HumanMessage(content=new_msg)
+
+		planner_messages = self._convert_input_messages(planner_messages, self.planner_model_name)
+		# Get planner output
+		response = await self.planner_llm.ainvoke(planner_messages)
+		plan = response.content
+		# if deepseek-reasoner, remove think tags
+		if self.planner_model_name == 'deepseek-reasoner':
+			plan = self._remove_think_tags(plan)
+		try:
+			plan_json = json.loads(plan)
+			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
+		except json.JSONDecodeError:
+			logger.info(f'Planning Analysis:\n{plan}')
+		except Exception as e:
+			logger.debug(f'Error parsing planning analysis: {e}')
+			logger.info(f'Plan: {plan}')
+
+		return plan

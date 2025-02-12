@@ -4,17 +4,14 @@ import os
 import pytest
 import requests
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
-from browser_use.agent.views import ActionResult, AgentHistoryList
+from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.views import BrowserState, TabInfo
-from browser_use.dom.views import DOMElementNode, DOMTextNode
 
 
 @pytest.fixture(scope='function')
@@ -130,7 +127,7 @@ async def test_model_search(llm, context):
 			response = requests.get('http://127.0.0.1:11434/')
 			if response.status_code != 200:
 				raise
-		except Exception as e:
+		except Exception:
 			raise Exception('Ollama is not running - start with `ollama start`')
 
 	agent = Agent(

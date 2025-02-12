@@ -221,6 +221,8 @@ class BrowserContext:
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
+			if self.browser.config.cdp_url:
+                		await page.reload() # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
@@ -916,6 +918,10 @@ class BrowserContext:
 			return None
 
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
+		"""
+		Input text into an element with proper error handling and state management.
+		Handles different types of input fields and ensures proper element state before input.
+		"""
 		try:
 			# Highlight before typing
 			if element_node.highlight_index is not None:
@@ -925,15 +931,30 @@ class BrowserContext:
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
-				raise Exception(f'Element: {repr(element_node)} not found')
+				raise BrowserError(f'Element: {repr(element_node)} not found')
 
-			await element_handle.scroll_into_view_if_needed(timeout=2500)
-			await element_handle.fill('')
-			await element_handle.type(text)
-			await page.wait_for_load_state()
+			# Ensure element is ready for input
+			await element_handle.wait_for_element_state('stable', timeout=2000)
+			await element_handle.scroll_into_view_if_needed(timeout=2100)
+
+			# Get element properties to determine input method
+			is_contenteditable = await element_handle.get_property('isContentEditable')
+
+			# Different handling for contenteditable vs input fields
+			try:
+				if await is_contenteditable.json_value():
+					await element_handle.evaluate('el => el.textContent = ""')
+					await element_handle.type(text, delay=5)
+				else:
+					await element_handle.fill(text)
+			except Exception:
+				logger.debug(f'Could not type text into element. Trying to click and type.')
+				await element_handle.click()
+				await element_handle.type(text, delay=5)
 
 		except Exception as e:
-			raise Exception(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
 		"""
@@ -1057,7 +1078,7 @@ class BrowserContext:
 		element_handle = await self.get_locate_element(selector_map[index])
 		return element_handle
 
-	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
+	async def get_dom_element_by_index(self, index: int) -> DOMElementNode:
 		selector_map = await self.get_selector_map()
 		return selector_map[index]
 
@@ -1146,6 +1167,7 @@ class BrowserContext:
 			tabs=[],
 		)
 
+
 	async def _get_unique_filename(self, directory, filename):
 		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
 		base, ext = os.path.splitext(filename)
@@ -1155,3 +1177,4 @@ class BrowserContext:
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
+
