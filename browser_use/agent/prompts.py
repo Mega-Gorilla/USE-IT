@@ -45,9 +45,9 @@ class SystemPrompt:
        {"click_element": {"index": 3}}
      ]
    - Navigation and extraction: [
-       {"open_new_tab": {}},
+       {"open_tab": {}},
        {"go_to_url": {"url": "https://example.com"}},
-       {"extract_page_content": {}}
+       {"extract_content": ""}
      ]
 
 
@@ -96,7 +96,7 @@ class SystemPrompt:
 - If you get stuck, 
 
 10. Extraction:
-- If your task is to find information or do research - call extract_page_content on the specific pages to get and store the information.
+- If your task is to find information or do research - call extract_content on the specific pages to get and store the information.
 
 """
 		text += f'   - use maximum {self.max_actions_per_step} actions per sequence'
