@@ -689,6 +689,7 @@ class Agent:
 				page_extraction_llm=self.page_extraction_llm,
 				check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
 				available_file_paths=self.available_file_paths,
+				sensitive_data=self.sensitive_data,
 			)
 
 		results = []
@@ -749,6 +750,7 @@ class Agent:
 			self.browser_context,
 			page_extraction_llm=self.page_extraction_llm,
 			check_break_if_paused=lambda: self._check_if_stopped_or_paused(),
+			sensitive_data=self.sensitive_data,
 		)
 
 		await asyncio.sleep(delay)
@@ -822,29 +824,50 @@ class Agent:
 			logger.warning('No history or first screenshot to create GIF from')
 			return
 
-		# Try to load nicer fonts
+		# Try to load fonts with multi-language support
 		try:
 			# Try different font options in order of preference
-			font_options = ['Helvetica', 'Arial', 'DejaVuSans', 'Verdana']
-			font_loaded = False
+			# System-specific fonts
+			if platform.system() == 'Windows':
+				font_options = [
+					'msyh.ttc',  # Microsoft YaHei
+					'seguiemj.ttf',  # Segoe UI Emoji
+					'segoe.ttf',  # Segoe UI
+				]
+			elif platform.system() == 'Darwin':  # macOS
+				font_options = [
+					'/System/Library/Fonts/PingFang.ttc',
+					'/System/Library/Fonts/Apple Color Emoji.ttc',
+					'/System/Library/Fonts/Helvetica.ttc',
+				]
+			else:  # Linux and others
+				font_options = [
+					'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+				]
 
+			# Add common fallback fonts
+			font_options.extend(['Arial Unicode MS', 'Helvetica', 'Arial', 'DejaVuSans', 'Verdana'])
+
+			font_loaded = False
 			for font_name in font_options:
 				try:
 					if platform.system() == 'Windows':
-						# Need to specify the abs font path on Windows
-						font_name = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf')
+						if not font_name.endswith(('.ttf', '.ttc')):
+							font_name = os.path.join(os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts'), font_name + '.ttf')
 					regular_font = ImageFont.truetype(font_name, font_size)
 					title_font = ImageFont.truetype(font_name, title_font_size)
 					goal_font = ImageFont.truetype(font_name, goal_font_size)
+					logger.debug(f'Loaded font: {font_name}')
 					font_loaded = True
 					break
 				except OSError:
 					continue
 
 			if not font_loaded:
-				raise OSError('No preferred fonts found')
+				raise OSError('No suitable fonts found')
 
 		except OSError:
+			logger.warning('Failed to load Unicode fonts, falling back to default')
 			regular_font = ImageFont.load_default()
 			title_font = ImageFont.load_default()
 

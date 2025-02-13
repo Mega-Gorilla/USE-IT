@@ -3,6 +3,7 @@ Playwright browser on steroids.
 """
 
 import asyncio
+import gc
 import logging
 from dataclasses import dataclass, field
 
@@ -53,6 +54,8 @@ class BrowserConfig:
 
 	proxy: ProxySettings | None = field(default=None)
 	new_context_config: BrowserContextConfig = field(default_factory=BrowserContextConfig)
+
+	_force_keep_browser_alive: bool = False
 
 
 # @singleton: TODO - think about id singleton makes sense here
@@ -219,15 +222,21 @@ class Browser:
 	async def close(self):
 		"""Close the browser instance"""
 		try:
-			if self.playwright_browser:
-				await self.playwright_browser.close()
-			if self.playwright:
-				await self.playwright.stop()
+			if not self.config._force_keep_browser_alive:
+				if self.playwright_browser:
+					await self.playwright_browser.close()
+					del self.playwright_browser
+				if self.playwright:
+					await self.playwright.stop()
+					del self.playwright
+
 		except Exception as e:
 			logger.debug(f'Failed to close browser properly: {e}')
 		finally:
 			self.playwright_browser = None
 			self.playwright = None
+
+			gc.collect()
 
 	def __del__(self):
 		"""Async cleanup when object is destroyed"""

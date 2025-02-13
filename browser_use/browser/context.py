@@ -4,6 +4,7 @@ Playwright browser on steroids.
 
 import asyncio
 import base64
+import gc
 import json
 import logging
 import os
@@ -132,6 +133,8 @@ class BrowserContextConfig:
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
 
+	_force_keep_context_alive: bool = False
+
 
 @dataclass
 class BrowserSession:
@@ -181,10 +184,11 @@ class BrowserContext:
 				except Exception as e:
 					logger.debug(f'Failed to stop tracing: {e}')
 
-			try:
-				await self.session.context.close()
-			except Exception as e:
-				logger.debug(f'Failed to close context: {e}')
+			if not self.config._force_keep_context_alive:
+				try:
+					await self.session.context.close()
+				except Exception as e:
+					logger.debug(f'Failed to close context: {e}')
 		finally:
 			self.session = None
 
@@ -194,9 +198,11 @@ class BrowserContext:
 			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
 				# Use sync Playwright method for force cleanup
-				if hasattr(self.session.context, '_impl_obj'):
+				if not self.config._force_keep_context_alive and hasattr(self.session.context, '_impl_obj'):
 					asyncio.run(self.session.context._impl_obj.close())
+
 				self.session = None
+				gc.collect()
 			except Exception as e:
 				logger.warning(f'Failed to force close browser context: {e}')
 
