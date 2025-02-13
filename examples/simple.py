@@ -12,9 +12,9 @@ llm = ChatOpenAI(
 	model='gpt-4o',
 	temperature=0.0,
 )
-task = 'Find a nice place to eat in San Francisco!'
+task = 'Find the founders of browser-use and draft them a short personalized message'
 
-agent = Agent(task=task, llm=llm, save_conversation_path='./conversation.json')
+agent = Agent(task=task, llm=llm)
 
 
 async def main():
