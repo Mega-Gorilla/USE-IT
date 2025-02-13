@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import uuid
 from pathlib import Path
@@ -13,7 +12,6 @@ from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
-	AIMessage,
 	BaseMessage,
 	HumanMessage,
 	SystemMessage,
@@ -24,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager
+from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
@@ -102,11 +101,9 @@ class Agent:
 		planner_interval: int = 1,  # Run planner every N steps
 	):
 		self.agent_id = str(uuid.uuid4())  # unique identifier for the agent
+
+		# Config
 		self.sensitive_data = sensitive_data
-		if not page_extraction_llm:
-			self.page_extraction_llm = llm
-		else:
-			self.page_extraction_llm = page_extraction_llm
 		self.available_file_paths = available_file_paths
 		self.task = task
 		self.use_vision = use_vision
@@ -121,10 +118,17 @@ class Agent:
 		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
 
-		# Initialize planner
+		# Page extraction LLM
+		if not page_extraction_llm:
+			self.page_extraction_llm = llm
+		else:
+			self.page_extraction_llm = page_extraction_llm
+
+		# Planner
 		self.planner_llm = planner_llm
 		self.planning_interval = planner_interval
 		self.last_plan = None
+
 		# Controller setup
 		self.controller = controller
 		self.max_actions_per_step = max_actions_per_step
@@ -132,7 +136,6 @@ class Agent:
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
-		self.message_context = message_context
 
 		# Initialize browser first if needed
 		self.browser = browser if browser is not None else (None if browser_context else Browser())
@@ -162,7 +165,6 @@ class Agent:
 		self.tool_calling_method = self.set_tool_calling_method(tool_calling_method)
 
 		self.message_manager = MessageManager(
-			llm=self.llm,
 			task=self.task,
 			action_descriptions=self.controller.registry.get_prompt_description(),
 			system_prompt_class=self.system_prompt_class,
@@ -170,21 +172,22 @@ class Agent:
 			include_attributes=self.include_attributes,
 			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
-			message_context=self.message_context,
+			message_context=message_context,
 			sensitive_data=self.sensitive_data,
+			available_file_paths=self.available_file_paths,
 		)
-		if self.available_file_paths:
-			self.message_manager.add_file_paths(self.available_file_paths)
-		# Step callback
+
+		# Step callback hooks
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 
 		# Tracking variables
+		self.max_failures = max_failures
+		self.retry_delay = retry_delay
+
 		self.history: AgentHistoryList = AgentHistoryList(history=[])
 		self.n_steps = 1
 		self.consecutive_failures = 0
-		self.max_failures = max_failures
-		self.retry_delay = retry_delay
 		self.validate_output = validate_output
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		if save_conversation_path:
@@ -216,15 +219,15 @@ class Agent:
 
 	def _set_model_names(self) -> None:
 		self.chat_model_library = self.llm.__class__.__name__
-		self.model_name = "Unknown"
+		self.model_name = 'Unknown'
 		# Check for 'model_name' attribute first
-		if hasattr(self.llm, "model_name"):
+		if hasattr(self.llm, 'model_name'):
 			model = self.llm.model_name
-			self.model_name = model if model is not None else "Unknown"
+			self.model_name = model if model is not None else 'Unknown'
 		# Fallback to 'model' attribute if needed
-		elif hasattr(self.llm, "model"):
+		elif hasattr(self.llm, 'model'):
 			model = self.llm.model
-			self.model_name = model if model is not None else "Unknown"
+			self.model_name = model if model is not None else 'Unknown'
 
 		if self.planner_llm:
 			if hasattr(self.planner_llm, 'model_name'):
@@ -292,10 +295,15 @@ class Agent:
 			try:
 				model_output = await self.get_next_action(input_messages)
 
+				self.n_steps += 1
+
 				if self.register_new_step_callback:
 					self.register_new_step_callback(state, model_output, self.n_steps)
 
-				self._save_conversation(input_messages, model_output)
+				if self.save_conversation_path:
+					target = self.save_conversation_path + f'_{self.n_steps}.txt'
+					save_conversation(input_messages, model_output, target, self.save_conversation_path_encoding)
+
 				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
 				self._check_if_stopped_or_paused()
@@ -405,28 +413,17 @@ class Agent:
 		"""Remove think tags from text"""
 		return re.sub(self.THINK_TAGS, '', text)
 
-	def _convert_input_messages(self, input_messages: list[BaseMessage], model_name: Optional[str]) -> list[BaseMessage]:
-		"""Convert input messages to a format that is compatible with the planner model"""
-		if model_name is None:
-			return input_messages
-		if model_name == 'deepseek-reasoner' or model_name.startswith('deepseek-r1'):
-			converted_input_messages = self.message_manager.convert_messages_for_non_function_calling_models(input_messages)
-			merged_input_messages = self.message_manager.merge_successive_messages(converted_input_messages, HumanMessage)
-			merged_input_messages = self.message_manager.merge_successive_messages(merged_input_messages, AIMessage)
-			return merged_input_messages
-		return input_messages
-
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
-		converted_input_messages = self._convert_input_messages(input_messages, self.model_name)
+		converted_input_messages = convert_input_messages(input_messages, self.model_name)
 
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
 			output = self.llm.invoke(converted_input_messages)
 			output.content = self._remove_think_tags(output.content)
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			try:
-				parsed_json = self.message_manager.extract_json_from_model_output(output.content)
+				parsed_json = extract_json_from_model_output(output.content)
 				parsed = self.AgentOutput(**parsed_json)
 			except (ValueError, ValidationError) as e:
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
@@ -446,7 +443,6 @@ class Agent:
 		# cut the number of actions to max_actions_per_step
 		parsed.action = parsed.action[: self.max_actions_per_step]
 		self._log_response(parsed)
-		self.n_steps += 1
 
 		return parsed
 
@@ -464,45 +460,6 @@ class Agent:
 		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 		for i, action in enumerate(response.action):
 			logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
-
-	def _save_conversation(self, input_messages: list[BaseMessage], response: Any) -> None:
-		"""Save conversation history to file if path is specified"""
-		if not self.save_conversation_path:
-			return
-
-		# create folders if not exists
-		os.makedirs(os.path.dirname(self.save_conversation_path), exist_ok=True)
-
-		with open(
-			self.save_conversation_path + f'_{self.n_steps}.txt',
-			'w',
-			encoding=self.save_conversation_path_encoding,
-		) as f:
-			self._write_messages_to_file(f, input_messages)
-			self._write_response_to_file(f, response)
-
-	def _write_messages_to_file(self, f: Any, messages: list[BaseMessage]) -> None:
-		"""Write messages to conversation file"""
-		for message in messages:
-			f.write(f' {message.__class__.__name__} \n')
-
-			if isinstance(message.content, list):
-				for item in message.content:
-					if isinstance(item, dict) and item.get('type') == 'text':
-						f.write(item['text'].strip() + '\n')
-			elif isinstance(message.content, str):
-				try:
-					content = json.loads(message.content)
-					f.write(json.dumps(content, indent=2) + '\n')
-				except json.JSONDecodeError:
-					f.write(message.content.strip() + '\n')
-
-			f.write('\n')
-
-	def _write_response_to_file(self, f: Any, response: Any) -> None:
-		"""Write model response to conversation file"""
-		f.write(' RESPONSE\n')
-		f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
@@ -676,6 +633,7 @@ class Agent:
 			"""
 			Validation results.
 			"""
+
 			is_valid: bool
 			reason: str
 
