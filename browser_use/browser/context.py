@@ -936,15 +936,17 @@ class BrowserContext:
 			if element_node.highlight_index is not None:
 				await self._update_state(focus_element=element_node.highlight_index)
 
-			page = await self.get_current_page()
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
 				raise BrowserError(f'Element: {repr(element_node)} not found')
 
 			# Ensure element is ready for input
-			await element_handle.wait_for_element_state('stable', timeout=1000)
-			await element_handle.scroll_into_view_if_needed(timeout=1000)
+			try:
+				await element_handle.wait_for_element_state('stable', timeout=1000)
+				await element_handle.scroll_into_view_if_needed(timeout=1000)
+			except Exception:
+				pass
 
 			# Get element properties to determine input method
 			is_contenteditable = await element_handle.get_property('isContentEditable')
