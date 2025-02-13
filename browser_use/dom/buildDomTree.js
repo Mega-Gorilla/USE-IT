@@ -17,8 +17,6 @@
 
   const ID = { current: 0 };
 
-  // Quick check to confirm the script receives focusHighlightIndex
-  console.log("focusHighlightIndex:", focusHighlightIndex);
 
   const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
 
@@ -184,9 +182,9 @@
    */
   function isInteractiveElement(element) {
     // Immediately return false for body tag
-    if (element.tagName.toLowerCase() === "body") {
-      return false;
-    }
+    // if (element.tagName.toLowerCase() === "body") {
+    //   return false;
+    // }
 
     // Base interactive elements and roles
     const interactiveElements = new Set([
@@ -195,13 +193,13 @@
       "details",
       "embed",
       "input",
-      "label",
+      // "label",
       "menu",
       "menuitem",
       "object",
       "select",
       "textarea",
-      "summary",
+      "summary"
     ]);
 
     const interactiveRoles = new Set([
@@ -336,6 +334,12 @@
       element.hasAttribute("aria-selected") ||
       element.hasAttribute("aria-checked");
 
+
+      const isContentEditable = element.getAttribute("contenteditable") === "true" || element.isContentEditable ||
+      element.id === "tinymce" ||
+      element.classList.contains("mce-content-body") ||
+      (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
+
     // Check for form-related functionality
     const isFormRelated =
       element.form !== undefined ||
@@ -346,13 +350,13 @@
     const isDraggable =
       element.draggable || element.getAttribute("draggable") === "true";
 
-    // Additional check to prevent body from being marked as interactive
-    if (
-      element.tagName.toLowerCase() === "body" ||
-      element.parentElement?.tagName.toLowerCase() === "body"
-    ) {
-      return false;
-    }
+    // // Additional check to prevent body from being marked as interactive
+    // if (
+    //   element.tagName.toLowerCase() === "body" ||
+    //   element.parentElement?.tagName.toLowerCase() === "body"
+    // ) {
+    //   return false;
+    // }
 
     return (
       hasAriaProps ||
@@ -360,7 +364,8 @@
       hasClickHandler ||
       hasClickListeners ||
       // isFormRelated ||
-      isDraggable
+      isDraggable ||
+      isContentEditable
     );
   }
 
@@ -370,10 +375,10 @@
   function isElementVisible(element) {
     const style = window.getComputedStyle(element);
     return (
-      element.offsetWidth > 0 &&
-      element.offsetHeight > 0 &&
-      style.visibility !== "hidden" &&
-      style.display !== "none"
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
     );
   }
 
@@ -667,11 +672,11 @@
     }
 
     // Handle iframes
-    if (node.tagName === "IFRAME") {
+    if (node.tagName && node.tagName.toLowerCase() === "iframe") {
       try {
         const iframeDoc = node.contentDocument || node.contentWindow.document;
         if (iframeDoc) {
-          for (const child of iframeDoc.body.childNodes) {
+          for (const child of iframeDoc.childNodes) {
             const domElement = buildDomTree(child, node);
             if (domElement) {
               nodeData.children.push(domElement);
