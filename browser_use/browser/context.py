@@ -54,7 +54,7 @@ class BrowserContextConfig:
 	    cookies_file: None
 	        Path to cookies file for persistence
 
-	        disable_security: False
+	        disable_security: True
 	                Disable browser security features
 
 	    minimum_wait_page_load_time: 0.5
@@ -114,7 +114,7 @@ class BrowserContextConfig:
 	maximum_wait_page_load_time: float = 5
 	wait_between_actions: float = 1
 
-	disable_security: bool = False
+	disable_security: bool = True
 
 	browser_window_size: BrowserContextWindowSize = field(default_factory=lambda: {'width': 1280, 'height': 1100})
 	no_viewport: Optional[bool] = None
@@ -231,7 +231,7 @@ class BrowserContext:
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
 			if self.browser.config.cdp_url:
-                		await page.reload() # Reload the page to avoid timeout errors
+				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
@@ -957,7 +957,7 @@ class BrowserContext:
 				else:
 					await element_handle.fill(text)
 			except Exception:
-				logger.debug(f'Could not type text into element. Trying to click and type.')
+				logger.debug('Could not type text into element. Trying to click and type.')
 				await element_handle.click()
 				await element_handle.type(text, delay=5)
 
@@ -1176,7 +1176,6 @@ class BrowserContext:
 			tabs=[],
 		)
 
-
 	async def _get_unique_filename(self, directory, filename):
 		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
 		base, ext = os.path.splitext(filename)
@@ -1186,4 +1185,3 @@ class BrowserContext:
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
-

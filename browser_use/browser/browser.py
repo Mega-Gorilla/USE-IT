@@ -27,7 +27,7 @@ class BrowserConfig:
 		headless: True
 			Whether to run browser in headless mode
 
-		disable_security: False
+		disable_security: True
 			Disable browser security features
 
 		extra_chromium_args: []
@@ -82,9 +82,7 @@ class Browser:
 				'--disable-features=IsolateOrigins,site-per-process',
 			]
 
-	async def new_context(
-		self, config: BrowserContextConfig = BrowserContextConfig()
-	) -> BrowserContext:
+	async def new_context(self, config: BrowserContextConfig = BrowserContextConfig()) -> BrowserContext:
 		"""Create a browser context"""
 		return BrowserContext(config=config, browser=self)
 
@@ -147,11 +145,12 @@ class Browser:
 			[
 				self.config.chrome_instance_path,
 				'--remote-debugging-port=9222',
-			] + self.config.extra_chromium_args,
+			]
+			+ self.config.extra_chromium_args,
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.DEVNULL,
 		)
-    
+
 		# Attempt to connect again after starting a new instance
 		for _ in range(10):
 			try:
