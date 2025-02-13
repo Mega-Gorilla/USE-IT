@@ -4,6 +4,7 @@ Playwright browser on steroids.
 
 import asyncio
 import base64
+import gc
 import json
 import logging
 import os
@@ -132,6 +133,8 @@ class BrowserContextConfig:
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
 
+	_force_keep_context_alive: bool = False
+
 
 @dataclass
 class BrowserSession:
@@ -181,10 +184,11 @@ class BrowserContext:
 				except Exception as e:
 					logger.debug(f'Failed to stop tracing: {e}')
 
-			try:
-				await self.session.context.close()
-			except Exception as e:
-				logger.debug(f'Failed to close context: {e}')
+			if not self.config._force_keep_context_alive:
+				try:
+					await self.session.context.close()
+				except Exception as e:
+					logger.debug(f'Failed to close context: {e}')
 		finally:
 			self.session = None
 
@@ -194,9 +198,11 @@ class BrowserContext:
 			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
 				# Use sync Playwright method for force cleanup
-				if hasattr(self.session.context, '_impl_obj'):
+				if not self.config._force_keep_context_alive and hasattr(self.session.context, '_impl_obj'):
 					asyncio.run(self.session.context._impl_obj.close())
+
 				self.session = None
+				gc.collect()
 			except Exception as e:
 				logger.warning(f'Failed to force close browser context: {e}')
 
@@ -231,7 +237,7 @@ class BrowserContext:
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
 			if self.browser.config.cdp_url:
-                		await page.reload() # Reload the page to avoid timeout errors
+				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
@@ -957,7 +963,7 @@ class BrowserContext:
 				else:
 					await element_handle.fill(text)
 			except Exception:
-				logger.debug(f'Could not type text into element. Trying to click and type.')
+				logger.debug('Could not type text into element. Trying to click and type.')
 				await element_handle.click()
 				await element_handle.type(text, delay=5)
 
@@ -1176,7 +1182,6 @@ class BrowserContext:
 			tabs=[],
 		)
 
-
 	async def _get_unique_filename(self, directory, filename):
 		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
 		base, ext = os.path.splitext(filename)
@@ -1186,4 +1191,3 @@ class BrowserContext:
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
-
