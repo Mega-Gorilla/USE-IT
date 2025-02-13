@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional, Type
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
 	AIMessage,
 	BaseMessage,
@@ -14,7 +11,6 @@ from langchain_core.messages import (
 	SystemMessage,
 	ToolMessage,
 )
-from langchain_openai import ChatOpenAI
 
 from browser_use.agent.message_manager.views import MessageHistory, MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
@@ -27,7 +23,6 @@ logger = logging.getLogger(__name__)
 class MessageManager:
 	def __init__(
 		self,
-		llm: BaseChatModel,
 		task: str,
 		action_descriptions: str,
 		system_prompt_class: Type[SystemPrompt],
@@ -40,8 +35,6 @@ class MessageManager:
 		message_context: Optional[str] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
 	):
-		self.llm = llm
-		self.system_prompt_class = system_prompt_class
 		self.max_input_tokens = max_input_tokens
 		self.history = MessageHistory()
 		self.task = task
@@ -52,7 +45,8 @@ class MessageManager:
 		self.max_error_length = max_error_length
 		self.message_context = message_context
 		self.sensitive_data = sensitive_data
-		system_message = self.system_prompt_class(
+
+		system_message = system_prompt_class(
 			self.action_descriptions,
 			max_actions_per_step=max_actions_per_step,
 		).get_system_message()
@@ -95,12 +89,12 @@ class MessageManager:
 		]
 
 		example_tool_call = AIMessage(
-			content=f'',
+			content='',
 			tool_calls=tool_calls,
 		)
 		self._add_message_with_tokens(example_tool_call)
 		tool_message = ToolMessage(
-			content=f'Browser started',
+			content='Browser started',
 			tool_call_id=str(self.tool_id),
 		)
 		self._add_message_with_tokens(tool_message)

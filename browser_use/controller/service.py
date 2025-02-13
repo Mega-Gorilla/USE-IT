@@ -34,17 +34,13 @@ class Controller:
 		exclude_actions: list[str] = [],
 		output_model: Optional[Type[BaseModel]] = None,
 	):
-		self.exclude_actions = exclude_actions
-		self.output_model = output_model
 		self.registry = Registry(exclude_actions)
-		self._register_default_actions()
 
-	def _register_default_actions(self):
 		"""Register all default browser actions"""
 
-		if self.output_model is not None:
+		if output_model is not None:
 
-			@self.registry.action('Complete task', param_model=self.output_model)
+			@self.registry.action('Complete task', param_model=output_model)
 			async def done(params: BaseModel):
 				return ActionResult(is_done=True, extracted_content=params.model_dump_json())
 		else:
@@ -433,6 +429,8 @@ class Controller:
 				logger.error(msg)
 				return ActionResult(error=msg, include_in_memory=True)
 
+	# Register ---------------------------------------------------------------
+
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
 
@@ -440,11 +438,14 @@ class Controller:
 		"""
 		return self.registry.action(description, **kwargs)
 
+	# Act --------------------------------------------------------------------
+
 	@time_execution_sync('--act')
 	async def act(
 		self,
 		action: ActionModel,
 		browser_context: BrowserContext,
+		#
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
 		available_file_paths: Optional[list[str]] = None,

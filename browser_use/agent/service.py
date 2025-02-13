@@ -525,10 +525,7 @@ class Agent:
 
 			# Execute initial actions if provided
 			if self.initial_actions:
-				result = await self.multi_act(
-					self.initial_actions,
-					check_for_new_elements=False,
-				)
+				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
 				self._last_result = result
 
 			for step in range(max_steps):

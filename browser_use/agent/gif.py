@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import base64
 import io
+import logging
 import os
 import platform
-import textwrap
 from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-from browser_use.agent.views import AgentHistoryList
+from browser_use.agent.views import (
+	AgentHistoryList,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def create_history_gif(
@@ -309,109 +315,3 @@ def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
 		lines.append(' '.join(current_line))
 
 	return '\n'.join(lines)
-
-
-def _create_frame(screenshot: str, text: str, step_number: int, width: int = 1200, height: int = 800) -> Image.Image:
-	"""Create a frame for the GIF with improved styling"""
-
-	# Create base image
-	frame = Image.new('RGB', (width, height), 'white')
-
-	# Load and resize screenshot
-	screenshot_img = Image.open(BytesIO(base64.b64decode(screenshot)))
-	screenshot_img.thumbnail((width - 40, height - 160))  # Leave space for text
-
-	# Calculate positions
-	screenshot_x = (width - screenshot_img.width) // 2
-	screenshot_y = 120  # Leave space for header
-
-	# Draw screenshot
-	frame.paste(screenshot_img, (screenshot_x, screenshot_y))
-
-	# Load browser-use logo
-	logo_size = 100  # Increased size for browser-use logo
-	logo_path = os.path.join(os.path.dirname(__file__), 'assets/browser-use-logo.png')
-	if os.path.exists(logo_path):
-		logo = Image.open(logo_path)
-		logo.thumbnail((logo_size, logo_size))
-		frame.paste(logo, (width - logo_size - 20, 20), logo if 'A' in logo.getbands() else None)
-
-	# Create drawing context
-	draw = ImageDraw.Draw(frame)
-
-	# Load fonts
-	try:
-		title_font = ImageFont.truetype('Arial.ttf', 36)  # Increased font size
-		text_font = ImageFont.truetype('Arial.ttf', 24)  # Increased font size
-		number_font = ImageFont.truetype('Arial.ttf', 48)  # Increased font size for step number
-	except:
-		title_font = ImageFont.load_default()
-		text_font = ImageFont.load_default()
-		number_font = ImageFont.load_default()
-
-	# Draw task text with increased spacing
-	margin = 80  # Increased margin
-	max_text_width = width - (2 * margin)
-
-	# Create rounded rectangle for goal text
-	text_padding = 20
-	text_lines = textwrap.wrap(text, width=60)
-	text_height = sum(draw.textsize(line, font=text_font)[1] for line in text_lines)
-	text_box_height = text_height + (2 * text_padding)
-
-	# Draw rounded rectangle background for goal
-	goal_bg_coords = [
-		margin - text_padding,
-		40,  # Top position
-		width - margin + text_padding,
-		40 + text_box_height,
-	]
-	draw.rounded_rectangle(
-		goal_bg_coords,
-		radius=15,  # Increased radius for more rounded corners
-		fill='#f0f0f0',
-	)
-
-	# Draw browser-use small logo in top left of goal box
-	small_logo_size = 30
-	if os.path.exists(logo_path):
-		small_logo = Image.open(logo_path)
-		small_logo.thumbnail((small_logo_size, small_logo_size))
-		frame.paste(
-			small_logo,
-			(margin - text_padding + 10, 45),  # Positioned inside goal box
-			small_logo if 'A' in small_logo.getbands() else None,
-		)
-
-	# Draw text with proper wrapping
-	y = 50  # Starting y position for text
-	for line in text_lines:
-		draw.text((margin + small_logo_size + 20, y), line, font=text_font, fill='black')
-		y += draw.textsize(line, font=text_font)[1] + 5
-
-	# Draw step number with rounded background
-	number_text = str(step_number)
-	number_size = draw.textsize(number_text, font=number_font)
-	number_padding = 20
-	number_box_width = number_size[0] + (2 * number_padding)
-	number_box_height = number_size[1] + (2 * number_padding)
-
-	# Draw rounded rectangle for step number
-	number_bg_coords = [
-		20,  # Left position
-		height - number_box_height - 20,  # Bottom position
-		20 + number_box_width,
-		height - 20,
-	]
-	draw.rounded_rectangle(
-		number_bg_coords,
-		radius=15,
-		fill='#007AFF',  # Blue background
-	)
-
-	# Center number in its background
-	number_x = number_bg_coords[0] + ((number_box_width - number_size[0]) // 2)
-	number_y = number_bg_coords[1] + ((number_box_height - number_size[1]) // 2)
-	draw.text((number_x, number_y), number_text, font=number_font, fill='white')
-
-	return frame
