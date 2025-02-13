@@ -199,6 +199,7 @@
       "object",
       "select",
       "textarea",
+      "canvas",
       "summary"
     ]);
 
