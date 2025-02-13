@@ -52,6 +52,24 @@ from browser_use.utils import time_execution_async
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+
+def log_response(response: AgentOutput) -> None:
+	"""Utility function to log the model's response."""
+
+	if 'Success' in response.current_state.evaluation_previous_goal:
+		emoji = '👍'
+	elif 'Failed' in response.current_state.evaluation_previous_goal:
+		emoji = '⚠'
+	else:
+		emoji = '🤷'
+	logger.debug(f'🤖 {emoji} Page summary: {response.current_state.page_summary}')
+	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
+	logger.info(f'🧠 Memory: {response.current_state.memory}')
+	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
+	for i, action in enumerate(response.action):
+		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
+
+
 T = TypeVar('T', bound=BaseModel)
 
 
@@ -261,11 +279,11 @@ class Agent:
 	def add_new_task(self, new_task: str) -> None:
 		self.message_manager.add_new_task(new_task)
 
-	def _check_if_stopped_or_paused(self) -> bool:
+	def _raise_if_stopped_or_paused(self) -> None:
+		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
 		if self._stopped or self._paused:
 			logger.debug('Agent paused after getting state')
 			raise InterruptedError
-		return False
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
@@ -279,7 +297,7 @@ class Agent:
 		try:
 			state = await self.browser_context.get_state()
 
-			self._check_if_stopped_or_paused()
+			self._raise_if_stopped_or_paused()
 			self.message_manager.add_state_message(state, self._last_result, step_info, self.use_vision)
 
 			# Run planner at specified intervals if planner is configured
@@ -290,7 +308,7 @@ class Agent:
 
 			input_messages = self.message_manager.get_messages()
 
-			self._check_if_stopped_or_paused()
+			self._raise_if_stopped_or_paused()
 
 			try:
 				model_output = await self.get_next_action(input_messages)
@@ -306,7 +324,7 @@ class Agent:
 
 				self.message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
-				self._check_if_stopped_or_paused()
+				self._raise_if_stopped_or_paused()
 
 				self.message_manager.add_model_output(model_output)
 			except Exception as e:
@@ -387,8 +405,6 @@ class Agent:
 		result: list[ActionResult],
 	) -> None:
 		"""Create and store history item"""
-		interacted_element = None
-		len_result = len(result)
 
 		if model_output:
 			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
@@ -442,24 +458,10 @@ class Agent:
 
 		# cut the number of actions to max_actions_per_step
 		parsed.action = parsed.action[: self.max_actions_per_step]
-		self._log_response(parsed)
+
+		log_response(parsed)
 
 		return parsed
-
-	def _log_response(self, response: AgentOutput) -> None:
-		"""Log the model's response"""
-		if 'Success' in response.current_state.evaluation_previous_goal:
-			emoji = '👍'
-		elif 'Failed' in response.current_state.evaluation_previous_goal:
-			emoji = '⚠'
-		else:
-			emoji = '🤷'
-		logger.debug(f'🤖 {emoji} Page summary: {response.current_state.page_summary}')
-		logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
-		logger.info(f'🧠 Memory: {response.current_state.memory}')
-		logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
-		for i, action in enumerate(response.action):
-			logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
@@ -490,12 +492,20 @@ class Agent:
 				self._last_result = result
 
 			for step in range(max_steps):
-				if self._too_many_failures():
+				# Check if we should stop due to too many failures
+				if self.consecutive_failures >= self.max_failures:
+					logger.error(f'❌ Stopping due to {self.max_failures} consecutive failures')
 					break
 
 				# Check control flags before each step
-				if not await self._handle_control_flags():
+				if self._stopped:
+					logger.info('Agent stopped')
 					break
+
+				while self._paused:
+					await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
+					if self._stopped:  # Allow stopping while paused
+						break
 
 				await self.step()
 
@@ -550,12 +560,12 @@ class Agent:
 		cached_selector_map = session.cached_state.selector_map
 		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
 
-		self._check_if_stopped_or_paused()
+		self._raise_if_stopped_or_paused()
 
 		await self.browser_context.remove_highlights()
 
 		for i, action in enumerate(actions):
-			self._check_if_stopped_or_paused()
+			self._raise_if_stopped_or_paused()
 
 			if action.get_index() is not None and i != 0:
 				new_state = await self.browser_context.get_state()
@@ -567,7 +577,7 @@ class Agent:
 					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
 					break
 
-			self._check_if_stopped_or_paused()
+			self._raise_if_stopped_or_paused()
 
 			results.append(
 				await self.controller.act(
@@ -583,25 +593,6 @@ class Agent:
 			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
 		return results
-
-	def _too_many_failures(self) -> bool:
-		"""Check if we should stop due to too many failures"""
-		if self.consecutive_failures >= self.max_failures:
-			logger.error(f'❌ Stopping due to {self.max_failures} consecutive failures')
-			return True
-		return False
-
-	async def _handle_control_flags(self) -> bool:
-		"""Handle pause and stop flags. Returns True if execution should continue."""
-		if self._stopped:
-			logger.info('Agent stopped')
-			return False
-
-		while self._paused:
-			await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
-			if self._stopped:  # Allow stopping while paused
-				return False
-		return True
 
 	async def _validate_output(self) -> bool:
 		"""Validate the output of the last action is what the user wanted"""
@@ -838,7 +829,8 @@ class Agent:
 
 			planner_messages[-1] = HumanMessage(content=new_msg)
 
-		planner_messages = self._convert_input_messages(planner_messages, self.planner_model_name)
+		planner_messages = convert_input_messages(planner_messages, self.planner_model_name)
+
 		# Get planner output
 		response = await self.planner_llm.ainvoke(planner_messages)
 		plan = response.content
