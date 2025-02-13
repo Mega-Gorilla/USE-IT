@@ -1,17 +1,28 @@
 import asyncio
 import time
 
-from tokencost import count_string_tokens
-
 from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from browser_use.dom.service import DomService
 from browser_use.utils import time_execution_sync
 
 
 async def test_process_html_file():
-	browser = Browser(config=BrowserConfig(headless=False))
+	config = BrowserContextConfig(
+		cookies_file='cookies3.json',
+		disable_security=True,
+		wait_for_network_idle_page_load_time=2,
+	)
+
+	browser = Browser(
+		config=BrowserConfig(
+			# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		)
+	)
+	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
+		'https://csigna-eup1u6rnd.a99d1.metricstream.com/ui/form/MS_GRC_RISK/create',
 		'https://kayak.com/flights',
 		'https://immobilienscout24.de',
 		'https://google.com',
@@ -19,7 +30,7 @@ async def test_process_html_file():
 		'https://github.com',
 	]
 
-	async with await browser.new_context() as context:
+	async with context as context:
 		page = await context.get_current_page()
 		dom_service = DomService(page)
 
@@ -70,45 +81,66 @@ async def test_process_html_file():
 
 
 async def test_focus_vs_all_elements():
-	browser = Browser(config=BrowserConfig(headless=False))
+	config = BrowserContextConfig(
+		cookies_file='cookies3.json',
+		disable_security=True,
+		wait_for_network_idle_page_load_time=2,
+	)
+
+	browser = Browser(
+		config=BrowserConfig(
+			# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		)
+	)
+	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
-		'https://google.com',  # Simple UI
-		'https://amazon.com',  # Complex UI
+		'https://csigna-eup1u6rnd.a99d1.metricstream.com/ui/form/MS_GRC_RISK/create',
+		'https://kayak.com/flights',
+		'https://immobilienscout24.de',
+		'https://google.com',
+		'https://amazon.com',
+		'https://github.com',
 	]
 
-	async with await browser.new_context() as context:
+	async with context as context:
 		page = await context.get_current_page()
 		dom_service = DomService(page)
 
 		for website in websites:
-			print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
+			# sleep 2
 			await page.goto(website)
-			time.sleep(2)  # Additional wait for dynamic content
+			time.sleep(2)
 
-			# First get all elements
-			print('\nGetting all elements:')
-			all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
-				highlight_elements=True, viewport_expansion=0
-			)
+			while True:
+				print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
+				time.sleep(2)  # Additional wait for dynamic content
 
-			selector_map = all_elements_state.selector_map
-			total_elements = len(selector_map.keys())
-			print(f'Total number of elements: {total_elements}')
+				# First get all elements
+				print('\nGetting all elements:')
+				all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
+					highlight_elements=True, viewport_expansion=0
+				)
 
-			answer = input('Which element do you want to focus on? (Enter index): ')
-			await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
+				selector_map = all_elements_state.selector_map
+				total_elements = len(selector_map.keys())
+				print(f'Total number of elements: {total_elements}')
 
-			focus_element = int(answer)
-			focus_state = await time_execution_sync('get_focused_element')(dom_service.get_clickable_elements)(
-				highlight_elements=True, focus_element=focus_element, viewport_expansion=0
-			)
-			focus_selector_map = focus_state.selector_map
-			focus_element_count = len(focus_selector_map.keys())
-			print(f'Number of highlighted elements when focused: {focus_element_count}')
+				answer = input('Which element do you want to focus on? (Enter index): ')
+				if answer == 'q':
+					break
+				await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
 
-			input('Press Enter to clear highlights and continue...')
-			await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
+				focus_element = int(answer)
+				focus_state = await time_execution_sync('get_focused_element')(dom_service.get_clickable_elements)(
+					highlight_elements=True, focus_element=focus_element, viewport_expansion=0
+				)
+				focus_selector_map = focus_state.selector_map
+				focus_element_count = len(focus_selector_map.keys())
+				print(f'Number of highlighted elements when focused: {focus_element_count}')
+
+				input('Press Enter to clear highlights and continue...')
+				await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
 
 
 if __name__ == '__main__':
