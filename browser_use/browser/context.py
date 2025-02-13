@@ -4,6 +4,7 @@ Playwright browser on steroids.
 
 import asyncio
 import base64
+import gc
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, TypedDict
 
+from playwright._impl._errors import TimeoutError
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
 	BrowserContext as PlaywrightBrowserContext,
@@ -23,7 +25,12 @@ from playwright.async_api import (
 	Page,
 )
 
-from browser_use.browser.views import BrowserError, BrowserState, TabInfo, URLNotAllowedError
+from browser_use.browser.views import (
+	BrowserError,
+	BrowserState,
+	TabInfo,
+	URLNotAllowedError,
+)
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_sync
@@ -45,61 +52,61 @@ class BrowserContextConfig:
 	Configuration for the BrowserContext.
 
 	Default values:
-		cookies_file: None
-			Path to cookies file for persistence
+	    cookies_file: None
+	        Path to cookies file for persistence
 
 	        disable_security: False
 	                Disable browser security features
 
-		minimum_wait_page_load_time: 0.5
-			Minimum time to wait before getting page state for LLM input
+	    minimum_wait_page_load_time: 0.5
+	        Minimum time to wait before getting page state for LLM input
 
 	        wait_for_network_idle_page_load_time: 1.0
 	                Time to wait for network requests to finish before getting page state.
 	                Lower values may result in incomplete page loads.
 
-		maximum_wait_page_load_time: 5.0
-			Maximum time to wait for page load before proceeding anyway
+	    maximum_wait_page_load_time: 5.0
+	        Maximum time to wait for page load before proceeding anyway
 
-		wait_between_actions: 1.0
-			Time to wait between multiple per step actions
+	    wait_between_actions: 1.0
+	        Time to wait between multiple per step actions
 
-		browser_window_size: {
-				'width': 1280,
-				'height': 1100,
-			}
-			Default browser window size
+	    browser_window_size: {
+	            'width': 1280,
+	            'height': 1100,
+	        }
+	        Default browser window size
 
-		no_viewport: False
-			Disable viewport
+	    no_viewport: False
+	        Disable viewport
 
-		save_recording_path: None
-			Path to save video recordings
+	    save_recording_path: None
+	        Path to save video recordings
 
-		save_downloads_path: None
+	    save_downloads_path: None
 	        Path to save downloads to
 
-		trace_path: None
-			Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
+	    trace_path: None
+	        Path to save trace files. It will auto name the file with the TRACE_PATH/{context_id}.zip
 
-		locale: None
-			Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+	    locale: None
+	        Specify user locale, for example en-GB, de-DE, etc. Locale will affect navigator.language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
 
-		user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-			custom user agent to use.
+	    user_agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
+	        custom user agent to use.
 
-		highlight_elements: True
-			Highlight elements in the DOM on the screen
+	    highlight_elements: True
+	        Highlight elements in the DOM on the screen
 
-		viewport_expansion: 500
-			Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
+	    viewport_expansion: 500
+	        Viewport expansion in pixels. This amount will increase the number of elements which are included in the state what the LLM will see. If set to -1, all elements will be included (this leads to high token usage). If set to 0, only the elements which are visible in the viewport will be included.
 
-		allowed_domains: None
-			List of allowed domains that can be accessed. If None, all domains are allowed.
-			Example: ['example.com', 'api.example.com']
+	    allowed_domains: None
+	        List of allowed domains that can be accessed. If None, all domains are allowed.
+	        Example: ['example.com', 'api.example.com']
 
-		include_dynamic_attributes: bool = True
-			Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
+	    include_dynamic_attributes: bool = True
+	        Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
 	"""
 
 	cookies_file: str | None = None
@@ -125,6 +132,8 @@ class BrowserContextConfig:
 	viewport_expansion: int = 500
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
+
+	_force_keep_context_alive: bool = False
 
 
 @dataclass
@@ -175,10 +184,11 @@ class BrowserContext:
 				except Exception as e:
 					logger.debug(f'Failed to stop tracing: {e}')
 
-			try:
-				await self.session.context.close()
-			except Exception as e:
-				logger.debug(f'Failed to close context: {e}')
+			if not self.config._force_keep_context_alive:
+				try:
+					await self.session.context.close()
+				except Exception as e:
+					logger.debug(f'Failed to close context: {e}')
 		finally:
 			self.session = None
 
@@ -188,9 +198,11 @@ class BrowserContext:
 			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
 				# Use sync Playwright method for force cleanup
-				if hasattr(self.session.context, '_impl_obj'):
+				if not self.config._force_keep_context_alive and hasattr(self.session.context, '_impl_obj'):
 					asyncio.run(self.session.context._impl_obj.close())
+
 				self.session = None
+				gc.collect()
 			except Exception as e:
 				logger.warning(f'Failed to force close browser context: {e}')
 
@@ -202,7 +214,15 @@ class BrowserContext:
 
 		context = await self._create_context(playwright_browser)
 		self._add_new_page_listener(context)
-		page = await context.new_page()
+
+		# Check if there's an existing page we can use
+		existing_pages = context.pages
+		if existing_pages:
+			page = existing_pages[-1]  # Use the last existing page
+			logger.debug('Reusing existing page')
+		else:
+			page = await context.new_page()
+			logger.debug('Created new page')
 
 		# Instead of calling _update_state(), create an empty initial state
 		initial_state = self._get_initial_state(page)
@@ -216,6 +236,8 @@ class BrowserContext:
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
 		async def on_page(page: Page):
+			if self.browser.config.cdp_url:
+				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
@@ -268,38 +290,38 @@ class BrowserContext:
 		# Expose anti-detection scripts
 		await context.add_init_script(
 			"""
-			// Webdriver property
-			Object.defineProperty(navigator, 'webdriver', {
-				get: () => undefined
-			});
+            // Webdriver property
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
 
-			// Languages
-			Object.defineProperty(navigator, 'languages', {
-				get: () => ['en-US']
-			});
+            // Languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US']
+            });
 
-			// Plugins
-			Object.defineProperty(navigator, 'plugins', {
-				get: () => [1, 2, 3, 4, 5]
-			});
+            // Plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
 
-			// Chrome runtime
-			window.chrome = { runtime: {} };
+            // Chrome runtime
+            window.chrome = { runtime: {} };
 
-			// Permissions
-			const originalQuery = window.navigator.permissions.query;
-			window.navigator.permissions.query = (parameters) => (
-				parameters.name === 'notifications' ?
-					Promise.resolve({ state: Notification.permission }) :
-					originalQuery(parameters)
-			);
-			(function () {
-				const originalAttachShadow = Element.prototype.attachShadow;
-				Element.prototype.attachShadow = function attachShadow(options) {
-					return originalAttachShadow.call(this, { ...options, mode: "open" });
-				};
-			})();
-			"""
+            // Permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            (function () {
+                const originalAttachShadow = Element.prototype.attachShadow;
+                Element.prototype.attachShadow = function attachShadow(options) {
+                    return originalAttachShadow.call(this, { ...options, mode: "open" });
+                };
+            })();
+            """
 		)
 
 		return context
@@ -886,7 +908,8 @@ class BrowserContext:
 		iframes = [item for item in parents if item.tag_name == 'iframe']
 		for parent in iframes:
 			css_selector = self._enhanced_css_selector_for_element(
-				parent, include_dynamic_attributes=self.config.include_dynamic_attributes
+				parent,
+				include_dynamic_attributes=self.config.include_dynamic_attributes,
 			)
 			current_frame = current_frame.frame_locator(css_selector)
 
@@ -910,6 +933,10 @@ class BrowserContext:
 			return None
 
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
+		"""
+		Input text into an element with proper error handling and state management.
+		Handles different types of input fields and ensures proper element state before input.
+		"""
 		try:
 			# Highlight before typing
 			if element_node.highlight_index is not None:
@@ -919,15 +946,30 @@ class BrowserContext:
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
-				raise Exception(f'Element: {repr(element_node)} not found')
+				raise BrowserError(f'Element: {repr(element_node)} not found')
 
-			await element_handle.scroll_into_view_if_needed(timeout=2500)
-			await element_handle.fill('')
-			await element_handle.type(text)
-			await page.wait_for_load_state()
+			# Ensure element is ready for input
+			await element_handle.wait_for_element_state('stable', timeout=2000)
+			await element_handle.scroll_into_view_if_needed(timeout=2100)
+
+			# Get element properties to determine input method
+			is_contenteditable = await element_handle.get_property('isContentEditable')
+
+			# Different handling for contenteditable vs input fields
+			try:
+				if await is_contenteditable.json_value():
+					await element_handle.evaluate('el => el.textContent = ""')
+					await element_handle.type(text, delay=5)
+				else:
+					await element_handle.fill(text)
+			except Exception:
+				logger.debug('Could not type text into element. Trying to click and type.')
+				await element_handle.click()
+				await element_handle.type(text, delay=5)
 
 		except Exception as e:
-			raise Exception(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
 		"""
@@ -954,8 +996,10 @@ class BrowserContext:
 						async with page.expect_download(timeout=5000) as download_info:
 							await click_func()
 						download = await download_info.value
-						# If the download succeeds, save to disk
-						download_path = os.path.join(self.config.save_downloads_path, download.suggested_filename)
+						# Determine file path
+						suggested_filename = download.suggested_filename
+						unique_filename = await self._get_unique_filename(self.config.save_downloads_path, suggested_filename)
+						download_path = os.path.join(self.config.save_downloads_path, unique_filename)
 						await download.save_as(download_path)
 						logger.debug(f'Download triggered. Saved file to: {download_path}')
 						return download_path
@@ -1058,7 +1102,7 @@ class BrowserContext:
 		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
-				logger.info(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
+				logger.debug(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
 
 				# Check if the path is a directory and create it if necessary
 				dirname = os.path.dirname(self.config.cookies_file)
@@ -1137,3 +1181,13 @@ class BrowserContext:
 			screenshot=None,
 			tabs=[],
 		)
+
+	async def _get_unique_filename(self, directory, filename):
+		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
+		base, ext = os.path.splitext(filename)
+		counter = 1
+		new_filename = filename
+		while os.path.exists(os.path.join(directory, new_filename)):
+			new_filename = f'{base} ({counter}){ext}'
+			counter += 1
+		return new_filename
