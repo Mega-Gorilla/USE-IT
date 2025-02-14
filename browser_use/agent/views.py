@@ -72,6 +72,7 @@ class AgentState(BaseModel):
 	last_plan: Optional[str] = None
 	paused: bool = False
 	stopped: bool = False
+
 	message_manager_state: MessageManagerState = Field(default_factory=MessageManagerState)
 
 	# class Config:
