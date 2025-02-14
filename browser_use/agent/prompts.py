@@ -1,11 +1,12 @@
 import datetime
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from browser_use.agent.views import ActionResult, AgentStepInfo
-from browser_use.browser.views import BrowserState
+if TYPE_CHECKING:
+	from browser_use.agent.views import ActionResult, AgentStepInfo
+	from browser_use.browser.views import BrowserState
 
 
 class SystemPrompt:
@@ -157,11 +158,11 @@ Remember: Your responses must be valid JSON matching the specified format. Each 
 class AgentMessagePrompt:
 	def __init__(
 		self,
-		state: BrowserState,
-		result: Optional[List[ActionResult]] = None,
+		state: 'BrowserState',
+		result: Optional[List['ActionResult']] = None,
 		include_attributes: list[str] = [],
 		max_error_length: int = 400,
-		step_info: Optional[AgentStepInfo] = None,
+		step_info: Optional['AgentStepInfo'] = None,
 	):
 		self.state = state
 		self.result = result

@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Optional, Type
 
 from langchain_core.prompts import PromptTemplate
-from lmnr import Laminar
+from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult

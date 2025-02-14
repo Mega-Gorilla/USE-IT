@@ -88,8 +88,8 @@ def create_history_gif(
 		task_frame = _create_task_frame(
 			task,
 			history.history[0].state.screenshot,
-			title_font,
-			regular_font,
+			title_font,  # type: ignore
+			regular_font,  # type: ignore
 			logo,
 			line_spacing,
 		)
@@ -109,8 +109,8 @@ def create_history_gif(
 				image=image,
 				step_number=i,
 				goal_text=item.model_output.current_state.next_goal,
-				regular_font=regular_font,
-				title_font=title_font,
+				regular_font=regular_font,  # type: ignore
+				title_font=title_font,  # type: ignore
 				margin=margin,
 				logo=logo,
 			)

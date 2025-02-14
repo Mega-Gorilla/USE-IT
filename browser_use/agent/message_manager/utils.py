@@ -76,7 +76,7 @@ def _merge_successive_messages(messages: list[BaseMessage], class_to_merge: Type
 			streak += 1
 			if streak > 1:
 				if isinstance(message.content, list):
-					merged_messages[-1].content += message.content[0]['text']
+					merged_messages[-1].content += message.content[0]['text']  # type:ignore
 				else:
 					merged_messages[-1].content += message.content
 			else:
