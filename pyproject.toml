@@ -30,7 +30,10 @@ dependencies = [
     "playwright>=1.49.0",
     "setuptools>=75.8.0",
     "lmnr[langchain]>=0.4.59",
-    "markdownify==0.14.1"
+    "markdownify==0.14.1",
+    "fastapi>=0.115.8",
+    "inngest>=0.4.19",
+    "uvicorn>=0.34.0",
 ]
 
 [project.optional-dependencies]

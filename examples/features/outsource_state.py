@@ -30,6 +30,7 @@ async def main():
 			headless=True,
 		)
 	)
+
 	browser_context = await browser.new_context()
 
 	agent_state = AgentState()
