@@ -21,13 +21,16 @@ class ManagedMessage(BaseModel):
 	message: BaseMessage
 	metadata: MessageMetadata = Field(default_factory=MessageMetadata)
 
+	model_config = ConfigDict(arbitrary_types_allowed=True)
 
-class MessageHistory:
+
+class MessageHistory(BaseModel):
 	"""History of messages with metadata"""
 
-	def __init__(self):
-		self.messages: list[ManagedMessage] = []
-		self.total_tokens: int = 0
+	messages: list[ManagedMessage] = Field(default_factory=list)
+	total_tokens: int = 0
+
+	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	def add_message(self, message: BaseMessage, metadata: MessageMetadata, position: int = -1) -> None:
 		"""Add message with metadata to history"""

@@ -67,7 +67,7 @@ class AgentState(BaseModel):
 	agent_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 	n_steps: int = 1
 	consecutive_failures: int = 0
-	last_result: Optional[List[ActionResult]] = None
+	last_result: Optional[List['ActionResult']] = None
 	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[]))
 	last_plan: Optional[str] = None
 	paused: bool = False
