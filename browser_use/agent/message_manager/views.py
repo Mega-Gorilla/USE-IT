@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from langchain_core.load import dumps, loads
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import AgentOutput
@@ -22,6 +23,41 @@ class ManagedMessage(BaseModel):
 	metadata: MessageMetadata = Field(default_factory=MessageMetadata)
 
 	model_config = ConfigDict(arbitrary_types_allowed=True)
+
+	# https://github.com/pydantic/pydantic/discussions/7558
+	@model_serializer(mode='wrap')
+	def to_json(self, original_dump, info) -> str:
+		"""
+		Returns the JSON representation of the model.
+
+		It uses langchain's `dumps` function to serialize the `message`
+		property before encoding the overall dict with json.dumps.
+		"""
+		data = original_dump(self)
+
+		# NOTE: We override the message field to use langchain JSON serialization.
+		data['message'] = dumps(self.message)
+
+		return data
+
+	@model_validator(mode='before')
+	@classmethod
+	def validate(
+		cls,
+		value: Any,
+		*,
+		strict: bool | None = None,
+		from_attributes: bool | None = None,
+		context: Any | None = None,
+	) -> Any:
+		"""
+		Custom validator that uses langchain's `loads` function
+		to parse the message if it is provided as a JSON string.
+		"""
+		if isinstance(value, dict) and 'message' in value and isinstance(value['message'], str):
+			# Use langchain's loads to convert the JSON string back into a BaseMessage object
+			value['message'] = loads(value['message'])
+		return value
 
 
 class MessageHistory(BaseModel):

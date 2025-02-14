@@ -1,17 +1,18 @@
 import asyncio
-import json
 import logging
 from typing import Any
 
 import inngest
 import inngest.fast_api
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from langchain_openai import ChatOpenAI
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentState
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
+
+# Simulated Services ---------------------------------------------------------
 
 
 class InMemoryDatabase:
@@ -20,14 +21,11 @@ class InMemoryDatabase:
 		self.key_counter = 0
 
 	async def get(self, key: str) -> Any:
-		raw = self.data.get(key)
-		if raw is None:
-			return None
-		return json.loads(raw)
+		return self.data.get(key)
 
 	async def set(self, value: Any):
 		key = f'state_{self.key_counter}'
-		self.data[key] = json.dumps(value)
+		self.data[key] = value
 		self.key_counter += 1
 		return key
 
@@ -61,11 +59,18 @@ class InMemoryBrowserService:
 		# Simulate a remote browser fetching.
 		return self.browser, self.contexts[id]
 
+	async def close_context(self, id: int):
+		# Simulate a remote browser closing.
+		context = self.contexts[id]
+		await context.close()
+
+		del self.contexts[id]
+
 
 browser_service = InMemoryBrowserService()
 
 
-# Inngest Loop
+# Inngest Loop ---------------------------------------------------------------
 
 inngest_client = inngest.Inngest(
 	app_id='browser-use-inngest',
@@ -77,6 +82,8 @@ inngest_client = inngest.Inngest(
 
 
 async def create_agent(task: str) -> tuple[str, str, int]:
+	print('🔍 Creating agent')
+
 	context_id = await browser_service.create_context()
 
 	initial_state = AgentState().model_dump_json(exclude={'history'})
@@ -86,10 +93,17 @@ async def create_agent(task: str) -> tuple[str, str, int]:
 	return task_id, state_id, context_id
 
 
-async def agent_step(task_id: str, state_id: str, browser_id: int) -> tuple[bool, bool, str]:
-	browser, browser_context = await browser_service.get_context(browser_id)
+async def agent_step(task_id: str, state_id: str, context_id: int) -> tuple[bool, bool, str]:
+	print('🔍 Running agent step!')
+
+	browser, browser_context = await browser_service.get_context(context_id)
 	state = AgentState.model_validate_json(await database_service.get(state_id))
 	task = await database_service.get(task_id)
+
+	print('🔍 Last agent step: ', state.n_steps)
+
+	# NOTE: Testing which messages in history are causing the issue.
+	# state.message_manager_state.history.messages = []
 
 	agent = Agent(
 		task=task,
@@ -101,6 +115,8 @@ async def agent_step(task_id: str, state_id: str, browser_id: int) -> tuple[bool
 	)
 
 	done, valid = await agent.take_step()
+
+	state.history.history = []
 
 	new_state = state.model_dump_json(exclude={'history'})
 	new_state_id = await database_service.set(new_state)
@@ -133,10 +149,27 @@ async def run_agent(ctx: inngest.Context, step: inngest.Step) -> str:
 		if done and valid:
 			break
 
+	await step.run('close_context', lambda: browser_service.close_context(context_id))
+
 	return await database_service.get(last_state_id)
 
 
+# FastAPI --------------------------------------------------------------------
+
+
 app = FastAPI()
+
+
+@app.get('/database/{key}')
+async def get_db_value(key: str):
+	"""
+	Retrieve a JSON value stored in the in‑memory database by its key.
+	"""
+	data = await database_service.get(key)
+	if data is None:
+		raise HTTPException(status_code=404, detail='Record not found')
+	return data
+
 
 # Serve the Inngest endpoint
 inngest.fast_api.serve(app, inngest_client, [run_agent])
