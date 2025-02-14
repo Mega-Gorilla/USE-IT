@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.load import dumps, loads
+from langchain_core.load import dumpd, load
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
@@ -26,7 +26,7 @@ class ManagedMessage(BaseModel):
 
 	# https://github.com/pydantic/pydantic/discussions/7558
 	@model_serializer(mode='wrap')
-	def to_json(self, original_dump, info) -> str:
+	def to_json(self, original_dump):
 		"""
 		Returns the JSON representation of the model.
 
@@ -36,7 +36,7 @@ class ManagedMessage(BaseModel):
 		data = original_dump(self)
 
 		# NOTE: We override the message field to use langchain JSON serialization.
-		data['message'] = dumps(self.message)
+		data['message'] = dumpd(self.message)
 
 		return data
 
@@ -54,9 +54,9 @@ class ManagedMessage(BaseModel):
 		Custom validator that uses langchain's `loads` function
 		to parse the message if it is provided as a JSON string.
 		"""
-		if isinstance(value, dict) and 'message' in value and isinstance(value['message'], str):
-			# Use langchain's loads to convert the JSON string back into a BaseMessage object
-			value['message'] = loads(value['message'])
+		if isinstance(value, dict) and 'message' in value:
+			# NOTE: We use langchain's load to convert the JSON string back into a BaseMessage object.
+			value['message'] = load(value['message'])
 		return value
 
 
