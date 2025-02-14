@@ -421,9 +421,8 @@ class Agent:
 	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
-		converted_input_messages = convert_input_messages(input_messages, self.model_name)
-
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
+			converted_input_messages = convert_input_messages(input_messages, self.model_name)
 			output = self.llm.invoke(converted_input_messages)
 			output.content = self._remove_think_tags(str(output.content))
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
