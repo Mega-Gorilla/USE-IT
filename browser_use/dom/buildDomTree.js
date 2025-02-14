@@ -384,7 +384,7 @@
   }
 
   /**
-   * Checks if an element is the top element at its position.
+   * Checks if an element is the topmost element at its position.
    */
   function isTopElement(element) {
     // Find the correct document context and root element
@@ -423,57 +423,11 @@
 
     // Regular DOM elements
     const rect = element.getBoundingClientRect();
-
-    // If viewportExpansion is -1, check if element is the top one at its position
-    if (viewportExpansion === -1) {
-      return true; // Consider all elements as top elements when expansion is -1
-    }
-
-    // Calculate expanded viewport boundaries including scroll position
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
-    const viewportTop = -viewportExpansion + scrollY;
-    const viewportLeft = -viewportExpansion + scrollX;
-    const viewportBottom = window.innerHeight + viewportExpansion + scrollY;
-    const viewportRight = window.innerWidth + viewportExpansion + scrollX;
-
-    // Get absolute element position
-    const absTop = rect.top + scrollY;
-    const absLeft = rect.left + scrollX;
-    const absBottom = rect.bottom + scrollY;
-    const absRight = rect.right + scrollX;
-
-    // Skip if element is completely outside expanded viewport
-    if (
-      absBottom < viewportTop ||
-      absTop > viewportBottom ||
-      absRight < viewportLeft ||
-      absLeft > viewportRight
-    ) {
-      return false;
-    }
-
-    // For elements within expanded viewport, check if they're the top element
     try {
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-
-      // Only clamp the point if it's outside the actual document
-      const point = {
-        x: centerX,
-        y: centerY,
-      };
-
-      if (
-        point.x < 0 ||
-        point.x >= window.innerWidth ||
-        point.y < 0 ||
-        point.y >= window.innerHeight
-      ) {
-        return true; // Consider elements with center outside viewport as visible
-      }
-
-      const topEl = document.elementFromPoint(point.x, point.y);
+      
+      const topEl = document.elementFromPoint(centerX, centerY);
       if (!topEl) return false;
 
       let current = topEl;
@@ -486,6 +440,37 @@
       return true;
     }
   }
+
+  /**
+   * Checks if an element is within the expanded viewport.
+   */
+  function isInExpandedViewport(element, viewportExpansion) {
+    const rect = element.getBoundingClientRect();
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+
+    // Calculate expanded viewport boundaries including scroll position
+    const viewportTop = -viewportExpansion + scrollY;
+    const viewportLeft = -viewportExpansion + scrollX;
+    const viewportBottom = window.innerHeight + viewportExpansion + scrollY;
+    const viewportRight = window.innerWidth + viewportExpansion + scrollX;
+
+    // Get absolute element position
+    const absTop = rect.top + scrollY;
+    const absLeft = rect.left + scrollX;
+    const absBottom = rect.bottom + scrollY;
+    const absRight = rect.right + scrollX;
+
+    // Check if element is within expanded viewport
+    return !(
+      absBottom < viewportTop ||
+      absTop > viewportBottom ||
+      absRight < viewportLeft ||
+      absLeft > viewportRight
+    );
+  }
+
+
 
   /**
    * Checks if a text node is visible.
@@ -525,13 +510,14 @@
     // Special case for text nodes
     if (node.nodeType === Node.TEXT_NODE) {
       const textContent = node.textContent.trim();
-      if (textContent && isTextNodeVisible(node)) {
+      if (textContent) { // && isTextNodeVisible(node)
         const id = `${ID.current++}`;
 
         DOM_HASH_MAP[id] = {
           type: "TEXT_NODE",
           text: textContent,
           isVisible: true,
+
         };
 
         return id;
@@ -632,14 +618,15 @@
       const isInteractive = isInteractiveElement(node);
       const isVisible = isElementVisible(node);
       const isTop = isTopElement(node);
-
+      const isInViewport = isInExpandedViewport(node, viewportExpansion);
       nodeData.isInteractive = isInteractive;
       nodeData.isVisible = isVisible;
       nodeData.isTopElement = isTop;
-
+      nodeData.isInViewport = isInViewport;
       // Highlight if element meets all criteria and highlighting is enabled
-      if (isInteractive && isVisible && isTop) {
+      if (isInteractive && isVisible && isTop && isInViewport) {
         nodeData.highlightIndex = highlightIndex++;
+        // console.log('highlightIndex', highlightIndex)
         if (doHighlightElements) {
           if (focusHighlightIndex >= 0) {
             if (focusHighlightIndex === nodeData.highlightIndex) {
