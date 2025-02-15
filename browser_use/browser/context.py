@@ -939,8 +939,8 @@ class BrowserContext:
 		"""
 		try:
 			# Highlight before typing
-			if element_node.highlight_index is not None:
-				await self._update_state(focus_element=element_node.highlight_index)
+			# if element_node.highlight_index is not None:
+			# 	await self._update_state(focus_element=element_node.highlight_index)
 
 			element_handle = await self.get_locate_element(element_node)
 
@@ -976,8 +976,8 @@ class BrowserContext:
 
 		try:
 			# Highlight before clicking
-			if element_node.highlight_index is not None:
-				await self._update_state(focus_element=element_node.highlight_index)
+			# if element_node.highlight_index is not None:
+			# 	await self._update_state(focus_element=element_node.highlight_index)
 
 			element_handle = await self.get_locate_element(element_node)
 
