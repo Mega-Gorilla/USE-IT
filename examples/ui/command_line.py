@@ -14,6 +14,7 @@ from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
 
+
 def get_llm(provider: str):
 	if provider == 'anthropic':
 		from langchain_anthropic import ChatAnthropic
@@ -26,49 +27,49 @@ def get_llm(provider: str):
 	else:
 		raise ValueError(f'Unsupported provider: {provider}')
 
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="Automate browser tasks using an LLM agent.")
+    parser.add_argument(
+        '--query',
+        type=str,
+        help='The query to process',
+        default='go to reddit and search for posts about browser-use'
+    )
+    parser.add_argument(
+        '--provider',
+        type=str,
+        choices=['openai', 'anthropic'],
+        default='openai',
+        help='The model provider to use (default: openai)',
+    )
+    return parser.parse_args()
 
-task = 'go to reddit and search for post about brower-use '
+def initialize_agent(query: str, provider: str):
+    """Initialize the browser agent with the given query and provider."""
+    llm = get_llm(provider)
+    controller = Controller()
+    browser = Browser(config=BrowserConfig())
 
-
-controller = Controller()
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--query', type=str, help='The query to process', default=task)
-parser.add_argument(
-	'--provider',
-	type=str,
-	choices=['openai', 'anthropic'],
-	default='openai',
-	help='The model provider to use (default: openai)',
-)
-
-args = parser.parse_args()
-
-llm = get_llm(args.provider)
-
-
-browser = Browser(
-	config=BrowserConfig(
-		# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-	)
-)
-
-agent = Agent(
-	task=args.query,
-	llm=llm,
-	controller=controller,
-	browser=browser,
-	use_vision=True,
-	max_actions_per_step=1,
-)
-
+    return Agent(
+        task=query,
+        llm=llm,
+        controller=controller,
+        browser=browser,
+        use_vision=True,
+        max_actions_per_step=1,
+    ), browser
 
 async def main():
-	await agent.run(max_steps=25)
+    """Main async function to run the agent."""
+    args = parse_arguments()
+    agent, browser = initialize_agent(args.query, args.provider)
 
-	input('Press Enter to close the browser...')
-	await browser.close()
+    await agent.run(max_steps=25)
+    
+    input('Press Enter to close the browser...')
+    await browser.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
