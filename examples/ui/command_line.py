@@ -1,7 +1,6 @@
 import os
 import sys
 
-from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +14,7 @@ from browser_use.controller.service import Controller
 
 def get_llm(provider: str):
 	if provider == 'anthropic':
+		from langchain_anthropic import ChatAnthropic
 		return ChatAnthropic(
 			model_name='claude-3-5-sonnet-20240620', timeout=25, stop=None, temperature=0.0
 		)
