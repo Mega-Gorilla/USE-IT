@@ -15,6 +15,41 @@ from langchain_openai import ChatOpenAI
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
+    
+# async def group_tabs(self, tab_ids: list[int] , title: str, color: str = "blue"):
+#     """Reset the browser session
+#     Call this when you don't want to kill the context but just kill the state
+#     """
+#     # close all tabs and clear cached state
+#     page = await self.get_current_page()
+
+#     js = f"""
+#         chrome.tabs.group({{ tabIds: {tab_ids} }}, (groupId) => {{
+#             chrome.tabGroups.update(groupId, {{ 
+#                 title: "{title}",
+#                 color: "{color}"
+#             }});
+#         }});
+#         """
+
+#     await page.evaluate(js)
+
+# async def ungroup_tabs(self, tab_ids: list[int]):
+#     """Reset the browser session
+#     Call this when you don't want to kill the context but just kill the state
+#     """
+#     # close all tabs and clear cached state
+#     page = await self.get_current_page()
+
+#     js = f"""
+#             for (const tabId of {tab_ids}) {{
+#                 chrome.tabs.ungroup(tabId);
+#             }}
+#         """
+
+#     await page.evaluate(js)  
+
+
 # Initialize controller first
 browser = Browser(
 	config=BrowserConfig(
