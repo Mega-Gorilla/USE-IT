@@ -70,5 +70,5 @@ async def main():
 	input('Press Enter to close the browser...')
 	await browser.close()
 
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
