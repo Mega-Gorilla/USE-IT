@@ -1,9 +1,8 @@
-import os
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import List, Optional
 
-# Third-party imports
 import gradio as gr
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -11,7 +10,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-# Local module imports
 from browser_use import Agent
 
 load_dotenv()
