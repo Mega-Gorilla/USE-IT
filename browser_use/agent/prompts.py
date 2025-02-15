@@ -160,12 +160,10 @@ class AgentMessagePrompt:
 		state: BrowserState,
 		result: Optional[List[ActionResult]] = None,
 		include_attributes: list[str] = [],
-		max_error_length: int = 400,
 		step_info: Optional[AgentStepInfo] = None,
 	):
 		self.state = state
 		self.result = result
-		self.max_error_length = max_error_length
 		self.include_attributes = include_attributes
 		self.step_info = step_info
 
@@ -215,8 +213,8 @@ Interactive elements from current page:
 				if result.extracted_content:
 					state_description += f'\nAction result {i + 1}/{len(self.result)}: {result.extracted_content}'
 				if result.error:
-					# only use last 300 characters of error
-					error = result.error[-self.max_error_length :]
+					# only use last line of error
+					error = result.error.split('\n')[-1]
 					state_description += f'\nAction error {i + 1}/{len(self.result)}: ...{error}'
 
 		if self.state.screenshot and use_vision == True:

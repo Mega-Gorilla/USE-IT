@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional, Type
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
 	AIMessage,
@@ -14,7 +12,6 @@ from langchain_core.messages import (
 	SystemMessage,
 	ToolMessage,
 )
-from langchain_openai import ChatOpenAI
 
 from browser_use.agent.message_manager.views import MessageHistory, MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt, SystemPrompt
@@ -35,7 +32,6 @@ class MessageManager:
 		estimated_characters_per_token: int = 3,
 		image_tokens: int = 800,
 		include_attributes: list[str] = [],
-		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 		message_context: Optional[str] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
@@ -49,7 +45,6 @@ class MessageManager:
 		self.estimated_characters_per_token = estimated_characters_per_token
 		self.IMG_TOKENS = image_tokens
 		self.include_attributes = include_attributes
-		self.max_error_length = max_error_length
 		self.message_context = message_context
 		self.sensitive_data = sensitive_data
 		system_message = self.system_prompt_class(
@@ -95,12 +90,12 @@ class MessageManager:
 		]
 
 		example_tool_call = AIMessage(
-			content=f'',
+			content='',
 			tool_calls=tool_calls,
 		)
 		self._add_message_with_tokens(example_tool_call)
 		tool_message = ToolMessage(
-			content=f'Browser started',
+			content='Browser started',
 			tool_call_id=str(self.tool_id),
 		)
 		self._add_message_with_tokens(tool_message)
@@ -147,7 +142,8 @@ class MessageManager:
 						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
 						self._add_message_with_tokens(msg)
 					if r.error:
-						msg = HumanMessage(content='Action error: ' + str(r.error)[-self.max_error_length :])
+						last_line = r.error.split('\n')[-1]
+						msg = HumanMessage(content='Action error: ' + last_line)
 						self._add_message_with_tokens(msg)
 					result = None  # if result in history, we dont want to add it again
 
@@ -156,7 +152,6 @@ class MessageManager:
 			state,
 			result,
 			include_attributes=self.include_attributes,
-			max_error_length=self.max_error_length,
 			step_info=step_info,
 		).get_user_message(use_vision)
 		self._add_message_with_tokens(state_message)
