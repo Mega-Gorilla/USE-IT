@@ -26,6 +26,10 @@ class DOMTextNode(DOMBaseNode):
 		while current is not None:
 			if current.highlight_index is not None:
 				return True
+			if not current.is_top_element:
+				return True
+			if not current.is_in_viewport:
+				return True
 			current = current.parent
 		return False
 
@@ -43,6 +47,7 @@ class DOMElementNode(DOMBaseNode):
 	children: List[DOMBaseNode]
 	is_interactive: bool = False
 	is_top_element: bool = False
+	is_in_viewport: bool = False
 	shadow_root: bool = False
 	highlight_index: Optional[int] = None
 	viewport_coordinates: Optional[CoordinateSet] = None
@@ -67,6 +72,8 @@ class DOMElementNode(DOMBaseNode):
 			extras.append('shadow-root')
 		if self.highlight_index is not None:
 			extras.append(f'highlight:{self.highlight_index}')
+		if self.is_in_viewport:
+			extras.append('in-viewport')
 
 		if extras:
 			tag_str += f' [{", ".join(extras)}]'
