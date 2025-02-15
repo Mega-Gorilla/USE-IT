@@ -1,5 +1,5 @@
 """
-To Use it:
+To Use It:
 
 Example 1: Using OpenAI (default), with default task: 'go to reddit and search for posts about browser-use'
 python command_line.py

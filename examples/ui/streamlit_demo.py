@@ -1,3 +1,10 @@
+"""
+To use it, you'll need to install streamlit, and run with:
+
+python -m streamlit run streamlit_demo.py
+
+"""
+
 import os
 import sys
 import asyncio
