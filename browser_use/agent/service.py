@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
@@ -72,10 +72,10 @@ def log_response(response: AgentOutput) -> None:
 		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
 
 
-T = TypeVar('T', bound=BaseModel)
+Context = TypeVar('Context')
 
 
-class Agent:
+class Agent(Generic[Context]):
 	def __init__(
 		self,
 		task: str,
@@ -83,7 +83,7 @@ class Agent:
 		# Optional parameters
 		browser: Browser | None = None,
 		browser_context: BrowserContext | None = None,
-		controller: Controller = Controller(),
+		controller: Controller[Context] = Controller(),
 		# Initial agent run parameters
 		sensitive_data: Optional[Dict[str, str]] = None,
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
@@ -124,6 +124,8 @@ class Agent:
 		planner_interval: int = 1,  # Run planner every N steps
 		# Inject state
 		injected_agent_state: Optional[AgentState] = None,
+		#
+		context: Context | None = None,
 	):
 		self.settings = AgentSettings(
 			use_vision=use_vision,
@@ -198,6 +200,9 @@ class Agent:
 		# Model setup
 		self._set_model_names()
 		self.tool_calling_method = self.set_tool_calling_method(self.settings.tool_calling_method)
+
+		# Context
+		self.context = context
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
@@ -591,15 +596,16 @@ class Agent:
 
 			self._raise_if_stopped_or_paused()
 
-			results.append(
-				await self.controller.act(
-					action,
-					self.browser_context,
-					self.settings.page_extraction_llm,
-					self.sensitive_data,
-					self.settings.available_file_paths,
-				)
+			result = await self.controller.act(
+				action,
+				self.browser_context,
+				self.settings.page_extraction_llm,
+				self.sensitive_data,
+				self.settings.available_file_paths,
+				context=self.context,
 			)
+
+			results.append(result)
 
 			logger.debug(f'Executed action {i + 1} / {len(actions)}')
 			if results[-1].is_done or results[-1].error or i == len(actions) - 1:

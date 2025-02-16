@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Optional, Type
+from typing import Dict, Generic, Optional, Type, TypeVar
 
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
 from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
@@ -25,16 +26,18 @@ from browser_use.controller.views import (
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
-from langchain_core.language_models.chat_models import BaseChatModel
 
 
-class Controller:
+Context = TypeVar('Context')
+
+
+class Controller(Generic[Context]):
 	def __init__(
 		self,
 		exclude_actions: list[str] = [],
 		output_model: Optional[Type[BaseModel]] = None,
 	):
-		self.registry = Registry(exclude_actions)
+		self.registry = Registry[Context](exclude_actions)
 
 		"""Register all default browser actions"""
 
@@ -449,6 +452,8 @@ class Controller:
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
 		available_file_paths: Optional[list[str]] = None,
+		#
+		context: Context | None = None,
 	) -> ActionResult:
 		"""Execute an action"""
 
@@ -470,6 +475,7 @@ class Controller:
 							page_extraction_llm=page_extraction_llm,
 							sensitive_data=sensitive_data,
 							available_file_paths=available_file_paths,
+							context=context,
 						)
 
 						Laminar.set_span_output(result)
