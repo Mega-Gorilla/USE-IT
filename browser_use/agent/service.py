@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
 from google.api_core.exceptions import ResourceExhausted
@@ -88,8 +88,9 @@ class Agent:
 		sensitive_data: Optional[Dict[str, str]] = None,
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
 		# Cloud Callbacks
-		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], None] | None = None,
-		register_done_callback: Callable[['AgentHistoryList'], None] | None = None,
+		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]] | None = None,
+		register_done_callback: Callable[['AgentHistoryList'], Awaitable[None]] | None = None,
+		register_external_agent_status_callback: Callable[[str], Awaitable[None]] | None = None,
 		# Agent settings
 		use_vision: bool = True,
 		use_vision_for_planner: bool = False,
@@ -285,6 +286,7 @@ class Agent:
 			state = await self.browser_context.get_state()
 
 			self._raise_if_stopped_or_paused()
+
 			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
 
 			# Run planner at specified intervals if planner is configured
@@ -303,7 +305,7 @@ class Agent:
 				self.state.n_steps += 1
 
 				if self.register_new_step_callback:
-					self.register_new_step_callback(state, model_output, self.state.n_steps)
+					await self.register_new_step_callback(state, model_output, self.state.n_steps)
 
 				if self.settings.save_conversation_path:
 					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
@@ -482,8 +484,9 @@ class Agent:
 					return True, False
 
 			logger.info('✅ Task completed successfully')
+
 			if self.register_done_callback:
-				self.register_done_callback(self.state.history)
+				await self.register_done_callback(self.state.history)
 
 			return True, True
 
@@ -525,7 +528,7 @@ class Agent:
 
 					logger.info('✅ Task completed successfully')
 					if self.register_done_callback:
-						self.register_done_callback(self.state.history)
+						await self.register_done_callback(self.state.history)
 					break
 			else:
 				logger.info('❌ Failed to complete task in maximum steps')
