@@ -5,7 +5,8 @@ from typing import Dict, Generic, Optional, Type, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
-from lmnr.sdk.laminar import Laminar
+
+# from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -460,25 +461,25 @@ class Controller(Generic[Context]):
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
-					with Laminar.start_as_current_span(
-						name=action_name,
-						input={
-							'action': action_name,
-							'params': params,
-						},
-						span_type='TOOL',
-					):
-						result = await self.registry.execute_action(
-							action_name,
-							params,
-							browser=browser_context,
-							page_extraction_llm=page_extraction_llm,
-							sensitive_data=sensitive_data,
-							available_file_paths=available_file_paths,
-							context=context,
-						)
+					# with Laminar.start_as_current_span(
+					# 	name=action_name,
+					# 	input={
+					# 		'action': action_name,
+					# 		'params': params,
+					# 	},
+					# 	span_type='TOOL',
+					# ):
+					result = await self.registry.execute_action(
+						action_name,
+						params,
+						browser=browser_context,
+						page_extraction_llm=page_extraction_llm,
+						sensitive_data=sensitive_data,
+						available_file_paths=available_file_paths,
+						context=context,
+					)
 
-						Laminar.set_span_output(result)
+					# Laminar.set_span_output(result)
 
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)

@@ -15,7 +15,8 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-from lmnr.sdk.decorators import observe
+
+# from lmnr.sdk.decorators import observe
 from openai import RateLimitError
 from pydantic import BaseModel, ValidationError
 
@@ -278,7 +279,7 @@ class Agent(Generic[Context]):
 			logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
-	@observe(name='agent.step', ignore_output=True, ignore_input=True)
+	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""

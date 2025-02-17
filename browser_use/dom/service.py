@@ -1,9 +1,10 @@
 import gc
 import logging
 from importlib import resources
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from playwright.async_api import Page
+if TYPE_CHECKING:
+	from playwright.async_api import Page
 
 from browser_use.dom.history_tree_processor.view import Coordinates
 from browser_use.dom.views import (
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class DomService:
-	def __init__(self, page: Page):
+	def __init__(self, page: 'Page'):
 		self.page = page
 		self.xpath_cache = {}
 
