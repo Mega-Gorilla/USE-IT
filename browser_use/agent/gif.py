@@ -5,13 +5,14 @@ import io
 import logging
 import os
 import platform
-from typing import Optional
-
-from PIL import Image, ImageDraw, ImageFont
+from typing import TYPE_CHECKING, Optional
 
 from browser_use.agent.views import (
 	AgentHistoryList,
 )
+
+if TYPE_CHECKING:
+	from PIL import Image, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,10 @@ def create_history_gif(
 		logger.warning('No history to create GIF from')
 		return
 
+	from PIL import Image, ImageFont
+
 	images = []
+
 	# if history is empty or first screenshot is None, we can't create a gif
 	if not history.history or not history.history[0].state.screenshot:
 		logger.warning('No history or first screenshot to create GIF from')
@@ -135,12 +139,14 @@ def create_history_gif(
 def _create_task_frame(
 	task: str,
 	first_screenshot: str,
-	title_font: ImageFont.FreeTypeFont,
-	regular_font: ImageFont.FreeTypeFont,
+	title_font: 'ImageFont.FreeTypeFont',
+	regular_font: 'ImageFont.FreeTypeFont',
 	logo: Optional[Image.Image] = None,
 	line_spacing: float = 1.5,
-) -> Image.Image:
+) -> 'Image.Image':
 	"""Create initial frame showing the task."""
+	from PIL import Image, ImageDraw, ImageFont
+
 	img_data = base64.b64decode(first_screenshot)
 	template = Image.open(io.BytesIO(img_data))
 	image = Image.new('RGB', template.size, (0, 0, 0))
@@ -188,18 +194,20 @@ def _create_task_frame(
 
 
 def _add_overlay_to_image(
-	image: Image.Image,
+	image: 'Image.Image',
 	step_number: int,
 	goal_text: str,
-	regular_font: ImageFont.FreeTypeFont,
-	title_font: ImageFont.FreeTypeFont,
+	regular_font: 'ImageFont.FreeTypeFont',
+	title_font: 'ImageFont.FreeTypeFont',
 	margin: int,
-	logo: Optional[Image.Image] = None,
+	logo: Optional['Image.Image'] = None,
 	display_step: bool = True,
 	text_color: tuple[int, int, int, int] = (255, 255, 255, 255),
 	text_box_color: tuple[int, int, int, int] = (0, 0, 0, 255),
-) -> Image.Image:
+) -> 'Image.Image':
 	"""Add step number and goal overlay to an image."""
+	from PIL import Image, ImageDraw
+
 	image = image.convert('RGBA')
 	txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
 	draw = ImageDraw.Draw(txt_layer)
@@ -283,7 +291,7 @@ def _add_overlay_to_image(
 	return result.convert('RGB')
 
 
-def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
+def _wrap_text(text: str, font: 'ImageFont.FreeTypeFont', max_width: int) -> str:
 	"""
 	Wrap text to fit within a given width.
 
