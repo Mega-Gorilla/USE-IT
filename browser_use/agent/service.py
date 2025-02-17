@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 from dotenv import load_dotenv
-from google.api_core.exceptions import ResourceExhausted
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
@@ -17,7 +16,6 @@ from langchain_core.messages import (
 )
 
 # from lmnr.sdk.decorators import observe
-from openai import RateLimitError
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
@@ -385,13 +383,17 @@ class Agent(Generic[Context]):
 				error_msg += '\n\nReturn a valid JSON object with the required fields.'
 
 			self.state.consecutive_failures += 1
-		elif isinstance(error, RateLimitError) or isinstance(error, ResourceExhausted):
-			logger.warning(f'{prefix}{error_msg}')
-			await asyncio.sleep(self.settings.retry_delay)
-			self.state.consecutive_failures += 1
 		else:
-			logger.error(f'{prefix}{error_msg}')
-			self.state.consecutive_failures += 1
+			from google.api_core.exceptions import ResourceExhausted
+			from openai import RateLimitError
+
+			if isinstance(error, RateLimitError) or isinstance(error, ResourceExhausted):
+				logger.warning(f'{prefix}{error_msg}')
+				await asyncio.sleep(self.settings.retry_delay)
+				self.state.consecutive_failures += 1
+			else:
+				logger.error(f'{prefix}{error_msg}')
+				self.state.consecutive_failures += 1
 
 		return [ActionResult(error=error_msg, include_in_memory=True)]
 
@@ -498,7 +500,7 @@ class Agent(Generic[Context]):
 
 		return False, False
 
-	@observe(name='agent.run', ignore_output=True)
+	# @observe(name='agent.run', ignore_output=True)
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
