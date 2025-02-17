@@ -566,7 +566,7 @@ class Agent(Generic[Context]):
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
-	@observe(name='controller.multi_act')
+	# @observe(name='controller.multi_act')
 	@time_execution_async('--multi-act')
 	async def multi_act(
 		self,
