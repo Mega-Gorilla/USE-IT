@@ -27,17 +27,16 @@
     // Create or get highlight container
     let container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
     if (!container) {
-      container = document.createElement("div");
-      container.id = HIGHLIGHT_CONTAINER_ID;
-      container.style.position = "fixed";
-      container.style.pointerEvents = "none";
-      container.style.top = "0";
-      container.style.left = "0";
-      container.style.width = "100%";
-      container.style.height = "100%";
-      container.style.zIndex = "2147483647";
-
-      document.body.appendChild(container);
+        container = document.createElement("div");
+        container.id = HIGHLIGHT_CONTAINER_ID;
+        container.style.position = "fixed";
+        container.style.pointerEvents = "none";
+        container.style.top = "0";
+        container.style.left = "0";
+        container.style.width = "100%";
+        container.style.height = "100%";
+        container.style.zIndex = "2147483647";
+        document.body.appendChild(container);
     }
 
     // Generate a color based on the index
@@ -67,20 +66,27 @@
     overlay.style.pointerEvents = "none";
     overlay.style.boxSizing = "border-box";
 
-    // Get element position considering all scroll contexts
+    // Get element position
     const rect = element.getBoundingClientRect();
-    const { scrollX, scrollY } = getEffectiveScroll(element);
+    let iframeOffset = { x: 0, y: 0 };
 
-    // Calculate position in viewport coordinates
-    const top = rect.top;
-    const left = rect.left;
+    // If element is in an iframe, calculate iframe offset
+    if (parentIframe) {
+        const iframeRect = parentIframe.getBoundingClientRect();
+        iframeOffset.x = iframeRect.left;
+        iframeOffset.y = iframeRect.top;
+    }
+
+    // Calculate position
+    const top = rect.top + iframeOffset.y;
+    const left = rect.left + iframeOffset.x;
 
     overlay.style.top = `${top}px`;
     overlay.style.left = `${left}px`;
     overlay.style.width = `${rect.width}px`;
     overlay.style.height = `${rect.height}px`;
 
-    // Create label with fixed positioning
+    // Create and position label
     const label = document.createElement("div");
     label.className = "playwright-highlight-label";
     label.style.position = "fixed";
@@ -91,18 +97,15 @@
     label.style.fontSize = `${Math.min(12, Math.max(8, rect.height / 2))}px`;
     label.textContent = index;
 
-    // Calculate label position in viewport coordinates
     const labelWidth = 20;
     const labelHeight = 16;
 
-    // Position label relative to the element's viewport position
     let labelTop = top + 2;
     let labelLeft = left + rect.width - labelWidth - 2;
 
-    // Adjust if box is too small
     if (rect.width < labelWidth + 4 || rect.height < labelHeight + 4) {
-      labelTop = top - labelHeight - 2;
-      labelLeft = left + rect.width - labelWidth;
+        labelTop = top - labelHeight - 2;
+        labelLeft = left + rect.width - labelWidth;
     }
 
     label.style.top = `${labelTop}px`;
@@ -112,44 +115,47 @@
     container.appendChild(overlay);
     container.appendChild(label);
 
-    // Store reference for cleanup
-    element.setAttribute(
-      "browser-user-highlight-id",
-      `playwright-highlight-${index}`
-    );
-
-    // Add scroll event listener to update positions
+    // Update positions on scroll
     const updatePositions = () => {
-      const newRect = element.getBoundingClientRect();
-      
-      // Update overlay position
-      overlay.style.top = `${newRect.top}px`;
-      overlay.style.left = `${newRect.left}px`;
-      
-      // Update label position
-      let newLabelTop = newRect.top + 2;
-      let newLabelLeft = newRect.left + newRect.width - labelWidth - 2;
-      
-      if (newRect.width < labelWidth + 4 || newRect.height < labelHeight + 4) {
-        newLabelTop = newRect.top - labelHeight - 2;
-        newLabelLeft = newRect.left + newRect.width - labelWidth;
-      }
-      
-      label.style.top = `${newLabelTop}px`;
-      label.style.left = `${newLabelLeft}px`;
+        const newRect = element.getBoundingClientRect();
+        let newIframeOffset = { x: 0, y: 0 };
+        
+        if (parentIframe) {
+            const iframeRect = parentIframe.getBoundingClientRect();
+            newIframeOffset.x = iframeRect.left;
+            newIframeOffset.y = iframeRect.top;
+        }
+
+        const newTop = newRect.top + newIframeOffset.y;
+        const newLeft = newRect.left + newIframeOffset.x;
+
+        overlay.style.top = `${newTop}px`;
+        overlay.style.left = `${newLeft}px`;
+        overlay.style.width = `${newRect.width}px`;
+        overlay.style.height = `${newRect.height}px`;
+
+        let newLabelTop = newTop + 2;
+        let newLabelLeft = newLeft + newRect.width - labelWidth - 2;
+
+        if (newRect.width < labelWidth + 4 || newRect.height < labelHeight + 4) {
+            newLabelTop = newTop - labelHeight - 2;
+            newLabelLeft = newLeft + newRect.width - labelWidth;
+        }
+
+        label.style.top = `${newLabelTop}px`;
+        label.style.left = `${newLabelLeft}px`;
     };
 
-    // Add scroll listeners to all scrollable parents
+    // Add scroll listeners
     let currentEl = element;
     while (currentEl) {
-      if (currentEl.scrollHeight > currentEl.clientHeight || 
-          currentEl.scrollWidth > currentEl.clientWidth) {
-        currentEl.addEventListener('scroll', updatePositions);
-      }
-      currentEl = currentEl.parentElement;
+        if (currentEl.scrollHeight > currentEl.clientHeight || 
+            currentEl.scrollWidth > currentEl.clientWidth) {
+            currentEl.addEventListener('scroll', updatePositions);
+        }
+        currentEl = currentEl.parentElement;
     }
 
-    // Add window scroll listener
     window.addEventListener('scroll', updatePositions);
 
     return index + 1;
@@ -601,26 +607,17 @@
 
   // Add this new helper function
   function getEffectiveScroll(element) {
-    // Get all scrollable parents up to the root
     let currentEl = element;
     let scrollX = 0;
     let scrollY = 0;
 
     while (currentEl && currentEl !== document.documentElement) {
-      // Check if element is in an iframe
-      if (currentEl.tagName === 'IFRAME') {
-        const iframeRect = currentEl.getBoundingClientRect();
-        scrollX += iframeRect.left;
-        scrollY += iframeRect.top;
-      }
-
-      // Add scroll of any scrollable container
-      if (currentEl.scrollLeft || currentEl.scrollTop) {
-        scrollX += currentEl.scrollLeft;
-        scrollY += currentEl.scrollTop;
-      }
-
-      currentEl = currentEl.parentElement;
+        // Add scroll of any scrollable container
+        if (currentEl.scrollLeft || currentEl.scrollTop) {
+            scrollX += currentEl.scrollLeft;
+            scrollY += currentEl.scrollTop;
+        }
+        currentEl = currentEl.parentElement;
     }
 
     // Add main window scroll
