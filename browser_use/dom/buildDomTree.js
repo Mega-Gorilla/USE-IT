@@ -626,14 +626,13 @@
     // Special case for text nodes
     if (node.nodeType === Node.TEXT_NODE) {
       const textContent = node.textContent.trim();
-      if (textContent) { // && isTextNodeVisible(node)
+      if (textContent ) { // 
         const id = `${ID.current++}`;
 
         DOM_HASH_MAP[id] = {
           type: "TEXT_NODE",
           text: textContent,
-          isVisible: true,
-
+          isVisible: isTextNodeVisible(node),
         };
 
         return id;
