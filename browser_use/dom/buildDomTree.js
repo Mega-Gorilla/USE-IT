@@ -564,12 +564,34 @@
     const range = document.createRange();
     range.selectNodeContents(textNode);
     const rect = range.getBoundingClientRect();
+    
+    // Get effective scroll for the text node's parent element
+    const { scrollX, scrollY } = getEffectiveScroll(textNode.parentElement);
+
+    // Calculate expanded viewport boundaries including effective scroll
+    const viewportTop = -viewportExpansion + scrollY;
+    const viewportLeft = -viewportExpansion + scrollX;
+    const viewportBottom = window.innerHeight + viewportExpansion + scrollY;
+    const viewportRight = window.innerWidth + viewportExpansion + scrollX;
+
+    // Get absolute text node position using effective scroll
+    const absTop = rect.top + scrollY;
+    const absLeft = rect.left + scrollX;
+    const absBottom = rect.bottom + scrollY;
+    const absRight = rect.right + scrollX;
+
+    // Check if text node is within expanded viewport
+    const isInExpandedViewport = !(
+      absBottom < viewportTop ||
+      absTop > viewportBottom ||
+      absRight < viewportLeft ||
+      absLeft > viewportRight
+    );
 
     return (
       rect.width !== 0 &&
       rect.height !== 0 &&
-      rect.top >= 0 &&
-      rect.top <= window.innerHeight &&
+      isInExpandedViewport &&
       textNode.parentElement?.checkVisibility({
         checkOpacity: true,
         checkVisibilityCSS: true,
