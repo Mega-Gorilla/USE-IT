@@ -3,6 +3,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
+from browser_use.utils import time_execution_sync
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -24,14 +25,22 @@ class DOMTextNode(DOMBaseNode):
 	def has_parent_with_highlight_index(self) -> bool:
 		current = self.parent
 		while current is not None:
+			# stop if the element has a highlight index (will be handled separately)
 			if current.highlight_index is not None:
 				return True
-			if not current.is_top_element:
-				return True
-			if not current.is_in_viewport:
-				return True
+
 			current = current.parent
 		return False
+
+	def is_parent_in_viewport(self) -> bool:
+		if self.parent is None:
+			return False
+		return self.parent.is_in_viewport
+
+	def is_parent_top_element(self) -> bool:
+		if self.parent is None:
+			return False
+		return self.parent.is_top_element
 
 
 @dataclass(frozen=False)
@@ -108,6 +117,7 @@ class DOMElementNode(DOMBaseNode):
 		collect_text(self, 0)
 		return '\n'.join(text_parts).strip()
 
+	@time_execution_sync('--clickable_elements_to_string')
 	def clickable_elements_to_string(self, include_attributes: list[str] = []) -> str:
 		"""Convert the processed DOM content to HTML."""
 		formatted_text = []
@@ -131,7 +141,7 @@ class DOMElementNode(DOMBaseNode):
 
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
-				if not node.has_parent_with_highlight_index():
+				if not node.has_parent_with_highlight_index() and node.is_parent_top_element() and node.is_visible:
 					formatted_text.append(f'[]{node.text}')
 
 		process_node(self, 0)
