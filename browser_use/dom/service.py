@@ -1,4 +1,5 @@
 import gc
+import json
 import logging
 from importlib import resources
 from typing import TYPE_CHECKING, Optional
@@ -62,6 +63,12 @@ class DomService:
 		}
 
 		eval_page = await self.page.evaluate(self.js_code, args)
+
+		# Log performance metrics if they exist
+		if 'perfMetrics' in eval_page:
+			perf_metrics = eval_page['perfMetrics']
+			logger.info('DOM Tree Building Performance Metrics:\n%s', json.dumps(perf_metrics, indent=2))
+
 		return await self._construct_dom_tree(eval_page)
 
 	@time_execution_async('--construct_dom_tree')

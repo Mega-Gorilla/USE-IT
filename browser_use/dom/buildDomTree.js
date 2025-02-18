@@ -8,6 +8,57 @@
   const { doHighlightElements, focusHighlightIndex, viewportExpansion } = args;
   let highlightIndex = 0; // Reset highlight index
 
+  // Add performance tracking
+  const PERF_METRICS = {
+    buildDomTreeCalls: 0,
+    highlightElementCalls: 0,
+    isInteractiveElementCalls: 0,
+    isElementVisibleCalls: 0,
+    isTopElementCalls: 0,
+    isInExpandedViewportCalls: 0,
+    isTextNodeVisibleCalls: 0,
+    getEffectiveScrollCalls: 0,
+    buildDomTreeBreakdown: {
+      textNodeProcessing: 0,
+      elementNodeProcessing: 0,
+      iframeProcessing: 0,
+      childrenProcessing: 0,
+      attributeProcessing: 0,
+      interactivityChecks: 0,
+      domHashMapOperations: 0,
+      xpathCalculation: 0,
+    },
+    timings: {
+      buildDomTree: 0,
+      highlightElement: 0,
+      isInteractiveElement: 0,
+      isElementVisible: 0,
+      isTopElement: 0,
+      isInExpandedViewport: 0,
+      isTextNodeVisible: 0,
+      getEffectiveScroll: 0,
+    }
+  };
+
+  // Helper to measure function execution time
+  function measureTime(fn, metricName) {
+    return function (...args) {
+      PERF_METRICS[`${metricName}Calls`]++;
+      const start = performance.now();
+      const result = fn.apply(this, args);
+      PERF_METRICS.timings[metricName] += (performance.now() - start);
+      return result;
+    };
+  }
+
+  // Helper to measure specific parts of buildDomTree
+  function measureBuildDomTreePart(part, fn) {
+    const start = performance.now();
+    const result = fn();
+    PERF_METRICS.buildDomTreeBreakdown[part] += (performance.now() - start);
+    return result;
+  }
+
   /**
    * Hash map of DOM nodes indexed by their highlight index.
    *
@@ -16,7 +67,6 @@
   const DOM_HASH_MAP = {};
 
   const ID = { current: 0 };
-
 
   const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
 
@@ -213,23 +263,25 @@
   }
 
   /**
+   * Checks if an element is visible.
+   */
+  function isElementVisible(element) {
+    const style = window.getComputedStyle(element);
+    return (
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+    );
+  }
+
+  /**
    * Checks if an element is interactive.
    */
   function isInteractiveElement(element) {
     const { scrollX, scrollY } = getEffectiveScroll(element);
     const rect = element.getBoundingClientRect();
     
-    // Use effective scroll for any position-based checks
-    const absTop = rect.top + scrollY;
-    const absLeft = rect.left + scrollX;
-    const absBottom = rect.bottom + scrollY;
-    const absRight = rect.right + scrollX;
-
-    // Immediately return false for body tag
-    // if (element.tagName.toLowerCase() === "body") {
-    //   return false;
-    // }
-
     // Base interactive elements and roles
     const interactiveElements = new Set([
       "a",
@@ -237,7 +289,6 @@
       "details",
       "embed",
       "input",
-      // "label",
       "menu",
       "menuitem",
       "object",
@@ -311,11 +362,6 @@
     // Get computed style
     const style = window.getComputedStyle(element);
 
-    // Check if element has click-like styling
-    // const hasClickStyling = style.cursor === 'pointer' ||
-    //     element.style.cursor === 'pointer' ||
-    //     style.pointerEvents !== 'none';
-
     // Check for event listeners
     const hasClickHandler =
       element.onclick !== null ||
@@ -327,13 +373,9 @@
     // Helper function to safely get event listeners
     function getEventListeners(el) {
       try {
-        // Try to get listeners using Chrome DevTools API
         return window.getEventListeners?.(el) || {};
       } catch (e) {
-        // Fallback: check for common event properties
         const listeners = {};
-
-        // List of common event types to check
         const eventTypes = [
           "click",
           "mousedown",
@@ -349,20 +391,14 @@
         for (const type of eventTypes) {
           const handler = el[`on${type}`];
           if (handler) {
-            listeners[type] = [
-              {
-                listener: handler,
-                useCapture: false,
-              },
-            ];
+            listeners[type] = [{ listener: handler, useCapture: false }];
           }
         }
-
         return listeners;
       }
     }
 
-    // Check for click-related events on the element itself
+    // Check for click-related events
     const listeners = getEventListeners(element);
     const hasClickListeners =
       listeners &&
@@ -372,58 +408,29 @@
         listeners.touchstart?.length > 0 ||
         listeners.touchend?.length > 0);
 
-    // Check for ARIA properties that suggest interactivity
+    // Check for ARIA properties
     const hasAriaProps =
       element.hasAttribute("aria-expanded") ||
       element.hasAttribute("aria-pressed") ||
       element.hasAttribute("aria-selected") ||
       element.hasAttribute("aria-checked");
 
-
-    const isContentEditable = element.getAttribute("contenteditable") === "true" || element.isContentEditable ||
+    const isContentEditable = element.getAttribute("contenteditable") === "true" || 
+      element.isContentEditable ||
       element.id === "tinymce" ||
       element.classList.contains("mce-content-body") ||
       (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
-
-    // Check for form-related functionality
-    const isFormRelated =
-      element.form !== undefined ||
-      element.hasAttribute("contenteditable") ||
-      style.userSelect !== "none";
 
     // Check if element is draggable
     const isDraggable =
       element.draggable || element.getAttribute("draggable") === "true";
 
-    // // Additional check to prevent body from being marked as interactive
-    // if (
-    //   element.tagName.toLowerCase() === "body" ||
-    //   element.parentElement?.tagName.toLowerCase() === "body"
-    // ) {
-    //   return false;
-    // }
-
     return (
       hasAriaProps ||
-      // hasClickStyling ||
       hasClickHandler ||
       hasClickListeners ||
-      // isFormRelated ||
       isDraggable ||
       isContentEditable
-    );
-  }
-
-  /**
-   * Checks if an element is visible.
-   */
-  function isElementVisible(element) {
-    const style = window.getComputedStyle(element);
-    return (
-        element.offsetWidth > 0 &&
-        element.offsetHeight > 0 &&
-        style.visibility !== "hidden" &&
-        style.display !== "none"
     );
   }
 
@@ -561,8 +568,6 @@
     );
   }
 
-
-
   /**
    * Checks if a text node is visible.
    */
@@ -637,26 +642,25 @@
     }
 
     // NOTE: We skip highlight container nodes from the DOM tree
-    //       by ignoring the container element itself and all its children.
     if (node.id === HIGHLIGHT_CONTAINER_ID) {
       return null;
     }
 
     // Special case for text nodes
     if (node.nodeType === Node.TEXT_NODE) {
-      const textContent = node.textContent.trim();
-      if (textContent ) { // 
-        const id = `${ID.current++}`;
-
-        DOM_HASH_MAP[id] = {
-          type: "TEXT_NODE",
-          text: textContent,
-          isVisible: isTextNodeVisible(node),
-        };
-
-        return id;
-      }
-      return null;
+      return measureBuildDomTreePart('textNodeProcessing', () => {
+        const textContent = node.textContent.trim();
+        if (textContent) {
+          const id = `${ID.current++}`;
+          DOM_HASH_MAP[id] = {
+            type: "TEXT_NODE",
+            text: textContent,
+            isVisible: isTextNodeVisible(node),
+          };
+          return id;
+        }
+        return null;
+      });
     }
 
     // Check if element is accepted
@@ -664,170 +668,183 @@
       return null;
     }
 
-    const nodeData = {
+    const nodeData = measureBuildDomTreePart('elementNodeProcessing', () => ({
       tagName: node.tagName ? node.tagName.toLowerCase() : null,
       attributes: {},
-      xpath:
-        node.nodeType === Node.ELEMENT_NODE ? getXPathTree(node, true) : null,
+      xpath: node.nodeType === Node.ELEMENT_NODE ? getXPathTree(node, true) : null,
       children: [],
-    };
+    }));
 
     // Add coordinates for element nodes
     if (node.nodeType === Node.ELEMENT_NODE) {
-      const rect = node.getBoundingClientRect();
-      const { scrollX, scrollY } = getEffectiveScroll(node);
+      measureBuildDomTreePart('attributeProcessing', () => {
+        const rect = node.getBoundingClientRect();
+        const { scrollX, scrollY } = getEffectiveScroll(node);
 
-      // Viewport-relative coordinates (can be negative when scrolled)
-      nodeData.viewportCoordinates = {
-        topLeft: {
-          x: Math.round(rect.left),
-          y: Math.round(rect.top),
-        },
-        topRight: {
-          x: Math.round(rect.right),
-          y: Math.round(rect.top),
-        },
-        bottomLeft: {
-          x: Math.round(rect.left),
-          y: Math.round(rect.bottom),
-        },
-        bottomRight: {
-          x: Math.round(rect.right),
-          y: Math.round(rect.bottom),
-        },
-        center: {
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
-        },
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      };
+        nodeData.viewportCoordinates = {
+          topLeft: {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+          },
+          topRight: {
+            x: Math.round(rect.right),
+            y: Math.round(rect.top),
+          },
+          bottomLeft: {
+            x: Math.round(rect.left),
+            y: Math.round(rect.bottom),
+          },
+          bottomRight: {
+            x: Math.round(rect.right),
+            y: Math.round(rect.bottom),
+          },
+          center: {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+          },
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
 
-      // Page-relative coordinates (always positive, relative to page origin)
-      nodeData.pageCoordinates = {
-        topLeft: {
-          x: Math.round(rect.left + scrollX),
-          y: Math.round(rect.top + scrollY),
-        },
-        topRight: {
-          x: Math.round(rect.right + scrollX),
-          y: Math.round(rect.top + scrollY),
-        },
-        bottomLeft: {
-          x: Math.round(rect.left + scrollX),
-          y: Math.round(rect.bottom + scrollY),
-        },
-        bottomRight: {
-          x: Math.round(rect.right + scrollX),
-          y: Math.round(rect.bottom + scrollY),
-        },
-        center: {
-          x: Math.round(rect.left + rect.width / 2 + scrollX),
-          y: Math.round(rect.top + rect.height / 2 + scrollY),
-        },
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      };
+        nodeData.pageCoordinates = {
+          topLeft: {
+            x: Math.round(rect.left + scrollX),
+            y: Math.round(rect.top + scrollY),
+          },
+          topRight: {
+            x: Math.round(rect.right + scrollX),
+            y: Math.round(rect.top + scrollY),
+          },
+          bottomLeft: {
+            x: Math.round(rect.left + scrollX),
+            y: Math.round(rect.bottom + scrollY),
+          },
+          bottomRight: {
+            x: Math.round(rect.right + scrollX),
+            y: Math.round(rect.bottom + scrollY),
+          },
+          center: {
+            x: Math.round(rect.left + rect.width / 2 + scrollX),
+            y: Math.round(rect.top + rect.height / 2 + scrollY),
+          },
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
 
-      // Add viewport and scroll information using effective scroll
-      nodeData.viewport = {
-        scrollX: Math.round(scrollX),
-        scrollY: Math.round(scrollY),
-        width: window.innerWidth,
-        height: window.innerHeight,
-      };
+        nodeData.viewport = {
+          scrollX: Math.round(scrollX),
+          scrollY: Math.round(scrollY),
+          width: window.innerWidth,
+          height: window.innerHeight,
+        };
+      });
     }
 
     // Copy all attributes if the node is an element
     if (node.nodeType === Node.ELEMENT_NODE && node.attributes) {
-      // Use getAttributeNames() instead of directly iterating attributes
-      const attributeNames = node.getAttributeNames?.() || [];
-      for (const name of attributeNames) {
-        nodeData.attributes[name] = node.getAttribute(name);
-      }
+      measureBuildDomTreePart('attributeProcessing', () => {
+        const attributeNames = node.getAttributeNames?.() || [];
+        for (const name of attributeNames) {
+          nodeData.attributes[name] = node.getAttribute(name);
+        }
+      });
     }
 
     if (node.nodeType === Node.ELEMENT_NODE) {
-      const isInteractive = isInteractiveElement(node);
-      const isVisible = isElementVisible(node);
-      const isTop = isTopElement(node);
-      const isInViewport = isInExpandedViewport(node, viewportExpansion);
-      nodeData.isInteractive = isInteractive;
-      nodeData.isVisible = isVisible;
-      nodeData.isTopElement = isTop;
-      nodeData.isInViewport = isInViewport;
-      // Highlight if element meets all criteria and highlighting is enabled
-      if (isInteractive && isVisible && isTop && isInViewport) {
-        nodeData.highlightIndex = highlightIndex++;
-        // console.log('highlightIndex', highlightIndex)
-        if (doHighlightElements) {
-          if (focusHighlightIndex >= 0) {
-            if (focusHighlightIndex === nodeData.highlightIndex) {
+      measureBuildDomTreePart('interactivityChecks', () => {
+        const isInteractive = isInteractiveElement(node);
+        const isVisible = isElementVisible(node);
+        const isTop = isTopElement(node);
+        const isInViewport = isInExpandedViewport(node, viewportExpansion);
+        nodeData.isInteractive = isInteractive;
+        nodeData.isVisible = isVisible;
+        nodeData.isTopElement = isTop;
+        nodeData.isInViewport = isInViewport;
+        if (isInteractive && isVisible && isTop && isInViewport) {
+          nodeData.highlightIndex = highlightIndex++;
+          if (doHighlightElements) {
+            if (focusHighlightIndex >= 0) {
+              if (focusHighlightIndex === nodeData.highlightIndex) {
+                highlightElement(node, nodeData.highlightIndex, parentIframe);
+              }
+            } else {
               highlightElement(node, nodeData.highlightIndex, parentIframe);
             }
-          } else {
-            highlightElement(node, nodeData.highlightIndex, parentIframe);
+          }
+        }
+      });
+    }
+
+    // Handle shadow DOM and iframes
+    measureBuildDomTreePart('childrenProcessing', () => {
+      if (node.shadowRoot) {
+        nodeData.shadowRoot = true;
+        for (const child of node.shadowRoot.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) {
+            nodeData.children.push(domElement);
           }
         }
       }
-    }
 
-    // Only add iframeContext if we're inside an iframe
-    // if (parentIframe) {
-    //     nodeData.iframeContext = `iframe[src="${parentIframe.src || ''}"]`;
-    // }
-
-    // Only add shadowRoot field if it exists
-    if (node.shadowRoot) {
-      nodeData.shadowRoot = true;
-    }
-
-    // Handle shadow DOM
-    if (node.shadowRoot) {
-      for (const child of node.shadowRoot.childNodes) {
-        const domElement = buildDomTree(child, parentIframe);
-        if (domElement) {
-          nodeData.children.push(domElement);
-        }
-      }
-    }
-
-    // Handle iframes
-    if (node.tagName && node.tagName.toLowerCase() === "iframe") {
-      try {
-        const iframeDoc = node.contentDocument || node.contentWindow.document;
-        if (iframeDoc) {
-          for (const child of iframeDoc.childNodes) {
-            const domElement = buildDomTree(child, node);
-            if (domElement) {
-              nodeData.children.push(domElement);
+      if (node.tagName && node.tagName.toLowerCase() === "iframe") {
+        measureBuildDomTreePart('iframeProcessing', () => {
+          try {
+            const iframeDoc = node.contentDocument || node.contentWindow.document;
+            if (iframeDoc) {
+              for (const child of iframeDoc.childNodes) {
+                const domElement = buildDomTree(child, node);
+                if (domElement) {
+                  nodeData.children.push(domElement);
+                }
+              }
             }
+          } catch (e) {
+            console.warn("Unable to access iframe:", node);
+          }
+        });
+      } else {
+        for (const child of node.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) {
+            nodeData.children.push(domElement);
           }
         }
-      } catch (e) {
-        console.warn("Unable to access iframe:", node);
       }
-    } else {
-      for (const child of node.childNodes) {
-        const domElement = buildDomTree(child, parentIframe);
-        if (domElement) {
-          nodeData.children.push(domElement);
-        }
-      }
-      // If it's an <a> element and has no visible content, return null
+
       if (nodeData.tagName === 'a' && nodeData.children.length === 0) {
         return null;
       }
-    }
+    });
 
-    // NOTE: We register the node to the hash map.
-    const id = `${ID.current++}`;
-    DOM_HASH_MAP[id] = nodeData;
-
-    return id;
+    // Register node to hash map
+    return measureBuildDomTreePart('domHashMapOperations', () => {
+      const id = `${ID.current++}`;
+      DOM_HASH_MAP[id] = nodeData;
+      return id;
+    });
   }
+
+  // After all functions are defined, wrap them with performance measurement
+  buildDomTree = measureTime(buildDomTree, 'buildDomTree');
+  highlightElement = measureTime(highlightElement, 'highlightElement');
+  isInteractiveElement = measureTime(isInteractiveElement, 'isInteractiveElement');
+  isElementVisible = measureTime(isElementVisible, 'isElementVisible');
+  isTopElement = measureTime(isTopElement, 'isTopElement');
+  isInExpandedViewport = measureTime(isInExpandedViewport, 'isInExpandedViewport');
+  isTextNodeVisible = measureTime(isTextNodeVisible, 'isTextNodeVisible');
+  getEffectiveScroll = measureTime(getEffectiveScroll, 'getEffectiveScroll');
 
   const rootId = buildDomTree(document.body);
 
-  return { rootId, map: DOM_HASH_MAP };
+  // Convert timings to seconds
+  Object.keys(PERF_METRICS.timings).forEach(key => {
+    PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
+  });
+  
+  Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
+    PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+  });
+
+  return { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS };
 };
