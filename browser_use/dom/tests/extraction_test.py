@@ -94,7 +94,6 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
-		'https://csigna-eup1u6rnd.a99d1.metricstream.com/ui/form/MS_GRC_RISK/create',
 		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
 		'https://kayak.com/flights',
 		'https://immobilienscout24.de',
