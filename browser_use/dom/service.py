@@ -61,7 +61,13 @@ class DomService:
 		}
 
 		eval_page = await self.page.evaluate(self.js_code, args)
+		return await self._construct_dom_tree(eval_page)
 
+	@time_execution_async('--construct_dom_tree')
+	async def _construct_dom_tree(
+		self,
+		eval_page: dict,
+	) -> tuple[DOMElementNode, SelectorMap]:
 		js_node_map = eval_page['map']
 		js_root_id = eval_page['rootId']
 
