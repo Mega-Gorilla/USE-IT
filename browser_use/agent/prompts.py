@@ -161,7 +161,7 @@ class AgentMessagePrompt:
 		state: 'BrowserState',
 		result: Optional[List['ActionResult']] = None,
 		include_attributes: list[str] = [],
-		step_info: Optional[AgentStepInfo] = None,
+		step_info: Optional['AgentStepInfo'] = None,
 	):
 		self.state = state
 		self.result = result
