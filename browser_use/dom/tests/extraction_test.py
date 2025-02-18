@@ -89,13 +89,14 @@ async def test_focus_vs_all_elements():
 
 	browser = Browser(
 		config=BrowserConfig(
-			# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+			chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 		)
 	)
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
 		'https://csigna-eup1u6rnd.a99d1.metricstream.com/ui/form/MS_GRC_RISK/create',
+		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
 		'https://kayak.com/flights',
 		'https://immobilienscout24.de',
 		'https://google.com',
@@ -113,34 +114,29 @@ async def test_focus_vs_all_elements():
 			time.sleep(2)
 
 			while True:
-				print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
-				time.sleep(2)  # Additional wait for dynamic content
+				try:
+					print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
+					# time.sleep(2)  # Additional wait for dynamic content
 
-				# First get all elements
-				print('\nGetting all elements:')
-				all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
-					highlight_elements=True, viewport_expansion=0
-				)
+					# First get all elements
+					print('\nGetting all elements:')
+					all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
+						highlight_elements=True, viewport_expansion=100
+					)
 
-				selector_map = all_elements_state.selector_map
-				total_elements = len(selector_map.keys())
-				print(f'Total number of elements: {total_elements}')
+					selector_map = all_elements_state.selector_map
+					total_elements = len(selector_map.keys())
+					print(f'Total number of elements: {total_elements}')
 
-				answer = input('Which element do you want to focus on? (Enter index): ')
-				if answer == 'q':
-					break
-				await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
+					answer = input('Press Enter to clear highlights and continue...')
+					if answer == 'q':
+						break
 
-				focus_element = int(answer)
-				focus_state = await time_execution_sync('get_focused_element')(dom_service.get_clickable_elements)(
-					highlight_elements=True, focus_element=focus_element, viewport_expansion=0
-				)
-				focus_selector_map = focus_state.selector_map
-				focus_element_count = len(focus_selector_map.keys())
-				print(f'Number of highlighted elements when focused: {focus_element_count}')
+					await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
 
-				input('Press Enter to clear highlights and continue...')
-				await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
+				except Exception as e:
+					print(f'Error: {e}')
+					pass
 
 
 if __name__ == '__main__':
