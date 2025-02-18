@@ -203,7 +203,7 @@ You will see the following only once - if you need to remember it and you dont k
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
-Interactive elements from current page:
+Interactive elements from top layer of the current page inside the viewport:
 {elements_text}
 {step_info_description}
 """
