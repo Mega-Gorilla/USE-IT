@@ -22,7 +22,6 @@ async def test_process_html_file():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
-		'https://csigna-eup1u6rnd.a99d1.metricstream.com/ui/form/MS_GRC_RISK/create',
 		'https://kayak.com/flights',
 		'https://immobilienscout24.de',
 		'https://google.com',
