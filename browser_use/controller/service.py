@@ -224,13 +224,25 @@ class Controller:
 
 		# send keys
 		@self.registry.action(
-			'Send strings of special keys like Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. Be aware of different operating systems and their shortcuts',
+			'Send strings of special keys like Escape,Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. ',
 			param_model=SendKeysAction,
 		)
 		async def send_keys(params: SendKeysAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 
-			await page.keyboard.press(params.keys)
+			try:
+				await page.keyboard.press(params.keys)
+			except Exception as e:
+				if 'Unknown key' in str(e):
+					# loop over the keys and try to send each one
+					for key in params.keys:
+						try:
+							await page.keyboard.press(key)
+						except Exception as e:
+							logger.debug(f'Error sending key {key}: {str(e)}')
+							raise e
+				else:
+					raise e
 			msg = f'⌨️  Sent keys: {params.keys}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)

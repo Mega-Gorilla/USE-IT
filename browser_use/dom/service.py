@@ -15,6 +15,7 @@ from browser_use.dom.views import (
 	SelectorMap,
 	ViewportInfo,
 )
+from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class DomService:
 		self.js_code = resources.read_text('browser_use.dom', 'buildDomTree.js')
 
 	# region - Clickable elements
-
+	@time_execution_async('--get_clickable_elements')
 	async def get_clickable_elements(
 		self,
 		highlight_elements: bool = True,
@@ -40,6 +41,7 @@ class DomService:
 
 		return dom_state
 
+	@time_execution_async('--build_dom_tree')
 	async def _build_dom_tree(
 		self,
 		highlight_elements: bool,
@@ -59,7 +61,13 @@ class DomService:
 		}
 
 		eval_page = await self.page.evaluate(self.js_code, args)
+		return await self._construct_dom_tree(eval_page)
 
+	@time_execution_async('--construct_dom_tree')
+	async def _construct_dom_tree(
+		self,
+		eval_page: dict,
+	) -> tuple[DOMElementNode, SelectorMap]:
 		js_node_map = eval_page['map']
 		js_root_id = eval_page['rootId']
 
@@ -158,6 +166,7 @@ class DomService:
 			is_visible=node_data.get('isVisible', False),
 			is_interactive=node_data.get('isInteractive', False),
 			is_top_element=node_data.get('isTopElement', False),
+			is_in_viewport=node_data.get('isInViewport', False),
 			highlight_index=node_data.get('highlightIndex'),
 			shadow_root=node_data.get('shadowRoot', False),
 			parent=None,

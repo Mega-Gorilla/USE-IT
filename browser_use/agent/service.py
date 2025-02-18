@@ -87,14 +87,13 @@ class Agent:
 			'type',
 			'name',
 			'role',
-			'tabindex',
 			'aria-label',
 			'placeholder',
 			'value',
 			'alt',
 			'aria-expanded',
+			'data-date-format',
 		],
-		max_error_length: int = 400,
 		max_actions_per_step: int = 10,
 		tool_call_in_content: bool = True,
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
@@ -123,7 +122,6 @@ class Agent:
 		self.save_conversation_path_encoding = save_conversation_path_encoding
 		self._last_result = None
 		self.include_attributes = include_attributes
-		self.max_error_length = max_error_length
 		self.generate_gif = generate_gif
 
 		# Initialize planner
@@ -173,7 +171,6 @@ class Agent:
 			system_prompt_class=self.system_prompt_class,
 			max_input_tokens=self.max_input_tokens,
 			include_attributes=self.include_attributes,
-			max_error_length=self.max_error_length,
 			max_actions_per_step=self.max_actions_per_step,
 			message_context=self.message_context,
 			sensitive_data=self.sensitive_data,
@@ -221,15 +218,15 @@ class Agent:
 
 	def _set_model_names(self) -> None:
 		self.chat_model_library = self.llm.__class__.__name__
-		self.model_name = "Unknown"
+		self.model_name = 'Unknown'
 		# Check for 'model_name' attribute first
-		if hasattr(self.llm, "model_name"):
+		if hasattr(self.llm, 'model_name'):
 			model = self.llm.model_name
-			self.model_name = model if model is not None else "Unknown"
+			self.model_name = model if model is not None else 'Unknown'
 		# Fallback to 'model' attribute if needed
-		elif hasattr(self.llm, "model"):
+		elif hasattr(self.llm, 'model'):
 			model = self.llm.model
-			self.model_name = model if model is not None else "Unknown"
+			self.model_name = model if model is not None else 'Unknown'
 
 		if self.planner_llm:
 			if hasattr(self.planner_llm, 'model_name'):
@@ -635,7 +632,6 @@ class Agent:
 				state=state,
 				result=self._last_result,
 				include_attributes=self.include_attributes,
-				max_error_length=self.max_error_length,
 			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message(self.use_vision)]
 		else:
@@ -646,6 +642,7 @@ class Agent:
 			"""
 			Validation results.
 			"""
+
 			is_valid: bool
 			reason: str
 
