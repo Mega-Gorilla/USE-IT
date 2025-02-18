@@ -85,13 +85,7 @@ class MessageManager:
 			tool_calls=tool_calls,
 		)
 		self._add_message_with_tokens(example_tool_call)
-		tool_message = ToolMessage(
-			content='Browser started',
-			tool_call_id=str(self.state.tool_id),
-		)
-		self._add_message_with_tokens(tool_message)
-
-		self.state.tool_id += 1
+		self.add_tool_message(content='Browser started')
 
 		placeholder_message = HumanMessage(content='[Your task history memory starts here]')
 		self._add_message_with_tokens(placeholder_message)
@@ -155,12 +149,7 @@ class MessageManager:
 
 		self._add_message_with_tokens(msg)
 		# empty tool response
-		tool_message = ToolMessage(
-			content='',
-			tool_call_id=str(self.state.tool_id),
-		)
-		self._add_message_with_tokens(tool_message)
-		self.state.tool_id += 1
+		self.add_tool_message(content='')
 
 	def add_plan(self, plan: Optional[str], position: int = -1) -> None:
 		if plan:
