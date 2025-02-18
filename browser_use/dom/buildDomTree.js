@@ -336,7 +336,7 @@
       element.hasAttribute("aria-checked");
 
 
-      const isContentEditable = element.getAttribute("contenteditable") === "true" || element.isContentEditable ||
+    const isContentEditable = element.getAttribute("contenteditable") === "true" || element.isContentEditable ||
       element.id === "tinymce" ||
       element.classList.contains("mce-content-body") ||
       (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
@@ -427,6 +427,49 @@
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       
+      // If the element is not in viewport, we need to scroll to it temporarily
+      const isInViewport = (
+        centerX >= 0 &&
+        centerX <= window.innerWidth &&
+        centerY >= 0 &&
+        centerY <= window.innerHeight
+      );
+
+      if (!isInViewport) {
+        // Save current scroll position
+        const originalScrollX = window.scrollX;
+        const originalScrollY = window.scrollY;
+
+        // Calculate scroll position to bring element into view
+        const scrollX = originalScrollX + rect.left - (window.innerWidth / 4);
+        const scrollY = originalScrollY + rect.top - (window.innerHeight / 4);
+
+        // Temporarily scroll to the element
+        window.scrollTo(scrollX, scrollY);
+
+        // Get new coordinates after scroll
+        const newRect = element.getBoundingClientRect();
+        const newCenterX = newRect.left + newRect.width / 2;
+        const newCenterY = newRect.top + newRect.height / 2;
+
+        // Check if element is top at new position
+        const topEl = document.elementFromPoint(newCenterX, newCenterY);
+
+        // Restore original scroll position
+        window.scrollTo(originalScrollX, originalScrollY);
+
+        if (!topEl) return true; // If no element found, consider it top
+
+        // Check if the found element is our target or one of its parents
+        let current = topEl;
+        while (current && current !== document.documentElement) {
+          if (current === element) return true;
+          current = current.parentElement;
+        }
+        return false;
+      }
+
+      // For elements in viewport, use original logic
       const topEl = document.elementFromPoint(centerX, centerY);
       if (!topEl) return false;
 
@@ -445,6 +488,10 @@
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
+    if (viewportExpansion === -1) {
+      return true;
+    }
+
     const rect = element.getBoundingClientRect();
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
