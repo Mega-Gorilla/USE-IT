@@ -98,6 +98,37 @@
     return result;
   }
 
+  // Add caching mechanisms at the top level
+  const DOM_CACHE = {
+    boundingRects: new WeakMap(),
+    computedStyles: new WeakMap(),
+    clearCache: () => {
+      DOM_CACHE.boundingRects = new WeakMap();
+      DOM_CACHE.computedStyles = new WeakMap();
+    }
+  };
+
+  // Cache helper functions
+  function getCachedBoundingRect(element) {
+    if (!DOM_CACHE.boundingRects.has(element)) {
+      DOM_CACHE.boundingRects.set(element, measureDomOperation(
+        () => element.getBoundingClientRect(),
+        'getBoundingClientRect'
+      ));
+    }
+    return DOM_CACHE.boundingRects.get(element);
+  }
+
+  function getCachedComputedStyle(element) {
+    if (!DOM_CACHE.computedStyles.has(element)) {
+      DOM_CACHE.computedStyles.set(element, measureDomOperation(
+        () => window.getComputedStyle(element),
+        'getComputedStyle'
+      ));
+    }
+    return DOM_CACHE.computedStyles.get(element);
+  }
+
   /**
    * Hash map of DOM nodes indexed by their highlight index.
    *
@@ -298,7 +329,7 @@
    * Checks if an element is visible.
    */
   function isElementVisible(element) {
-    const style = measureDomOperation(() => window.getComputedStyle(element), 'getComputedStyle');
+    const style = getCachedComputedStyle(element);
     return (
         element.offsetWidth > 0 &&
         element.offsetHeight > 0 &&
@@ -470,7 +501,7 @@
    * Checks if an element is the topmost element at its position.
    */
   function isTopElement(element) {
-    const rect = measureDomOperation(() => element.getBoundingClientRect(), 'getBoundingClientRect');
+    const rect = getCachedBoundingRect(element);
     
     // If element is not in viewport, consider it top
     const isInViewport = (
@@ -543,7 +574,7 @@
         return true;
     }
 
-    const rect = element.getBoundingClientRect();
+    const rect = getCachedBoundingRect(element);
     
     // Simple viewport check without scroll calculations
     return !(
@@ -659,7 +690,7 @@
       // Add coordinates for element nodes
       if (node.nodeType === Node.ELEMENT_NODE) {
         measureBuildDomTreePart('attributeProcessing', () => {
-          const rect = measureDomOperation(() => node.getBoundingClientRect(), 'getBoundingClientRect');
+          const rect = getCachedBoundingRect(node);
           
           // Only store minimal viewport info
           nodeData.viewport = {
@@ -792,6 +823,9 @@
   getEffectiveScroll = measureTime(getEffectiveScroll, 'getEffectiveScroll');
 
   const rootId = buildDomTree(document.body);
+
+  // Clear the cache before starting
+  DOM_CACHE.clearCache();
 
   // Convert timings to seconds and add some useful derived metrics
   Object.keys(PERF_METRICS.timings).forEach(key => {
