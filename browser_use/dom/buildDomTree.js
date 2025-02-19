@@ -634,6 +634,38 @@
     }, 'scrollOperations');
   }
 
+  // Add these helper functions at the top level
+  function isInteractiveCandidate(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+
+    const tagName = element.tagName.toLowerCase();
+    
+    // Fast-path for common interactive elements
+    const interactiveElements = new Set([
+      "a", "button", "input", "select", "textarea", "details", "summary"
+    ]);
+    
+    if (interactiveElements.has(tagName)) return true;
+
+    // Quick attribute checks without getting full lists
+    const hasQuickInteractiveAttr = element.hasAttribute("onclick") || 
+      element.hasAttribute("role") ||
+      element.hasAttribute("tabindex") ||
+      element.hasAttribute("aria-") ||
+      element.hasAttribute("data-action");
+
+    return hasQuickInteractiveAttr;
+  }
+
+  function quickVisibilityCheck(element) {
+    // Fast initial check before expensive getComputedStyle
+    return element.offsetWidth > 0 && 
+           element.offsetHeight > 0 && 
+           !element.hasAttribute("hidden") &&
+           element.style.display !== "none" &&
+           element.style.visibility !== "hidden";
+  }
+
   /**
    * Creates a node data object for a given node and its descendants and returns
    * the identifier of the node in the hash map or null if the node is not accepted.
@@ -649,101 +681,75 @@
     let result;
 
     try {
-      if (!node) {
-        return null;
+      if (!node) return null;
+
+      // Skip highlight container
+      if (node.id === HIGHLIGHT_CONTAINER_ID) return null;
+
+      // Early bailout for non-element nodes except text
+      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) return null;
+
+      // Quick checks for element nodes
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        // Skip denied elements early
+        if (!isElementAccepted(node)) return null;
+
+        // Quick visibility check before expensive operations
+        if (!quickVisibilityCheck(node)) return null;
+
+        // If not in viewport and not processing all elements, skip
+        if (viewportExpansion !== -1) {
+          const rect = getCachedBoundingRect(node);
+          if (rect.bottom < -viewportExpansion ||
+              rect.top > window.innerHeight + viewportExpansion ||
+              rect.right < -viewportExpansion ||
+              rect.left > window.innerWidth + viewportExpansion) {
+            return null;
+          }
+        }
       }
 
-      // NOTE: We skip highlight container nodes from the DOM tree
-      if (node.id === HIGHLIGHT_CONTAINER_ID) {
-        return null;
-      }
-
-      // Special case for text nodes
+      // Process text nodes
       if (node.nodeType === Node.TEXT_NODE) {
         return measureBuildDomTreePart('textNodeProcessing', () => {
           const textContent = node.textContent.trim();
-          if (textContent) {
-            const id = `${ID.current++}`;
-            DOM_HASH_MAP[id] = {
-              type: "TEXT_NODE",
-              text: textContent,
-              isVisible: isTextNodeVisible(node),
-            };
-            return id;
-          }
-          return null;
+          if (!textContent) return null;
+
+          const id = `${ID.current++}`;
+          DOM_HASH_MAP[id] = {
+            type: "TEXT_NODE",
+            text: textContent,
+            isVisible: isTextNodeVisible(node),
+          };
+          return id;
         });
       }
 
-      // Check if element is accepted
-      if (node.nodeType === Node.ELEMENT_NODE && !isElementAccepted(node)) {
-        return null;
-      }
-
+      // At this point we know it's an element node that passed initial checks
       const nodeData = measureBuildDomTreePart('elementNodeProcessing', () => ({
-        tagName: node.tagName ? node.tagName.toLowerCase() : null,
+        tagName: node.tagName.toLowerCase(),
         attributes: {},
-        xpath: node.nodeType === Node.ELEMENT_NODE ? getXPathTree(node, true) : null,
+        xpath: getXPathTree(node, true),
         children: [],
       }));
 
-      // Add coordinates for element nodes
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        measureBuildDomTreePart('attributeProcessing', () => {
-          const rect = getCachedBoundingRect(node);
-          
-          // Only store minimal viewport info
-          nodeData.viewport = {
-            width: window.innerWidth,
-            height: window.innerHeight
-          };
-        });
-      }
+      // Only do expensive checks if element is a potential interactive candidate
+      const isCandidate = isInteractiveCandidate(node);
 
-      // Measure attribute operations
-      measureBuildDomTreePart('attributeProcessing', () => {
-        const attributeNames = measureDomOperation(
-          () => node.getAttributeNames?.() || [],
-          'getAttributeNames'
-        );
-        for (const name of attributeNames) {
-          nodeData.attributes[name] = measureDomOperation(
-            () => node.getAttribute(name),
-            'getAttribute'
-          );
-        }
-      });
-
-      if (node.nodeType === Node.ELEMENT_NODE) {
+      if (isCandidate) {
         measureBuildDomTreePart('interactivityChecks', () => {
-          // Initialize all flags to false by default
-          nodeData.isInteractive = false;
-          nodeData.isVisible = false;
-          nodeData.isTopElement = false;
-          nodeData.isInViewport = false;
+          nodeData.isVisible = isElementVisible(node);
+          if (!nodeData.isVisible) return;
 
-          // Check visibility first as it's the fastest check
-          const isVisible = isElementVisible(node);
-          if (!isVisible) return;
-          nodeData.isVisible = true;
+          nodeData.isInteractive = isInteractiveElement(node);
+          if (!nodeData.isInteractive) return;
 
-          // Check interactivity next as it's the second fastest
-          const isInteractive = isInteractiveElement(node);
-          if (!isInteractive) return;
-          nodeData.isInteractive = true;
+          nodeData.isTopElement = isTopElement(node);
+          if (!nodeData.isTopElement) return;
 
-          // Check if element is top as third fastest
-          const isTop = isTopElement(node);
-          if (!isTop) return;
-          nodeData.isTopElement = true;
-
-          // Check viewport last as it's the most expensive
-          const isInViewport = isInExpandedViewport(node, viewportExpansion);
-          if (!isInViewport) return;
-          nodeData.isInViewport = true;
-
-          // Only if all checks pass, do we handle highlighting
+          nodeData.isInViewport = true; // We already checked this
           nodeData.highlightIndex = highlightIndex++;
+
           if (doHighlightElements) {
             if (focusHighlightIndex >= 0) {
               if (focusHighlightIndex === nodeData.highlightIndex) {
@@ -756,18 +762,9 @@
         });
       }
 
-      // Handle shadow DOM and iframes
+      // Process children
       measureBuildDomTreePart('childrenProcessing', () => {
-        if (node.shadowRoot) {
-          nodeData.shadowRoot = true;
-          for (const child of node.shadowRoot.childNodes) {
-            const domElement = buildDomTree(child, parentIframe);
-            if (domElement) {
-              nodeData.children.push(domElement);
-            }
-          }
-        }
-
+        // Only process children if parent might contain interactive elements
         if (node.tagName && node.tagName.toLowerCase() === "iframe") {
           measureBuildDomTreePart('iframeProcessing', () => {
             try {
@@ -775,9 +772,7 @@
               if (iframeDoc) {
                 for (const child of iframeDoc.childNodes) {
                   const domElement = buildDomTree(child, node);
-                  if (domElement) {
-                    nodeData.children.push(domElement);
-                  }
+                  if (domElement) nodeData.children.push(domElement);
                 }
               }
             } catch (e) {
@@ -787,14 +782,8 @@
         } else {
           for (const child of node.childNodes) {
             const domElement = buildDomTree(child, parentIframe);
-            if (domElement) {
-              nodeData.children.push(domElement);
-            }
+            if (domElement) nodeData.children.push(domElement);
           }
-        }
-
-        if (nodeData.tagName === 'a' && nodeData.children.length === 0) {
-          return null;
         }
       });
 
