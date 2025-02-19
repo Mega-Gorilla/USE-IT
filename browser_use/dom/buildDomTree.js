@@ -145,7 +145,7 @@
     ];
     const colorIndex = index % colors.length;
     const baseColor = colors[colorIndex];
-    const backgroundColor = `${baseColor}1A`; // 10% opacity version of the color
+    const backgroundColor = baseColor + "1A"; // 10% opacity version of the color
 
     // Create highlight overlay
     const overlay = document.createElement("div");
@@ -235,17 +235,10 @@
         label.style.left = `${newLabelLeft}px`;
     };
 
-    // Add scroll listeners
-    let currentEl = element;
-    while (currentEl) {
-        if (currentEl.scrollHeight > currentEl.clientHeight || 
-            currentEl.scrollWidth > currentEl.clientWidth) {
-            currentEl.addEventListener('scroll', updatePositions);
-        }
-        currentEl = currentEl.parentElement;
-    }
+  
 
     window.addEventListener('scroll', updatePositions);
+    window.addEventListener('resize', updatePositions);
 
     return index + 1;
   }
@@ -547,29 +540,17 @@
    */
   function isInExpandedViewport(element, viewportExpansion) {
     if (viewportExpansion === -1) {
-      return true;
+        return true;
     }
 
     const rect = element.getBoundingClientRect();
-    const { scrollX, scrollY } = getEffectiveScroll(element);  // Use effective scroll
-
-    // Calculate expanded viewport boundaries including effective scroll
-    const viewportTop = -viewportExpansion + scrollY;
-    const viewportLeft = -viewportExpansion + scrollX;
-    const viewportBottom = window.innerHeight + viewportExpansion + scrollY;
-    const viewportRight = window.innerWidth + viewportExpansion + scrollX;
-
-    // Get absolute element position using effective scroll
-    const absTop = rect.top + scrollY;
-    const absLeft = rect.left + scrollX;
-    const absBottom = rect.bottom + scrollY;
-    const absRight = rect.right + scrollX;
-
+    
+    // Simple viewport check without scroll calculations
     return !(
-      absBottom < viewportTop ||
-      absTop > viewportBottom ||
-      absRight < viewportLeft ||
-      absLeft > viewportRight
+        rect.bottom < -viewportExpansion ||
+        rect.top > window.innerHeight + viewportExpansion ||
+        rect.right < -viewportExpansion ||
+        rect.left > window.innerWidth + viewportExpansion
     );
   }
 
@@ -581,38 +562,23 @@
     range.selectNodeContents(textNode);
     const rect = range.getBoundingClientRect();
     
-    // Get effective scroll for the text node's parent element
-    const { scrollX, scrollY } = getEffectiveScroll(textNode.parentElement);
+    // Simple size check
+    if (rect.width === 0 || rect.height === 0) {
+        return false;
+    }
 
-    // Calculate expanded viewport boundaries including effective scroll
-    const viewportTop = -viewportExpansion + scrollY;
-    const viewportLeft = -viewportExpansion + scrollX;
-    const viewportBottom = window.innerHeight + viewportExpansion + scrollY;
-    const viewportRight = window.innerWidth + viewportExpansion + scrollX;
-
-    // Get absolute text node position using effective scroll
-    const absTop = rect.top + scrollY;
-    const absLeft = rect.left + scrollX;
-    const absBottom = rect.bottom + scrollY;
-    const absRight = rect.right + scrollX;
-
-    // Check if text node is within expanded viewport
-    const isInExpandedViewport = !(
-      absBottom < viewportTop ||
-      absTop > viewportBottom ||
-      absRight < viewportLeft ||
-      absLeft > viewportRight
+    // Simple viewport check without scroll calculations
+    const isInViewport = !(
+        rect.bottom < -viewportExpansion ||
+        rect.top > window.innerHeight + viewportExpansion ||
+        rect.right < -viewportExpansion ||
+        rect.left > window.innerWidth + viewportExpansion
     );
 
-    return (
-      rect.width !== 0 &&
-      rect.height !== 0 &&
-      isInExpandedViewport &&
-      textNode.parentElement?.checkVisibility({
+    return isInViewport && textNode.parentElement?.checkVisibility({
         checkOpacity: true,
         checkVisibilityCSS: true,
-      })
-    );
+    });
   }
 
   // Add this new helper function
@@ -694,63 +660,11 @@
       if (node.nodeType === Node.ELEMENT_NODE) {
         measureBuildDomTreePart('attributeProcessing', () => {
           const rect = measureDomOperation(() => node.getBoundingClientRect(), 'getBoundingClientRect');
-          const { scrollX, scrollY } = getEffectiveScroll(node);
-
-          nodeData.viewportCoordinates = {
-            topLeft: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.top),
-            },
-            topRight: {
-              x: Math.round(rect.right),
-              y: Math.round(rect.top),
-            },
-            bottomLeft: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.bottom),
-            },
-            bottomRight: {
-              x: Math.round(rect.right),
-              y: Math.round(rect.bottom),
-            },
-            center: {
-              x: Math.round(rect.left + rect.width / 2),
-              y: Math.round(rect.top + rect.height / 2),
-            },
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          };
-
-          nodeData.pageCoordinates = {
-            topLeft: {
-              x: Math.round(rect.left + scrollX),
-              y: Math.round(rect.top + scrollY),
-            },
-            topRight: {
-              x: Math.round(rect.right + scrollX),
-              y: Math.round(rect.top + scrollY),
-            },
-            bottomLeft: {
-              x: Math.round(rect.left + scrollX),
-              y: Math.round(rect.bottom + scrollY),
-            },
-            bottomRight: {
-              x: Math.round(rect.right + scrollX),
-              y: Math.round(rect.bottom + scrollY),
-            },
-            center: {
-              x: Math.round(rect.left + rect.width / 2 + scrollX),
-              y: Math.round(rect.top + rect.height / 2 + scrollY),
-            },
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          };
-
+          
+          // Only store minimal viewport info
           nodeData.viewport = {
-            scrollX: Math.round(scrollX),
-            scrollY: Math.round(scrollY),
             width: window.innerWidth,
-            height: window.innerHeight,
+            height: window.innerHeight
           };
         });
       }
