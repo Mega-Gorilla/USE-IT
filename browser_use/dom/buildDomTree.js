@@ -27,6 +27,30 @@
       interactivityChecks: 0,
       domHashMapOperations: 0,
       xpathCalculation: 0,
+      totalSelfTime: 0,  // Time spent in buildDomTree itself, excluding child calls
+      totalTime: 0,      // Total time including all recursive calls
+      depth: 0,          // Current recursion depth
+      maxDepth: 0,      // Maximum recursion depth reached
+      domOperations: {
+        getBoundingClientRect: 0,
+        getComputedStyle: 0,
+        getAttribute: 0,
+        getAttributeNames: 0,
+        scrollOperations: 0,
+        elementFromPoint: 0,
+        checkVisibility: 0,
+        createRange: 0,
+      },
+      domOperationCounts: {
+        getBoundingClientRect: 0,
+        getComputedStyle: 0,
+        getAttribute: 0,
+        getAttributeNames: 0,
+        scrollOperations: 0,
+        elementFromPoint: 0,
+        checkVisibility: 0,
+        createRange: 0,
+      }
     },
     timings: {
       buildDomTree: 0,
@@ -46,7 +70,10 @@
       PERF_METRICS[`${metricName}Calls`]++;
       const start = performance.now();
       const result = fn.apply(this, args);
-      PERF_METRICS.timings[metricName] += (performance.now() - start);
+      const duration = performance.now() - start;
+      if (metricName !== 'buildDomTree') {  // Skip buildDomTree as we measure it separately
+        PERF_METRICS.timings[metricName] += duration;
+      }
       return result;
     };
   }
@@ -55,7 +82,19 @@
   function measureBuildDomTreePart(part, fn) {
     const start = performance.now();
     const result = fn();
-    PERF_METRICS.buildDomTreeBreakdown[part] += (performance.now() - start);
+    const duration = performance.now() - start;
+    PERF_METRICS.buildDomTreeBreakdown[part] += duration;
+    PERF_METRICS.buildDomTreeBreakdown.totalSelfTime += duration;
+    return result;
+  }
+
+  // Helper to measure DOM operations
+  function measureDomOperation(operation, name) {
+    const start = performance.now();
+    const result = operation();
+    const duration = performance.now() - start;
+    PERF_METRICS.buildDomTreeBreakdown.domOperations[name] += duration;
+    PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[name]++;
     return result;
   }
 
@@ -266,7 +305,7 @@
    * Checks if an element is visible.
    */
   function isElementVisible(element) {
-    const style = window.getComputedStyle(element);
+    const style = measureDomOperation(() => window.getComputedStyle(element), 'getComputedStyle');
     return (
         element.offsetWidth > 0 &&
         element.offsetHeight > 0 &&
@@ -439,7 +478,7 @@
    */
   function isTopElement(element) {
     const { scrollX, scrollY } = getEffectiveScroll(element);
-    const rect = element.getBoundingClientRect();
+    const rect = measureDomOperation(() => element.getBoundingClientRect(), 'getBoundingClientRect');
     
     // Use effective scroll for center point calculation
     const centerX = rect.left + rect.width/2 + scrollX;
@@ -463,7 +502,10 @@
 
       try {
         // Use shadow root's elementFromPoint to check within shadow DOM context
-        const topEl = shadowRoot.elementFromPoint(point.x, point.y);
+        const topEl = measureDomOperation(
+          () => shadowRoot.elementFromPoint(point.x, point.y),
+          'elementFromPoint'
+        );
         if (!topEl) return false;
 
         // Check if the element or any of its parents match our target element
@@ -615,21 +657,21 @@
     let currentEl = element;
     let scrollX = 0;
     let scrollY = 0;
+    
+    return measureDomOperation(() => {
+      while (currentEl && currentEl !== document.documentElement) {
+          if (currentEl.scrollLeft || currentEl.scrollTop) {
+              scrollX += currentEl.scrollLeft;
+              scrollY += currentEl.scrollTop;
+          }
+          currentEl = currentEl.parentElement;
+      }
 
-    while (currentEl && currentEl !== document.documentElement) {
-        // Add scroll of any scrollable container
-        if (currentEl.scrollLeft || currentEl.scrollTop) {
-            scrollX += currentEl.scrollLeft;
-            scrollY += currentEl.scrollTop;
-        }
-        currentEl = currentEl.parentElement;
-    }
+      scrollX += window.scrollX;
+      scrollY += window.scrollY;
 
-    // Add main window scroll
-    scrollX += window.scrollX;
-    scrollY += window.scrollY;
-
-    return { scrollX, scrollY };
+      return { scrollX, scrollY };
+    }, 'scrollOperations');
   }
 
   /**
@@ -637,196 +679,216 @@
    * the identifier of the node in the hash map or null if the node is not accepted.
    */
   function buildDomTree(node, parentIframe = null) {
-    if (!node) {
-      return null;
-    }
+    PERF_METRICS.buildDomTreeBreakdown.depth++;
+    PERF_METRICS.buildDomTreeBreakdown.maxDepth = Math.max(
+      PERF_METRICS.buildDomTreeBreakdown.maxDepth,
+      PERF_METRICS.buildDomTreeBreakdown.depth
+    );
 
-    // NOTE: We skip highlight container nodes from the DOM tree
-    if (node.id === HIGHLIGHT_CONTAINER_ID) {
-      return null;
-    }
+    const start = performance.now();
+    let result;
 
-    // Special case for text nodes
-    if (node.nodeType === Node.TEXT_NODE) {
-      return measureBuildDomTreePart('textNodeProcessing', () => {
-        const textContent = node.textContent.trim();
-        if (textContent) {
-          const id = `${ID.current++}`;
-          DOM_HASH_MAP[id] = {
-            type: "TEXT_NODE",
-            text: textContent,
-            isVisible: isTextNodeVisible(node),
-          };
-          return id;
-        }
+    try {
+      if (!node) {
         return null;
-      });
-    }
+      }
 
-    // Check if element is accepted
-    if (node.nodeType === Node.ELEMENT_NODE && !isElementAccepted(node)) {
-      return null;
-    }
+      // NOTE: We skip highlight container nodes from the DOM tree
+      if (node.id === HIGHLIGHT_CONTAINER_ID) {
+        return null;
+      }
 
-    const nodeData = measureBuildDomTreePart('elementNodeProcessing', () => ({
-      tagName: node.tagName ? node.tagName.toLowerCase() : null,
-      attributes: {},
-      xpath: node.nodeType === Node.ELEMENT_NODE ? getXPathTree(node, true) : null,
-      children: [],
-    }));
+      // Special case for text nodes
+      if (node.nodeType === Node.TEXT_NODE) {
+        return measureBuildDomTreePart('textNodeProcessing', () => {
+          const textContent = node.textContent.trim();
+          if (textContent) {
+            const id = `${ID.current++}`;
+            DOM_HASH_MAP[id] = {
+              type: "TEXT_NODE",
+              text: textContent,
+              isVisible: isTextNodeVisible(node),
+            };
+            return id;
+          }
+          return null;
+        });
+      }
 
-    // Add coordinates for element nodes
-    if (node.nodeType === Node.ELEMENT_NODE) {
+      // Check if element is accepted
+      if (node.nodeType === Node.ELEMENT_NODE && !isElementAccepted(node)) {
+        return null;
+      }
+
+      const nodeData = measureBuildDomTreePart('elementNodeProcessing', () => ({
+        tagName: node.tagName ? node.tagName.toLowerCase() : null,
+        attributes: {},
+        xpath: node.nodeType === Node.ELEMENT_NODE ? getXPathTree(node, true) : null,
+        children: [],
+      }));
+
+      // Add coordinates for element nodes
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        measureBuildDomTreePart('attributeProcessing', () => {
+          const rect = measureDomOperation(() => node.getBoundingClientRect(), 'getBoundingClientRect');
+          const { scrollX, scrollY } = getEffectiveScroll(node);
+
+          nodeData.viewportCoordinates = {
+            topLeft: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.top),
+            },
+            topRight: {
+              x: Math.round(rect.right),
+              y: Math.round(rect.top),
+            },
+            bottomLeft: {
+              x: Math.round(rect.left),
+              y: Math.round(rect.bottom),
+            },
+            bottomRight: {
+              x: Math.round(rect.right),
+              y: Math.round(rect.bottom),
+            },
+            center: {
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+            },
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+
+          nodeData.pageCoordinates = {
+            topLeft: {
+              x: Math.round(rect.left + scrollX),
+              y: Math.round(rect.top + scrollY),
+            },
+            topRight: {
+              x: Math.round(rect.right + scrollX),
+              y: Math.round(rect.top + scrollY),
+            },
+            bottomLeft: {
+              x: Math.round(rect.left + scrollX),
+              y: Math.round(rect.bottom + scrollY),
+            },
+            bottomRight: {
+              x: Math.round(rect.right + scrollX),
+              y: Math.round(rect.bottom + scrollY),
+            },
+            center: {
+              x: Math.round(rect.left + rect.width / 2 + scrollX),
+              y: Math.round(rect.top + rect.height / 2 + scrollY),
+            },
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+
+          nodeData.viewport = {
+            scrollX: Math.round(scrollX),
+            scrollY: Math.round(scrollY),
+            width: window.innerWidth,
+            height: window.innerHeight,
+          };
+        });
+      }
+
+      // Measure attribute operations
       measureBuildDomTreePart('attributeProcessing', () => {
-        const rect = node.getBoundingClientRect();
-        const { scrollX, scrollY } = getEffectiveScroll(node);
-
-        nodeData.viewportCoordinates = {
-          topLeft: {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-          },
-          topRight: {
-            x: Math.round(rect.right),
-            y: Math.round(rect.top),
-          },
-          bottomLeft: {
-            x: Math.round(rect.left),
-            y: Math.round(rect.bottom),
-          },
-          bottomRight: {
-            x: Math.round(rect.right),
-            y: Math.round(rect.bottom),
-          },
-          center: {
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-          },
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        };
-
-        nodeData.pageCoordinates = {
-          topLeft: {
-            x: Math.round(rect.left + scrollX),
-            y: Math.round(rect.top + scrollY),
-          },
-          topRight: {
-            x: Math.round(rect.right + scrollX),
-            y: Math.round(rect.top + scrollY),
-          },
-          bottomLeft: {
-            x: Math.round(rect.left + scrollX),
-            y: Math.round(rect.bottom + scrollY),
-          },
-          bottomRight: {
-            x: Math.round(rect.right + scrollX),
-            y: Math.round(rect.bottom + scrollY),
-          },
-          center: {
-            x: Math.round(rect.left + rect.width / 2 + scrollX),
-            y: Math.round(rect.top + rect.height / 2 + scrollY),
-          },
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        };
-
-        nodeData.viewport = {
-          scrollX: Math.round(scrollX),
-          scrollY: Math.round(scrollY),
-          width: window.innerWidth,
-          height: window.innerHeight,
-        };
-      });
-    }
-
-    // Copy all attributes if the node is an element
-    if (node.nodeType === Node.ELEMENT_NODE && node.attributes) {
-      measureBuildDomTreePart('attributeProcessing', () => {
-        const attributeNames = node.getAttributeNames?.() || [];
+        const attributeNames = measureDomOperation(
+          () => node.getAttributeNames?.() || [],
+          'getAttributeNames'
+        );
         for (const name of attributeNames) {
-          nodeData.attributes[name] = node.getAttribute(name);
+          nodeData.attributes[name] = measureDomOperation(
+            () => node.getAttribute(name),
+            'getAttribute'
+          );
         }
       });
-    }
 
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      measureBuildDomTreePart('interactivityChecks', () => {
-        const isInteractive = isInteractiveElement(node);
-        const isVisible = isElementVisible(node);
-        const isTop = isTopElement(node);
-        const isInViewport = isInExpandedViewport(node, viewportExpansion);
-        nodeData.isInteractive = isInteractive;
-        nodeData.isVisible = isVisible;
-        nodeData.isTopElement = isTop;
-        nodeData.isInViewport = isInViewport;
-        if (isInteractive && isVisible && isTop && isInViewport) {
-          nodeData.highlightIndex = highlightIndex++;
-          if (doHighlightElements) {
-            if (focusHighlightIndex >= 0) {
-              if (focusHighlightIndex === nodeData.highlightIndex) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        measureBuildDomTreePart('interactivityChecks', () => {
+          const isInteractive = isInteractiveElement(node);
+          const isVisible = isElementVisible(node);
+          const isTop = isTopElement(node);
+          const isInViewport = isInExpandedViewport(node, viewportExpansion);
+          nodeData.isInteractive = isInteractive;
+          nodeData.isVisible = isVisible;
+          nodeData.isTopElement = isTop;
+          nodeData.isInViewport = isInViewport;
+          if (isInteractive && isVisible && isTop && isInViewport) {
+            nodeData.highlightIndex = highlightIndex++;
+            if (doHighlightElements) {
+              if (focusHighlightIndex >= 0) {
+                if (focusHighlightIndex === nodeData.highlightIndex) {
+                  highlightElement(node, nodeData.highlightIndex, parentIframe);
+                }
+              } else {
                 highlightElement(node, nodeData.highlightIndex, parentIframe);
               }
-            } else {
-              highlightElement(node, nodeData.highlightIndex, parentIframe);
             }
-          }
-        }
-      });
-    }
-
-    // Handle shadow DOM and iframes
-    measureBuildDomTreePart('childrenProcessing', () => {
-      if (node.shadowRoot) {
-        nodeData.shadowRoot = true;
-        for (const child of node.shadowRoot.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
-          if (domElement) {
-            nodeData.children.push(domElement);
-          }
-        }
-      }
-
-      if (node.tagName && node.tagName.toLowerCase() === "iframe") {
-        measureBuildDomTreePart('iframeProcessing', () => {
-          try {
-            const iframeDoc = node.contentDocument || node.contentWindow.document;
-            if (iframeDoc) {
-              for (const child of iframeDoc.childNodes) {
-                const domElement = buildDomTree(child, node);
-                if (domElement) {
-                  nodeData.children.push(domElement);
-                }
-              }
-            }
-          } catch (e) {
-            console.warn("Unable to access iframe:", node);
           }
         });
-      } else {
-        for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
-          if (domElement) {
-            nodeData.children.push(domElement);
+      }
+
+      // Handle shadow DOM and iframes
+      measureBuildDomTreePart('childrenProcessing', () => {
+        if (node.shadowRoot) {
+          nodeData.shadowRoot = true;
+          for (const child of node.shadowRoot.childNodes) {
+            const domElement = buildDomTree(child, parentIframe);
+            if (domElement) {
+              nodeData.children.push(domElement);
+            }
           }
         }
-      }
 
-      if (nodeData.tagName === 'a' && nodeData.children.length === 0) {
-        return null;
-      }
-    });
+        if (node.tagName && node.tagName.toLowerCase() === "iframe") {
+          measureBuildDomTreePart('iframeProcessing', () => {
+            try {
+              const iframeDoc = node.contentDocument || node.contentWindow.document;
+              if (iframeDoc) {
+                for (const child of iframeDoc.childNodes) {
+                  const domElement = buildDomTree(child, node);
+                  if (domElement) {
+                    nodeData.children.push(domElement);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn("Unable to access iframe:", node);
+            }
+          });
+        } else {
+          for (const child of node.childNodes) {
+            const domElement = buildDomTree(child, parentIframe);
+            if (domElement) {
+              nodeData.children.push(domElement);
+            }
+          }
+        }
 
-    // Register node to hash map
-    return measureBuildDomTreePart('domHashMapOperations', () => {
-      const id = `${ID.current++}`;
-      DOM_HASH_MAP[id] = nodeData;
-      return id;
-    });
+        if (nodeData.tagName === 'a' && nodeData.children.length === 0) {
+          return null;
+        }
+      });
+
+      result = measureBuildDomTreePart('domHashMapOperations', () => {
+        const id = `${ID.current++}`;
+        DOM_HASH_MAP[id] = nodeData;
+        return id;
+      });
+    } finally {
+      const duration = performance.now() - start;
+      PERF_METRICS.buildDomTreeBreakdown.totalTime += duration;
+      PERF_METRICS.buildDomTreeBreakdown.depth--;
+    }
+
+    return result;
   }
 
   // After all functions are defined, wrap them with performance measurement
-  buildDomTree = measureTime(buildDomTree, 'buildDomTree');
+  // Remove buildDomTree from here as we measure it separately
   highlightElement = measureTime(highlightElement, 'highlightElement');
   isInteractiveElement = measureTime(isInteractiveElement, 'isInteractiveElement');
   isElementVisible = measureTime(isElementVisible, 'isElementVisible');
@@ -837,13 +899,30 @@
 
   const rootId = buildDomTree(document.body);
 
-  // Convert timings to seconds
+  // Convert timings to seconds and add some useful derived metrics
   Object.keys(PERF_METRICS.timings).forEach(key => {
     PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
   });
   
   Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
-    PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+    if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
+      PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+    }
+  });
+
+  // Add some useful derived metrics
+  PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode = 
+    PERF_METRICS.buildDomTreeBreakdown.totalTime / PERF_METRICS.buildDomTreeCalls;
+  PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls = 
+    PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
+
+  // Add average time per operation to the metrics
+  Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
+    const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
+    const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
+    if (count > 0) {
+      PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+    }
   });
 
   return { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS };
