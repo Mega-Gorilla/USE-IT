@@ -371,16 +371,74 @@
     return segments.join("/");
   }
 
+  /**
+   * Checks if a text node is visible.
+   */
+  function isTextNodeVisible(textNode) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(textNode);
+      const rect = range.getBoundingClientRect();
+      
+      // Simple size check
+      if (rect.width === 0 || rect.height === 0) {
+          return false;
+      }
+
+      // Simple viewport check without scroll calculations
+      const isInViewport = !(
+          rect.bottom < -viewportExpansion ||
+          rect.top > window.innerHeight + viewportExpansion ||
+          rect.right < -viewportExpansion ||
+          rect.left > window.innerWidth + viewportExpansion
+      );
+
+      // Check parent visibility
+      const parentElement = textNode.parentElement;
+      if (!parentElement) return false;
+
+      try {
+        return isInViewport && parentElement.checkVisibility({
+          checkOpacity: true,
+          checkVisibilityCSS: true,
+        });
+      } catch (e) {
+        // Fallback if checkVisibility is not supported
+        const style = window.getComputedStyle(parentElement);
+        return isInViewport && 
+               style.display !== 'none' && 
+               style.visibility !== 'hidden' &&
+               style.opacity !== '0';
+      }
+    } catch (e) {
+      console.warn('Error checking text node visibility:', e);
+      return false;
+    }
+  }
+
   // Helper function to check if element is accepted
   function isElementAccepted(element) {
+    if (!element || !element.tagName) return false;
+    
+    // Always accept body and common container elements
+    const alwaysAccept = new Set([
+      "body", "div", "main", "article", "section", "nav", "header", "footer"
+    ]);
+    const tagName = element.tagName.toLowerCase();
+    
+    if (alwaysAccept.has(tagName)) return true;
+
     const leafElementDenyList = new Set([
       "svg",
       "script",
       "style",
       "link",
       "meta",
+      "noscript",
+      "template",
     ]);
-    return !leafElementDenyList.has(element.tagName.toLowerCase());
+    
+    return !leafElementDenyList.has(tagName);
   }
 
   /**
@@ -643,33 +701,6 @@
     );
   }
 
-  /**
-   * Checks if a text node is visible.
-   */
-  function isTextNodeVisible(textNode) {
-    const range = document.createRange();
-    range.selectNodeContents(textNode);
-    const rect = range.getBoundingClientRect();
-    
-    // Simple size check
-    if (rect.width === 0 || rect.height === 0) {
-        return false;
-    }
-
-    // Simple viewport check without scroll calculations
-    const isInViewport = !(
-        rect.bottom < -viewportExpansion ||
-        rect.top > window.innerHeight + viewportExpansion ||
-        rect.right < -viewportExpansion ||
-        rect.left > window.innerWidth + viewportExpansion
-    );
-
-    return isInViewport && textNode.parentElement?.checkVisibility({
-        checkOpacity: true,
-        checkVisibilityCSS: true,
-    });
-  }
-
   // Add this new helper function
   function getEffectiveScroll(element) {
     let currentEl = element;
@@ -735,6 +766,27 @@
       return null;
     }
 
+    // Special handling for root node (body)
+    if (node === document.body) {
+      const nodeData = {
+        tagName: 'body',
+        attributes: {},
+        xpath: '/body',
+        children: [],
+      };
+
+      // Process children of body
+      for (const child of node.childNodes) {
+        const domElement = buildDomTree(child, parentIframe);
+        if (domElement) nodeData.children.push(domElement);
+      }
+
+      const id = `${ID.current++}`;
+      DOM_HASH_MAP[id] = nodeData;
+      if (debugMode) PERF_METRICS.nodeMetrics.processedNodes++;
+      return id;
+    }
+
     // Early bailout for non-element nodes except text
     if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) {
       if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
@@ -745,6 +797,13 @@
     if (node.nodeType === Node.TEXT_NODE) {
       const textContent = node.textContent.trim();
       if (!textContent) {
+        if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+        return null;
+      }
+
+      // Only check visibility for text nodes that might be visible
+      const parentElement = node.parentElement;
+      if (!parentElement || parentElement.tagName.toLowerCase() === 'script') {
         if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
         return null;
       }
