@@ -3,55 +3,34 @@
     doHighlightElements: true,
     focusHighlightIndex: -1,
     viewportExpansion: 0,
+    debugMode: false,
   }
 ) => {
-  const { doHighlightElements, focusHighlightIndex, viewportExpansion } = args;
+  const { doHighlightElements, focusHighlightIndex, viewportExpansion, debugMode } = args;
   let highlightIndex = 0; // Reset highlight index
 
-  // Add performance tracking
-  const PERF_METRICS = {
+  // Add timing stack to handle recursion
+  const TIMING_STACK = {
+    nodeProcessing: [],
+    treeTraversal: [],
+    highlighting: [],
+    current: null
+  };
+
+  function pushTiming(type) {
+    TIMING_STACK[type] = TIMING_STACK[type] || [];
+    TIMING_STACK[type].push(performance.now());
+  }
+
+  function popTiming(type) {
+    const start = TIMING_STACK[type].pop();
+    const duration = performance.now() - start;
+    return duration;
+  }
+
+  // Only initialize performance tracking if in debug mode
+  const PERF_METRICS = debugMode ? {
     buildDomTreeCalls: 0,
-    highlightElementCalls: 0,
-    isInteractiveElementCalls: 0,
-    isElementVisibleCalls: 0,
-    isTopElementCalls: 0,
-    isInExpandedViewportCalls: 0,
-    isTextNodeVisibleCalls: 0,
-    getEffectiveScrollCalls: 0,
-    buildDomTreeBreakdown: {
-      textNodeProcessing: 0,
-      elementNodeProcessing: 0,
-      iframeProcessing: 0,
-      childrenProcessing: 0,
-      attributeProcessing: 0,
-      interactivityChecks: 0,
-      domHashMapOperations: 0,
-      xpathCalculation: 0,
-      totalSelfTime: 0,  // Time spent in buildDomTree itself, excluding child calls
-      totalTime: 0,      // Total time including all recursive calls
-      depth: 0,          // Current recursion depth
-      maxDepth: 0,      // Maximum recursion depth reached
-      domOperations: {
-        getBoundingClientRect: 0,
-        getComputedStyle: 0,
-        getAttribute: 0,
-        getAttributeNames: 0,
-        scrollOperations: 0,
-        elementFromPoint: 0,
-        checkVisibility: 0,
-        createRange: 0,
-      },
-      domOperationCounts: {
-        getBoundingClientRect: 0,
-        getComputedStyle: 0,
-        getAttribute: 0,
-        getAttributeNames: 0,
-        scrollOperations: 0,
-        elementFromPoint: 0,
-        checkVisibility: 0,
-        createRange: 0,
-      }
-    },
     timings: {
       buildDomTree: 0,
       highlightElement: 0,
@@ -61,40 +40,62 @@
       isInExpandedViewport: 0,
       isTextNodeVisible: 0,
       getEffectiveScroll: 0,
+    },
+    cacheMetrics: {
+      boundingRectCacheHits: 0,
+      boundingRectCacheMisses: 0,
+      computedStyleCacheHits: 0,
+      computedStyleCacheMisses: 0,
+      getBoundingClientRectTime: 0,
+      getComputedStyleTime: 0,
+      boundingRectHitRate: 0,
+      computedStyleHitRate: 0,
+      overallHitRate: 0,
+    },
+    nodeMetrics: {
+      totalNodes: 0,
+      processedNodes: 0,
+      skippedNodes: 0,
+    },
+    buildDomTreeBreakdown: {
+      totalTime: 0,
+      totalSelfTime: 0,
+      buildDomTreeCalls: 0,
+      domOperations: {
+        getBoundingClientRect: 0,
+        getComputedStyle: 0,
+      },
+      domOperationCounts: {
+        getBoundingClientRect: 0,
+        getComputedStyle: 0,
+      }
     }
-  };
+  } : null;
 
-  // Helper to measure function execution time
-  function measureTime(fn, metricName) {
-    return function (...args) {
-      PERF_METRICS[`${metricName}Calls`]++;
+  // Simple timing helper that only runs in debug mode
+  function measureTime(fn) {
+    if (!debugMode) return fn;
+    return function(...args) {
       const start = performance.now();
       const result = fn.apply(this, args);
       const duration = performance.now() - start;
-      if (metricName !== 'buildDomTree') {  // Skip buildDomTree as we measure it separately
-        PERF_METRICS.timings[metricName] += duration;
-      }
       return result;
     };
   }
 
-  // Helper to measure specific parts of buildDomTree
-  function measureBuildDomTreePart(part, fn) {
-    const start = performance.now();
-    const result = fn();
-    const duration = performance.now() - start;
-    PERF_METRICS.buildDomTreeBreakdown[part] += duration;
-    PERF_METRICS.buildDomTreeBreakdown.totalSelfTime += duration;
-    return result;
-  }
-
   // Helper to measure DOM operations
   function measureDomOperation(operation, name) {
+    if (!debugMode) return operation();
+    
     const start = performance.now();
     const result = operation();
     const duration = performance.now() - start;
-    PERF_METRICS.buildDomTreeBreakdown.domOperations[name] += duration;
-    PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[name]++;
+    
+    if (PERF_METRICS && name in PERF_METRICS.buildDomTreeBreakdown.domOperations) {
+      PERF_METRICS.buildDomTreeBreakdown.domOperations[name] += duration;
+      PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[name]++;
+    }
+    
     return result;
   }
 
@@ -110,23 +111,69 @@
 
   // Cache helper functions
   function getCachedBoundingRect(element) {
-    if (!DOM_CACHE.boundingRects.has(element)) {
-      DOM_CACHE.boundingRects.set(element, measureDomOperation(
-        () => element.getBoundingClientRect(),
-        'getBoundingClientRect'
-      ));
+    if (!element) return null;
+    
+    if (DOM_CACHE.boundingRects.has(element)) {
+      if (debugMode && PERF_METRICS) {
+        PERF_METRICS.cacheMetrics.boundingRectCacheHits++;
+      }
+      return DOM_CACHE.boundingRects.get(element);
     }
-    return DOM_CACHE.boundingRects.get(element);
+
+    if (debugMode && PERF_METRICS) {
+      PERF_METRICS.cacheMetrics.boundingRectCacheMisses++;
+    }
+    
+    let rect;
+    if (debugMode) {
+      const start = performance.now();
+      rect = element.getBoundingClientRect();
+      const duration = performance.now() - start;
+      if (PERF_METRICS) {
+        PERF_METRICS.buildDomTreeBreakdown.domOperations.getBoundingClientRect += duration;
+        PERF_METRICS.buildDomTreeBreakdown.domOperationCounts.getBoundingClientRect++;
+      }
+    } else {
+      rect = element.getBoundingClientRect();
+    }
+    
+    if (rect) {
+      DOM_CACHE.boundingRects.set(element, rect);
+    }
+    return rect;
   }
 
   function getCachedComputedStyle(element) {
-    if (!DOM_CACHE.computedStyles.has(element)) {
-      DOM_CACHE.computedStyles.set(element, measureDomOperation(
-        () => window.getComputedStyle(element),
-        'getComputedStyle'
-      ));
+    if (!element) return null;
+    
+    if (DOM_CACHE.computedStyles.has(element)) {
+      if (debugMode && PERF_METRICS) {
+        PERF_METRICS.cacheMetrics.computedStyleCacheHits++;
+      }
+      return DOM_CACHE.computedStyles.get(element);
     }
-    return DOM_CACHE.computedStyles.get(element);
+
+    if (debugMode && PERF_METRICS) {
+      PERF_METRICS.cacheMetrics.computedStyleCacheMisses++;
+    }
+    
+    let style;
+    if (debugMode) {
+      const start = performance.now();
+      style = window.getComputedStyle(element);
+      const duration = performance.now() - start;
+      if (PERF_METRICS) {
+        PERF_METRICS.buildDomTreeBreakdown.domOperations.getComputedStyle += duration;
+        PERF_METRICS.buildDomTreeBreakdown.domOperationCounts.getComputedStyle++;
+      }
+    } else {
+      style = window.getComputedStyle(element);
+    }
+    
+    if (style) {
+      DOM_CACHE.computedStyles.set(element, style);
+    }
+    return style;
   }
 
   /**
@@ -144,134 +191,145 @@
    * Highlights an element in the DOM and returns the index of the next element.
    */
   function highlightElement(element, index, parentIframe = null) {
-    // Create or get highlight container
-    let container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
-    if (!container) {
-        container = document.createElement("div");
-        container.id = HIGHLIGHT_CONTAINER_ID;
-        container.style.position = "fixed";
-        container.style.pointerEvents = "none";
-        container.style.top = "0";
-        container.style.left = "0";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.zIndex = "2147483647";
-        document.body.appendChild(container);
+    if (!element) return index;
+
+    try {
+      // Create or get highlight container
+      let container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
+      if (!container) {
+          container = document.createElement("div");
+          container.id = HIGHLIGHT_CONTAINER_ID;
+          container.style.position = "fixed";
+          container.style.pointerEvents = "none";
+          container.style.top = "0";
+          container.style.left = "0";
+          container.style.width = "100%";
+          container.style.height = "100%";
+          container.style.zIndex = "2147483647";
+          document.body.appendChild(container);
+      }
+
+      // Get element position
+      const rect = measureDomOperation(
+        () => element.getBoundingClientRect(),
+        'getBoundingClientRect'
+      );
+      
+      if (!rect) return index;
+
+      // Generate a color based on the index
+      const colors = [
+        "#FF0000",
+        "#00FF00",
+        "#0000FF",
+        "#FFA500",
+        "#800080",
+        "#008080",
+        "#FF69B4",
+        "#4B0082",
+        "#FF4500",
+        "#2E8B57",
+        "#DC143C",
+        "#4682B4",
+      ];
+      const colorIndex = index % colors.length;
+      const baseColor = colors[colorIndex];
+      const backgroundColor = baseColor + "1A"; // 10% opacity version of the color
+
+      // Create highlight overlay
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.border = `2px solid ${baseColor}`;
+      overlay.style.backgroundColor = backgroundColor;
+      overlay.style.pointerEvents = "none";
+      overlay.style.boxSizing = "border-box";
+
+      // Get element position
+      let iframeOffset = { x: 0, y: 0 };
+
+      // If element is in an iframe, calculate iframe offset
+      if (parentIframe) {
+          const iframeRect = parentIframe.getBoundingClientRect();
+          iframeOffset.x = iframeRect.left;
+          iframeOffset.y = iframeRect.top;
+      }
+
+      // Calculate position
+      const top = rect.top + iframeOffset.y;
+      const left = rect.left + iframeOffset.x;
+
+      overlay.style.top = `${top}px`;
+      overlay.style.left = `${left}px`;
+      overlay.style.width = `${rect.width}px`;
+      overlay.style.height = `${rect.height}px`;
+
+      // Create and position label
+      const label = document.createElement("div");
+      label.className = "playwright-highlight-label";
+      label.style.position = "fixed";
+      label.style.background = baseColor;
+      label.style.color = "white";
+      label.style.padding = "1px 4px";
+      label.style.borderRadius = "4px";
+      label.style.fontSize = `${Math.min(12, Math.max(8, rect.height / 2))}px`;
+      label.textContent = index;
+
+      const labelWidth = 20;
+      const labelHeight = 16;
+
+      let labelTop = top + 2;
+      let labelLeft = left + rect.width - labelWidth - 2;
+
+      if (rect.width < labelWidth + 4 || rect.height < labelHeight + 4) {
+          labelTop = top - labelHeight - 2;
+          labelLeft = left + rect.width - labelWidth;
+      }
+
+      label.style.top = `${labelTop}px`;
+      label.style.left = `${labelLeft}px`;
+
+      // Add to container
+      container.appendChild(overlay);
+      container.appendChild(label);
+
+      // Update positions on scroll
+      const updatePositions = () => {
+          const newRect = element.getBoundingClientRect();
+          let newIframeOffset = { x: 0, y: 0 };
+          
+          if (parentIframe) {
+              const iframeRect = parentIframe.getBoundingClientRect();
+              newIframeOffset.x = iframeRect.left;
+              newIframeOffset.y = iframeRect.top;
+          }
+
+          const newTop = newRect.top + newIframeOffset.y;
+          const newLeft = newRect.left + newIframeOffset.x;
+
+          overlay.style.top = `${newTop}px`;
+          overlay.style.left = `${newLeft}px`;
+          overlay.style.width = `${newRect.width}px`;
+          overlay.style.height = `${newRect.height}px`;
+
+          let newLabelTop = newTop + 2;
+          let newLabelLeft = newLeft + newRect.width - labelWidth - 2;
+
+          if (newRect.width < labelWidth + 4 || newRect.height < labelHeight + 4) {
+              newLabelTop = newTop - labelHeight - 2;
+              newLabelLeft = newLeft + newRect.width - labelWidth;
+          }
+
+          label.style.top = `${newLabelTop}px`;
+          label.style.left = `${newLabelLeft}px`;
+      };
+
+      window.addEventListener('scroll', updatePositions);
+      window.addEventListener('resize', updatePositions);
+
+      return index + 1;
+    } finally {
+      popTiming('highlighting');
     }
-
-    // Generate a color based on the index
-    const colors = [
-      "#FF0000",
-      "#00FF00",
-      "#0000FF",
-      "#FFA500",
-      "#800080",
-      "#008080",
-      "#FF69B4",
-      "#4B0082",
-      "#FF4500",
-      "#2E8B57",
-      "#DC143C",
-      "#4682B4",
-    ];
-    const colorIndex = index % colors.length;
-    const baseColor = colors[colorIndex];
-    const backgroundColor = baseColor + "1A"; // 10% opacity version of the color
-
-    // Create highlight overlay
-    const overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.border = `2px solid ${baseColor}`;
-    overlay.style.backgroundColor = backgroundColor;
-    overlay.style.pointerEvents = "none";
-    overlay.style.boxSizing = "border-box";
-
-    // Get element position
-    const rect = element.getBoundingClientRect();
-    let iframeOffset = { x: 0, y: 0 };
-
-    // If element is in an iframe, calculate iframe offset
-    if (parentIframe) {
-        const iframeRect = parentIframe.getBoundingClientRect();
-        iframeOffset.x = iframeRect.left;
-        iframeOffset.y = iframeRect.top;
-    }
-
-    // Calculate position
-    const top = rect.top + iframeOffset.y;
-    const left = rect.left + iframeOffset.x;
-
-    overlay.style.top = `${top}px`;
-    overlay.style.left = `${left}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-
-    // Create and position label
-    const label = document.createElement("div");
-    label.className = "playwright-highlight-label";
-    label.style.position = "fixed";
-    label.style.background = baseColor;
-    label.style.color = "white";
-    label.style.padding = "1px 4px";
-    label.style.borderRadius = "4px";
-    label.style.fontSize = `${Math.min(12, Math.max(8, rect.height / 2))}px`;
-    label.textContent = index;
-
-    const labelWidth = 20;
-    const labelHeight = 16;
-
-    let labelTop = top + 2;
-    let labelLeft = left + rect.width - labelWidth - 2;
-
-    if (rect.width < labelWidth + 4 || rect.height < labelHeight + 4) {
-        labelTop = top - labelHeight - 2;
-        labelLeft = left + rect.width - labelWidth;
-    }
-
-    label.style.top = `${labelTop}px`;
-    label.style.left = `${labelLeft}px`;
-
-    // Add to container
-    container.appendChild(overlay);
-    container.appendChild(label);
-
-    // Update positions on scroll
-    const updatePositions = () => {
-        const newRect = element.getBoundingClientRect();
-        let newIframeOffset = { x: 0, y: 0 };
-        
-        if (parentIframe) {
-            const iframeRect = parentIframe.getBoundingClientRect();
-            newIframeOffset.x = iframeRect.left;
-            newIframeOffset.y = iframeRect.top;
-        }
-
-        const newTop = newRect.top + newIframeOffset.y;
-        const newLeft = newRect.left + newIframeOffset.x;
-
-        overlay.style.top = `${newTop}px`;
-        overlay.style.left = `${newLeft}px`;
-        overlay.style.width = `${newRect.width}px`;
-        overlay.style.height = `${newRect.height}px`;
-
-        let newLabelTop = newTop + 2;
-        let newLabelLeft = newLeft + newRect.width - labelWidth - 2;
-
-        if (newRect.width < labelWidth + 4 || newRect.height < labelHeight + 4) {
-            newLabelTop = newTop - labelHeight - 2;
-            newLabelLeft = newLeft + newRect.width - labelWidth;
-        }
-
-        label.style.top = `${newLabelTop}px`;
-        label.style.left = `${newLabelLeft}px`;
-    };
-
-  
-
-    window.addEventListener('scroll', updatePositions);
-    window.addEventListener('resize', updatePositions);
-
-    return index + 1;
   }
 
   /**
@@ -667,180 +725,183 @@
   }
 
   /**
-   * Creates a node data object for a given node and its descendants and returns
-   * the identifier of the node in the hash map or null if the node is not accepted.
+   * Creates a node data object for a given node and its descendants.
    */
   function buildDomTree(node, parentIframe = null) {
-    PERF_METRICS.buildDomTreeBreakdown.depth++;
-    PERF_METRICS.buildDomTreeBreakdown.maxDepth = Math.max(
-      PERF_METRICS.buildDomTreeBreakdown.maxDepth,
-      PERF_METRICS.buildDomTreeBreakdown.depth
-    );
+    if (debugMode) PERF_METRICS.nodeMetrics.totalNodes++;
 
-    const start = performance.now();
-    let result;
+    if (!node || node.id === HIGHLIGHT_CONTAINER_ID) {
+      if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+      return null;
+    }
 
-    try {
-      if (!node) return null;
+    // Early bailout for non-element nodes except text
+    if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) {
+      if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+      return null;
+    }
 
-      // Skip highlight container
-      if (node.id === HIGHLIGHT_CONTAINER_ID) return null;
+    // Process text nodes
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textContent = node.textContent.trim();
+      if (!textContent) {
+        if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+        return null;
+      }
 
-      // Early bailout for non-element nodes except text
-      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) return null;
+      const id = `${ID.current++}`;
+      DOM_HASH_MAP[id] = {
+        type: "TEXT_NODE",
+        text: textContent,
+        isVisible: isTextNodeVisible(node),
+      };
+      if (debugMode) PERF_METRICS.nodeMetrics.processedNodes++;
+      return id;
+    }
 
-      // Quick checks for element nodes
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        // Skip denied elements early
-        if (!isElementAccepted(node)) return null;
+    // Quick checks for element nodes
+    if (!isElementAccepted(node) || !quickVisibilityCheck(node)) {
+      if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+      return null;
+    }
 
-        // Quick visibility check before expensive operations
-        if (!quickVisibilityCheck(node)) return null;
+    // Check viewport if needed
+    if (viewportExpansion !== -1) {
+      const rect = getCachedBoundingRect(node);
+      if (rect.bottom < -viewportExpansion ||
+          rect.top > window.innerHeight + viewportExpansion ||
+          rect.right < -viewportExpansion ||
+          rect.left > window.innerWidth + viewportExpansion) {
+        if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+        return null;
+      }
+    }
 
-        // If not in viewport and not processing all elements, skip
-        if (viewportExpansion !== -1) {
-          const rect = getCachedBoundingRect(node);
-          if (rect.bottom < -viewportExpansion ||
-              rect.top > window.innerHeight + viewportExpansion ||
-              rect.right < -viewportExpansion ||
-              rect.left > window.innerWidth + viewportExpansion) {
-            return null;
+    // Process element node
+    const nodeData = {
+      tagName: node.tagName.toLowerCase(),
+      attributes: {},
+      xpath: getXPathTree(node, true),
+      children: [],
+    };
+
+    // Check interactivity
+    if (isInteractiveCandidate(node)) {
+      nodeData.isVisible = isElementVisible(node);
+      if (nodeData.isVisible) {
+        nodeData.isInteractive = isInteractiveElement(node);
+        if (nodeData.isInteractive) {
+          nodeData.isTopElement = isTopElement(node);
+          if (nodeData.isTopElement) {
+            nodeData.isInViewport = true;
+            nodeData.highlightIndex = highlightIndex++;
+
+            if (doHighlightElements) {
+              if (focusHighlightIndex >= 0) {
+                if (focusHighlightIndex === nodeData.highlightIndex) {
+                  highlightElement(node, nodeData.highlightIndex, parentIframe);
+                }
+              } else {
+                highlightElement(node, nodeData.highlightIndex, parentIframe);
+              }
+            }
           }
         }
       }
+    }
 
-      // Process text nodes
-      if (node.nodeType === Node.TEXT_NODE) {
-        return measureBuildDomTreePart('textNodeProcessing', () => {
-          const textContent = node.textContent.trim();
-          if (!textContent) return null;
-
-          const id = `${ID.current++}`;
-          DOM_HASH_MAP[id] = {
-            type: "TEXT_NODE",
-            text: textContent,
-            isVisible: isTextNodeVisible(node),
-          };
-          return id;
-        });
-      }
-
-      // At this point we know it's an element node that passed initial checks
-      const nodeData = measureBuildDomTreePart('elementNodeProcessing', () => ({
-        tagName: node.tagName.toLowerCase(),
-        attributes: {},
-        xpath: getXPathTree(node, true),
-        children: [],
-      }));
-
-      // Only do expensive checks if element is a potential interactive candidate
-      const isCandidate = isInteractiveCandidate(node);
-
-      if (isCandidate) {
-        measureBuildDomTreePart('interactivityChecks', () => {
-          nodeData.isVisible = isElementVisible(node);
-          if (!nodeData.isVisible) return;
-
-          nodeData.isInteractive = isInteractiveElement(node);
-          if (!nodeData.isInteractive) return;
-
-          nodeData.isTopElement = isTopElement(node);
-          if (!nodeData.isTopElement) return;
-
-          nodeData.isInViewport = true; // We already checked this
-          nodeData.highlightIndex = highlightIndex++;
-
-          if (doHighlightElements) {
-            if (focusHighlightIndex >= 0) {
-              if (focusHighlightIndex === nodeData.highlightIndex) {
-                highlightElement(node, nodeData.highlightIndex, parentIframe);
-              }
-            } else {
-              highlightElement(node, nodeData.highlightIndex, parentIframe);
-            }
-          }
-        });
-      }
-
-      // Process children
-      measureBuildDomTreePart('childrenProcessing', () => {
-        // Only process children if parent might contain interactive elements
-        if (node.tagName && node.tagName.toLowerCase() === "iframe") {
-          measureBuildDomTreePart('iframeProcessing', () => {
-            try {
-              const iframeDoc = node.contentDocument || node.contentWindow.document;
-              if (iframeDoc) {
-                for (const child of iframeDoc.childNodes) {
-                  const domElement = buildDomTree(child, node);
-                  if (domElement) nodeData.children.push(domElement);
-                }
-              }
-            } catch (e) {
-              console.warn("Unable to access iframe:", node);
-            }
-          });
-        } else {
-          for (const child of node.childNodes) {
-            const domElement = buildDomTree(child, parentIframe);
+    // Process children
+    if (node.tagName && node.tagName.toLowerCase() === "iframe") {
+      try {
+        const iframeDoc = node.contentDocument || node.contentWindow.document;
+        if (iframeDoc) {
+          for (const child of iframeDoc.childNodes) {
+            const domElement = buildDomTree(child, node);
             if (domElement) nodeData.children.push(domElement);
           }
         }
-      });
-
-      result = measureBuildDomTreePart('domHashMapOperations', () => {
-        const id = `${ID.current++}`;
-        DOM_HASH_MAP[id] = nodeData;
-        return id;
-      });
-    } finally {
-      const duration = performance.now() - start;
-      PERF_METRICS.buildDomTreeBreakdown.totalTime += duration;
-      PERF_METRICS.buildDomTreeBreakdown.depth--;
+      } catch (e) {
+        console.warn("Unable to access iframe:", node);
+      }
+    } else {
+      for (const child of node.childNodes) {
+        const domElement = buildDomTree(child, parentIframe);
+        if (domElement) nodeData.children.push(domElement);
+      }
     }
 
-    return result;
+    const id = `${ID.current++}`;
+    DOM_HASH_MAP[id] = nodeData;
+    if (debugMode) PERF_METRICS.nodeMetrics.processedNodes++;
+    return id;
   }
 
   // After all functions are defined, wrap them with performance measurement
   // Remove buildDomTree from here as we measure it separately
-  highlightElement = measureTime(highlightElement, 'highlightElement');
-  isInteractiveElement = measureTime(isInteractiveElement, 'isInteractiveElement');
-  isElementVisible = measureTime(isElementVisible, 'isElementVisible');
-  isTopElement = measureTime(isTopElement, 'isTopElement');
-  isInExpandedViewport = measureTime(isInExpandedViewport, 'isInExpandedViewport');
-  isTextNodeVisible = measureTime(isTextNodeVisible, 'isTextNodeVisible');
-  getEffectiveScroll = measureTime(getEffectiveScroll, 'getEffectiveScroll');
+  highlightElement = measureTime(highlightElement);
+  isInteractiveElement = measureTime(isInteractiveElement);
+  isElementVisible = measureTime(isElementVisible);
+  isTopElement = measureTime(isTopElement);
+  isInExpandedViewport = measureTime(isInExpandedViewport);
+  isTextNodeVisible = measureTime(isTextNodeVisible);
+  getEffectiveScroll = measureTime(getEffectiveScroll);
 
   const rootId = buildDomTree(document.body);
 
   // Clear the cache before starting
   DOM_CACHE.clearCache();
 
-  // Convert timings to seconds and add some useful derived metrics
-  Object.keys(PERF_METRICS.timings).forEach(key => {
-    PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
-  });
-  
-  Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
-    if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
-      PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+  // Only process metrics in debug mode
+  if (debugMode && PERF_METRICS) {
+    // Convert timings to seconds and add useful derived metrics
+    Object.keys(PERF_METRICS.timings).forEach(key => {
+      PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
+    });
+    
+    Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
+      if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
+        PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
+      }
+    });
+
+    // Add some useful derived metrics
+    if (PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls > 0) {
+      PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode = 
+        PERF_METRICS.buildDomTreeBreakdown.totalTime / PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls;
     }
-  });
 
-  // Add some useful derived metrics
-  PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode = 
-    PERF_METRICS.buildDomTreeBreakdown.totalTime / PERF_METRICS.buildDomTreeCalls;
-  PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls = 
-    PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
+    PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls = 
+      PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
 
-  // Add average time per operation to the metrics
-  Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
-    const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
-    const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
-    if (count > 0) {
-      PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+    // Add average time per operation to the metrics
+    Object.keys(PERF_METRICS.buildDomTreeBreakdown.domOperations).forEach(op => {
+      const time = PERF_METRICS.buildDomTreeBreakdown.domOperations[op];
+      const count = PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[op];
+      if (count > 0) {
+        PERF_METRICS.buildDomTreeBreakdown.domOperations[`${op}Average`] = time / count;
+      }
+    });
+
+    // Calculate cache hit rates
+    const boundingRectTotal = PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.boundingRectCacheMisses;
+    const computedStyleTotal = PERF_METRICS.cacheMetrics.computedStyleCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheMisses;
+    
+    if (boundingRectTotal > 0) {
+      PERF_METRICS.cacheMetrics.boundingRectHitRate = PERF_METRICS.cacheMetrics.boundingRectCacheHits / boundingRectTotal;
     }
-  });
+    
+    if (computedStyleTotal > 0) {
+      PERF_METRICS.cacheMetrics.computedStyleHitRate = PERF_METRICS.cacheMetrics.computedStyleCacheHits / computedStyleTotal;
+    }
+    
+    if ((boundingRectTotal + computedStyleTotal) > 0) {
+      PERF_METRICS.cacheMetrics.overallHitRate = 
+        (PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheHits) /
+        (boundingRectTotal + computedStyleTotal);
+    }
+  }
 
-  return { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS };
+  return debugMode ? 
+    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS } : 
+    { rootId, map: DOM_HASH_MAP };
 };
