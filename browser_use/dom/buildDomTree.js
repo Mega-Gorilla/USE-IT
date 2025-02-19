@@ -318,8 +318,8 @@
    * Checks if an element is interactive.
    */
   function isInteractiveElement(element) {
-    const { scrollX, scrollY } = getEffectiveScroll(element);
-    const rect = element.getBoundingClientRect();
+    // const { scrollX, scrollY } = getEffectiveScroll(element);
+    // const rect = element.getBoundingClientRect();
     
     // Base interactive elements and roles
     const interactiveElements = new Set([
@@ -477,105 +477,68 @@
    * Checks if an element is the topmost element at its position.
    */
   function isTopElement(element) {
-    const { scrollX, scrollY } = getEffectiveScroll(element);
     const rect = measureDomOperation(() => element.getBoundingClientRect(), 'getBoundingClientRect');
     
-    // Use effective scroll for center point calculation
-    const centerX = rect.left + rect.width/2 + scrollX;
-    const centerY = rect.top + rect.height/2 + scrollY;
+    // If element is not in viewport, consider it top
+    const isInViewport = (
+        rect.left < window.innerWidth &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.bottom > 0
+    );
+
+    if (!isInViewport) {
+        return true;
+    }
 
     // Find the correct document context and root element
     let doc = element.ownerDocument;
 
     // If we're in an iframe, elements are considered top by default
     if (doc !== window.document) {
-      return true;
+        return true;
     }
 
     // For shadow DOM, we need to check within its own root context
     const shadowRoot = element.getRootNode();
     if (shadowRoot instanceof ShadowRoot) {
-      const point = {
-        x: centerX,
-        y: centerY,
-      };
+        const centerX = rect.left + rect.width/2;
+        const centerY = rect.top + rect.height/2;
 
-      try {
-        // Use shadow root's elementFromPoint to check within shadow DOM context
-        const topEl = measureDomOperation(
-          () => shadowRoot.elementFromPoint(point.x, point.y),
-          'elementFromPoint'
-        );
-        if (!topEl) return false;
+        try {
+            const topEl = measureDomOperation(
+                () => shadowRoot.elementFromPoint(centerX, centerY),
+                'elementFromPoint'
+            );
+            if (!topEl) return false;
 
-        // Check if the element or any of its parents match our target element
-        let current = topEl;
-        while (current && current !== shadowRoot) {
-          if (current === element) return true;
-          current = current.parentElement;
+            let current = topEl;
+            while (current && current !== shadowRoot) {
+                if (current === element) return true;
+                current = current.parentElement;
+            }
+            return false;
+        } catch (e) {
+            return true;
         }
-        return false;
-      } catch (e) {
-        return true; // If we can't determine, consider it visible
-      }
     }
 
-    // Regular DOM elements
+    // For elements in viewport, check if they're topmost
+    const centerX = rect.left + rect.width/2;
+    const centerY = rect.top + rect.height/2;
+    
     try {
-      // If the element is not in viewport, we need to scroll to it temporarily
-      const isInViewport = (
-        centerX >= 0 &&
-        centerX <= window.innerWidth &&
-        centerY >= 0 &&
-        centerY <= window.innerHeight
-      );
+        const topEl = document.elementFromPoint(centerX, centerY);
+        if (!topEl) return false;
 
-      if (!isInViewport) {
-        // Save current scroll position
-        const originalScrollX = window.scrollX;
-        const originalScrollY = window.scrollY;
-
-        // Calculate scroll position to bring element into view
-        const scrollX = originalScrollX + rect.left - (window.innerWidth / 4);
-        const scrollY = originalScrollY + rect.top - (window.innerHeight / 4);
-
-        // Temporarily scroll to the element
-        window.scrollTo(scrollX, scrollY);
-
-        // Get new coordinates after scroll
-        const newRect = element.getBoundingClientRect();
-        const newCenterX = newRect.left + newRect.width / 2;
-        const newCenterY = newRect.top + newRect.height / 2;
-
-        // Check if element is top at new position
-        const topEl = document.elementFromPoint(newCenterX, newCenterY);
-
-        // Restore original scroll position
-        window.scrollTo(originalScrollX, originalScrollY);
-
-        if (!topEl) return true; // If no element found, consider it top
-
-        // Check if the found element is our target or one of its parents
         let current = topEl;
         while (current && current !== document.documentElement) {
-          if (current === element) return true;
-          current = current.parentElement;
+            if (current === element) return true;
+            current = current.parentElement;
         }
         return false;
-      }
-
-      // For elements in viewport, use original logic
-      const topEl = document.elementFromPoint(centerX, centerY);
-      if (!topEl) return false;
-
-      let current = topEl;
-      while (current && current !== document.documentElement) {
-        if (current === element) return true;
-        current = current.parentElement;
-      }
-      return false;
     } catch (e) {
-      return true;
+        return true;
     }
   }
 
@@ -808,24 +771,41 @@
 
       if (node.nodeType === Node.ELEMENT_NODE) {
         measureBuildDomTreePart('interactivityChecks', () => {
-          const isInteractive = isInteractiveElement(node);
+          // Initialize all flags to false by default
+          nodeData.isInteractive = false;
+          nodeData.isVisible = false;
+          nodeData.isTopElement = false;
+          nodeData.isInViewport = false;
+
+          // Check visibility first as it's the fastest check
           const isVisible = isElementVisible(node);
+          if (!isVisible) return;
+          nodeData.isVisible = true;
+
+          // Check interactivity next as it's the second fastest
+          const isInteractive = isInteractiveElement(node);
+          if (!isInteractive) return;
+          nodeData.isInteractive = true;
+
+          // Check if element is top as third fastest
           const isTop = isTopElement(node);
+          if (!isTop) return;
+          nodeData.isTopElement = true;
+
+          // Check viewport last as it's the most expensive
           const isInViewport = isInExpandedViewport(node, viewportExpansion);
-          nodeData.isInteractive = isInteractive;
-          nodeData.isVisible = isVisible;
-          nodeData.isTopElement = isTop;
-          nodeData.isInViewport = isInViewport;
-          if (isInteractive && isVisible && isTop && isInViewport) {
-            nodeData.highlightIndex = highlightIndex++;
-            if (doHighlightElements) {
-              if (focusHighlightIndex >= 0) {
-                if (focusHighlightIndex === nodeData.highlightIndex) {
-                  highlightElement(node, nodeData.highlightIndex, parentIframe);
-                }
-              } else {
+          if (!isInViewport) return;
+          nodeData.isInViewport = true;
+
+          // Only if all checks pass, do we handle highlighting
+          nodeData.highlightIndex = highlightIndex++;
+          if (doHighlightElements) {
+            if (focusHighlightIndex >= 0) {
+              if (focusHighlightIndex === nodeData.highlightIndex) {
                 highlightElement(node, nodeData.highlightIndex, parentIframe);
               }
+            } else {
+              highlightElement(node, nodeData.highlightIndex, parentIframe);
             }
           }
         });
