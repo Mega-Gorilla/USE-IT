@@ -768,10 +768,12 @@
     // Check viewport if needed
     if (viewportExpansion !== -1) {
       const rect = getCachedBoundingRect(node);
-      if (rect.bottom < -viewportExpansion ||
+      if (!rect || (
+          rect.bottom < -viewportExpansion ||
           rect.top > window.innerHeight + viewportExpansion ||
           rect.right < -viewportExpansion ||
-          rect.left > window.innerWidth + viewportExpansion) {
+          rect.left > window.innerWidth + viewportExpansion
+      )) {
         if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
         return null;
       }
@@ -785,14 +787,22 @@
       children: [],
     };
 
+    // Get attributes for interactive elements or potential text containers
+    if (isInteractiveCandidate(node) || node.tagName.toLowerCase() === 'iframe' || node.tagName.toLowerCase() === 'body') {
+      const attributeNames = node.getAttributeNames?.() || [];
+      for (const name of attributeNames) {
+        nodeData.attributes[name] = node.getAttribute(name);
+      }
+    }
+
     // Check interactivity
     if (isInteractiveCandidate(node)) {
       nodeData.isVisible = isElementVisible(node);
       if (nodeData.isVisible) {
-        nodeData.isInteractive = isInteractiveElement(node);
-        if (nodeData.isInteractive) {
-          nodeData.isTopElement = isTopElement(node);
-          if (nodeData.isTopElement) {
+      nodeData.isTopElement = isTopElement(node);
+      if (nodeData.isTopElement) {
+          nodeData.isInteractive = isInteractiveElement(node);
+          if (nodeData.isInteractive) {
             nodeData.isInViewport = true;
             nodeData.highlightIndex = highlightIndex++;
 
@@ -810,24 +820,59 @@
       }
     }
 
-    // Process children
-    if (node.tagName && node.tagName.toLowerCase() === "iframe") {
-      try {
-        const iframeDoc = node.contentDocument || node.contentWindow.document;
-        if (iframeDoc) {
-          for (const child of iframeDoc.childNodes) {
-            const domElement = buildDomTree(child, node);
-            if (domElement) nodeData.children.push(domElement);
+    // Process children, with special handling for iframes and rich text editors
+    if (node.tagName) {
+      const tagName = node.tagName.toLowerCase();
+      
+      // Handle iframes
+      if (tagName === "iframe") {
+        try {
+          const iframeDoc = node.contentDocument || node.contentWindow?.document;
+          if (iframeDoc) {
+            for (const child of iframeDoc.childNodes) {
+              const domElement = buildDomTree(child, node);
+              if (domElement) nodeData.children.push(domElement);
+            }
           }
+        } catch (e) {
+          console.warn("Unable to access iframe:", e);
         }
-      } catch (e) {
-        console.warn("Unable to access iframe:", node);
+      } 
+      // Handle rich text editors and contenteditable elements
+      else if (
+        node.isContentEditable || 
+        node.getAttribute("contenteditable") === "true" ||
+        node.id === "tinymce" ||
+        node.classList.contains("mce-content-body") ||
+        (tagName === "body" && node.getAttribute("data-id")?.startsWith("mce_"))
+      ) {
+        // Process all child nodes to capture formatted text
+        for (const child of node.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) nodeData.children.push(domElement);
+        }
       }
-    } else {
-      for (const child of node.childNodes) {
-        const domElement = buildDomTree(child, parentIframe);
-        if (domElement) nodeData.children.push(domElement);
+      // Handle shadow DOM
+      else if (node.shadowRoot) {
+        nodeData.shadowRoot = true;
+        for (const child of node.shadowRoot.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) nodeData.children.push(domElement);
+        }
       }
+      // Handle regular elements
+      else {
+        for (const child of node.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) nodeData.children.push(domElement);
+        }
+      }
+    }
+
+    // Skip empty anchor tags
+    if (nodeData.tagName === 'a' && nodeData.children.length === 0 && !nodeData.attributes.href) {
+      if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
+      return null;
     }
 
     const id = `${ID.current++}`;
