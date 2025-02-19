@@ -111,7 +111,11 @@ class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	current_state: AgentBrain
-	action: list[ActionModel]
+	action: list[ActionModel] = Field(
+		...,  # This means the field is required
+		description="List of actions to execute",
+		min_items=1,  # Ensure at least one action is provided
+	)
 
 	@staticmethod
 	def type_with_custom_actions(custom_actions: Type[ActionModel]) -> Type['AgentOutput']:
@@ -119,10 +123,17 @@ class AgentOutput(BaseModel):
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
-			action=(list[custom_actions], Field(...)),  # Properly annotated field with no default
+			action=(
+				list[custom_actions],
+				Field(
+					...,
+					description="List of actions to execute",
+					min_items=1
+				)
+			),
 			__module__=AgentOutput.__module__,
 		)
-		model_.__doc__ = 'AgentOutput model'
+		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
 
