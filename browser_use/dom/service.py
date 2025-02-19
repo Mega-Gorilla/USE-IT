@@ -71,7 +71,7 @@ class DomService:
 		# Log performance metrics if they exist
 		if 'perfMetrics' in eval_page:
 			perf_metrics = eval_page['perfMetrics']
-			logger.info('DOM Tree Building Performance Metrics:\n%s', json.dumps(perf_metrics, indent=2))
+			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(perf_metrics, indent=2))
 
 		return await self._construct_dom_tree(eval_page)
 
