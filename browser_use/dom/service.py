@@ -42,10 +42,7 @@ class DomService:
 		viewport_expansion: int = 0,
 	) -> DOMState:
 		element_tree, selector_map = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
-
-		dom_state = DOMState(element_tree=element_tree, selector_map=selector_map)
-
-		return dom_state
+		return DOMState(element_tree=element_tree, selector_map=selector_map)
 
 	@time_execution_async('--build_dom_tree')
 	async def _build_dom_tree(
@@ -60,18 +57,23 @@ class DomService:
 		# NOTE: We execute JS code in the browser to extract important DOM information.
 		#       The returned hash map contains information about the DOM tree and the
 		#       relationship between the DOM elements.
+		debug_mode = logger.getEffectiveLevel() == logging.DEBUG
 		args = {
 			'doHighlightElements': highlight_elements,
 			'focusHighlightIndex': focus_element,
 			'viewportExpansion': viewport_expansion,
+			'debugMode': debug_mode,
 		}
 
-		eval_page = await self.page.evaluate(self.js_code, args)
+		try:
+			eval_page = await self.page.evaluate(self.js_code, args)
+		except Exception as e:
+			logger.error('Error evaluating JavaScript: %s', e)
+			raise
 
-		# Log performance metrics if they exist
-		if 'perfMetrics' in eval_page:
-			perf_metrics = eval_page['perfMetrics']
-			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(perf_metrics, indent=2))
+		# Only log performance metrics in debug mode
+		if debug_mode and 'perfMetrics' in eval_page:
+			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(eval_page['perfMetrics'], indent=2))
 
 		return await self._construct_dom_tree(eval_page)
 
@@ -108,7 +110,7 @@ class DomService:
 					child_node.parent = node
 					node.children.append(child_node)
 
-		html_to_dict = node_map[js_root_id]
+		html_to_dict = node_map[str(js_root_id)]
 
 		del node_map
 		del js_node_map
