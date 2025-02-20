@@ -148,7 +148,7 @@ class BrowserContextState:
 	State of the browser context
 	"""
 
-	current_page_id: int = 0
+	current_page_id: int | None = None
 
 
 class BrowserContext:
@@ -156,7 +156,7 @@ class BrowserContext:
 		self,
 		browser: 'Browser',
 		config: BrowserContextConfig = BrowserContextConfig(),
-		state: BrowserContextState | None = None,
+		state: Optional[BrowserContextState] = None,
 	):
 		self.context_id = str(uuid.uuid4())
 		logger.debug(f'Initializing new browser context with id: {self.context_id}')
@@ -196,10 +196,10 @@ class BrowserContext:
 				self._page_event_handler = None
 
 			# Remove any remaining CDP protocol listeners
-			if self._get_current_page(self.session):
+			if page := await self._get_current_page(self.session):
 				try:
-					self._get_current_page(self.session).remove_listener('request', None)
-					self._get_current_page(self.session).remove_listener('response', None)
+					page.remove_listener('request', None)
+					page.remove_listener('response', None)
 				except Exception as e:
 					logger.debug(f'Failed to remove page listeners: {e}')
 
@@ -225,11 +225,11 @@ class BrowserContext:
 
 	def __del__(self):
 		"""Cleanup when object is destroyed"""
-		if self.session is not None:
+		if not self.config._force_keep_context_alive and self.session is not None:
 			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
 				# Use sync Playwright method for force cleanup
-				if not self.config._force_keep_context_alive and hasattr(self.session.context, '_impl_obj'):
+				if hasattr(self.session.context, '_impl_obj'):
 					asyncio.run(self.session.context._impl_obj.close())
 
 				self.session = None
@@ -244,14 +244,15 @@ class BrowserContext:
 		playwright_browser = await self.browser.get_playwright_browser()
 
 		context = await self._create_context(playwright_browser)
-		self._add_new_page_listener(context)
+		# self._add_new_page_listener(context)
+		self._page_event_handler = None
 
 		# Get or create a page to use
 		pages = context.pages
-		current_page_id = len(pages) - 1 if pages else 0
 
 		if pages:
 			logger.debug('Reusing existing page')
+
 		else:
 			await context.new_page()
 			logger.debug('Created new page')
@@ -261,7 +262,13 @@ class BrowserContext:
 			cached_state=None,
 		)
 
-		self.state.current_page_id = current_page_id
+		if self.state.current_page_id is None:
+			self.state.current_page_id = len(pages) - 1 if pages else 0
+		# bring to front
+		page = context.pages[self.state.current_page_id]
+		await page.bring_to_front()
+		await page.wait_for_load_state('load')
+
 		return self.session
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
@@ -285,7 +292,7 @@ class BrowserContext:
 	async def get_current_page(self) -> Page:
 		"""Get the current page"""
 		session = await self.get_session()
-		return self._get_current_page(session)
+		return await self._get_current_page(session)
 
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
@@ -630,7 +637,7 @@ class BrowserContext:
 	async def close_current_tab(self):
 		"""Close the current tab"""
 		session = await self.get_session()
-		page = self._get_current_page(session)
+		page = await self._get_current_page(session)
 		await page.close()
 
 		# Switch to the first available tab if any exist
@@ -677,7 +684,7 @@ class BrowserContext:
 			pages = session.context.pages
 			if pages:
 				self.state.current_page_id = len(pages) - 1
-				page = self._get_current_page(session)
+				page = await self._get_current_page(session)
 				logger.debug(f'Switched to page: {await page.title()}')
 			else:
 				raise BrowserError('Browser closed: no valid pages available')
@@ -720,6 +727,9 @@ class BrowserContext:
 		Returns a base64 encoded screenshot of the current page.
 		"""
 		page = await self.get_current_page()
+
+		await page.bring_to_front()
+		await page.wait_for_load_state()
 
 		screenshot = await page.screenshot(
 			full_page=full_page,
@@ -1096,11 +1106,12 @@ class BrowserContext:
 		"""Create a new tab and optionally navigate to a URL"""
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
-
+		logger.debug(f'Current page id: {self.state.current_page_id}')
 		session = await self.get_session()
 		new_page = await session.context.new_page()
-		self.state.current_page_id = len(session.context.pages) - 1
 
+		self.state.current_page_id = len(session.context.pages) - 1
+		session.current_page = new_page
 		await new_page.wait_for_load_state()
 
 		page = await self.get_current_page()
@@ -1108,20 +1119,30 @@ class BrowserContext:
 		if url:
 			await page.goto(url)
 			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
+		logger.debug(f'Current page id after create new tab: {self.state.current_page_id}')
 
 	# endregion
 
 	# region - Helper methods for easier access to the DOM
-	def _get_current_page(self, session: BrowserSession) -> Page:
+	async def _get_current_page(self, session: BrowserSession) -> Page:
 		pages = session.context.pages
 
 		# if not len(pages):
 		# 	raise BrowserError('No pages found')
 
+		if self.state.current_page_id is None:
+			self.state.current_page_id = len(pages) - 1 if pages else 0
+
 		if self.state.current_page_id >= len(pages):
 			self.state.current_page_id = len(pages) - 1
 
-		return pages[self.state.current_page_id]
+		page = pages[self.state.current_page_id]
+
+		# bring to front
+		# switch to the page
+		# await page.bring_to_front()
+		# await page.wait_for_load_state()
+		return page
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
