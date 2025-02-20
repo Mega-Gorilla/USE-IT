@@ -195,14 +195,6 @@ class BrowserContext:
 					logger.debug(f'Failed to remove CDP listener: {e}')
 				self._page_event_handler = None
 
-			# Remove any remaining CDP protocol listeners
-			if page := await self._get_current_page(self.session):
-				try:
-					page.remove_listener('request', None)
-					page.remove_listener('response', None)
-				except Exception as e:
-					logger.debug(f'Failed to remove page listeners: {e}')
-
 			await self.save_cookies()
 
 			if self.config.trace_path:
