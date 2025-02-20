@@ -148,7 +148,7 @@ class BrowserContextState:
 	State of the browser context
 	"""
 
-	current_page_id: int | None = None
+	target_id: str | None = None  # CDP target ID
 
 
 class BrowserContext:
@@ -242,32 +242,51 @@ class BrowserContext:
 		logger.debug('Initializing browser context')
 
 		playwright_browser = await self.browser.get_playwright_browser()
-
 		context = await self._create_context(playwright_browser)
-		# self._add_new_page_listener(context)
 		self._page_event_handler = None
 
 		# Get or create a page to use
 		pages = context.pages
-
-		if pages:
-			logger.debug('Reusing existing page')
-
-		else:
-			await context.new_page()
-			logger.debug('Created new page')
 
 		self.session = BrowserSession(
 			context=context,
 			cached_state=None,
 		)
 
-		if self.state.current_page_id is None:
-			self.state.current_page_id = len(pages) - 1 if pages else 0
-		# bring to front
-		page = context.pages[self.state.current_page_id]
-		await page.bring_to_front()
-		await page.wait_for_load_state('load')
+		active_page = None
+		if self.browser.config.cdp_url:
+			# If we have a saved target ID, try to find and activate it
+			if self.state.target_id:
+				targets = await self._get_cdp_targets()
+				for target in targets:
+					if target['targetId'] == self.state.target_id:
+						# Find matching page by URL
+						for page in pages:
+							if page.url == target['url']:
+								active_page = page
+								break
+						break
+
+		# If no target ID or couldn't find it, use existing page or create new
+		if not active_page:
+			if pages:
+				active_page = pages[0]
+				logger.debug('Using existing page')
+			else:
+				active_page = await context.new_page()
+				logger.debug('Created new page')
+
+			# Get target ID for the active page
+			if self.browser.config.cdp_url:
+				targets = await self._get_cdp_targets()
+				for target in targets:
+					if target['url'] == active_page.url:
+						self.state.target_id = target['targetId']
+						break
+
+		# Bring page to front
+		await active_page.bring_to_front()
+		await active_page.wait_for_load_state('load')
 
 		return self.session
 
@@ -278,7 +297,7 @@ class BrowserContext:
 			await page.wait_for_load_state()
 			logger.debug(f'New page opened: {page.url}')
 			if self.session is not None:
-				self.state.current_page_id = len(self.session.context.pages) - 1
+				self.state.target_id = None
 
 		self._page_event_handler = on_page
 		context.on('page', on_page)
@@ -683,7 +702,7 @@ class BrowserContext:
 			# Get all available pages
 			pages = session.context.pages
 			if pages:
-				self.state.current_page_id = len(pages) - 1
+				self.state.target_id = None
 				page = await self._get_current_page(session)
 				logger.debug(f'Switched to page: {await page.title()}')
 			else:
@@ -1081,10 +1100,7 @@ class BrowserContext:
 		return tabs_info
 
 	async def switch_to_tab(self, page_id: int) -> None:
-		"""Switch to a specific tab by its page_id
-
-		@You can also use negative indices to switch to tabs from the end (Pure pythonic way)
-		"""
+		"""Switch to a specific tab by its page_id"""
 		session = await self.get_session()
 		pages = session.context.pages
 
@@ -1097,7 +1113,13 @@ class BrowserContext:
 		if not self._is_url_allowed(page.url):
 			raise BrowserError(f'Cannot switch to tab with non-allowed URL: {page.url}')
 
-		self.state.current_page_id = page_id
+		# Update target ID if using CDP
+		if self.browser.config.cdp_url:
+			targets = await self._get_cdp_targets()
+			for target in targets:
+				if target['url'] == page.url:
+					self.state.target_id = target['targetId']
+					break
 
 		await page.bring_to_front()
 		await page.wait_for_load_state()
@@ -1106,20 +1128,22 @@ class BrowserContext:
 		"""Create a new tab and optionally navigate to a URL"""
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
-		logger.debug(f'Current page id: {self.state.current_page_id}')
+
 		session = await self.get_session()
 		new_page = await session.context.new_page()
-
-		self.state.current_page_id = len(session.context.pages) - 1
-		session.current_page = new_page
 		await new_page.wait_for_load_state()
 
-		page = await self.get_current_page()
-
 		if url:
-			await page.goto(url)
+			await new_page.goto(url)
 			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
-		logger.debug(f'Current page id after create new tab: {self.state.current_page_id}')
+
+		# Get target ID for new page if using CDP
+		if self.browser.config.cdp_url:
+			targets = await self._get_cdp_targets()
+			for target in targets:
+				if target['url'] == new_page.url:
+					self.state.target_id = target['targetId']
+					break
 
 	# endregion
 
@@ -1127,22 +1151,17 @@ class BrowserContext:
 	async def _get_current_page(self, session: BrowserSession) -> Page:
 		pages = session.context.pages
 
-		# if not len(pages):
-		# 	raise BrowserError('No pages found')
+		# Try to find page by target ID if using CDP
+		if self.browser.config.cdp_url and self.state.target_id:
+			targets = await self._get_cdp_targets()
+			for target in targets:
+				if target['targetId'] == self.state.target_id:
+					for page in pages:
+						if page.url == target['url']:
+							return page
 
-		if self.state.current_page_id is None:
-			self.state.current_page_id = len(pages) - 1 if pages else 0
-
-		if self.state.current_page_id >= len(pages):
-			self.state.current_page_id = len(pages) - 1
-
-		page = pages[self.state.current_page_id]
-
-		# bring to front
-		# switch to the page
-		# await page.bring_to_front()
-		# await page.wait_for_load_state()
-		return page
+		# Fallback to last page
+		return pages[-1] if pages else await session.context.new_page()
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
@@ -1224,7 +1243,7 @@ class BrowserContext:
 			await page.close()
 
 		session.cached_state = None
-		self.state.current_page_id = len(session.context.pages) - 1
+		self.state.target_id = None
 
 	async def _get_unique_filename(self, directory, filename):
 		"""Generate a unique filename by appending (1), (2), etc., if a file already exists."""
@@ -1235,3 +1254,21 @@ class BrowserContext:
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
+
+	async def _get_cdp_targets(self) -> list[dict]:
+		"""Get all CDP targets directly using CDP protocol"""
+		if not self.browser.config.cdp_url or not self.session:
+			return []
+
+		try:
+			pages = self.session.context.pages
+			if not pages:
+				return []
+
+			cdp_session = await pages[0].context.new_cdp_session(pages[0])
+			result = await cdp_session.send('Target.getTargets')
+			await cdp_session.detach()
+			return result.get('targetInfos', [])
+		except Exception as e:
+			logger.debug(f'Failed to get CDP targets: {e}')
+			return []
