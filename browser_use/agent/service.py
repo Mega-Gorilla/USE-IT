@@ -89,7 +89,7 @@ class Agent(Generic[Context]):
 		# Cloud Callbacks
 		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]] | None = None,
 		register_done_callback: Callable[['AgentHistoryList'], Awaitable[None]] | None = None,
-		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[None]] | None = None,
+		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
 		use_vision: bool = True,
 		use_vision_for_planner: bool = False,
