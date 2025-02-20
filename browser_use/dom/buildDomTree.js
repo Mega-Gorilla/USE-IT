@@ -819,7 +819,7 @@
     }
 
     // Quick checks for element nodes
-    if (!isElementAccepted(node) || !quickVisibilityCheck(node)) {
+    if (node.nodeType === Node.ELEMENT_NODE && !isElementAccepted(node)) {
       if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
       return null;
     }
@@ -854,12 +854,14 @@
       }
     }
 
+    // if (isInteractiveCandidate(node)) {
+
     // Check interactivity
-    if (isInteractiveCandidate(node)) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
       nodeData.isVisible = isElementVisible(node);
       if (nodeData.isVisible) {
-      nodeData.isTopElement = isTopElement(node);
-      if (nodeData.isTopElement) {
+        nodeData.isTopElement = isTopElement(node);
+        if (nodeData.isTopElement) {
           nodeData.isInteractive = isInteractiveElement(node);
           if (nodeData.isInteractive) {
             nodeData.isInViewport = true;
