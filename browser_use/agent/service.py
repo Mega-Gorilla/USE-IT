@@ -89,7 +89,7 @@ class Agent(Generic[Context]):
 		# Cloud Callbacks
 		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]] | None = None,
 		register_done_callback: Callable[['AgentHistoryList'], Awaitable[None]] | None = None,
-		register_external_agent_status_callback: Callable[[str], Awaitable[None]] | None = None,
+		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[None]] | None = None,
 		# Agent settings
 		use_vision: bool = True,
 		use_vision_for_planner: bool = False,
@@ -187,6 +187,7 @@ class Agent(Generic[Context]):
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
+		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
 
 		# Action setup
 		self._setup_action_models()
@@ -268,8 +269,13 @@ class Agent(Generic[Context]):
 	def add_new_task(self, new_task: str) -> None:
 		self._message_manager.add_new_task(new_task)
 
-	def _raise_if_stopped_or_paused(self) -> None:
+	async def _raise_if_stopped_or_paused(self) -> None:
 		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
+
+		if self.register_external_agent_status_raise_error_callback:
+			if await self.register_external_agent_status_raise_error_callback():
+				raise InterruptedError
+
 		if self.state.stopped or self.state.paused:
 			logger.debug('Agent paused after getting state')
 			raise InterruptedError
@@ -286,7 +292,7 @@ class Agent(Generic[Context]):
 		try:
 			state = await self.browser_context.get_state()
 
-			self._raise_if_stopped_or_paused()
+			await self._raise_if_stopped_or_paused()
 
 			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
 
@@ -297,8 +303,6 @@ class Agent(Generic[Context]):
 				self._message_manager.add_plan(plan, position=-1)
 
 			input_messages = self._message_manager.get_messages()
-
-			self._raise_if_stopped_or_paused()
 
 			try:
 				model_output = await self.get_next_action(input_messages)
@@ -314,7 +318,7 @@ class Agent(Generic[Context]):
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
-				self._raise_if_stopped_or_paused()
+				await self._raise_if_stopped_or_paused()
 
 				self._message_manager.add_model_output(model_output)
 			except Exception as e:
@@ -573,17 +577,12 @@ class Agent(Generic[Context]):
 		"""Execute multiple actions"""
 		results = []
 
-		session = await self.browser_context.get_session()
-		cached_selector_map = session.cached_state.selector_map
+		cached_selector_map = await self.browser_context.get_selector_map()
 		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
-
-		self._raise_if_stopped_or_paused()
 
 		await self.browser_context.remove_highlights()
 
 		for i, action in enumerate(actions):
-			self._raise_if_stopped_or_paused()
-
 			if action.get_index() is not None and i != 0:
 				new_state = await self.browser_context.get_state()
 				new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
@@ -594,7 +593,7 @@ class Agent(Generic[Context]):
 					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
 					break
 
-			self._raise_if_stopped_or_paused()
+			await self._raise_if_stopped_or_paused()
 
 			result = await self.controller.act(
 				action,

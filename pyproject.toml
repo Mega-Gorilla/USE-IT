@@ -21,6 +21,9 @@ dependencies = [
     # "lmnr[langchain]>=0.4.59",
     "markdownify==0.14.1",
     "langchain-core>=0.3.35",
+    "langchain-openai==0.3.1",
+    "langchain-anthropic==0.3.3",
+    "langchain-ollama==0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -34,12 +37,9 @@ dev = [
     "inngest>=0.4.19",
     "uvicorn>=0.34.0",
     "langchain>=0.3.18",
-    "langchain-anthropic==0.3.3",
     "langchain-aws>=0.2.11",
     "langchain-fireworks>=0.2.6",
     "langchain-google-genai==2.0.8",
-    "langchain-ollama==0.2.2",
-    "langchain-openai==0.3.1",
 ]
 
 [tool.ruff]
