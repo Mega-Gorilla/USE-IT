@@ -43,14 +43,20 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 
-		self._add_message_with_tokens(system_message)
+		# Only initialize messages if state is empty
+		if len(self.state.history.messages) == 0:
+			self._init_messages()
+
+	def _init_messages(self) -> None:
+		"""Initialize the message history with system message, context, task, and other initial messages"""
+		self._add_message_with_tokens(self.system_prompt)
 
 		if self.settings.message_context:
 			context_message = HumanMessage(content='Context for the task' + self.settings.message_context)
 			self._add_message_with_tokens(context_message)
 
 		task_message = HumanMessage(
-			content=f'Your ultimate task is: """{task}""". If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
+			content=f'Your ultimate task is: """{self.task}""". If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
 		)
 		self._add_message_with_tokens(task_message)
 
