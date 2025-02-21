@@ -22,6 +22,7 @@ dependencies = [
     "markdownify==0.14.1",
     "langchain-core>=0.3.35",
 ]
+urls = { "Repository" = "https://github.com/browser-use/browser-use" }
 
 [project.optional-dependencies]
 dev = [
