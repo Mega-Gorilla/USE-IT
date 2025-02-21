@@ -11,6 +11,6 @@ async def run_agent(task: str, max_steps: int = 38):
 		model='gpt-4o',
 		temperature=0.0,
 	)
-	agent = Agent(task=task, llm=llm)
+	agent = Agent(task=task, llm=llm, use_vision=False)
 	result = await agent.run(max_steps=max_steps)
 	return result
