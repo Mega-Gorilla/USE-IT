@@ -126,6 +126,9 @@ class Agent(Generic[Context]):
 		#
 		context: Context | None = None,
 	):
+		if page_extraction_llm is None:
+			page_extraction_llm = llm
+
 		self.settings = AgentSettings(
 			use_vision=use_vision,
 			use_vision_for_planner=use_vision_for_planner,
