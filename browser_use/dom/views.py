@@ -143,9 +143,13 @@ class DOMElementNode(DOMBaseNode):
 						attributes_str = ';'.join(attributes)
 					line = f'[{node.highlight_index}]<{node.tag_name} '
 					if attributes_str:
-						line += f'{attributes_str}>'
+						line += f'{attributes_str}'
 					if text:
-						line += f'{text}>'
+						if attributes_str:
+							line += f'>{text}'
+						else:
+							line += f'{text}'
+					line += '/>'
 					formatted_text.append(line)
 
 				# Process children regardless
