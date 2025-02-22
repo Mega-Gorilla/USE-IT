@@ -96,7 +96,6 @@ class ActionResult(BaseModel):
 class AgentBrain(BaseModel):
 	"""Current state of the agent"""
 
-	page_summary: str
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str

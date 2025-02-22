@@ -63,7 +63,7 @@ def log_response(response: AgentOutput) -> None:
 		emoji = '⚠'
 	else:
 		emoji = '🤷'
-	logger.debug(f'🤖 {emoji} Page summary: {response.current_state.page_summary}')
+
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
