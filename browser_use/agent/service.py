@@ -75,7 +75,7 @@ Context = TypeVar('Context')
 
 
 class Agent(Generic[Context]):
-	@time_execution_sync('--init agent')
+	@time_execution_sync('--init (agent)')
 	def __init__(
 		self,
 		task: str,
