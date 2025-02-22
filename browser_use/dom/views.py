@@ -141,12 +141,12 @@ class DOMElementNode(DOMBaseNode):
 						if text in attributes:
 							attributes.remove(text)
 						attributes_str = ';'.join(attributes)
+					line = f'[{node.highlight_index}]<{node.tag_name} '
+					if attributes_str:
+						line += f'{attributes_str}>'
 					if text:
-						formatted_text.append(
-							f'[{node.highlight_index}]<{node.tag_name} {attributes_str}>{text}</{node.tag_name}>'
-						)
-					else:
-						formatted_text.append(f'[{node.highlight_index}]<{node.tag_name} {attributes_str}/>')
+						line += f'{text}>'
+					formatted_text.append(line)
 
 				# Process children regardless
 				for child in node.children:
