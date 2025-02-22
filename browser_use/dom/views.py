@@ -128,12 +128,17 @@ class DOMElementNode(DOMBaseNode):
 				if node.highlight_index is not None:
 					attributes_str = ''
 					if include_attributes:
-						attributes_str = ' ' + ' '.join(
-							f'{key}="{value}"' for key, value in node.attributes.items() if key in include_attributes
+						attributes = list(
+							set([str(value) for key, value in node.attributes.items() if key in include_attributes])
 						)
-					formatted_text.append(
-						f'[{node.highlight_index}]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
-					)
+						attributes_str = ';'.join(attributes)
+					text = node.get_all_text_till_next_clickable_element()
+					if text:
+						formatted_text.append(
+							f'[{node.highlight_index}]<{node.tag_name} {attributes_str}>{text}</{node.tag_name}>'
+						)
+					else:
+						formatted_text.append(f'[{node.highlight_index}]<{node.tag_name} {attributes_str}/>')
 
 				# Process children regardless
 				for child in node.children:
