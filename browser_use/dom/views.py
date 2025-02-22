@@ -127,6 +127,7 @@ class DOMElementNode(DOMBaseNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
 					attributes_str = ''
+					text = node.get_all_text_till_next_clickable_element()
 					if include_attributes:
 						attributes = list(
 							set(
@@ -137,8 +138,9 @@ class DOMElementNode(DOMBaseNode):
 								]
 							)
 						)
+						if text in attributes:
+							attributes.remove(text)
 						attributes_str = ';'.join(attributes)
-					text = node.get_all_text_till_next_clickable_element()
 					if text:
 						formatted_text.append(
 							f'[{node.highlight_index}]<{node.tag_name} {attributes_str}>{text}</{node.tag_name}>'
