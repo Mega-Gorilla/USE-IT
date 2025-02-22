@@ -33,7 +33,7 @@ from browser_use.browser.views import (
 )
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
-from browser_use.utils import time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync
 
 if TYPE_CHECKING:
 	from browser_use.browser.browser import Browser
@@ -178,6 +178,7 @@ class BrowserContext:
 		"""Async context manager exit"""
 		await self.close()
 
+	@time_execution_async('--close')
 	async def close(self):
 		"""Close the browser instance"""
 		logger.debug('Closing browser context')
@@ -229,6 +230,7 @@ class BrowserContext:
 			except Exception as e:
 				logger.warning(f'Failed to force close browser context: {e}')
 
+	@time_execution_async('--initialize_session')
 	async def _initialize_session(self):
 		"""Initialize the browser session"""
 		logger.debug('Initializing browser context')
@@ -732,7 +734,7 @@ class BrowserContext:
 			raise
 
 	# region - Browser Actions
-
+	@time_execution_async('--take_screenshot')
 	async def take_screenshot(self, full_page: bool = False) -> str:
 		"""
 		Returns a base64 encoded screenshot of the current page.
@@ -753,6 +755,7 @@ class BrowserContext:
 
 		return screenshot_b64
 
+	@time_execution_async('--remove_highlights')
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.
@@ -837,6 +840,7 @@ class BrowserContext:
 		return base_selector
 
 	@classmethod
+	@time_execution_sync('--enhanced_css_selector_for_element')
 	def _enhanced_css_selector_for_element(cls, element: DOMElementNode, include_dynamic_attributes: bool = True) -> str:
 		"""
 		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
@@ -942,6 +946,7 @@ class BrowserContext:
 			tag_name = element.tag_name or '*'
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
+	@time_execution_async('--get_locate_element')
 	async def get_locate_element(self, element: DOMElementNode) -> Optional[ElementHandle]:
 		current_frame = await self.get_current_page()
 
@@ -984,6 +989,7 @@ class BrowserContext:
 			logger.error(f'Failed to locate element: {str(e)}')
 			return None
 
+	@time_execution_async('--input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		"""
 		Input text into an element with proper error handling and state management.
@@ -1020,6 +1026,7 @@ class BrowserContext:
 			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
+	@time_execution_async('--click_element_node')
 	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
 		"""
 		Optimized method to click an element using xpath.
@@ -1080,6 +1087,7 @@ class BrowserContext:
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 
+	@time_execution_async('--get_tabs_info')
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
 		session = await self.get_session()
@@ -1091,6 +1099,7 @@ class BrowserContext:
 
 		return tabs_info
 
+	@time_execution_async('--switch_to_tab')
 	async def switch_to_tab(self, page_id: int) -> None:
 		"""Switch to a specific tab by its page_id"""
 		session = await self.get_session()
@@ -1116,6 +1125,7 @@ class BrowserContext:
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
+	@time_execution_async('--create_new_tab')
 	async def create_new_tab(self, url: str | None = None) -> None:
 		"""Create a new tab and optionally navigate to a URL"""
 		if url and not self._is_url_allowed(url):
