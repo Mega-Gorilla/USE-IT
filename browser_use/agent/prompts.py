@@ -32,9 +32,7 @@ class SystemPrompt:
 		Returns:
 		    SystemMessage: Formatted system prompt
 		"""
-		prompt = self.prompt_template.format(
-			max_actions=self.max_actions_per_step, action_description=self.default_action_description
-		)
+		prompt = self.prompt_template.format(max_actions=self.max_actions_per_step)
 		return SystemMessage(content=prompt)
 
 
