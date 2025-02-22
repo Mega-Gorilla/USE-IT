@@ -88,9 +88,9 @@ class AgentMessagePrompt:
 		step_info_description += f'Current date and time: {time_str}'
 
 		state_description = f"""
-[Task history memory ends here]
+[Task history memory ends]
 [Current state starts here]
-You will see the following only once - if you need to remember it and you dont know it yet, write it down in the memory:
+The following is one-time information - if you need to remember it write it to memory:
 Current url: {self.state.url}
 Available tabs:
 {self.state.tabs}
