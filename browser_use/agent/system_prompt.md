@@ -39,6 +39,7 @@ Common action sequences:
 - Use scroll to find elements you are looking for
 - If you want to research something, open a new tab instead of using the current tab
 - If captcha pops up, try to solve it - else try a different approach
+- If the page is not fully loaded, use wait action
 5. TASK COMPLETION:
 - Use the done action as the last action as soon as the ultimate task is complete
 - Dont use "done" before you are done with everything the user asked you. 
