@@ -124,6 +124,10 @@ class MessageManager:
 						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
 						self._add_message_with_tokens(msg)
 					if r.error:
+						# if endswith \n, remove it
+						if r.error.endswith('\n'):
+							r.error = r.error[:-1]
+						# get only last line of error
 						last_line = r.error.split('\n')[-1]
 						msg = HumanMessage(content='Action error: ' + last_line)
 						self._add_message_with_tokens(msg)
