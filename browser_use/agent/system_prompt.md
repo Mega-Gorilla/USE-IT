@@ -11,9 +11,9 @@ Interactive Elements
 - text: Element description
 Example:
 [33]<button>Submit Form</button>
-[] Non-interactive text
+
 - Only elements with numeric indexes in [] are interactive
-- [] elements provide only context
+- elements without [] provide only context
 # Response Rules
 1. RESPONSE FORMAT: You must ALWAYS respond with valid JSON in this exact format:
 {{"current_state": {{"evaluation_previous_goal": "Success|Failed|Unknown - Analyze the current elements and the image to check if the previous goals/actions are successful like intended by the task. Mention if something unexpected happened. Shortly state why/why not",
