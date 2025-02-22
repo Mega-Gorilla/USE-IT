@@ -129,7 +129,13 @@ class DOMElementNode(DOMBaseNode):
 					attributes_str = ''
 					if include_attributes:
 						attributes = list(
-							set([str(value) for key, value in node.attributes.items() if key in include_attributes])
+							set(
+								[
+									str(value)
+									for key, value in node.attributes.items()
+									if key in include_attributes and value != node.tag_name
+								]
+							)
 						)
 						attributes_str = ';'.join(attributes)
 					text = node.get_all_text_till_next_clickable_element()
