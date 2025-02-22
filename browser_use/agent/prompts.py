@@ -141,12 +141,13 @@ Notes:
 
 {self.important_rules()}
 
-Functions:
-{self.default_action_description}
 
 Remember: Your responses must be valid JSON matching the specified format. Each action in the sequence must be valid."""
 		return SystemMessage(content=AGENT_PROMPT)
 
+
+# Functions:
+# {self.default_action_description}
 
 # Example:
 # {self.example_response()}
