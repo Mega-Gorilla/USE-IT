@@ -94,6 +94,7 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
+		'https://www.amazon.com/s?k=laptop&s=review-rank&crid=1RZCEJ289EUSI&qid=1740202453&sprefix=laptop%2Caps%2C166&ref=sr_st_review-rank&ds=v1%3A4EnYKXVQA7DIE41qCvRZoNB4qN92Jlztd3BPsTFXmxU',
 		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
 		'https://kayak.com/flights',
 		'https://immobilienscout24.de',
