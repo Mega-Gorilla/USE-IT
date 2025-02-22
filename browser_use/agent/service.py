@@ -48,7 +48,7 @@ from browser_use.telemetry.views import (
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async
+from browser_use.utils import time_execution_async, time_execution_sync
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ Context = TypeVar('Context')
 
 
 class Agent(Generic[Context]):
+	@time_execution_sync('--init agent')
 	def __init__(
 		self,
 		task: str,
@@ -281,7 +282,7 @@ class Agent(Generic[Context]):
 			raise InterruptedError
 
 	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
-	@time_execution_async('--step')
+	@time_execution_async('--step (agent)')
 	async def step(self, step_info: Optional[AgentStepInfo] = None) -> None:
 		"""Execute one step of the task"""
 		logger.info(f'📍 Step {self.state.n_steps}')
@@ -364,6 +365,7 @@ class Agent(Generic[Context]):
 			if state:
 				self._make_history_item(model_output, state, result)
 
+	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
 		include_trace = logger.isEnabledFor(logging.DEBUG)
@@ -429,7 +431,7 @@ class Agent(Generic[Context]):
 		"""Remove think tags from text"""
 		return re.sub(self.THINK_TAGS, '', text)
 
-	@time_execution_async('--get_next_action')
+	@time_execution_async('--get_next_action (agent)')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
@@ -502,6 +504,7 @@ class Agent(Generic[Context]):
 		return False, False
 
 	# @observe(name='agent.run', ignore_output=True)
+	@time_execution_async('--run (agent)')
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 		try:
@@ -568,7 +571,7 @@ class Agent(Generic[Context]):
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
 	# @observe(name='controller.multi_act')
-	@time_execution_async('--multi-act')
+	@time_execution_async('--multi-act (agent)')
 	async def multi_act(
 		self,
 		actions: list[ActionModel],
