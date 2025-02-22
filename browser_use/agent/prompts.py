@@ -103,24 +103,22 @@ class SystemPrompt:
 		return text
 
 	def input_format(self) -> str:
-		return """
-INPUT STRUCTURE:
-1. Current URL: The webpage you're currently on
-2. Available Tabs: List of open browser tabs
-3. Interactive Elements: List in the format:
-   index[:]<element_type>element_text</element_type>
+		return """Input:
+1. Task	
+2. Previous steps
+3. Current URL
+4. Open Tabs
+5. Interactive Elements:
+   [index]<type>text</type>
    - index: Numeric identifier for interaction
-   - element_type: HTML element type (button, input, etc.)
-   - element_text: Visible text or element description
-
+   - type: HTML element type (button, input, etc.)
+   - text: Element description
 Example:
 [33]<button>Submit Form</button>
 [] Non-interactive text
 
-
-Notes:
 - Only elements with numeric indexes inside [] are interactive
-- [] elements provide context but cannot be interacted with
+- [] elements provide only context
 """
 
 	def get_system_message(self) -> SystemMessage:
@@ -131,18 +129,10 @@ Notes:
 		    str: Formatted system prompt
 		"""
 
-		AGENT_PROMPT = f"""You are a precise browser automation agent that interacts with websites through structured commands. Your role is to:
-1. Analyze the provided webpage elements and structure
-2. Use the given information to accomplish the ultimate task
-3. Respond with valid JSON containing your next action sequence and state assessment
-
-
+		AGENT_PROMPT = f"""You are an AI agent designed to automate browser tasks. Your goal is to accomplish the ultimate task by following the rules.
 {self.input_format()}
-
 {self.important_rules()}
-
-
-Remember: Your responses must be valid JSON matching the specified format. Each action in the sequence must be valid."""
+Your responses must be always JSON with the specified format. """
 		return SystemMessage(content=AGENT_PROMPT)
 
 
