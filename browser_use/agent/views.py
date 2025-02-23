@@ -12,7 +12,6 @@ from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from browser_use.agent.message_manager.views import MessageManagerState
-from browser_use.agent.prompts import SystemPrompt
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.dom.history_tree_processor.service import (
@@ -34,12 +33,13 @@ class AgentSettings(BaseModel):
 	save_conversation_path_encoding: Optional[str] = 'utf-8'
 	max_failures: int = 3
 	retry_delay: int = 10
-	system_prompt_class: Type[SystemPrompt] = SystemPrompt
 	max_input_tokens: int = 128000
 	validate_output: bool = False
 	message_context: Optional[str] = None
 	generate_gif: bool | str = False
 	available_file_paths: Optional[list[str]] = None
+	override_system_message: Optional[str] = None
+	extend_system_message: Optional[str] = None
 	include_attributes: list[str] = [
 		'title',
 		'type',

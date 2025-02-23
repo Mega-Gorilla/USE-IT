@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -100,7 +100,8 @@ class Agent(Generic[Context]):
 		save_conversation_path_encoding: Optional[str] = 'utf-8',
 		max_failures: int = 3,
 		retry_delay: int = 10,
-		system_prompt_class: Type[SystemPrompt] = SystemPrompt,
+		override_system_message: Optional[str] = None,
+		extend_system_message: Optional[str] = None,
 		max_input_tokens: int = 128000,
 		validate_output: bool = False,
 		message_context: Optional[str] = None,
@@ -144,7 +145,8 @@ class Agent(Generic[Context]):
 			save_conversation_path_encoding=save_conversation_path_encoding,
 			max_failures=max_failures,
 			retry_delay=retry_delay,
-			system_prompt_class=system_prompt_class,
+			override_system_message=override_system_message,
+			extend_system_message=extend_system_message,
 			max_input_tokens=max_input_tokens,
 			validate_output=validate_output,
 			message_context=message_context,
@@ -178,9 +180,11 @@ class Agent(Generic[Context]):
 		# Initialize message manager with state
 		self._message_manager = MessageManager(
 			task=task,
-			system_message=self.settings.system_prompt_class(
-				self.available_actions,
+			system_message=SystemPrompt(
+				action_description=self.available_actions,
 				max_actions_per_step=self.settings.max_actions_per_step,
+				override_system_message=override_system_message,
+				extend_system_message=extend_system_message,
 			).get_system_message(),
 			settings=MessageManagerSettings(
 				max_input_tokens=self.settings.max_input_tokens,
