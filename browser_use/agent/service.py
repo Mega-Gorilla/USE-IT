@@ -278,6 +278,10 @@ class Agent(Generic[Context]):
 		# Create output model with the dynamic actions
 		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
 
+		# used to force the done action when max_steps is reached
+		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
+		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+
 	def set_tool_calling_method(self, tool_calling_method: Optional[ToolCallingMethod]) -> Optional[ToolCallingMethod]:
 		if tool_calling_method == 'auto':
 			if self.chat_model_library == 'ChatGoogleGenerativeAI':
@@ -334,6 +338,9 @@ class Agent(Generic[Context]):
 				msg = 'Now comes your last step. You have to use the done action now! Provide your best result of the ultimate task given your findings inside the done action.'
 				logger.info('Last step finishing up')
 				self._message_manager._add_message_with_tokens(HumanMessage(content=msg), position=-1)
+				entire_output_model = self.AgentOutput
+				self.AgentOutput = self.DoneAgentOutput
+
 			input_messages = self._message_manager.get_messages()
 			tokens = self._message_manager.state.history.current_tokens
 
@@ -534,7 +541,11 @@ class Agent(Generic[Context]):
 				if not await self._validate_output():
 					return True, False
 
-			logger.info('✅ Task completed successfully')
+			logger.info('✅ Task completed')
+			if self.state.history.is_successful():
+				logger.info('✅ Successfully')
+			else:
+				logger.info('❌ Unfinished')
 
 			if self.register_done_callback:
 				await self.register_done_callback(self.state.history)
@@ -579,7 +590,12 @@ class Agent(Generic[Context]):
 						if not await self._validate_output():
 							continue
 
-					logger.info('✅ Task completed successfully')
+					logger.info('✅ Task completed')
+					if self.state.history.is_successful():
+						logger.info('✅ Successfully')
+					else:
+						logger.info('❌ Unfinished')
+
 					if self.register_done_callback:
 						await self.register_done_callback(self.state.history)
 					break
