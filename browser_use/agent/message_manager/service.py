@@ -75,7 +75,6 @@ class MessageManager:
 				'name': 'AgentOutput',
 				'args': {
 					'current_state': {
-						'page_summary': 'On the page are company a,b,c wtih their revenue 1,2,3.',
 						'evaluation_previous_goal': 'Success - I opend the first page',
 						'memory': 'Starting with the new task. I have completed 1/10 steps',
 						'next_goal': 'Click on company a',
@@ -125,6 +124,10 @@ class MessageManager:
 						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
 						self._add_message_with_tokens(msg)
 					if r.error:
+						# if endswith \n, remove it
+						if r.error.endswith('\n'):
+							r.error = r.error[:-1]
+						# get only last line of error
 						last_line = r.error.split('\n')[-1]
 						msg = HumanMessage(content='Action error: ' + last_line)
 						self._add_message_with_tokens(msg)

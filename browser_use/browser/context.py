@@ -110,10 +110,10 @@ class BrowserContextConfig:
 	"""
 
 	cookies_file: str | None = None
-	minimum_wait_page_load_time: float = 0.5
-	wait_for_network_idle_page_load_time: float = 1
+	minimum_wait_page_load_time: float = 0.25
+	wait_for_network_idle_page_load_time: float = 0.5
 	maximum_wait_page_load_time: float = 5
-	wait_between_actions: float = 1
+	wait_between_actions: float = 0.5
 
 	disable_security: bool = True
 
