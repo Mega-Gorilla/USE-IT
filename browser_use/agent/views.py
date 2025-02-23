@@ -306,6 +306,10 @@ class AgentHistoryList(BaseModel):
 					result.append(o)
 		return result
 
+	def number_of_steps(self) -> int:
+		"""Get the number of steps in the history"""
+		return len(self.history)
+
 
 class AgentError:
 	"""Container for agent error handling"""
