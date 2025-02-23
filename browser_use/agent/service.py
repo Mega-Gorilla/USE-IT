@@ -304,6 +304,7 @@ class Agent(Generic[Context]):
 		model_output = None
 		result: list[ActionResult] = []
 		step_start_time = time.time()
+		tokens = 0
 
 		try:
 			state = await self.browser_context.get_state()
@@ -324,6 +325,7 @@ class Agent(Generic[Context]):
 				logger.info('Last step finishing up')
 				self._message_manager._add_message_with_tokens(HumanMessage(content=msg), position=-1)
 			input_messages = self._message_manager.get_messages()
+			tokens = self._message_manager.state.history.current_tokens
 
 			try:
 				model_output = await self.get_next_action(input_messages)
@@ -388,7 +390,7 @@ class Agent(Generic[Context]):
 					step_number=self.state.n_steps,
 					step_start_time=step_start_time,
 					step_end_time=step_end_time,
-					input_tokens=self._message_manager.state.history.current_tokens,
+					input_tokens=tokens,
 				)
 				self._make_history_item(model_output, state, result, metadata)
 
