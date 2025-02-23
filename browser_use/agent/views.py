@@ -22,7 +22,7 @@ from browser_use.dom.history_tree_processor.service import (
 )
 from browser_use.dom.views import SelectorMap
 
-ToolCallingMethod = Literal['function_calling', 'auto']
+ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto']
 
 
 class AgentSettings(BaseModel):
