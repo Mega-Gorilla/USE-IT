@@ -153,11 +153,20 @@ class Agent(Generic[Context]):
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
 
+		# for models without tool calling, add available actions to context
+		available_actions = controller.registry.get_prompt_description()
+		if self.model_name == 'deepseek-reasoner' or self.model_name.startswith('deepseek-r1'):
+			# add to context that we are using deepseek
+			if message_context:
+				message_context += f'\n\nAvailable actions: {available_actions}'
+			else:
+				message_context = f'Available actions: {available_actions}'
+
 		# Initialize message manager with state
 		self._message_manager = MessageManager(
 			task=task,
 			system_message=self.settings.system_prompt_class(
-				controller.registry.get_prompt_description(),
+				available_actions,
 				max_actions_per_step=self.settings.max_actions_per_step,
 			).get_system_message(),
 			settings=MessageManagerSettings(
