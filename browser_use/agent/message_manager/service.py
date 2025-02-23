@@ -238,7 +238,7 @@ class MessageManager:
 
 	def cut_messages(self):
 		"""Get current message list, potentially trimmed to max tokens"""
-		diff = self.state.history.total_tokens - self.settings.max_input_tokens
+		diff = self.state.history.current_tokens - self.settings.max_input_tokens
 		if diff <= 0:
 			return None
 
@@ -252,9 +252,9 @@ class MessageManager:
 					msg.message.content.remove(item)
 					diff -= self.settings.image_tokens
 					msg.metadata.tokens -= self.settings.image_tokens
-					self.state.history.total_tokens -= self.settings.image_tokens
+					self.state.history.current_tokens -= self.settings.image_tokens
 					logger.debug(
-						f'Removed image with {self.settings.image_tokens} tokens - total tokens now: {self.state.history.total_tokens}/{self.settings.max_input_tokens}'
+						f'Removed image with {self.settings.image_tokens} tokens - total tokens now: {self.state.history.current_tokens}/{self.settings.max_input_tokens}'
 					)
 				elif 'text' in item and isinstance(item, dict):
 					text += item['text']
@@ -290,7 +290,7 @@ class MessageManager:
 		last_msg = self.state.history.messages[-1]
 
 		logger.debug(
-			f'Added message with {last_msg.metadata.tokens} tokens - total tokens now: {self.state.history.total_tokens}/{self.settings.max_input_tokens} - total messages: {len(self.state.history.messages)}'
+			f'Added message with {last_msg.metadata.tokens} tokens - total tokens now: {self.state.history.current_tokens}/{self.settings.max_input_tokens} - total messages: {len(self.state.history.messages)}'
 		)
 
 	def _remove_last_state_message(self) -> None:

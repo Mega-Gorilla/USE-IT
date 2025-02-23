@@ -174,7 +174,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 			else:
 				raise e
 
-		assert message_manager.state.history.total_tokens <= message_manager.settings.max_input_tokens + 100
+		assert message_manager.state.history.current_tokens <= message_manager.settings.max_input_tokens + 100
 
 		last_msg = messages[-1]
 		assert isinstance(last_msg, HumanMessage)
@@ -217,7 +217,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 		assert f'step {i}' in messages[-1].content  # Should contain current step info
 
 		# Log token usage for debugging
-		token_usage = message_manager.state.history.total_tokens
+		token_usage = message_manager.state.history.current_tokens
 		token_limit = message_manager.settings.max_input_tokens
 		# print(f'Step {i}: Using {token_usage}/{token_limit} tokens')
 
@@ -231,7 +231,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 			real_tokens.append(message_manager._count_tokens(msg.message))
 		assert total_tokens == sum(real_tokens)
 		assert stored_tokens == real_tokens
-		assert message_manager.state.history.total_tokens == total_tokens
+		assert message_manager.state.history.current_tokens == total_tokens
 
 
 # pytest -s browser_use/agent/message_manager/tests.py

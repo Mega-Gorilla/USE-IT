@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
@@ -31,6 +32,7 @@ from browser_use.agent.views import (
 	AgentSettings,
 	AgentState,
 	AgentStepInfo,
+	StepMetadata,
 	ToolCallingMethod,
 )
 from browser_use.browser.browser import Browser
@@ -301,6 +303,7 @@ class Agent(Generic[Context]):
 		state = None
 		model_output = None
 		result: list[ActionResult] = []
+		step_start_time = time.time()
 
 		try:
 			state = await self.browser_context.get_state()
@@ -361,6 +364,7 @@ class Agent(Generic[Context]):
 			self.state.last_result = result
 
 		finally:
+			step_end_time = time.time()
 			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
 			self.telemetry.capture(
 				AgentStepTelemetryEvent(
@@ -375,7 +379,13 @@ class Agent(Generic[Context]):
 				return
 
 			if state:
-				self._make_history_item(model_output, state, result)
+				metadata = StepMetadata(
+					step_number=self.state.n_steps,
+					step_start_time=step_start_time,
+					step_end_time=step_end_time,
+					input_tokens=self._message_manager.state.history.current_tokens,
+				)
+				self._make_history_item(model_output, state, result, metadata)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -417,6 +427,7 @@ class Agent(Generic[Context]):
 		model_output: AgentOutput | None,
 		state: BrowserState,
 		result: list[ActionResult],
+		metadata: Optional[StepMetadata] = None,
 	) -> None:
 		"""Create and store history item"""
 
@@ -433,7 +444,7 @@ class Agent(Generic[Context]):
 			screenshot=state.screenshot,
 		)
 
-		history_item = AgentHistory(model_output=model_output, result=result, state=state_history)
+		history_item = AgentHistory(model_output=model_output, result=result, state=state_history, metadata=metadata)
 
 		self.state.history.history.append(history_item)
 
