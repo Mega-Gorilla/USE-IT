@@ -47,14 +47,20 @@ class Controller(Generic[Context]):
 			class ExtendedOutputModel(output_model):  # type: ignore
 				success: bool = True
 
-			@self.registry.action('Complete task', param_model=ExtendedOutputModel)
+			@self.registry.action(
+				'Complete task - with return text and if the ultimate task is reached (success=True) or (success=False)',
+				param_model=ExtendedOutputModel,
+			)
 			async def done(params: ExtendedOutputModel):
 				# Exclude success from the output JSON since it's an internal parameter
 				output_dict = params.model_dump(exclude={'success'})
 				return ActionResult(is_done=True, success=params.success, extracted_content=json.dumps(output_dict))
 		else:
 
-			@self.registry.action('Complete task', param_model=DoneAction)
+			@self.registry.action(
+				'Complete task - with return text and if the ultimate task is reached (success=True) or (success=False)',
+				param_model=DoneAction,
+			)
 			async def done(params: DoneAction):
 				return ActionResult(is_done=True, success=params.success, extracted_content=params.text)
 

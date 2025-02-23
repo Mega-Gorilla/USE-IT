@@ -49,7 +49,7 @@ Common action sequences:
 5. TASK COMPLETION:
 - Use the done action as the last action as soon as the ultimate task is complete
 - Dont use "done" before you are done with everything the user asked you, except you reach the last step of max_steps. 
-- If you reach the max_steps, use the done action even you are not finished and provide all the information you have gathered so far.
+- If you reach the max_steps, use the done action even you are not finished and provide all the information you have gathered so far. If the task is not finished set success to false.
 - If you have to do something repeatedly for example the task says for "each", or "for all", or "x times", count always inside "memory" how many times you have done it and how many remain. Don't stop until you have completed like the task asked you. Only call done after the last step.
 - Don't hallucinate actions
 - Make sure to include everything the user asked for in the done text parameter. This is what the user will see. Do not just say you are done, but include the requested information of the task.
