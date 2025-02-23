@@ -380,6 +380,7 @@ class Agent(Generic[Context]):
 
 			if state:
 				metadata = StepMetadata(
+					step_number=self.state.n_steps,
 					step_start_time=step_start_time,
 					step_end_time=step_end_time,
 					tokens=self._message_manager.state.history.current_tokens,
