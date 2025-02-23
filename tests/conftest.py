@@ -8,6 +8,7 @@ import sys
 
 import pytest
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 # Ensure the project root is in the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -35,7 +36,7 @@ def llm():
 	api_key = os.getenv('OPENAI_API_KEY')
 	logger.debug(f'API Key present: {bool(api_key)}')
 	logger.debug('Using actual ChatOpenAI model')
-	return ChatOpenAI(model='gpt-4o', api_key=api_key)
+	return ChatOpenAI(model='gpt-4o', api_key=SecretStr(api_key) if api_key else None)
 
 
 @pytest.fixture(scope='session')
