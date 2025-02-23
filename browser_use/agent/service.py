@@ -566,7 +566,9 @@ class Agent(Generic[Context]):
 						await self.register_done_callback(self.state.history)
 					break
 			else:
-				logger.info('❌ Failed to complete task in maximum steps')
+				error_message = 'Failed to complete task in maximum steps'
+				self.history.add_error(error_message)
+				logger.info(f'❌ {error_message}')
 
 			return self.state.history
 		finally:
