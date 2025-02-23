@@ -129,6 +129,12 @@ class Agent(Generic[Context]):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 
+		# Core components
+		self.task = task
+		self.llm = llm
+		self.controller = controller
+		self.sensitive_data = sensitive_data
+
 		self.settings = AgentSettings(
 			use_vision=use_vision,
 			use_vision_for_planner=use_vision_for_planner,
@@ -149,6 +155,15 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 		)
+
+		# Action setup
+		self._setup_action_models()
+		self._set_browser_use_version_and_source()
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
+
+		# Model setup
+		self._set_model_names()
+		self.tool_calling_method = self.set_tool_calling_method(self.settings.tool_calling_method)
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -179,12 +194,6 @@ class Agent(Generic[Context]):
 			state=self.state.message_manager_state,
 		)
 
-		# Core components
-		self.task = task
-		self.llm = llm
-		self.controller = controller
-		self.sensitive_data = sensitive_data
-
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
@@ -201,15 +210,6 @@ class Agent(Generic[Context]):
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
-
-		# Action setup
-		self._setup_action_models()
-		self._set_browser_use_version_and_source()
-		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
-
-		# Model setup
-		self._set_model_names()
-		self.tool_calling_method = self.set_tool_calling_method(self.settings.tool_calling_method)
 
 		# Context
 		self.context = context
