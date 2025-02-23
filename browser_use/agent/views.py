@@ -221,11 +221,14 @@ class AgentHistoryList(BaseModel):
 			return self.history[-1].model_output.action[-1].model_dump(exclude_none=True)
 		return None
 
-	def errors(self) -> list[str]:
-		"""Get all errors from history"""
+	def errors(self) -> list[str | None]:
+		"""Get all errors from history, with None for steps without errors"""
 		errors = []
 		for h in self.history:
-			errors.extend([r.error for r in h.result if r.error])
+			step_errors = [r.error for r in h.result if r.error]
+
+			# each step can have only one error
+			errors.append(step_errors[0] if step_errors else None)
 		return errors
 
 	def final_result(self) -> None | str:
@@ -241,8 +244,8 @@ class AgentHistoryList(BaseModel):
 		return False
 
 	def has_errors(self) -> bool:
-		"""Check if the agent has any errors"""
-		return len(self.errors()) > 0
+		"""Check if the agent has any non-None errors"""
+		return any(error is not None for error in self.errors())
 
 	def urls(self) -> list[str]:
 		"""Get all unique URLs from history"""
