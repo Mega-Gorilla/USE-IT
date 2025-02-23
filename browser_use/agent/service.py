@@ -382,7 +382,7 @@ class Agent(Generic[Context]):
 				metadata = StepMetadata(
 					step_start_time=step_start_time,
 					step_end_time=step_end_time,
-					total_tokens=self._message_manager.state.history.total_tokens,
+					tokens=self._message_manager.state.history.current_tokens,
 				)
 				self._make_history_item(model_output, state, result, metadata)
 

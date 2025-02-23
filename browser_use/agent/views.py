@@ -98,7 +98,7 @@ class StepMetadata(BaseModel):
 
 	step_start_time: float
 	step_end_time: float
-	total_tokens: int  # Approximate tokens from message manager for this step
+	tokens: int  # Approximate tokens from message manager for this step
 
 	@property
 	def duration_seconds(self) -> float:
@@ -208,7 +208,7 @@ class AgentHistoryList(BaseModel):
 		total = 0
 		for h in self.history:
 			if h.metadata:
-				total += h.metadata.total_tokens
+				total += h.metadata.tokens
 		return total
 
 	def __str__(self) -> str:
