@@ -345,7 +345,6 @@ class Agent(Generic[Context]):
 				msg = 'Now comes your last step. You have to use the done action now! Provide your best result of the ultimate task given your findings inside the done action.'
 				logger.info('Last step finishing up')
 				self._message_manager._add_message_with_tokens(HumanMessage(content=msg), position=-1)
-				entire_output_model = self.AgentOutput
 				self.AgentOutput = self.DoneAgentOutput
 
 			input_messages = self._message_manager.get_messages()
