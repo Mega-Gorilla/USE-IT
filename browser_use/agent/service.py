@@ -519,8 +519,9 @@ class Agent(Generic[Context]):
 		if parsed is None:
 			raise ValueError('Could not parse response.')
 
-		# cut the number of actions to max_actions_per_step
-		parsed.action = parsed.action[: self.settings.max_actions_per_step]
+		# cut the number of actions to max_actions_per_step if needed
+		if len(parsed.action) > self.settings.max_actions_per_step:
+			parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
 		log_response(parsed)
 

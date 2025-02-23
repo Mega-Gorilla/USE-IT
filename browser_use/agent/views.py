@@ -130,9 +130,9 @@ class AgentOutput(BaseModel):
 
 	current_state: AgentBrain
 	action: list[ActionModel] = Field(
-		...,  # This means the field is required
+		...,
 		description='List of actions to execute',
-		min_items=1,  # Ensure at least one action is provided
+		json_schema_extra={'min_items': 1},  # Ensure at least one action is provided
 	)
 
 	@staticmethod
@@ -141,7 +141,10 @@ class AgentOutput(BaseModel):
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
-			action=(list[custom_actions], Field(..., description='List of actions to execute', min_items=1)),
+			action=(
+				list[custom_actions],
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
 			__module__=AgentOutput.__module__,
 		)
 		model_.__doc__ = 'AgentOutput model with custom actions'
