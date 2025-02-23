@@ -340,11 +340,14 @@ class Agent(Generic[Context]):
 				# add plan before last state message
 				self._message_manager.add_plan(plan, position=-1)
 
-			# Add last step warning if needed
 			if step_info and step_info.is_last_step():
-				msg = 'Now comes your last step. You have to use the done action now! Provide your best result of the ultimate task given your findings inside the done action.'
+				# Add last step warning if needed
+				msg = 'Now comes your last step. You have to use the "done" action now immediately! No other actions are allowed.'
+				msg += '\nIf the task is not fully finished as requested by the user, set success in "done" to false!'
+				msg += '\nIf the task is fully finished, set success in "done" to true.'
+				msg += '\nMake sure you include everything you found out for the ultimate task in the done text parameter.'
 				logger.info('Last step finishing up')
-				self._message_manager._add_message_with_tokens(HumanMessage(content=msg), position=-1)
+				self._message_manager._add_message_with_tokens(HumanMessage(content=msg))
 				self.AgentOutput = self.DoneAgentOutput
 
 			input_messages = self._message_manager.get_messages()

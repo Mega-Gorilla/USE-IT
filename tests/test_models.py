@@ -55,12 +55,12 @@ api_key_anthropic = SecretStr(os.getenv('ANTHROPIC_API_KEY') or '')
 			azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
 			api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
 		),
+		# ChatOpenAI(
+		# base_url='https://api.deepseek.com/v1',
+		# model='deepseek-reasoner',
+		# api_key=api_key_deepseek,
+		# ),
 		# run: ollama start
-		ChatOpenAI(
-			base_url='https://api.deepseek.com/v1',
-			model='deepseek-reasoner',
-			api_key=api_key_deepseek,
-		),
 		ChatOllama(
 			model='qwen2.5:latest',
 			num_ctx=128000,
@@ -91,7 +91,7 @@ api_key_anthropic = SecretStr(os.getenv('ANTHROPIC_API_KEY') or '')
 		'gpt-4o',
 		'gpt-4o-mini',
 		'azure-gpt-4o',
-		'deepseek-reasoner',
+		#'deepseek-reasoner',
 		'qwen2.5:latest',
 		'azure-gpt-4o-mini',
 		'claude-3-5-sonnet',
