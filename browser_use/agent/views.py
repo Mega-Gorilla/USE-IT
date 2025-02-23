@@ -83,11 +83,16 @@ class AgentStepInfo:
 	step_number: int
 	max_steps: int
 
+	def is_last_step(self) -> bool:
+		"""Check if this is the last step"""
+		return self.step_number >= self.max_steps - 1
+
 
 class ActionResult(BaseModel):
 	"""Result of executing an action"""
 
 	is_done: Optional[bool] = False
+	success: Optional[bool] = True  # Default to True for backward compatibility
 	extracted_content: Optional[str] = None
 	error: Optional[str] = None
 	include_in_memory: bool = False  # whether to include in past messages as context or not
@@ -279,21 +284,29 @@ class AgentHistoryList(BaseModel):
 
 	def is_done(self) -> bool:
 		"""Check if the agent is done"""
-		if self.history and len(self.history[-1].result) > 0 and self.history[-1].result[-1].is_done:
-			return self.history[-1].result[-1].is_done
+		if self.history and len(self.history[-1].result) > 0:
+			last_result = self.history[-1].result[-1]
+			return last_result.is_done is True
+		return False
+
+	def is_successful(self) -> bool:
+		"""Check if the agent completed successfully"""
+		if self.history and len(self.history[-1].result) > 0:
+			last_result = self.history[-1].result[-1]
+			return last_result.is_done is True and last_result.success is True
 		return False
 
 	def has_errors(self) -> bool:
 		"""Check if the agent has any non-None errors"""
 		return any(error is not None for error in self.errors())
 
-	def urls(self) -> list[str]:
+	def urls(self) -> list[str | None]:
 		"""Get all unique URLs from history"""
-		return [h.state.url for h in self.history if h.state.url]
+		return [h.state.url if h.state.url is not None else None for h in self.history]
 
-	def screenshots(self) -> list[str]:
+	def screenshots(self) -> list[str | None]:
 		"""Get all screenshots from history"""
-		return [h.state.screenshot for h in self.history if h.state.screenshot]
+		return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history]
 
 	def action_names(self) -> list[str]:
 		"""Get all action names from history"""
