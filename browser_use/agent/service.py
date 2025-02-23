@@ -225,19 +225,29 @@ class Agent(Generic[Context]):
 	def _set_browser_use_version_and_source(self) -> None:
 		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
 		try:
-			import pkg_resources
+			# First check for repository-specific files
+			repo_files = ['.git', 'README.md', 'docs', 'examples']
+			package_root = Path(__file__).parent.parent.parent
 
-			version = pkg_resources.get_distribution('browser-use').version
-			source = 'pip'
-		except Exception:
-			try:
-				import subprocess
+			# If all of these files/dirs exist, it's likely from git
+			if all(Path(package_root / file).exists() for file in repo_files):
+				try:
+					import subprocess
 
-				version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+					version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
+				except Exception:
+					version = 'unknown'
 				source = 'git'
-			except Exception:
-				version = 'unknown'
-				source = 'unknown'
+			else:
+				# If no repo files found, try getting version from pip
+				import pkg_resources
+
+				version = pkg_resources.get_distribution('browser-use').version
+				source = 'pip'
+		except Exception:
+			version = 'unknown'
+			source = 'unknown'
+
 		logger.debug(f'Version: {version}, Source: {source}')
 		self.version = version
 		self.source = source
