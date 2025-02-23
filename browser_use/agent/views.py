@@ -93,6 +93,19 @@ class ActionResult(BaseModel):
 	include_in_memory: bool = False  # whether to include in past messages as context or not
 
 
+class StepMetadata(BaseModel):
+	"""Metadata for a single step including timing and token information"""
+
+	step_start_time: float
+	step_end_time: float
+	total_tokens: int  # Approximate tokens from message manager for this step
+
+	@property
+	def duration_seconds(self) -> float:
+		"""Calculate step duration in seconds"""
+		return self.step_end_time - self.step_start_time
+
+
 class AgentBrain(BaseModel):
 	"""Current state of the agent"""
 
@@ -135,6 +148,7 @@ class AgentHistory(BaseModel):
 	model_output: AgentOutput | None
 	result: list[ActionResult]
 	state: BrowserStateHistory
+	metadata: Optional[StepMetadata] = None
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
@@ -166,6 +180,7 @@ class AgentHistory(BaseModel):
 			'model_output': model_output_dump,
 			'result': [r.model_dump(exclude_none=True) for r in self.result],
 			'state': self.state.to_dict(),
+			'metadata': self.metadata.model_dump() if self.metadata else None,
 		}
 
 
@@ -173,6 +188,28 @@ class AgentHistoryList(BaseModel):
 	"""List of agent history items"""
 
 	history: list[AgentHistory]
+
+	@property
+	def total_duration_seconds(self) -> float:
+		"""Get total duration of all steps in seconds"""
+		total = 0.0
+		for h in self.history:
+			if h.metadata:
+				total += h.metadata.duration_seconds
+		return total
+
+	@property
+	def total_tokens(self) -> int:
+		"""
+		Get total tokens used across all steps.
+		Note: These are from the approximate token counting of the message manager.
+		For accurate token counting, use tools like LangChain Smith or OpenAI's token counters.
+		"""
+		total = 0
+		for h in self.history:
+			if h.metadata:
+				total += h.metadata.total_tokens
+		return total
 
 	def __str__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
