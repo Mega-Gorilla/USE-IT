@@ -92,7 +92,7 @@ class ActionResult(BaseModel):
 	"""Result of executing an action"""
 
 	is_done: Optional[bool] = False
-	success: Optional[bool] = True  # Default to True for backward compatibility
+	success: Optional[bool] = None
 	extracted_content: Optional[str] = None
 	error: Optional[str] = None
 	include_in_memory: bool = False  # whether to include in past messages as context or not
@@ -289,12 +289,13 @@ class AgentHistoryList(BaseModel):
 			return last_result.is_done is True
 		return False
 
-	def is_successful(self) -> bool:
-		"""Check if the agent completed successfully"""
+	def is_successful(self) -> bool | None:
+		"""Check if the agent completed successfully - the agent decides in the last step if it was successful or not. None if not done yet."""
 		if self.history and len(self.history[-1].result) > 0:
 			last_result = self.history[-1].result[-1]
-			return last_result.is_done is True and last_result.success is True
-		return False
+			if last_result.is_done is True:
+				return last_result.success
+		return None
 
 	def has_errors(self) -> bool:
 		"""Check if the agent has any non-None errors"""

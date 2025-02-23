@@ -581,10 +581,13 @@ class Agent(Generic[Context]):
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
 					agent_id=self.state.agent_id,
-					success=self.state.history.is_done(),
+					is_done=self.state.history.is_done(),
+					success=self.state.history.is_successful(),
 					steps=self.state.n_steps,
 					max_steps_reached=self.state.n_steps >= max_steps,
 					errors=self.state.history.errors(),
+					total_input_tokens=self.state.history.total_input_tokens(),
+					total_duration_seconds=self.state.history.total_duration_seconds(),
 				)
 			)
 
