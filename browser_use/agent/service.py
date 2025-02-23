@@ -310,11 +310,6 @@ class Agent(Generic[Context]):
 
 			await self._raise_if_stopped_or_paused()
 
-			# Add last step warning if needed
-			if step_info and step_info.is_last_step():
-				msg = 'Done: This is your last step. You have to use the done action now! Please provide your best result of the ultimate task given your findings inside the done action.'
-				self._message_manager._add_message_with_tokens(HumanMessage(content=msg))
-
 			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
 
 			# Run planner at specified intervals if planner is configured
@@ -323,6 +318,11 @@ class Agent(Generic[Context]):
 				# add plan before last state message
 				self._message_manager.add_plan(plan, position=-1)
 
+			# Add last step warning if needed
+			if step_info and step_info.is_last_step():
+				msg = 'Now comes your last step. You have to use the done action now! Provide your best result of the ultimate task given your findings inside the done action.'
+				logger.info('Last step finishing up')
+				self._message_manager._add_message_with_tokens(HumanMessage(content=msg), position=-1)
 			input_messages = self._message_manager.get_messages()
 
 			try:
