@@ -383,7 +383,7 @@ class Agent(Generic[Context]):
 					step_number=self.state.n_steps,
 					step_start_time=step_start_time,
 					step_end_time=step_end_time,
-					tokens=self._message_manager.state.history.current_tokens,
+					input_tokens=self._message_manager.state.history.current_tokens,
 				)
 				self._make_history_item(model_output, state, result, metadata)
 
