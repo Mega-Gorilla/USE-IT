@@ -7,6 +7,7 @@ icon: "message"
 ## Overview
 
 You can customize the system prompt in two ways:
+
 1. Extend the default system prompt with additional instructions
 2. Override the default system prompt entirely
 
@@ -16,9 +17,7 @@ You can customize the system prompt in two ways:
   the agent's performance and reliability.
 </Note>
 
-## Basic Usage
-
-### Extend System Prompt
+### Extend System Prompt (recommended)
 
 To add additional instructions to the default system prompt:
 
@@ -28,7 +27,7 @@ from langchain_openai import ChatOpenAI
 
 # Add your custom instructions
 extend_system_message = """
-REMEMBER the most important RULE: 
+REMEMBER the most important RULE:
 ALWAYS open first a new tab and go first to url wikipedia.com no matter the task!!!
 """
 
@@ -42,7 +41,13 @@ agent = Agent(
 
 ### Override System Prompt
 
-To completely replace the default system prompt with your own:
+<Warning>
+  Not recommended! If you must override the [default system
+  prompt](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/system_prompt.md),
+  make sure to test the agent yourself.
+</Warning>
+
+Anyway, to override the default system prompt:
 
 ```python
 # Define your complete custom prompt
