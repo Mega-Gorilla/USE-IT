@@ -541,12 +541,7 @@ class Agent(Generic[Context]):
 				if not await self._validate_output():
 					return True, False
 
-			logger.info('✅ Task completed')
-			if self.state.history.is_successful():
-				logger.info('✅ Successfully')
-			else:
-				logger.info('❌ Unfinished')
-
+			await self.log_completion()
 			if self.register_done_callback:
 				await self.register_done_callback(self.state.history)
 
@@ -590,14 +585,7 @@ class Agent(Generic[Context]):
 						if not await self._validate_output():
 							continue
 
-					logger.info('✅ Task completed')
-					if self.state.history.is_successful():
-						logger.info('✅ Successfully')
-					else:
-						logger.info('❌ Unfinished')
-
-					if self.register_done_callback:
-						await self.register_done_callback(self.state.history)
+					await self.log_completion()
 					break
 			else:
 				logger.info('❌ Failed to complete task in maximum steps')
@@ -722,6 +710,17 @@ class Agent(Generic[Context]):
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
+
+	async def log_completion(self) -> None:
+		"""Log the completion of the task"""
+		logger.info('✅ Task completed')
+		if self.state.history.is_successful():
+			logger.info('✅ Successfully')
+		else:
+			logger.info('❌ Unfinished')
+
+		if self.register_done_callback:
+			await self.register_done_callback(self.state.history)
 
 	async def rerun_history(
 		self,
