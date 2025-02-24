@@ -530,7 +530,8 @@ class Agent(Generic[Context]):
 
 				await self.step()
 
-				await after_step_func(self)
+				if after_step_func is not None:
+					await after_step_func(self)
 
 				if self.state.history.is_done():
 					if self.settings.validate_output and step < max_steps - 1:
