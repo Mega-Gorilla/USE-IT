@@ -880,15 +880,11 @@
       children: [],
     };
 
-    // Get attributes for interactive elements or potential text containers
-    if (isInteractiveCandidate(node) || node.tagName.toLowerCase() === 'iframe' || node.tagName.toLowerCase() === 'body') {
-      const attributeNames = node.getAttributeNames?.() || [];
-      for (const name of attributeNames) {
-        nodeData.attributes[name] = node.getAttribute(name);
-      }
+    // Get attributes
+    const attributeNames = node.getAttributeNames?.() || [];
+    for (const name of attributeNames) {
+      nodeData.attributes[name] = node.getAttribute(name);
     }
-
-    // if (isInteractiveCandidate(node)) {
 
     // Check interactivity
     if (node.nodeType === Node.ELEMENT_NODE) {
@@ -915,16 +911,39 @@
       }
     }
 
-    // Process children, with special handling for iframes and rich text editors
+    // Process children, with special handling for iframes, shadow DOM, and custom elements
     if (node.tagName) {
       const tagName = node.tagName.toLowerCase();
+
+      // Handle shadow DOM
+      if (node.shadowRoot) {
+        const shadowChildren = Array.from(node.shadowRoot.children);
+        for (const child of shadowChildren) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) nodeData.children.push(domElement);
+        }
+      }
+
+      // Handle custom elements that might have shadow roots
+      if (tagName.includes('-')) {
+        // Try to access shadow root even if not directly exposed
+        const shadowRoot = node.shadowRoot || node.openOrClosedShadowRoot;
+        if (shadowRoot) {
+          const shadowChildren = Array.from(shadowRoot.children);
+          for (const child of shadowChildren) {
+            const domElement = buildDomTree(child, parentIframe);
+            if (domElement) nodeData.children.push(domElement);
+          }
+        }
+      }
 
       // Handle iframes
       if (tagName === "iframe") {
         try {
           const iframeDoc = node.contentDocument || node.contentWindow?.document;
           if (iframeDoc) {
-            for (const child of iframeDoc.childNodes) {
+            const iframeChildren = Array.from(iframeDoc.body.children);
+            for (const child of iframeChildren) {
               const domElement = buildDomTree(child, node);
               if (domElement) nodeData.children.push(domElement);
             }
@@ -933,41 +952,13 @@
           console.warn("Unable to access iframe:", e);
         }
       }
-      // Handle rich text editors and contenteditable elements
-      else if (
-        node.isContentEditable ||
-        node.getAttribute("contenteditable") === "true" ||
-        node.id === "tinymce" ||
-        node.classList.contains("mce-content-body") ||
-        (tagName === "body" && node.getAttribute("data-id")?.startsWith("mce_"))
-      ) {
-        // Process all child nodes to capture formatted text
-        for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
-          if (domElement) nodeData.children.push(domElement);
-        }
-      }
-      // Handle shadow DOM
-      else if (node.shadowRoot) {
-        nodeData.shadowRoot = true;
-        for (const child of node.shadowRoot.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
-          if (domElement) nodeData.children.push(domElement);
-        }
-      }
-      // Handle regular elements
-      else {
-        for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
-          if (domElement) nodeData.children.push(domElement);
-        }
-      }
-    }
 
-    // Skip empty anchor tags
-    if (nodeData.tagName === 'a' && nodeData.children.length === 0 && !nodeData.attributes.href) {
-      if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
-      return null;
+      // Process regular children
+      const children = Array.from(node.children);
+      for (const child of children) {
+        const domElement = buildDomTree(child, parentIframe);
+        if (domElement) nodeData.children.push(domElement);
+      }
     }
 
     const id = `${ID.current++}`;
