@@ -2,7 +2,7 @@ import logging
 from importlib import resources
 from typing import Optional
 
-from playwright.async_api import Page
+from rebrowser_playwright.async_api import Page
 
 from browser_use.dom.history_tree_processor.view import Coordinates
 from browser_use.dom.views import (
