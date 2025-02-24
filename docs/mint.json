@@ -14,6 +14,9 @@
     "anchors": {
       "from": "#F97316",
       "to": "#FB923C"
+    },
+    "background": {
+      "dark": "#0D0A09"
     }
   },
   "feedback": {
@@ -38,17 +41,14 @@
   "tabs": [
     {
       "name": "Cloud API",
-      "url": "/cloud-api",
+      "url": "cloud",
       "openapi": "https://api.browser-use.com/openapi.json"
     }
   ],
   "navigation": [
     {
       "group": "Get Started",
-      "pages": [
-        "introduction",
-        "quickstart"
-      ]
+      "pages": ["introduction", "quickstart"]
     },
     {
       "group": "Customize",
@@ -71,6 +71,10 @@
         "development/observability",
         "development/roadmap"
       ]
+    },
+    {
+      "group": "Cloud API",
+      "pages": ["cloud/quickstart", "cloud/implementation"]
     }
   ],
   "footerSocials": {

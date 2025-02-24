@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 
 from rebrowser_playwright.async_api import async_playwright
