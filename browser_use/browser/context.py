@@ -669,6 +669,57 @@ class BrowserContext:
 		page = await self.get_current_page()
 		return await page.evaluate(script)
 
+	async def get_page_structure(self) -> str:
+		"""Get a debug view of the page structure including iframes"""
+		debug_script = """(() => {
+			function getPageStructure(element = document, depth = 0, maxDepth = 10) {
+				if (depth >= maxDepth) return '';
+				
+				const indent = '  '.repeat(depth);
+				let structure = '';
+				
+				// Add current element info if it's not the document
+				if (element !== document) {
+					const tagName = element.tagName.toLowerCase();
+					const id = element.id ? `#${element.id}` : '';
+					const classes = element.className && typeof element.className === 'string' ? 
+						`.${element.className.split(' ').join('.')}` : '';
+					structure += `${indent}${tagName}${id}${classes}\\n`;
+					
+					// Handle iframes specially
+					if (tagName === 'iframe') {
+						try {
+							const iframeDoc = element.contentDocument || element.contentWindow?.document;
+							if (iframeDoc) {
+								structure += `${indent}  [IFRAME CONTENT]:\\n`;
+								structure += getPageStructure(iframeDoc, depth + 2, maxDepth);
+							} else {
+								structure += `${indent}  [IFRAME: No access to content]\\n`;
+							}
+						} catch (e) {
+							structure += `${indent}  [IFRAME: ${e.message}]\\n`;
+						}
+					}
+				}
+				
+				// Get all child elements
+				const children = element.children || element.childNodes;
+				for (const child of children) {
+					if (child.nodeType === 1) { // Element nodes only
+						structure += getPageStructure(child, depth + 1, maxDepth);
+					}
+				}
+				
+				return structure;
+			}
+			
+			return getPageStructure();
+		})()"""
+
+		page = await self.get_current_page()
+		structure = await page.evaluate(debug_script)
+		return structure
+
 	@time_execution_sync('--get_state')  # This decorator might need to be updated to handle async
 	async def get_state(self) -> BrowserState:
 		"""Get the current state of the browser"""
