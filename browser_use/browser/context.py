@@ -678,13 +678,33 @@ class BrowserContext:
 				const indent = '  '.repeat(depth);
 				let structure = '';
 				
+				// Skip certain elements that clutter the output
+				const skipTags = new Set(['script', 'style', 'link', 'meta', 'noscript']);
+				
 				// Add current element info if it's not the document
 				if (element !== document) {
 					const tagName = element.tagName.toLowerCase();
+					
+					// Skip uninteresting elements
+					if (skipTags.has(tagName)) return '';
+					
 					const id = element.id ? `#${element.id}` : '';
 					const classes = element.className && typeof element.className === 'string' ? 
-						`.${element.className.split(' ').join('.')}` : '';
-					structure += `${indent}${tagName}${id}${classes}\\n`;
+						`.${element.className.split(' ').filter(c => c).join('.')}` : '';
+					
+					// Get additional useful attributes
+					const attrs = [];
+					if (element.getAttribute('role')) attrs.push(`role="${element.getAttribute('role')}"`);
+					if (element.getAttribute('aria-label')) attrs.push(`aria-label="${element.getAttribute('aria-label')}"`);
+					if (element.getAttribute('type')) attrs.push(`type="${element.getAttribute('type')}"`);
+					if (element.getAttribute('name')) attrs.push(`name="${element.getAttribute('name')}"`);
+					if (element.getAttribute('src')) {
+						const src = element.getAttribute('src');
+						attrs.push(`src="${src.substring(0, 50)}${src.length > 50 ? '...' : ''}"`);
+					}
+					
+					// Add element info
+					structure += `${indent}${tagName}${id}${classes}${attrs.length ? ' [' + attrs.join(', ') + ']' : ''}\\n`;
 					
 					// Handle iframes specially
 					if (tagName === 'iframe') {
@@ -694,10 +714,10 @@ class BrowserContext:
 								structure += `${indent}  [IFRAME CONTENT]:\\n`;
 								structure += getPageStructure(iframeDoc, depth + 2, maxDepth);
 							} else {
-								structure += `${indent}  [IFRAME: No access to content]\\n`;
+								structure += `${indent}  [IFRAME: No access - likely cross-origin]\\n`;
 							}
 						} catch (e) {
-							structure += `${indent}  [IFRAME: ${e.message}]\\n`;
+							structure += `${indent}  [IFRAME: Access denied - ${e.message}]\\n`;
 						}
 					}
 				}
