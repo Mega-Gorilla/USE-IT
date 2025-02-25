@@ -183,6 +183,7 @@ class Browser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		browser = await playwright.chromium.launch(
 			headless=self.config.headless,
+			args=self.disable_security_args + self.config.extra_chromium_args,
 			proxy=self.config.proxy,
 		)
 		# convert to Browser
