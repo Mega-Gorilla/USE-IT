@@ -462,34 +462,6 @@
       return false;
     }
 
-    // Special handling for cookie banner elements
-    const isCookieBannerElement =
-      (typeof element.closest === 'function') && (
-        element.closest('[id*="onetrust"]') ||
-        element.closest('[class*="onetrust"]') ||
-        element.closest('[data-nosnippet="true"]') ||
-        element.closest('[aria-label*="cookie"]')
-      );
-
-    if (isCookieBannerElement) {
-      // Check if it's a button or interactive element within the banner
-      if (
-        element.tagName.toLowerCase() === 'button' ||
-        element.getAttribute('role') === 'button' ||
-        element.onclick ||
-        element.getAttribute('onclick') ||
-        (element.classList && (
-          element.classList.contains('ot-sdk-button') ||
-          element.classList.contains('accept-button') ||
-          element.classList.contains('reject-button')
-        )) ||
-        element.getAttribute('aria-label')?.toLowerCase().includes('accept') ||
-        element.getAttribute('aria-label')?.toLowerCase().includes('reject')
-      ) {
-        return true;
-      }
-    }
-
     // Base interactive elements and roles
     const interactiveElements = new Set([
       "a", "button", "details", "embed", "input", "menu", "menuitem",
@@ -534,43 +506,8 @@
 
     if (hasInteractiveRole) return true;
 
-    // Additional checks for cookie banners and consent UI
-    const isCookieBanner =
-      element.id?.toLowerCase().includes('cookie') ||
-      element.id?.toLowerCase().includes('consent') ||
-      element.id?.toLowerCase().includes('notice') ||
-      (element.classList && (
-        element.classList.contains('otCenterRounded') ||
-        element.classList.contains('ot-sdk-container')
-      )) ||
-      element.getAttribute('data-nosnippet') === 'true' ||
-      element.getAttribute('aria-label')?.toLowerCase().includes('cookie') ||
-      element.getAttribute('aria-label')?.toLowerCase().includes('consent') ||
-      (element.tagName.toLowerCase() === 'div' && (
-        element.id?.includes('onetrust') ||
-        (element.classList && (
-          element.classList.contains('onetrust') ||
-          element.classList.contains('cookie') ||
-          element.classList.contains('consent')
-        ))
-      ));
 
-    if (isCookieBanner) return true;
 
-    // Additional check for buttons in cookie banners
-    const isInCookieBanner = typeof element.closest === 'function' && element.closest(
-      '[id*="cookie"],[id*="consent"],[class*="cookie"],[class*="consent"],[id*="onetrust"]'
-    );
-
-    if (isInCookieBanner && (
-      element.tagName.toLowerCase() === 'button' ||
-      element.getAttribute('role') === 'button' ||
-      (element.classList && element.classList.contains('button')) ||
-      element.onclick ||
-      element.getAttribute('onclick')
-    )) {
-      return true;
-    }
 
     // Get computed style
     const style = window.getComputedStyle(element);
@@ -852,7 +789,7 @@
       return id;
     }
 
-    // Quick checks for element nodes
+    // Quick checks for element nodes - skip filtering for OneTrust elements
     if (node.nodeType === Node.ELEMENT_NODE && !isElementAccepted(node)) {
       if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
       return null;
@@ -861,12 +798,16 @@
     // Check viewport if needed
     if (viewportExpansion !== -1) {
       const rect = getCachedBoundingRect(node);
-      if (!rect || (
+      const style = getCachedComputedStyle(node);
+
+      // Skip viewport check for OneTrust elements, fixed/sticky position elements, or if element has no rect
+      const isOneTrust = node.id?.includes('onetrust-') || node.closest('#onetrust-consent-sdk');
+      if (!rect || (!isOneTrust && !style?.position?.match(/fixed|sticky/) && (
         rect.bottom < -viewportExpansion ||
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      )) {
+      ))) {
         if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
         return null;
       }
