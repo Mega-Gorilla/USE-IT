@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: pipx install pre-commit
       - run: pre-commit run check-toml          --all-files
       - run: pre-commit run check-yaml          --all-files
       - run: pre-commit run end-of-file-fixer   --all-files
