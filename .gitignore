@@ -186,4 +186,3 @@ gcp-login.json
 *.csv
 *.json
 *.jsonl
-.python-version
