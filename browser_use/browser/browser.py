@@ -48,7 +48,7 @@ class BrowserConfig:
 
 	headless: bool = False
 	disable_security: bool = True
-	extra_chromium_args: list[str] = field(default_factory=list)
+	extra_chromium_args: list[str] = field(default_factory=lambda: ['--disable-blink-features=AutomationControlled'])
 	chrome_instance_path: str | None = None
 	wss_url: str | None = None
 	cdp_url: str | None = None
@@ -183,6 +183,7 @@ class Browser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		browser = await playwright.chromium.launch(
 			headless=self.config.headless,
+			channel='chrome',
 			args=self.disable_security_args + self.config.extra_chromium_args,
 			proxy=self.config.proxy,
 		)

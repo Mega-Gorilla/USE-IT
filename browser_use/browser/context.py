@@ -339,6 +339,8 @@ class BrowserContext:
 		# Expose anti-detection scripts
 		await context.add_init_script(
 			"""
+			// rebrowser is flaky for some reason so we manually delete it
+			delete window.__pwInitScripts;
 
 			// Permissions
 			const originalQuery = window.navigator.permissions.query;
