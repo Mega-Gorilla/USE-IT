@@ -154,8 +154,13 @@ class BrowserSession:
 					const originalAddEventListener = Element.prototype.addEventListener;
 
 					const eventProxy = {
-						addEventListener: function (type, listener, options = { once: false, passive: false, capture: false }) {
+						addEventListener: function (type, listener, options = {}) {
 							// Initialize __listeners if not exists
+							const defaultOptions = { once: false, passive: false, capture: false };
+							if(typeof options === 'boolean') {
+								options = { capture: options };
+							}
+							options = { ...defaultOptions, ...options };
 							if (!this.__listeners) {
 								this.__listeners = {};
 							}
@@ -164,6 +169,7 @@ class BrowserSession:
 							if (!this.__listeners[type]) {
 								this.__listeners[type] = [];
 							}
+							
 
 							// Add the listener to __listeners
 							this.__listeners[type].push({
