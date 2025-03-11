@@ -484,7 +484,7 @@ class Agent(Generic[Context]):
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history, metadata=metadata)
 
 		self.state.history.history.append(history_item)
-	
+
 	THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
 	STRAY_CLOSE_TAG = re.compile(r'.*?</think>', re.DOTALL)
 
