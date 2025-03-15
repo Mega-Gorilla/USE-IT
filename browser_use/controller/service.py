@@ -1,5 +1,6 @@
 import asyncio
 import json
+import enum
 import logging
 from typing import Dict, Generic, Optional, Type, TypeVar
 
@@ -43,15 +44,33 @@ class Controller(Generic[Context]):
 		"""Register all default browser actions"""
 
 		if output_model is not None:
+			# Create a new model that extends the output model with success parameter
+			class ExtendedOutputModel(BaseModel):  # type: ignore
+				success: bool = True
+				data: output_model
 
-			@self.registry.action('Complete task', param_model=output_model)
-			async def done(params: BaseModel):
-				return ActionResult(is_done=True, extracted_content=params.model_dump_json())
+			@self.registry.action(
+				'Complete task - with return text and if the task is finished (success=True) or not yet  completly finished (success=False), because last step is reached',
+				param_model=ExtendedOutputModel,
+			)
+			async def done(params: ExtendedOutputModel):
+				# Exclude success from the output JSON since it's an internal parameter
+				output_dict = params.data.model_dump()
+
+				# Enums are not serializable, convert to string
+				for key, value in output_dict.items():
+					if isinstance(value, enum.Enum):
+						output_dict[key] = value.value
+
+				return ActionResult(is_done=True, success=params.success, extracted_content=json.dumps(output_dict))
 		else:
 
-			@self.registry.action('Complete task', param_model=DoneAction)
+			@self.registry.action(
+				'Complete task - with return text and if the task is finished (success=True) or not yet  completly finished (success=False), because last step is reached',
+				param_model=DoneAction,
+			)
 			async def done(params: DoneAction):
-				return ActionResult(is_done=True, extracted_content=params.text)
+				return ActionResult(is_done=True, success=params.success, extracted_content=params.text)
 
 		# Basic Navigation Actions
 		@self.registry.action(
@@ -82,16 +101,23 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
+		# wait for x seconds
+		@self.registry.action('Wait for x seconds default 3')
+		async def wait(seconds: int = 3):
+			msg = f'🕒  Waiting for {seconds} seconds'
+			logger.info(msg)
+			await asyncio.sleep(seconds)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
 		# Element Interaction Actions
 		@self.registry.action('Click element', param_model=ClickElementAction)
 		async def click_element(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
-			state = session.cached_state
 
-			if params.index not in state.selector_map:
+			if params.index not in await browser.get_selector_map():
 				raise Exception(f'Element with index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = state.selector_map[params.index]
+			element_node = await browser.get_dom_element_by_index(params.index)
 			initial_pages = len(session.context.pages)
 
 			# if element has file uploader then dont click
@@ -126,13 +152,10 @@ class Controller(Generic[Context]):
 			param_model=InputTextAction,
 		)
 		async def input_text(params: InputTextAction, browser: BrowserContext, has_sensitive_data: bool = False):
-			session = await browser.get_session()
-			state = session.cached_state
-
-			if params.index not in state.selector_map:
+			if params.index not in await browser.get_selector_map():
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = state.selector_map[params.index]
+			element_node = await browser.get_dom_element_by_index(params.index)
 			await browser._input_text_element_node(element_node, params.text)
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'

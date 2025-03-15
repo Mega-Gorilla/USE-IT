@@ -15,6 +15,7 @@ from playwright.async_api import (
 )
 
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
+from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class Browser:
 
 		return self.playwright_browser
 
+	@time_execution_async('--init (browser)')
 	async def _init(self):
 		"""Initialize the browser session"""
 		playwright = await async_playwright().start()

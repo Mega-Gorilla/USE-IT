@@ -1,5 +1,3 @@
-import asyncio
-
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
@@ -13,12 +11,6 @@ async def run_agent(task: str, max_steps: int = 38):
 		model='gpt-4o',
 		temperature=0.0,
 	)
-	agent = Agent(task=task, llm=llm)
+	agent = Agent(task=task, llm=llm, use_vision=False)
 	result = await agent.run(max_steps=max_steps)
 	return result
-
-
-if __name__ == '__main__':
-	task = 'Go to https://www.google.com and search for "python" and click on the first result'
-	result = asyncio.run(run_agent(task))
-	print(result)
