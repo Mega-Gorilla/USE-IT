@@ -501,6 +501,7 @@ class Agent(Generic[Context]):
 	async def run(
 		self,
 		max_steps: int = 100,
+		before_step_func: Callable | None = None,
 		after_step_func: Callable | None = None
 			) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
@@ -527,6 +528,9 @@ class Agent(Generic[Context]):
 					await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
 					if self.state.stopped:  # Allow stopping while paused
 						break
+
+				if before_step_func is not None:
+					await before_step_func(self)
 
 				await self.step()
 
