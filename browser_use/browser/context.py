@@ -879,9 +879,18 @@ class BrowserContext:
 			if not part:
 				continue
 
+			# Handle custom elements with colons by escaping them
+			if ':' in part and '[' not in part:
+				base_part = part.replace(':', r'\:')
+				css_parts.append(base_part)
+				continue
+
 			# Handle index notation [n]
 			if '[' in part:
 				base_part = part[: part.find('[')]
+				# Handle custom elements with colons in the base part
+				if ':' in base_part:
+					base_part = base_part.replace(':', r'\:')
 				index_part = part[part.find('[') :]
 
 				# Handle multiple indices
