@@ -775,8 +775,8 @@
       element.hasAttribute("role") ||
       element.hasAttribute("tabindex") ||
       element.hasAttribute("aria-") ||
-      element.hasAttribute("data-action");
-
+      element.hasAttribute("data-action") ||
+      element.getAttribute("contenteditable") == "true";
     return hasQuickInteractiveAttr;
   }
 
@@ -860,7 +860,7 @@
 
     // Early viewport check - only filter out elements clearly outside viewport
     if (viewportExpansion !== -1) {
-      const rect = getCachedBoundingRect(node);
+      const rect =  (node);
       const style = getCachedComputedStyle(node);
 
       // Skip viewport check for fixed/sticky elements as they may appear anywhere
