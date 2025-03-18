@@ -860,7 +860,7 @@
 
     // Early viewport check - only filter out elements clearly outside viewport
     if (viewportExpansion !== -1) {
-      const rect =  getCachedBoundingRect(node);
+      const rect = getCachedBoundingRect(node);
       const style = getCachedComputedStyle(node);
 
       // Skip viewport check for fixed/sticky elements as they may appear anywhere
