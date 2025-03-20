@@ -879,9 +879,18 @@ class BrowserContext:
 			if not part:
 				continue
 
+			# Handle custom elements with colons by escaping them
+			if ':' in part and '[' not in part:
+				base_part = part.replace(':', r'\:')
+				css_parts.append(base_part)
+				continue
+
 			# Handle index notation [n]
 			if '[' in part:
 				base_part = part[: part.find('[')]
+				# Handle custom elements with colons in the base part
+				if ':' in base_part:
+					base_part = base_part.replace(':', r'\:')
 				index_part = part[part.find('[') :]
 
 				# Handle multiple indices
@@ -1084,10 +1093,16 @@ class BrowserContext:
 				pass
 
 			# Get element properties to determine input method
+			tag_handle = await element_handle.get_property("tagName")
+			tag_name = (await tag_handle.json_value()).lower()
 			is_contenteditable = await element_handle.get_property('isContentEditable')
+			readonly_handle = await element_handle.get_property("readOnly")
+			disabled_handle = await element_handle.get_property("disabled")
 
-			# Different handling for contenteditable vs input fields
-			if await is_contenteditable.json_value():
+			readonly = await readonly_handle.json_value() if readonly_handle else False
+			disabled = await disabled_handle.json_value() if disabled_handle else False
+
+			if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
 				await element_handle.evaluate('el => el.textContent = ""')
 				await element_handle.type(text, delay=5)
 			else:
