@@ -51,6 +51,8 @@ class ExtractPageContentAction(BaseModel):
 class SavePDFAction(BaseModel):
 	file_path: str
 	media_type: Literal['screen', 'print'] = 'screen'
+	format: Literal['A4', 'A3', 'A5', 'Legal', 'Letter'] = 'A4'
+	print_background: bool = False
 
 
 class NoParamsAction(BaseModel):
