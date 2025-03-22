@@ -1,4 +1,5 @@
 import asyncio
+import re
 import json
 import enum
 import logging
@@ -176,7 +177,7 @@ class Controller(Generic[Context]):
 			sanitized_filename = f'{slug}.pdf'
 
 			await page.emulate_media('screen')
-			await page.pdf(path=sanitized_filename, format='A4', print_background=params.print_background)
+			await page.pdf(path=sanitized_filename, format='A4', print_background=False)
 			msg = f"Saving page with URL {page.url} as PDF to ./{sanitized_filename}"
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)

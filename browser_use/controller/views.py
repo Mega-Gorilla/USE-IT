@@ -48,11 +48,6 @@ class ExtractPageContentAction(BaseModel):
 	value: str
 
 
-class SavePDFAction(BaseModel):
-	file_path: str
-	print_background: bool = False
-
-
 class NoParamsAction(BaseModel):
 	"""
 	Accepts absolutely anything in the incoming data
