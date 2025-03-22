@@ -168,14 +168,16 @@ class Controller(Generic[Context]):
 		# Save PDF
 		@self.registry.action(
 			'Save the current page as a PDF file',
-			param_model=SavePDFAction,
 		)
-		async def save_pdf(params: SavePDFAction, browser: BrowserContext):
+		async def save_pdf(browser: BrowserContext):
 			page = await browser.get_current_page()
-			await page.emulate_media('screen')
-			await page.pdf(path=params.file_path, format='A4', print_background=params.print_background)
+			short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
+			slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
+			sanitized_filename = f'{slug}.pdf'
 
-			msg = f"Saving page with URL {page.url} as PDF to {params.file_path}"
+			await page.emulate_media('screen')
+			await page.pdf(path=sanitized_filename, format='A4', print_background=params.print_background)
+			msg = f"Saving page with URL {page.url} as PDF to ./{sanitized_filename}"
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
