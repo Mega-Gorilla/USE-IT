@@ -71,6 +71,30 @@ class DomService:
 			logger.error('Error evaluating JavaScript: %s', e)
 			raise
 
+		# handle cross origin iframes
+		inner_iframes = [
+			await frame.frame_element()
+			for frame in self.page.frames
+			if frame.url != self.page.url and not frame.url.startswith('data:')
+		]
+		for frame in inner_iframes:
+			try:
+				# check if the frame already has a buildDomTree.js
+				inner_target = await frame.content_frame()
+				has_build_dom_tree = await inner_target.evaluate('window._loadedBrowserUseBuildDomTree')
+				if has_build_dom_tree:
+					logger.warning('Found iframe already processed by buildDomTree.js: %s', inner_target.url)
+					# was already processed by buildDomTree.js's iframe-traveral handling
+					continue
+				else:
+					logger.warning('Found cross-origin iframe that needs special handling: %s', inner_target.url)
+					# need to process this frame separately
+
+			except Exception as e:
+				logger.error('Error checking page for cross origin iframes: %s', e)
+				# frames often dissapear upon navigation, page changes, etc. no need to bail here
+				continue
+
 		# Only log performance metrics in debug mode
 		if debug_mode and 'perfMetrics' in eval_page:
 			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(eval_page['perfMetrics'], indent=2))
