@@ -232,7 +232,7 @@ Using a separate planner model can help:
 
 - `message_context`: Additional information about the task to help the LLM understand the task better.
 - `initial_actions`: List of initial actions to run before the main task.
-- `max_actions_per_step`: Maximum number of actions to run in a step. Defaults to `1`.
+- `max_actions_per_step`: Maximum number of actions to run in a step. Defaults to `10`.
 - `max_failures`: Maximum number of failures before giving up. Defaults to `3`.
-- `retry_delay`: Time to wait between retries in seconds. Defaults to `10`.
+- `retry_delay`: Time to wait between retries in seconds when rate limited. Defaults to `10`.
 - `generate_gif`: Enable/disable GIF generation. Defaults to `False`. Set to `True` or a string path to save the GIF.
