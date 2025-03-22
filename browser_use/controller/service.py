@@ -22,7 +22,6 @@ from browser_use.controller.views import (
 	OpenTabAction,
 	ScrollAction,
 	SearchGoogleAction,
-	SavePDFAction,
 	SendKeysAction,
 	SwitchTabAction,
 )
