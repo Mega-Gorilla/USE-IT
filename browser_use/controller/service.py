@@ -173,8 +173,8 @@ class Controller(Generic[Context]):
 		)
 		async def save_pdf(params: SavePDFAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-			await page.emulate_media(params.media_type)
-			await page.pdf(path=params.file_path, format=params.format, print_background=params.print_background)
+			await page.emulate_media('screen')
+			await page.pdf(path=params.file_path, format='A4', print_background=params.print_background)
 
 			msg = f"Saving page with URL {page.url} as PDF to {params.file_path}"
 			logger.info(msg)
