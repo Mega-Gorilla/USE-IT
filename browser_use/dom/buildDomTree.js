@@ -800,6 +800,10 @@
       return null;
     }
 
+    // FOR DEBUGGING: mark the node as having been processed by buildDomTree.js
+    // so that playwright can tell if it's been processed or not
+    // node.setAttribute('data-browser-use-built-dom-tree', 'true');
+
     // Special handling for root node (body)
     if (node === document.body) {
       const nodeData = {
@@ -936,6 +940,9 @@
               const domElement = buildDomTree(child, node);
               if (domElement) nodeData.children.push(domElement);
             }
+            // mark the iframe as having been processed by buildDomTree.js
+            // so that playwright can tell if got processed already or if it needs special handling
+            node.contentWindow._loadedBrowserUseBuildDomTree = true;
           }
         } catch (e) {
           console.warn("Unable to access iframe:", e);
