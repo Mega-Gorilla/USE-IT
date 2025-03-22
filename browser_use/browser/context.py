@@ -760,8 +760,10 @@ class BrowserContext:
 		# Check if current page is still valid, if not switch to another available page
 		try:
 			page = await self.get_current_page()
-			# Test if page is still accessible
+			# Test if page and its iframes are still accessible
 			await page.evaluate('1')
+			# for frame in page.frames:
+			# 	await frame.evaluate('1')
 		except Exception as e:
 			logger.debug(f'Current page is no longer accessible: {str(e)}')
 			# Get all available pages
