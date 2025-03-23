@@ -189,21 +189,36 @@ class Controller(Generic[Context]):
 			param_model=NoParamsAction,
 		)
 		async def download_html(_: NoParamsAction, browser: BrowserContext) -> ActionResult:
-			"""Retrieves and returns the full HTML content of the current page"""
+			"""Retrieves and returns the full HTML content of the current page to a file"""
 			try:
+				import re
+				import datetime
 				page = await browser.get_current_page()
 				html_content = await page.content()
-				msg = f'📄 Page HTML content\n: {html_content}\n'
-				logger.info(f'Successfully retrieved page HTML: {msg}')
+				
+				# Create a filename based on the page URL
+				short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
+				slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
+				timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+				sanitized_filename = f'{slug}_{timestamp}.html'
+				
+				# Save HTML to file
+				with open(sanitized_filename, "w", encoding="utf-8") as f:
+					f.write(html_content)
+				
+				msg = f"Saved HTML content of page with URL {page.url} to ./{sanitized_filename}"
+				
+				logger.info(msg)
 				return ActionResult(
-					extracted_content=html_content,  # Return raw HTML
+					extracted_content=msg,
 					is_done=True,
-					include_in_memory=False
+					include_in_memory=True
 				)
 			except Exception as e:
-				logger.error(f'Failed to get HTML content: {str(e)}')
+				error_msg = f'Failed to save HTML content: {str(e)}'
+				logger.error(error_msg)
 				return ActionResult(
-					error=f'Error retrieving HTML: {str(e)}',
+					error=error_msg,
 					extracted_content=''
 				)
 
