@@ -1,12 +1,5 @@
-(
-  args = {
-    doHighlightElements: true,
-    focusHighlightIndex: -1,
-    viewportExpansion: 0,
-    debugMode: false,
-  }
-) => {
-  const { doHighlightElements, focusHighlightIndex, viewportExpansion, debugMode } = args;
+({ doHighlightElements=true, focusHighlightIndex=-1, viewportExpansion=0, debugMode=false, indexOffset=0 }={}) => {
+  // console.log('indexOffset', indexOffset)
   let highlightIndex = 0; // Reset highlight index
 
   // Add timing stack to handle recursion
@@ -183,7 +176,7 @@
    */
   const DOM_HASH_MAP = {};
 
-  const ID = { current: 0 };
+  const ID = { current: indexOffset };
 
   const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
 
@@ -1057,6 +1050,6 @@
   }
 
   return debugMode ?
-    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS } :
-    { rootId, map: DOM_HASH_MAP };
+    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS, indexOffset } :
+    { rootId, map: DOM_HASH_MAP, indexOffset };
 };

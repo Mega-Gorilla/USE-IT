@@ -3,7 +3,7 @@ import json
 import logging
 from dataclasses import dataclass
 from importlib import resources
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, TypeVar
 
 if TYPE_CHECKING:
 	from playwright.async_api import Page
@@ -24,6 +24,95 @@ logger = logging.getLogger(__name__)
 class ViewportInfo:
 	width: int
 	height: int
+
+
+T = TypeVar('T', dict, list, int)
+
+
+def merge_dom_trees(value_a: T, value_b: T) -> T:
+	"""merge two buildDomTree.js result dicts. used to put together results from parent frame and child cross-origin iframes"""
+
+	if isinstance(value_a, dict) and isinstance(value_b, dict):
+		merged_tree = value_a.copy()
+		for key, value in value_b.items():
+			if key == 'rootId':
+				# original top parent rootId should never change
+				continue
+
+			if key in merged_tree:
+				merged_tree[key] = merge_dom_trees(merged_tree[key], value)
+			else:
+				merged_tree[key] = value
+
+		return merged_tree
+
+	elif isinstance(value_a, list) and isinstance(value_b, list):
+		merged_tree = value_a.copy()
+		for value in value_b:
+			if value not in merged_tree:
+				merged_tree.append(value)
+
+		return merged_tree
+
+	elif isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
+		# assumes all numeric values in perf metrics are summable totals counts or seconds/milliseconds
+		# may not always be true in the future, e.g. if we add any avg values then naiive sum will be wrong
+		return value_a + value_b
+
+	elif isinstance(value_a, str) and isinstance(value_b, str):
+		if value_a == value_b:
+			return value_a
+
+	raise TypeError(f'Cannot merge {type(value_a)}: {value_a} and {type(value_b)}: {value_b}')
+
+
+def link_cross_origin_iframes(eval_page: dict) -> dict:
+	"""link cross-origin iframes to their parent frame"""
+	for node in eval_page['map'].values():
+		if node['tagName'] == 'iframe' and not node['children']:
+			# locate the child frame's body and put it in the children
+			# so that it's handled the same as a same-origin iframe
+			for elem in eval_page['map'].values():
+				if elem.get('parentFrameId') == node['id']:
+					node['children'].append(elem)
+					break
+
+	return eval_page
+
+
+def dump_frame_tree(frame, indent=''):
+	"""From: https://playwright.dev/python/docs/api/class-frame"""
+	yield (indent + frame.name + '@' + frame.url)
+	for child in frame.child_frames:
+		yield from dump_frame_tree(child, indent + '    ')
+
+
+# def find_nested_iframes(root_frame) -> dict[str, 'Frame']:
+# 	"""
+# 	iteratively find all iframes in the page
+# 	assumptions:
+# 	- iframes can be nested
+# 	- iframes can be cross-origin-iframes
+# 	- non-cross-origin iframes can nested inside cross-origin iframes
+# 	- iframes arent guaranteed to have any id, name, or unique src url
+# 	- iframes and their content can be added/removed/updated multiple times per second by JS
+# 	"""
+
+# 	frame_idx = 0
+
+# 	all_frames = {f'{frame_idx}': root_frame}
+# 	frames_to_search = [list(all_frames.keys())[0]]
+# 	while frames_to_search:
+# 		frame_idx += 1
+# 		frame_id = frames_to_search.pop()
+# 		frame = all_frames[frame_id]
+
+# 		for child_frame in frame.child_frames if hasattr(frame, 'child_frames') else frame.frames:
+# 			child_frame_id = f'{frame_id}/{frame_idx}'
+# 			all_frames[child_frame_id] = child_frame
+# 			frames_to_search.append(child_frame_id)
+
+# 	return all_frames
 
 
 class DomService:
@@ -63,13 +152,7 @@ class DomService:
 					attributes={},
 					children=[],
 					is_visible=False,
-					is_interactive=False,
-					is_top_element=True,
-					is_in_viewport=False,
-					highlight_index=None,
-					shadow_root=False,
 					parent=None,
-					viewport_info=None,
 				),
 				{},
 			)
@@ -85,35 +168,52 @@ class DomService:
 			'debugMode': debug_mode,
 		}
 
+		logger.debug('Running buildDomTree.js on: %s', self.page.url)
+
+		# 1. recursively find all nested iframes
+		# 2. filter to only include cross-origin iframes
+		# 3. run buildDomTree.js on all cross-origin iframes + top-level-page in parallel
+		# 4. merge the results into a single flat selector_map
+
+		print(list(dump_frame_tree(self.page.main_frame)))
+
 		try:
-			eval_page = await self.page.evaluate(self.js_code, args)
+			eval_page: dict = await self.page.evaluate(self.js_code, args)
 		except Exception as e:
 			logger.error('Error evaluating JavaScript: %s', e)
 			raise
 
-		# handle cross origin iframes
-		inner_iframes = [
-			await frame.frame_element()
-			for frame in self.page.frames
-			if frame.url != self.page.url and not frame.url.startswith('data:')
-		]
-		for frame in inner_iframes:
-			try:
-				# check if the frame already has a buildDomTree.js
-				inner_target = await frame.content_frame()
-				has_build_dom_tree = await inner_target.evaluate('window._loadedBrowserUseBuildDomTree')
-				if has_build_dom_tree:
-					logger.warning('Found iframe already processed by buildDomTree.js: %s', inner_target.url)
-					# was already processed by buildDomTree.js's iframe-traveral handling
-					continue
-				else:
-					logger.warning('Found cross-origin iframe that needs special handling: %s', inner_target.url)
-					# need to process this frame separately
+		# # also run buildDomTree.js on all cross-origin iframes
+		# inner_iframes = [
+		# 	await frame.frame_element()
+		# 	for frame in self.page.frames
+		# 	if frame.url != self.page.url and not frame.url.startswith('data:')
+		# ]
+		# for frame in inner_iframes:
+		# 	try:
+		# 		# check if the frame already has a buildDomTree.js
+		# 		inner_target = await frame.content_frame()
+		# 		has_built_dom_tree = await inner_target.evaluate('window._loadedBrowserUseBuildDomTree')
+		# 		if has_built_dom_tree:
+		# 			# was already processed by buildDomTree.js's iframe-traveral handling
+		# 			continue
+		# 		else:
+		# 			logger.debug('Found cross-origin iframe that needs special handling: %s', inner_target.url)
+		# 			# start the index offset from the last index of the parent frame so that child element idx dont conflict
+		# 			iframe_args = {
+		# 				**args,
+		# 				'indexOffset': len(eval_page['map']),
+		# 				'parentFrameId': frame.parent_frame_id,
+		# 			}
+		# 			iframe_results: dict = await inner_target.evaluate(self.js_code, iframe_args)
+		# 			eval_page: dict = merge_dom_trees(eval_page, iframe_results)
 
-			except Exception as e:
-				logger.error('Error checking page for cross origin iframes: %s', e)
-				# frames often dissapear upon navigation, page changes, etc. no need to bail here
-				continue
+		# 	except Exception as e:
+		# 		logger.error('Error checking page for cross origin iframes: %s', e)
+		# 		# frames often dissapear upon navigation, page changes, etc. no need to hard fail here
+		# 		continue
+
+		# eval_page = link_cross_origin_iframes(eval_page)
 
 		# Only log performance metrics in debug mode
 		if debug_mode and 'perfMetrics' in eval_page:
