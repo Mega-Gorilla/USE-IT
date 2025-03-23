@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Generic, Optional, Type, TypeVar
-
+import datetime
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
 
@@ -191,8 +191,6 @@ class Controller(Generic[Context]):
 		async def download_html(_: NoParamsAction, browser: BrowserContext) -> ActionResult:
 			"""Retrieves and returns the full HTML content of the current page to a file"""
 			try:
-				import re
-				import datetime
 				page = await browser.get_current_page()
 				html_content = await page.content()
 				
