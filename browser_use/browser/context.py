@@ -263,12 +263,13 @@ class BrowserContext:
 
 		# If no target ID or couldn't find it, use existing page or create new
 		if not active_page:
-			if pages:
+			if pages and pages[0].url:
 				active_page = pages[0]
-				logger.debug('Using existing page')
+				logger.debug('Using existing page: %s', active_page.url)
 			else:
 				active_page = await context.new_page()
-				logger.debug('Created new page')
+				await active_page.goto('about:blank')
+				logger.debug('Created new page: %s', active_page.url)
 
 			# Get target ID for the active page
 			if self.browser.config.cdp_url:
@@ -279,6 +280,7 @@ class BrowserContext:
 						break
 
 		# Bring page to front
+		logger.debug('Bringing tab to front: %s', active_page)
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
@@ -762,8 +764,6 @@ class BrowserContext:
 			page = await self.get_current_page()
 			# Test if page and its iframes are still accessible
 			await page.evaluate('1')
-			# for frame in page.frames:
-			# 	await frame.evaluate('1')
 		except Exception as e:
 			logger.debug(f'Current page is no longer accessible: {str(e)}')
 			# Get all available pages
@@ -1095,11 +1095,11 @@ class BrowserContext:
 				pass
 
 			# Get element properties to determine input method
-			tag_handle = await element_handle.get_property("tagName")
+			tag_handle = await element_handle.get_property('tagName')
 			tag_name = (await tag_handle.json_value()).lower()
 			is_contenteditable = await element_handle.get_property('isContentEditable')
-			readonly_handle = await element_handle.get_property("readOnly")
-			disabled_handle = await element_handle.get_property("disabled")
+			readonly_handle = await element_handle.get_property('readOnly')
+			disabled_handle = await element_handle.get_property('disabled')
 
 			readonly = await readonly_handle.json_value() if readonly_handle else False
 			disabled = await disabled_handle.json_value() if disabled_handle else False
@@ -1182,8 +1182,14 @@ class BrowserContext:
 
 		tabs_info = []
 		for page_id, page in enumerate(session.context.pages):
-			tab_info = TabInfo(page_id=page_id, url=page.url, title=await page.title())
-			tabs_info.append(tab_info)
+			try:
+				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
+				tabs_info.append(tab_info)
+			except asyncio.TimeoutError:
+				# page.title with hang forever on tabs that are frozen or about:blank
+				# we dont want to try automating those tabs because they will hang the whole script
+				logger.debug('Failed to get tab info for tab: %s (ignoring)', page_id)
+				continue
 
 		return tabs_info
 

@@ -1,6 +1,6 @@
 import asyncio
-import json
 import enum
+import json
 import logging
 from typing import Dict, Generic, Optional, Type, TypeVar
 
