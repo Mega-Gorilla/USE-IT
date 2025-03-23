@@ -211,7 +211,6 @@ class Controller(Generic[Context]):
 				logger.info(msg)
 				return ActionResult(
 					extracted_content=msg,
-					is_done=True,
 					include_in_memory=True
 				)
 			except Exception as e:
