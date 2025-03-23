@@ -54,6 +54,26 @@ class DomService:
 		if await self.page.evaluate('1+1') != 2:
 			raise ValueError('The page cannot evaluate javascript code properly')
 
+		if self.page.url == 'about:blank':
+			# short-circuit if the page is a new empty tab for speed, no need to inject buildDomTree.js
+			return (
+				DOMElementNode(
+					tag_name='body',
+					xpath='',
+					attributes={},
+					children=[],
+					is_visible=False,
+					is_interactive=False,
+					is_top_element=True,
+					is_in_viewport=False,
+					highlight_index=None,
+					shadow_root=False,
+					parent=None,
+					viewport_info=None,
+				),
+				{},
+			)
+
 		# NOTE: We execute JS code in the browser to extract important DOM information.
 		#       The returned hash map contains information about the DOM tree and the
 		#       relationship between the DOM elements.
