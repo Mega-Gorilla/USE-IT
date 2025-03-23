@@ -193,6 +193,12 @@ class Controller(Generic[Context]):
 
 			content = markdownify.markdownify(await page.content())
 
+			# append iframe content into the page so it's accessible to the LLM too
+			for iframe in page.frames:
+				if iframe.url != page.url and not iframe.url.startswith('data:'):
+					content += f'\n\nIFRAME {iframe.url}:\n'
+					content += markdownify.markdownify(await iframe.content())
+
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
 			try:
