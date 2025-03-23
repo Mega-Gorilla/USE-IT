@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -90,8 +91,16 @@ class Agent(Generic[Context]):
 		sensitive_data: Optional[Dict[str, str]] = None,
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
 		# Cloud Callbacks
-		register_new_step_callback: Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]] | None = None,
-		register_done_callback: Callable[['AgentHistoryList'], Awaitable[None]] | None = None,
+		register_new_step_callback: Union[
+            Callable[['BrowserState', 'AgentOutput', int], None],  # Sync callback
+            Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]],  # Async callback
+            None
+        ] = None,
+		register_done_callback: Union[
+			Callable[['AgentHistoryList'], Awaitable[None]], # Async Callback
+			Callable[['AgentHistoryList'], None], #Sync Callback
+			None
+		] = None,
 		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
 		use_vision: bool = True,
@@ -363,8 +372,10 @@ class Agent(Generic[Context]):
 				self.state.n_steps += 1
 
 				if self.register_new_step_callback:
-					await self.register_new_step_callback(state, model_output, self.state.n_steps)
-
+					if inspect.iscoroutinefunction(self.register_new_step_callback):
+						await self.register_new_step_callback(state, model_output, self.state.n_steps)
+					else:
+						self.register_new_step_callback(state, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
 					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
 					save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
@@ -571,8 +582,10 @@ class Agent(Generic[Context]):
 
 			await self.log_completion()
 			if self.register_done_callback:
-				await self.register_done_callback(self.state.history)
-
+				if inspect.iscoroutinefunction(self.register_done_callback):
+					await self.register_done_callback(self.state.history)
+				else:
+					self.register_done_callback(self.state.history)
 			return True, True
 
 		return False, False
@@ -744,7 +757,10 @@ class Agent(Generic[Context]):
 			logger.info('❌ Unfinished')
 
 		if self.register_done_callback:
-			await self.register_done_callback(self.state.history)
+			if inspect.iscoroutinefunction(self.register_done_callback):
+				await self.register_done_callback(self.state.history)
+			else:
+				self.register_done_callback(self.state.history)
 
 	async def rerun_history(
 		self,
