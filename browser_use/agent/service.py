@@ -199,14 +199,12 @@ class Agent(Generic[Context]):
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
-		self.browser = browser if browser is not None else (None if browser_context else Browser())
 		if browser_context:
+			self.browser = browser
 			self.browser_context = browser_context
-		elif self.browser:
-			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
 		else:
-			self.browser = Browser()
-			self.browser_context = BrowserContext(browser=self.browser)
+			self.browser = browser or Browser()
+			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
