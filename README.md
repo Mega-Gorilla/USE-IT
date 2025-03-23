@@ -28,15 +28,9 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-Install Browsers for Playwright: 
-You can install specific browsers by running:
+Install Playwright: 
 ```bash
-playwright install  chromium
-```
-
-To install all browsers:
-```bash
-playwright install
+playwright install chromium
 ```
 
 Spin up your agent:
