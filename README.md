@@ -28,8 +28,13 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-install playwright:
+Install Browsers for Playwright: 
+You can install specific browsers by running:
+```bash
+playwright install  chromium
+```
 
+To install all browsers:
 ```bash
 playwright install
 ```
