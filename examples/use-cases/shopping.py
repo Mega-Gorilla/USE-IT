@@ -80,7 +80,7 @@ At this stage, check the basket on the top right (indicates the price) and check
 ---
 
 ### Step 5: Select Delivery Window
-- Choose a **delivery window within the current week**. It's ok to pay up to CHF2 for the window selction.
+- Choose a **delivery window within the current week**. It's ok to pay up to CHF2 for the window selection.
 - Preferably select a slot within the workweek.
 
 ---
