@@ -614,6 +614,10 @@ class BrowserContext:
 			parsed_url = urlparse(url)
 			domain = parsed_url.netloc.lower()
 
+   			# Special case: Allow 'about:blank' explicitly
+			if url == "about:blank":
+				return True
+
 			# Remove port number if present
 			if ':' in domain:
 				domain = domain.split(':')[0]
