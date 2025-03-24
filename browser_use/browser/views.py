@@ -14,6 +14,7 @@ class TabInfo(BaseModel):
 	page_id: int
 	url: str
 	title: str
+	parent_page_id: Optional[int] = None  # parent page that contains this popup or cross-origin iframe
 
 
 @dataclass
