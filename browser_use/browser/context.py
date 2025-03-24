@@ -762,7 +762,7 @@ class BrowserContext:
 		# Check if current page is still valid, if not switch to another available page
 		try:
 			page = await self.get_current_page()
-			# Test if page and its iframes are still accessible
+			# Test if page is still accessible
 			await page.evaluate('1')
 		except Exception as e:
 			logger.debug(f'Current page is no longer accessible: {str(e)}')
@@ -790,6 +790,8 @@ class BrowserContext:
 			# mark the titles of the new tabs so the LLM knows to check them for additional content
 			iframe_urls = await dom_service.get_cross_origin_iframes()
 			for url in iframe_urls:
+				if url in [tab.url for tab in tabs_info]:
+					continue  # skip if the iframe if we already have it open in a tab
 				await self.create_new_tab(url)
 				tabs_info.append(
 					TabInfo(
@@ -1201,7 +1203,7 @@ class BrowserContext:
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
 				tabs_info.append(tab_info)
 			except asyncio.TimeoutError:
-				# page.title with hang forever on tabs that are frozen or about:blank
+				# page.title() can hang forever on tabs that are crashed/dissapeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
 				logger.debug('Failed to get tab info for tab: %s (ignoring)', page_id)
 				continue

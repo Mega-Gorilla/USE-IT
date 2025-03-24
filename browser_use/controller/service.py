@@ -1,9 +1,8 @@
 import asyncio
-import re
-import json
 import enum
 import json
 import logging
+import re
 from typing import Dict, Generic, Optional, Type, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -166,7 +165,7 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			logger.debug(f'Element xpath: {element_node.xpath}')
 			return ActionResult(extracted_content=msg, include_in_memory=True)
-		
+
 		# Save PDF
 		@self.registry.action(
 			'Save the current page as a PDF file',
@@ -179,7 +178,7 @@ class Controller(Generic[Context]):
 
 			await page.emulate_media('screen')
 			await page.pdf(path=sanitized_filename, format='A4', print_background=False)
-			msg = f"Saving page with URL {page.url} as PDF to ./{sanitized_filename}"
+			msg = f'Saving page with URL {page.url} as PDF to ./{sanitized_filename}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
@@ -211,7 +210,7 @@ class Controller(Generic[Context]):
 
 			content = markdownify.markdownify(await page.content())
 
-			# append iframe content into the page so it's accessible to the LLM too
+			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
 				if iframe.url != page.url and not iframe.url.startswith('data:'):
 					content += f'\n\nIFRAME {iframe.url}:\n'

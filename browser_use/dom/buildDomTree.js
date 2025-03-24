@@ -1,5 +1,12 @@
-({ doHighlightElements=true, focusHighlightIndex=-1, viewportExpansion=0, debugMode=false, indexOffset=0 }={}) => {
-  // console.log('indexOffset', indexOffset)
+(
+  args = {
+    doHighlightElements: true,
+    focusHighlightIndex: -1,
+    viewportExpansion: 0,
+    debugMode: false,
+  }
+) => {
+  const { doHighlightElements, focusHighlightIndex, viewportExpansion, debugMode } = args;
   let highlightIndex = 0; // Reset highlight index
 
   // Add timing stack to handle recursion
@@ -176,7 +183,7 @@
    */
   const DOM_HASH_MAP = {};
 
-  const ID = { current: indexOffset };
+  const ID = { current: 0 };
 
   const HIGHLIGHT_CONTAINER_ID = "playwright-highlight-container";
 
@@ -768,8 +775,8 @@
       element.hasAttribute("role") ||
       element.hasAttribute("tabindex") ||
       element.hasAttribute("aria-") ||
-      element.hasAttribute("data-action") ||
-      element.getAttribute("contenteditable") == "true";
+      element.hasAttribute("data-action");
+
     return hasQuickInteractiveAttr;
   }
 
@@ -792,10 +799,6 @@
       if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
       return null;
     }
-
-    // FOR DEBUGGING: mark the node as having been processed by buildDomTree.js
-    // so that playwright can tell if it's been processed or not
-    // node.setAttribute('data-browser-use-built-dom-tree', 'true');
 
     // Special handling for root node (body)
     if (node === document.body) {
@@ -933,9 +936,6 @@
               const domElement = buildDomTree(child, node);
               if (domElement) nodeData.children.push(domElement);
             }
-            // mark the iframe as having been processed by buildDomTree.js
-            // so that playwright can tell if got processed already or if it needs special handling
-            node.contentWindow._loadedBrowserUseBuildDomTree = true;
           }
         } catch (e) {
           console.warn("Unable to access iframe:", e);
@@ -1050,6 +1050,6 @@
   }
 
   return debugMode ?
-    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS, indexOffset } :
-    { rootId, map: DOM_HASH_MAP, indexOffset };
+    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS } :
+    { rootId, map: DOM_HASH_MAP };
 };
