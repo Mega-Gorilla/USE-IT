@@ -15,6 +15,9 @@ from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
+	ClickElementBySelectorAction,
+	ClickElementByTextAction,
+	ClickElementByXpathAction,
 	DoneAction,
 	GoToUrlAction,
 	InputTextAction,
@@ -110,8 +113,8 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Element Interaction Actions
-		@self.registry.action('Click element', param_model=ClickElementAction)
-		async def click_element(params: ClickElementAction, browser: BrowserContext):
+		@self.registry.action('Click element by index', param_model=ClickElementAction)
+		async def click_element_by_index(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
 
 			if params.index not in await browser.get_selector_map():
@@ -145,6 +148,39 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click element by selector', param_model=ClickElementBySelectorAction)
+		async def click_element_by_selector(params: ClickElementBySelectorAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_css_selector(params.css_selector)
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with selector {params.css_selector}'
+			except Exception as e:
+				logger.warning(f'Element not clickable with index {params.css_selector} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click on element by xpath', param_model=ClickElementByXpathAction)
+		async def click_element_by_xpath(params: ClickElementByXpathAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_xpath(params.xpath)
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with xpath {params.xpath}'
+			except Exception as e:
+				logger.warning(f'Element not clickable with xpath {params.xpath} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click element with text', param_model=ClickElementByTextAction)
+		async def click_element_by_text(params: ClickElementByTextAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_text(params.text)
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with text {params.text}'
+			except Exception as e:
+				logger.warning(f'Element not clickable with text {params.text} - most likely the page changed')
 				return ActionResult(error=str(e))
 
 		@self.registry.action(
