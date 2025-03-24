@@ -158,7 +158,7 @@ class Controller(Generic[Context]):
 					await element_node.click()
 					msg = f'🖱️  Clicked on element with selector {params.css_selector}'
 			except Exception as e:
-				logger.warning(f'Element not clickable with index {params.css_selector} - most likely the page changed')
+				logger.warning(f'Element not clickable with selector {params.css_selector} - most likely the page changed')
 				return ActionResult(error=str(e))
 
 		@self.registry.action('Click on element by xpath', param_model=ClickElementByXpathAction)
