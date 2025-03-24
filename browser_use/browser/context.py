@@ -799,7 +799,8 @@ class BrowserContext:
 					TabInfo(
 						page_id=new_page_id,
 						url=url,
-						title=f'iFrame opened as new tab, treat as part of the page: {page.url}',
+						title=f'iFrame opened as new tab, treat as if embedded inside page #{self.state.target_id}: {page.url}',
+						parent_page_id=self.state.target_id,
 					)
 				)
 
