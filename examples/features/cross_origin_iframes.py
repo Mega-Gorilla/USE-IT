@@ -16,13 +16,15 @@ from langchain_openai import ChatOpenAI
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 
+# Load environment variables
 load_dotenv()
+if not os.getenv('OPENAI_API_KEY'):
+	raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')
 
 
 browser = Browser(
 	config=BrowserConfig(
-		headless=False,
-		cdp_url='http://localhost:9222',
+		browser_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	)
 )
 controller = Controller()

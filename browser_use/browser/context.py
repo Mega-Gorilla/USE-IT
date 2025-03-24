@@ -792,12 +792,14 @@ class BrowserContext:
 			for url in iframe_urls:
 				if url in [tab.url for tab in tabs_info]:
 					continue  # skip if the iframe if we already have it open in a tab
+				new_page_id = tabs_info[-1].page_id + 1
+				logger.debug(f'Opening cross-origin iframe in new tab #{new_page_id}: {url}')
 				await self.create_new_tab(url)
 				tabs_info.append(
 					TabInfo(
-						page_id=tabs_info[-1].page_id + 1,
+						page_id=new_page_id,
 						url=url,
-						title=f'Popup opened by page: {page.url}',
+						title=f'iFrame opened as new tab, treat as part of the page: {page.url}',
 					)
 				)
 

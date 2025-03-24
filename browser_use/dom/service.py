@@ -50,7 +50,8 @@ class DomService:
 		return [
 			frame.url
 			for frame in self.page.frames
-			if urlparse(frame.url).netloc != urlparse(self.page.url).netloc and not frame.url.startswith('data:')
+			if urlparse(frame.url).netloc  # exclude data:urls and about:blank
+			and urlparse(frame.url).netloc != urlparse(self.page.url).netloc
 		]
 
 	@time_execution_async('--build_dom_tree')
@@ -96,7 +97,11 @@ class DomService:
 
 		# Only log performance metrics in debug mode
 		if debug_mode and 'perfMetrics' in eval_page:
-			logger.debug('DOM Tree Building Performance Metrics:\n%s', json.dumps(eval_page['perfMetrics'], indent=2))
+			logger.debug(
+				'DOM Tree Building Performance Metrics for: %s\n%s',
+				self.page.url,
+				json.dumps(eval_page['perfMetrics'], indent=2),
+			)
 
 		return await self._construct_dom_tree(eval_page)
 
