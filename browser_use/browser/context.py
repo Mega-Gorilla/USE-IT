@@ -1204,12 +1204,12 @@ class BrowserContext:
 		for page_id, page in enumerate(session.context.pages):
 			try:
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
-				tabs_info.append(tab_info)
 			except asyncio.TimeoutError:
 				# page.title() can hang forever on tabs that are crashed/dissapeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
-				logger.debug('Failed to get tab info for tab: %s (ignoring)', page_id)
-				continue
+				logger.debug('Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
+				tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
+			tabs_info.append(tab_info)
 
 		return tabs_info
 
