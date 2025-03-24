@@ -784,6 +784,21 @@ class BrowserContext:
 				highlight_elements=self.config.highlight_elements,
 			)
 
+			tabs_info = await self.get_tabs_info()
+
+			# Get all cross-origin iframes within the page and open them in new tabs
+			# mark the titles of the new tabs so the LLM knows to check them for additional content
+			iframe_urls = await dom_service.get_cross_origin_iframes()
+			for url in iframe_urls:
+				await self.create_new_tab(url)
+				tabs_info.append(
+					TabInfo(
+						page_id=tabs_info[-1].page_id + 1,
+						url=url,
+						title=f'Popup opened by page: {page.url}',
+					)
+				)
+
 			screenshot_b64 = await self.take_screenshot()
 			pixels_above, pixels_below = await self.get_scroll_info(page)
 
@@ -792,7 +807,7 @@ class BrowserContext:
 				selector_map=content.selector_map,
 				url=page.url,
 				title=await page.title(),
-				tabs=await self.get_tabs_info(),
+				tabs=tabs_info,
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
