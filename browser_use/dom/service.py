@@ -47,11 +47,20 @@ class DomService:
 
 	@time_execution_async('--get_cross_origin_iframes')
 	async def get_cross_origin_iframes(self) -> list[str]:
+		# invisible cross-origin iframes are used for ads and tracking, dont open those
+		hidden_frame_urls = await self.page.locator('iframe').filter(visible=False).evaluate_all('e => e.map(e => e.src)')
+
+		is_ad_url = lambda url: any(
+			domain in urlparse(url).netloc for domain in ('doubleclick.net', 'adroll.com', 'googletagmanager.com')
+		)
+
 		return [
 			frame.url
 			for frame in self.page.frames
 			if urlparse(frame.url).netloc  # exclude data:urls and about:blank
-			and urlparse(frame.url).netloc != urlparse(self.page.url).netloc
+			and urlparse(frame.url).netloc != urlparse(self.page.url).netloc  # exclude same-origin iframes
+			and frame.url not in hidden_frame_urls  # exclude hidden frames
+			and not is_ad_url(frame.url)  # exclude most common ad network tracker frame URLs
 		]
 
 	@time_execution_async('--build_dom_tree')
