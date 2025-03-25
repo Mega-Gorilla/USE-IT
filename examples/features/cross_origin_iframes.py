@@ -32,16 +32,7 @@ controller = Controller()
 
 async def main():
 	agent = Agent(
-		# task='Click "Go cross-site (simple page)" button on https://csreis.github.io/tests/cross-site-iframe.html then tell me the text within',
-		# task='Go to https://pirate.github.io/financial-dashboard/iframe.html and click Tools > Edit',
-		task="""
-			1. Go to https://trailhead.salesforce.com/today (if any login is needed, username: salesforce@sweeting.me password: SfTestPassword992)
-			2. Scroll down to Your Personalized Recommendations > Admin Beginner and click the Start button
-			3. Click the big blue "Start" button on the left
-			4. Scroll all the way to the bottom of the page and under "Choose hands-on org" make sure "My Trailhead Playground 1" is selected, then click "Launch"
-			5. Once the org loads in a new tab, click "Dashboards" in the menubar at the top
-			6. Click the "teset234234" dashboard and wait till it loads
-		""",
+		task='Click "Go cross-site (simple page)" button on https://csreis.github.io/tests/cross-site-iframe.html then tell me the text within',
 		llm=ChatOpenAI(model='gpt-4o', temperature=0.0),
 		controller=controller,
 		browser=browser,
