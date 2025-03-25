@@ -28,10 +28,9 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-install playwright:
-
+Install Playwright: 
 ```bash
-playwright install
+playwright install chromium
 ```
 
 Spin up your agent:
