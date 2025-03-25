@@ -791,6 +791,7 @@
       element.hasAttribute("aria-") ||
       element.hasAttribute("data-action") ||
       element.getAttribute("contenteditable") == "true";
+
     return hasQuickInteractiveAttr;
   }
 

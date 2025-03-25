@@ -283,12 +283,13 @@ class BrowserContext:
 
 		# If no target ID or couldn't find it, use existing page or create new
 		if not active_page:
-			if pages:
+			if pages and pages[0].url:
 				active_page = pages[0]
-				logger.debug('Using existing page')
+				logger.debug('Using existing page: %s', active_page.url)
 			else:
 				active_page = await context.new_page()
-				logger.debug('Created new page')
+				await active_page.goto('about:blank')
+				logger.debug('Created new page: %s', active_page.url)
 
 			# Get target ID for the active page
 			if self.browser.config.cdp_url:
@@ -299,6 +300,7 @@ class BrowserContext:
 						break
 
 		# Bring page to front
+		logger.debug('Bringing tab to front: %s', active_page)
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
@@ -811,6 +813,26 @@ class BrowserContext:
 				highlight_elements=self.config.highlight_elements,
 			)
 
+			tabs_info = await self.get_tabs_info()
+
+			# Get all cross-origin iframes within the page and open them in new tabs
+			# mark the titles of the new tabs so the LLM knows to check them for additional content
+			iframe_urls = await dom_service.get_cross_origin_iframes()
+			for url in iframe_urls:
+				if url in [tab.url for tab in tabs_info]:
+					continue  # skip if the iframe if we already have it open in a tab
+				new_page_id = tabs_info[-1].page_id + 1
+				logger.debug(f'Opening cross-origin iframe in new tab #{new_page_id}: {url}')
+				await self.create_new_tab(url)
+				tabs_info.append(
+					TabInfo(
+						page_id=new_page_id,
+						url=url,
+						title=f'iFrame opened as new tab, treat as if embedded inside page #{self.state.target_id}: {page.url}',
+						parent_page_id=self.state.target_id,
+					)
+				)
+
 			screenshot_b64 = await self.take_screenshot()
 			pixels_above, pixels_below = await self.get_scroll_info(page)
 
@@ -819,7 +841,7 @@ class BrowserContext:
 				selector_map=content.selector_map,
 				url=page.url,
 				title=await page.title(),
-				tabs=await self.get_tabs_info(),
+				tabs=tabs_info,
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
@@ -1122,11 +1144,11 @@ class BrowserContext:
 				pass
 
 			# Get element properties to determine input method
-			tag_handle = await element_handle.get_property("tagName")
+			tag_handle = await element_handle.get_property('tagName')
 			tag_name = (await tag_handle.json_value()).lower()
 			is_contenteditable = await element_handle.get_property('isContentEditable')
-			readonly_handle = await element_handle.get_property("readOnly")
-			disabled_handle = await element_handle.get_property("disabled")
+			readonly_handle = await element_handle.get_property('readOnly')
+			disabled_handle = await element_handle.get_property('disabled')
 
 			readonly = await readonly_handle.json_value() if readonly_handle else False
 			disabled = await disabled_handle.json_value() if disabled_handle else False
@@ -1209,7 +1231,13 @@ class BrowserContext:
 
 		tabs_info = []
 		for page_id, page in enumerate(session.context.pages):
-			tab_info = TabInfo(page_id=page_id, url=page.url, title=await page.title())
+			try:
+				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
+			except asyncio.TimeoutError:
+				# page.title() can hang forever on tabs that are crashed/dissapeared/about:blank
+				# we dont want to try automating those tabs because they will hang the whole script
+				logger.debug('Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
+				tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 			tabs_info.append(tab_info)
 
 		return tabs_info
