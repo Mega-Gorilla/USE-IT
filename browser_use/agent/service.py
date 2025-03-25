@@ -981,25 +981,6 @@ class Agent(Generic[Context]):
 	def message_manager(self) -> MessageManager:
 		return self._message_manager
 
-	async def cleanup_httpx_clients(self):
-		"""Cleanup all httpx clients"""
-		import httpx
-		import gc
-
-		# Force garbage collection to make sure all clients are in memory
-		gc.collect()
-		
-		# Get all httpx clients
-		clients = [obj for obj in gc.get_objects() if isinstance(obj, httpx.AsyncClient)]
-		
-		# Close all clients
-		for client in clients:
-			if not client.is_closed:
-				try:
-					await client.aclose()
-				except Exception as e:
-					logger.debug(f"Error closing httpx client: {e}")
-
 	async def close(self):
 		"""Close all resources"""
 		try:
@@ -1008,9 +989,6 @@ class Agent(Generic[Context]):
 				await self.browser_context.close()
 			if self.browser and not self.injected_browser:
 				await self.browser.close()
-			
-			# Then cleanup httpx clients
-			await self.cleanup_httpx_clients()
 			
 			# Force garbage collection
 			gc.collect()
