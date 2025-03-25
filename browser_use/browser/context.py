@@ -283,7 +283,12 @@ class BrowserContext:
 
 		# If no target ID or couldn't find it, use existing page or create new
 		if not active_page:
-			if pages and pages[0].url:
+			if (
+				pages
+				and pages[0].url
+				and not pages[0].url.startswith('chrome://')
+				and not pages[0].url.startswith('chrome-extension://')
+			):
 				active_page = pages[0]
 				logger.debug('Using existing page: %s', active_page.url)
 			else:
@@ -616,8 +621,8 @@ class BrowserContext:
 			parsed_url = urlparse(url)
 			domain = parsed_url.netloc.lower()
 
-   			# Special case: Allow 'about:blank' explicitly
-			if url == "about:blank":
+			# Special case: Allow 'about:blank' explicitly
+			if url == 'about:blank':
 				return True
 
 			# Remove port number if present
