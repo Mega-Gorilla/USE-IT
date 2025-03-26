@@ -226,6 +226,7 @@ class Browser:
 				'--no-startup-window',
 			],
 		}
+		browser_class = getattr(playwright, self.config.browser_class)
 		browser = await browser_class.launch(
 			headless=self.config.headless,
 			args=args[self.config.browser_class] + self.disable_security_args + self.config.extra_browser_args,
