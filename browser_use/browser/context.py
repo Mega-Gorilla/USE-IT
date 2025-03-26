@@ -1128,6 +1128,75 @@ class BrowserContext:
 			logger.error(f'Failed to locate element: {str(e)}')
 			return None
 
+	@time_execution_async('--get_locate_element_by_xpath')
+	async def get_locate_element_by_xpath(self, xpath: str) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided XPath.
+		"""
+		current_frame = await self.get_current_page()
+
+		try:
+			# Use XPath to locate the element
+			element_handle = await current_frame.query_selector(f'xpath={xpath}')
+			if element_handle:
+				await element_handle.scroll_into_view_if_needed()
+				return element_handle
+			return None
+		except Exception as e:
+			logger.error(f'Failed to locate element by XPath {xpath}: {str(e)}')
+			return None
+
+	@time_execution_async('--get_locate_element_by_css_selector')
+	async def get_locate_element_by_css_selector(self, css_selector: str) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided CSS selector.
+		"""
+		current_frame = await self.get_current_page()
+
+		try:
+			# Use CSS selector to locate the element
+			element_handle = await current_frame.query_selector(css_selector)
+			if element_handle:
+				await element_handle.scroll_into_view_if_needed()
+				return element_handle
+			return None
+		except Exception as e:
+			logger.error(f'Failed to locate element by CSS selector {css_selector}: {str(e)}')
+			return None
+
+	@time_execution_async('--get_locate_element_by_text')
+	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0) -> Optional[ElementHandle]:
+		"""
+		Locates an element on the page using the provided text.
+		If `nth` is provided, it returns the nth matching element (0-based).
+		"""
+		current_frame = await self.get_current_page()
+		try:
+			elements = await current_frame.query_selector_all(f"text={text}")
+			# considering only visible elements
+			elements = [el for el in elements if await el.is_visible()]
+
+			if not elements:
+				logger.error(f"No visible element with text '{text}' found.")
+				return None
+
+			if nth is not None:
+				if 0 <= nth < len(elements):
+					element_handle = elements[nth]
+				else:
+					logger.error(f"Visible element with text '{text}' not found at index {nth}.")
+					return None
+			else:
+				element_handle = elements[0]
+
+			await element_handle.scroll_into_view_if_needed()
+			return element_handle
+		except Exception as e:
+			logger.error(f"Failed to locate element by text '{text}': {str(e)}")
+			return None
+
+
+
 	@time_execution_async('--input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		"""
