@@ -54,7 +54,8 @@ from browser_use.telemetry.views import (
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
+from browser_use.constants import REQUIRED_ENV_VARIABLES
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -184,8 +185,9 @@ class Agent(Generic[Context]):
 		self._set_model_names()
 
 		# Check env setup
-		if not self._check_env_variables():
-			logger.error('Environment variables not set')
+		llm_api_env_vars = REQUIRED_ENV_VARIABLES[self.llm.__class__.__name__]
+		if not check_env_variables(llm_api_env_vars):
+			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
 			raise ValueError('Environment variables not set')
 
 		# for models without tool calling, add available actions to context
@@ -244,20 +246,6 @@ class Agent(Generic[Context]):
 			else:
 				self.settings.message_context = f'Available actions: {self.available_actions}'
 		return self.settings.message_context
-
-	def _check_env_variables(self) -> bool:
-		"""Check if all required environment variables are set"""
-		if isinstance(self.llm, ChatOpenAI):
-			if not os.getenv('OPENAI_API_KEY'):
-				logger.error('OPENAI_API_KEY is not set')
-				return False
-
-		if isinstance(self.llm, AzureChatOpenAI):
-			if not os.getenv('AZURE_OPENAI_API_KEY') or not os.getenv('AZURE_OPENAI_ENDPOINT'):
-				logger.error('AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT is not set')
-				return False
-			
-		return True
 
 	def _set_browser_use_version_and_source(self) -> None:
 		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
