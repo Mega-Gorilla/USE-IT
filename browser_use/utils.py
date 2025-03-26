@@ -2,6 +2,7 @@ import logging
 import time
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -52,3 +53,8 @@ def singleton(cls):
 		return instance[0]
 
 	return wrapper
+
+
+def check_env_variables(keys: list[str], any_or_all=all) -> bool:
+	""" Check if all required environment variables are set """
+	return any_or_all(os.getenv(key).strip() for key in keys)
