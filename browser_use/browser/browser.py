@@ -121,7 +121,6 @@ class Browser:
 		logger.info(f'Connecting to remote browser via CDP {self.config.cdp_url}')
 		browser_class = getattr(playwright, self.config.browser_class)
 		browser = await browser_class.connect_over_cdp(self.config.cdp_url)
-
 		return browser
 
 	async def _setup_wss(self, playwright: Playwright) -> PlaywrightBrowser:
@@ -219,6 +218,7 @@ class Browser:
 				*self.config.extra_browser_args,
 			],
 		}
+		browser_class = getattr(playwright, self.config.browser_class)
 		browser = await browser_class.launch(
 			headless=self.config.headless,
 			args=args[self.config.browser_class],

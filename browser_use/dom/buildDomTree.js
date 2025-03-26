@@ -391,7 +391,7 @@
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      );
+      ) || viewportExpansion === -1;
 
       // Check parent visibility
       const parentElement = textNode.parentElement;
@@ -530,7 +530,9 @@
 
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
+      element.classList.contains("button") ||
       element.classList.contains('dropdown-toggle') ||
+      element.getAttribute('data-index') ||
       element.getAttribute('data-toggle') === 'dropdown' ||
       element.getAttribute('aria-haspopup') === 'true'
     )) {
