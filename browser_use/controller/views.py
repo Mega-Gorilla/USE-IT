@@ -15,7 +15,16 @@ class GoToUrlAction(BaseModel):
 class ClickElementAction(BaseModel):
 	index: int
 	xpath: Optional[str] = None
+ 
+class ClickElementByXpathAction(BaseModel):
+    xpath: str
 
+class ClickElementBySelectorAction(BaseModel):
+    css_selector: str
+    
+class ClickElementByTextAction(BaseModel):
+    text: str
+    nth: int = 0
 
 class InputTextAction(BaseModel):
 	index: int
