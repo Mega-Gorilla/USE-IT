@@ -530,7 +530,9 @@
 
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
+      element.classList.contains("button") ||
       element.classList.contains('dropdown-toggle') ||
+      element.getAttribute('data-index') ||
       element.getAttribute('data-toggle') === 'dropdown' ||
       element.getAttribute('aria-haspopup') === 'true'
     )) {
