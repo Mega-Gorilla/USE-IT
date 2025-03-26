@@ -6,9 +6,11 @@ import asyncio
 import gc
 import logging
 import os
+import subprocess
 from dataclasses import dataclass, field
 from typing import Literal
 
+import requests
 from playwright._impl._api_structures import ProxySettings
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
@@ -16,7 +18,7 @@ from playwright.async_api import (
 	async_playwright,
 )
 
-from browser_use.browser.chrome import CHROME_ARGS, CHROME_DOCKER_ARGS, CHROME_HEADLESS_ARGS
+from browser_use.browser.chrome import CHROME_ARGS, CHROME_DISABLE_SECURITY_ARGS, CHROME_DOCKER_ARGS, CHROME_HEADLESS_ARGS
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from browser_use.browser.utils.screen_resolution import get_screen_resolution, get_window_adjustments
 from browser_use.utils import time_execution_async
@@ -86,14 +88,6 @@ class Browser:
 		self.playwright: Playwright | None = None
 		self.playwright_browser: PlaywrightBrowser | None = None
 
-		self.disable_security_args = []
-		if self.config.disable_security:
-			self.disable_security_args = ['--disable-web-security', '--disable-site-isolation-trials']
-			if self.config.browser_class == 'chromium':
-				self.disable_security_args += [
-					'--disable-features=IsolateOrigins,site-per-process',
-				]
-
 	async def new_context(self, config: BrowserContextConfig = BrowserContextConfig()) -> BrowserContext:
 		"""Create a browser context"""
 		return BrowserContext(config=config, browser=self)
@@ -143,9 +137,6 @@ class Browser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		if not self.config.browser_instance_path:
 			raise ValueError('Chrome instance path is required')
-		import subprocess
-
-		import requests
 
 		try:
 			# Check if browser is already running
@@ -168,6 +159,7 @@ class Browser:
 				*CHROME_ARGS,
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
+				*(CHROME_DISABLE_SECURITY_ARGS if self.config.disable_security else []),
 				*self.config.extra_browser_args,
 			}
 		)
@@ -207,38 +199,23 @@ class Browser:
 		offset_x, offset_y = get_window_adjustments()
 		browser_class = getattr(playwright, self.config.browser_class)
 		args = {
-			'chromium': [
-				'--no-sandbox',
-				'--disable-blink-features=AutomationControlled',
-				'--disable-infobars',
-				'--disable-background-timer-throttling',
-				'--disable-popup-blocking',
-				'--disable-backgrounding-occluded-windows',
-				'--disable-renderer-backgrounding',
-				'--disable-window-activation',
-				'--disable-focus-on-load',
-				'--no-first-run',
-				'--no-default-browser-check',
-				'--no-startup-window',
-				f'--window-position={offset_x},{offset_y}',
-				f'--window-size={screen_size["width"]},{screen_size["height"]}',
-				'--force-device-scale-factor=1',
-				'--window-position=0,0',
-				'--enable-experimental-extension-apis',
-				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
-				*CHROME_ARGS,
-				*self.disable_security_args,
-				*self.config.extra_browser_args,
-			],
+			'chromium': list(
+				{
+					*CHROME_ARGS,
+					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
+					*(CHROME_HEADLESS_ARGS if self.config.headless else []),
+					*(CHROME_DISABLE_SECURITY_ARGS if self.config.disable_security else []),
+					f'--window-position={offset_x},{offset_y}',
+					f'--window-size={screen_size["width"]},{screen_size["height"]}',
+					*self.config.extra_browser_args,
+				}
+			),
 			'firefox': [
 				'-no-remote',
-				*self.disable_security_args,
 				*self.config.extra_browser_args,
 			],
 			'webkit': [
 				'--no-startup-window',
-				*self.disable_security_args,
 				*self.config.extra_browser_args,
 			],
 		}
