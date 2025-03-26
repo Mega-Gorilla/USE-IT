@@ -18,6 +18,7 @@ from playwright.async_api import (
 
 from browser_use.browser.chrome import CHROME_ARGS, CHROME_DOCKER_ARGS, CHROME_HEADLESS_ARGS
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
+from browser_use.browser.utils.screen_resolution import get_screen_resolution, get_window_adjustments
 from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
@@ -202,10 +203,28 @@ class Browser:
 
 	async def _setup_standard_browser(self, playwright: Playwright) -> PlaywrightBrowser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
+		screen_size = get_screen_resolution()
+		offset_x, offset_y = get_window_adjustments()
 		browser_class = getattr(playwright, self.config.browser_class)
-
 		args = {
 			'chromium': [
+				'--no-sandbox',
+				'--disable-blink-features=AutomationControlled',
+				'--disable-infobars',
+				'--disable-background-timer-throttling',
+				'--disable-popup-blocking',
+				'--disable-backgrounding-occluded-windows',
+				'--disable-renderer-backgrounding',
+				'--disable-window-activation',
+				'--disable-focus-on-load',
+				'--no-first-run',
+				'--no-default-browser-check',
+				'--no-startup-window',
+				f'--window-position={offset_x},{offset_y}',
+				f'--window-size={screen_size["width"]},{screen_size["height"]}',
+				'--force-device-scale-factor=1',
+				'--window-position=0,0',
+				'--enable-experimental-extension-apis',
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
 				*CHROME_ARGS,
@@ -256,7 +275,8 @@ class Browser:
 				if self.playwright:
 					await self.playwright.stop()
 					del self.playwright
-
+				# Then cleanup httpx clients
+				await self.cleanup_httpx_clients()
 		except Exception as e:
 			logger.debug(f'Failed to close browser properly: {e}')
 		finally:
@@ -276,3 +296,23 @@ class Browser:
 					asyncio.run(self.close())
 		except Exception as e:
 			logger.debug(f'Failed to cleanup browser in destructor: {e}')
+
+	async def cleanup_httpx_clients(self):
+		"""Cleanup all httpx clients"""
+		import gc
+
+		import httpx
+
+		# Force garbage collection to make sure all clients are in memory
+		gc.collect()
+
+		# Get all httpx clients
+		clients = [obj for obj in gc.get_objects() if isinstance(obj, httpx.AsyncClient)]
+
+		# Close all clients
+		for client in clients:
+			if not client.is_closed:
+				try:
+					await client.aclose()
+				except Exception as e:
+					logger.debug(f'Error closing httpx client: {e}')
