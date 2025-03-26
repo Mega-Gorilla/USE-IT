@@ -19,6 +19,7 @@ from browser_use.controller.views import (
 	ClickElementBySelectorAction,
 	ClickElementByTextAction,
 	ClickElementByXpathAction,
+	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
 	GroupTabsAction,
@@ -244,6 +245,16 @@ class Controller(Generic[Context]):
 		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
 			msg = f'🔗  Opened new tab with {params.url}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
+		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
+		async def close_tab(params: CloseTabAction, browser: BrowserContext):
+			await browser.switch_to_tab(params.page_id)
+			page = await browser.get_current_page()
+			url = page.url
+			await page.close()
+			msg = f'❌  Closed tab #{params.page_id} with url {url}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
