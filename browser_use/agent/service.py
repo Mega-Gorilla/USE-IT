@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -17,10 +18,11 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
+from browser_use.exceptions import LLMException
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
@@ -181,6 +183,11 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 
+		# Check env setup
+		if not self._check_env_variables():
+			logger.error('Environment variables not set')
+			raise ValueError('Environment variables not set')
+
 		# for models without tool calling, add available actions to context
 		self.available_actions = self.controller.registry.get_prompt_description()
 
@@ -237,6 +244,20 @@ class Agent(Generic[Context]):
 			else:
 				self.settings.message_context = f'Available actions: {self.available_actions}'
 		return self.settings.message_context
+
+	def _check_env_variables(self) -> bool:
+		"""Check if all required environment variables are set"""
+		if isinstance(self.llm, ChatOpenAI):
+			if not os.getenv('OPENAI_API_KEY'):
+				logger.error('OPENAI_API_KEY is not set')
+				return False
+
+		if isinstance(self.llm, AzureChatOpenAI):
+			if not os.getenv('AZURE_OPENAI_API_KEY') or not os.getenv('AZURE_OPENAI_ENDPOINT'):
+				logger.error('AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT is not set')
+				return False
+			
+		return True
 
 	def _set_browser_use_version_and_source(self) -> None:
 		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
@@ -519,7 +540,12 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			output = self.llm.invoke(input_messages)
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			try:
+				output = self.llm.invoke(input_messages)
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'Failed to invoke model')
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -531,12 +557,24 @@ class Agent(Generic[Context]):
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			try:
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+				parsed: AgentOutput | None = response['parsed']
+
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'Failed to invoke model')
+
 		else:
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			try:
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+				parsed: AgentOutput | None = response['parsed']
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'Failed to invoke model')
+			
 			if not parsed:
 				try:
 					parsed_json = extract_json_from_model_output(response["raw"].content)
