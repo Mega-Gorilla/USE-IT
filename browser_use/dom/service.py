@@ -1,33 +1,41 @@
 import gc
+import json
 import logging
+from dataclasses import dataclass
 from importlib import resources
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+from urllib.parse import urlparse
 
-from playwright.async_api import Page
+if TYPE_CHECKING:
+	from playwright.async_api import Page
 
-from browser_use.dom.history_tree_processor.view import Coordinates
 from browser_use.dom.views import (
-	CoordinateSet,
 	DOMBaseNode,
 	DOMElementNode,
 	DOMState,
 	DOMTextNode,
 	SelectorMap,
-	ViewportInfo,
 )
+from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ViewportInfo:
+	width: int
+	height: int
+
+
 class DomService:
-	def __init__(self, page: Page):
+	def __init__(self, page: 'Page'):
 		self.page = page
 		self.xpath_cache = {}
 
 		self.js_code = resources.read_text('browser_use.dom', 'buildDomTree.js')
 
 	# region - Clickable elements
-
+	@time_execution_async('--get_clickable_elements')
 	async def get_clickable_elements(
 		self,
 		highlight_elements: bool = True,
@@ -35,11 +43,27 @@ class DomService:
 		viewport_expansion: int = 0,
 	) -> DOMState:
 		element_tree, selector_map = await self._build_dom_tree(highlight_elements, focus_element, viewport_expansion)
+		return DOMState(element_tree=element_tree, selector_map=selector_map)
 
-		dom_state = DOMState(element_tree=element_tree, selector_map=selector_map)
+	@time_execution_async('--get_cross_origin_iframes')
+	async def get_cross_origin_iframes(self) -> list[str]:
+		# invisible cross-origin iframes are used for ads and tracking, dont open those
+		hidden_frame_urls = await self.page.locator('iframe').filter(visible=False).evaluate_all('e => e.map(e => e.src)')
 
-		return dom_state
+		is_ad_url = lambda url: any(
+			domain in urlparse(url).netloc for domain in ('doubleclick.net', 'adroll.com', 'googletagmanager.com')
+		)
 
+		return [
+			frame.url
+			for frame in self.page.frames
+			if urlparse(frame.url).netloc  # exclude data:urls and about:blank
+			and urlparse(frame.url).netloc != urlparse(self.page.url).netloc  # exclude same-origin iframes
+			and frame.url not in hidden_frame_urls  # exclude hidden frames
+			and not is_ad_url(frame.url)  # exclude most common ad network tracker frame URLs
+		]
+
+	@time_execution_async('--build_dom_tree')
 	async def _build_dom_tree(
 		self,
 		highlight_elements: bool,
@@ -49,17 +73,52 @@ class DomService:
 		if await self.page.evaluate('1+1') != 2:
 			raise ValueError('The page cannot evaluate javascript code properly')
 
+		if self.page.url == 'about:blank':
+			# short-circuit if the page is a new empty tab for speed, no need to inject buildDomTree.js
+			return (
+				DOMElementNode(
+					tag_name='body',
+					xpath='',
+					attributes={},
+					children=[],
+					is_visible=False,
+					parent=None,
+				),
+				{},
+			)
+
 		# NOTE: We execute JS code in the browser to extract important DOM information.
 		#       The returned hash map contains information about the DOM tree and the
 		#       relationship between the DOM elements.
+		debug_mode = logger.getEffectiveLevel() == logging.DEBUG
 		args = {
 			'doHighlightElements': highlight_elements,
 			'focusHighlightIndex': focus_element,
 			'viewportExpansion': viewport_expansion,
+			'debugMode': debug_mode,
 		}
 
-		eval_page = await self.page.evaluate(self.js_code, args)
+		try:
+			eval_page: dict = await self.page.evaluate(self.js_code, args)
+		except Exception as e:
+			logger.error('Error evaluating JavaScript: %s', e)
+			raise
 
+		# Only log performance metrics in debug mode
+		if debug_mode and 'perfMetrics' in eval_page:
+			logger.debug(
+				'DOM Tree Building Performance Metrics for: %s\n%s',
+				self.page.url,
+				json.dumps(eval_page['perfMetrics'], indent=2),
+			)
+
+		return await self._construct_dom_tree(eval_page)
+
+	@time_execution_async('--construct_dom_tree')
+	async def _construct_dom_tree(
+		self,
+		eval_page: dict,
+	) -> tuple[DOMElementNode, SelectorMap]:
 		js_node_map = eval_page['map']
 		js_root_id = eval_page['rootId']
 
@@ -88,7 +147,7 @@ class DomService:
 					child_node.parent = node
 					node.children.append(child_node)
 
-		html_to_dict = node_map[js_root_id]
+		html_to_dict = node_map[str(js_root_id)]
 
 		del node_map
 		del js_node_map
@@ -118,34 +177,11 @@ class DomService:
 			return text_node, []
 
 		# Process coordinates if they exist for element nodes
-		viewport_coordinates = None
-		page_coordinates = None
+
 		viewport_info = None
 
-		if 'viewportCoordinates' in node_data:
-			viewport_coordinates = CoordinateSet(
-				top_left=Coordinates(**node_data['viewportCoordinates']['topLeft']),
-				top_right=Coordinates(**node_data['viewportCoordinates']['topRight']),
-				bottom_left=Coordinates(**node_data['viewportCoordinates']['bottomLeft']),
-				bottom_right=Coordinates(**node_data['viewportCoordinates']['bottomRight']),
-				center=Coordinates(**node_data['viewportCoordinates']['center']),
-				width=node_data['viewportCoordinates']['width'],
-				height=node_data['viewportCoordinates']['height'],
-			)
-		if 'pageCoordinates' in node_data:
-			page_coordinates = CoordinateSet(
-				top_left=Coordinates(**node_data['pageCoordinates']['topLeft']),
-				top_right=Coordinates(**node_data['pageCoordinates']['topRight']),
-				bottom_left=Coordinates(**node_data['pageCoordinates']['bottomLeft']),
-				bottom_right=Coordinates(**node_data['pageCoordinates']['bottomRight']),
-				center=Coordinates(**node_data['pageCoordinates']['center']),
-				width=node_data['pageCoordinates']['width'],
-				height=node_data['pageCoordinates']['height'],
-			)
 		if 'viewport' in node_data:
 			viewport_info = ViewportInfo(
-				scroll_x=node_data['viewport']['scrollX'],
-				scroll_y=node_data['viewport']['scrollY'],
 				width=node_data['viewport']['width'],
 				height=node_data['viewport']['height'],
 			)
@@ -158,11 +194,10 @@ class DomService:
 			is_visible=node_data.get('isVisible', False),
 			is_interactive=node_data.get('isInteractive', False),
 			is_top_element=node_data.get('isTopElement', False),
+			is_in_viewport=node_data.get('isInViewport', False),
 			highlight_index=node_data.get('highlightIndex'),
 			shadow_root=node_data.get('shadowRoot', False),
 			parent=None,
-			viewport_coordinates=viewport_coordinates,
-			page_coordinates=page_coordinates,
 			viewport_info=viewport_info,
 		)
 
