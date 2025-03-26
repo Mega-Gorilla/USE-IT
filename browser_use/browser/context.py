@@ -1106,21 +1106,36 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
-	async def get_locate_element_by_text(self, text: str) -> Optional[ElementHandle]:
+	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0) -> Optional[ElementHandle]:
 		"""
 		Locates an element on the page using the provided text.
+		If `nth` is provided, it returns the nth matching element (0-based).
 		"""
 		current_frame = await self.get_current_page()
 		try:
-			# Use Playwright's text selector syntax to locate the element
-			element_handle = await current_frame.query_selector(f"text={text}")
-			if element_handle:
-				await element_handle.scroll_into_view_if_needed()
-				return element_handle
-			return None
+			elements = await current_frame.query_selector_all(f"text={text}")
+			# considering only visible elements
+			elements = [el for el in elements if await el.is_visible()]
+
+			if not elements:
+				logger.error(f"No visible element with text '{text}' found.")
+				return None
+
+			if nth is not None:
+				if 0 <= nth < len(elements):
+					element_handle = elements[nth]
+				else:
+					logger.error(f"Visible element with text '{text}' not found at index {nth}.")
+					return None
+			else:
+				element_handle = elements[0]
+
+			await element_handle.scroll_into_view_if_needed()
+			return element_handle
 		except Exception as e:
 			logger.error(f"Failed to locate element by text '{text}': {str(e)}")
 			return None
+
 
 
 	@time_execution_async('--input_text_element_node')

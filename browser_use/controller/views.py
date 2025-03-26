@@ -24,6 +24,7 @@ class ClickElementBySelectorAction(BaseModel):
     
 class ClickElementByTextAction(BaseModel):
     text: str
+    nth: int = 0
 
 class InputTextAction(BaseModel):
 	index: int

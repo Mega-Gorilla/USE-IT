@@ -157,6 +157,7 @@ class Controller(Generic[Context]):
 				if element_node:
 					await element_node.click()
 					msg = f'🖱️  Clicked on element with selector {params.css_selector}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with selector {params.css_selector} - most likely the page changed')
 				return ActionResult(error=str(e))
@@ -168,6 +169,7 @@ class Controller(Generic[Context]):
 				if element_node:
 					await element_node.click()
 					msg = f'🖱️  Clicked on element with xpath {params.xpath}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with xpath {params.xpath} - most likely the page changed')
 				return ActionResult(error=str(e))
@@ -175,12 +177,19 @@ class Controller(Generic[Context]):
 		@self.registry.action('Click element with text', param_model=ClickElementByTextAction)
 		async def click_element_by_text(params: ClickElementByTextAction, browser: BrowserContext):
 			try:
-				element_node = await browser.get_locate_element_by_text(params.text)
+				element_node = await browser.get_locate_element_by_text(
+					text=params.text,
+					nth=params.nth,
+				)
+
 				if element_node:
 					await element_node.click()
 					msg = f'🖱️  Clicked on element with text {params.text}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+				else:
+					return ActionResult(error=f"No element found for text '{params.text}'")
 			except Exception as e:
-				logger.warning(f'Element not clickable with text {params.text} - most likely the page changed')
+				logger.warning(f"Element not clickable with text {params.text} - {e}")
 				return ActionResult(error=str(e))
 
 		@self.registry.action(
