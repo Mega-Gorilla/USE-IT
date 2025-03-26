@@ -44,10 +44,9 @@ agent = Agent(
 For actions that need browser access, simply add the `browser` parameter inside the function parameters:
 
 <Note>
-  Please note that browser-use’s `Browser` class is entirely different from
-  Playwright’s `Browser`. It employs its own abstraction layer for browser
-  control, resulting in numerous differences in available methods and behavior
-  compared to Playwright’s implementation.
+  Please note that browser-use’s `Browser` class is a wrapper class around
+  Playwright’s `Browser`. The `Browser.playwright_browser` attr can be used
+  to directly access the Playwright browser object if needed.
 </Note>
 
 ```python
