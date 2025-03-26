@@ -1313,8 +1313,13 @@ class BrowserContext:
 						if page.url == target['url']:
 							return page
 
-		# Fallback to last page
-		return pages[-1] if pages else await session.context.new_page()
+		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
+		non_extension_pages = [page for page in pages if not page.url.startswith('chrome-extension://')]
+		if non_extension_pages:
+			return non_extension_pages[-1]
+
+		# Fallback to opening a new tab
+		return await session.context.new_page()
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
