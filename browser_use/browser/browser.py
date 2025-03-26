@@ -62,7 +62,6 @@ class BrowserConfig:
 	browser_class: Literal['chromium', 'firefox', 'webkit'] = 'chromium'
 
 
-
 # @singleton: TODO - think about id singleton makes sense here
 # @dev By default this is a singleton, but you can create multiple instances if you need to.
 class Browser:
@@ -114,16 +113,16 @@ class Browser:
 
 	async def _setup_cdp(self, playwright: Playwright) -> PlaywrightBrowser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures. Firefox has no longer CDP support."""
-		if 'firefox' not in self.config.browser_instance_path.lower():
-			if not self.config.cdp_url:
-				raise ValueError('CDP URL is required')
-			logger.info(f'Connecting to remote browser via CDP {self.config.cdp_url}')
-			browser_class = getattr(playwright, self.config.browser_class)
-			browser = await browser_class.connect_over_cdp(self.config.cdp_url)
-		else:
+		if 'firefox' in (self.config.browser_instance_path or '').lower():
 			raise ValueError(
 				'CDP has been deprecated for firefox, check: https://fxdx.dev/deprecating-cdp-support-in-firefox-embracing-the-future-with-webdriver-bidi/'
 			)
+
+		if not self.config.cdp_url:
+			raise ValueError('CDP URL is required')
+		logger.info(f'Connecting to remote browser via CDP {self.config.cdp_url}')
+		browser_class = getattr(playwright, self.config.browser_class)
+		browser = await browser_class.connect_over_cdp(self.config.cdp_url)
 		return browser
 
 	async def _setup_wss(self, playwright: Playwright) -> PlaywrightBrowser:
@@ -157,16 +156,15 @@ class Browser:
 		except requests.ConnectionError:
 			logger.debug('No existing Chrome instance found, starting a new one')
 
-		# Start a new Chrome instance      
+		# Start a new Chrome instance
 		args = [
-				self.config.browser_instance_path,
-				'--remote-debugging-port=9222',
-			]
+			self.config.browser_instance_path,
+			'--remote-debugging-port=9222',
+		]
 		if self.config.headless:
 			args.append('--headless')
 		subprocess.Popen(
-			args
-			+ self.config.extra_browser_args,      
+			args + self.config.extra_browser_args,
 			stdout=subprocess.DEVNULL,
 			stderr=subprocess.DEVNULL,
 		)
@@ -284,19 +282,20 @@ class Browser:
 
 	async def cleanup_httpx_clients(self):
 		"""Cleanup all httpx clients"""
-		import httpx
 		import gc
+
+		import httpx
 
 		# Force garbage collection to make sure all clients are in memory
 		gc.collect()
-		
+
 		# Get all httpx clients
 		clients = [obj for obj in gc.get_objects() if isinstance(obj, httpx.AsyncClient)]
-		
+
 		# Close all clients
 		for client in clients:
 			if not client.is_closed:
 				try:
 					await client.aclose()
 				except Exception as e:
-					logger.debug(f"Error closing httpx client: {e}")
+					logger.debug(f'Error closing httpx client: {e}')
