@@ -545,7 +545,7 @@ class Agent(Generic[Context]):
 				output = self.llm.invoke(input_messages)
 			except Exception as e:
 				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'Failed to invoke model')
+				raise LLMException(401, 'LLM API call failed') from e
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
