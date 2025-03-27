@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -17,10 +18,11 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
+from browser_use.exceptions import LLMException
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
@@ -36,6 +38,7 @@ from browser_use.agent.views import (
 	AgentStepInfo,
 	StepMetadata,
 	ToolCallingMethod,
+	REQUIRED_LLM_API_ENV_VARS
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -52,7 +55,7 @@ from browser_use.telemetry.views import (
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -180,6 +183,12 @@ class Agent(Generic[Context]):
 
 		# Model setup
 		self._set_model_names()
+
+		# Check env setup
+		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
+		if not check_env_variables(llm_api_env_vars):
+			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
+			raise ValueError('Environment variables not set')
 
 		# for models without tool calling, add available actions to context
 		self.available_actions = self.controller.registry.get_prompt_description()
@@ -519,7 +528,12 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			output = self.llm.invoke(input_messages)
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			try:
+				output = self.llm.invoke(input_messages)
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -531,15 +545,58 @@ class Agent(Generic[Context]):
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			try:
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+				parsed: AgentOutput | None = response['parsed']
+
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
+
 		else:
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			
+		# Handle tool call responses
+		if response.get('parsing_error') and 'raw' in response:
+			raw_msg = response['raw']
+			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
+				# Convert tool calls to AgentOutput format
+    
+				tool_call = raw_msg.tool_calls[0]  # Take first tool call
+    
+				# Create current state
+				tool_call_name = tool_call['name']
+				tool_call_args = tool_call['args']
+				
+				current_state = {
+					'page_summary': 'Processing tool call',
+					'evaluation_previous_goal': 'Executing action',
+					'memory': 'Using tool call',
+					'next_goal': f'Execute {tool_call_name}'
+				}
+				
+				# Create action from tool call
+				action = {tool_call_name: tool_call_args}
 
-		if parsed is None:
-			raise ValueError('Could not parse response.')
+				parsed = self.AgentOutput(
+					current_state=current_state,
+					action=[self.ActionModel(**action)]
+				)
+			else:
+				parsed = None
+		else:
+			parsed = response['parsed']
+
+		if not parsed:
+			try:
+				parsed_json = extract_json_from_model_output(response["raw"].content)
+				parsed = self.AgentOutput(**parsed_json)
+			except:
+				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
+				raise ValueError('Could not parse response.')
+
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
@@ -965,7 +1022,12 @@ class Agent(Generic[Context]):
 		planner_messages = convert_input_messages(planner_messages, self.planner_model_name)
 
 		# Get planner output
-		response = await self.settings.planner_llm.ainvoke(planner_messages)
+		try:
+			response = await self.settings.planner_llm.ainvoke(planner_messages)
+		except Exception as e:
+			logger.error(f'Failed to invoke planner: {str(e)}')
+			raise LLMException(401, 'LLM API call failed') from e
+		
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
 		if self.planner_model_name and ('deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name):
@@ -985,25 +1047,6 @@ class Agent(Generic[Context]):
 	def message_manager(self) -> MessageManager:
 		return self._message_manager
 
-	async def cleanup_httpx_clients(self):
-		"""Cleanup all httpx clients"""
-		import httpx
-		import gc
-
-		# Force garbage collection to make sure all clients are in memory
-		gc.collect()
-		
-		# Get all httpx clients
-		clients = [obj for obj in gc.get_objects() if isinstance(obj, httpx.AsyncClient)]
-		
-		# Close all clients
-		for client in clients:
-			if not client.is_closed:
-				try:
-					await client.aclose()
-				except Exception as e:
-					logger.debug(f"Error closing httpx client: {e}")
-
 	async def close(self):
 		"""Close all resources"""
 		try:
@@ -1012,9 +1055,6 @@ class Agent(Generic[Context]):
 				await self.browser_context.close()
 			if self.browser and not self.injected_browser:
 				await self.browser.close()
-			
-			# Then cleanup httpx clients
-			await self.cleanup_httpx_clients()
 			
 			# Force garbage collection
 			gc.collect()

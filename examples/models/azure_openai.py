@@ -6,6 +6,7 @@ Simple try of the agent.
 
 import os
 import sys
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,9 +16,14 @@ from langchain_openai import AzureChatOpenAI
 
 from browser_use import Agent
 
+load_dotenv()
+
 # Retrieve Azure-specific environment variables
-azure_openai_api_key = os.environ.get('AZURE_OPENAI_API_KEY')
-azure_openai_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT')
+azure_openai_api_key = os.getenv('AZURE_OPENAI_API_KEY')
+azure_openai_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
+
+if not azure_openai_api_key or not azure_openai_endpoint:
+    raise ValueError('AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT is not set')
 
 # Initialize the Azure OpenAI client
 llm = AzureChatOpenAI(
