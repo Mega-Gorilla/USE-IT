@@ -53,8 +53,10 @@ dev = [
 
 [tool.ruff]
 line-length = 130
-select = ["E", "F", "I"]
 fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [tool.ruff.format]
 quote-style = "single"
