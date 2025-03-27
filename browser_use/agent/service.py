@@ -80,7 +80,7 @@ def log_response(response: AgentOutput) -> None:
 
 Context = TypeVar('Context')
 
-AgentHookFunc = Callable
+AgentHookFunc = Callable[['Agent'], None]
 
 
 class Agent(Generic[Context]):
