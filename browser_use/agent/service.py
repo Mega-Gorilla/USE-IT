@@ -452,6 +452,10 @@ class Agent(Generic[Context]):
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 
+		if 'Browser closed' in error_msg:
+			logger.error('❌  Browser is closed or disconnected, unable to proceed')
+			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=False)]
+
 		if isinstance(error, (ValidationError, ValueError)):
 			logger.error(f'{prefix}{error_msg}')
 			if 'Max token limit reached' in error_msg:
