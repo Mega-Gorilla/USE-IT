@@ -551,7 +551,7 @@ class Agent(Generic[Context]):
 
 			except Exception as e:
 				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'Failed to invoke model')
+				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
 			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
@@ -561,7 +561,7 @@ class Agent(Generic[Context]):
 				parsed: AgentOutput | None = response['parsed']
 			except Exception as e:
 				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'Failed to invoke model')
+				raise LLMException(401, 'LLM API call failed') from e
 			
 			if not parsed:
 				try:
@@ -987,7 +987,12 @@ class Agent(Generic[Context]):
 		planner_messages = convert_input_messages(planner_messages, self.planner_model_name)
 
 		# Get planner output
-		response = await self.settings.planner_llm.ainvoke(planner_messages)
+		try:
+			response = await self.settings.planner_llm.ainvoke(planner_messages)
+		except Exception as e:
+			logger.error(f'Failed to invoke planner: {str(e)}')
+			raise LLMException(401, 'LLM API call failed') from e
+		
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
 		if self.planner_model_name and ('deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name):
