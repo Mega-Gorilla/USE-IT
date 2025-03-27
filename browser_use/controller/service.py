@@ -171,8 +171,17 @@ class Controller(Generic[Context]):
 			try:
 				element_node = await browser.get_locate_element_by_xpath(params.xpath)
 				if element_node:
-					await element_node.click()
-					msg = f'🖱️  Clicked on element with xpath {params.xpath}'
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception as e:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with text '{params.xpath}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.xpath}"'
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with xpath {params.xpath} - most likely the page changed')
@@ -184,16 +193,26 @@ class Controller(Generic[Context]):
 				element_node = await browser.get_locate_element_by_text(
 					text=params.text,
 					nth=params.nth,
+					element_type=params.element_type
 				)
 
 				if element_node:
-					await element_node.click()
-					msg = f'🖱️  Clicked on element with text {params.text}'
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception as e:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with text '{params.text}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.text}"'
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 				else:
 					return ActionResult(error=f"No element found for text '{params.text}'")
 			except Exception as e:
-				logger.warning(f"Element not clickable with text {params.text} - {e}")
+				logger.warning(f"Element not clickable with text '{params.text}' - {e}")
 				return ActionResult(error=str(e))
 
 		@self.registry.action(

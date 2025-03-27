@@ -1165,14 +1165,17 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
-	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0) -> Optional[ElementHandle]:
+	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
+		If `element_type` is provided, filters by tag name (e.g., 'button', 'span').
 		"""
 		current_frame = await self.get_current_page()
 		try:
-			elements = await current_frame.query_selector_all(f"text={text}")
+			# handle also specific element type or use any type.
+			selector = f"{element_type or '*'}:text(\"{text}\")"
+			elements = await current_frame.query_selector_all(selector)
 			# considering only visible elements
 			elements = [el for el in elements if await el.is_visible()]
 
