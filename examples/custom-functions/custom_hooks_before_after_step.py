@@ -113,7 +113,7 @@ gracefully handling circular references.
 # ! pip install -U prettyprinter
 
 from langchain_openai import ChatOpenAI
-from browser_use_recorder import Agent
+from browser_use import Agent
 from dotenv import load_dotenv
 from pyobjtojson import obj_to_json
 import asyncio
