@@ -183,11 +183,14 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 
-		# Check env setup
+		# LLM API connection setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
 		if not check_env_variables(llm_api_env_vars):
 			logger.error(f'Environment variables not set for {self.llm.__class__.__name__}')
 			raise ValueError('Environment variables not set')
+
+		# Start non-blocking LLM connection verification
+		self.llm._verified_api_keys = self._verify_llm_connection(self.llm)
 
 		# for models without tool calling, add available actions to context
 		self.available_actions = self.controller.registry.get_prompt_description()
@@ -589,7 +592,7 @@ class Agent(Generic[Context]):
 			try:
 				parsed_json = extract_json_from_model_output(response['raw'].content)
 				parsed = self.AgentOutput(**parsed_json)
-			except:
+			except Exception as e:
 				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
 				raise ValueError('Could not parse response.')
 
@@ -647,8 +650,7 @@ class Agent(Generic[Context]):
 		"""Execute the task with maximum number of steps"""
 
 		# Start non-blocking LLM connection verification
-		# asyncio.create_task(self._verify_llm_connection(self.llm))
-		# await self._verify_llm_connection(self.llm)
+		assert await self.llm._verified_api_keys, 'Failed to verify LLM API keys'
 
 		try:
 			self._log_agent_run()
@@ -981,35 +983,42 @@ class Agent(Generic[Context]):
 
 		return converted_actions
 
-	async def _verify_llm_connection(self, llm: BaseChatModel) -> None:
+	async def _verify_llm_connection(self, llm: BaseChatModel) -> bool:
 		"""
 		Verify that the LLM API keys are working properly by sending a simple test prompt
 		and checking that the response contains the expected answer.
-
-		Args:
-			llm: The LLM to test
-
-		Raises:
-			SystemExit: If the LLM connection test fails
 		"""
-		if getattr(llm, '_verified_keys_work', None):
+		if getattr(llm, '_verified_api_keys', None) is True:
 			# If the LLM API keys have already been verified during a previous run, skip the test
-			return
+			return True
 
+		test_prompt = 'What is the capital of France? Respond with a single word.'
+		test_answer = 'paris'
+		required_keys = REQUIRED_LLM_API_ENV_VARS.get(llm.__class__.__name__, ['OPENAI_API_KEY'])
 		try:
-			test_prompt = 'What is the capital of France? Respond with a single word.'
 			response = await llm.ainvoke([HumanMessage(content=test_prompt)])
 			response_text = str(response.content).lower()
 
-			if 'paris' in response_text:
-				llm._verified_keys_work = True
+			if test_answer in response_text:
+				logger.debug(
+					f'🧠  LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
+				)
+				llm._verified_api_keys = True
+				return True
 			else:
-				raise Exception('LLM failed to respond to a simple test question correctly')
+				logger.debug(
+					'❌  Got bad LLM response to basic sanity check question: %s  EXPECTING: %s  GOT: %s',
+					test_prompt,
+					test_answer,
+					response,
+				)
+				raise Exception('LLM responded to a simple test question incorrectly')
 		except Exception as e:
 			logger.error(
-				f'LLM {llm.__class__.__name__} connection test failed. Are your LLM API keys working and is your account funded? {e}'
+				f'\n\n❌  LLM {llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n'
 			)
-			raise SystemExit(f'LLM connection test failed: {e}') from e
+			raise Exception(f'LLM API connection test failed: {e}') from e
+		return False
 
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
