@@ -38,6 +38,7 @@ from browser_use.agent.views import (
 	AgentStepInfo,
 	StepMetadata,
 	ToolCallingMethod,
+	REQUIRED_LLM_API_ENV_VARS
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -55,7 +56,6 @@ from browser_use.telemetry.views import (
 	AgentStepTelemetryEvent,
 )
 from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
-from browser_use.constants import REQUIRED_ENV_VARIABLES
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ class Agent(Generic[Context]):
 		self._set_model_names()
 
 		# Check env setup
-		llm_api_env_vars = REQUIRED_ENV_VARIABLES[self.llm.__class__.__name__]
+		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
 		if not check_env_variables(llm_api_env_vars):
 			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
 			raise ValueError('Environment variables not set')
