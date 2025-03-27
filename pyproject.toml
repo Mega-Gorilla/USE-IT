@@ -27,6 +27,7 @@ dependencies = [
     "pyobjc>=11.0; platform_system == 'darwin'",
     "screeninfo>=0.8.1; platform_system != 'darwin'",
     "typing-extensions>=4.12.2",
+    "psutil>=7.0.0",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
