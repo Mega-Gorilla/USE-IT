@@ -2,9 +2,7 @@ import os
 import sys
 from pprint import pprint
 
-from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.context import (
-	BrowserContextConfig,
+from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
 )
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,7 +18,6 @@ browser = Browser(
 	config=BrowserConfig(
 		headless=False,
 		disable_security=True,
-		extra_browser_args=['--window-size=2000,2000'],
 	)
 )
 
@@ -30,8 +27,7 @@ async def main():
 		config=BrowserContextConfig(
 			trace_path='./tmp/result_processing',
 			no_viewport=False,
-			browser_window_width=1280,
-			browser_window_height=1000,
+			browser_window_size={'width': 1280, 'height': 1000},
 		)
 	) as browser_context:
 		agent = Agent(
