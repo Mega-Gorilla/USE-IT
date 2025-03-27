@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -17,10 +18,11 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
+from browser_use.exceptions import LLMException
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
@@ -36,6 +38,7 @@ from browser_use.agent.views import (
 	AgentStepInfo,
 	StepMetadata,
 	ToolCallingMethod,
+	REQUIRED_LLM_API_ENV_VARS
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -52,7 +55,7 @@ from browser_use.telemetry.views import (
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -180,6 +183,12 @@ class Agent(Generic[Context]):
 
 		# Model setup
 		self._set_model_names()
+
+		# Check env setup
+		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
+		if not check_env_variables(llm_api_env_vars):
+			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
+			raise ValueError('Environment variables not set')
 
 		# for models without tool calling, add available actions to context
 		self.available_actions = self.controller.registry.get_prompt_description()
@@ -519,7 +528,12 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			output = self.llm.invoke(input_messages)
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			try:
+				output = self.llm.invoke(input_messages)
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -531,9 +545,16 @@ class Agent(Generic[Context]):
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			parsed: AgentOutput | None = response['parsed']
+			try:
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+				parsed: AgentOutput | None = response['parsed']
+
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
+
 		else:
+			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 			
@@ -990,7 +1011,12 @@ class Agent(Generic[Context]):
 		planner_messages = convert_input_messages(planner_messages, self.planner_model_name)
 
 		# Get planner output
-		response = await self.settings.planner_llm.ainvoke(planner_messages)
+		try:
+			response = await self.settings.planner_llm.ainvoke(planner_messages)
+		except Exception as e:
+			logger.error(f'Failed to invoke planner: {str(e)}')
+			raise LLMException(401, 'LLM API call failed') from e
+		
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
 		if self.planner_model_name and ('deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name):
