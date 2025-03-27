@@ -159,8 +159,17 @@ class Controller(Generic[Context]):
 			try:
 				element_node = await browser.get_locate_element_by_css_selector(params.css_selector)
 				if element_node:
-					await element_node.click()
-					msg = f'🖱️  Clicked on element with selector {params.css_selector}'
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception as e:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with css selector '{params.css_selector}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.css_selector}"'
 					return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with selector {params.css_selector} - most likely the page changed')
@@ -179,7 +188,7 @@ class Controller(Generic[Context]):
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
 						except Exception as e:
-							logger.warning(f"Element not clickable with text '{params.xpath}' - {e}")
+							logger.warning(f"Element not clickable with xpath '{params.xpath}' - {e}")
 							return ActionResult(error=str(e))
 					msg = f'🖱️  Clicked on element with text "{params.xpath}"'
 					return ActionResult(extracted_content=msg, include_in_memory=True)
