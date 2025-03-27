@@ -1,7 +1,7 @@
 import datetime
 import importlib.resources
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -139,9 +139,8 @@ Interactive elements from top layer of the current page inside the viewport:
 
 
 class PlannerPrompt(SystemPrompt):
-	def get_system_message(self) -> SystemMessage:
-		return SystemMessage(
-			content="""You are a planning agent that helps break down tasks into smaller steps and reason about the current state.
+	def get_system_message(self, is_planner_reasoning) -> Union[SystemMessage, HumanMessage]:
+		planner_prompt_text = """You are a planning agent that helps break down tasks into smaller steps and reason about the current state.
 Your role is to:
 1. Analyze the current state and history
 2. Evaluate progress towards the ultimate goal
@@ -162,4 +161,12 @@ Your output format should be always a JSON object with the following fields:
 Ignore the other AI messages output structures.
 
 Keep your responses concise and focused on actionable insights."""
-		)
+
+		if is_planner_reasoning:
+			return HumanMessage(
+				content=planner_prompt_text
+			)
+		else:
+			return SystemMessage(
+				content=planner_prompt_text
+			)

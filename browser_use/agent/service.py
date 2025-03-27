@@ -134,6 +134,7 @@ class Agent(Generic[Context]):
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		planner_llm: Optional[BaseChatModel] = None,
 		planner_interval: int = 1,  # Run planner every N steps
+		is_planner_reasoning: bool = False,
 		# Inject state
 		injected_agent_state: Optional[AgentState] = None,
 		#
@@ -168,6 +169,7 @@ class Agent(Generic[Context]):
 			page_extraction_llm=page_extraction_llm,
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
+			is_planner_reasoning=is_planner_reasoning,
 		)
 
 		# Initialize state
@@ -968,7 +970,7 @@ class Agent(Generic[Context]):
 
 		# Create planner message history using full message history
 		planner_messages = [
-			PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(),
+			PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(self.settings.is_planner_reasoning),
 			*self._message_manager.get_messages()[1:],  # Use full message history except the first
 		]
 
