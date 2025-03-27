@@ -65,6 +65,9 @@ from browser_use.utils import check_env_variables, time_execution_async, time_ex
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# Global flag to prevent duplicate exit messages
+_exiting = False
+
 
 def log_response(response: AgentOutput) -> None:
 	"""Utility function to log the model's response."""
