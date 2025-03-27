@@ -7,7 +7,7 @@ import gc
 import logging
 import os
 import subprocess
-from typing import Any, Literal
+from typing import Literal
 
 import requests
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -15,7 +15,7 @@ from playwright.async_api import (
 	Playwright,
 	async_playwright,
 )
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
 from browser_use.browser.chrome import (
@@ -79,36 +79,16 @@ class BrowserConfig(BaseModel):
 	cdp_url: str | None = None
 
 	browser_class: Literal['chromium', 'firefox', 'webkit'] = 'chromium'
-	browser_binary_path: str | None = None
-	browser_instance_path: str | None = Field(None, deprecated=True)  # Old name for browser_binary_path
-	chrome_instance_path: str | None = Field(None, deprecated=True)  # Old name for browser_binary_path
+	browser_binary_path: str | None = Field(default=None, alias=AliasChoices('browser_instance_path', 'chrome_instance_path'))
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False
 	disable_security: bool = False
 	deterministic_rendering: bool = False
-	keep_alive: bool = False  # used to be called _force_keep_browser_alive
+	keep_alive: bool = Field(default=False, alias='_force_keep_browser_alive')  # used to be called _force_keep_browser_alive
 
 	proxy: ProxySettings | None = None
 	new_context_config: BrowserContextConfig = Field(default_factory=BrowserContextConfig)
-
-	@field_validator('browser_binary_path', mode='before')
-	def handle_browser_instance_path(cls, v: Any, info: Any) -> Any:
-		# If browser_binary_path is None but browser_instance_path is set, use that value
-		if v is None and ('browser_instance_path' in info.data or 'chrome_instance_path' in info.data):
-			return info.data.get('browser_instance_path', info.data.get('chrome_instance_path'))
-
-		assert info.data.get('browser_class') == 'chromium', (
-			'browser_binary_path only supports chromium-based browsers (make sure browser_class=chromium)'
-		)
-		return v
-
-	@field_validator('keep_alive', mode='before')
-	def handle_force_keep_browser_alive(cls, v: Any, info: Any) -> Any:
-		# If keep_alive is False but _force_keep_browser_alive is set, use that value
-		if v is False and '_force_keep_browser_alive' in info.data:
-			return info.data.get('_force_keep_browser_alive')
-		return v
 
 
 # @singleton: TODO - think about id singleton makes sense here

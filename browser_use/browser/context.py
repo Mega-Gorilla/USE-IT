@@ -152,7 +152,7 @@ class BrowserContextConfig(BaseModel):
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
 
-	keep_alive: bool = False  # used to be called _force_keep_context_alive
+	keep_alive: bool = Field(default=False, alias='_force_keep_context_alive')  # used to be called _force_keep_context_alive
 	is_mobile: bool | None = None
 	has_touch: bool | None = None
 	geolocation: dict | None = None
