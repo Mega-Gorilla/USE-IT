@@ -56,6 +56,11 @@ Add your API keys for the provider you want to use to your `.env` file.
 
 ```bash
 OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+AZURE_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+GEMINI_API_KEY=
+DEEPSEEK_API_KEY=
 ```
 
 For other settings, models, and more, check out the [documentation 📕](https://docs.browser-use.com).
@@ -132,7 +137,7 @@ Tell your computer what to do, and it gets it done.
 ### Rerunning tasks
 
 - [ ] LLM as fallback
-- [ ] Make it easy to define workfows templates where LLM fills in the details
+- [ ] Make it easy to define workfow templates where LLM fills in the details
 - [ ] Return playwright script from the agent
 
 ### Datasets

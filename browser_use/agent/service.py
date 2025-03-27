@@ -556,23 +556,47 @@ class Agent(Generic[Context]):
 		else:
 			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			try:
-				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-				parsed: AgentOutput | None = response['parsed']
-			except Exception as e:
-				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'LLM API call failed') from e
+			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 			
-			if not parsed:
-				try:
-					parsed_json = extract_json_from_model_output(response["raw"].content)
-					parsed = self.AgentOutput(**parsed_json)
-				except:
-					logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
-					raise ValueError('Could not parse response.')
+		# Handle tool call responses
+		if response.get('parsing_error') and 'raw' in response:
+			raw_msg = response['raw']
+			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
+				# Convert tool calls to AgentOutput format
+    
+				tool_call = raw_msg.tool_calls[0]  # Take first tool call
+    
+				# Create current state
+				tool_call_name = tool_call['name']
+				tool_call_args = tool_call['args']
+				
+				current_state = {
+					'page_summary': 'Processing tool call',
+					'evaluation_previous_goal': 'Executing action',
+					'memory': 'Using tool call',
+					'next_goal': f'Execute {tool_call_name}'
+				}
+				
+				# Create action from tool call
+				action = {tool_call_name: tool_call_args}
 
-		if parsed is None:
-			raise ValueError('Could not parse response.')
+				parsed = self.AgentOutput(
+					current_state=current_state,
+					action=[self.ActionModel(**action)]
+				)
+			else:
+				parsed = None
+		else:
+			parsed = response['parsed']
+
+		if not parsed:
+			try:
+				parsed_json = extract_json_from_model_output(response["raw"].content)
+				parsed = self.AgentOutput(**parsed_json)
+			except:
+				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
+				raise ValueError('Could not parse response.')
+
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
@@ -1012,25 +1036,6 @@ class Agent(Generic[Context]):
 	def message_manager(self) -> MessageManager:
 		return self._message_manager
 
-	async def cleanup_httpx_clients(self):
-		"""Cleanup all httpx clients"""
-		import httpx
-		import gc
-
-		# Force garbage collection to make sure all clients are in memory
-		gc.collect()
-		
-		# Get all httpx clients
-		clients = [obj for obj in gc.get_objects() if isinstance(obj, httpx.AsyncClient)]
-		
-		# Close all clients
-		for client in clients:
-			if not client.is_closed:
-				try:
-					await client.aclose()
-				except Exception as e:
-					logger.debug(f"Error closing httpx client: {e}")
-
 	async def close(self):
 		"""Close all resources"""
 		try:
@@ -1039,9 +1044,6 @@ class Agent(Generic[Context]):
 				await self.browser_context.close()
 			if self.browser and not self.injected_browser:
 				await self.browser.close()
-			
-			# Then cleanup httpx clients
-			await self.cleanup_httpx_clients()
 			
 			# Force garbage collection
 			gc.collect()
