@@ -679,14 +679,14 @@ class Agent(Generic[Context]):
 					if self.state.stopped:  # Allow stopping while paused
 						break
 
-				if before_step_func is not None:
-					await before_step_func(self)
+				if on_step_start is not None:
+					await on_step_start(self)
 
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await self.step(step_info)
 
-				if after_step_func is not None:
-					await after_step_func(self)
+				if on_step_end is not None:
+					await on_step_end(self)
 
 				if self.state.history.is_done():
 					if self.settings.validate_output and step < max_steps - 1:
