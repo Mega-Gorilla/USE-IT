@@ -80,6 +80,8 @@ def log_response(response: AgentOutput) -> None:
 
 Context = TypeVar('Context')
 
+AgentHookFunc = Callable
+
 
 class Agent(Generic[Context]):
 	@time_execution_sync('--init (agent)')
