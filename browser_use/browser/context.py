@@ -1235,7 +1235,7 @@ class BrowserContext:
 			disabled = await disabled_handle.json_value() if disabled_handle else False
 
 			if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
-				await element_handle.evaluate('el => el.textContent = ""')
+				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
 				await element_handle.type(text, delay=5)
 			else:
 				await element_handle.fill(text)
