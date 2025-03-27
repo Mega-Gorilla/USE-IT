@@ -10,6 +10,7 @@ import subprocess
 from typing import Literal
 
 import requests
+from dotenv import load_dotenv
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import (
 	Playwright,
@@ -17,6 +18,8 @@ from playwright.async_api import (
 )
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
+
+load_dotenv()
 
 from browser_use.browser.chrome import (
 	CHROME_ARGS,
@@ -31,8 +34,7 @@ from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
 
-
-IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower() == 'true'
+IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
 
 
 class ProxySettings(TypedDict, total=False):
