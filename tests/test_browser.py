@@ -10,7 +10,7 @@ from playwright._impl._api_structures import ProxySettings
 async def test_standard_browser_launch(monkeypatch):
     """
     Test that the standard browser is launched correctly:
-    When no remote (cdp or wss) or chrome instance is provided, the Browser class uses _setup_standard_browser.
+    When no remote (cdp or wss) or chrome instance is provided, the Browser class uses _setup_builtin_browser.
     This test monkeypatches async_playwright to return dummy objects, and asserts that get_playwright_browser returns the expected DummyBrowser.
     """
     class DummyBrowser:
@@ -30,7 +30,7 @@ async def test_standard_browser_launch(monkeypatch):
     config = BrowserConfig(headless=True, disable_security=False, extra_browser_args=["--test"])
     browser_obj = Browser(config=config)
     result_browser = await browser_obj.get_playwright_browser()
-    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_standard_browser"
+    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_builtin_browser"
     await browser_obj.close()
 @pytest.mark.asyncio
 async def test_cdp_browser_launch(monkeypatch):
@@ -88,7 +88,7 @@ async def test_wss_browser_launch(monkeypatch):
 async def test_chrome_instance_browser_launch(monkeypatch):
     """
     Test that when a chrome instance path is provided the Browser class uses 
-    _setup_browser_with_instance branch and returns the expected DummyBrowser object
+    _setup_user_provided_browser branch and returns the expected DummyBrowser object
     by reusing an existing Chrome instance.
     """
     # Dummy response for requests.get when checking chrome debugging endpoint.
@@ -114,19 +114,19 @@ async def test_chrome_instance_browser_launch(monkeypatch):
         async def start(self):
             return DummyPlaywright()
     monkeypatch.setattr("browser_use.browser.browser.async_playwright", lambda: DummyAsyncPlaywrightContext())
-    config = BrowserConfig(browser_instance_path="dummy/chrome", extra_browser_args=["--dummy-arg"])
+    config = BrowserConfig(browser_binary_path="dummy/chrome", extra_browser_args=["--dummy-arg"])
     browser_obj = Browser(config=config)
     result_browser = await browser_obj.get_playwright_browser()
-    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_browser_with_instance"
+    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_user_provided_browser"
     await browser_obj.close()
 @pytest.mark.asyncio
 async def test_standard_browser_disable_security_args(monkeypatch):
     """
     Test that the standard browser launch includes disable-security arguments when disable_security is True.
-    This verifies that _setup_standard_browser correctly appends the security disabling arguments along with
+    This verifies that _setup_builtin_browser correctly appends the security disabling arguments along with
     the base arguments and any extra arguments provided.
     """
-    # These are the base arguments defined in _setup_standard_browser.
+    # These are the base arguments defined in _setup_builtin_browser.
     base_args = [
         '--no-sandbox',
         '--disable-blink-features=AutomationControlled',
@@ -172,7 +172,7 @@ async def test_standard_browser_disable_security_args(monkeypatch):
     config = BrowserConfig(headless=True, disable_security=True, extra_browser_args=extra_args)
     browser_obj = Browser(config=config)
     result_browser = await browser_obj.get_playwright_browser()
-    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_standard_browser with disable_security active"
+    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_builtin_browser with disable_security active"
     await browser_obj.close()
 @pytest.mark.asyncio
 async def test_new_context_creation():
@@ -192,7 +192,7 @@ async def test_new_context_creation():
 async def test_chrome_instance_browser_launch_failure(monkeypatch):
     """
     Test that when a Chrome instance cannot be started or connected to,
-    the Browser._setup_browser_with_instance branch eventually raises a RuntimeError.
+    the Browser._setup_user_provided_browser branch eventually raises a RuntimeError.
     We simulate failure by:
       - Forcing requests.get to always raise a ConnectionError (so no existing instance is found).
       - Monkeypatching subprocess.Popen to do nothing.
@@ -218,7 +218,7 @@ async def test_chrome_instance_browser_launch_failure(monkeypatch):
         async def start(self):
             return DummyPlaywright()
     monkeypatch.setattr("browser_use.browser.browser.async_playwright", lambda: DummyAsyncPlaywrightContext())
-    config = BrowserConfig(browser_instance_path="dummy/chrome", extra_browser_args=["--dummy-arg"])
+    config = BrowserConfig(browser_binary_path="dummy/chrome", extra_browser_args=["--dummy-arg"])
     browser_obj = Browser(config=config)
     with pytest.raises(RuntimeError, match="To start chrome in Debug mode"):
         await browser_obj.get_playwright_browser()
@@ -273,7 +273,7 @@ async def test_close_error_handling(monkeypatch):
 @pytest.mark.asyncio
 async def test_standard_browser_launch_with_proxy(monkeypatch):
     """
-    Test that when a proxy is provided in the BrowserConfig, the _setup_standard_browser method
+    Test that when a proxy is provided in the BrowserConfig, the _setup_builtin_browser method
     correctly passes the proxy parameter to the playwright.chromium.launch method.
     This test sets up a dummy async_playwright context and verifies that the dummy proxy is received.
     """
@@ -302,5 +302,5 @@ async def test_standard_browser_launch_with_proxy(monkeypatch):
     browser_obj = Browser(config=config)
     # Call get_playwright_browser and verify that the returned browser is as expected.
     result_browser = await browser_obj.get_playwright_browser()
-    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_standard_browser with proxy provided"
+    assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_builtin_browser with proxy provided"
     await browser_obj.close()
