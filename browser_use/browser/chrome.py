@@ -64,8 +64,8 @@ CHROME_DISABLE_SECURITY_ARGS = [
 CHROME_ARGS = [
 	# Profile data dir setup
 	# chrome://profile-internals
-	f'--user-data-dir={CHROME_PROFILE_PATH}',
-	f'--profile-directory={CHROME_PROFILE_USER}',
+	# f'--user-data-dir={CHROME_PROFILE_PATH}',     # managed by playwright arg instead
+	# f'--profile-directory={CHROME_PROFILE_USER}',
 	'--password-store=basic',  # use mock keychain instead of OS-provided keychain (we manage auth.json instead)
 	'--use-mock-keychain',
 	'--disable-cookie-encryption',  # we need to be able to write unencrypted cookies to save/load auth.json
