@@ -183,7 +183,6 @@ class BrowserContext:
 		state: Optional[BrowserContextState] = None,
 	):
 		self.context_id = str(uuid.uuid4())
-		logger.debug(f'🌎  Initializing new browser context with id: {self.context_id}')
 
 		self.config = config or BrowserContextConfig(**browser.config)
 		self.browser = browser
@@ -257,7 +256,7 @@ class BrowserContext:
 	@time_execution_async('--initialize_session')
 	async def _initialize_session(self):
 		"""Initialize the browser session"""
-		logger.debug('🌎  Initializing browser context')
+		logger.debug(f'🌎  Initializing new browser context with id: {self.context_id}')
 
 		playwright_browser = await self.browser.get_playwright_browser()
 		context = await self._create_context(playwright_browser)
