@@ -51,30 +51,30 @@ class BrowserConfig(BaseModel):
 	Configuration for the Browser.
 
 	Default values:
-					headless: False
-									Whether to run browser in headless mode (not recommended)
+		headless: False
+			Whether to run browser in headless mode (not recommended)
 
-					disable_security: False
-									Disable browser security features (required for cross-origin iframe support)
+		disable_security: True
+			Disable browser security features (required for cross-origin iframe support)
 
-					extra_browser_args: []
-									Extra arguments to pass to the browser
+		extra_browser_args: []
+			Extra arguments to pass to the browser
 
-					wss_url: None
-									Connect to a browser instance via WebSocket
+		wss_url: None
+			Connect to a browser instance via WebSocket
 
-					cdp_url: None
-									Connect to a browser instance via CDP
+		cdp_url: None
+			Connect to a browser instance via CDP
 
-					browser_binary_path: None
-									Path to a Browser instance to use to connect to your normal browser
-									e.g. '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome'
+		browser_binary_path: None
+			Path to a Browser instance to use to connect to your normal browser
+			e.g. '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome'
 
-					keep_alive: False
-						Keep the browser alive after the agent has finished running
+		keep_alive: False
+			Keep the browser alive after the agent has finished running
 
-					deterministic_rendering: False
-						Enable deterministic rendering (makes GPU/font rendering consistent across different OS's and docker)
+		deterministic_rendering: False
+			Enable deterministic rendering (makes GPU/font rendering consistent across different OS's and docker)
 	"""
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
@@ -87,7 +87,7 @@ class BrowserConfig(BaseModel):
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False
-	disable_security: bool = False
+	disable_security: bool = True
 	deterministic_rendering: bool = False
 	keep_alive: bool = Field(default=False, alias='_force_keep_browser_alive')  # used to be called _force_keep_browser_alive
 

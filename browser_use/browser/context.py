@@ -56,15 +56,15 @@ class BrowserContextConfig(BaseModel):
 	    cookies_file: None
 	        Path to cookies file for persistence
 
-	        disable_security: True
-	                Disable browser security features
+		disable_security: True
+			Disable browser security features
 
 	    minimum_wait_page_load_time: 0.5
 	        Minimum time to wait before getting page state for LLM input
 
-	        wait_for_network_idle_page_load_time: 1.0
-	                Time to wait for network requests to finish before getting page state.
-	                Lower values may result in incomplete page loads.
+		wait_for_network_idle_page_load_time: 1.0
+			Time to wait for network requests to finish before getting page state.
+			Lower values may result in incomplete page loads.
 
 	    maximum_wait_page_load_time: 5.0
 	        Maximum time to wait for page load before proceeding anyway
@@ -72,10 +72,7 @@ class BrowserContextConfig(BaseModel):
 	    wait_between_actions: 1.0
 	        Time to wait between multiple per step actions
 
-	    browser_window_size: {
-	            'width': 1280,
-	            'height': 1100,
-	        }
+	    browser_window_size: {'width': 1280, 'height': 1100}
 	        Default browser window size
 
 	    no_viewport: False
@@ -135,7 +132,7 @@ class BrowserContextConfig(BaseModel):
 
 	disable_security: bool = True
 
-	browser_window_size: BrowserContextWindowSize | None = Field(default_factory=lambda: {'width': 1280, 'height': 1100})
+	browser_window_size: BrowserContextWindowSize = Field(default_factory=lambda: {'width': 1280, 'height': 1100})
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
