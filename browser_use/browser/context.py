@@ -183,7 +183,7 @@ class BrowserContext:
 		state: Optional[BrowserContextState] = None,
 	):
 		self.context_id = str(uuid.uuid4())
-		logger.debug(f'Initializing new browser context with id: {self.context_id}')
+		logger.debug(f'🌎  Initializing new browser context with id: {self.context_id}')
 
 		self.config = config or BrowserContextConfig(**browser.config)
 		self.browser = browser
@@ -257,7 +257,7 @@ class BrowserContext:
 	@time_execution_async('--initialize_session')
 	async def _initialize_session(self):
 		"""Initialize the browser session"""
-		logger.debug('Initializing browser context')
+		logger.debug('🌎  Initializing browser context')
 
 		playwright_browser = await self.browser.get_playwright_browser()
 		context = await self._create_context(playwright_browser)
@@ -290,15 +290,15 @@ class BrowserContext:
 			if (
 				pages
 				and pages[0].url
-				and not pages[0].url.startswith('chrome://')
-				and not pages[0].url.startswith('chrome-extension://')
+				and not pages[0].url.startswith('chrome://')  # skip chrome internal pages e.g. settings, history, etc
+				and not pages[0].url.startswith('chrome-extension://')  # skip hidden extension background pages
 			):
 				active_page = pages[0]
-				logger.debug('Using existing page: %s', active_page.url)
+				logger.debug('🔍  Using existing page: %s', active_page.url)
 			else:
 				active_page = await context.new_page()
 				await active_page.goto('about:blank')
-				logger.debug('Created new page: %s', active_page.url)
+				logger.debug('🆕  Created new page: %s', active_page.url)
 
 			# Get target ID for the active page
 			if self.browser.config.cdp_url:
@@ -309,7 +309,7 @@ class BrowserContext:
 						break
 
 		# Bring page to front
-		logger.debug('Bringing tab to front: %s', active_page)
+		logger.debug('🫨  Bringing tab to front: %s', active_page)
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
@@ -320,7 +320,7 @@ class BrowserContext:
 			if self.browser.config.cdp_url:
 				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
-			logger.debug(f'New page opened: {page.url}')
+			logger.debug(f'📑  New page opened: {page.url}')
 			if self.session is not None:
 				self.state.target_id = None
 
@@ -375,7 +375,7 @@ class BrowserContext:
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
 			with open(self.config.cookies_file, 'r') as f:
 				cookies = json.load(f)
-				logger.info(f'Loaded {len(cookies)} cookies from {self.config.cookies_file}')
+				logger.info(f'🍪  Loaded {len(cookies)} cookies from {self.config.cookies_file}')
 				await context.add_cookies(cookies)
 
 		# Expose anti-detection scripts
@@ -584,7 +584,7 @@ class BrowserContext:
 			page.remove_listener('request', on_request)
 			page.remove_listener('response', on_response)
 
-		logger.debug(f'Network stabilized for {self.config.wait_for_network_idle_page_load_time} seconds')
+		logger.debug(f'⚖️  Network stabilized for {self.config.wait_for_network_idle_page_load_time} seconds')
 
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
@@ -605,7 +605,7 @@ class BrowserContext:
 		except URLNotAllowedError as e:
 			raise e
 		except Exception:
-			logger.warning('Page load failed, continuing...')
+			logger.warning('⚠️  Page load failed, continuing...')
 			pass
 
 		# Calculate remaining time to meet minimum WAIT_TIME
@@ -643,17 +643,17 @@ class BrowserContext:
 				for allowed_domain in self.config.allowed_domains
 			)
 		except Exception as e:
-			logger.error(f'Error checking URL allowlist: {str(e)}')
+			logger.error(f'⛔️  Error checking URL allowlist: {str(e)}')
 			return False
 
 	async def _check_and_handle_navigation(self, page: Page) -> None:
 		"""Check if current page URL is allowed and handle if not."""
 		if not self._is_url_allowed(page.url):
-			logger.warning(f'Navigation to non-allowed URL detected: {page.url}')
+			logger.warning(f'⛔️  Navigation to non-allowed URL detected: {page.url}')
 			try:
 				await self.go_back()
 			except Exception as e:
-				logger.error(f'Failed to go back after detecting non-allowed URL: {str(e)}')
+				logger.error(f'⛔️  Failed to go back after detecting non-allowed URL: {str(e)}')
 			raise URLNotAllowedError(f'Navigation to non-allowed URL: {page.url}')
 
 	async def navigate_to(self, url: str):
@@ -680,7 +680,7 @@ class BrowserContext:
 			# await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
-			logger.debug(f'During go_back: {e}')
+			logger.debug(f'⏮️  Error during go_back: {e}')
 
 	async def go_forward(self):
 		"""Navigate forward in history"""
@@ -689,7 +689,7 @@ class BrowserContext:
 			await page.go_forward(timeout=10, wait_until='domcontentloaded')
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
-			logger.debug(f'During go_forward: {e}')
+			logger.debug(f'⏭️  Error during go_forward: {e}')
 
 	async def close_current_tab(self):
 		"""Close the current tab"""
@@ -807,13 +807,13 @@ class BrowserContext:
 			# Test if page is still accessible
 			await page.evaluate('1')
 		except Exception as e:
-			logger.debug(f'Current page is no longer accessible: {str(e)}')
+			logger.debug(f'👋  Current page is no longer accessible: {str(e)}')
 			# Get all available pages
 			pages = session.context.pages
 			if pages:
 				self.state.target_id = None
 				page = await self._get_current_page(session)
-				logger.debug(f'Switched to page: {await page.title()}')
+				logger.debug(f'🔄  Switched to page: {await page.title()}')
 			else:
 				raise BrowserError('Browser closed: no valid pages available')
 
@@ -864,7 +864,7 @@ class BrowserContext:
 
 			return self.current_state
 		except Exception as e:
-			logger.error(f'Failed to update state: {str(e)}')
+			logger.error(f'❌  Failed to update state: {str(e)}')
 			# Return last known good state if available
 			if hasattr(self, 'current_state'):
 				return self.current_state
@@ -920,7 +920,7 @@ class BrowserContext:
                 """
 			)
 		except Exception as e:
-			logger.debug(f'Failed to remove highlights (this is usually ok): {str(e)}')
+			logger.debug(f'⚠  Failed to remove highlights (this is usually ok): {str(e)}')
 			# Don't raise the error since this is not critical functionality
 			pass
 
@@ -1132,7 +1132,7 @@ class BrowserContext:
 					return element_handle
 				return None
 		except Exception as e:
-			logger.error(f'Failed to locate element: {str(e)}')
+			logger.error(f'❌  Failed to locate element: {str(e)}')
 			return None
 
 	@time_execution_async('--get_locate_element_by_xpath')
@@ -1150,7 +1150,7 @@ class BrowserContext:
 				return element_handle
 			return None
 		except Exception as e:
-			logger.error(f'Failed to locate element by XPath {xpath}: {str(e)}')
+			logger.error(f'❌  Failed to locate element by XPath {xpath}: {str(e)}')
 			return None
 
 	@time_execution_async('--get_locate_element_by_css_selector')
@@ -1168,7 +1168,7 @@ class BrowserContext:
 				return element_handle
 			return None
 		except Exception as e:
-			logger.error(f'Failed to locate element by CSS selector {css_selector}: {str(e)}')
+			logger.error(f'❌  Failed to locate element by CSS selector {css_selector}: {str(e)}')
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
@@ -1199,7 +1199,7 @@ class BrowserContext:
 			await element_handle.scroll_into_view_if_needed()
 			return element_handle
 		except Exception as e:
-			logger.error(f"Failed to locate element by text '{text}': {str(e)}")
+			logger.error(f"❌  Failed to locate element by text '{text}': {str(e)}")
 			return None
 
 	@time_execution_async('--input_text_element_node')
@@ -1242,7 +1242,7 @@ class BrowserContext:
 				await element_handle.fill(text)
 
 		except Exception as e:
-			logger.debug(f'Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+			logger.debug(f'❌  Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	@time_execution_async('--click_element_node')
@@ -1276,7 +1276,7 @@ class BrowserContext:
 						unique_filename = await self._get_unique_filename(self.config.save_downloads_path, suggested_filename)
 						download_path = os.path.join(self.config.save_downloads_path, unique_filename)
 						await download.save_as(download_path)
-						logger.debug(f'Download triggered. Saved file to: {download_path}')
+						logger.debug(f'⬇️  Download triggered. Saved file to: {download_path}')
 						return download_path
 					except TimeoutError:
 						# If no download is triggered, treat as normal click
@@ -1318,7 +1318,7 @@ class BrowserContext:
 			except asyncio.TimeoutError:
 				# page.title() can hang forever on tabs that are crashed/dissapeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
-				logger.debug('Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
+				logger.debug('⚠  Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
 				tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 			tabs_info.append(tab_info)
 
@@ -1388,7 +1388,9 @@ class BrowserContext:
 							return page
 
 		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
-		non_extension_pages = [page for page in pages if not page.url.startswith('chrome-extension://')]
+		non_extension_pages = [
+			page for page in pages if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://')
+		]
 		if non_extension_pages:
 			return non_extension_pages[-1]
 
@@ -1422,7 +1424,7 @@ class BrowserContext:
 		if self.session and self.session.context and self.config.cookies_file:
 			try:
 				cookies = await self.session.context.cookies()
-				logger.debug(f'Saving {len(cookies)} cookies to {self.config.cookies_file}')
+				logger.debug(f'🍪  Saving {len(cookies)} cookies to {self.config.cookies_file}')
 
 				# Check if the path is a directory and create it if necessary
 				dirname = os.path.dirname(self.config.cookies_file)
@@ -1432,7 +1434,7 @@ class BrowserContext:
 				with open(self.config.cookies_file, 'w') as f:
 					json.dump(cookies, f)
 			except Exception as e:
-				logger.warning(f'Failed to save cookies: {str(e)}')
+				logger.warning(f'❌  Failed to save cookies: {str(e)}')
 
 	async def is_file_uploader(self, element_node: DOMElementNode, max_depth: int = 3, current_depth: int = 0) -> bool:
 		"""Check if element or its children are file uploaders"""

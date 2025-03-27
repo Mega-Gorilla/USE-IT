@@ -125,7 +125,7 @@ class Browser:
 		self,
 		config: BrowserConfig = BrowserConfig(),
 	):
-		logger.debug('Initializing new browser')
+		logger.debug('🌎  Initializing new browser')
 		self.config = config
 		self.playwright: Playwright | None = None
 		self.playwright_browser: PlaywrightBrowser | None = None
@@ -160,7 +160,7 @@ class Browser:
 			)
 		if not self.config.cdp_url:
 			raise ValueError('CDP URL is required')
-		logger.info(f'Connecting to remote browser via CDP {self.config.cdp_url}')
+		logger.info(f'🔌  Connecting to remote browser via CDP {self.config.cdp_url}')
 		browser_class = getattr(playwright, self.config.browser_class)
 		browser = await browser_class.connect_over_cdp(self.config.cdp_url)
 		return browser
@@ -169,7 +169,7 @@ class Browser:
 		"""Sets up and returns a Playwright Browser instance with anti-detection measures."""
 		if not self.config.wss_url:
 			raise ValueError('WSS URL is required')
-		logger.info(f'Connecting to remote browser via WSS {self.config.wss_url}')
+		logger.info(f'🔌  Connecting to remote browser via WSS {self.config.wss_url}')
 		browser_class = getattr(playwright, self.config.browser_class)
 		browser = await browser_class.connect(self.config.wss_url)
 		return browser
@@ -195,7 +195,7 @@ class Browser:
 				)
 				return browser
 		except requests.ConnectionError:
-			logger.debug('No existing Chrome instance found, starting a new one')
+			logger.debug('🌎  No existing Chrome instance found, starting a new one')
 
 		# Start a new Chrome instance
 		chrome_launch_cmd = [
@@ -234,9 +234,9 @@ class Browser:
 			)
 			return browser
 		except Exception as e:
-			logger.error(f'Failed to start a new Chrome instance.: {str(e)}')
+			logger.error(f'❌  Failed to start a new Chrome instance: {str(e)}')
 			raise RuntimeError(
-				' To start chrome in Debug mode, you need to close all existing Chrome instances and try again otherwise we can not connect to the instance.'
+				'To start chrome in Debug mode, you need to close all existing Chrome instances and try again otherwise we can not connect to the instance.'
 			)
 
 	async def _setup_builtin_browser(self, playwright: Playwright) -> PlaywrightBrowser:
