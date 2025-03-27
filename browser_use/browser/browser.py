@@ -9,6 +9,7 @@ import os
 import subprocess
 from typing import Literal
 
+import psutil
 import requests
 from dotenv import load_dotenv
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -193,10 +194,13 @@ class Browser:
 				*self.config.extra_browser_args,
 			},
 		]
-		subprocess.Popen(
-			chrome_launch_cmd,
-			stdout=subprocess.DEVNULL,
-			stderr=subprocess.DEVNULL,
+		self._chrome_subprocess = psutil.Process(
+			subprocess.Popen(
+				chrome_launch_cmd,
+				stdout=subprocess.DEVNULL,
+				stderr=subprocess.DEVNULL,
+				shell=False,
+			).pid
 		)
 
 		# Attempt to connect again after starting a new instance
@@ -300,6 +304,15 @@ class Browser:
 			if self.playwright:
 				await self.playwright.stop()
 				del self.playwright
+			if chrome_proc := getattr(self, '_chrome_subprocess', None):
+				try:
+					# always kill all children processes, otherwise chrome leaves a bunch of zombie processes
+					for proc in chrome_proc.children(recursive=True):
+						proc.kill()
+					chrome_proc.kill()
+				except Exception as e:
+					logger.debug(f'Failed to terminate chrome subprocess: {e}')
+
 			# Then cleanup httpx clients
 			await self.cleanup_httpx_clients()
 		except Exception as e:
@@ -308,6 +321,7 @@ class Browser:
 		finally:
 			self.playwright_browser = None
 			self.playwright = None
+			self._chrome_subprocess = None
 			gc.collect()
 
 	def __del__(self):
