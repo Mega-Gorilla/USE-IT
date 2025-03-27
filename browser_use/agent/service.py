@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import gc
+import inspect
 import json
 import logging
-import re
-import time
 import os
+import re
+import signal
+import sys
+import time
+
+# Global flag to prevent duplicate exit messages
+_exiting = False
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -18,16 +23,16 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
+
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
-from browser_use.exceptions import LLMException
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
+	REQUIRED_LLM_API_ENV_VARS,
 	ActionResult,
 	AgentError,
 	AgentHistory,
@@ -38,7 +43,6 @@ from browser_use.agent.views import (
 	AgentStepInfo,
 	StepMetadata,
 	ToolCallingMethod,
-	REQUIRED_LLM_API_ENV_VARS
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -49,16 +53,20 @@ from browser_use.dom.history_tree_processor.service import (
 	DOMHistoryElement,
 	HistoryTreeProcessor,
 )
+from browser_use.exceptions import LLMException
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
+from browser_use.utils import check_env_variables, time_execution_async, time_execution_sync
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+# Global flag to prevent duplicate exit messages
+_exiting = False
 
 
 def log_response(response: AgentOutput) -> None:
@@ -76,6 +84,61 @@ def log_response(response: AgentOutput) -> None:
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 	for i, action in enumerate(response.action):
 		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
+
+
+def sigint_handler(loop: asyncio.AbstractEventLoop, agent=None):
+	"""SIGINT (Ctrl+C) handler.
+
+	First Ctrl+C: Cancel current step and pause the agent.
+	Second Ctrl+C: Exit immediately.
+	"""
+	global _exiting
+
+	if _exiting:
+		# Already exiting, force exit immediately
+		os._exit(0)
+
+	if getattr(loop, 'ctrl_c_pressed', False):
+		# If we're in the waiting for input state, let the pause method handle it
+		if getattr(loop, 'waiting_for_input', False):
+			return
+
+		# Second Ctrl+C - exit immediately
+		_exiting = True
+		logger.info('\n\n🛑🛑 Second Ctrl+C detected. Exiting immediately...\n\n')
+
+		# Force exit - more reliable than sys.exit()
+		os._exit(0)
+
+	# Mark that Ctrl+C was pressed
+	loop.ctrl_c_pressed = True
+
+	# Cancel current tasks
+	current_task = asyncio.current_task(loop)
+	for task in asyncio.all_tasks(loop):
+		if task != current_task and not task.done():
+			task_name = task.get_name() if hasattr(task, 'get_name') else str(task)
+			if 'step' in task_name or 'multi_act' in task_name or 'get_next_action' in task_name:
+				task.cancel()
+
+	# If we can get the agent reference, pause it
+	if agent and hasattr(agent, 'pause'):
+		agent.pause()
+
+	logger.info('\n\n🛑 Ctrl+C detected. Current step cancelled and agent paused.')
+	logger.info('Press Enter to resume or Ctrl+C again to exit completely.\n\n')
+
+
+def sigterm_handler(loop: asyncio.AbstractEventLoop):
+	"""SIGTERM handler.
+
+	Always exits the program completely.
+	"""
+	global _exiting
+	if not _exiting:
+		_exiting = True
+		logger.info('\n\n🛑 SIGTERM received. Exiting immediately...\n\n')
+	os._exit(0)
 
 
 Context = TypeVar('Context')
@@ -96,14 +159,14 @@ class Agent(Generic[Context]):
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
 		# Cloud Callbacks
 		register_new_step_callback: Union[
-            Callable[['BrowserState', 'AgentOutput', int], None],  # Sync callback
-            Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]],  # Async callback
-            None
-        ] = None,
+			Callable[['BrowserState', 'AgentOutput', int], None],  # Sync callback
+			Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]],  # Async callback
+			None,
+		] = None,
 		register_done_callback: Union[
-			Callable[['AgentHistoryList'], Awaitable[None]], # Async Callback
-			Callable[['AgentHistoryList'], None], #Sync Callback
-			None
+			Callable[['AgentHistoryList'], Awaitable[None]],  # Async Callback
+			Callable[['AgentHistoryList'], None],  # Sync Callback
+			None,
 		] = None,
 		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
@@ -184,11 +247,14 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 
-		# Check env setup
+		# LLM API connection setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
 		if not check_env_variables(llm_api_env_vars):
-			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
+			logger.error(f'Environment variables not set for {self.llm.__class__.__name__}')
 			raise ValueError('Environment variables not set')
+
+		# Start non-blocking LLM connection verification
+		self.llm._verified_api_keys = self._verify_llm_connection(self.llm)
 
 		# for models without tool calling, add available actions to context
 		self.available_actions = self.controller.registry.get_prompt_description()
@@ -450,6 +516,10 @@ class Agent(Generic[Context]):
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 
+		if 'Browser closed' in error_msg:
+			logger.error('❌  Browser is closed or disconnected, unable to proceed')
+			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=False)]
+
 		if isinstance(error, (ValidationError, ValueError)):
 			logger.error(f'{prefix}{error_msg}')
 			if 'Max token limit reached' in error_msg:
@@ -528,7 +598,7 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
 			try:
 				output = self.llm.invoke(input_messages)
 			except Exception as e:
@@ -554,36 +624,33 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			
+
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
 			raw_msg = response['raw']
 			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
 				# Convert tool calls to AgentOutput format
-    
+
 				tool_call = raw_msg.tool_calls[0]  # Take first tool call
-    
+
 				# Create current state
 				tool_call_name = tool_call['name']
 				tool_call_args = tool_call['args']
-				
+
 				current_state = {
 					'page_summary': 'Processing tool call',
 					'evaluation_previous_goal': 'Executing action',
 					'memory': 'Using tool call',
-					'next_goal': f'Execute {tool_call_name}'
+					'next_goal': f'Execute {tool_call_name}',
 				}
-				
+
 				# Create action from tool call
 				action = {tool_call_name: tool_call_args}
 
-				parsed = self.AgentOutput(
-					current_state=current_state,
-					action=[self.ActionModel(**action)]
-				)
+				parsed = self.AgentOutput(current_state=current_state, action=[self.ActionModel(**action)])
 			else:
 				parsed = None
 		else:
@@ -591,12 +658,11 @@ class Agent(Generic[Context]):
 
 		if not parsed:
 			try:
-				parsed_json = extract_json_from_model_output(response["raw"].content)
+				parsed_json = extract_json_from_model_output(response['raw'].content)
 				parsed = self.AgentOutput(**parsed_json)
-			except:
+			except Exception as e:
 				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
 				raise ValueError('Could not parse response.')
-
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
@@ -650,6 +716,20 @@ class Agent(Generic[Context]):
 	@time_execution_async('--run (agent)')
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
+
+		loop = asyncio.get_event_loop()
+
+		# Initialize control attributes
+		setattr(loop, 'ctrl_c_pressed', False)
+		setattr(loop, 'waiting_for_input', False)
+
+		# Set up signal handlers with reference to self (the agent)
+		loop.add_signal_handler(signal.SIGINT, lambda: sigint_handler(loop, self))
+		loop.add_signal_handler(signal.SIGTERM, lambda: sigterm_handler(loop))
+
+		# Start non-blocking LLM connection verification
+		assert await self.llm._verified_api_keys, 'Failed to verify LLM API keys'
+
 		try:
 			self._log_agent_run()
 
@@ -659,6 +739,34 @@ class Agent(Generic[Context]):
 				self.state.last_result = result
 
 			for step in range(max_steps):
+				# Check if waiting for user input after Ctrl+C
+				if getattr(loop, 'waiting_for_user_input', False):
+					# Create a future that will be resolved when user presses Enter
+					user_input_future = loop.create_future()
+
+					# Use a separate thread to read user input without blocking the event loop
+					def wait_for_input():
+						try:
+							input()  # Wait for Enter key
+							if not user_input_future.done():
+								loop.call_soon_threadsafe(user_input_future.set_result, None)
+						except (EOFError, KeyboardInterrupt):
+							# If another Ctrl+C is received during input, exit
+							sys.exit(0)
+
+					import threading
+
+					threading.Thread(target=wait_for_input, daemon=True).start()
+
+					try:
+						# Wait for user to press Enter
+						await user_input_future
+						logger.info('Resuming agent execution...')
+						loop.waiting_for_user_input = False
+					except asyncio.CancelledError:
+						# User pressed Ctrl+C again
+						sys.exit(0)
+
 				# Check if we should stop due to too many failures
 				if self.state.consecutive_failures >= self.settings.max_failures:
 					logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
@@ -688,6 +796,12 @@ class Agent(Generic[Context]):
 				logger.info('❌ Failed to complete task in maximum steps')
 
 			return self.state.history
+
+		except KeyboardInterrupt:
+			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
+			logger.info('Got KeyboardInterrupt during execution, returning current history')
+			return self.state.history
+
 		finally:
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
@@ -946,13 +1060,59 @@ class Agent(Generic[Context]):
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		logger.info('🔄 pausing Agent ')
+		logger.info('\n\n⏸️  Got Ctrl+C, paused the agent and left the browser open.')
 		self.state.paused = True
+
+		# If this was triggered by Ctrl+C, wait for user input
+		loop = asyncio.get_event_loop()
+		if getattr(loop, 'ctrl_c_pressed', False):
+			# Set flag to indicate we're waiting for input
+			setattr(loop, 'waiting_for_input', True)
+
+			# Temporarily restore default signal handling for SIGINT
+			# This ensures KeyboardInterrupt will be raised during input()
+			original_handler = signal.getsignal(signal.SIGINT)
+			signal.signal(signal.SIGINT, signal.default_int_handler)
+
+			try:
+				print('Press [Enter] to resume or [Ctrl+C] to exit... ', end='', flush=True)
+				input()  # This will raise KeyboardInterrupt on Ctrl+C
+
+				self.resume()
+			except KeyboardInterrupt:
+				# Second Ctrl+C detected
+				global _exiting
+				if not _exiting:
+					_exiting = True
+					logger.info('\n\n🛑 Second Ctrl+C detected. Exiting immediately...\n\n')
+				# Force exit with os._exit which doesn't run cleanup handlers (hides big wall of errors)
+				os._exit(0)
+			finally:
+				try:
+					signal.signal(signal.SIGINT, original_handler)
+					setattr(loop, 'waiting_for_input', False)
+				except BaseException:
+					pass
 
 	def resume(self) -> None:
 		"""Resume the agent"""
-		logger.info('▶️ Agent resuming')
+		print()
+		logger.info('▶️  Resuming agent after user confirmation')
 		self.state.paused = False
+
+		# Clear the flags
+		loop = asyncio.get_event_loop()
+		if hasattr(loop, 'ctrl_c_pressed'):
+			loop.ctrl_c_pressed = False
+		if hasattr(loop, 'waiting_for_input'):
+			loop.waiting_for_input = False
+
+		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
+		# so we need to restart the browser if user wants to continue
+		if self.browser:
+			logger.info('🌎  Restarting/reconnecting to browser...')
+			loop.create_task(self.browser._init())
+			loop.create_task(asyncio.sleep(5))
 
 	def stop(self) -> None:
 		"""Stop the agent"""
@@ -980,6 +1140,43 @@ class Agent(Generic[Context]):
 			converted_actions.append(action_model)
 
 		return converted_actions
+
+	async def _verify_llm_connection(self, llm: BaseChatModel) -> bool:
+		"""
+		Verify that the LLM API keys are working properly by sending a simple test prompt
+		and checking that the response contains the expected answer.
+		"""
+		if getattr(llm, '_verified_api_keys', None) is True:
+			# If the LLM API keys have already been verified during a previous run, skip the test
+			return True
+
+		test_prompt = 'What is the capital of France? Respond with a single word.'
+		test_answer = 'paris'
+		required_keys = REQUIRED_LLM_API_ENV_VARS.get(llm.__class__.__name__, ['OPENAI_API_KEY'])
+		try:
+			response = await llm.ainvoke([HumanMessage(content=test_prompt)])
+			response_text = str(response.content).lower()
+
+			if test_answer in response_text:
+				logger.debug(
+					f'🧠  LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
+				)
+				llm._verified_api_keys = True
+				return True
+			else:
+				logger.debug(
+					'❌  Got bad LLM response to basic sanity check question: %s  EXPECTING: %s  GOT: %s',
+					test_prompt,
+					test_answer,
+					response,
+				)
+				raise Exception('LLM responded to a simple test question incorrectly')
+		except Exception as e:
+			logger.error(
+				f'\n\n❌  LLM {llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n'
+			)
+			raise Exception(f'LLM API connection test failed: {e}') from e
+		return False
 
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
@@ -1016,10 +1213,12 @@ class Agent(Generic[Context]):
 		except Exception as e:
 			logger.error(f'Failed to invoke planner: {str(e)}')
 			raise LLMException(401, 'LLM API call failed') from e
-		
+
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
-		if self.planner_model_name and ('deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name):
+		if self.planner_model_name and (
+			'deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name
+		):
 			plan = self._remove_think_tags(plan)
 		try:
 			plan_json = json.loads(plan)
@@ -1044,9 +1243,9 @@ class Agent(Generic[Context]):
 				await self.browser_context.close()
 			if self.browser and not self.injected_browser:
 				await self.browser.close()
-			
+
 			# Force garbage collection
 			gc.collect()
-			
+
 		except Exception as e:
-			logger.error(f"Error during cleanup: {e}")
+			logger.error(f'Error during cleanup: {e}')

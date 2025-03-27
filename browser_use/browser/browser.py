@@ -270,6 +270,8 @@ class Browser:
 			headless=self.config.headless,
 			args=args[self.config.browser_class],
 			proxy=self.config.proxy,
+			handle_sigterm=False,
+			handle_sigint=False,
 		)
 		return browser
 
