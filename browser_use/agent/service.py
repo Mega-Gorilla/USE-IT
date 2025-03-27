@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import gc
+import inspect
 import json
 import logging
 import re
 import time
-import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -18,16 +17,16 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
+
 # from lmnr.sdk.decorators import observe
 from pydantic import BaseModel, ValidationError
 
-from browser_use.exceptions import LLMException
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
+	REQUIRED_LLM_API_ENV_VARS,
 	ActionResult,
 	AgentError,
 	AgentHistory,
@@ -38,7 +37,6 @@ from browser_use.agent.views import (
 	AgentStepInfo,
 	StepMetadata,
 	ToolCallingMethod,
-	REQUIRED_LLM_API_ENV_VARS
 )
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
@@ -49,13 +47,14 @@ from browser_use.dom.history_tree_processor.service import (
 	DOMHistoryElement,
 	HistoryTreeProcessor,
 )
+from browser_use.exceptions import LLMException
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentEndTelemetryEvent,
 	AgentRunTelemetryEvent,
 	AgentStepTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync, check_env_variables
+from browser_use.utils import check_env_variables, time_execution_async, time_execution_sync
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -96,14 +95,14 @@ class Agent(Generic[Context]):
 		initial_actions: Optional[List[Dict[str, Dict[str, Any]]]] = None,
 		# Cloud Callbacks
 		register_new_step_callback: Union[
-            Callable[['BrowserState', 'AgentOutput', int], None],  # Sync callback
-            Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]],  # Async callback
-            None
-        ] = None,
+			Callable[['BrowserState', 'AgentOutput', int], None],  # Sync callback
+			Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]],  # Async callback
+			None,
+		] = None,
 		register_done_callback: Union[
-			Callable[['AgentHistoryList'], Awaitable[None]], # Async Callback
-			Callable[['AgentHistoryList'], None], #Sync Callback
-			None
+			Callable[['AgentHistoryList'], Awaitable[None]],  # Async Callback
+			Callable[['AgentHistoryList'], None],  # Sync Callback
+			None,
 		] = None,
 		register_external_agent_status_raise_error_callback: Callable[[], Awaitable[bool]] | None = None,
 		# Agent settings
@@ -187,7 +186,7 @@ class Agent(Generic[Context]):
 		# Check env setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
 		if not check_env_variables(llm_api_env_vars):
-			logger.error(f"Environment variables not set for {self.llm.__class__.__name__}")
+			logger.error(f'Environment variables not set for {self.llm.__class__.__name__}')
 			raise ValueError('Environment variables not set')
 
 		# for models without tool calling, add available actions to context
@@ -528,7 +527,7 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
 			try:
 				output = self.llm.invoke(input_messages)
 			except Exception as e:
@@ -554,36 +553,33 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			logger.debug(f"Using {self.tool_calling_method} for {self.chat_model_library}")
+			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-			
+
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
 			raw_msg = response['raw']
 			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
 				# Convert tool calls to AgentOutput format
-    
+
 				tool_call = raw_msg.tool_calls[0]  # Take first tool call
-    
+
 				# Create current state
 				tool_call_name = tool_call['name']
 				tool_call_args = tool_call['args']
-				
+
 				current_state = {
 					'page_summary': 'Processing tool call',
 					'evaluation_previous_goal': 'Executing action',
 					'memory': 'Using tool call',
-					'next_goal': f'Execute {tool_call_name}'
+					'next_goal': f'Execute {tool_call_name}',
 				}
-				
+
 				# Create action from tool call
 				action = {tool_call_name: tool_call_args}
 
-				parsed = self.AgentOutput(
-					current_state=current_state,
-					action=[self.ActionModel(**action)]
-				)
+				parsed = self.AgentOutput(current_state=current_state, action=[self.ActionModel(**action)])
 			else:
 				parsed = None
 		else:
@@ -591,12 +587,11 @@ class Agent(Generic[Context]):
 
 		if not parsed:
 			try:
-				parsed_json = extract_json_from_model_output(response["raw"].content)
+				parsed_json = extract_json_from_model_output(response['raw'].content)
 				parsed = self.AgentOutput(**parsed_json)
 			except:
 				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
 				raise ValueError('Could not parse response.')
-
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
@@ -650,6 +645,11 @@ class Agent(Generic[Context]):
 	@time_execution_async('--run (agent)')
 	async def run(self, max_steps: int = 100) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
+
+		# Start non-blocking LLM connection verification
+		# asyncio.create_task(self._verify_llm_connection(self.llm))
+		# await self._verify_llm_connection(self.llm)
+
 		try:
 			self._log_agent_run()
 
@@ -981,6 +981,36 @@ class Agent(Generic[Context]):
 
 		return converted_actions
 
+	async def _verify_llm_connection(self, llm: BaseChatModel) -> None:
+		"""
+		Verify that the LLM API keys are working properly by sending a simple test prompt
+		and checking that the response contains the expected answer.
+
+		Args:
+			llm: The LLM to test
+
+		Raises:
+			SystemExit: If the LLM connection test fails
+		"""
+		if getattr(llm, '_verified_keys_work', None):
+			# If the LLM API keys have already been verified during a previous run, skip the test
+			return
+
+		try:
+			test_prompt = 'What is the capital of France? Respond with a single word.'
+			response = await llm.ainvoke([HumanMessage(content=test_prompt)])
+			response_text = str(response.content).lower()
+
+			if 'paris' in response_text:
+				llm._verified_keys_work = True
+			else:
+				raise Exception('LLM failed to respond to a simple test question correctly')
+		except Exception as e:
+			logger.error(
+				f'LLM {llm.__class__.__name__} connection test failed. Are your LLM API keys working and is your account funded? {e}'
+			)
+			raise SystemExit(f'LLM connection test failed: {e}') from e
+
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
 		# Skip planning if no planner_llm is set
@@ -1016,10 +1046,12 @@ class Agent(Generic[Context]):
 		except Exception as e:
 			logger.error(f'Failed to invoke planner: {str(e)}')
 			raise LLMException(401, 'LLM API call failed') from e
-		
+
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
-		if self.planner_model_name and ('deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name):
+		if self.planner_model_name and (
+			'deepseek-r1' in self.planner_model_name or 'deepseek-reasoner' in self.planner_model_name
+		):
 			plan = self._remove_think_tags(plan)
 		try:
 			plan_json = json.loads(plan)
@@ -1044,9 +1076,9 @@ class Agent(Generic[Context]):
 				await self.browser_context.close()
 			if self.browser and not self.injected_browser:
 				await self.browser.close()
-			
+
 			# Force garbage collection
 			gc.collect()
-			
+
 		except Exception as e:
-			logger.error(f"Error during cleanup: {e}")
+			logger.error(f'Error during cleanup: {e}')
