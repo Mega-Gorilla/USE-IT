@@ -152,16 +152,16 @@ class Browser:
 			logger.debug('No existing Chrome instance found, starting a new one')
 
 		# Start a new Chrome instance
-		chrome_launch_cmd = list(
-			{
-				self.config.browser_instance_path,
+		chrome_launch_cmd = [
+			self.config.browser_instance_path,
+			*{  # remove duplicates (usually preserves the order, but not guaranteed)
 				*CHROME_ARGS,
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
 				*(CHROME_DISABLE_SECURITY_ARGS if self.config.disable_security else []),
 				*self.config.extra_browser_args,
-			}
-		)
+			},
+		]
 		subprocess.Popen(
 			chrome_launch_cmd,
 			stdout=subprocess.DEVNULL,
@@ -210,12 +210,16 @@ class Browser:
 				}
 			),
 			'firefox': [
-				'-no-remote',
-				*self.config.extra_browser_args,
+				*{
+					'-no-remote',
+					*self.config.extra_browser_args,
+				}
 			],
 			'webkit': [
-				'--no-startup-window',
-				*self.config.extra_browser_args,
+				*{
+					'--no-startup-window',
+					*self.config.extra_browser_args,
+				}
 			],
 		}
 		browser_class = getattr(playwright, self.config.browser_class)
