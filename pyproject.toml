@@ -23,7 +23,13 @@ dependencies = [
     "langchain-anthropic==0.3.3",
     "langchain-ollama==0.2.2",
     "google-api-core>=2.24.0",
-    "pyperclip>=1.9.0",   # only used for examples
+    "pyperclip>=1.9.0",
+    # only used for examples that use copy/paste
+    "pyobjc>=11.0; platform_system == 'darwin'",
+    # only used to get screen resolution on macOS
+    "screeninfo>=0.8.1; platform_system != 'darwin'",
+    "typing-extensions>=4.12.2",
+    # only used to get screen resolution on Linux/Windows
 ]
 urls = { "Repository" = "https://github.com/browser-use/browser-use" }
 

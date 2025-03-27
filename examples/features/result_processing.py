@@ -4,9 +4,7 @@ from pprint import pprint
 
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import (
-	BrowserContext,
 	BrowserContextConfig,
-	BrowserContextWindowSize,
 )
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,7 +14,6 @@ from langchain_openai import ChatOpenAI
 
 from browser_use import Agent
 from browser_use.agent.views import AgentHistoryList
-from browser_use.controller.service import Controller
 
 llm = ChatOpenAI(model='gpt-4o')
 browser = Browser(
@@ -33,7 +30,8 @@ async def main():
 		config=BrowserContextConfig(
 			trace_path='./tmp/result_processing',
 			no_viewport=False,
-			browser_window_size=BrowserContextWindowSize(width=1280, height=1000),
+			browser_window_width=1280,
+			browser_window_height=1000,
 		)
 	) as browser_context:
 		agent = Agent(

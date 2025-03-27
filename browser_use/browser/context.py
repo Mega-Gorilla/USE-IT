@@ -11,8 +11,8 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, TypedDict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
 
 from playwright._impl._errors import TimeoutError
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -24,6 +24,8 @@ from playwright.async_api import (
 	FrameLocator,
 	Page,
 )
+from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import TypedDict
 
 from browser_use.browser.views import (
 	BrowserError,
@@ -46,8 +48,7 @@ class BrowserContextWindowSize(TypedDict):
 	height: int
 
 
-@dataclass
-class BrowserContextConfig:
+class BrowserContextConfig(BaseModel):
 	"""
 	Configuration for the BrowserContext.
 
@@ -124,6 +125,8 @@ class BrowserContextConfig:
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
 	"""
 
+	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+
 	cookies_file: str | None = None
 	minimum_wait_page_load_time: float = 0.25
 	wait_for_network_idle_page_load_time: float = 0.5
@@ -132,7 +135,7 @@ class BrowserContextConfig:
 
 	disable_security: bool = True
 
-	browser_window_size: BrowserContextWindowSize = field(default_factory=lambda: {'width': 1280, 'height': 1100})
+	browser_window_size: BrowserContextWindowSize | None = Field(default_factory=lambda: {'width': 1280, 'height': 1100})
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
@@ -149,7 +152,7 @@ class BrowserContextConfig:
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
 
-	_force_keep_context_alive: bool = False
+	keep_alive: bool = False  # used to be called _force_keep_context_alive
 	is_mobile: bool | None = None
 	has_touch: bool | None = None
 	geolocation: dict | None = None
@@ -176,13 +179,13 @@ class BrowserContext:
 	def __init__(
 		self,
 		browser: 'Browser',
-		config: BrowserContextConfig = BrowserContextConfig(),
+		config: BrowserContextConfig | None = None,
 		state: Optional[BrowserContextState] = None,
 	):
 		self.context_id = str(uuid.uuid4())
 		logger.debug(f'Initializing new browser context with id: {self.context_id}')
 
-		self.config = config
+		self.config = config or BrowserContextConfig(**browser.config)
 		self.browser = browser
 
 		self.state = state or BrowserContextState()
@@ -202,7 +205,6 @@ class BrowserContext:
 	@time_execution_async('--close')
 	async def close(self):
 		"""Close the browser instance"""
-		logger.debug('Closing browser context')
 
 		try:
 			if self.session is None:
@@ -226,7 +228,8 @@ class BrowserContext:
 					logger.debug(f'Failed to stop tracing: {e}')
 
 			# This is crucial - it closes the CDP connection
-			if not self.config._force_keep_context_alive:
+			if not self.config.keep_alive:
+				logger.debug('Closing browser context')
 				try:
 					await self.session.context.close()
 				except Exception as e:
@@ -239,7 +242,7 @@ class BrowserContext:
 
 	def __del__(self):
 		"""Cleanup when object is destroyed"""
-		if not self.config._force_keep_context_alive and self.session is not None:
+		if not self.config.keep_alive and self.session is not None:
 			logger.debug('BrowserContext was not properly closed before destruction')
 			try:
 				# Use sync Playwright method for force cleanup
@@ -327,7 +330,11 @@ class BrowserContext:
 	async def get_session(self) -> BrowserSession:
 		"""Lazy initialization of the browser and related components"""
 		if self.session is None:
-			return await self._initialize_session()
+			try:
+				return await self._initialize_session()
+			except Exception as e:
+				logger.error(f'❌  Failed to create new browser session: {e} (did the browser process quit?)')
+				raise e
 		return self.session
 
 	async def get_current_page(self) -> Page:
@@ -339,7 +346,7 @@ class BrowserContext:
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		if self.browser.config.cdp_url and len(browser.contexts) > 0:
 			context = browser.contexts[0]
-		elif self.browser.config.browser_instance_path and len(browser.contexts) > 0:
+		elif self.browser.config.browser_binary_path and len(browser.contexts) > 0:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
 		else:
@@ -1172,7 +1179,7 @@ class BrowserContext:
 		"""
 		current_frame = await self.get_current_page()
 		try:
-			elements = await current_frame.query_selector_all(f"text={text}")
+			elements = await current_frame.query_selector_all(f'text={text}')
 			# considering only visible elements
 			elements = [el for el in elements if await el.is_visible()]
 
@@ -1194,8 +1201,6 @@ class BrowserContext:
 		except Exception as e:
 			logger.error(f"Failed to locate element by text '{text}': {str(e)}")
 			return None
-
-
 
 	@time_execution_async('--input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
@@ -1387,8 +1392,15 @@ class BrowserContext:
 		if non_extension_pages:
 			return non_extension_pages[-1]
 
-		# Fallback to opening a new tab
-		return await session.context.new_page()
+		# Fallback to opening a new tab in the active window
+		try:
+			return await session.context.new_page()
+		except Exception:
+			# there is no browser window available (perhaps the user closed it?)
+			# reopen a new window in the browser and try again
+			logger.warning('⚠️  No browser window available, opening a new window')
+			await self._initialize_session()
+			return await session.context.new_page()
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
