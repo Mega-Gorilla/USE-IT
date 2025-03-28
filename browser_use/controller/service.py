@@ -117,7 +117,7 @@ class Controller(Generic[Context]):
 			await asyncio.sleep(seconds)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-    @self.registry.action('Wait for element to be visible', param_model=WaitForElementAction)
+		@self.registry.action('Wait for element to be visible', param_model=WaitForElementAction)
 		async def wait_for_element(params: WaitForElementAction, browser: BrowserContext):
 			"""Waits for the element specified by the CSS selector to become visible within the given timeout."""
 			try:
