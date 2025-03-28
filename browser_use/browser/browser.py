@@ -6,6 +6,7 @@ import asyncio
 import gc
 import logging
 import os
+import socket
 import subprocess
 from typing import Literal
 
@@ -250,12 +251,10 @@ class Browser:
 		}
 
 		# check if port 9222 is already taken, if so remove the remote-debugging-port arg to prevent conflicts
-		try:
-			response = requests.get('http://localhost:9222/json/version', timeout=2)
-			if response.status_code == 200:
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			if s.connect_ex(('localhost', 9222)) == 0:
 				chrome_args.remove('--remote-debugging-port=9222')
-		except Exception:
-			pass
+				chrome_args.remove('--remote-debugging-address=0.0.0.0')
 
 		browser_class = getattr(playwright, self.config.browser_class)
 		args = {
