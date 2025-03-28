@@ -250,10 +250,12 @@ class Agent(Generic[Context]):
 
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
+			# For raw tool calling, only include actions with no filters initially
+			unfiltered_actions = self.controller.registry.get_prompt_description()
 			if self.settings.message_context:
-				self.settings.message_context += f'\n\nAvailable actions: {self.available_actions}'
+				self.settings.message_context += f'\n\nAvailable actions: {unfiltered_actions}'
 			else:
-				self.settings.message_context = f'Available actions: {self.available_actions}'
+				self.settings.message_context = f'Available actions: {unfiltered_actions}'
 		return self.settings.message_context
 
 	def _set_browser_use_version_and_source(self) -> None:
