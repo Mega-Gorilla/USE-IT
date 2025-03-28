@@ -199,7 +199,7 @@ class Agent(Generic[Context]):
 
 		# Initialize available actions for system prompt (only non-filtered actions)
 		# These will be used for the system prompt to maintain caching
-		self.available_actions = self.controller.registry.get_prompt_description()
+		self.unfiltered_actions = self.controller.registry.get_prompt_description()
 
 		self.tool_calling_method = self._set_tool_calling_method()
 		self.settings.message_context = self._set_message_context()
@@ -209,7 +209,7 @@ class Agent(Generic[Context]):
 		self._message_manager = MessageManager(
 			task=task,
 			system_message=SystemPrompt(
-				action_description=self.available_actions,
+				action_description=self.unfiltered_actions,
 				max_actions_per_step=self.settings.max_actions_per_step,
 				override_system_message=override_system_message,
 				extend_system_message=extend_system_message,
@@ -251,11 +251,10 @@ class Agent(Generic[Context]):
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
 			# For raw tool calling, only include actions with no filters initially
-			unfiltered_actions = self.controller.registry.get_prompt_description()
 			if self.settings.message_context:
-				self.settings.message_context += f'\n\nAvailable actions: {unfiltered_actions}'
+				self.settings.message_context += f'\n\nAvailable actions: {self.unfiltered_actions}'
 			else:
-				self.settings.message_context = f'Available actions: {unfiltered_actions}'
+				self.settings.message_context = f'Available actions: {self.unfiltered_actions}'
 		return self.settings.message_context
 
 	def _set_browser_use_version_and_source(self) -> None:
