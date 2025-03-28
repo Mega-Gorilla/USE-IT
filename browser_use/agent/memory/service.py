@@ -109,10 +109,6 @@ class Memory:
 	def _create(self, messages: List[BaseMessage], current_step: int) -> Optional[str]:
 		parsed_messages = convert_to_openai_messages(messages)
 		try:
-			if current_step == 10:
-				import pdb
-
-				pdb.set_trace()
 			results = self.mem0.add(
 				messages=parsed_messages,
 				agent_id=self.settings.agent_id,
