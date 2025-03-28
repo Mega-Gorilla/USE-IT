@@ -10,7 +10,7 @@ from browser_use.browser.context import BrowserContext, BrowserContextConfig
 
 
 @pytest.mark.asyncio
-async def test_standard_browser_launch(monkeypatch):
+async def test_builtin_browser_launch(monkeypatch):
     """
     Test that the standard browser is launched correctly:
     When no remote (cdp or wss) or chrome instance is provided, the Browser class uses _setup_builtin_browser.
@@ -35,10 +35,11 @@ async def test_standard_browser_launch(monkeypatch):
     result_browser = await browser_obj.get_playwright_browser()
     assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_builtin_browser"
     await browser_obj.close()
+
 @pytest.mark.asyncio
 async def test_cdp_browser_launch(monkeypatch):
     """
-    Test that when a CDP URL is provided in the configuration, the Browser uses _setup_cdp 
+    Test that when a CDP URL is provided in the configuration, the Browser uses _setup_cdp
     and returns the expected DummyBrowser.
     """
     class DummyBrowser:
@@ -61,11 +62,12 @@ async def test_cdp_browser_launch(monkeypatch):
     result_browser = await browser_obj.get_playwright_browser()
     assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_cdp"
     await browser_obj.close()
+
 @pytest.mark.asyncio
 async def test_wss_browser_launch(monkeypatch):
     """
     Test that when a WSS URL is provided in the configuration,
-    the Browser uses _setup_wss and returns the expected DummyBrowser.
+    the Browser uses setup_wss and returns the expected DummyBrowser.
     """
     class DummyBrowser:
         pass
@@ -87,10 +89,11 @@ async def test_wss_browser_launch(monkeypatch):
     result_browser = await browser_obj.get_playwright_browser()
     assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_wss"
     await browser_obj.close()
+
 @pytest.mark.asyncio
-async def test_chrome_instance_browser_launch(monkeypatch):
+async def test_user_provided_browser_launch(monkeypatch):
     """
-    Test that when a chrome instance path is provided the Browser class uses 
+    Test that when a browser_binary_path is provided the Browser class uses
     _setup_user_provided_browser branch and returns the expected DummyBrowser object
     by reusing an existing Chrome instance.
     """
@@ -122,8 +125,9 @@ async def test_chrome_instance_browser_launch(monkeypatch):
     result_browser = await browser_obj.get_playwright_browser()
     assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_user_provided_browser"
     await browser_obj.close()
+
 @pytest.mark.asyncio
-async def test_standard_browser_disable_security_args(monkeypatch):
+async def test_builtin_browser_disable_security_args(monkeypatch):
     """
     Test that the standard browser launch includes disable-security arguments when disable_security is True.
     This verifies that _setup_builtin_browser correctly appends the security disabling arguments along with
@@ -177,6 +181,7 @@ async def test_standard_browser_disable_security_args(monkeypatch):
     result_browser = await browser_obj.get_playwright_browser()
     assert isinstance(result_browser, DummyBrowser), "Expected DummyBrowser from _setup_builtin_browser with disable_security active"
     await browser_obj.close()
+
 @pytest.mark.asyncio
 async def test_new_context_creation():
     """
@@ -191,8 +196,9 @@ async def test_new_context_creation():
     assert context.browser is browser_obj, "Expected the context's browser attribute to be the Browser instance"
     assert context.config == custom_context_config, "Expected the context's config attribute to be the provided config"
     await browser_obj.close()
+
 @pytest.mark.asyncio
-async def test_chrome_instance_browser_launch_failure(monkeypatch):
+async def test_user_provided_browser_launch_failure(monkeypatch):
     """
     Test that when a Chrome instance cannot be started or connected to,
     the Browser._setup_user_provided_browser branch eventually raises a RuntimeError.
@@ -226,6 +232,7 @@ async def test_chrome_instance_browser_launch_failure(monkeypatch):
     with pytest.raises(RuntimeError, match="To start chrome in Debug mode"):
         await browser_obj.get_playwright_browser()
     await browser_obj.close()
+
 @pytest.mark.asyncio
 async def test_get_playwright_browser_caching(monkeypatch):
     """
@@ -253,6 +260,7 @@ async def test_get_playwright_browser_caching(monkeypatch):
     second_browser = await browser_obj.get_playwright_browser()
     assert first_browser is second_browser, "Expected the browser to be cached and reused across calls."
     await browser_obj.close()
+
 @pytest.mark.asyncio
 async def test_close_error_handling(monkeypatch):
     """
@@ -273,6 +281,7 @@ async def test_close_error_handling(monkeypatch):
     await browser_obj.close()
     assert browser_obj.playwright_browser is None, "Expected playwright_browser to be None after close"
     assert browser_obj.playwright is None, "Expected playwright to be None after close"
+
 @pytest.mark.asyncio
 async def test_standard_browser_launch_with_proxy(monkeypatch):
     """

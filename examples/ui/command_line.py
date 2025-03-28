@@ -33,7 +33,7 @@ def get_llm(provider: str):
 		api_key = os.getenv("ANTHROPIC_API_KEY")
 		if not api_key:
 			raise ValueError("Error: ANTHROPIC_API_KEY is not set. Please provide a valid API key.")
-        
+
 		return ChatAnthropic(
 			model_name='claude-3-5-sonnet-20240620', timeout=25, stop=None, temperature=0.0
 		)
@@ -42,7 +42,7 @@ def get_llm(provider: str):
 		api_key = os.getenv("OPENAI_API_KEY")
 		if not api_key:
 			raise ValueError("Error: OPENAI_API_KEY is not set. Please provide a valid API key.")
-        
+
 		return ChatOpenAI(model='gpt-4o', temperature=0.0)
 
 	else:
@@ -87,7 +87,7 @@ async def main():
     agent, browser = initialize_agent(args.query, args.provider)
 
     await agent.run(max_steps=25)
-    
+
     input('Press Enter to close the browser...')
     await browser.close()
 

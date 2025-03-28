@@ -10,7 +10,7 @@ import asyncio
 task="""
    ### Prompt for Shopping Agent – Migros Online Grocery Order
 
-**Objective:**  
+**Objective:**
 Visit [Migros Online](https://www.migros.ch/en), search for the required grocery items, add them to the cart, select an appropriate delivery window, and complete the checkout process using TWINT.
 
 **Important:**
