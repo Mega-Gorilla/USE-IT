@@ -197,13 +197,15 @@ class Agent(Generic[Context]):
 		# Start non-blocking LLM connection verification
 		self.llm._verified_api_keys = self._verify_llm_connection(self.llm)
 
-		# for models without tool calling, add available actions to context
+		# Initialize available actions for system prompt (only non-filtered actions)
+		# These will be used for the system prompt to maintain caching
 		self.available_actions = self.controller.registry.get_prompt_description()
 
 		self.tool_calling_method = self._set_tool_calling_method()
 		self.settings.message_context = self._set_message_context()
 
 		# Initialize message manager with state
+		# Initial system prompt with all actions - will be updated during each step
 		self._message_manager = MessageManager(
 			task=task,
 			system_message=SystemPrompt(
@@ -359,6 +361,31 @@ class Agent(Generic[Context]):
 			state = await self.browser_context.get_state()
 
 			await self._raise_if_stopped_or_paused()
+			
+			# Get page-specific filtered actions
+			page_filtered_actions = self.controller.registry.get_prompt_description(state.page)
+			
+			# If there are page-specific actions, add them as a special message for this step only
+			if page_filtered_actions:
+				page_action_message = f"For this page, these additional actions are available:\n{page_filtered_actions}"
+				self._message_manager._add_message_with_tokens(HumanMessage(content=page_action_message))
+			
+			# If using raw tool calling method, we need to update the message context with new actions
+			if self.tool_calling_method == 'raw':
+				# For raw tool calling, get all non-filtered actions plus the page-filtered ones
+				all_unfiltered_actions = self.controller.registry.get_prompt_description()
+				all_actions = all_unfiltered_actions
+				if page_filtered_actions:
+					all_actions += "\n" + page_filtered_actions
+				
+				context_lines = self._message_manager.settings.message_context.split('\n')
+				non_action_lines = [line for line in context_lines if not line.startswith('Available actions:')]
+				updated_context = '\n'.join(non_action_lines)
+				if updated_context:
+					updated_context += f'\n\nAvailable actions: {all_actions}'
+				else:
+					updated_context = f'Available actions: {all_actions}'
+				self._message_manager.settings.message_context = updated_context
 
 			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
 
@@ -1114,9 +1141,21 @@ class Agent(Generic[Context]):
 		if not self.settings.planner_llm:
 			return None
 
-		# Create planner message history using full message history
+		# Get current state to filter actions by page
+		state = await self.browser_context.get_state()
+		
+		# Get all standard actions (no filter) and page-specific actions
+		standard_actions = self.controller.registry.get_prompt_description()  # No page = system prompt actions
+		page_actions = self.controller.registry.get_prompt_description(state.page)  # Page-specific actions
+		
+		# Combine both for the planner
+		all_actions = standard_actions
+		if page_actions:
+			all_actions += "\n" + page_actions
+			
+		# Create planner message history using full message history with all available actions
 		planner_messages = [
-			PlannerPrompt(self.controller.registry.get_prompt_description()).get_system_message(),
+			PlannerPrompt(all_actions).get_system_message(),
 			*self._message_manager.get_messages()[1:],  # Use full message history except the first
 		]
 

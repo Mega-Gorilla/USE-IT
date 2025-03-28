@@ -1,5 +1,6 @@
 from typing import Callable, Dict, Type
 
+from playwright.async_api import Page
 from pydantic import BaseModel, ConfigDict
 
 
@@ -10,7 +11,10 @@ class RegisteredAction(BaseModel):
 	description: str
 	function: Callable
 	param_model: Type[BaseModel]
+
+	# filters: provide specific domains or a function to determine whether the action should be available on the given page or not
 	domains: list[str] | None = None  # e.g. ['*.google.com', 'www.bing.com', 'yahoo.*]
+	page_filter: Callable[[Page], bool] | None = None
 
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -66,6 +70,69 @@ class ActionRegistry(BaseModel):
 
 	actions: Dict[str, RegisteredAction] = {}
 
-	def get_prompt_description(self) -> str:
-		"""Get a description of all actions for the prompt"""
-		return '\n'.join([action.prompt_description() for action in self.actions.values()])
+	def _match_domain(self, domain_pattern: str, url: str) -> bool:
+		"""
+		Match a domain pattern against a URL using glob patterns.
+		
+		Args:
+			domain_pattern: A domain pattern that can include glob patterns (* wildcard)
+			url: The URL to match against
+			
+		Returns:
+			True if the URL's domain matches the pattern, False otherwise
+		"""
+		import fnmatch
+		from urllib.parse import urlparse
+		
+		# Parse the URL to get the domain
+		try:
+			parsed_url = urlparse(url)
+			if not parsed_url.netloc:
+				return False
+			
+			domain = parsed_url.netloc
+			# Remove port if present
+			if ':' in domain:
+				domain = domain.split(':')[0]
+				
+			# Perform glob matching
+			return fnmatch.fnmatch(domain, domain_pattern)
+		except Exception:
+			return False
+	
+	def get_prompt_description(self, page=None) -> str:
+		"""Get a description of all actions for the prompt
+		
+		Args:
+			page: If provided, filter actions by page using page_filter and domains.
+		
+		Returns:
+			A string description of available actions.
+			- If page is None: return only actions with no page_filter and no domains (for system prompt)
+			- If page is provided: return filtered actions for the current page
+		"""
+		if page is None:
+			# For system prompt (no page provided), include only actions with no filters
+			return '\n'.join([action.prompt_description() for action in self.actions.values() 
+							 if action.page_filter is None and action.domains is None])
+		
+		# For step-by-step prompts, include filtered actions for the current page
+		filtered_actions = []
+		for action in self.actions.values():
+			# Check page_filter if present
+			page_filter_match = action.page_filter is not None and action.page_filter(page)
+			
+			# Check domains if present
+			domains_match = False
+			if action.domains is not None and page.url:
+				# Try to match any of the domain patterns
+				for domain_pattern in action.domains:
+					if self._match_domain(domain_pattern, page.url):
+						domains_match = True
+						break
+			
+			# Include action if either filter matches
+			if page_filter_match or domains_match:
+				filtered_actions.append(action)
+		
+		return '\n'.join([action.prompt_description() for action in filtered_actions])

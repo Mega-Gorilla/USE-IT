@@ -50,6 +50,7 @@ class Registry(Generic[Context]):
 		description: str,
 		param_model: Optional[Type[BaseModel]] = None,
 		domains: Optional[list[str]] = None,
+		page_filter: Optional[Callable[[Any], bool]] = None,
 	):
 		"""Decorator for registering actions"""
 
@@ -81,6 +82,7 @@ class Registry(Generic[Context]):
 				function=wrapped_func,
 				param_model=actual_param_model,
 				domains=domains,
+				page_filter=page_filter,
 			)
 			self.registry.actions[func.__name__] = action
 			return func
@@ -196,6 +198,10 @@ class Registry(Generic[Context]):
 
 		return create_model('ActionModel', __base__=ActionModel, **fields)  # type:ignore
 
-	def get_prompt_description(self) -> str:
-		"""Get a description of all actions for the prompt"""
-		return self.registry.get_prompt_description()
+	def get_prompt_description(self, page=None) -> str:
+		"""Get a description of all actions for the prompt
+		
+		If page is provided, only include actions that are available for that page
+		based on their filter_func
+		"""
+		return self.registry.get_prompt_description(page)
