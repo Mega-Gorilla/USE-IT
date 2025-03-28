@@ -5,6 +5,7 @@ import gc
 import inspect
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -58,6 +59,8 @@ from browser_use.utils import check_env_variables, time_execution_async, time_ex
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+SKIP_LLM_API_KEY_VERIFICATION = os.getenv('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower() == 'true'
 
 
 def log_response(response: AgentOutput) -> None:
@@ -672,11 +675,8 @@ class Agent(Generic[Context]):
 	# @observe(name='agent.run', ignore_output=True)
 	@time_execution_async('--run (agent)')
 	async def run(
-		self,
-		max_steps: int = 100,
-		on_step_start: AgentHookFunc | None = None,
-		on_step_end: AgentHookFunc | None = None
-			) -> AgentHistoryList:
+		self, max_steps: int = 100, on_step_start: AgentHookFunc | None = None, on_step_end: AgentHookFunc | None = None
+	) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 
 		loop = asyncio.get_event_loop()
@@ -1076,7 +1076,7 @@ class Agent(Generic[Context]):
 		Verify that the LLM API keys are working properly by sending a simple test prompt
 		and checking that the response contains the expected answer.
 		"""
-		if getattr(llm, '_verified_api_keys', None) is True:
+		if getattr(llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
 			# If the LLM API keys have already been verified during a previous run, skip the test
 			return True
 
