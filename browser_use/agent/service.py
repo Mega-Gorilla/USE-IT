@@ -396,6 +396,7 @@ class Agent(Generic[Context]):
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
+				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
 				self._message_manager.add_model_output(model_output)
@@ -425,14 +426,14 @@ class Agent(Generic[Context]):
 			# logger.debug('Agent paused')
 			self.state.last_result = [
 				ActionResult(
-					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=True
+					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=False
 				)
 			]
 			return
 		except asyncio.CancelledError:
 			# Directly handle the case where the step is cancelled at a higher level
 			# logger.debug('Task cancelled - agent was paused with Ctrl+C')
-			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=True)]
+			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=False)]
 			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
