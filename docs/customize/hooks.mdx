@@ -29,7 +29,23 @@ from browser_use import Agent
 from langchain_openai import ChatOpenAI
 
 async def my_step_hook(agent):
-    print(f"Agent is on URL: {agent.state.history.urls()[-1] if agent.state.history.urls() else 'No URL yet'}")
+    # inside a hook you can access all the state and methods under the Agent object:
+    #   agent.settings, agent.state, agent.task
+    #   agent.controller, agent.llm, agent.browser, agent.browser_context
+    #   agent.pause(), agent.resume(), agent.add_new_task(...), etc.
+    
+    current_page = await agent.browser_context.get_current_page()
+    
+    visit_log = agent.state.history.urls()
+    current_url = current_page.url
+    previous_url = visit_log[-2] if len(visit_log) >= 2 else None
+    print(f"Agent was last on URL: {previous_url} and is now on {current_url}")
+    
+    if 'completed' in current_url:
+        agent.pause()
+        Path('result.txt').write_text(await current_page.content()) 
+        input('Saved "completed" page content to result.txt, press [Enter] to resume...')
+        agent.resume()
     
 agent = Agent(
     task="Search for the latest news about AI",
