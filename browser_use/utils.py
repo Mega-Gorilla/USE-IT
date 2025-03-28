@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import platform
 import signal
 import time
 from functools import wraps
@@ -27,6 +28,7 @@ class SignalHandler:
 	- Support for custom pause/resume callbacks
 	- Management of event loop state across signals
 	- Standardized handling of first and second Ctrl+C presses
+	- Cross-platform compatibility (with simplified behavior on Windows)
 	"""
 
 	def __init__(
@@ -56,6 +58,7 @@ class SignalHandler:
 		self.custom_exit_callback = custom_exit_callback
 		self.exit_on_second_int = exit_on_second_int
 		self.interruptible_task_patterns = interruptible_task_patterns or ['step', 'multi_act', 'get_next_action']
+		self.is_windows = platform.system() == 'Windows'
 
 		# Initialize loop state attributes
 		self._initialize_loop_state()
