@@ -21,6 +21,7 @@ Feedback is appreciated!
 
 import base64
 
+
 def b64_to_png(b64_string: str, output_file):
     """
     Convert a Base64-encoded string to a PNG file.
@@ -47,8 +48,8 @@ def b64_to_png(b64_string: str, output_file):
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, Request
 import prettyprinter
+from fastapi import FastAPI, Request
 
 prettyprinter.install_extras()
 
@@ -112,13 +113,14 @@ gracefully handling circular references.
 # ! pip install -U pyobjtojson
 # ! pip install -U prettyprinter
 
-from langchain_openai import ChatOpenAI
-from browser_use import Agent
-from dotenv import load_dotenv
-from pyobjtojson import obj_to_json
 import asyncio
 
 import requests
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from pyobjtojson import obj_to_json
+
+from browser_use import Agent
 
 # import prettyprinter
 
