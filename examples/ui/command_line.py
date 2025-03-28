@@ -11,10 +11,10 @@ Example 3: Using Anthropic's Claude Model with a Custom Query
 python command_line.py --query "find latest Python tutorials on Medium" --provider anthropic
 
 """
-import os
-import sys
 import argparse
 import asyncio
+import os
+import sys
 
 # Ensure local repository (browser_use) is accessible
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
-
 
 load_dotenv()
 

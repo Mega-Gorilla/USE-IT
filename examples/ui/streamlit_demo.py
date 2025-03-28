@@ -5,9 +5,10 @@ python -m streamlit run streamlit_demo.py
 
 """
 
+import asyncio
 import os
 import sys
-import asyncio
+
 import streamlit as st
 from dotenv import load_dotenv
 

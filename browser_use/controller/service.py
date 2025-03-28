@@ -16,9 +16,12 @@ from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
+	ClickElementBySelectorAction,
+	ClickElementByTextAction,
+	ClickElementByXpathAction,
+	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
-	GroupTabsAction,
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
@@ -26,7 +29,7 @@ from browser_use.controller.views import (
 	SearchGoogleAction,
 	SendKeysAction,
 	SwitchTabAction,
-	UngroupTabsAction,
+	WaitForElementAction,
 )
 from browser_use.utils import time_execution_sync
 
@@ -112,9 +115,22 @@ class Controller(Generic[Context]):
 			await asyncio.sleep(seconds)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
+		@self.registry.action('Wait for element to be visible', param_model=WaitForElementAction)
+		async def wait_for_element(params: WaitForElementAction, browser: BrowserContext):
+			"""Waits for the element specified by the CSS selector to become visible within the given timeout."""
+			try:
+				await browser.wait_for_element(params.selector, params.timeout)
+				msg = f'👀  Element with selector "{params.selector}" became visible within {params.timeout}ms.'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				err_msg = f'❌  Failed to wait for element "{params.selector}" within {params.timeout}ms: {str(e)}'
+				logger.error(err_msg)
+				raise Exception(err_msg)
+
 		# Element Interaction Actions
-		@self.registry.action('Click element', param_model=ClickElementAction)
-		async def click_element(params: ClickElementAction, browser: BrowserContext):
+		@self.registry.action('Click element by index', param_model=ClickElementAction)
+		async def click_element_by_index(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
 
 			if params.index not in await browser.get_selector_map():
@@ -148,6 +164,76 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click element by selector', param_model=ClickElementBySelectorAction)
+		async def click_element_by_selector(params: ClickElementBySelectorAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_css_selector(params.css_selector)
+				if element_node:
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with css selector '{params.css_selector}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.css_selector}"'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				logger.warning(f'Element not clickable with selector {params.css_selector} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click on element by xpath', param_model=ClickElementByXpathAction)
+		async def click_element_by_xpath(params: ClickElementByXpathAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_xpath(params.xpath)
+				if element_node:
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with xpath '{params.xpath}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.xpath}"'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				logger.warning(f'Element not clickable with xpath {params.xpath} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click element with text', param_model=ClickElementByTextAction)
+		async def click_element_by_text(params: ClickElementByTextAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_text(
+					text=params.text,
+					nth=params.nth,
+					element_type=params.element_type
+				)
+
+				if element_node:
+					try:
+						await element_node.scroll_into_view_if_needed()
+						await element_node.click(timeout=1500, force=True)
+					except Exception:
+						try:
+							# Handle with js evaluate if fails to click using playwright
+							await element_node.evaluate('el => el.click()')
+						except Exception as e:
+							logger.warning(f"Element not clickable with text '{params.text}' - {e}")
+							return ActionResult(error=str(e))
+					msg = f'🖱️  Clicked on element with text "{params.text}"'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+				else:
+					return ActionResult(error=f"No element found for text '{params.text}'")
+			except Exception as e:
+				logger.warning(f"Element not clickable with text '{params.text}' - {e}")
 				return ActionResult(error=str(e))
 
 		@self.registry.action(
@@ -202,15 +288,29 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
+		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
+		async def close_tab(params: CloseTabAction, browser: BrowserContext):
+			await browser.switch_to_tab(params.page_id)
+			page = await browser.get_current_page()
+			url = page.url
+			await page.close()
+			msg = f'❌  Closed tab #{params.page_id} with url {url}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
 		# Content Actions
 		@self.registry.action(
 			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
+		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
 			import markdownify
 
-			content = markdownify.markdownify(await page.content())
+			strip = []
+			if should_strip_link_urls:
+				strip = ['a', 'img']
+
+			content = markdownify.markdownify(await page.content(), strip=strip)
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:

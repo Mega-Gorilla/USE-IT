@@ -5,24 +5,24 @@ Goal: Searches for job listings, evaluates relevance based on a CV, and applies
 Also you have to install PyPDF2 to read pdf files: pip install PyPDF2
 """
 
+import asyncio
 import csv
+import logging
 import os
 import sys
 from pathlib import Path
-import logging
-from typing import List, Optional
-import asyncio
+from typing import Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
-from PyPDF2 import PdfReader
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from pydantic import BaseModel, SecretStr
+from PyPDF2 import PdfReader
 
 from browser_use import ActionResult, Agent, Controller
-from browser_use.browser.context import BrowserContext
 from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser.context import BrowserContext
 
 # Validate required environment variables
 load_dotenv()
@@ -110,7 +110,7 @@ async def upload_cv(index: int, browser: BrowserContext):
 
 browser = Browser(
 	config=BrowserConfig(
-		browser_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 		disable_security=True,
 	)
 )

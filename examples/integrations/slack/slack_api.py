@@ -1,12 +1,14 @@
 import logging
-from browser_use import BrowserConfig
-from fastapi import FastAPI, Request, HTTPException, Depends
+
 from dotenv import load_dotenv
-from slack_sdk.web.async_client import AsyncWebClient
+from fastapi import Depends, FastAPI, HTTPException, Request
+from langchain_core.language_models.chat_models import BaseChatModel
 from slack_sdk.errors import SlackApiError
 from slack_sdk.signature import SignatureVerifier
+from slack_sdk.web.async_client import AsyncWebClient
+
+from browser_use import BrowserConfig
 from browser_use.agent.service import Agent, Browser
-from langchain_core.language_models.chat_models import BaseChatModel
 from browser_use.logging_config import setup_logging
 
 load_dotenv()
