@@ -15,7 +15,7 @@ from browser_use.browser.browser import Browser, BrowserConfig
 
 browser = Browser(
 	config=BrowserConfig(
-		browser_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	),
 )
 

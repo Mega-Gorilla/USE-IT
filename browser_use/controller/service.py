@@ -30,6 +30,7 @@ from browser_use.controller.views import (
 	SearchGoogleAction,
 	SendKeysAction,
 	SwitchTabAction,
+	WaitForElementAction,
 	UngroupTabsAction,
 )
 from browser_use.utils import time_execution_sync
@@ -115,6 +116,19 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			await asyncio.sleep(seconds)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
+
+		@self.registry.action('Wait for element to be visible', param_model=WaitForElementAction)
+		async def wait_for_element(params: WaitForElementAction, browser: BrowserContext):
+			"""Waits for the element specified by the CSS selector to become visible within the given timeout."""
+			try:
+				await browser.wait_for_element(params.selector, params.timeout)
+				msg = f'👀  Element with selector "{params.selector}" became visible within {params.timeout}ms.'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				err_msg = f'❌  Failed to wait for element "{params.selector}" within {params.timeout}ms: {str(e)}'
+				logger.error(err_msg)
+				raise Exception(err_msg)
 
 		# Element Interaction Actions
 		@self.registry.action('Click element by index', param_model=ClickElementAction)
@@ -290,11 +304,15 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
+		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
 			import markdownify
 
-			content = markdownify.markdownify(await page.content())
+			strip = []
+			if should_strip_link_urls:
+				strip = ['a', 'img']
+
+			content = markdownify.markdownify(await page.content(), strip=strip)
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
