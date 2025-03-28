@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import platform
 import signal
 import time
 from functools import wraps
@@ -27,6 +28,7 @@ class SignalHandler:
 	- Support for custom pause/resume callbacks
 	- Management of event loop state across signals
 	- Standardized handling of first and second Ctrl+C presses
+	- Cross-platform compatibility (with simplified behavior on Windows)
 	"""
 
 	def __init__(
@@ -56,6 +58,7 @@ class SignalHandler:
 		self.custom_exit_callback = custom_exit_callback
 		self.exit_on_second_int = exit_on_second_int
 		self.interruptible_task_patterns = interruptible_task_patterns or ['step', 'multi_act', 'get_next_action']
+		self.is_windows = platform.system() == 'Windows'
 
 		# Initialize loop state attributes
 		self._initialize_loop_state()
@@ -71,21 +74,38 @@ class SignalHandler:
 
 	def register(self) -> None:
 		"""Register signal handlers for SIGINT and SIGTERM."""
-		self.original_sigint_handler = self.loop.add_signal_handler(signal.SIGINT, lambda: self.sigint_handler())
-		self.original_sigterm_handler = self.loop.add_signal_handler(signal.SIGTERM, lambda: self.sigterm_handler())
+		if self.is_windows:
+			# On Windows, use simple signal handling with immediate exit on Ctrl+C
+			def windows_handler(sig, frame):
+				print('\n\n🛑 Got Ctrl+C. Exiting immediately on Windows...\n', file=stderr)
+				# Run the custom exit callback if provided
+				if self.custom_exit_callback:
+					self.custom_exit_callback()
+				os._exit(0)
+			
+			self.original_sigint_handler = signal.signal(signal.SIGINT, windows_handler)
+		else:
+			# On Unix-like systems, use asyncio's signal handling for smoother experience
+			self.original_sigint_handler = self.loop.add_signal_handler(signal.SIGINT, lambda: self.sigint_handler())
+			self.original_sigterm_handler = self.loop.add_signal_handler(signal.SIGTERM, lambda: self.sigterm_handler())
 
 	def unregister(self) -> None:
 		"""Unregister signal handlers and restore original handlers if possible."""
 		try:
-			# Remove signal handlers
-			self.loop.remove_signal_handler(signal.SIGINT)
-			self.loop.remove_signal_handler(signal.SIGTERM)
+			if self.is_windows:
+				# On Windows, just restore the original SIGINT handler
+				if self.original_sigint_handler:
+					signal.signal(signal.SIGINT, self.original_sigint_handler)
+			else:
+				# On Unix-like systems, use asyncio's signal handler removal
+				self.loop.remove_signal_handler(signal.SIGINT)
+				self.loop.remove_signal_handler(signal.SIGTERM)
 
-			# Restore original handlers if available
-			if self.original_sigint_handler:
-				signal.signal(signal.SIGINT, self.original_sigint_handler)
-			if self.original_sigterm_handler:
-				signal.signal(signal.SIGTERM, self.original_sigterm_handler)
+				# Restore original handlers if available
+				if self.original_sigint_handler:
+					signal.signal(signal.SIGINT, self.original_sigint_handler)
+				if self.original_sigterm_handler:
+					signal.signal(signal.SIGTERM, self.original_sigterm_handler)
 		except Exception as e:
 			logger.warning(f'Error while unregistering signal handlers: {e}')
 
