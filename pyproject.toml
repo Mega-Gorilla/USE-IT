@@ -50,6 +50,7 @@ dev = [
     "langchain-aws>=0.2.11",
     "langchain-fireworks>=0.2.6",
     "langchain-google-genai==2.0.8",
+    "pytest>=8.3.5",
 ]
 
 [tool.ruff]
