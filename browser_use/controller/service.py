@@ -22,7 +22,6 @@ from browser_use.controller.views import (
 	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
-	GroupTabsAction,
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
@@ -31,7 +30,6 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	SwitchTabAction,
 	WaitForElementAction,
-	UngroupTabsAction,
 )
 from browser_use.utils import time_execution_sync
 
@@ -176,7 +174,7 @@ class Controller(Generic[Context]):
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
@@ -197,7 +195,7 @@ class Controller(Generic[Context]):
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
@@ -223,7 +221,7 @@ class Controller(Generic[Context]):
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')

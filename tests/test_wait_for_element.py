@@ -1,6 +1,6 @@
+import asyncio
 import os
 import sys
-import asyncio
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -8,15 +8,14 @@ if project_root not in sys.path:
 
 import pytest
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 
 # Third-party imports
-from playwright.async_api import async_playwright
-from langchain_openai import ChatOpenAI
+from browser_use import Agent, Controller
 
 # Local imports
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
-from browser_use import Agent, Controller
 
 # Load environment variables.
 load_dotenv()

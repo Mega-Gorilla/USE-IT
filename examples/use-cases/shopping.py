@@ -1,6 +1,8 @@
-from langchain_openai import ChatOpenAI
-from browser_use import Agent, Browser, BrowserConfig
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+from browser_use import Agent, Browser
+
 load_dotenv()
 
 import asyncio
