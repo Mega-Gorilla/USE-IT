@@ -22,6 +22,9 @@ dependencies = [
     "langchain-openai==0.3.11",
     "langchain-anthropic==0.3.3",
     "langchain-ollama==0.3.0",
+    "langchain-google-genai==2.1.2",
+    "langchain>=0.3.21",
+    "langchain-aws>=0.2.11",
     "google-api-core>=2.24.0",
     "pyperclip>=1.9.0",
     "pyobjc>=11.0; platform_system == 'darwin'",
@@ -56,11 +59,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-  "browser_use/**/*.py",
-  "!browser_use/**/tests/*.py",
-  "!browser_use/**/tests.py",
-  "browser_use/agent/system_prompt.md",
-  "browser_use/dom/buildDomTree.js",
+    "browser_use/**/*.py",
+    "!browser_use/**/tests/*.py",
+    "!browser_use/**/tests.py",
+    "browser_use/agent/system_prompt.md",
+    "browser_use/dom/buildDomTree.js",
 ]
 
 [tool.uv]
@@ -68,16 +71,12 @@ dev-dependencies = [
     "ruff>=0.11.2",
     "tokencost>=0.1.16",
     "build>=1.2.2",
-    "pytest>=8.3.3",
+    "pytest>=8.3.5",
     "pytest-asyncio>=0.24.0",
     "fastapi>=0.115.8",
     "inngest>=0.4.19",
     "uvicorn>=0.34.0",
-    "langchain>=0.3.21",
-    "langchain-aws>=0.2.11",
     "langchain-fireworks>=0.2.6",
-    "langchain-google-genai==2.0.8",
-    "pytest>=8.3.5",
     "ipdb>=0.13.13",
 ]
 
