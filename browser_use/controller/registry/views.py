@@ -10,6 +10,7 @@ class RegisteredAction(BaseModel):
 	description: str
 	function: Callable
 	param_model: Type[BaseModel]
+	domains: list[str] | None = None  # e.g. ['*.google.com', 'www.bing.com', 'yahoo.*]
 
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 

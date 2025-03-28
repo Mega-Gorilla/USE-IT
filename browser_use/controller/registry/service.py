@@ -49,6 +49,7 @@ class Registry(Generic[Context]):
 		self,
 		description: str,
 		param_model: Optional[Type[BaseModel]] = None,
+		domains: Optional[list[str]] = None,
 	):
 		"""Decorator for registering actions"""
 
@@ -79,6 +80,7 @@ class Registry(Generic[Context]):
 				description=description,
 				function=wrapped_func,
 				param_model=actual_param_model,
+				domains=domains,
 			)
 			self.registry.actions[func.__name__] = action
 			return func
