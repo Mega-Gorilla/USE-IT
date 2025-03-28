@@ -1,6 +1,26 @@
+"""
+Action filters (domains and page_filter) let you limit actions available to the Agent on a step-by-step/page-by-page basis.
+
+@registry.action(..., domains=['*'], page_filter=lambda page: return True)
+async def some_action(browser: BrowserContext):
+    ...
+
+This helps prevent the LLM from deciding to use an action that is not compatible with the current page.
+It helps limit decision fatique by scoping actions only to pages where they make sense.
+It also helps prevent mis-triggering stateful actions or actions that could break other programs or leak secrets.
+
+For example:
+    - only run on certain domains @registry.action(..., domains=['example.com', '*.example.com', 'example.co.*']) (supports globs, but no regex)
+    - only fill in a password on a specific login page url
+    - only run if this action has not run before on this page (e.g. by looking up the url in a file on disk)
+
+During each step, the agent recalculates the actions available specifically for that page, and informs the LLM.
+"""
+
 import asyncio
 
 from langchain_openai import ChatOpenAI
+from playwright.async_api import Page
 
 from browser_use.agent.service import Agent, Browser, BrowserContext, Controller
 
@@ -24,17 +44,18 @@ async def disco_mode(browser: BrowserContext):
 
 
 # you can create a custom page filter function that determines if the action should be available for a given page
-def is_login_page(page) -> bool:
-	return 'login' in page.url.lower() or page.url.endswith('signin') or page.url.endswith('sign-in')
+def is_login_page(page: Page) -> bool:
+	return 'login' in page.url.lower() or 'signin' in page.url.lower()
 
 
 # then use it in the action decorator to limit the action to only be available on pages where the filter returns True
 @registry.action(description='Use the force, luke', page_filter=is_login_page)
 async def use_the_force(browser: BrowserContext):
+	# this will only ever run on pages that matched the filter
 	page = await browser.get_current_page()
-	await page.evaluate("""() => { 
-        document.querySelector('body').innerHTML = 'These are not the droids you are looking for';
-    }""")
+	assert is_login_page(page)
+
+	await page.evaluate("""() => { document.querySelector('body').innerHTML = 'These are not the droids you are looking for';}""")
 
 
 async def main():
