@@ -1,9 +1,14 @@
 import asyncio
+import enum
 import json
 import logging
-from typing import Callable, Dict, Optional, Type
+import re
+from typing import Dict, Generic, Optional, Type, TypeVar
 
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
+
+# from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -11,8 +16,13 @@ from browser_use.browser.context import BrowserContext
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
+	ClickElementBySelectorAction,
+	ClickElementByTextAction,
+	ClickElementByXpathAction,
+	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
+	GroupTabsAction,
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
@@ -21,41 +31,58 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	SwitchTabAction,
 	WaitForElementAction,
+	UngroupTabsAction,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
-from langchain_core.language_models.chat_models import BaseChatModel
 
 
-class Controller:
+Context = TypeVar('Context')
+
+
+class Controller(Generic[Context]):
 	def __init__(
 		self,
 		exclude_actions: list[str] = [],
 		output_model: Optional[Type[BaseModel]] = None,
 	):
-		self.exclude_actions = exclude_actions
-		self.output_model = output_model
-		self.registry = Registry(exclude_actions)
-		self._register_default_actions()
+		self.registry = Registry[Context](exclude_actions)
 
-	def _register_default_actions(self):
 		"""Register all default browser actions"""
 
-		if self.output_model is not None:
+		if output_model is not None:
+			# Create a new model that extends the output model with success parameter
+			class ExtendedOutputModel(BaseModel):  # type: ignore
+				success: bool = True
+				data: output_model
 
-			@self.registry.action('Complete task', param_model=self.output_model)
-			async def done(params: BaseModel):
-				return ActionResult(is_done=True, extracted_content=params.model_dump_json())
+			@self.registry.action(
+				'Complete task - with return text and if the task is finished (success=True) or not yet  completly finished (success=False), because last step is reached',
+				param_model=ExtendedOutputModel,
+			)
+			async def done(params: ExtendedOutputModel):
+				# Exclude success from the output JSON since it's an internal parameter
+				output_dict = params.data.model_dump()
+
+				# Enums are not serializable, convert to string
+				for key, value in output_dict.items():
+					if isinstance(value, enum.Enum):
+						output_dict[key] = value.value
+
+				return ActionResult(is_done=True, success=params.success, extracted_content=json.dumps(output_dict))
 		else:
 
-			@self.registry.action('Complete task', param_model=DoneAction)
+			@self.registry.action(
+				'Complete task - with return text and if the task is finished (success=True) or not yet  completly finished (success=False), because last step is reached',
+				param_model=DoneAction,
+			)
 			async def done(params: DoneAction):
-				return ActionResult(is_done=True, extracted_content=params.text)
+				return ActionResult(is_done=True, success=params.success, extracted_content=params.text)
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search Google in the current tab',
+			'Search the query in Google in the current tab, the query should be a search query like humans search in Google, concrete and not vague or super long. More the single most important items. ',
 			param_model=SearchGoogleAction,
 		)
 		async def search_google(params: SearchGoogleAction, browser: BrowserContext):
@@ -82,14 +109,17 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action(
-			'Wait for element to be visible',
-			param_model=WaitForElementAction,  # Ensure this model is defined with "selector" and "timeout" fields
-		)
+		# wait for x seconds
+		@self.registry.action('Wait for x seconds default 3')
+		async def wait(seconds: int = 3):
+			msg = f'🕒  Waiting for {seconds} seconds'
+			logger.info(msg)
+			await asyncio.sleep(seconds)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
+    @self.registry.action('Wait for element to be visible', param_model=WaitForElementAction)
 		async def wait_for_element(params: WaitForElementAction, browser: BrowserContext):
-			"""
-			Waits for the element specified by the CSS selector to become visible within the given timeout.
-			"""
+			"""Waits for the element specified by the CSS selector to become visible within the given timeout."""
 			try:
 				await browser.wait_for_element(params.selector, params.timeout)
 				msg = f'👀  Element with selector "{params.selector}" became visible within {params.timeout}ms.'
@@ -101,15 +131,14 @@ class Controller:
 				raise Exception(err_msg)
 
 		# Element Interaction Actions
-		@self.registry.action('Click element', param_model=ClickElementAction)
-		async def click_element(params: ClickElementAction, browser: BrowserContext):
+		@self.registry.action('Click element by index', param_model=ClickElementAction)
+		async def click_element_by_index(params: ClickElementAction, browser: BrowserContext):
 			session = await browser.get_session()
-			state = session.cached_state
 
-			if params.index not in state.selector_map:
+			if params.index not in await browser.get_selector_map():
 				raise Exception(f'Element with index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = state.selector_map[params.index]
+			element_node = await browser.get_dom_element_by_index(params.index)
 			initial_pages = len(session.context.pages)
 
 			# if element has file uploader then dont click
@@ -139,22 +168,80 @@ class Controller:
 				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
 				return ActionResult(error=str(e))
 
+		@self.registry.action('Click element by selector', param_model=ClickElementBySelectorAction)
+		async def click_element_by_selector(params: ClickElementBySelectorAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_css_selector(params.css_selector)
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with selector {params.css_selector}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				logger.warning(f'Element not clickable with selector {params.css_selector} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click on element by xpath', param_model=ClickElementByXpathAction)
+		async def click_element_by_xpath(params: ClickElementByXpathAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_xpath(params.xpath)
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with xpath {params.xpath}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+			except Exception as e:
+				logger.warning(f'Element not clickable with xpath {params.xpath} - most likely the page changed')
+				return ActionResult(error=str(e))
+
+		@self.registry.action('Click element with text', param_model=ClickElementByTextAction)
+		async def click_element_by_text(params: ClickElementByTextAction, browser: BrowserContext):
+			try:
+				element_node = await browser.get_locate_element_by_text(
+					text=params.text,
+					nth=params.nth,
+				)
+
+				if element_node:
+					await element_node.click()
+					msg = f'🖱️  Clicked on element with text {params.text}'
+					return ActionResult(extracted_content=msg, include_in_memory=True)
+				else:
+					return ActionResult(error=f"No element found for text '{params.text}'")
+			except Exception as e:
+				logger.warning(f"Element not clickable with text {params.text} - {e}")
+				return ActionResult(error=str(e))
+
 		@self.registry.action(
 			'Input text into a input interactive element',
 			param_model=InputTextAction,
 		)
-		async def input_text(params: InputTextAction, browser: BrowserContext):
-			session = await browser.get_session()
-			state = session.cached_state
-
-			if params.index not in state.selector_map:
+		async def input_text(params: InputTextAction, browser: BrowserContext, has_sensitive_data: bool = False):
+			if params.index not in await browser.get_selector_map():
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = state.selector_map[params.index]
+			element_node = await browser.get_dom_element_by_index(params.index)
 			await browser._input_text_element_node(element_node, params.text)
-			msg = f'⌨️  Input {params.text} into index {params.index}'
+			if not has_sensitive_data:
+				msg = f'⌨️  Input {params.text} into index {params.index}'
+			else:
+				msg = f'⌨️  Input sensitive data into index {params.index}'
 			logger.info(msg)
 			logger.debug(f'Element xpath: {element_node.xpath}')
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
+		# Save PDF
+		@self.registry.action(
+			'Save the current page as a PDF file',
+		)
+		async def save_pdf(browser: BrowserContext):
+			page = await browser.get_current_page()
+			short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
+			slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
+			sanitized_filename = f'{slug}.pdf'
+
+			await page.emulate_media('screen')
+			await page.pdf(path=sanitized_filename, format='A4', print_background=False)
+			msg = f'Saving page with URL {page.url} as PDF to ./{sanitized_filename}'
+			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Tab Management Actions
@@ -175,15 +262,35 @@ class Controller:
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
+		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
+		async def close_tab(params: CloseTabAction, browser: BrowserContext):
+			await browser.switch_to_tab(params.page_id)
+			page = await browser.get_current_page()
+			url = page.url
+			await page.close()
+			msg = f'❌  Closed tab #{params.page_id} with url {url}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True)
+
 		# Content Actions
 		@self.registry.action(
 			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
+		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
 			import markdownify
 
-			content = markdownify.markdownify(await page.content())
+			strip = []
+			if should_strip_link_urls:
+				strip = ['a', 'img']
+
+			content = markdownify.markdownify(await page.content(), strip=strip)
+
+			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
+			for iframe in page.frames:
+				if iframe.url != page.url and not iframe.url.startswith('data:'):
+					content += f'\n\nIFRAME {iframe.url}:\n'
+					content += markdownify.markdownify(await iframe.content())
 
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
@@ -207,7 +314,7 @@ class Controller:
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, {params.amount});')
 			else:
-				await page.keyboard.press('PageDown')
+				await page.evaluate('window.scrollBy(0, window.innerHeight);')
 
 			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍  Scrolled down the page by {amount}'
@@ -227,7 +334,7 @@ class Controller:
 			if params.amount is not None:
 				await page.evaluate(f'window.scrollBy(0, -{params.amount});')
 			else:
-				await page.keyboard.press('PageUp')
+				await page.evaluate('window.scrollBy(0, -window.innerHeight);')
 
 			amount = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍  Scrolled up the page by {amount}'
@@ -239,13 +346,25 @@ class Controller:
 
 		# send keys
 		@self.registry.action(
-			'Send strings of special keys like Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. Be aware of different operating systems and their shortcuts',
+			'Send strings of special keys like Escape,Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. ',
 			param_model=SendKeysAction,
 		)
 		async def send_keys(params: SendKeysAction, browser: BrowserContext):
 			page = await browser.get_current_page()
 
-			await page.keyboard.press(params.keys)
+			try:
+				await page.keyboard.press(params.keys)
+			except Exception as e:
+				if 'Unknown key' in str(e):
+					# loop over the keys and try to send each one
+					for key in params.keys:
+						try:
+							await page.keyboard.press(key)
+						except Exception as e:
+							logger.debug(f'Error sending key {key}: {str(e)}')
+							raise e
+				else:
+					raise e
 			msg = f'⌨️  Sent keys: {params.keys}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -451,6 +570,8 @@ class Controller:
 				logger.error(msg)
 				return ActionResult(error=msg, include_in_memory=True)
 
+	# Register ---------------------------------------------------------------
+
 	def action(self, description: str, **kwargs):
 		"""Decorator for registering custom actions
 
@@ -458,71 +579,45 @@ class Controller:
 		"""
 		return self.registry.action(description, **kwargs)
 
-	@time_execution_async('--multi-act')
-	async def multi_act(
-		self,
-		actions: list[ActionModel],
-		browser_context: BrowserContext,
-		check_break_if_paused: Callable[[], bool],
-		check_for_new_elements: bool = True,
-		page_extraction_llm: Optional[BaseChatModel] = None,
-		sensitive_data: Optional[Dict[str, str]] = None,
-	) -> list[ActionResult]:
-		"""Execute multiple actions"""
-		results = []
-
-		session = await browser_context.get_session()
-		cached_selector_map = session.cached_state.selector_map
-		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
-
-		check_break_if_paused()
-
-		await browser_context.remove_highlights()
-
-		for i, action in enumerate(actions):
-			check_break_if_paused()
-
-			if action.get_index() is not None and i != 0:
-				new_state = await browser_context.get_state()
-				new_path_hashes = set(e.hash.branch_path_hash for e in new_state.selector_map.values())
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-					# next action requires index but there are new elements on the page
-					logger.info(f'Something new appeared after action {i} / {len(actions)}')
-					break
-
-			check_break_if_paused()
-
-			results.append(await self.act(action, browser_context, page_extraction_llm, sensitive_data))
-
-			logger.debug(f'Executed action {i + 1} / {len(actions)}')
-			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
-				break
-
-			await asyncio.sleep(browser_context.config.wait_between_actions)
-			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
-
-		return results
+	# Act --------------------------------------------------------------------
 
 	@time_execution_sync('--act')
 	async def act(
 		self,
 		action: ActionModel,
 		browser_context: BrowserContext,
+		#
 		page_extraction_llm: Optional[BaseChatModel] = None,
 		sensitive_data: Optional[Dict[str, str]] = None,
+		available_file_paths: Optional[list[str]] = None,
+		#
+		context: Context | None = None,
 	) -> ActionResult:
 		"""Execute an action"""
+
 		try:
 			for action_name, params in action.model_dump(exclude_unset=True).items():
 				if params is not None:
-					# remove highlights
+					# with Laminar.start_as_current_span(
+					# 	name=action_name,
+					# 	input={
+					# 		'action': action_name,
+					# 		'params': params,
+					# 	},
+					# 	span_type='TOOL',
+					# ):
 					result = await self.registry.execute_action(
 						action_name,
 						params,
 						browser=browser_context,
 						page_extraction_llm=page_extraction_llm,
 						sensitive_data=sensitive_data,
+						available_file_paths=available_file_paths,
+						context=context,
 					)
+
+					# Laminar.set_span_output(result)
+
 					if isinstance(result, str):
 						return ActionResult(extracted_content=result)
 					elif isinstance(result, ActionResult):

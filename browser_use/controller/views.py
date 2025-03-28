@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 # Action Input Models
@@ -19,7 +19,16 @@ class WaitForElementAction(BaseModel):
 class ClickElementAction(BaseModel):
 	index: int
 	xpath: Optional[str] = None
+ 
+class ClickElementByXpathAction(BaseModel):
+    xpath: str
 
+class ClickElementBySelectorAction(BaseModel):
+    css_selector: str
+    
+class ClickElementByTextAction(BaseModel):
+    text: str
+    nth: int = 0
 
 class InputTextAction(BaseModel):
 	index: int
@@ -29,6 +38,7 @@ class InputTextAction(BaseModel):
 
 class DoneAction(BaseModel):
 	text: str
+	success: bool
 
 
 class SwitchTabAction(BaseModel):
@@ -39,12 +49,30 @@ class OpenTabAction(BaseModel):
 	url: str
 
 
+class CloseTabAction(BaseModel):
+	page_id: int
+
+
 class ScrollAction(BaseModel):
 	amount: Optional[int] = None  # The number of pixels to scroll. If None, scroll down/up one page
 
 
 class SendKeysAction(BaseModel):
 	keys: str
+
+class GroupTabsAction(BaseModel):
+    tab_ids: list[int] = Field(..., description="List of tab IDs to group")
+    title: str = Field(..., description="Name for the tab group")
+    color: Optional[str] = Field(
+        "blue",
+        description="Color for the group (grey/blue/red/yellow/green/pink/purple/cyan)",
+    )
+
+class UngroupTabsAction(BaseModel):
+    tab_ids: list[int] = Field(..., description="List of tab IDs to ungroup")
+
+class ExtractPageContentAction(BaseModel):
+	value: str
 
 
 class NoParamsAction(BaseModel):
