@@ -23,6 +23,7 @@ from langchain_core.messages import (
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
+from browser_use.agent.memory.service import Memory, MemorySettings
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
@@ -146,6 +147,9 @@ class Agent(Generic[Context]):
 		injected_agent_state: Optional[AgentState] = None,
 		#
 		context: Context | None = None,
+		# Procedural memory settings
+		enable_memory: bool = True,
+		memory_interval: int = 10,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -177,6 +181,8 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
+			enable_memory=enable_memory,
+			memory_interval=memory_interval,
 		)
 
 		# Initialize state
@@ -224,6 +230,19 @@ class Agent(Generic[Context]):
 				available_file_paths=self.settings.available_file_paths,
 			),
 			state=self.state.message_manager_state,
+		)
+
+		memory_settings = MemorySettings(
+			agent_id=self.state.agent_id,
+			enabled=self.settings.enable_memory,
+			interval=self.settings.memory_interval,
+		)
+
+		# Initialize procedural memory
+		self.memory = Memory(
+			message_manager=self._message_manager,
+			llm=self.llm,
+			settings=memory_settings,
 		)
 
 		# Browser setup
@@ -364,6 +383,10 @@ class Agent(Generic[Context]):
 		try:
 			state = await self.browser_context.get_state()
 			active_page = await self.browser_context.get_current_page()
+
+			# summarize memories if needed
+			if self.state.n_steps % self.settings.memory_interval == 0:
+				self.memory.create_procedural_memory(self.state.n_steps)
 
 			await self._raise_if_stopped_or_paused()
 
