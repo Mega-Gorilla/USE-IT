@@ -60,7 +60,7 @@ from browser_use.utils import check_env_variables, time_execution_async, time_ex
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-SKIP_LLM_API_KEY_VERIFICATION = os.getenv('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower() == 'true'
+SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
 def log_response(response: AgentOutput) -> None:
