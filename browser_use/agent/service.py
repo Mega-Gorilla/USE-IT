@@ -5,14 +5,8 @@ import gc
 import inspect
 import json
 import logging
-import os
 import re
-import signal
-import sys
 import time
-
-# Global flag to prevent duplicate exit messages
-_exiting = False
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -65,9 +59,6 @@ from browser_use.utils import check_env_variables, time_execution_async, time_ex
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Global flag to prevent duplicate exit messages
-_exiting = False
-
 
 def log_response(response: AgentOutput) -> None:
 	"""Utility function to log the model's response."""
@@ -84,61 +75,6 @@ def log_response(response: AgentOutput) -> None:
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 	for i, action in enumerate(response.action):
 		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
-
-
-def sigint_handler(loop: asyncio.AbstractEventLoop, agent=None):
-	"""SIGINT (Ctrl+C) handler.
-
-	First Ctrl+C: Cancel current step and pause the agent.
-	Second Ctrl+C: Exit immediately.
-	"""
-	global _exiting
-
-	if _exiting:
-		# Already exiting, force exit immediately
-		os._exit(0)
-
-	if getattr(loop, 'ctrl_c_pressed', False):
-		# If we're in the waiting for input state, let the pause method handle it
-		if getattr(loop, 'waiting_for_input', False):
-			return
-
-		# Second Ctrl+C - exit immediately
-		_exiting = True
-		logger.info('\n\n🛑🛑 Second Ctrl+C detected. Exiting immediately...\n\n')
-
-		# Force exit - more reliable than sys.exit()
-		os._exit(0)
-
-	# Mark that Ctrl+C was pressed
-	loop.ctrl_c_pressed = True
-
-	# Cancel current tasks
-	current_task = asyncio.current_task(loop)
-	for task in asyncio.all_tasks(loop):
-		if task != current_task and not task.done():
-			task_name = task.get_name() if hasattr(task, 'get_name') else str(task)
-			if 'step' in task_name or 'multi_act' in task_name or 'get_next_action' in task_name:
-				task.cancel()
-
-	# If we can get the agent reference, pause it
-	if agent and hasattr(agent, 'pause'):
-		agent.pause()
-
-	logger.info('\n\n🛑 Ctrl+C detected. Current step cancelled and agent paused.')
-	logger.info('Press Enter to resume or Ctrl+C again to exit completely.\n\n')
-
-
-def sigterm_handler(loop: asyncio.AbstractEventLoop):
-	"""SIGTERM handler.
-
-	Always exits the program completely.
-	"""
-	global _exiting
-	if not _exiting:
-		_exiting = True
-		logger.info('\n\n🛑 SIGTERM received. Exiting immediately...\n\n')
-	os._exit(0)
 
 
 Context = TypeVar('Context')
@@ -402,7 +338,7 @@ class Agent(Generic[Context]):
 				raise InterruptedError
 
 		if self.state.stopped or self.state.paused:
-			logger.debug('Agent paused after getting state')
+			# logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
 	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
@@ -445,6 +381,10 @@ class Agent(Generic[Context]):
 			try:
 				model_output = await self.get_next_action(input_messages)
 
+				# Check again for paused/stopped state after getting model output
+				# This is needed in case Ctrl+C was pressed during the get_next_action call
+				await self._raise_if_stopped_or_paused()
+
 				self.state.n_steps += 1
 
 				if self.register_new_step_callback:
@@ -458,9 +398,18 @@ class Agent(Generic[Context]):
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
+				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
 				self._message_manager.add_model_output(model_output)
+			except asyncio.CancelledError:
+				# Task was cancelled due to Ctrl+C
+				self._message_manager._remove_last_state_message()
+				raise InterruptedError('Model query cancelled by user')
+			except InterruptedError:
+				# Agent was paused during get_next_action
+				self._message_manager._remove_last_state_message()
+				raise  # Re-raise to be caught by the outer try/except
 			except Exception as e:
 				# model call failed, remove last state message from history
 				self._message_manager._remove_last_state_message()
@@ -476,13 +425,18 @@ class Agent(Generic[Context]):
 			self.state.consecutive_failures = 0
 
 		except InterruptedError:
-			logger.debug('Agent paused')
+			# logger.debug('Agent paused')
 			self.state.last_result = [
 				ActionResult(
-					error='The agent was paused - now continuing actions might need to be repeated', include_in_memory=True
+					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=False
 				)
 			]
 			return
+		except asyncio.CancelledError:
+			# Directly handle the case where the step is cancelled at a higher level
+			# logger.debug('Task cancelled - agent was paused with Ctrl+C')
+			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=False)]
+			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
 			self.state.last_result = result
@@ -670,7 +624,8 @@ class Agent(Generic[Context]):
 		if len(parsed.action) > self.settings.max_actions_per_step:
 			parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
-		log_response(parsed)
+		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
+			log_response(parsed)
 
 		return parsed
 
@@ -726,13 +681,17 @@ class Agent(Generic[Context]):
 
 		loop = asyncio.get_event_loop()
 
-		# Initialize control attributes
-		setattr(loop, 'ctrl_c_pressed', False)
-		setattr(loop, 'waiting_for_input', False)
+		# Set up the Ctrl+C signal handler with callbacks specific to this agent
+		from browser_use.utils import SignalHandler
 
-		# Set up signal handlers with reference to self (the agent)
-		loop.add_signal_handler(signal.SIGINT, lambda: sigint_handler(loop, self))
-		loop.add_signal_handler(signal.SIGTERM, lambda: sigterm_handler(loop))
+		signal_handler = SignalHandler(
+			loop=loop,
+			pause_callback=self.pause,
+			resume_callback=self.resume,
+			custom_exit_callback=None,  # No special cleanup needed on forced exit
+			exit_on_second_int=True,
+		)
+		signal_handler.register()
 
 		# Start non-blocking LLM connection verification
 		assert await self.llm._verified_api_keys, 'Failed to verify LLM API keys'
@@ -747,32 +706,9 @@ class Agent(Generic[Context]):
 
 			for step in range(max_steps):
 				# Check if waiting for user input after Ctrl+C
-				if getattr(loop, 'waiting_for_user_input', False):
-					# Create a future that will be resolved when user presses Enter
-					user_input_future = loop.create_future()
-
-					# Use a separate thread to read user input without blocking the event loop
-					def wait_for_input():
-						try:
-							input()  # Wait for Enter key
-							if not user_input_future.done():
-								loop.call_soon_threadsafe(user_input_future.set_result, None)
-						except (EOFError, KeyboardInterrupt):
-							# If another Ctrl+C is received during input, exit
-							sys.exit(0)
-
-					import threading
-
-					threading.Thread(target=wait_for_input, daemon=True).start()
-
-					try:
-						# Wait for user to press Enter
-						await user_input_future
-						logger.info('Resuming agent execution...')
-						loop.waiting_for_user_input = False
-					except asyncio.CancelledError:
-						# User pressed Ctrl+C again
-						sys.exit(0)
+				if self.state.paused:
+					signal_handler.wait_for_resume()
+					signal_handler.reset()
 
 				# Check if we should stop due to too many failures
 				if self.state.consecutive_failures >= self.settings.max_failures:
@@ -816,6 +752,9 @@ class Agent(Generic[Context]):
 			return self.state.history
 
 		finally:
+			# Unregister signal handlers before cleanup
+			signal_handler.unregister()
+
 			self.telemetry.capture(
 				AgentEndTelemetryEvent(
 					agent_id=self.state.agent_id,
@@ -864,25 +803,34 @@ class Agent(Generic[Context]):
 					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
 					break
 
-			await self._raise_if_stopped_or_paused()
+			try:
+				await self._raise_if_stopped_or_paused()
 
-			result = await self.controller.act(
-				action,
-				self.browser_context,
-				self.settings.page_extraction_llm,
-				self.sensitive_data,
-				self.settings.available_file_paths,
-				context=self.context,
-			)
+				result = await self.controller.act(
+					action,
+					self.browser_context,
+					self.settings.page_extraction_llm,
+					self.sensitive_data,
+					self.settings.available_file_paths,
+					context=self.context,
+				)
 
-			results.append(result)
+				results.append(result)
 
-			logger.debug(f'Executed action {i + 1} / {len(actions)}')
-			if results[-1].is_done or results[-1].error or i == len(actions) - 1:
-				break
+				logger.debug(f'Executed action {i + 1} / {len(actions)}')
+				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
+					break
 
-			await asyncio.sleep(self.browser_context.config.wait_between_actions)
-			# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
+				await asyncio.sleep(self.browser_context.config.wait_between_actions)
+				# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
+
+			except asyncio.CancelledError:
+				# Gracefully handle task cancellation
+				logger.info(f'Action {i + 1} was cancelled due to Ctrl+C')
+				if not results:
+					# Add a result for the cancelled action
+					results.append(ActionResult(error='The action was cancelled due to Ctrl+C', include_in_memory=True))
+				raise InterruptedError('Action cancelled by user')
 
 		return results
 
@@ -1073,57 +1021,26 @@ class Agent(Generic[Context]):
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		logger.info('\n\n⏸️  Got Ctrl+C, paused the agent and left the browser open.')
+		print('\n\n⏸️  Got Ctrl+C, paused the agent and left the browser open.')
 		self.state.paused = True
 
-		# If this was triggered by Ctrl+C, wait for user input
-		loop = asyncio.get_event_loop()
-		if getattr(loop, 'ctrl_c_pressed', False):
-			# Set flag to indicate we're waiting for input
-			setattr(loop, 'waiting_for_input', True)
-
-			# Temporarily restore default signal handling for SIGINT
-			# This ensures KeyboardInterrupt will be raised during input()
-			original_handler = signal.getsignal(signal.SIGINT)
-			signal.signal(signal.SIGINT, signal.default_int_handler)
-
-			try:
-				print('Press [Enter] to resume or [Ctrl+C] to exit... ', end='', flush=True)
-				input()  # This will raise KeyboardInterrupt on Ctrl+C
-
-				self.resume()
-			except KeyboardInterrupt:
-				# Second Ctrl+C detected
-				global _exiting
-				if not _exiting:
-					_exiting = True
-					logger.info('\n\n🛑 Second Ctrl+C detected. Exiting immediately...\n\n')
-				# Force exit with os._exit which doesn't run cleanup handlers (hides big wall of errors)
-				os._exit(0)
-			finally:
-				try:
-					signal.signal(signal.SIGINT, original_handler)
-					setattr(loop, 'waiting_for_input', False)
-				except BaseException:
-					pass
+		# The signal handler will handle the asyncio pause logic for us
+		# No need to duplicate the code here
 
 	def resume(self) -> None:
 		"""Resume the agent"""
-		print()
-		logger.info('▶️  Resuming agent after user confirmation')
+		print('----------------------------------------------------------------------')
+		print('▶️  Got Enter, resuming agent execution where it left off...\n')
 		self.state.paused = False
 
-		# Clear the flags
-		loop = asyncio.get_event_loop()
-		if hasattr(loop, 'ctrl_c_pressed'):
-			loop.ctrl_c_pressed = False
-		if hasattr(loop, 'waiting_for_input'):
-			loop.waiting_for_input = False
+		# The signal handler should have already reset the flags
+		# through its reset() method when called from run()
 
 		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
 		# so we need to restart the browser if user wants to continue
 		if self.browser:
-			logger.info('🌎  Restarting/reconnecting to browser...')
+			logger.info('🌎 Restarting/reconnecting to browser...')
+			loop = asyncio.get_event_loop()
 			loop.create_task(self.browser._init())
 			loop.create_task(asyncio.sleep(5))
 
