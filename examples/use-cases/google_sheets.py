@@ -29,13 +29,7 @@ controller = Controller()
 
 
 def is_google_sheet(page) -> bool:
-	return page.url.startswith('https://docas.google.com/spreadsheets/')
-
-
-# TODO: refactor if not is_google_sheet(page): checks below to something like this:
-# @controller.registry.action('Do something with a Google Sheet', page_filter=is_google_sheet)
-# async def some_google_sheet_action(browser: BrowserContext):
-# 	...
+	return page.url.startswith('https://docs.google.com/spreadsheets/')
 
 
 @controller.registry.action('Google Sheets: Open a specific Google Sheet')

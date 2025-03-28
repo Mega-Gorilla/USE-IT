@@ -195,16 +195,17 @@ class Registry(Generic[Context]):
 				page_filter_match = action.page_filter(page)
 
 			# Check domains if present
-			domains_match = False
+			domains_match = True  # Default to True if no filter
 			if action.domains is not None and page.url:
+				domains_match = False
 				# Try to match any of the domain patterns
 				for domain_pattern in action.domains:
 					if self.registry._match_domain(domain_pattern, page.url):
 						domains_match = True
 						break
 
-			# Only include action if either filter matches
-			if page_filter_match or domains_match:
+			# Include action if both filters match (or if either is not present)
+			if page_filter_match and domains_match:
 				available_actions[name] = action
 
 		fields = {

@@ -128,16 +128,17 @@ class ActionRegistry(BaseModel):
 				page_filter_match = action.page_filter(page)
 
 			# Check domains if present
-			domains_match = False
+			domains_match = True  # Default to True if no filter
 			if action.domains is not None and page.url:
+				domains_match = False
 				# Try to match any of the domain patterns
 				for domain_pattern in action.domains:
 					if self._match_domain(domain_pattern, page.url):
 						domains_match = True
 						break
 
-			# Include action if either filter matches
-			if page_filter_match or domains_match:
+			# Include action if both filters match (or if either is not present)
+			if page_filter_match and domains_match:
 				filtered_actions.append(action)
 
 		return '\n'.join(action.prompt_description() for action in filtered_actions)
