@@ -89,6 +89,27 @@ class SignalHandler:
 		except Exception as e:
 			logger.warning(f'Error while unregistering signal handlers: {e}')
 
+	def _handle_second_ctrl_c(self) -> None:
+		"""
+		Handle a second Ctrl+C press by performing cleanup and exiting.
+		This is shared logic used by both sigint_handler and wait_for_resume.
+		"""
+		global _exiting
+
+		if not _exiting:
+			_exiting = True
+
+			# Call custom exit callback if provided
+			if self.custom_exit_callback:
+				try:
+					self.custom_exit_callback()
+				except Exception as e:
+					logger.error(f'Error in exit callback: {e}')
+
+		# Force immediate exit - more reliable than sys.exit()
+		print('\n\n🛑  Got second Ctrl+C. Exiting immediately...\n', file=stderr)
+		os._exit(0)
+
 	def sigint_handler(self) -> None:
 		"""
 		SIGINT (Ctrl+C) handler.
@@ -109,19 +130,7 @@ class SignalHandler:
 
 			# Second Ctrl+C - exit immediately if configured to do so
 			if self.exit_on_second_int:
-				_exiting = True
-				print('\n\n🛑 Second Ctrl+C detected. Exiting immediately...\n\n', file=stderr)
-
-				# Call custom exit callback if provided
-				if self.custom_exit_callback:
-					try:
-						self.custom_exit_callback()
-					except Exception as e:
-						logger.error(f'Error in exit callback: {e}')
-
-				# Force immediate exit - more reliable than sys.exit()
-				logger.debug('Forcing immediate exit with os._exit(0)')
-				os._exit(0)
+				self._handle_second_ctrl_c()
 
 		# Mark that Ctrl+C was pressed
 		self.loop.ctrl_c_pressed = True
@@ -137,8 +146,7 @@ class SignalHandler:
 				logger.error(f'Error in pause callback: {e}')
 
 		# Log pause message after pause_callback is called (not before)
-		print('\n\n----------------------------------------------------------------------', file=stderr)
-		print('Press [Enter] to resume or [Ctrl+C] again to exit completely.\n\n', file=stderr)
+		print('----------------------------------------------------------------------', file=stderr)
 
 	def sigterm_handler(self) -> None:
 		"""
@@ -167,6 +175,8 @@ class SignalHandler:
 				if any(pattern in task_name for pattern in self.interruptible_task_patterns):
 					logger.debug(f'Cancelling task: {task_name}')
 					task.cancel()
+					# Add exception handler to silence "Task exception was never retrieved" warnings
+					task.add_done_callback(lambda t: t.exception() if t.cancelled() else None)
 
 		# Also cancel the current task if it's interruptible
 		if current_task and not current_task.done():
@@ -191,30 +201,27 @@ class SignalHandler:
 		original_handler = signal.getsignal(signal.SIGINT)
 		signal.signal(signal.SIGINT, signal.default_int_handler)
 
-		try:
-			print('Press [Enter] to resume or [Ctrl+C] to exit... ', end='', flush=True, file=stderr)
+		green = '\x1b[32;1m'
+		red = '\x1b[31m'
+		blink = '\033[33;5m'
+		unblink = '\033[0m'
+		reset = '\x1b[0m'
+
+		try:  # escape code is to blink the ...
+			print(
+				f'➡️  Press {green}[Enter]{reset} to resume or {red}[Ctrl+C]{reset} again to exit{blink}...{unblink} ',
+				end='',
+				flush=True,
+				file=stderr,
+			)
 			input()  # This will raise KeyboardInterrupt on Ctrl+C
 
 			# Call resume callback if provided
 			if self.resume_callback:
 				self.resume_callback()
 		except KeyboardInterrupt:
-			# Second Ctrl+C detected
-			global _exiting
-			if not _exiting:
-				_exiting = True
-				print('\n\n🛑 Second Ctrl+C detected. Exiting immediately...\n\n', file=stderr)
-
-				# Call custom exit callback if provided
-				if self.custom_exit_callback:
-					try:
-						self.custom_exit_callback()
-					except Exception as e:
-						logger.error(f'Error in exit callback: {e}')
-
-			# Force immediate exit
-			# Force exit with os._exit which doesn't run cleanup handlers
-			os._exit(0)
+			# Use the shared method to handle second Ctrl+C
+			self._handle_second_ctrl_c()
 		finally:
 			try:
 				# Restore our signal handler

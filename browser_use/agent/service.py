@@ -1015,7 +1015,8 @@ class Agent(Generic[Context]):
 
 	def resume(self) -> None:
 		"""Resume the agent"""
-		print('\n▶️  Resuming agent after user confirmation')
+		print('----------------------------------------------------------------------')
+		print('▶️  Got Enter, resuming agent execution where it left off...\n')
 		self.state.paused = False
 
 		# The signal handler should have already reset the flags
@@ -1024,7 +1025,7 @@ class Agent(Generic[Context]):
 		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
 		# so we need to restart the browser if user wants to continue
 		if self.browser:
-			logger.info('🌎  Restarting/reconnecting to browser...')
+			logger.info('🌎 Restarting/reconnecting to browser...')
 			loop = asyncio.get_event_loop()
 			loop.create_task(self.browser._init())
 			loop.create_task(asyncio.sleep(5))
