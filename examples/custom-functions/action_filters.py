@@ -1,105 +1,65 @@
-"""
-This example demonstrates how to use action filters to expose different actions
-based on the current page URL or page content.
-
-There are two ways to filter actions:
-1. Using `domains` parameter with glob patterns to match specific domains
-2. Using `page_filter` function for more complex filtering based on page content
-
-Actions with no filters will be included in the system prompt. Actions with filters
-will only be dynamically added when the agent is on a matching page.
-"""
-
 import asyncio
-import os
-from typing import Optional
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
-from browser_use.agent.service import Agent
-from browser_use.browser.browser import Browser
-from browser_use.controller.service import Controller, Registry
+from browser_use.agent.service import Agent, Browser, BrowserContext, Controller
 
 # Initialize controller and registry
 controller = Controller()
 registry = controller.registry
 
 
-# Define a standard action with no filters (always available)
-@registry.action(
-    description="Navigate to a URL"
-)
-async def navigate(url: str):
-    """Navigate to a specific URL"""
-    return f"Would navigate to {url}"
+# Action will only be available to Agent on Google domains because of the domain filter
+@registry.action(description='Trigger disco mode', domains=['google.com', '*.google.com'])
+async def disco_mode(browser: BrowserContext):
+	page = await browser.get_current_page()
+	await page.evaluate("""() => { 
+        // define the wiggle animation
+        document.styleSheets[0].insertRule('@keyframes wiggle { 0% { transform: rotate(0deg); } 50% { transform: rotate(10deg); } 100% { transform: rotate(0deg); } }');
+        
+        document.querySelectorAll("*").forEach(element => {
+            element.style.animation = "wiggle 0.5s infinite";
+        });
+    }""")
 
 
-# Action only available on Google
-@registry.action(
-    description="Search on Google",
-    domains=["google.com", "*.google.com"]  # Matches google.com and any subdomain
-)
-async def google_search(query: str):
-    """Perform a Google search"""
-    return f"Would search for '{query}' on Google"
+# you can create a custom page filter function that determines if the action should be available for a given page
+def is_login_page(page) -> bool:
+	return 'login' in page.url.lower() or page.url.endswith('signin') or page.url.endswith('sign-in')
 
 
-# Action only available on GitHub
-@registry.action(
-    description="Search GitHub repositories",
-    domains=["github.com"]
-)
-async def github_search(repo_query: str):
-    """Search for repositories on GitHub"""
-    return f"Would search for GitHub repos matching '{repo_query}'"
-
-
-# Action that uses a complex page filter function
-# Note: For real use, you would need an async page filter or access HTML content via DOM
-@registry.action(
-    description="Login to account (only available on login pages)",
-    page_filter=lambda page: "login" in page.url.lower() or 
-                             page.url.endswith("signin") or
-                             page.url.endswith("sign-in")
-)
-async def login(username: str, password: str):
-    """Login to the current site"""
-    return f"Would login with username '{username}'"
-
-
-# Action for admin pages using both domain and page filter
-@registry.action(
-    description="Admin-only action",
-    domains=["example.com"],
-    page_filter=lambda page: "admin" in page.url.lower()
-)
-class AdminAction(BaseModel):
-    action_type: str = Field(description="Type of admin action to perform")
-    
-    async def execute(self):
-        return f"Would perform admin action: {self.action_type}"
+# then use it in the action decorator to limit the action to only be available on pages where the filter returns True
+@registry.action(description='Use the force, luke', page_filter=is_login_page)
+async def use_the_force(browser: BrowserContext):
+	page = await browser.get_current_page()
+	await page.evaluate("""() => { 
+        document.querySelector('body').innerHTML = 'These are not the droids you are looking for';
+    }""")
 
 
 async def main():
-    """Main function to run the example"""
-    browser = Browser()
-    llm = ChatOpenAI(model_name="gpt-4o")
-    
-    # Create the agent
-    agent = Agent(
-        task="Demonstrate how action filters work by visiting different websites",
-        llm=llm,
-        browser=browser,
-        controller=controller,
-    )
-    
-    # Run the agent
-    await agent.run(max_steps=10)
-    
-    # Cleanup
-    await browser.close()
+	"""Main function to run the example"""
+	browser = Browser()
+	llm = ChatOpenAI(model_name='gpt-4o')
+
+	# Create the agent
+	agent = Agent(  # disco mode will not be triggered on apple.com because the LLM wont be able to see that action available, it should work on Google.com though.
+		task="""
+            Go to apple.com and trigger disco mode (if dont know how to do that, then just move on).
+            Then go to google.com and trigger disco mode.
+            After that, go to the Google login page and Use the force, luke.
+        """,
+		llm=llm,
+		browser=browser,
+		controller=controller,
+	)
+
+	# Run the agent
+	await agent.run(max_steps=10)
+
+	# Cleanup
+	await browser.close()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+	asyncio.run(main())
