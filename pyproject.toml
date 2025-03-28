@@ -80,6 +80,7 @@ include = [
 
 [tool.uv]
 dev-dependencies = [
+    "ipdb>=0.13.13",
     "ruff>=0.11.2",
 ]
 

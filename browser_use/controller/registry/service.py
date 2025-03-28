@@ -175,23 +175,51 @@ class Registry(Generic[Context]):
 		return params
 
 	@time_execution_sync('--create_action_model')
-	def create_action_model(self, include_actions: Optional[list[str]] = None) -> Type[ActionModel]:
+	def create_action_model(self, include_actions: Optional[list[str]] = None, page=None) -> Type[ActionModel]:
 		"""Creates a Pydantic model from registered actions"""
+		# Filter actions based on page if provided
+		available_actions = {}
+		for name, action in self.registry.actions.items():
+			if include_actions is not None and name not in include_actions:
+				continue
+
+			# If no page provided, only include actions with no filters
+			if page is None:
+				if action.page_filter is None and action.domains is None:
+					available_actions[name] = action
+				continue
+
+			# Check page_filter if present
+			page_filter_match = True  # Default to True if no filter
+			if action.page_filter is not None:
+				page_filter_match = action.page_filter(page)
+
+			# Check domains if present
+			domains_match = False
+			if action.domains is not None and page.url:
+				# Try to match any of the domain patterns
+				for domain_pattern in action.domains:
+					if self.registry._match_domain(domain_pattern, page.url):
+						domains_match = True
+						break
+
+			# Only include action if either filter matches
+			if page_filter_match or domains_match:
+				available_actions[name] = action
+
 		fields = {
 			name: (
 				Optional[action.param_model],
 				Field(default=None, description=action.description),
 			)
-			for name, action in self.registry.actions.items()
-			if include_actions is None or name in include_actions
+			for name, action in available_actions.items()
 		}
 
 		self.telemetry.capture(
 			ControllerRegisteredFunctionsTelemetryEvent(
 				registered_functions=[
 					RegisteredFunction(name=name, params=action.param_model.model_json_schema())
-					for name, action in self.registry.actions.items()
-					if include_actions is None or name in include_actions
+					for name, action in available_actions.items()
 				]
 			)
 		)
@@ -200,8 +228,8 @@ class Registry(Generic[Context]):
 
 	def get_prompt_description(self, page=None) -> str:
 		"""Get a description of all actions for the prompt
-		
+
 		If page is provided, only include actions that are available for that page
 		based on their filter_func
 		"""
-		return self.registry.get_prompt_description(page)
+		return self.registry.get_prompt_description(page=page)

@@ -73,39 +73,39 @@ class ActionRegistry(BaseModel):
 	def _match_domain(self, domain_pattern: str, url: str) -> bool:
 		"""
 		Match a domain pattern against a URL using glob patterns.
-		
+
 		Args:
 			domain_pattern: A domain pattern that can include glob patterns (* wildcard)
 			url: The URL to match against
-			
+
 		Returns:
 			True if the URL's domain matches the pattern, False otherwise
 		"""
 		import fnmatch
 		from urllib.parse import urlparse
-		
+
 		# Parse the URL to get the domain
 		try:
 			parsed_url = urlparse(url)
 			if not parsed_url.netloc:
 				return False
-			
+
 			domain = parsed_url.netloc
 			# Remove port if present
 			if ':' in domain:
 				domain = domain.split(':')[0]
-				
+
 			# Perform glob matching
 			return fnmatch.fnmatch(domain, domain_pattern)
 		except Exception:
 			return False
-	
+
 	def get_prompt_description(self, page=None) -> str:
 		"""Get a description of all actions for the prompt
-		
+
 		Args:
 			page: If provided, filter actions by page using page_filter and domains.
-		
+
 		Returns:
 			A string description of available actions.
 			- If page is None: return only actions with no page_filter and no domains (for system prompt)
@@ -113,15 +113,20 @@ class ActionRegistry(BaseModel):
 		"""
 		if page is None:
 			# For system prompt (no page provided), include only actions with no filters
-			return '\n'.join([action.prompt_description() for action in self.actions.values() 
-							 if action.page_filter is None and action.domains is None])
-		
+			return '\n'.join(
+				action.prompt_description()
+				for action in self.actions.values()
+				if action.page_filter is None and action.domains is None
+			)
+
 		# For step-by-step prompts, include filtered actions for the current page
 		filtered_actions = []
 		for action in self.actions.values():
 			# Check page_filter if present
-			page_filter_match = action.page_filter is not None and action.page_filter(page)
-			
+			page_filter_match = True  # Default to True if no filter
+			if action.page_filter is not None:
+				page_filter_match = action.page_filter(page)
+
 			# Check domains if present
 			domains_match = False
 			if action.domains is not None and page.url:
@@ -130,9 +135,9 @@ class ActionRegistry(BaseModel):
 					if self._match_domain(domain_pattern, page.url):
 						domains_match = True
 						break
-			
+
 			# Include action if either filter matches
 			if page_filter_match or domains_match:
 				filtered_actions.append(action)
-		
-		return '\n'.join([action.prompt_description() for action in filtered_actions])
+
+		return '\n'.join(action.prompt_description() for action in filtered_actions)

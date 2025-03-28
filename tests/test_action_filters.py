@@ -203,7 +203,7 @@ class TestActionFilters:
 		assert 'domain_only' in description
 		assert 'page_only' in description
 		assert 'both_matching' in description
-		assert 'both_one_fail' in description  # Should match because page_filter matches
+		assert 'both_one_fail' not in description  # Should not match because domain filter fails
 
 	@pytest.mark.asyncio
 	async def test_registry_action_decorator(self):
@@ -238,3 +238,45 @@ class TestActionFilters:
 		page_description = registry.get_prompt_description(mock_page)
 		assert 'Domain filter action' in page_description
 		assert 'Page filter action' in page_description
+
+	@pytest.mark.asyncio
+	async def test_action_model_creation(self):
+		"""Test that action models are created correctly with filters"""
+		registry = Registry()
+
+		# Define actions with different filters
+		@registry.action(
+			description='No filter action',
+		)
+		def no_filter_action():
+			pass
+
+		@registry.action(description='Domain filter action', domains=['example.com'])
+		def domain_filter_action():
+			pass
+
+		@registry.action(description='Page filter action', page_filter=lambda page: 'admin' in page.url)
+		def page_filter_action():
+			pass
+
+		# Initial action model should only include no_filter_action
+		initial_model = registry.create_action_model()
+		assert 'no_filter_action' in initial_model.model_fields
+		assert 'domain_filter_action' not in initial_model.model_fields
+		assert 'page_filter_action' not in initial_model.model_fields
+
+		# Action model with page should include matching actions
+		mock_page = MagicMock(spec=Page)
+		mock_page.url = 'https://example.com/admin'
+
+		page_model = registry.create_action_model(page=mock_page)
+		assert 'no_filter_action' in page_model.model_fields
+		assert 'domain_filter_action' in page_model.model_fields
+		assert 'page_filter_action' in page_model.model_fields
+
+		# Action model with non-matching page should only include no_filter_action
+		mock_page.url = 'https://other.com/page'
+		non_matching_model = registry.create_action_model(page=mock_page)
+		assert 'no_filter_action' in non_matching_model.model_fields
+		assert 'domain_filter_action' not in non_matching_model.model_fields
+		assert 'page_filter_action' not in non_matching_model.model_fields
