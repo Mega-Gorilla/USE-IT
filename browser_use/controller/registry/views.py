@@ -70,17 +70,22 @@ class ActionRegistry(BaseModel):
 
 	actions: Dict[str, RegisteredAction] = {}
 
-	def _match_domain(self, domain_pattern: str, url: str) -> bool:
+	@staticmethod
+	def _match_domains(domains: list[str] | None, url: str) -> bool:
 		"""
-		Match a domain pattern against a URL using glob patterns.
+		Match a list of domain glob patterns against a URL.
 
 		Args:
-			domain_pattern: A domain pattern that can include glob patterns (* wildcard)
+			domain_patterns: A list of domain patterns that can include glob patterns (* wildcard)
 			url: The URL to match against
 
 		Returns:
 			True if the URL's domain matches the pattern, False otherwise
 		"""
+
+		if domains is None or not url:
+			return True
+
 		import fnmatch
 		from urllib.parse import urlparse
 
@@ -95,12 +100,21 @@ class ActionRegistry(BaseModel):
 			if ':' in domain:
 				domain = domain.split(':')[0]
 
-			# Perform glob matching
-			return fnmatch.fnmatch(domain, domain_pattern)
+			for domain_pattern in domains:
+				if fnmatch.fnmatch(domain, domain_pattern):  # Perform glob *.matching.*
+					return True
+			return False
 		except Exception:
 			return False
 
-	def get_prompt_description(self, page=None) -> str:
+	@staticmethod
+	def _match_page_filter(page_filter: Callable[[Page], bool] | None, page: Page) -> bool:
+		"""Match a page filter against a page"""
+		if page_filter is None:
+			return True
+		return page_filter(page)
+
+	def get_prompt_description(self, page: Page | None = None) -> str:
 		"""Get a description of all actions for the prompt
 
 		Args:
@@ -109,7 +123,7 @@ class ActionRegistry(BaseModel):
 		Returns:
 			A string description of available actions.
 			- If page is None: return only actions with no page_filter and no domains (for system prompt)
-			- If page is provided: return filtered actions for the current page
+			- If page is provided: return only filtered actions that match the current page (excluding unfiltered actions)
 		"""
 		if page is None:
 			# For system prompt (no page provided), include only actions with no filters
@@ -119,26 +133,17 @@ class ActionRegistry(BaseModel):
 				if action.page_filter is None and action.domains is None
 			)
 
-		# For step-by-step prompts, include filtered actions for the current page
+		# only include filtered actions for the current page
 		filtered_actions = []
 		for action in self.actions.values():
-			# Check page_filter if present
-			page_filter_match = True  # Default to True if no filter
-			if action.page_filter is not None:
-				page_filter_match = action.page_filter(page)
+			if not (action.domains or action.page_filter):
+				# skip actions with no filters, they are already included in the system prompt
+				continue
 
-			# Check domains if present
-			domains_match = True  # Default to True if no filter
-			if action.domains is not None and page.url:
-				domains_match = False
-				# Try to match any of the domain patterns
-				for domain_pattern in action.domains:
-					if self._match_domain(domain_pattern, page.url):
-						domains_match = True
-						break
+			domain_is_allowed = self._match_domains(action.domains, page.url)
+			page_is_allowed = self._match_page_filter(action.page_filter, page)
 
-			# Include action if both filters match (or if either is not present)
-			if page_filter_match and domains_match:
+			if domain_is_allowed and page_is_allowed:
 				filtered_actions.append(action)
 
 		return '\n'.join(action.prompt_description() for action in filtered_actions)

@@ -176,8 +176,12 @@ class Registry(Generic[Context]):
 
 	@time_execution_sync('--create_action_model')
 	def create_action_model(self, include_actions: Optional[list[str]] = None, page=None) -> Type[ActionModel]:
-		"""Creates a Pydantic model from registered actions"""
-		# Filter actions based on page if provided
+		"""Creates a Pydantic model from registered actions, used by LLM APIs that support tool calling & enforce a schema"""
+
+		# Filter actions based on page if provided:
+		#   if page is None, only include actions with no filters
+		#   if page is provided, only include actions that match the page
+
 		available_actions = {}
 		for name, action in self.registry.actions.items():
 			if include_actions is not None and name not in include_actions:
@@ -190,22 +194,11 @@ class Registry(Generic[Context]):
 				continue
 
 			# Check page_filter if present
-			page_filter_match = True  # Default to True if no filter
-			if action.page_filter is not None:
-				page_filter_match = action.page_filter(page)
-
-			# Check domains if present
-			domains_match = True  # Default to True if no filter
-			if action.domains is not None and page.url:
-				domains_match = False
-				# Try to match any of the domain patterns
-				for domain_pattern in action.domains:
-					if self.registry._match_domain(domain_pattern, page.url):
-						domains_match = True
-						break
+			domain_is_allowed = self.registry._match_domains(action.domains, page.url)
+			page_is_allowed = self.registry._match_page_filter(action.page_filter, page)
 
 			# Include action if both filters match (or if either is not present)
-			if page_filter_match and domains_match:
+			if domain_is_allowed and page_is_allowed:
 				available_actions[name] = action
 
 		fields = {
