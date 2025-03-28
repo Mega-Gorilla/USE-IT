@@ -106,7 +106,7 @@ CHROME_ARGS = [
 	# Extensions
 	# chrome://inspect/#extensions
 	# f'--load-extension={CHROME_EXTENSIONS.map(({unpacked_path}) => unpacked_path).join(',')}',  # not needed when using existing profile that already has extensions installed
-	f'--allowlisted-extension-id={",".join(CHROME_EXTENSIONS.keys())}',
+	# f'--allowlisted-extension-id={",".join(CHROME_EXTENSIONS.keys())}',
 	'--allow-legacy-extension-manifests',
 	'--allow-pre-commit-input',  # allow JS mutations before page rendering is complete
 	'--disable-blink-features=AutomationControlled',  # hide the signatures that announce browser is being remote-controlled

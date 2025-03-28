@@ -6,6 +6,7 @@ import asyncio
 import gc
 import logging
 import os
+import socket
 import subprocess
 from typing import Literal
 
@@ -238,20 +239,26 @@ class Browser:
 			screen_size = get_screen_resolution()
 			offset_x, offset_y = get_window_adjustments()
 
+		chrome_args = {
+			*CHROME_ARGS,
+			*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
+			*(CHROME_HEADLESS_ARGS if self.config.headless else []),
+			*(CHROME_DISABLE_SECURITY_ARGS if self.config.disable_security else []),
+			*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.config.deterministic_rendering else []),
+			f'--window-position={offset_x},{offset_y}',
+			f'--window-size={screen_size["width"]},{screen_size["height"]}',
+			*self.config.extra_browser_args,
+		}
+
+		# check if port 9222 is already taken, if so remove the remote-debugging-port arg to prevent conflicts
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			if s.connect_ex(('localhost', 9222)) == 0:
+				chrome_args.remove('--remote-debugging-port=9222')
+				chrome_args.remove('--remote-debugging-address=0.0.0.0')
+
 		browser_class = getattr(playwright, self.config.browser_class)
 		args = {
-			'chromium': list(
-				{
-					*CHROME_ARGS,
-					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-					*(CHROME_HEADLESS_ARGS if self.config.headless else []),
-					*(CHROME_DISABLE_SECURITY_ARGS if self.config.disable_security else []),
-					*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.config.deterministic_rendering else []),
-					f'--window-position={offset_x},{offset_y}',
-					f'--window-size={screen_size["width"]},{screen_size["height"]}',
-					*self.config.extra_browser_args,
-				}
-			),
+			'chromium': list(chrome_args),
 			'firefox': [
 				*{
 					'-no-remote',

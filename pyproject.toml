@@ -34,6 +34,7 @@ dependencies = [
 # pyobjc: only used to get screen resolution on macOS
 # screeninfo: only used to get screen resolution on Linux/Windows
 # markdownify: used for page text content extraction for passing to LLM
+# openai: datalib,voice-helpers are actually NOT NEEDED but openai produces noisy errors on exit without them TODO: fix
 urls = { "Repository" = "https://github.com/browser-use/browser-use" }
 
 [project.optional-dependencies]
@@ -50,6 +51,7 @@ dev = [
     "langchain-aws>=0.2.11",
     "langchain-fireworks>=0.2.6",
     "langchain-google-genai==2.0.8",
+    "pytest>=8.3.5",
 ]
 
 [tool.ruff]
@@ -79,6 +81,7 @@ include = [
 
 [tool.uv]
 dev-dependencies = [
+    "ipdb>=0.13.13",
     "ruff>=0.11.2",
 ]
 
