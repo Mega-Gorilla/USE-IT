@@ -78,5 +78,6 @@ dev-dependencies = [
     "uvicorn>=0.34.0",
     "langchain-fireworks>=0.2.6",
     "ipdb>=0.13.13",
+    "pre-commit>=4.2.0",
 ]
 
