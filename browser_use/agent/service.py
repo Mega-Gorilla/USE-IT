@@ -143,6 +143,8 @@ def sigterm_handler(loop: asyncio.AbstractEventLoop):
 
 Context = TypeVar('Context')
 
+AgentHookFunc = Callable[['Agent'], None]
+
 
 class Agent(Generic[Context]):
 	@time_execution_sync('--init (agent)')
@@ -714,7 +716,12 @@ class Agent(Generic[Context]):
 
 	# @observe(name='agent.run', ignore_output=True)
 	@time_execution_async('--run (agent)')
-	async def run(self, max_steps: int = 100) -> AgentHistoryList:
+	async def run(
+		self,
+		max_steps: int = 100,
+		on_step_start: AgentHookFunc | None = None,
+		on_step_end: AgentHookFunc | None = None
+			) -> AgentHistoryList:
 		"""Execute the task with maximum number of steps"""
 
 		loop = asyncio.get_event_loop()
@@ -782,8 +789,14 @@ class Agent(Generic[Context]):
 					if self.state.stopped:  # Allow stopping while paused
 						break
 
+				if on_step_start is not None:
+					await on_step_start(self)
+
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await self.step(step_info)
+
+				if on_step_end is not None:
+					await on_step_end(self)
 
 				if self.state.history.is_done():
 					if self.settings.validate_output and step < max_steps - 1:
