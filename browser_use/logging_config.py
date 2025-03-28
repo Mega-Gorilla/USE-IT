@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -76,7 +77,7 @@ def setup_logging():
 
 	class BrowserUseFormatter(logging.Formatter):
 		def format(self, record):
-			if record.name.startswith('browser_use.'):
+			if type(record.name) == str and record.name.startswith('browser_use.'):
 				record.name = record.name.split('.')[-2]
 			return super().format(record)
 
@@ -121,6 +122,10 @@ def setup_logging():
 		'openai',
 		'httpcore',
 		'charset_normalizer',
+		'anthropic._base_client',
+		'PIL.PngImagePlugin',
+		'trafilatura.htmlprocessing',
+		'trafilatura',
 	]:
 		third_party = logging.getLogger(logger)
 		third_party.setLevel(logging.ERROR)

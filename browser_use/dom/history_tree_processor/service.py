@@ -1,5 +1,4 @@
 import hashlib
-from dataclasses import dataclass
 from typing import Optional
 
 from browser_use.dom.history_tree_processor.view import DOMHistoryElement, HashedDomElement
@@ -15,7 +14,10 @@ class HistoryTreeProcessor:
 
 	@staticmethod
 	def convert_dom_element_to_history_element(dom_element: DOMElementNode) -> DOMHistoryElement:
+		from browser_use.browser.context import BrowserContext
+
 		parent_branch_path = HistoryTreeProcessor._get_parent_branch_path(dom_element)
+		css_selector = BrowserContext._enhanced_css_selector_for_element(dom_element)
 		return DOMHistoryElement(
 			dom_element.tag_name,
 			dom_element.xpath,
@@ -23,15 +25,15 @@ class HistoryTreeProcessor:
 			parent_branch_path,
 			dom_element.attributes,
 			dom_element.shadow_root,
+			css_selector=css_selector,
+			page_coordinates=dom_element.page_coordinates,
+			viewport_coordinates=dom_element.viewport_coordinates,
+			viewport_info=dom_element.viewport_info,
 		)
 
 	@staticmethod
-	def find_history_element_in_tree(
-		dom_history_element: DOMHistoryElement, tree: DOMElementNode
-	) -> Optional[DOMElementNode]:
-		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(
-			dom_history_element
-		)
+	def find_history_element_in_tree(dom_history_element: DOMHistoryElement, tree: DOMElementNode) -> Optional[DOMElementNode]:
+		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(dom_history_element)
 
 		def process_node(node: DOMElementNode):
 			if node.highlight_index is not None:
@@ -48,33 +50,29 @@ class HistoryTreeProcessor:
 		return process_node(tree)
 
 	@staticmethod
-	def compare_history_element_and_dom_element(
-		dom_history_element: DOMHistoryElement, dom_element: DOMElementNode
-	) -> bool:
-		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(
-			dom_history_element
-		)
+	def compare_history_element_and_dom_element(dom_history_element: DOMHistoryElement, dom_element: DOMElementNode) -> bool:
+		hashed_dom_history_element = HistoryTreeProcessor._hash_dom_history_element(dom_history_element)
 		hashed_dom_element = HistoryTreeProcessor._hash_dom_element(dom_element)
 
 		return hashed_dom_history_element == hashed_dom_element
 
 	@staticmethod
 	def _hash_dom_history_element(dom_history_element: DOMHistoryElement) -> HashedDomElement:
-		branch_path_hash = HistoryTreeProcessor._parent_branch_path_hash(
-			dom_history_element.entire_parent_branch_path
-		)
+		branch_path_hash = HistoryTreeProcessor._parent_branch_path_hash(dom_history_element.entire_parent_branch_path)
 		attributes_hash = HistoryTreeProcessor._attributes_hash(dom_history_element.attributes)
+		xpath_hash = HistoryTreeProcessor._xpath_hash(dom_history_element.xpath)
 
-		return HashedDomElement(branch_path_hash, attributes_hash)
+		return HashedDomElement(branch_path_hash, attributes_hash, xpath_hash)
 
 	@staticmethod
 	def _hash_dom_element(dom_element: DOMElementNode) -> HashedDomElement:
 		parent_branch_path = HistoryTreeProcessor._get_parent_branch_path(dom_element)
 		branch_path_hash = HistoryTreeProcessor._parent_branch_path_hash(parent_branch_path)
 		attributes_hash = HistoryTreeProcessor._attributes_hash(dom_element.attributes)
+		xpath_hash = HistoryTreeProcessor._xpath_hash(dom_element.xpath)
 		# text_hash = DomTreeProcessor._text_hash(dom_element)
 
-		return HashedDomElement(branch_path_hash, attributes_hash)
+		return HashedDomElement(branch_path_hash, attributes_hash, xpath_hash)
 
 	@staticmethod
 	def _get_parent_branch_path(dom_element: DOMElementNode) -> list[str]:
@@ -97,6 +95,10 @@ class HistoryTreeProcessor:
 	def _attributes_hash(attributes: dict[str, str]) -> str:
 		attributes_string = ''.join(f'{key}={value}' for key, value in attributes.items())
 		return hashlib.sha256(attributes_string.encode()).hexdigest()
+
+	@staticmethod
+	def _xpath_hash(xpath: str) -> str:
+		return hashlib.sha256(xpath.encode()).hexdigest()
 
 	@staticmethod
 	def _text_hash(dom_element: DOMElementNode) -> str:

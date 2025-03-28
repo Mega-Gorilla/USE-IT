@@ -42,8 +42,8 @@ class ProductTelemetry:
 		if telemetry_disabled:
 			self._posthog_client = None
 		else:
-			logging.info(
-				'Anonymized telemetry enabled. See https://github.com/browser-use/browser-use for more information.'
+			logger.info(
+				'Anonymized telemetry enabled. See https://docs.browser-use.com/development/telemetry for more information.'
 			)
 			self._posthog_client = Posthog(
 				project_api_key=self.PROJECT_API_KEY,

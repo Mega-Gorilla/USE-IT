@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
-
-from browser_use.controller.registry.views import ActionModel
+from typing import Any, Dict, Sequence
 
 
 @dataclass
@@ -43,7 +41,6 @@ class AgentStepTelemetryEvent(BaseTelemetryEvent):
 class AgentRunTelemetryEvent(BaseTelemetryEvent):
 	agent_id: str
 	use_vision: bool
-	tool_call_in_content: bool
 	task: str
 	model_name: str
 	chat_model_library: str
@@ -57,6 +54,10 @@ class AgentEndTelemetryEvent(BaseTelemetryEvent):
 	agent_id: str
 	steps: int
 	max_steps_reached: bool
-	success: bool
-	errors: list[str]
+	is_done: bool
+	success: bool | None
+	total_input_tokens: int
+	total_duration_seconds: float
+
+	errors: Sequence[str | None]
 	name: str = 'agent_end'

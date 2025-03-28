@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from browser_use.dom.history_tree_processor.view import HashedDomElement
+from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
+from browser_use.utils import time_execution_sync
 
 # Avoid circular import issues
 if TYPE_CHECKING:
@@ -24,10 +25,22 @@ class DOMTextNode(DOMBaseNode):
 	def has_parent_with_highlight_index(self) -> bool:
 		current = self.parent
 		while current is not None:
+			# stop if the element has a highlight index (will be handled separately)
 			if current.highlight_index is not None:
 				return True
+
 			current = current.parent
 		return False
+
+	def is_parent_in_viewport(self) -> bool:
+		if self.parent is None:
+			return False
+		return self.parent.is_in_viewport
+
+	def is_parent_top_element(self) -> bool:
+		if self.parent is None:
+			return False
+		return self.parent.is_top_element
 
 
 @dataclass(frozen=False)
@@ -43,8 +56,12 @@ class DOMElementNode(DOMBaseNode):
 	children: List[DOMBaseNode]
 	is_interactive: bool = False
 	is_top_element: bool = False
+	is_in_viewport: bool = False
 	shadow_root: bool = False
 	highlight_index: Optional[int] = None
+	viewport_coordinates: Optional[CoordinateSet] = None
+	page_coordinates: Optional[CoordinateSet] = None
+	viewport_info: Optional[ViewportInfo] = None
 
 	def __repr__(self) -> str:
 		tag_str = f'<{self.tag_name}'
@@ -64,6 +81,8 @@ class DOMElementNode(DOMBaseNode):
 			extras.append('shadow-root')
 		if self.highlight_index is not None:
 			extras.append(f'highlight:{self.highlight_index}')
+		if self.is_in_viewport:
+			extras.append('in-viewport')
 
 		if extras:
 			tag_str += f' [{", ".join(extras)}]'
@@ -86,11 +105,7 @@ class DOMElementNode(DOMBaseNode):
 				return
 
 			# Skip this branch if we hit a highlighted element (except for the current node)
-			if (
-				isinstance(node, DOMElementNode)
-				and node != self
-				and node.highlight_index is not None
-			):
+			if isinstance(node, DOMElementNode) and node != self and node.highlight_index is not None:
 				return
 
 			if isinstance(node, DOMTextNode):
@@ -102,7 +117,8 @@ class DOMElementNode(DOMBaseNode):
 		collect_text(self, 0)
 		return '\n'.join(text_parts).strip()
 
-	def clickable_elements_to_string(self, include_attributes: list[str] = []) -> str:
+	@time_execution_sync('--clickable_elements_to_string')
+	def clickable_elements_to_string(self, include_attributes: list[str] | None = None) -> str:
 		"""Convert the processed DOM content to HTML."""
 		formatted_text = []
 
@@ -111,15 +127,30 @@ class DOMElementNode(DOMBaseNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
 					attributes_str = ''
+					text = node.get_all_text_till_next_clickable_element()
 					if include_attributes:
-						attributes_str = ' ' + ' '.join(
-							f'{key}="{value}"'
-							for key, value in node.attributes.items()
-							if key in include_attributes
+						attributes = list(
+							set(
+								[
+									str(value)
+									for key, value in node.attributes.items()
+									if key in include_attributes and value != node.tag_name
+								]
+							)
 						)
-					formatted_text.append(
-						f'{node.highlight_index}[:]<{node.tag_name}{attributes_str}>{node.get_all_text_till_next_clickable_element()}</{node.tag_name}>'
-					)
+						if text in attributes:
+							attributes.remove(text)
+						attributes_str = ';'.join(attributes)
+					line = f'[{node.highlight_index}]<{node.tag_name} '
+					if attributes_str:
+						line += f'{attributes_str}'
+					if text:
+						if attributes_str:
+							line += f'>{text}'
+						else:
+							line += f'{text}'
+					line += '/>'
+					formatted_text.append(line)
 
 				# Process children regardless
 				for child in node.children:
@@ -127,8 +158,8 @@ class DOMElementNode(DOMBaseNode):
 
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
-				if not node.has_parent_with_highlight_index():
-					formatted_text.append(f'_[:]{node.text}')
+				if not node.has_parent_with_highlight_index() and node.is_visible:  # and node.is_parent_top_element()
+					formatted_text.append(f'{node.text}')
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)
@@ -154,29 +185,6 @@ class DOMElementNode(DOMBaseNode):
 						return result
 
 		return None
-
-
-class ElementTreeSerializer:
-	@staticmethod
-	def serialize_clickable_elements(element_tree: DOMElementNode) -> str:
-		return element_tree.clickable_elements_to_string()
-
-	@staticmethod
-	def dom_element_node_to_json(element_tree: DOMElementNode) -> dict:
-		def node_to_dict(node: DOMBaseNode) -> dict:
-			if isinstance(node, DOMTextNode):
-				return {'type': 'text', 'text': node.text}
-			elif isinstance(node, DOMElementNode):
-				return {
-					'type': 'element',
-					'tag_name': node.tag_name,
-					'attributes': node.attributes,
-					'highlight_index': node.highlight_index,
-					'children': [node_to_dict(child) for child in node.children],
-				}
-			return {}
-
-		return node_to_dict(element_tree)
 
 
 SelectorMap = dict[int, DOMElementNode]

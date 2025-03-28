@@ -177,3 +177,14 @@ AgentHistory.json
 cv_04_24.pdf
 AgentHistoryList.json
 *.gif
+gcp-login.json
+.vscode
+.ruff_cache
+.idea
+*.txt
+*.pdf
+*.csv
+*.json
+*.jsonl
+
+uv.lock
