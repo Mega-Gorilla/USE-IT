@@ -28,6 +28,7 @@ class ClickElementBySelectorAction(BaseModel):
     
 class ClickElementByTextAction(BaseModel):
     text: str
+    element_type: Optional[str]
     nth: int = 0
 
 class InputTextAction(BaseModel):
