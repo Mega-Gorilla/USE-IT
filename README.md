@@ -112,6 +112,23 @@ Contributions are welcome! Feel free to open issues for bugs or feature requests
 
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
 
+
+# Browser Use
+
+## Branching and Tagging Strategy
+
+### Branches
+- **`stable`**: Reflects the latest stable release. Updated only when a new stable release is published.
+- **`main`**: The primary development branch. Updated frequently with the latest changes.
+
+### Tags
+- **`x.x.x`**: Stable release tags, created for production-ready releases.
+- **`x.x.xrcXX`**: Pre-release tags, created for testing and unstable releases.
+
+### Workflow
+- **Push to `main`**: Runs pre-commit hooks and tests.
+- **Stable Releases**: Published to PyPI and updates the `stable` branch.
+- **Pre-Releases**: Published to PyPI as pre-releases every Friday at 5 PM UTC.
 ---
 
 <div align="center">
