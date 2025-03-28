@@ -262,11 +262,15 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(goal: str, browser: BrowserContext, page_extraction_llm: BaseChatModel):
+		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
 			page = await browser.get_current_page()
 			import markdownify
 
-			content = markdownify.markdownify(await page.content())
+			strip = []
+			if should_strip_link_urls:
+				strip = ['a', 'img']
+
+			content = markdownify.markdownify(await page.content(), strip=strip)
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
