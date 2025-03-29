@@ -9,7 +9,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
 
 # from lmnr.sdk.laminar import Laminar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser.context import BrowserContext
@@ -35,9 +35,7 @@ from browser_use.controller.views import (
 	UngroupTabsAction,
 )
 from browser_use.utils import time_execution_sync
-from playwright.async_api import BrowserContext as PlaywrightBrowserContext, Page, ElementHandle, Locator
-from playwright.async_api import Position as PlaywrightPosition
-from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Page, ElementHandle
 
 logger = logging.getLogger(__name__)
 
