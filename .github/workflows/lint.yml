@@ -1,10 +1,10 @@
-name: ci
+name: Lint
 on:
   push:
   pull_request:
   workflow_dispatch:
 jobs:
-  pre-commit:
+  ruff:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,3 +25,4 @@ jobs:
       - run: uv run pre-commit run detect-private-key --all-files
       - run: uv run pre-commit run mixed-line-ending --all-files
       - run: uv run pre-commit run fix-byte-order-marker --all-files
+      #- run: uv run pytest tests/conftest.py
