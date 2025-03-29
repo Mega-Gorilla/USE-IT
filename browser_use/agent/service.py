@@ -147,9 +147,10 @@ class Agent(Generic[Context]):
 		injected_agent_state: Optional[AgentState] = None,
 		#
 		context: Context | None = None,
-		# Procedural memory settings
+		# Memory settings
 		enable_memory: bool = True,
 		memory_interval: int = 10,
+		memory_config: Optional[dict] = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -183,6 +184,7 @@ class Agent(Generic[Context]):
 			is_planner_reasoning=is_planner_reasoning,
 			enable_memory=enable_memory,
 			memory_interval=memory_interval,
+			memory_config=memory_config,
 		)
 
 		# Initialize state
@@ -232,18 +234,22 @@ class Agent(Generic[Context]):
 			state=self.state.message_manager_state,
 		)
 
-		memory_settings = MemorySettings(
-			agent_id=self.state.agent_id,
-			enabled=self.settings.enable_memory,
-			interval=self.settings.memory_interval,
-		)
+		if self.settings.enable_memory:
+			memory_settings = MemorySettings(
+				agent_id=self.state.agent_id,
+				enabled=self.settings.enable_memory,
+				interval=self.settings.memory_interval,
+				config=self.settings.memory_config,
+			)
 
-		# Initialize procedural memory
-		self.memory = Memory(
-			message_manager=self._message_manager,
-			llm=self.llm,
-			settings=memory_settings,
-		)
+			# Initialize memory
+			self.memory = Memory(
+				message_manager=self._message_manager,
+				llm=self.llm,
+				settings=memory_settings,
+			)
+		else:
+			self.memory = None
 
 		# Browser setup
 		self.injected_browser = browser is not None
@@ -384,8 +390,8 @@ class Agent(Generic[Context]):
 			state = await self.browser_context.get_state()
 			active_page = await self.browser_context.get_current_page()
 
-			# summarize memories if needed
-			if self.state.n_steps % self.settings.memory_interval == 0:
+			# generate procedural memory if needed
+			if self.settings.enable_memory and self.memory and self.state.n_steps % self.settings.memory_interval == 0:
 				self.memory.create_procedural_memory(self.state.n_steps)
 
 			await self._raise_if_stopped_or_paused()
