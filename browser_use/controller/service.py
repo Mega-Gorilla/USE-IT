@@ -344,7 +344,7 @@ class Controller(Generic[Context]):
 				
 				# Create a filename based on the page URL
 				short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
-				slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
+				slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()[:64]
 				timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 				sanitized_filename = f'{slug}_{timestamp}.html'
 				
