@@ -31,5 +31,6 @@ async def test_take_full_page_screenshot():
 	finally:
 		await browser.close()
 
+
 if __name__ == '__main__':
 	asyncio.run(test_take_full_page_screenshot())

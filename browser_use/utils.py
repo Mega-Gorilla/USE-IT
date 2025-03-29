@@ -82,7 +82,7 @@ class SignalHandler:
 				if self.custom_exit_callback:
 					self.custom_exit_callback()
 				os._exit(0)
-			
+
 			self.original_sigint_handler = signal.signal(signal.SIGINT, windows_handler)
 		else:
 			# On Unix-like systems, use asyncio's signal handling for smoother experience
