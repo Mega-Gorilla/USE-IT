@@ -336,7 +336,7 @@ class Controller(Generic[Context]):
 			'Save the raw HTML content of the current page to a local file',
 			param_model=NoParamsAction,
 		)
-		async def download_html(_: NoParamsAction, browser: BrowserContext) -> ActionResult:
+		async def save_html_to_file(_: NoParamsAction, browser: BrowserContext) -> ActionResult:
 			"""Retrieves and returns the full HTML content of the current page to a file"""
 			try:
 				page = await browser.get_current_page()
