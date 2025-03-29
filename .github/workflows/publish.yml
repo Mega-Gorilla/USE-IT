@@ -29,7 +29,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.x"
       - uses: astral-sh/setup-uv@v5
       - run: uv run ruff check --no-fix --select PLE  # check only for syntax errors
       - run: uv build
@@ -63,7 +63,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.x"
       - uses: astral-sh/setup-uv@v5
       - run: uv run ruff check --no-fix --select PLE  # check only for syntax errors
       - run: uv build
