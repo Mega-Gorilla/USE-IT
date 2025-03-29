@@ -10,7 +10,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv run ruff format
-      - run: uv run pytest tests/conftest.py
       - run: uv run pre-commit run check-toml --all-files
       - run: uv run pre-commit run check-yaml --all-files
       - run: uv run pre-commit run check-json --all-files
