@@ -162,10 +162,6 @@ Ignore the other AI messages output structures.
 Keep your responses concise and focused on actionable insights."""
 
 		if is_planner_reasoning:
-			return HumanMessage(
-				content=planner_prompt_text
-			)
+			return HumanMessage(content=planner_prompt_text)
 		else:
-			return SystemMessage(
-				content=planner_prompt_text
-			)
+			return SystemMessage(content=planner_prompt_text)
