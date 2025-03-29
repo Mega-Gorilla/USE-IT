@@ -47,8 +47,8 @@ fix = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "PLE"]
-ignore = ["E101", "E402", "E501"]
-unfixable = ["E101", "E402", "E501", "F841"]
+ignore = ["E101", "E402", "E501", "F841", "E731"]
+unfixable = ["E101", "E402", "E501", "F841", "E731"]
 
 [tool.ruff.format]
 quote-style = "single"
