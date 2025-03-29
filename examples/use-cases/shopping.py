@@ -7,7 +7,7 @@ load_dotenv()
 
 import asyncio
 
-task="""
+task = """
    ### Prompt for Shopping Agent – Migros Online Grocery Order
 
 **Objective:**
@@ -107,15 +107,17 @@ At this stage, check the basket on the top right (indicates the price) and check
 browser = Browser()
 
 agent = Agent(
-   task=task,
-    llm=ChatOpenAI(model="gpt-4o"),
-    browser=browser,
-    )
+	task=task,
+	llm=ChatOpenAI(model='gpt-4o'),
+	browser=browser,
+)
+
 
 async def main():
-    await agent.run()
-    input("Press Enter to close the browser...")
-    await browser.close()
+	await agent.run()
+	input('Press Enter to close the browser...')
+	await browser.close()
+
 
 if __name__ == '__main__':
-    asyncio.run(main())
+	asyncio.run(main())

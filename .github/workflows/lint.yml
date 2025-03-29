@@ -10,8 +10,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv run ruff format
-      - run: uv run pre-commit run check-toml          --all-files
-      - run: uv run pre-commit run check-yaml          --all-files
-      - run: uv run pre-commit run end-of-file-fixer   --all-files
-      - run: uv run pre-commit run trailing-whitespace --all-files
+      - run: uv run pre-commit run check-toml --all-files
+      - run: uv run pre-commit run check-yaml --all-files
+      - run: uv run pre-commit run check-json --all-files
+      - run: uv run pre-commit run end-of-file-fixer --all-files
+      - run: uv run pre-commit run check-merge-conflict --all-files
+      - run: uv run pre-commit run check-illegal-windows-names --all-files
+      - run: uv run pre-commit run check-case-conflict --all-files
+      - run: uv run pre-commit run check-added-large-files --all-files
+      - run: uv run pre-commit run check-shebang-scripts-are-executable --all-files
+      - run: uv run pre-commit run check-symlinks --all-files
+      - run: uv run pre-commit run destroyed-symlinks --all-files
+      - run: uv run pre-commit run detect-private-key --all-files
+      - run: uv run pre-commit run mixed-line-ending --all-files
+      - run: uv run pre-commit run fix-byte-order-marker --all-files
       #- run: uv run pytest tests/conftest.py

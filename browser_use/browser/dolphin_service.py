@@ -297,7 +297,7 @@ class DolphinBrowser(Browser):
 				for page in self._pages:
 					try:
 						await page.close()
-					except:
+					except BaseException:
 						pass
 				self._pages = []
 

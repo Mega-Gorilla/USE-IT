@@ -26,10 +26,10 @@ from browser_use.browser.context import BrowserContext
 
 # Validate required environment variables
 load_dotenv()
-required_env_vars = ["AZURE_OPENAI_KEY", "AZURE_OPENAI_ENDPOINT"]
+required_env_vars = ['AZURE_OPENAI_KEY', 'AZURE_OPENAI_ENDPOINT']
 for var in required_env_vars:
-    if not os.getenv(var):
-        raise ValueError(f"{var} is not set. Please add it to your environment variables.")
+	if not os.getenv(var):
+		raise ValueError(f'{var} is not set. Please add it to your environment variables.')
 
 logger = logging.getLogger(__name__)
 # full screen mode
@@ -156,5 +156,5 @@ async def main():
 	await asyncio.gather(*[agent.run() for agent in agents])
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	asyncio.run(main())
