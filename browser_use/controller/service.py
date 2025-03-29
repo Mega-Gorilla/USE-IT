@@ -333,7 +333,7 @@ class Controller(Generic[Context]):
 		
 		# HTML Download
 		@self.registry.action(
-			'Download the full HTML content of the current page',
+			'Save the raw HTML content of the current page to a local file',
 			param_model=NoParamsAction,
 		)
 		async def download_html(_: NoParamsAction, browser: BrowserContext) -> ActionResult:
