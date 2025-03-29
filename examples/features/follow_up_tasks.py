@@ -15,9 +15,9 @@ llm = ChatOpenAI(
 # Get your chrome path
 browser = Browser(
 	config=BrowserConfig(
-		browser_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 		new_context_config=BrowserContextConfig(
-			_force_keep_context_alive=True,
+			keep_alive=True,
 		),
 	),
 )

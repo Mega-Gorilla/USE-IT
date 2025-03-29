@@ -1,6 +1,5 @@
 import os
 import sys
-from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel
@@ -15,6 +14,7 @@ from langchain_openai import ChatOpenAI
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
+
 
 class HoverAction(BaseModel):
 	index: 	  Optional[int] = None

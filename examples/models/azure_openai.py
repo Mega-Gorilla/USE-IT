@@ -6,6 +6,7 @@ Simple try of the agent.
 
 import os
 import sys
+
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -27,7 +28,7 @@ if not azure_openai_api_key or not azure_openai_endpoint:
 
 # Initialize the Azure OpenAI client
 llm = AzureChatOpenAI(
-    model_name='gpt-4o', 
+    model_name='gpt-4o',
     openai_api_key=azure_openai_api_key,
     azure_endpoint=azure_openai_endpoint,  # Corrected to use azure_endpoint instead of openai_api_base
     deployment_name='gpt-4o',  # Use deployment_name for Azure models
