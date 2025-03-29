@@ -69,7 +69,7 @@ class AgentSettings(BaseModel):
 
 	# Procedural memory settings
 	enable_memory: bool = True
-	memory_interval: int = 8
+	memory_interval: int = 10
 	memory_config: Optional[dict] = None
 
 
