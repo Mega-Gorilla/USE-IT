@@ -1,4 +1,4 @@
-# Goal: Automates posting on X (Twitter) using stored authentication cookies. 
+# Goal: Automates posting on X (Twitter) using stored authentication cookies.
 
 import asyncio
 import os
@@ -39,5 +39,5 @@ async def main():
 	input('Press Enter to close the browser...')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	asyncio.run(main())

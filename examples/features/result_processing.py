@@ -3,7 +3,6 @@ import sys
 from pprint import pprint
 
 from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig
-)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio

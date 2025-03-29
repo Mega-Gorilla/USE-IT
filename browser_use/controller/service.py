@@ -22,7 +22,6 @@ from browser_use.controller.views import (
 	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
-	GroupTabsAction,
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
@@ -31,7 +30,6 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	SwitchTabAction,
 	WaitForElementAction,
-	UngroupTabsAction,
 )
 from browser_use.utils import time_execution_sync
 
@@ -176,7 +174,7 @@ class Controller(Generic[Context]):
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
@@ -197,7 +195,7 @@ class Controller(Generic[Context]):
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
@@ -214,16 +212,14 @@ class Controller(Generic[Context]):
 		async def click_element_by_text(params: ClickElementByTextAction, browser: BrowserContext):
 			try:
 				element_node = await browser.get_locate_element_by_text(
-					text=params.text,
-					nth=params.nth,
-					element_type=params.element_type
+					text=params.text, nth=params.nth, element_type=params.element_type
 				)
 
 				if element_node:
 					try:
 						await element_node.scroll_into_view_if_needed()
 						await element_node.click(timeout=1500, force=True)
-					except Exception as e:
+					except Exception:
 						try:
 							# Handle with js evaluate if fails to click using playwright
 							await element_node.evaluate('el => el.click()')
@@ -304,7 +300,9 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			'Extract page content to retrieve specific information from the page, e.g. all company names, a specifc description, all information about, links with companies in structured format or simply links',
 		)
-		async def extract_content(goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel):
+		async def extract_content(
+			goal: str, should_strip_link_urls: bool, browser: BrowserContext, page_extraction_llm: BaseChatModel
+		):
 			page = await browser.get_current_page()
 			import markdownify
 

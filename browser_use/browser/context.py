@@ -157,10 +157,55 @@ class BrowserContextConfig(BaseModel):
 	timezone_id: str | None = None
 
 
-@dataclass
 class BrowserSession:
-	context: PlaywrightBrowserContext
-	cached_state: BrowserState | None
+	def __init__(self, context: PlaywrightBrowserContext, cached_state: BrowserState | None = None):
+		init_script = """
+			(() => {
+				if (!window.getEventListeners) {
+					window.getEventListeners = function (node) {
+						return node.__listeners || {};
+					};
+
+					// Save the original addEventListener
+					const originalAddEventListener = Element.prototype.addEventListener;
+
+					const eventProxy = {
+						addEventListener: function (type, listener, options = {}) {
+							// Initialize __listeners if not exists
+							const defaultOptions = { once: false, passive: false, capture: false };
+							if(typeof options === 'boolean') {
+								options = { capture: options };
+							}
+							options = { ...defaultOptions, ...options };
+							if (!this.__listeners) {
+								this.__listeners = {};
+							}
+
+							// Initialize array for this event type if not exists
+							if (!this.__listeners[type]) {
+								this.__listeners[type] = [];
+							}
+							
+
+							// Add the listener to __listeners
+							this.__listeners[type].push({
+								listener: listener,
+								type: type,
+								...options
+							});
+
+							// Call original addEventListener using the saved reference
+							return originalAddEventListener.call(this, type, listener, options);
+						}
+					};
+
+					Element.prototype.addEventListener = eventProxy.addEventListener;
+				}
+			})()
+			"""
+		self.context = context
+		self.cached_state = cached_state
+		self.context.on('page', lambda page: page.add_init_script(init_script))
 
 
 @dataclass
@@ -714,24 +759,24 @@ class BrowserContext:
 		debug_script = """(() => {
 			function getPageStructure(element = document, depth = 0, maxDepth = 10) {
 				if (depth >= maxDepth) return '';
-				
+
 				const indent = '  '.repeat(depth);
 				let structure = '';
-				
+
 				// Skip certain elements that clutter the output
 				const skipTags = new Set(['script', 'style', 'link', 'meta', 'noscript']);
-				
+
 				// Add current element info if it's not the document
 				if (element !== document) {
 					const tagName = element.tagName.toLowerCase();
-					
+
 					// Skip uninteresting elements
 					if (skipTags.has(tagName)) return '';
-					
+
 					const id = element.id ? `#${element.id}` : '';
-					const classes = element.className && typeof element.className === 'string' ? 
+					const classes = element.className && typeof element.className === 'string' ?
 						`.${element.className.split(' ').filter(c => c).join('.')}` : '';
-					
+
 					// Get additional useful attributes
 					const attrs = [];
 					if (element.getAttribute('role')) attrs.push(`role="${element.getAttribute('role')}"`);
@@ -742,10 +787,10 @@ class BrowserContext:
 						const src = element.getAttribute('src');
 						attrs.push(`src="${src.substring(0, 50)}${src.length > 50 ? '...' : ''}"`);
 					}
-					
+
 					// Add element info
 					structure += `${indent}${tagName}${id}${classes}${attrs.length ? ' [' + attrs.join(', ') + ']' : ''}\\n`;
-					
+
 					// Handle iframes specially
 					if (tagName === 'iframe') {
 						try {
@@ -761,7 +806,7 @@ class BrowserContext:
 						}
 					}
 				}
-				
+
 				// Get all child elements
 				const children = element.children || element.childNodes;
 				for (const child of children) {
@@ -769,10 +814,10 @@ class BrowserContext:
 						structure += getPageStructure(child, depth + 1, maxDepth);
 					}
 				}
-				
+
 				return structure;
 			}
-			
+
 			return getPageStructure();
 		})()"""
 
@@ -1168,7 +1213,9 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
-	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
+	async def get_locate_element_by_text(
+		self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None
+	) -> Optional[ElementHandle]:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
@@ -1177,7 +1224,7 @@ class BrowserContext:
 		current_frame = await self.get_current_page()
 		try:
 			# handle also specific element type or use any type.
-			selector = f"{element_type or '*'}:text(\"{text}\")"
+			selector = f'{element_type or "*"}:text("{text}")'
 			elements = await current_frame.query_selector_all(selector)
 			# considering only visible elements
 			elements = [el for el in elements if await el.is_visible()]
@@ -1525,4 +1572,4 @@ class BrowserContext:
 		    TimeoutError: If the element does not become visible within the specified timeout.
 		"""
 		page = await self.get_current_page()
-		await page.wait_for_selector(selector, state="visible", timeout=timeout)
+		await page.wait_for_selector(selector, state='visible', timeout=timeout)
