@@ -15,22 +15,22 @@ from browser_use.agent.views import AgentHistoryList
 
 
 async def run_search() -> AgentHistoryList:
-    agent = Agent(
-        task="Search for a 'browser use' post on the r/LocalLLaMA subreddit and open it.",
-        llm=ChatOllama(
-            model="qwen2.5:32b-instruct-q4_K_M",
-            num_ctx=32000,
-        ),
-    )
+	agent = Agent(
+		task="Search for a 'browser use' post on the r/LocalLLaMA subreddit and open it.",
+		llm=ChatOllama(
+			model='qwen2.5:32b-instruct-q4_K_M',
+			num_ctx=32000,
+		),
+	)
 
-    result = await agent.run()
-    return result
+	result = await agent.run()
+	return result
 
 
 async def main():
-    result = await run_search()
-    print("\n\n", result)
+	result = await run_search()
+	print('\n\n', result)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+	asyncio.run(main())

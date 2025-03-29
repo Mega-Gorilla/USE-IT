@@ -158,12 +158,7 @@ class BrowserContextConfig(BaseModel):
 
 
 class BrowserSession:
-	
-	def __init__(
-			self,
-			context: PlaywrightBrowserContext,
-			cached_state: BrowserState | None=None
-		):
+	def __init__(self, context: PlaywrightBrowserContext, cached_state: BrowserState | None = None):
 		init_script = """
 			(() => {
 				if (!window.getEventListeners) {
@@ -211,6 +206,7 @@ class BrowserSession:
 		self.context = context
 		self.cached_state = cached_state
 		self.context.on('page', lambda page: page.add_init_script(init_script))
+
 
 @dataclass
 class BrowserContextState:
@@ -1217,7 +1213,9 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_text')
-	async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
+	async def get_locate_element_by_text(
+		self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None
+	) -> Optional[ElementHandle]:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
@@ -1226,7 +1224,7 @@ class BrowserContext:
 		current_frame = await self.get_current_page()
 		try:
 			# handle also specific element type or use any type.
-			selector = f"{element_type or '*'}:text(\"{text}\")"
+			selector = f'{element_type or "*"}:text("{text}")'
 			elements = await current_frame.query_selector_all(selector)
 			# considering only visible elements
 			elements = [el for el in elements if await el.is_visible()]
@@ -1574,4 +1572,4 @@ class BrowserContext:
 		    TimeoutError: If the element does not become visible within the specified timeout.
 		"""
 		page = await self.get_current_page()
-		await page.wait_for_selector(selector, state="visible", timeout=timeout)
+		await page.wait_for_selector(selector, state='visible', timeout=timeout)
