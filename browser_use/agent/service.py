@@ -198,7 +198,7 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 		logger.info(
-			f'Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, '
+			f'🧠 Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, '
 			f'extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, "model_name") else None}'
 		)
 
@@ -257,12 +257,10 @@ class Agent(Generic[Context]):
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
-		if browser_context:
-			self.browser = browser
-			self.browser_context = browser_context
-		else:
-			self.browser = browser or Browser()
-			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
+		self.browser = browser or Browser()
+		self.browser_context = browser_context or BrowserContext(
+			browser=self.browser, config=self.browser.config.new_context_config
+		)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
@@ -1156,7 +1154,7 @@ class Agent(Generic[Context]):
 
 			if test_answer in response_text:
 				logger.debug(
-					f'🧠  LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
+					f'🧠 LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
 				)
 				llm._verified_api_keys = True
 				return True

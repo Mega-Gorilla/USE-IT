@@ -79,7 +79,14 @@ class BrowserConfig(BaseModel):
 			Enable deterministic rendering (makes GPU/font rendering consistent across different OS's and docker)
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True,
+		extra='ignore',
+		populate_by_name=True,
+		from_attributes=True,
+		validate_assignment=True,
+		revalidate_instances='subclass-instances',
+	)
 
 	wss_url: str | None = None
 	cdp_url: str | None = None
@@ -109,16 +116,16 @@ class Browser:
 
 	def __init__(
 		self,
-		config: BrowserConfig = BrowserConfig(),
+		config: BrowserConfig | None = None,
 	):
 		logger.debug('🌎  Initializing new browser')
-		self.config = config
+		self.config = config or BrowserConfig()
 		self.playwright: Playwright | None = None
 		self.playwright_browser: PlaywrightBrowser | None = None
 
-	async def new_context(self, config: BrowserContextConfig = BrowserContextConfig()) -> BrowserContext:
+	async def new_context(self, config: BrowserContextConfig | None = None) -> BrowserContext:
 		"""Create a browser context"""
-		return BrowserContext(config=config, browser=self)
+		return BrowserContext(config=config or self.config, browser=self)
 
 	async def get_playwright_browser(self) -> PlaywrightBrowser:
 		"""Get a browser context"""
