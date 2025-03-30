@@ -6,6 +6,7 @@ Automated news analysis and sentiment scoring using Bedrock.
 
 import os
 import sys
+import boto3
 import asyncio
 import argparse
 from browser_use import Agent
