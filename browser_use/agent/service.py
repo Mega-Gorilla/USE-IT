@@ -198,10 +198,9 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 		logger.info(
-			f"Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, "
-			f"extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, 'model_name') else None}"
+			f'Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, '
+			f'extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, "model_name") else None}'
 		)
-
 
 		# LLM API connection setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
@@ -1183,11 +1182,11 @@ class Agent(Generic[Context]):
 			return None
 
 		# Get current state to filter actions by page
-		state = await self.browser_context.get_state()
+		page = await self.browser_context.get_current_page()
 
 		# Get all standard actions (no filter) and page-specific actions
 		standard_actions = self.controller.registry.get_prompt_description()  # No page = system prompt actions
-		page_actions = self.controller.registry.get_prompt_description(state.page)  # Page-specific actions
+		page_actions = self.controller.registry.get_prompt_description(page)  # Page-specific actions
 
 		# Combine both for the planner
 		all_actions = standard_actions
