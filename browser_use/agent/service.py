@@ -189,6 +189,11 @@ class Agent(Generic[Context]):
 
 		# Model setup
 		self._set_model_names()
+		logger.info(
+			f"Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, "
+			f"extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, 'model_name') else None}"
+		)
+
 
 		# LLM API connection setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
