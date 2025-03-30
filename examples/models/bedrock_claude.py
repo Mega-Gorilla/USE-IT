@@ -4,17 +4,18 @@ Automated news analysis and sentiment scoring using Bedrock.
 @dev Ensure AWS environment variables are set correctly for Bedrock access.
 """
 
+import argparse
+import asyncio
 import os
 import sys
+
 import boto3
-import asyncio
-import argparse
-from browser_use import Agent
 from botocore.config import Config
 from langchain_aws import ChatBedrockConverse
-from browser_use.controller.service import Controller
-from browser_use.browser.browser import Browser, BrowserConfig
 
+from browser_use import Agent
+from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.controller.service import Controller
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
