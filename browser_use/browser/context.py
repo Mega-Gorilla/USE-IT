@@ -203,6 +203,7 @@ class BrowserSession:
 				}
 			})()
 			"""
+		self.active_tab = None
 		self.context = context
 		self.cached_state = cached_state
 		self.context.on('page', lambda page: page.add_init_script(init_script))
@@ -233,6 +234,7 @@ class BrowserContext:
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
+		self.active_tab: Page | None = None
 
 	async def __aenter__(self):
 		"""Async context manager entry"""
@@ -278,6 +280,7 @@ class BrowserContext:
 
 		finally:
 			# Dereference everything
+			self.active_tab = None
 			self.session = None
 			self._page_event_handler = None
 
@@ -354,6 +357,8 @@ class BrowserContext:
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
+		self.active_tab = active_page
+
 		return self.session
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
@@ -362,6 +367,10 @@ class BrowserContext:
 				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'📑  New page opened: {page.url}')
+
+			if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://'):
+				self.active_tab = page
+
 			if self.session is not None:
 				self.state.target_id = None
 
@@ -737,10 +746,11 @@ class BrowserContext:
 		session = await self.get_session()
 		page = await self._get_current_page(session)
 		await page.close()
-
+		self.active_tab = None
 		# Switch to the first available tab if any exist
 		if session.context.pages:
 			await self.switch_to_tab(0)
+			self.active_tab = session.context.pages[0]
 
 		# otherwise the browser will be closed
 
@@ -1393,6 +1403,7 @@ class BrowserContext:
 					self.state.target_id = target['targetId']
 					break
 
+		self.active_tab = page
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
@@ -1404,6 +1415,9 @@ class BrowserContext:
 
 		session = await self.get_session()
 		new_page = await session.context.new_page()
+
+		self.active_tab = new_page
+
 		await new_page.wait_for_load_state()
 
 		if url:
@@ -1433,6 +1447,9 @@ class BrowserContext:
 						if page.url == target['url']:
 							return page
 
+		if self.active_tab and self.active_tab in session.context.pages and not self.active_tab.is_closed():
+			return self.active_tab
+		
 		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
 		non_extension_pages = [
 			page for page in pages if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://')
@@ -1448,7 +1465,9 @@ class BrowserContext:
 			# reopen a new window in the browser and try again
 			logger.warning('⚠️  No browser window available, opening a new window')
 			await self._initialize_session()
-			return await session.context.new_page()
+			page = await session.context.new_page()
+			self.active_tab = page
+			return page
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
@@ -1529,6 +1548,7 @@ class BrowserContext:
 		for page in pages:
 			await page.close()
 
+		self.active_tab = None
 		session.cached_state = None
 		self.state.target_id = None
 
