@@ -559,15 +559,15 @@ class Agent(Generic[Context]):
 
 			self.state.consecutive_failures += 1
 		else:
+			from anthropic import RateLimitError as AnthropicRateLimitError
 			from google.api_core.exceptions import ResourceExhausted
 			from openai import RateLimitError
-			from anthropic import RateLimitError as AnthropicRateLimitError
 
 			# Define a tuple of rate limit error types for easier maintenance
 			RATE_LIMIT_ERRORS = (
-				RateLimitError,          # OpenAI
-				ResourceExhausted,       # Google
-				AnthropicRateLimitError, # Anthropic
+				RateLimitError,  # OpenAI
+				ResourceExhausted,  # Google
+				AnthropicRateLimitError,  # Anthropic
 			)
 
 			if isinstance(error, RATE_LIMIT_ERRORS):

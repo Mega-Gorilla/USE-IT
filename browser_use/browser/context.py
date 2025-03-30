@@ -1456,7 +1456,7 @@ class BrowserContext:
 
 		if self.active_tab and self.active_tab in session.context.pages and not self.active_tab.is_closed():
 			return self.active_tab
-		
+
 		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
 		non_extension_pages = [
 			page for page in pages if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://')
