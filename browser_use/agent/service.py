@@ -191,8 +191,8 @@ class Agent(Generic[Context]):
 		self._set_model_names()
 
 		# LLM API connection setup
-		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS[self.llm.__class__.__name__]
-		if not check_env_variables(llm_api_env_vars):
+		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
+		if llm_api_env_vars and not check_env_variables(llm_api_env_vars):
 			logger.error(f'Environment variables not set for {self.llm.__class__.__name__}')
 			raise ValueError('Environment variables not set')
 
