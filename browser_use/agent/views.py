@@ -28,6 +28,8 @@ REQUIRED_LLM_API_ENV_VARS = {
 	'ChatBedrockConverse': ['ANTHROPIC_API_KEY'],
 	'ChatAnthropic': ['ANTHROPIC_API_KEY'],
 	'ChatGoogleGenerativeAI': ['GEMINI_API_KEY'],
+	'ChatDeepSeek': ['DEEPSEEK_API_KEY'],
+	'ChatOllama': [],
 }
 
 
