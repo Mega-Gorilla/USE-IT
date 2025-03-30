@@ -122,7 +122,14 @@ class BrowserContextConfig(BaseModel):
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True,
+		extra='ignore',
+		populate_by_name=True,
+		from_attributes=True,
+		validate_assignment=True,
+		revalidate_instances='subclass-instances',
+	)
 
 	cookies_file: str | None = None
 	minimum_wait_page_load_time: float = 0.25
