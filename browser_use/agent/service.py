@@ -561,8 +561,16 @@ class Agent(Generic[Context]):
 		else:
 			from google.api_core.exceptions import ResourceExhausted
 			from openai import RateLimitError
+			from anthropic import RateLimitError as AnthropicRateLimitError
 
-			if isinstance(error, RateLimitError) or isinstance(error, ResourceExhausted):
+			# Define a tuple of rate limit error types for easier maintenance
+			RATE_LIMIT_ERRORS = (
+				RateLimitError,          # OpenAI
+				ResourceExhausted,       # Google
+				AnthropicRateLimitError, # Anthropic
+			)
+
+			if isinstance(error, RATE_LIMIT_ERRORS):
 				logger.warning(f'{prefix}{error_msg}')
 				await asyncio.sleep(self.settings.retry_delay)
 				self.state.consecutive_failures += 1
