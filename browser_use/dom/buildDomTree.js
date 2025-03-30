@@ -462,57 +462,135 @@
       return false;
     }
 
+    // Define interactive cursors
+    const interactiveCursors = new Set([
+      'pointer',    // Link/clickable elements
+      'move',       // Movable elements
+      'text',       // Text selection
+      'grab',       // Grabbable elements
+      'grabbing',   // Currently grabbing
+      'cell',       // Table cell selection
+      'copy',       // Copy operation
+      'alias',      // Alias creation
+      'all-scroll', // Scrollable content
+      'col-resize', // Column resize
+      'context-menu', // Context menu available
+      'crosshair',  // Precise selection
+      'e-resize',   // East resize
+      'ew-resize',  // East-west resize
+      'help',       // Help available
+      'n-resize',   // North resize
+      'ne-resize',  // Northeast resize
+      'nesw-resize', // Northeast-southwest resize
+      'ns-resize',  // North-south resize
+      'nw-resize',  // Northwest resize
+      'nwse-resize', // Northwest-southeast resize
+      'row-resize', // Row resize
+      's-resize',   // South resize
+      'se-resize',  // Southeast resize
+      'sw-resize',  // Southwest resize
+      'vertical-text', // Vertical text selection
+      'w-resize',   // West resize
+      'zoom-in',    // Zoom in
+      'zoom-out'    // Zoom out
+    ]);
+
+    // Define non-interactive cursors
+    const nonInteractiveCursors = new Set([
+      'not-allowed', // Action not allowed
+      'no-drop',     // Drop not allowed
+      'wait',        // Processing
+      'progress',    // In progress
+      'initial',     // Initial value
+      'inherit'      // Inherited value
+      //? Let's just include all potentially clickable elements that are not specifically blocked
+      // 'none',        // No cursor
+      // 'default',     // Default cursor 
+      // 'auto',        // Browser default
+    ]);
+
     function doesElementHaveInteractivePointer(element) {
       if (element.tagName.toLowerCase() === "html") return false;
-      const style = window.getComputedStyle(element);
+      const style = getCachedComputedStyle(element);
 
-      let interactiveCursors = ["pointer", "move", "text", "grab", "cell"];
-
-      if (interactiveCursors.includes(style.cursor)) return true;
+      if (interactiveCursors.has(style.cursor)) return true;
 
       return false;
     }
 
     let isInteractiveCursor = doesElementHaveInteractivePointer(element);
 
+    // Genius fix for almost all interactive elements
     if (isInteractiveCursor) {
       return true;
     }
 
-    // Special handling for cookie banner elements
-    const isCookieBannerElement =
-      (typeof element.closest === 'function') && (
-        element.closest('[id*="onetrust"]') ||
-        element.closest('[class*="onetrust"]') ||
-        element.closest('[data-nosnippet="true"]') ||
-        element.closest('[aria-label*="cookie"]')
-      );
+    const interactiveElements = new Set([
+      "a",          // Links
+      "button",     // Buttons
+      "input",      // All input types (text, checkbox, radio, etc.)
+      "select",     // Dropdown menus
+      "textarea",   // Text areas
+      "details",    // Expandable details
+      "summary",    // Summary element (clickable part of details)
+      "label",      // Form labels (often clickable)
+      "option",     // Select options
+      "optgroup",   // Option groups
+      "fieldset",   // Form fieldsets (can be interactive with legend)
+      "legend",     // Fieldset legends
+    ]);
 
-    if (isCookieBannerElement) {
-      // Check if it's a button or interactive element within the banner
-      if (
-        element.tagName.toLowerCase() === 'button' ||
-        element.getAttribute('role') === 'button' ||
-        element.onclick ||
-        element.getAttribute('onclick') ||
-        (element.classList && (
-          element.classList.contains('ot-sdk-button') ||
-          element.classList.contains('accept-button') ||
-          element.classList.contains('reject-button')
-        )) ||
-        element.getAttribute('aria-label')?.toLowerCase().includes('accept') ||
-        element.getAttribute('aria-label')?.toLowerCase().includes('reject')
-      ) {
-        return true;
+    // Define explicit disable attributes and properties
+    const explicitDisableTags = new Set([
+      'disabled',           // Standard disabled attribute
+      // 'aria-disabled',      // ARIA disabled state
+      'readonly',          // Read-only state
+      // 'aria-readonly',     // ARIA read-only state
+      // 'aria-hidden',       // Hidden from accessibility
+      // 'hidden',            // Hidden attribute
+      // 'inert',             // Inert attribute
+      // 'aria-inert',        // ARIA inert state
+      // 'tabindex="-1"',     // Removed from tab order
+      // 'aria-hidden="true"' // Hidden from screen readers
+    ]);
+
+    // handle inputs, select, checkbox, radio, textarea, button and make sure they are not cursor style disabled/not-allowed
+    if (interactiveElements.has(element.tagName.toLowerCase())) {
+      const style = getCachedComputedStyle(element);
+
+      // Check for non-interactive cursor
+      if (nonInteractiveCursors.has(style.cursor)) {
+        return false;
       }
+
+      // Check for explicit disable attributes
+      for (const disableTag of explicitDisableTags) {
+        if (element.hasAttribute(disableTag) ||
+          element.getAttribute(disableTag) === 'true' ||
+          element.getAttribute(disableTag) === '') {
+          return false;
+        }
+      }
+
+      // Check for disabled property on form elements
+      if (element.disabled) {
+        return false;
+      }
+
+      // Check for readonly property on form elements
+      if (element.readOnly) {
+        return false;
+      }
+
+      // Check for inert property
+      if (element.inert) {
+        return false;
+      }
+
+      return true;
     }
 
-    // Base interactive elements and roles
-    const interactiveElements = new Set([
-      "a", "button", "details", "embed", "input", "menu", "menuitem",
-      "object", "select", "textarea", "canvas", "summary", "dialog",
-      "banner"
-    ]);
+    return false
 
     const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
 
@@ -659,7 +737,8 @@
       hasClickHandler ||
       hasClickListeners ||
       isDraggable ||
-      isContentEditable
+      isContentEditable ||
+      false
     );
   }
 
@@ -669,16 +748,21 @@
   function isTopElement(element) {
     const rect = getCachedBoundingRect(element);
 
-    // If element is not in viewport, consider it top
-    const isInViewport = (
-      rect.left < window.innerWidth &&
-      rect.right > 0 &&
-      rect.top < window.innerHeight &&
-      rect.bottom > 0
-    );
-
-    if (!isInViewport) {
-      return true;
+    if (viewportExpansion <= 0) {
+      if (rect.bottom < 0 ||
+        rect.top > window.innerHeight ||
+        rect.right < 0 ||
+        rect.left > window.innerWidth) {
+        return false;
+      }
+    } else {
+      // For positive viewportExpansion, only expand in Y direction
+      if (rect.bottom < -viewportExpansion ||
+        rect.top > window.innerHeight + viewportExpansion ||
+        rect.right < 0 ||
+        rect.left > window.innerWidth) {
+        return false;
+      }
     }
 
     // Find the correct document context and root element

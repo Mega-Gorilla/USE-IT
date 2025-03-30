@@ -102,7 +102,9 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
+		# 'https://www.concur.com/?&cookie_preferences=cpra',
 		'https://immobilienscout24.de',
+		'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit',
 		'https://www.zeiss.com/career/en/job-search.html?page=1',
 		'https://www.mlb.com/yankees/stats/',
 		'https://www.amazon.com/s?k=laptop&s=review-rank&crid=1RZCEJ289EUSI&qid=1740202453&sprefix=laptop%2Caps%2C166&ref=sr_st_review-rank&ds=v1%3A4EnYKXVQA7DIE41qCvRZoNB4qN92Jlztd3BPsTFXmxU',
@@ -132,12 +134,14 @@ async def test_focus_vs_all_elements():
 					# First get all elements
 					print('\nGetting all elements:')
 					all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
-						highlight_elements=True, viewport_expansion=100
+						highlight_elements=True, viewport_expansion=1000
 					)
 
 					selector_map = all_elements_state.selector_map
 					total_elements = len(selector_map.keys())
 					print(f'Total number of elements: {total_elements}')
+
+					print(all_elements_state.element_tree.clickable_elements_to_string())
 
 					answer = input('Press Enter to clear highlights and continue...')
 					if answer == 'q':
