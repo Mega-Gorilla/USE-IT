@@ -237,7 +237,6 @@ class Agent(Generic[Context]):
 		if self.settings.enable_memory:
 			memory_settings = MemorySettings(
 				agent_id=self.state.agent_id,
-				enabled=self.settings.enable_memory,
 				interval=self.settings.memory_interval,
 				config=self.settings.memory_config,
 			)

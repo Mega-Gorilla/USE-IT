@@ -23,7 +23,6 @@ class MemorySettings(BaseModel):
 	"""Settings for procedural memory."""
 
 	agent_id: str
-	enabled: bool = True
 	interval: int = 10
 	config: Optional[dict] | None = None
 
@@ -47,7 +46,7 @@ class Memory:
 		self.message_manager = message_manager
 		self.llm = llm
 		self.settings = settings
-		self._memory_config = self.settings.config or {'vector_store': {'provider': 'chroma', 'config': {'path': '/tmp/mem0'}}}
+		self._memory_config = self.settings.config or {'vector_store': {'provider': 'faiss'}}
 		self.mem0 = Mem0Memory.from_config(config_dict=self._memory_config)
 
 	@time_execution_sync('--create_procedural_memory')
@@ -58,9 +57,6 @@ class Memory:
 		Args:
 		    current_step: The current step number of the agent
 		"""
-		if not self.settings.enabled:
-			return
-
 		logger.info(f'Creating procedural memory at step {current_step}')
 
 		# Get all messages
@@ -112,6 +108,7 @@ class Memory:
 			results = self.mem0.add(
 				messages=parsed_messages,
 				agent_id=self.settings.agent_id,
+				llm=self.llm,
 				memory_type='procedural_memory',
 				metadata={'step': current_step},
 			)
