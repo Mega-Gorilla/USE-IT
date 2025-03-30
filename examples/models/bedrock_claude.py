@@ -19,17 +19,10 @@ from browser_use.browser.browser import Browser, BrowserConfig
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-
 def get_llm():
+	config = Config(retries={'max_attempts': 10, 'mode': 'adaptive'})
+	bedrock_client = boto3.client('bedrock-runtime', region_name='us-east-1', config=config)
 
-	config = Config(
-            retries = {
-                'max_attempts': 10,
-                'mode': 'adaptive'
-            }
-        )
-	bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1", config=config)
-	
 	return ChatBedrockConverse(
 		model_id='us.anthropic.claude-3-5-sonnet-20241022-v2:0',
 		temperature=0.0,
