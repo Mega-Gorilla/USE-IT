@@ -13,11 +13,11 @@ import boto3
 from botocore.config import Config
 from langchain_aws import ChatBedrockConverse
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from browser_use import Agent
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.controller.service import Controller
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def get_llm():
