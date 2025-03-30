@@ -99,8 +99,8 @@ CHROME_ARGS = [
 	# chrome://profile-internals
 	# f'--user-data-dir={CHROME_PROFILE_PATH}',     # managed by playwright arg instead
 	# f'--profile-directory={CHROME_PROFILE_USER}',
-	'--password-store=basic',  # use mock keychain instead of OS-provided keychain (we manage auth.json instead)
-	'--use-mock-keychain',
+	# '--password-store=basic',  # use mock keychain instead of OS-provided keychain (we manage auth.json instead)
+	# '--use-mock-keychain',
 	'--disable-cookie-encryption',  # we need to be able to write unencrypted cookies to save/load auth.json
 	'--disable-sync',  # don't try to use Google account sync features while automation is active
 	# Extensions
