@@ -61,6 +61,7 @@ class ManagedMessage(BaseModel):
 		"""
 		if isinstance(value, dict) and 'message' in value:
 			# NOTE: We use langchain's load to convert the JSON string back into a BaseMessage object.
+			filterwarnings('ignore', category=LangChainBetaWarning)
 			value['message'] = load(value['message'])
 		return value
 

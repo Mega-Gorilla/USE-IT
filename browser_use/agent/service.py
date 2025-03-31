@@ -198,10 +198,9 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 		logger.info(
-			f"Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, "
-			f"extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, 'model_name') else None}"
+			f'🧠 Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, '
+			f'extraction_model={self.settings.page_extraction_llm.model_name if hasattr(self.settings.page_extraction_llm, "model_name") else None}'
 		)
-
 
 		# LLM API connection setup
 		llm_api_env_vars = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
@@ -258,12 +257,10 @@ class Agent(Generic[Context]):
 		# Browser setup
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
-		if browser_context:
-			self.browser = browser
-			self.browser_context = browser_context
-		else:
-			self.browser = browser or Browser()
-			self.browser_context = BrowserContext(browser=self.browser, config=self.browser.config.new_context_config)
+		self.browser = browser or Browser()
+		self.browser_context = browser_context or BrowserContext(
+			browser=self.browser, config=self.browser.config.new_context_config
+		)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
@@ -562,10 +559,18 @@ class Agent(Generic[Context]):
 
 			self.state.consecutive_failures += 1
 		else:
+			from anthropic import RateLimitError as AnthropicRateLimitError
 			from google.api_core.exceptions import ResourceExhausted
 			from openai import RateLimitError
 
-			if isinstance(error, RateLimitError) or isinstance(error, ResourceExhausted):
+			# Define a tuple of rate limit error types for easier maintenance
+			RATE_LIMIT_ERRORS = (
+				RateLimitError,  # OpenAI
+				ResourceExhausted,  # Google
+				AnthropicRateLimitError,  # Anthropic
+			)
+
+			if isinstance(error, RATE_LIMIT_ERRORS):
 				logger.warning(f'{prefix}{error_msg}')
 				await asyncio.sleep(self.settings.retry_delay)
 				self.state.consecutive_failures += 1
@@ -1157,7 +1162,7 @@ class Agent(Generic[Context]):
 
 			if test_answer in response_text:
 				logger.debug(
-					f'🧠  LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
+					f'🧠 LLM API keys {", ".join(required_keys)} verified, {llm.__class__.__name__} model is connected and responding correctly.'
 				)
 				llm._verified_api_keys = True
 				return True
@@ -1183,11 +1188,11 @@ class Agent(Generic[Context]):
 			return None
 
 		# Get current state to filter actions by page
-		state = await self.browser_context.get_state()
+		page = await self.browser_context.get_current_page()
 
 		# Get all standard actions (no filter) and page-specific actions
 		standard_actions = self.controller.registry.get_prompt_description()  # No page = system prompt actions
-		page_actions = self.controller.registry.get_prompt_description(state.page)  # Page-specific actions
+		page_actions = self.controller.registry.get_prompt_description(page)  # Page-specific actions
 
 		# Combine both for the planner
 		all_actions = standard_actions
