@@ -22,6 +22,15 @@ from browser_use.dom.history_tree_processor.service import (
 from browser_use.dom.views import SelectorMap
 
 ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto']
+REQUIRED_LLM_API_ENV_VARS = {
+	'ChatOpenAI': ['OPENAI_API_KEY'],
+	'AzureOpenAI': ['AZURE_ENDPOINT', 'AZURE_OPENAI_API_KEY'],
+	'ChatBedrockConverse': ['ANTHROPIC_API_KEY'],
+	'ChatAnthropic': ['ANTHROPIC_API_KEY'],
+	'ChatGoogleGenerativeAI': ['GEMINI_API_KEY'],
+	'ChatDeepSeek': ['DEEPSEEK_API_KEY'],
+	'ChatOllama': [],
+}
 
 
 class AgentSettings(BaseModel):
@@ -58,6 +67,12 @@ class AgentSettings(BaseModel):
 	page_extraction_llm: Optional[BaseChatModel] = None
 	planner_llm: Optional[BaseChatModel] = None
 	planner_interval: int = 1  # Run planner every N steps
+	is_planner_reasoning: bool = False  # type: ignore
+
+	# Procedural memory settings
+	enable_memory: bool = True
+	memory_interval: int = 10
+	memory_config: Optional[dict] = None
 
 
 class AgentState(BaseModel):
@@ -166,7 +181,7 @@ class AgentHistory(BaseModel):
 		elements = []
 		for action in model_output.action:
 			index = action.get_index()
-			if index and index in selector_map:
+			if index is not None and index in selector_map:
 				el: DOMElementNode = selector_map[index]
 				elements.append(HistoryTreeProcessor.convert_dom_element_to_history_element(el))
 			else:
@@ -356,8 +371,10 @@ class AgentHistoryList(BaseModel):
 			content.extend([r.extracted_content for r in h.result if r.extracted_content])
 		return content
 
-	def model_actions_filtered(self, include: list[str] = []) -> list[dict]:
+	def model_actions_filtered(self, include: list[str] | None = None) -> list[dict]:
 		"""Get all model actions from history as JSON"""
+		if include is None:
+			include = []
 		outputs = self.model_actions()
 		result = []
 		for o in outputs:
