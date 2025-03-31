@@ -28,7 +28,7 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-Install Playwright: 
+Install Playwright:
 ```bash
 playwright install chromium
 ```
@@ -160,6 +160,11 @@ We love contributions! Feel free to open issues for bugs or feature requests. To
 
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
 
+
+`main` is the primary development branch with frequent changes. For production use, install a stable [versioned release](https://github.com/browser-use/browser-use/releases) instead.
+
+---
+
 ## Cooperations
 
 We are forming a commission to define best practices for UI/UX design for browser agents.
@@ -186,7 +191,6 @@ If you use Browser Use in your research or project, please cite:
 ```
 
  <div align="center"> <img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/> 
-
  
 [![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/gregpr07)
 [![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/mamagnus00)
