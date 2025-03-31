@@ -592,7 +592,7 @@
 
     return false
 
-    const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
+
 
     const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
@@ -616,6 +616,10 @@
     )) {
       return true;
     }
+
+    // return false
+
+    const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'list', 'listitem', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
 
     // Basic role/attribute checks
     const hasInteractiveRole =
@@ -685,14 +689,6 @@
         const listeners = {};
         const eventTypes = [
           "click",
-          "mousedown",
-          "mouseup",
-          "touchstart",
-          "touchend",
-          "keydown",
-          "keyup",
-          "focus",
-          "blur",
         ];
 
         for (const type of eventTypes) {
@@ -733,11 +729,11 @@
       element.draggable || element.getAttribute("draggable") === "true";
 
     return (
-      hasAriaProps ||
-      hasClickHandler ||
-      hasClickListeners ||
-      isDraggable ||
-      isContentEditable ||
+      // hasAriaProps ||
+      // hasClickHandler ||
+      // hasClickListeners ||
+      // isDraggable ||
+      // isContentEditable ||
       false
     );
   }

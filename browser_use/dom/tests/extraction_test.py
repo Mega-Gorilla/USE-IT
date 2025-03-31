@@ -89,7 +89,7 @@ async def test_process_html_file():
 
 async def test_focus_vs_all_elements():
 	config = BrowserContextConfig(
-		cookies_file='cookies3.json',
+		# cookies_file='cookies3.json',
 		disable_security=True,
 		wait_for_network_idle_page_load_time=2,
 	)
