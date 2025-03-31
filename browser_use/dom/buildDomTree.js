@@ -590,7 +590,7 @@
       return true;
     }
 
-    return false
+    // return false
 
 
 
@@ -600,11 +600,11 @@
     const tabIndex = element.getAttribute("tabindex");
 
     // Add check for specific class
-    const hasAddressInputClass = element.classList && (
-      element.classList.contains("address-input__container__input") ||
-      element.classList.contains("nav-btn") ||
-      element.classList.contains("pull-left")
-    );
+    // const hasAddressInputClass = element.classList && (
+    //   element.classList.contains("address-input__container__input") ||
+    //   element.classList.contains("nav-btn") ||
+    //   element.classList.contains("pull-left")
+    // );
 
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
@@ -619,59 +619,37 @@
 
     // return false
 
-    const interactiveRoles = new Set(['button-icon', 'dialog', 'button-text-icon-only', 'treeitem', 'alert', 'grid', 'progressbar', 'radio', 'checkbox', 'menuitem', 'option', 'switch', 'dropdown', 'scrollbar', 'combobox', 'a-button-text', 'button', 'region', 'textbox', 'tabpanel', 'tab', 'click', 'button-text', 'spinbutton', 'a-button-inner', 'link', 'menu', 'slider', 'listbox', 'list', 'listitem', 'a-dropdown-button', 'button-icon-only', 'searchbox', 'menuitemradio', 'tooltip', 'tree', 'menuitemcheckbox']);
+    const interactiveRoles = new Set([
+      'button',           // Directly clickable element
+      // 'link',            // Clickable link
+      'menuitem',        // Clickable menu item
+      'menuitemradio',   // Radio-style menu item (selectable)
+      'menuitemcheckbox', // Checkbox-style menu item (toggleable)
+      'radio',           // Radio button (selectable)
+      'checkbox',        // Checkbox (toggleable)
+      'tab',             // Tab (clickable to switch content)
+      'switch',          // Toggle switch (clickable to change state)
+      'slider',          // Slider control (draggable)
+      'spinbutton',      // Number input with up/down controls
+      'combobox',        // Dropdown with text input
+      'searchbox',       // Search input field
+      'textbox',         // Text input field
+      'listbox',         // Selectable list
+      'option',          // Selectable option in a list
+      'scrollbar'        // Scrollable control
+    ]);
 
     // Basic role/attribute checks
     const hasInteractiveRole =
-      hasAddressInputClass ||
       interactiveElements.has(tagName) ||
       interactiveRoles.has(role) ||
-      interactiveRoles.has(ariaRole) ||
-      (tabIndex !== null &&
-        tabIndex !== "-1" &&
-        element.parentElement?.tagName.toLowerCase() !== "body") ||
-      element.getAttribute("data-action") === "a-dropdown-select" ||
-      element.getAttribute("data-action") === "a-dropdown-button";
+      interactiveRoles.has(ariaRole);
 
     if (hasInteractiveRole) return true;
 
-    // Additional checks for cookie banners and consent UI
-    const isCookieBanner =
-      element.id?.toString().toLowerCase().includes('cookie') ||
-      element.id?.toString().toLowerCase().includes('consent') ||
-      element.id?.toString().toLowerCase().includes('notice') ||
-      (element.classList && (
-        element.classList.contains('otCenterRounded') ||
-        element.classList.contains('ot-sdk-container')
-      )) ||
-      element.getAttribute('data-nosnippet') === 'true' ||
-      element.getAttribute('aria-label')?.toString().toLowerCase().includes('cookie') ||
-      element.getAttribute('aria-label')?.toString().toLowerCase().includes('consent') ||
-      (element.tagName.toLowerCase() === 'div' && (
-        element.id?.toString().toLowerCase().includes('onetrust') ||
-        (element.classList && (
-          element.classList.contains('onetrust') ||
-          element.classList.contains('cookie') ||
-          element.classList.contains('consent')
-        ))
-      ));
+    return false
 
-    if (isCookieBanner) return true;
 
-    // Additional check for buttons in cookie banners
-    const isInCookieBanner = typeof element.closest === 'function' && element.closest(
-      '[id*="cookie"],[id*="consent"],[class*="cookie"],[class*="consent"],[id*="onetrust"]'
-    );
-
-    if (isInCookieBanner && (
-      element.tagName.toLowerCase() === 'button' ||
-      element.getAttribute('role') === 'button' ||
-      (element.classList && element.classList.contains('button')) ||
-      element.onclick ||
-      element.getAttribute('onclick')
-    )) {
-      return true;
-    }
 
     // Check for event listeners
     const hasClickHandler =
@@ -737,6 +715,7 @@
       false
     );
   }
+
 
   /**
    * Checks if an element is the topmost element at its position.

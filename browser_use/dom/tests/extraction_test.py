@@ -102,6 +102,8 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
+		'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
+		'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
 		# 'https://www.concur.com/?&cookie_preferences=cpra',
 		'https://immobilienscout24.de',
 		'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit',
