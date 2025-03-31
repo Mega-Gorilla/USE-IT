@@ -110,7 +110,7 @@ class Browser:
 	"""
 	Playwright browser on steroids.
 
-	This is persistant browser factory that can spawn multiple browser contexts.
+	This is persistent browser factory that can spawn multiple browser contexts.
 	It is recommended to use only one instance of Browser per your application (RAM usage will grow otherwise).
 	"""
 
@@ -180,7 +180,7 @@ class Browser:
 			# Check if browser is already running
 			response = requests.get('http://localhost:9222/json/version', timeout=2)
 			if response.status_code == 200:
-				logger.info('🔌  Re-using existing browser found running on http://localhost:9222')
+				logger.info('🔌  Reusing existing browser found running on http://localhost:9222')
 				browser_class = getattr(playwright, self.config.browser_class)
 				browser = await browser_class.connect_over_cdp(
 					endpoint_url='http://localhost:9222',

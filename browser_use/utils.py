@@ -93,7 +93,7 @@ class SignalHandler:
 		except Exception:
 			# there are situations where signal handlers are not supported, e.g.
 			# - when running in a thread other than the main thread
-			# - some opearating systems
+			# - some operating systems
 			# - inside jupyter notebooks
 			pass
 
