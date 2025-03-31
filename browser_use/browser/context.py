@@ -107,7 +107,7 @@ class BrowserContextConfig(BaseModel):
 	        Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
 		
 		  http_credentials: None
-          Dictionary with HTTP authentication credentials, e.g.
+          Dictionary with HTTP basic authentication credentials for corporate intranets (only supports one set of credentials for all URLs at the moment), e.g.
           {"username": "bill", "password": "pa55w0rd"}
 
 	    is_mobile: None
