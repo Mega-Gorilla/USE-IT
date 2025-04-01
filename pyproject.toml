@@ -49,6 +49,10 @@ dependencies = [
 urls = { "Repository" = "https://github.com/browser-use/browser-use" }
 
 
+[tool.codespell]
+ignore-words-list = "bu"
+skip = "*.json"
+
 [tool.ruff]
 line-length = 130
 fix = true
@@ -89,4 +93,5 @@ dev-dependencies = [
     "langchain-fireworks>=0.2.6",
     "ipdb>=0.13.13",
     "pre-commit>=4.2.0",
+    "codespell>=2.4.1",
 ]
