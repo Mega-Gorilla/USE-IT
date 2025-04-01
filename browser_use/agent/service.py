@@ -767,7 +767,7 @@ class Agent(Generic[Context]):
 		signal_handler.register()
 
 		# Start non-blocking LLM connection verification
-		assert await self.llm._verified_api_keys, 'Failed to verify LLM API keys'
+		assert self.llm._verified_api_keys, 'Failed to verify LLM API keys'
 
 		try:
 			self._log_agent_run()
