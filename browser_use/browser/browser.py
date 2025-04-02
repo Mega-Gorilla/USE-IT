@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 
 from dataclasses import dataclass, field
 
-from rebrowser_playwright._impl._api_structures import ProxySettings
-from rebrowser_playwright.async_api import Browser as PlaywrightBrowser
-from rebrowser_playwright.async_api import Playwright, async_playwright
+from patchright._impl._api_structures import ProxySettings
+from patchright.async_api import Browser as PlaywrightBrowser
+from patchright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
@@ -92,7 +92,7 @@ class BrowserConfig(BaseModel):
 	cdp_url: str | None = None
 
 	browser_class: Literal['chromium', 'firefox', 'webkit'] = 'chromium'
-	browser_binary_path: str | None = Field(default=None, alias=AliasChoices('browser_instance_path', 'chrome_instance_path'))
+	browser_binary_path: str | None = Field(default=None, validation_alias=AliasChoices('browser_instance_path', 'chrome_instance_path'))
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False

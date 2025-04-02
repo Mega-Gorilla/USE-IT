@@ -17,7 +17,7 @@ dependencies = [
     "requests>=2.32.3",
     "posthog>=3.7.0",
     # "lmnr[langchain]>=0.4.59",
-    "rebrowser-playwright>=1.49.0",
+    "patchright>=1.51.0",
     "playwright>=1.51.0",
     "markdownify==1.1.0",
     "langchain-core==0.3.49",
