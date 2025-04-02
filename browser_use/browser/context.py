@@ -448,8 +448,7 @@ class BrowserContext:
 									f"Fixed invalid sameSite value '{cookie['sameSite']}' to 'None' for cookie {cookie.get('name')}"
 								)
 								cookie['sameSite'] = 'None'
-
-          logger.info(f'🍪  Loaded {len(cookies)} cookies from {self.config.cookies_file}')
+					logger.info(f'🍪  Loaded {len(cookies)} cookies from {self.config.cookies_file}')
 					await context.add_cookies(cookies)
 
 				except json.JSONDecodeError as e:
