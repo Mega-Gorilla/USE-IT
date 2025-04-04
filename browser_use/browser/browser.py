@@ -8,13 +8,11 @@ import logging
 import os
 import socket
 import subprocess
+from typing import Literal
+
 import psutil
 import requests
-from typing import Literal
 from dotenv import load_dotenv
-
-from dataclasses import dataclass, field
-
 from patchright._impl._api_structures import ProxySettings
 from patchright.async_api import Browser as PlaywrightBrowser
 from patchright.async_api import Playwright, async_playwright
@@ -92,7 +90,9 @@ class BrowserConfig(BaseModel):
 	cdp_url: str | None = None
 
 	browser_class: Literal['chromium', 'firefox', 'webkit'] = 'chromium'
-	browser_binary_path: str | None = Field(default=None, validation_alias=AliasChoices('browser_instance_path', 'chrome_instance_path'))
+	browser_binary_path: str | None = Field(
+		default=None, validation_alias=AliasChoices('browser_instance_path', 'chrome_instance_path')
+	)
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False

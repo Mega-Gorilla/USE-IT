@@ -412,15 +412,15 @@ class BrowserContext:
 		else:
 			kwargs = {}
 			if self.browser.config.headless:
-				kwargs["viewport"] = self.config.browser_window_size
-				kwargs["no_viewport"] = False
+				kwargs['viewport'] = self.config.browser_window_size
+				kwargs['no_viewport'] = False
 			if self.config.user_agent is not None:
-				kwargs["user_agent"] = self.config.user_agent
+				kwargs['user_agent'] = self.config.user_agent
 
 			context = await browser.new_context(
 				**kwargs,
 				java_script_enabled=True,
-				**({"bypass_csp": True, "ignore_https_errors": True} if self.config.disable_security else {}),
+				**({'bypass_csp': True, 'ignore_https_errors': True} if self.config.disable_security else {}),
 				record_video_dir=self.config.save_recording_path,
 				record_video_size=self.config.browser_window_size,
 				record_har_path=self.config.save_har_path,
