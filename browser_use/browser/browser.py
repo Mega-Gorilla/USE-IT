@@ -56,7 +56,7 @@ class BrowserConfig(BaseModel):
 		headless: False
 			Whether to run browser in headless mode (not recommended)
 
-		disable_security: True
+		disable_security: False
 			Disable browser security features (required for cross-origin iframe support)
 
 		extra_browser_args: []
@@ -96,7 +96,7 @@ class BrowserConfig(BaseModel):
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False
-	disable_security: bool = True
+	disable_security: bool = False  # disable_security=True is dangerous as any malicious URL visited could embed an iframe for the user's bank, and use their cookies to steal money
 	deterministic_rendering: bool = False
 	keep_alive: bool = Field(default=False, alias='_force_keep_browser_alive')  # used to be called _force_keep_browser_alive
 
@@ -261,7 +261,6 @@ class Browser:
 		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 			if s.connect_ex(('localhost', 9222)) == 0:
 				chrome_args.remove('--remote-debugging-port=9222')
-				chrome_args.remove('--remote-debugging-address=0.0.0.0')
 
 		browser_class = getattr(playwright, self.config.browser_class)
 		args = {
