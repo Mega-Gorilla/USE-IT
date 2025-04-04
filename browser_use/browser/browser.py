@@ -13,7 +13,6 @@ from typing import Literal
 import psutil
 import requests
 from dotenv import load_dotenv
-from patchright._impl._api_structures import ProxySettings
 from patchright.async_api import Browser as PlaywrightBrowser
 from patchright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -125,7 +124,7 @@ class Browser:
 
 	async def new_context(self, config: BrowserContextConfig | None = None) -> BrowserContext:
 		"""Create a browser context"""
-		return BrowserContext(config=config or self.config, browser=self)
+		return BrowserContext(config=config or self.config.new_context_config, browser=self)
 
 	async def get_playwright_browser(self) -> PlaywrightBrowser:
 		"""Get a browser context"""
