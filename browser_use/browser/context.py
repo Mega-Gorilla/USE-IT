@@ -56,8 +56,8 @@ class BrowserContextConfig(BaseModel):
 	    cookies_file: None
 	        Path to cookies file for persistence
 
-		disable_security: True
-			Disable browser security features
+		disable_security: False
+			Disable browser security features (dangerous, but cross-origin iframe support requires it)
 
 	    minimum_wait_page_load_time: 0.5
 	        Minimum time to wait before getting page state for LLM input
@@ -106,6 +106,10 @@ class BrowserContextConfig(BaseModel):
 	    include_dynamic_attributes: bool = True
 	        Include dynamic attributes in the CSS selector. If you want to reuse the css_selectors, it might be better to set this to False.
 
+		  http_credentials: None
+	  Dictionary with HTTP basic authentication credentials for corporate intranets (only supports one set of credentials for all URLs at the moment), e.g.
+	  {"username": "bill", "password": "pa55w0rd"}
+
 	    is_mobile: None
 	        Whether the meta viewport tag is taken into account and touch events are enabled.
 
@@ -122,7 +126,14 @@ class BrowserContextConfig(BaseModel):
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True,
+		extra='ignore',
+		populate_by_name=True,
+		from_attributes=True,
+		validate_assignment=True,
+		revalidate_instances='subclass-instances',
+	)
 
 	cookies_file: str | None = None
 	minimum_wait_page_load_time: float = 0.25
@@ -130,7 +141,7 @@ class BrowserContextConfig(BaseModel):
 	maximum_wait_page_load_time: float = 5
 	wait_between_actions: float = 0.5
 
-	disable_security: bool = True
+	disable_security: bool = False  # disable_security=True is dangerous as any malicious URL visited could embed an iframe for the user's bank, and use their cookies to steal money
 
 	browser_window_size: BrowserContextWindowSize = Field(default_factory=lambda: {'width': 1280, 'height': 1100})
 	no_viewport: Optional[bool] = None
@@ -148,6 +159,7 @@ class BrowserContextConfig(BaseModel):
 	viewport_expansion: int = 0
 	allowed_domains: list[str] | None = None
 	include_dynamic_attributes: bool = True
+	http_credentials: dict[str, str] | None = None
 
 	keep_alive: bool = Field(default=False, alias='_force_keep_context_alive')  # used to be called _force_keep_context_alive
 	is_mobile: bool | None = None
@@ -203,6 +215,7 @@ class BrowserSession:
 				}
 			})()
 			"""
+		self.active_tab = None
 		self.context = context
 		self.cached_state = cached_state
 		self.context.on('page', lambda page: page.add_init_script(init_script))
@@ -233,6 +246,7 @@ class BrowserContext:
 
 		# Initialize these as None - they'll be set up when needed
 		self.session: BrowserSession | None = None
+		self.active_tab: Page | None = None
 
 	async def __aenter__(self):
 		"""Async context manager entry"""
@@ -278,6 +292,7 @@ class BrowserContext:
 
 		finally:
 			# Dereference everything
+			self.active_tab = None
 			self.session = None
 			self._page_event_handler = None
 
@@ -354,6 +369,8 @@ class BrowserContext:
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
+		self.active_tab = active_page
+
 		return self.session
 
 	def _add_new_page_listener(self, context: PlaywrightBrowserContext):
@@ -362,6 +379,10 @@ class BrowserContext:
 				await page.reload()  # Reload the page to avoid timeout errors
 			await page.wait_for_load_state()
 			logger.debug(f'📑  New page opened: {page.url}')
+
+			if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://'):
+				self.active_tab = page
+
 			if self.session is not None:
 				self.state.target_id = None
 
@@ -402,6 +423,7 @@ class BrowserContext:
 				record_video_size=self.config.browser_window_size,
 				record_har_path=self.config.save_har_path,
 				locale=self.config.locale,
+				http_credentials=self.config.http_credentials,
 				is_mobile=self.config.is_mobile,
 				has_touch=self.config.has_touch,
 				geolocation=self.config.geolocation,
@@ -415,9 +437,22 @@ class BrowserContext:
 		# Load cookies if they exist
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
 			with open(self.config.cookies_file, 'r') as f:
-				cookies = json.load(f)
-				logger.info(f'🍪  Loaded {len(cookies)} cookies from {self.config.cookies_file}')
-				await context.add_cookies(cookies)
+				try:
+					cookies = json.load(f)
+
+					valid_same_site_values = ['Strict', 'Lax', 'None']
+					for cookie in cookies:
+						if 'sameSite' in cookie:
+							if cookie['sameSite'] not in valid_same_site_values:
+								logger.warning(
+									f"Fixed invalid sameSite value '{cookie['sameSite']}' to 'None' for cookie {cookie.get('name')}"
+								)
+								cookie['sameSite'] = 'None'
+					logger.info(f'🍪  Loaded {len(cookies)} cookies from {self.config.cookies_file}')
+					await context.add_cookies(cookies)
+
+				except json.JSONDecodeError as e:
+					logger.error(f'Failed to parse cookies file: {str(e)}')
 
 		# Expose anti-detection scripts
 		await context.add_init_script(
@@ -737,10 +772,11 @@ class BrowserContext:
 		session = await self.get_session()
 		page = await self._get_current_page(session)
 		await page.close()
-
+		self.active_tab = None
 		# Switch to the first available tab if any exist
 		if session.context.pages:
 			await self.switch_to_tab(0)
+			self.active_tab = session.context.pages[0]
 
 		# otherwise the browser will be closed
 
@@ -872,7 +908,7 @@ class BrowserContext:
 			# Get all cross-origin iframes within the page and open them in new tabs
 			# mark the titles of the new tabs so the LLM knows to check them for additional content
 			# unfortunately too buggy for now, too many sites use invisible cross-origin iframes for ads, tracking, youtube videos, social media, etc.
-			# and it distracts the bot by openeing a lot of new tabs
+			# and it distracts the bot by opening a lot of new tabs
 			# iframe_urls = await dom_service.get_cross_origin_iframes()
 			# for url in iframe_urls:
 			# 	if url in [tab.url for tab in tabs_info]:
@@ -1362,7 +1398,7 @@ class BrowserContext:
 			try:
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
 			except asyncio.TimeoutError:
-				# page.title() can hang forever on tabs that are crashed/dissapeared/about:blank
+				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
 				logger.debug('⚠  Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
 				tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
@@ -1393,6 +1429,7 @@ class BrowserContext:
 					self.state.target_id = target['targetId']
 					break
 
+		self.active_tab = page
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
@@ -1404,6 +1441,9 @@ class BrowserContext:
 
 		session = await self.get_session()
 		new_page = await session.context.new_page()
+
+		self.active_tab = new_page
+
 		await new_page.wait_for_load_state()
 
 		if url:
@@ -1433,6 +1473,9 @@ class BrowserContext:
 						if page.url == target['url']:
 							return page
 
+		if self.active_tab and self.active_tab in session.context.pages and not self.active_tab.is_closed():
+			return self.active_tab
+
 		# fall back to most recently opened non-extension page (extensions are almost always invisible background targets)
 		non_extension_pages = [
 			page for page in pages if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://')
@@ -1448,7 +1491,9 @@ class BrowserContext:
 			# reopen a new window in the browser and try again
 			logger.warning('⚠️  No browser window available, opening a new window')
 			await self._initialize_session()
-			return await session.context.new_page()
+			page = await session.context.new_page()
+			self.active_tab = page
+			return page
 
 	async def get_selector_map(self) -> SelectorMap:
 		session = await self.get_session()
@@ -1529,6 +1574,7 @@ class BrowserContext:
 		for page in pages:
 			await page.close()
 
+		self.active_tab = None
 		session.cached_state = None
 		self.state.target_id = None
 

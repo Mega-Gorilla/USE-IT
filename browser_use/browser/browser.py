@@ -56,7 +56,7 @@ class BrowserConfig(BaseModel):
 		headless: False
 			Whether to run browser in headless mode (not recommended)
 
-		disable_security: True
+		disable_security: False
 			Disable browser security features (required for cross-origin iframe support)
 
 		extra_browser_args: []
@@ -79,7 +79,14 @@ class BrowserConfig(BaseModel):
 			Enable deterministic rendering (makes GPU/font rendering consistent across different OS's and docker)
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True,
+		extra='ignore',
+		populate_by_name=True,
+		from_attributes=True,
+		validate_assignment=True,
+		revalidate_instances='subclass-instances',
+	)
 
 	wss_url: str | None = None
 	cdp_url: str | None = None
@@ -89,7 +96,7 @@ class BrowserConfig(BaseModel):
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False
-	disable_security: bool = True
+	disable_security: bool = False  # disable_security=True is dangerous as any malicious URL visited could embed an iframe for the user's bank, and use their cookies to steal money
 	deterministic_rendering: bool = False
 	keep_alive: bool = Field(default=False, alias='_force_keep_browser_alive')  # used to be called _force_keep_browser_alive
 
@@ -103,22 +110,22 @@ class Browser:
 	"""
 	Playwright browser on steroids.
 
-	This is persistant browser factory that can spawn multiple browser contexts.
+	This is persistent browser factory that can spawn multiple browser contexts.
 	It is recommended to use only one instance of Browser per your application (RAM usage will grow otherwise).
 	"""
 
 	def __init__(
 		self,
-		config: BrowserConfig = BrowserConfig(),
+		config: BrowserConfig | None = None,
 	):
 		logger.debug('🌎  Initializing new browser')
-		self.config = config
+		self.config = config or BrowserConfig()
 		self.playwright: Playwright | None = None
 		self.playwright_browser: PlaywrightBrowser | None = None
 
-	async def new_context(self, config: BrowserContextConfig = BrowserContextConfig()) -> BrowserContext:
+	async def new_context(self, config: BrowserContextConfig | None = None) -> BrowserContext:
 		"""Create a browser context"""
-		return BrowserContext(config=config, browser=self)
+		return BrowserContext(config=config or self.config, browser=self)
 
 	async def get_playwright_browser(self) -> PlaywrightBrowser:
 		"""Get a browser context"""
@@ -173,7 +180,7 @@ class Browser:
 			# Check if browser is already running
 			response = requests.get('http://localhost:9222/json/version', timeout=2)
 			if response.status_code == 200:
-				logger.info('🔌  Re-using existing browser found running on http://localhost:9222')
+				logger.info('🔌  Reusing existing browser found running on http://localhost:9222')
 				browser_class = getattr(playwright, self.config.browser_class)
 				browser = await browser_class.connect_over_cdp(
 					endpoint_url='http://localhost:9222',
@@ -254,7 +261,6 @@ class Browser:
 		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 			if s.connect_ex(('localhost', 9222)) == 0:
 				chrome_args.remove('--remote-debugging-port=9222')
-				chrome_args.remove('--remote-debugging-address=0.0.0.0')
 
 		browser_class = getattr(playwright, self.config.browser_class)
 		args = {
