@@ -25,7 +25,6 @@ from playwright.async_api import (
 	Page,
 )
 from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import TypedDict
 
 from browser_use.browser.views import (
 	BrowserError,
@@ -43,9 +42,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BrowserContextWindowSize(TypedDict):
+class BrowserContextWindowSize(BaseModel):
+	"""Window size configuration for browser context"""
+
 	width: int
 	height: int
+
+	model_config = ConfigDict(
+		extra='allow',  # Allow extra fields to ensure compatibility with dictionary
+		populate_by_name=True,
+		from_attributes=True,
+	)
+
+	# Support dict-like behavior for compatibility
+	def __getitem__(self, key):
+		return getattr(self, key)
+
+	def get(self, key, default=None):
+		return getattr(self, key, default)
 
 
 class BrowserContextConfig(BaseModel):
@@ -143,7 +157,9 @@ class BrowserContextConfig(BaseModel):
 
 	disable_security: bool = False  # disable_security=True is dangerous as any malicious URL visited could embed an iframe for the user's bank, and use their cookies to steal money
 
-	browser_window_size: BrowserContextWindowSize = Field(default_factory=lambda: {'width': 1280, 'height': 1100})
+	browser_window_size: BrowserContextWindowSize = Field(
+		default_factory=lambda: BrowserContextWindowSize(width=1280, height=1100)
+	)
 	no_viewport: Optional[bool] = None
 
 	save_recording_path: str | None = None
@@ -239,7 +255,7 @@ class BrowserContext:
 	):
 		self.context_id = str(uuid.uuid4())
 
-		self.config = config or BrowserContextConfig(**dict(browser.config))
+		self.config = config or BrowserContextConfig(**(browser.config.model_dump() if browser.config else {}))
 		self.browser = browser
 
 		self.state = state or BrowserContextState()
@@ -420,7 +436,7 @@ class BrowserContext:
 				bypass_csp=self.config.disable_security,
 				ignore_https_errors=self.config.disable_security,
 				record_video_dir=self.config.save_recording_path,
-				record_video_size=self.config.browser_window_size,
+				record_video_size=self.config.browser_window_size.model_dump(),
 				record_har_path=self.config.save_har_path,
 				locale=self.config.locale,
 				http_credentials=self.config.http_credentials,
