@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import time
 
@@ -12,10 +11,24 @@ from browser_use.dom.service import DomService
 from browser_use.utils import time_execution_sync
 
 
-def count_string_tokens(string: str, model: str) -> int:
+def count_string_tokens(string: str, model: str) -> tuple[int, float]:
 	"""Count the number of tokens in a string using a specified model."""
+
+	def get_price_per_token(model: str) -> float:
+		"""Get the price per token for a specified model.
+
+		@todo: move to utils, use a package or sth
+		"""
+		prices = {
+			'gpt-4o': 2.5 / 1e6,
+			'gpt-4o-mini': 0.15 / 1e6,
+		}
+		return prices[model]
+
 	llm = ChatOpenAI(model=model)
-	return llm.get_num_tokens(string)
+	token_count = llm.get_num_tokens(string)
+	price = token_count * get_price_per_token(model)
+	return token_count, price
 
 
 async def test_process_html_file():
@@ -122,7 +135,6 @@ async def test_focus_vs_all_elements():
 
 	websites = [
 		'https://kayak.com/flights',
-		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
 		'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
 		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
 		# # 'https://www.concur.com/?&cookie_preferences=cpra',
@@ -132,6 +144,7 @@ async def test_focus_vs_all_elements():
 		'https://www.mlb.com/yankees/stats/',
 		'https://www.amazon.com/s?k=laptop&s=review-rank&crid=1RZCEJ289EUSI&qid=1740202453&sprefix=laptop%2Caps%2C166&ref=sr_st_review-rank&ds=v1%3A4EnYKXVQA7DIE41qCvRZoNB4qN92Jlztd3BPsTFXmxU',
 		'https://reddit.com',
+		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
 		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
 		'https://google.com',
 		'https://amazon.com',
@@ -173,12 +186,15 @@ async def test_focus_vs_all_elements():
 					os.makedirs('./tmp', exist_ok=True)
 					with open('./tmp/user_message.txt', 'w', encoding='utf-8') as f:
 						f.write(user_message)
+
+					token_count, price = count_string_tokens(user_message, model='gpt-4o')
+					print(f'Prompt token count: {token_count}, price: {round(price, 4)} USD')
 					print('User message written to ./tmp/user_message.txt')
 
 					# also save all_elements_state.element_tree.clickable_elements_to_string() to a file
-					with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:
-						f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
-					print('Clickable elements written to ./tmp/clickable_elements.json')
+					# with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:
+					# 	f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
+					# print('Clickable elements written to ./tmp/clickable_elements.json')
 
 					answer = input("Enter element index to click, text to input (after click), or 'q' to quit: ")
 
