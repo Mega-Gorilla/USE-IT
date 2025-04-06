@@ -523,6 +523,10 @@
 
   /**
    * Checks if an element is interactive.
+   * 
+   * lots of comments, and uncommented code - to show the logic of what we already tried
+   * 
+   * One of the things we tried at the beggining was also to use event listeners, and other fancy class, style stuff -> what actually worked best was just combining most things with computed cursor style :)
    */
   function isInteractiveElement(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -657,21 +661,9 @@
       return true;
     }
 
-    // return false
-
-
-
     const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
     const ariaRole = element.getAttribute("aria-role");
-    const tabIndex = element.getAttribute("tabindex");
-
-    // Add check for specific class
-    // const hasAddressInputClass = element.classList && (
-    //   element.classList.contains("address-input__container__input") ||
-    //   element.classList.contains("nav-btn") ||
-    //   element.classList.contains("pull-left")
-    // );
 
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
@@ -683,8 +675,6 @@
     )) {
       return true;
     }
-
-    // return false
 
     const interactiveRoles = new Set([
       'button',           // Directly clickable element
@@ -715,72 +705,6 @@
     if (hasInteractiveRole) return true;
 
     return false
-
-
-
-    // Check for event listeners
-    const hasClickHandler =
-      element.onclick !== null ||
-      element.getAttribute("onclick") !== null ||
-      element.hasAttribute("ng-click") ||
-      element.hasAttribute("@click") ||
-      element.hasAttribute("v-on:click");
-
-    // Helper function to safely get event listeners
-    function getEventListeners(el) {
-      try {
-        return window.getEventListeners?.(el) || {};
-      } catch (e) {
-        const listeners = {};
-        const eventTypes = [
-          "click",
-        ];
-
-        for (const type of eventTypes) {
-          const handler = el[`on${type}`];
-          if (handler) {
-            listeners[type] = [{ listener: handler, useCapture: false }];
-          }
-        }
-        return listeners;
-      }
-    }
-
-    // Check for click-related events
-    const listeners = getEventListeners(element);
-    const hasClickListeners =
-      listeners &&
-      (listeners.click?.length > 0 ||
-        listeners.mousedown?.length > 0 ||
-        listeners.mouseup?.length > 0 ||
-        listeners.touchstart?.length > 0 ||
-        listeners.touchend?.length > 0);
-
-    // Check for ARIA properties
-    const hasAriaProps =
-      element.hasAttribute("aria-expanded") ||
-      element.hasAttribute("aria-pressed") ||
-      element.hasAttribute("aria-selected") ||
-      element.hasAttribute("aria-checked");
-
-    const isContentEditable = element.getAttribute("contenteditable") === "true" ||
-      element.isContentEditable ||
-      element.id === "tinymce" ||
-      element.classList.contains("mce-content-body") ||
-      (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
-
-    // Check if element is draggable
-    const isDraggable =
-      element.draggable || element.getAttribute("draggable") === "true";
-
-    return (
-      // hasAriaProps ||
-      // hasClickHandler ||
-      // hasClickListeners ||
-      // isDraggable ||
-      // isContentEditable ||
-      false
-    );
   }
 
 
@@ -868,6 +792,8 @@
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
+    return true
+
     if (viewportExpansion === -1) {
       return true;
     }

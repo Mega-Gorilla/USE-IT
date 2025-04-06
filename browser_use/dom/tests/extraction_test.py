@@ -87,6 +87,9 @@ async def test_process_html_file():
 			await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
 
 
+TIMEOUT = 60
+
+
 async def test_focus_vs_all_elements():
 	config = BrowserContextConfig(
 		# cookies_file='cookies3.json',
@@ -103,8 +106,8 @@ async def test_focus_vs_all_elements():
 
 	websites = [
 		'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
-		'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
-		# 'https://www.concur.com/?&cookie_preferences=cpra',
+		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
+		# # 'https://www.concur.com/?&cookie_preferences=cpra',
 		'https://immobilienscout24.de',
 		'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit',
 		'https://www.zeiss.com/career/en/job-search.html?page=1',
@@ -145,7 +148,21 @@ async def test_focus_vs_all_elements():
 
 					print(all_elements_state.element_tree.clickable_elements_to_string())
 
-					answer = input('Press Enter to clear highlights and continue...')
+					try:
+						# Set timeout of 5 seconds for input
+						import signal
+
+						def timeout_handler(signum, frame):
+							raise TimeoutError()
+
+						signal.signal(signal.SIGALRM, timeout_handler)
+						signal.alarm(TIMEOUT)
+
+						answer = input(f'Press Enter to clear highlights and continue ({TIMEOUT}s timeout)...')
+						signal.alarm(0)  # Cancel the alarm if input received
+					except TimeoutError:
+						answer = None
+						print('Timeout reached, continuing automatically...')
 					if answer == 'q':
 						break
 
