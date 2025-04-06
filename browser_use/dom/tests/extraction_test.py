@@ -1,8 +1,11 @@
 import asyncio
+import json
+import os
 import time
 
 from langchain_openai import ChatOpenAI
 
+from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from browser_use.dom.service import DomService
@@ -89,6 +92,19 @@ async def test_process_html_file():
 
 TIMEOUT = 60
 
+DEFAULT_INCLUDE_ATTRIBUTES = [
+	'title',
+	'type',
+	'name',
+	'role',
+	'aria-label',
+	'placeholder',
+	'value',
+	'alt',
+	'aria-expanded',
+	'data-date-format',
+]
+
 
 async def test_focus_vs_all_elements():
 	config = BrowserContextConfig(
@@ -144,7 +160,25 @@ async def test_focus_vs_all_elements():
 					total_elements = len(selector_map.keys())
 					print(f'Total number of elements: {total_elements}')
 
-					print(all_elements_state.element_tree.clickable_elements_to_string())
+					# print(all_elements_state.element_tree.clickable_elements_to_string())
+					prompt = AgentMessagePrompt(
+						state=all_elements_state,
+						result=None,
+						include_attributes=DEFAULT_INCLUDE_ATTRIBUTES,
+						step_info=None,
+					)
+					# print(prompt.get_user_message(use_vision=False).content)
+					# Write the user message to a file for analysis
+					user_message = prompt.get_user_message(use_vision=False).content
+					os.makedirs('./tmp', exist_ok=True)
+					with open('./tmp/user_message.txt', 'w', encoding='utf-8') as f:
+						f.write(user_message)
+					print('User message written to ./tmp/user_message.txt')
+
+					# also save all_elements_state.element_tree.clickable_elements_to_string() to a file
+					with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:
+						f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
+					print('Clickable elements written to ./tmp/clickable_elements.json')
 
 					answer = input("Enter element index to click, text to input (after click), or 'q' to quit: ")
 

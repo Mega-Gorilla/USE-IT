@@ -16,6 +16,9 @@ class DOMBaseNode:
 	# Use None as default and set parent later to avoid circular reference issues
 	parent: Optional['DOMElementNode']
 
+	def __json__(self) -> dict:
+		raise NotImplementedError('DOMBaseNode is an abstract class')
+
 
 @dataclass(frozen=False)
 class DOMTextNode(DOMBaseNode):
@@ -42,6 +45,12 @@ class DOMTextNode(DOMBaseNode):
 			return False
 		return self.parent.is_top_element
 
+	def __json__(self) -> dict:
+		return {
+			'text': self.text,
+			'type': self.type,
+		}
+
 
 @dataclass(frozen=False)
 class DOMElementNode(DOMBaseNode):
@@ -62,6 +71,22 @@ class DOMElementNode(DOMBaseNode):
 	viewport_coordinates: Optional[CoordinateSet] = None
 	page_coordinates: Optional[CoordinateSet] = None
 	viewport_info: Optional[ViewportInfo] = None
+
+	def __json__(self) -> dict:
+		return {
+			'tag_name': self.tag_name,
+			'xpath': self.xpath,
+			'attributes': self.attributes,
+			'is_visible': self.is_visible,
+			'is_interactive': self.is_interactive,
+			'is_top_element': self.is_top_element,
+			'is_in_viewport': self.is_in_viewport,
+			'shadow_root': self.shadow_root,
+			'highlight_index': self.highlight_index,
+			'viewport_coordinates': self.viewport_coordinates,
+			'page_coordinates': self.page_coordinates,
+			'children': [child.__json__() for child in self.children],
+		}
 
 	def __repr__(self) -> str:
 		tag_str = f'<{self.tag_name}'
