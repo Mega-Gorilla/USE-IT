@@ -12,14 +12,14 @@ from browser_use.utils import time_execution_sync
 def count_string_tokens(string: str, model: str) -> int:
 	"""Count the number of tokens in a string using a specified model."""
 	llm = ChatOpenAI(model=model)
-	return llm.count_tokens(string)
+	return llm.get_num_tokens(string)
 
 
 async def test_process_html_file():
 	config = BrowserContextConfig(
 		cookies_file='cookies3.json',
 		disable_security=True,
-		wait_for_network_idle_page_load_time=2,
+		wait_for_network_idle_page_load_time=1,
 	)
 
 	browser = Browser(
@@ -94,7 +94,7 @@ async def test_focus_vs_all_elements():
 	config = BrowserContextConfig(
 		# cookies_file='cookies3.json',
 		disable_security=True,
-		wait_for_network_idle_page_load_time=2,
+		wait_for_network_idle_page_load_time=1,
 	)
 
 	browser = Browser(
@@ -105,6 +105,8 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
+		'https://kayak.com/flights',
+		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
 		'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
 		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
 		# # 'https://www.concur.com/?&cookie_preferences=cpra',
@@ -113,10 +115,8 @@ async def test_focus_vs_all_elements():
 		'https://www.zeiss.com/career/en/job-search.html?page=1',
 		'https://www.mlb.com/yankees/stats/',
 		'https://www.amazon.com/s?k=laptop&s=review-rank&crid=1RZCEJ289EUSI&qid=1740202453&sprefix=laptop%2Caps%2C166&ref=sr_st_review-rank&ds=v1%3A4EnYKXVQA7DIE41qCvRZoNB4qN92Jlztd3BPsTFXmxU',
-		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
 		'https://reddit.com',
 		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
-		'https://kayak.com/flights',
 		'https://google.com',
 		'https://amazon.com',
 		'https://github.com',
@@ -129,18 +129,16 @@ async def test_focus_vs_all_elements():
 		for website in websites:
 			# sleep 2
 			await page.goto(website)
-			time.sleep(2)
+			time.sleep(1)
 
+			last_clicked_index = None  # Track the index for text input
 			while True:
 				try:
 					print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
-					# time.sleep(2)  # Additional wait for dynamic content
 
-					# First get all elements
-					print('\nGetting all elements:')
-					all_elements_state = await time_execution_sync('get_all_elements')(dom_service.get_clickable_elements)(
-						highlight_elements=True, viewport_expansion=1000
-					)
+					# Get/refresh the state (includes removing old highlights)
+					print('\nGetting page state...')
+					all_elements_state = await context.get_state()
 
 					selector_map = all_elements_state.selector_map
 					total_elements = len(selector_map.keys())
@@ -148,31 +146,49 @@ async def test_focus_vs_all_elements():
 
 					print(all_elements_state.element_tree.clickable_elements_to_string())
 
-					try:
-						# Set timeout of 5 seconds for input
-						import signal
+					answer = input("Enter element index to click, text to input (after click), or 'q' to quit: ")
 
-						def timeout_handler(signum, frame):
-							raise TimeoutError()
-
-						signal.signal(signal.SIGALRM, timeout_handler)
-						signal.alarm(TIMEOUT)
-
-						answer = input(f'Press Enter to clear highlights and continue ({TIMEOUT}s timeout)...')
-						signal.alarm(0)  # Cancel the alarm if input received
-					except TimeoutError:
-						answer = None
-						print('Timeout reached, continuing automatically...')
-					if answer == 'q':
+					if answer.lower() == 'q':
 						break
 
-					await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
+					try:
+						# Try clicking based on index
+						clicked_index = int(answer)
+						if clicked_index in selector_map:
+							element_node = selector_map[clicked_index]
+							print(f'Clicking element {clicked_index}: {element_node.tag_name}')
+							await context._click_element_node(element_node)
+							last_clicked_index = clicked_index  # Remember index for potential input
+							print('Click successful.')
+						else:
+							print(f'Invalid index: {clicked_index}')
+							last_clicked_index = None  # Reset if index was invalid
+					except ValueError:
+						# If not an integer, try inputting text
+						if last_clicked_index is not None:
+							if last_clicked_index in selector_map:
+								element_node = selector_map[last_clicked_index]
+								print(f"Inputting text '{answer}' into element {last_clicked_index}: {element_node.tag_name}")
+								await context._input_text_element_node(element_node, answer.split(',')[1])
+								last_clicked_index = None  # Reset after input
+								print('Input successful.')
+							else:
+								print(f'Error: Last clicked index {last_clicked_index} no longer valid.')
+								last_clicked_index = None
+						else:
+							print('Please click an element (enter its index) before inputting text.')
+					except Exception as action_e:
+						print(f'Action failed: {action_e}')
+						last_clicked_index = None  # Reset on failure
+
+				# No explicit highlight removal here, get_state handles it at the start of the loop
 
 				except Exception as e:
-					print(f'Error: {e}')
-					pass
+					print(f'Error in loop: {e}')
+					# Optionally add a small delay before retrying
+					await asyncio.sleep(1)
 
 
 if __name__ == '__main__':
 	asyncio.run(test_focus_vs_all_elements())
-	asyncio.run(test_process_html_file())
+	# asyncio.run(test_process_html_file()) # Commented out the other test
