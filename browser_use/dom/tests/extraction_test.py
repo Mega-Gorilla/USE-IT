@@ -106,6 +106,7 @@ async def test_process_html_file():
 TIMEOUT = 60
 
 DEFAULT_INCLUDE_ATTRIBUTES = [
+	'id',
 	'title',
 	'type',
 	'name',
@@ -134,8 +135,8 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
-		'https://kayak.com/flights',
-		'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
+		# 'https://kayak.com/flights',
+		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
 		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
 		# # 'https://www.concur.com/?&cookie_preferences=cpra',
 		'https://immobilienscout24.de',
