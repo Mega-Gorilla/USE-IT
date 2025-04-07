@@ -879,19 +879,131 @@
     return hasQuickInteractiveAttr;
   }
 
-  function quickVisibilityCheck(element) {
-    // Fast initial check before expensive getComputedStyle
-    return element.offsetWidth > 0 &&
-      element.offsetHeight > 0 &&
-      !element.hasAttribute("hidden") &&
-      element.style.display !== "none" &&
-      element.style.visibility !== "hidden";
+  // --- Define constants for distinct interaction check ---
+  const DISTINCT_INTERACTIVE_TAGS = new Set([
+    'a', 'button', 'input', 'select', 'textarea', 'summary', 'details', 'label', 'option'
+  ]);
+  const INTERACTIVE_ROLES = new Set([
+    'button', 'link', 'menuitem', 'menuitemradio', 'menuitemcheckbox',
+    'radio', 'checkbox', 'tab', 'switch', 'slider', 'spinbutton',
+    'combobox', 'searchbox', 'textbox', 'listbox', 'option', 'scrollbar'
+  ]);
+
+  /**
+   * Checks if an element likely represents a distinct interaction
+   * separate from its parent (if the parent is also interactive).
+   */
+  function isElementDistinctInteraction(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+
+
+    const tagName = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+
+    // Check if it's an iframe - always distinct boundary
+    if (tagName === 'iframe') {
+      return true;
+    }
+
+    // Check tag name
+    if (DISTINCT_INTERACTIVE_TAGS.has(tagName)) {
+      return true;
+    }
+    // Check interactive roles
+    if (role && INTERACTIVE_ROLES.has(role)) {
+      return true;
+    }
+    // Check contenteditable
+    if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
+      return true;
+    }
+    // Check for common testing/automation attributes
+    if (element.hasAttribute('data-testid') || element.hasAttribute('data-cy') || element.hasAttribute('data-test')) {
+      return true;
+    }
+    // Check for explicit onclick handler (attribute or property)
+    if (element.hasAttribute('onclick') || typeof element.onclick === 'function') {
+      return true;
+    }
+    // Check for other common interaction event listeners
+    try {
+      if (typeof getEventListeners === 'function') {
+        const listeners = getEventListeners(element);
+        const interactionEvents = ['mousedown', 'mouseup', 'keydown', 'keyup', 'submit', 'change', 'input', 'focus', 'blur'];
+        for (const eventType of interactionEvents) {
+          if (listeners[eventType] && listeners[eventType].length > 0) {
+            return true; // Found a common interaction listener
+          }
+        }
+      } else {
+        // Fallback: Check common event attributes if getEventListeners is not available
+        const commonEventAttrs = ['onmousedown', 'onmouseup', 'onkeydown', 'onkeyup', 'onsubmit', 'onchange', 'oninput', 'onfocus', 'onblur'];
+        if (commonEventAttrs.some(attr => element.hasAttribute(attr))) {
+          return true;
+        }
+      }
+    } catch (e) {
+      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
+      // If checking listeners fails, rely on other checks
+    }
+
+
+    // Default to false: if it's interactive but doesn't match above,
+    // assume it triggers the same action as the parent.
+    return false;
+  }
+  // --- End distinct interaction check ---
+
+  /**
+   * Handles the logic for deciding whether to highlight an element and performing the highlight.
+   */
+  function handleHighlighting(nodeData, node, parentIframe, isParentHighlighted) {
+    if (!nodeData.isInteractive) return false; // Not interactive, definitely don't highlight
+
+    let shouldHighlight = false;
+    if (!isParentHighlighted) {
+      // Parent wasn't highlighted, this interactive node can be highlighted.
+      shouldHighlight = true;
+    } else {
+      // Parent *was* highlighted. Only highlight this node if it represents a distinct interaction.
+      if (isElementDistinctInteraction(node)) {
+        shouldHighlight = true;
+      } else {
+        // console.log(`Skipping highlight for ${nodeData.tagName} (parent highlighted)`);
+        shouldHighlight = false;
+      }
+    }
+
+    if (shouldHighlight) {
+      // Check viewport status before assigning index and highlighting
+      nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
+      if (nodeData.isInViewport) {
+        nodeData.highlightIndex = highlightIndex++;
+
+        if (doHighlightElements) {
+          if (focusHighlightIndex >= 0) {
+            if (focusHighlightIndex === nodeData.highlightIndex) {
+              highlightElement(node, nodeData.highlightIndex, parentIframe);
+            }
+          } else {
+            highlightElement(node, nodeData.highlightIndex, parentIframe);
+          }
+        }
+        return true; // Successfully highlighted
+      } else {
+        // console.log(`Skipping highlight for ${nodeData.tagName} (outside viewport)`);
+      }
+    }
+
+    return false; // Did not highlight
   }
 
   /**
    * Creates a node data object for a given node and its descendants.
    */
-  function buildDomTree(node, parentIframe = null) {
+  function buildDomTree(node, parentIframe = null, isParentHighlighted = false) {
     if (debugMode) PERF_METRICS.nodeMetrics.totalNodes++;
 
     if (!node || node.id === HIGHLIGHT_CONTAINER_ID) {
@@ -910,7 +1022,7 @@
 
       // Process children of body
       for (const child of node.childNodes) {
-        const domElement = buildDomTree(child, parentIframe);
+        const domElement = buildDomTree(child, parentIframe, false); // Body's children have no highlighted parent initially
         if (domElement) nodeData.children.push(domElement);
       }
 
@@ -998,36 +1110,16 @@
       }
     }
 
-    // if (isInteractiveCandidate(node)) {
-
-    // Check interactivity
+    let nodeWasHighlighted = false;
+    // Perform visibility, interactivity, and highlighting checks
     if (node.nodeType === Node.ELEMENT_NODE) {
       nodeData.isVisible = isElementVisible(node); // isElementVisible uses offsetWidth/Height, which is fine
       if (nodeData.isVisible) {
-        // isTopElement now uses getClientRects
         nodeData.isTopElement = isTopElement(node);
         if (nodeData.isTopElement) {
           nodeData.isInteractive = isInteractiveElement(node);
-          if (nodeData.isInteractive) {
-            // isInExpandedViewport now uses getClientRects
-            nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
-            if (nodeData.isInViewport) { // Only highlight if in viewport based on getClientRects
-              nodeData.highlightIndex = highlightIndex++;
-
-              if (doHighlightElements) {
-                if (focusHighlightIndex >= 0) {
-                  if (focusHighlightIndex === nodeData.highlightIndex) {
-                    highlightElement(node, nodeData.highlightIndex, parentIframe);
-                  }
-                } else {
-                  highlightElement(node, nodeData.highlightIndex, parentIframe);
-                }
-              }
-            } else {
-              // Element is interactive and top, but determined to be outside viewport by getClientRects
-              // console.log("Interactive element outside viewport:", node.tagName, nodeData.xpath);
-            }
-          }
+          // Call the dedicated highlighting function
+          nodeWasHighlighted = handleHighlighting(nodeData, node, parentIframe, isParentHighlighted);
         }
       }
     }
@@ -1042,7 +1134,7 @@
           const iframeDoc = node.contentDocument || node.contentWindow?.document;
           if (iframeDoc) {
             for (const child of iframeDoc.childNodes) {
-              const domElement = buildDomTree(child, node);
+              const domElement = buildDomTree(child, node, false);
               if (domElement) nodeData.children.push(domElement);
             }
           }
@@ -1060,7 +1152,7 @@
       ) {
         // Process all child nodes to capture formatted text
         for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
+          const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
           if (domElement) nodeData.children.push(domElement);
         }
       }
@@ -1069,13 +1161,13 @@
         if (node.shadowRoot) {
           nodeData.shadowRoot = true;
           for (const child of node.shadowRoot.childNodes) {
-            const domElement = buildDomTree(child, parentIframe);
+            const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
             if (domElement) nodeData.children.push(domElement);
           }
         }
         // Handle regular elements
         for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe);
+          const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
           if (domElement) nodeData.children.push(domElement);
         }
       }
