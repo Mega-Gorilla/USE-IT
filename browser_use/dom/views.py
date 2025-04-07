@@ -148,38 +148,64 @@ class DOMElementNode(DOMBaseNode):
 		formatted_text = []
 
 		def process_node(node: DOMBaseNode, depth: int) -> None:
+			next_depth = int(depth)
+			depth_str = depth * '\t'
+
 			if isinstance(node, DOMElementNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
-					attributes_str = ''
+					next_depth += 1
+
 					text = node.get_all_text_till_next_clickable_element()
+					attributes_html_str = ''
 					if include_attributes:
-						attributes = list(
-							set(
-								[
-									str(value)
-									for key, value in node.attributes.items()
-									if key in include_attributes and value != node.tag_name
-								]
-							)
-						)
-						if text in attributes:
-							attributes.remove(text)
-						attributes_str = ';'.join(attributes)
-					line = f'[{node.highlight_index}]<{node.tag_name} '
-					if attributes_str:
-						line += f'{attributes_str}'
+						attributes_to_include = {
+							key: str(value) for key, value in node.attributes.items() if key in include_attributes
+						}
+
+						# Easy LLM optimizations
+						# if tag == role attribute, don't include it
+						if node.tag_name == attributes_to_include.get('role'):
+							del attributes_to_include['role']
+
+						# if aria-label == text of the node, don't include it
+						if (
+							attributes_to_include.get('aria-label')
+							and attributes_to_include.get('aria-label', '').strip() == text.strip()
+						):
+							del attributes_to_include['aria-label']
+
+						# if placeholder == text of the node, don't include it
+						if (
+							attributes_to_include.get('placeholder')
+							and attributes_to_include.get('placeholder', '').strip() == text.strip()
+						):
+							del attributes_to_include['placeholder']
+
+						if attributes_to_include:
+							# Format as key1='value1' key2='value2'
+							attributes_html_str = ' '.join(f"{key}='{value}'" for key, value in attributes_to_include.items())
+
+					# Build the line
+					line = f'{depth_str}[{node.highlight_index}]<{node.tag_name}'
+					if attributes_html_str:
+						line += f' {attributes_html_str}'
+
 					if text:
-						if attributes_str:
-							line += f'>{text}'
-						else:
-							line += f'{text}'
-					line += '/>'
+						# Add space before >text only if there were NO attributes added before
+						if not attributes_html_str:
+							line += ' '
+						line += f'>{text}'
+					# Add space before /> only if neither attributes NOR text were added
+					elif not attributes_html_str:
+						line += ' '
+
+					line += ' />'  # 1 token
 					formatted_text.append(line)
 
 				# Process children regardless
 				for child in node.children:
-					process_node(child, depth + 1)
+					process_node(child, next_depth)
 
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
@@ -189,7 +215,7 @@ class DOMElementNode(DOMBaseNode):
 					and node.parent.is_visible
 					and node.parent.is_top_element
 				):  # and node.is_parent_top_element()
-					formatted_text.append(f'{node.text}')
+					formatted_text.append(f'{depth_str}{node.text}')
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)

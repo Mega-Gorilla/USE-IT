@@ -196,40 +196,48 @@ async def test_focus_vs_all_elements():
 					# 	f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
 					# print('Clickable elements written to ./tmp/clickable_elements.json')
 
-					answer = input("Enter element index to click, text to input (after click), or 'q' to quit: ")
+					answer = input("Enter element index to click, 'index,text' to input, or 'q' to quit: ")
 
 					if answer.lower() == 'q':
 						break
 
 					try:
-						# Try clicking based on index
-						clicked_index = int(answer)
-						if clicked_index in selector_map:
-							element_node = selector_map[clicked_index]
-							print(f'Clicking element {clicked_index}: {element_node.tag_name}')
-							await context._click_element_node(element_node)
-							last_clicked_index = clicked_index  # Remember index for potential input
-							print('Click successful.')
-						else:
-							print(f'Invalid index: {clicked_index}')
-							last_clicked_index = None  # Reset if index was invalid
-					except ValueError:
-						# If not an integer, try inputting text
-						if last_clicked_index is not None:
-							if last_clicked_index in selector_map:
-								element_node = selector_map[last_clicked_index]
-								print(f"Inputting text '{answer}' into element {last_clicked_index}: {element_node.tag_name}")
-								await context._input_text_element_node(element_node, answer.split(',')[1])
-								last_clicked_index = None  # Reset after input
-								print('Input successful.')
+						if ',' in answer:
+							# Input text format: index,text
+							parts = answer.split(',', 1)
+							if len(parts) == 2:
+								try:
+									target_index = int(parts[0].strip())
+									text_to_input = parts[1]
+									if target_index in selector_map:
+										element_node = selector_map[target_index]
+										print(
+											f"Inputting text '{text_to_input}' into element {target_index}: {element_node.tag_name}"
+										)
+										await context._input_text_element_node(element_node, text_to_input)
+										print('Input successful.')
+									else:
+										print(f'Invalid index: {target_index}')
+								except ValueError:
+									print(f'Invalid index format: {parts[0]}')
 							else:
-								print(f'Error: Last clicked index {last_clicked_index} no longer valid.')
-								last_clicked_index = None
+								print("Invalid input format. Use 'index,text'.")
 						else:
-							print('Please click an element (enter its index) before inputting text.')
+							# Click element format: index
+							try:
+								clicked_index = int(answer)
+								if clicked_index in selector_map:
+									element_node = selector_map[clicked_index]
+									print(f'Clicking element {clicked_index}: {element_node.tag_name}')
+									await context._click_element_node(element_node)
+									print('Click successful.')
+								else:
+									print(f'Invalid index: {clicked_index}')
+							except ValueError:
+								print(f"Invalid input: '{answer}'. Enter an index, 'index,text', or 'q'.")
+
 					except Exception as action_e:
 						print(f'Action failed: {action_e}')
-						last_clicked_index = None  # Reset on failure
 
 				# No explicit highlight removal here, get_state handles it at the start of the loop
 

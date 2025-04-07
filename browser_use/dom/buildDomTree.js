@@ -679,7 +679,7 @@
     const interactiveRoles = new Set([
       'button',           // Directly clickable element
       // 'link',            // Clickable link
-      'menuitem',        // Clickable menu item
+      // 'menuitem',        // Clickable menu item
       'menuitemradio',   // Radio-style menu item (selectable)
       'menuitemcheckbox', // Checkbox-style menu item (toggleable)
       'radio',           // Radio button (selectable)
@@ -691,7 +691,7 @@
       'combobox',        // Dropdown with text input
       'searchbox',       // Search input field
       'textbox',         // Text input field
-      'listbox',         // Selectable list
+      // 'listbox',         // Selectable list
       'option',          // Selectable option in a list
       'scrollbar'        // Scrollable control
     ]);
@@ -990,8 +990,8 @@
           } else {
             highlightElement(node, nodeData.highlightIndex, parentIframe);
           }
+          return true; // Successfully highlighted
         }
-        return true; // Successfully highlighted
       } else {
         // console.log(`Skipping highlight for ${nodeData.tagName} (outside viewport)`);
       }
@@ -1167,7 +1167,9 @@
         }
         // Handle regular elements
         for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
+          // Pass the highlighted status of the *current* node to its children
+          const passHighlightStatusToChild = nodeWasHighlighted || isParentHighlighted;
+          const domElement = buildDomTree(child, parentIframe, passHighlightStatusToChild);
           if (domElement) nodeData.children.push(domElement);
         }
       }
