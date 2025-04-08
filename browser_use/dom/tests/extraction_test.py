@@ -8,7 +8,6 @@ from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from browser_use.dom.service import DomService
-from browser_use.utils import time_execution_sync
 
 
 def count_string_tokens(string: str, model: str) -> tuple[int, float]:
@@ -29,78 +28,6 @@ def count_string_tokens(string: str, model: str) -> tuple[int, float]:
 	token_count = llm.get_num_tokens(string)
 	price = token_count * get_price_per_token(model)
 	return token_count, price
-
-
-async def test_process_html_file():
-	config = BrowserContextConfig(
-		cookies_file='cookies3.json',
-		disable_security=True,
-		wait_for_network_idle_page_load_time=1,
-	)
-
-	browser = Browser(
-		config=BrowserConfig(
-			# chrome_instance_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-		)
-	)
-	context = BrowserContext(browser=browser, config=config)  # noqa: F821
-
-	websites = [
-		'https://kayak.com/flights',
-		'https://immobilienscout24.de',
-		'https://google.com',
-		'https://amazon.com',
-		'https://github.com',
-	]
-
-	async with context as context:
-		page = await context.get_current_page()
-		dom_service = DomService(page)
-
-		for website in websites:
-			print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
-			await page.goto(website)
-			time.sleep(2)  # Additional wait for dynamic content
-
-			async def test_viewport(expansion: int, description: str):
-				print(f'\n{description}:')
-				dom_state = await time_execution_sync(f'get_clickable_elements ({description})')(
-					dom_service.get_clickable_elements
-				)(highlight_elements=True, viewport_expansion=expansion)
-
-				elements = dom_state.element_tree
-				selector_map = dom_state.selector_map
-				element_count = len(selector_map.keys())
-				token_count = count_string_tokens(elements.clickable_elements_to_string(), model='gpt-4o')
-
-				print(f'Number of elements: {element_count}')
-				print(f'Token count: {token_count}')
-				return element_count, token_count
-
-			expansions = [0, 100, 200, 300, 400, 500, 600, 1000, -1, -200]
-			results = []
-
-			for i, expansion in enumerate(expansions):
-				description = (
-					f'{i + 1}. Expansion {expansion}px' if expansion >= 0 else f'{i + 1}. All elements ({expansion} expansion)'
-				)
-				count, tokens = await test_viewport(expansion, description)
-				results.append((count, tokens))
-				input('Press Enter to continue...')
-				await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
-
-			# Print comparison summary
-			print('\nComparison Summary:')
-			for i, (count, tokens) in enumerate(results):
-				expansion = expansions[i]
-				description = f'Expansion {expansion}px' if expansion >= 0 else 'All elements (-1)'
-				initial_count, initial_tokens = results[0]
-				print(f'{description}: {count} elements (+{count - initial_count}), {tokens} tokens')
-
-			input('\nPress Enter to continue to next website...')
-
-			# Clear highlights before next website
-			await page.evaluate('document.getElementById("playwright-highlight-container")?.remove()')
 
 
 TIMEOUT = 60
@@ -135,11 +62,11 @@ async def test_focus_vs_all_elements():
 	context = BrowserContext(browser=browser, config=config)  # noqa: F821
 
 	websites = [
-		# 'https://kayak.com/flights',
+		'https://kayak.com/flights',
 		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
 		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
 		# # 'https://www.concur.com/?&cookie_preferences=cpra',
-		'https://immobilienscout24.de',
+		# 'https://immobilienscout24.de',
 		'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit',
 		'https://www.zeiss.com/career/en/job-search.html?page=1',
 		'https://www.mlb.com/yankees/stats/',
@@ -168,7 +95,7 @@ async def test_focus_vs_all_elements():
 
 					# Get/refresh the state (includes removing old highlights)
 					print('\nGetting page state...')
-					all_elements_state = await context.get_state()
+					all_elements_state = await context.get_state(True)
 
 					selector_map = all_elements_state.selector_map
 					total_elements = len(selector_map.keys())

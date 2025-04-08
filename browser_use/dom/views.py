@@ -72,6 +72,13 @@ class DOMElementNode(DOMBaseNode):
 	page_coordinates: Optional[CoordinateSet] = None
 	viewport_info: Optional[ViewportInfo] = None
 
+	"""
+	### State injected by the browser context.
+
+	The idea is that the clickable elements are sometimes persistent from the previous page -> tells the model which objects are new/_how_ the state has changed
+	"""
+	is_new: Optional[bool] = None
+
 	def __json__(self) -> dict:
 		return {
 			'tag_name': self.tag_name,
@@ -187,7 +194,13 @@ class DOMElementNode(DOMBaseNode):
 							attributes_html_str = ' '.join(f"{key}='{value}'" for key, value in attributes_to_include.items())
 
 					# Build the line
-					line = f'{depth_str}[{node.highlight_index}]<{node.tag_name}'
+					if node.is_new:
+						highlight_indicator = f'*[{node.highlight_index}]*'
+					else:
+						highlight_indicator = f'[{node.highlight_index}]'
+
+					line = f'{depth_str}{highlight_indicator}<{node.tag_name}'
+
 					if attributes_html_str:
 						line += f' {attributes_html_str}'
 

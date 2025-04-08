@@ -13,10 +13,12 @@ Interactive Elements
 - type: HTML element type (button, input, etc.)
 - text: Element description
   Example:
-  [33]<button>Submit Form</button>
+  [33]<div>User form</div>
+  \t*[35]*<button aria-label='Submit form'>Submit</button>
 
 - Only elements with numeric indexes in [] are interactive
-- (stacked) indentation is important and means that the element is a child of the element above (with a lower index)
+- (stacked) indentation (with \t) is important and means that the element is a (html) child of the element above (with a lower index)
+- Elements with \* are new elements that were added after the previous step (if url has not changed)
 
 # Response Rules
 
