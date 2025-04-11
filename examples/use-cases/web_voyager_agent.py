@@ -18,7 +18,7 @@ from browser_use.browser.context import BrowserContextWindowSize
 # Load environment variables
 load_dotenv()
 
-# Set LLM based on defined environment variables and enable memory if OPENAI_API_KEY is set (otherwise Memory initialization will fail)
+# Set LLM based on defined environment variables
 if os.getenv('OPENAI_API_KEY'):
 	llm = ChatOpenAI(
 		model='gpt-4o',
@@ -57,7 +57,6 @@ browser = Browser(
 TASK = """
 Find and book a hotel in Paris with suitable accommodations for a family of four (two adults and two children) offering free cancellation for the dates of February 14-21, 2025. on https://www.booking.com/
 """
-
 
 async def main():
 	agent = Agent(
