@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 from patchright.async_api import Browser as PlaywrightBrowser
 from patchright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-from typing_extensions import TypedDict
 
 load_dotenv()
 
@@ -36,13 +35,22 @@ logger = logging.getLogger(__name__)
 IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
 
 
-class ProxySettings(TypedDict, total=False):
-	"""the same as playwright.sync_api.ProxySettings, but with typing_extensions.TypedDict so pydantic can validate it"""
+class ProxySettings(BaseModel):
+	"""the same as playwright.sync_api.ProxySettings, but now as a Pydantic BaseModel so pydantic can validate it"""
 
 	server: str
-	bypass: str | None
-	username: str | None
-	password: str | None
+	bypass: str | None = None
+	username: str | None = None
+	password: str | None = None
+
+	model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+	# Support dict-like behavior for compatibility with Playwright's ProxySettings
+	def __getitem__(self, key):
+		return getattr(self, key)
+
+	def get(self, key, default=None):
+		return getattr(self, key, default)
 
 
 class BrowserConfig(BaseModel):
@@ -282,7 +290,7 @@ class Browser:
 			headless=self.config.headless,
 			channel='chrome',
 			args=args[self.config.browser_class],
-			proxy=self.config.proxy,
+			proxy=self.config.proxy.model_dump() if self.config.proxy else None,
 			handle_sigterm=False,
 			handle_sigint=False,
 		)
