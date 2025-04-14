@@ -148,7 +148,7 @@ class Agent(Generic[Context]):
 		#
 		context: Context | None = None,
 		# Memory settings
-		enable_memory: bool = True,
+		enable_memory: bool = False,
 		memory_interval: int = 10,
 		memory_config: Optional[dict] = None,
 	):
