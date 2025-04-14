@@ -526,7 +526,7 @@
    * 
    * lots of comments, and uncommented code - to show the logic of what we already tried
    * 
-   * One of the things we tried at the beggining was also to use event listeners, and other fancy class, style stuff -> what actually worked best was just combining most things with computed cursor style :)
+   * One of the things we tried at the beginning was also to use event listeners, and other fancy class, style stuff -> what actually worked best was just combining most things with computed cursor style :)
    */
   function isInteractiveElement(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) {
