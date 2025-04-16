@@ -229,7 +229,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("NOVITA_API_KEY")
 
 # Initialize the model
 llm=ChatOpenAI(base_url='https://api.novita.ai/v3/openai', model='deepseek/deepseek-v3-0324', api_key=SecretStr(api_key))
@@ -245,7 +245,7 @@ agent = Agent(
 Required environment variables:
 
 ```bash .env
-OPENAI_API_KEY=
+NOVITA_API_KEY=
 ```
 
 ## Coming soon

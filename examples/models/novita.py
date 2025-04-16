@@ -1,7 +1,7 @@
 """
 Simple try of the agent.
 
-@dev You need to add OPENAI_API_KEY to your environment variables.
+@dev You need to add NOVITA_API_KEY to your environment variables.
 """
 
 import asyncio
@@ -16,9 +16,9 @@ from browser_use import Agent
 # dotenv
 load_dotenv()
 
-api_key = os.getenv('OPENAI_API_KEY', '')
+api_key = os.getenv('NOVITA_API_KEY', '')
 if not api_key:
-	raise ValueError('OPENAI_API_KEY is not set')
+	raise ValueError('NOVITA_API_KEY is not set')
 
 
 async def run_search():
