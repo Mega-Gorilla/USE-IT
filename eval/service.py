@@ -258,8 +258,8 @@ async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model
 
 	Args:
 	    task: The task description
-	    last_actions: List of actions taken
-	    images_path: List of image paths
+	    last_actions: list of actions taken
+	    images_path: list of image paths
 	    model: The model to use for evaluation
 	    score_threshold: Score threshold for image filtering
 	    max_retries: Maximum number of retry attempts
@@ -288,7 +288,7 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -378,9 +378,9 @@ class TaskTracker:
 			'steps': self.step_results,
 			'action_history': [step['actions'][-1]['content'] for step in self.step_results],
 			'screenshot_paths': self.screenshots,
-			'final_result_response': self.step_results[-1]['actions'][-1]['content']
-			if self.step_results[-1]['actions'][-1]['is_done']
-			else None,
+			'final_result_response': (
+				last_action['content'] if (last_action := self.step_results[-1]['actions'][-1])['is_done'] else None
+			),
 			'self_report_completed': self.step_results[-1]['actions'][-1]['is_done'],
 			'self_report_success': self.step_results[-1]['actions'][-1]['success'],
 		}
@@ -472,11 +472,23 @@ def judge_task_result(model, task_folder: Path, score_threshold: float = 3) -> D
 
 			return evaluation
 
-		except Exception as e:
-			return {'task_id': task_folder.name, 'judgement': None, 'success': False, 'error': str(e), 'score': 0.0}
+		except Exception as err:
+			return {
+				'task_id': task_folder.name,
+				'judgement': None,
+				'success': False,
+				'error': f'{type(err).__name__}: {err}',
+				'score': 0.0,
+			}
 
-	except Exception as e:
-		return {'task_id': task_folder.name, 'judgement': None, 'success': False, 'error': str(e), 'score': 0.0}
+	except Exception as err:
+		return {
+			'task_id': task_folder.name,
+			'judgement': None,
+			'success': False,
+			'error': f'{type(err).__name__}: {err}',
+			'score': 0.0,
+		}
 
 
 async def evaluate_all_saved_results(args) -> Dict:
@@ -487,7 +499,7 @@ async def evaluate_all_saved_results(args) -> Dict:
 	    Dictionary containing evaluation summary
 	"""
 	trajectories_dir = Path('saved_trajectories')
-	if not trajectories_dir.exists():
+	if not trajectories_dir.is_dir():
 		return {'error': 'No saved trajectories found'}
 
 	# Define the model used as a judge
@@ -531,7 +543,7 @@ async def evaluate_all_saved_results(args) -> Dict:
 
 
 async def run_multiple_tasks(
-	tasks: List[Task],
+	tasks: list[Task],
 	max_parallel_runs: int = 3,
 	max_parallel_evaluations: int = 5,
 	max_steps_per_task: int = 25,
