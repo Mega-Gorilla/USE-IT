@@ -428,7 +428,7 @@ class BrowserContext:
 		else:
 			kwargs = {}
 			if self.browser.config.headless:
-				kwargs['viewport'] = self.config.browser_window_size
+				kwargs['viewport'] = self.config.browser_window_size.model_dump()
 				kwargs['no_viewport'] = False
 			if self.config.user_agent is not None:
 				kwargs['user_agent'] = self.config.user_agent
