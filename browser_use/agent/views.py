@@ -30,7 +30,6 @@ REQUIRED_LLM_API_ENV_VARS = {
 	'ChatGoogleGenerativeAI': ['GEMINI_API_KEY'],
 	'ChatDeepSeek': ['DEEPSEEK_API_KEY'],
 	'ChatOllama': [],
-	'ChatNovita': ['NOVITA_API_KEY'],
 }
 
 
