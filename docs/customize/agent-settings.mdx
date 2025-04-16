@@ -256,6 +256,49 @@ agent = Agent(
 - `memory_interval`: Number of steps between memory summarization. Defaults to `10`.
 - `memory_config`: Optional configuration dictionary for the underlying memory system.
 
+### Custom Memory Configuration
+
+You can customize the memory system with specific providers for embeddings and vector storage:
+
+```python
+agent = Agent(
+    task=task_description,
+    llm=llm,
+    memory_config={
+        "embedder": {"provider": "openai", "config": {"model": "text-embedding-3-large"}},
+        "llm": {"provider": "openai", "config": {"model": "gpt-4o-mini"}},
+        "vector_store": {"provider": "faiss", "config": {"path": "./chroma_db"}},
+    },
+)
+```
+
+Alternatively, you can use Pydantic BaseModel classes for more type-safe configuration:
+
+```python
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+
+class EmbedderConfig(BaseModel):
+    provider: str = "openai"
+    config: Dict[str, Any] = {"model": "text-embedding-3-large"}
+
+class VectorStoreConfig(BaseModel):
+    provider: str = "faiss"
+    config: Dict[str, Any] = {"path": "./chroma_db"}
+
+class MemoryConfig(BaseModel):
+    embedder: EmbedderConfig = EmbedderConfig()
+    llm: Optional[Any] = None
+    vector_store: VectorStoreConfig = VectorStoreConfig()
+
+# Initialize with Pydantic models
+agent = Agent(
+    task=task_description,
+    llm=llm,
+    memory_config=MemoryConfig(llm=llm).model_dump()
+)
+```
+
 ### How Memory Works
 
 When enabled, the agent periodically compresses its conversation history into concise summaries:

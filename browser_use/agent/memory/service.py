@@ -38,8 +38,12 @@ class Memory:
 	"""
 
 	# Default configuration values as class constants
-	DEFAULT_VECTOR_STORE = {'provider': 'faiss', 'config': {'embedding_model_dims': 384}}
-	DEFAULT_EMBEDDER = {'provider': 'huggingface', 'config': {'model': 'all-MiniLM-L6-v2'}}
+	EMBEDDER_CONFIGS = {
+		'ChatOpenAI': {'provider': 'openai', 'config': {'model': 'text-embedding-3-small', 'embedding_dims': 1536}},
+		'ChatGoogleGenerativeAI': {'provider': 'gemini', 'config': {'model': 'models/text-embedding-004', 'embedding_dims': 768}},
+		'ChatOllama': {'provider': 'ollama', 'config': {'model': 'nomic-embed-text', 'embedding_dims': 512}},
+		'default': {'provider': 'huggingface', 'config': {'model': 'all-MiniLM-L6-v2', 'embedding_dims': 384}},
+	}
 
 	def __init__(
 		self,
@@ -53,13 +57,38 @@ class Memory:
 		self._memory_config = self.settings.config or self._get_default_config(llm)
 		self.mem0 = Mem0Memory.from_config(config_dict=self._memory_config)
 
-	@staticmethod
-	def _get_default_config(llm: BaseChatModel) -> dict:
+	@classmethod
+	def _get_embedder_config(cls, llm: BaseChatModel) -> dict:
+		"""Returns the embedder configuration for the given LLM."""
+		llm_class = llm.__class__.__name__
+		if llm_class not in {
+			'ChatOpenAI',
+			'ChatGoogleGenerativeAI',
+			'ChatOllama',
+		}:
+			try:
+				from sentence_transformers import SentenceTransformer
+			except ImportError:
+				raise ImportError(f'sentence_transformers is required for managing memory for {llm_class}. Please install it with `pip install sentence-transformers`.')
+		return cls.EMBEDDER_CONFIGS.get(llm_class, cls.EMBEDDER_CONFIGS['default'])
+
+	@classmethod
+	def _get_vector_store_config(cls, llm: BaseChatModel) -> dict:
+		"""Returns the vector store configuration for memory."""
+		embedder_config = cls._get_embedder_config(llm)
+		embedding_dims = embedder_config['config']['embedding_dims']
+		return {
+			'provider': 'faiss',
+			'config': {'embedding_model_dims': embedding_dims, 'path': f'/tmp/mem0_{embedding_dims}_faiss'}
+		}
+
+	@classmethod
+	def _get_default_config(cls, llm: BaseChatModel) -> dict:
 		"""Returns the default configuration for memory."""
 		return {
-			'vector_store': Memory.DEFAULT_VECTOR_STORE,
+			'vector_store': cls._get_vector_store_config(llm),
 			'llm': {'provider': 'langchain', 'config': {'model': llm}},
-			'embedder': Memory.DEFAULT_EMBEDDER,
+			'embedder': cls._get_embedder_config(llm),
 		}
 
 	@time_execution_sync('--create_procedural_memory')
