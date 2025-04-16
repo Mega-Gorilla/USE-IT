@@ -132,7 +132,10 @@ class Browser:
 
 	async def new_context(self, config: BrowserContextConfig | None = None) -> BrowserContext:
 		"""Create a browser context"""
-		return BrowserContext(config=config or self.config.new_context_config, browser=self)
+    browser_config = dict(self.config or {})
+    context_config = dict(config or {})
+    merged_config = {**browser_config, **context_config}
+		return BrowserContext(config=BrowserContextConfig(**merged_config), browser=self)
 
 	async def get_playwright_browser(self) -> PlaywrightBrowser:
 		"""Get a browser context"""
