@@ -10,22 +10,13 @@ from langchain_core.messages import (
 )
 from langchain_core.messages.utils import convert_to_openai_messages
 from mem0 import Memory as Mem0Memory
-from pydantic import BaseModel
 
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.message_manager.views import ManagedMessage, MessageMetadata
 from browser_use.utils import time_execution_sync
+from browser_use.agent.memory.views import MemoryConfig
 
 logger = logging.getLogger(__name__)
-
-
-class MemorySettings(BaseModel):
-	"""Settings for procedural memory."""
-
-	agent_id: str
-	interval: int = 10
-	config: Optional[dict] | None = None
-
 
 class Memory:
 	"""
@@ -37,59 +28,51 @@ class Memory:
 	yet comprehensive memory constructs that preserve essential operational knowledge.
 	"""
 
-	# Default configuration values as class constants
-	EMBEDDER_CONFIGS = {
-		'ChatOpenAI': {'provider': 'openai', 'config': {'model': 'text-embedding-3-small', 'embedding_dims': 1536}},
-		'ChatGoogleGenerativeAI': {'provider': 'gemini', 'config': {'model': 'models/text-embedding-004', 'embedding_dims': 768}},
-		'ChatOllama': {'provider': 'ollama', 'config': {'model': 'nomic-embed-text', 'embedding_dims': 512}},
-		'default': {'provider': 'huggingface', 'config': {'model': 'all-MiniLM-L6-v2', 'embedding_dims': 384}},
-	}
-
 	def __init__(
 		self,
 		message_manager: MessageManager,
 		llm: BaseChatModel,
-		settings: MemorySettings,
+		config: Optional[MemoryConfig] = None,
 	):
 		self.message_manager = message_manager
 		self.llm = llm
-		self.settings = settings
-		self._memory_config = self.settings.config or self._get_default_config(llm)
-		self.mem0 = Mem0Memory.from_config(config_dict=self._memory_config)
 
-	@classmethod
-	def _get_embedder_config(cls, llm: BaseChatModel) -> dict:
-		"""Returns the embedder configuration for the given LLM."""
-		llm_class = llm.__class__.__name__
-		if llm_class not in {
-			'ChatOpenAI',
-			'ChatGoogleGenerativeAI',
-			'ChatOllama',
-		}:
+		# Initialize configuration with defaults based on the LLM if not provided
+		if config is None:
+			config = MemoryConfig(
+				llm_instance=llm,
+				agent_id=f"agent_{id(self)}"
+			)
+
+			# Set appropriate embedder based on LLM type
+			llm_class = llm.__class__.__name__
+			if llm_class == 'ChatOpenAI':
+				config.embedder_provider = 'openai'
+				config.embedder_model = 'text-embedding-3-small'
+				config.embedder_dims = 1536
+			elif llm_class == 'ChatGoogleGenerativeAI':
+				config.embedder_provider = 'gemini'
+				config.embedder_model = 'models/text-embedding-004'
+				config.embedder_dims = 768
+			elif llm_class == 'ChatOllama':
+				config.embedder_provider = 'ollama'
+				config.embedder_model = 'nomic-embed-text'
+				config.embedder_dims = 512
+		else:
+			# Ensure LLM instance is set in the config
+			config.llm_instance = llm
+
+		self.config = config
+
+		# Check if sentence_transformers is needed
+		if config.embedder_provider == 'huggingface':
 			try:
 				from sentence_transformers import SentenceTransformer
 			except ImportError:
-				raise ImportError(f'sentence_transformers is required for managing memory for {llm_class}. Please install it with `pip install sentence-transformers`.')
-		return cls.EMBEDDER_CONFIGS.get(llm_class, cls.EMBEDDER_CONFIGS['default'])
+				raise ImportError(f'sentence_transformers is required for managing memory with huggingface embeddings. Please install it with `pip install sentence-transformers`.')
 
-	@classmethod
-	def _get_vector_store_config(cls, llm: BaseChatModel) -> dict:
-		"""Returns the vector store configuration for memory."""
-		embedder_config = cls._get_embedder_config(llm)
-		embedding_dims = embedder_config['config']['embedding_dims']
-		return {
-			'provider': 'faiss',
-			'config': {'embedding_model_dims': embedding_dims, 'path': f'/tmp/mem0_{embedding_dims}_faiss'}
-		}
-
-	@classmethod
-	def _get_default_config(cls, llm: BaseChatModel) -> dict:
-		"""Returns the default configuration for memory."""
-		return {
-			'vector_store': cls._get_vector_store_config(llm),
-			'llm': {'provider': 'langchain', 'config': {'model': llm}},
-			'embedder': cls._get_embedder_config(llm),
-		}
+		# Initialize Mem0 with the configuration
+		self.mem0 = Mem0Memory.from_config(config_dict=config.full_config_dict)
 
 	@time_execution_sync('--create_procedural_memory')
 	def create_procedural_memory(self, current_step: int) -> None:
@@ -149,7 +132,7 @@ class Memory:
 		try:
 			results = self.mem0.add(
 				messages=parsed_messages,
-				agent_id=self.settings.agent_id,
+				agent_id=self.config.agent_id,
 				memory_type='procedural_memory',
 				metadata={'step': current_step},
 			)
