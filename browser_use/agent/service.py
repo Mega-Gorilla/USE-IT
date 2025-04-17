@@ -197,9 +197,17 @@ class Agent(Generic[Context]):
 
 		# Model setup
 		self._set_model_names()
+		self.tool_calling_method = self._set_tool_calling_method()
 		logger.info(
-			f'🧠 Starting an agent with main_model={self.model_name}, planner_model={self.planner_model_name}, '
-			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}'
+			f'🧠 Starting an agent with main_model={self.model_name}'
+			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
+			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
+			f'{" +vision" if use_vision else ""}'
+			f'{" +memory" if enable_memory else ""}, '
+			f'planner_model={self.planner_model_name}'
+			f'{" +reasoning" if is_planner_reasoning else ""}'
+			f'{" +vision" if use_vision_for_planner else ""}, '
+			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
 		)
 
 		# LLM API connection setup
@@ -215,7 +223,6 @@ class Agent(Generic[Context]):
 		# These will be used for the system prompt to maintain caching
 		self.unfiltered_actions = self.controller.registry.get_prompt_description()
 
-		self.tool_calling_method = self._set_tool_calling_method()
 		self.settings.message_context = self._set_message_context()
 
 		# Initialize message manager with state
