@@ -44,7 +44,7 @@ jobs:
           --ignore=tests/test_save_conversation.py \
           --ignore=tests/test_vision.py \
           --ignore=tests/test_wait_for_element.py || true
-      - run: uv publish --trusted-publishing always
+      # - run: uv publish --trusted-publishing always
 
   tag_pre_release:
     if: github.event_name == 'schedule'
