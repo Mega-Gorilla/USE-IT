@@ -162,9 +162,6 @@ Your role is to:
 3. Identify potential challenges or roadblocks
 4. Suggest the next high-level steps to take
 
-Available actions:
-{available_actions}
-
 Inside your messages, there will be AI messages from different agents with different formats.
 
 Your output format should be always a JSON object with the following fields:
