@@ -198,15 +198,26 @@ class Agent(Generic[Context]):
 		# Model setup
 		self._set_model_names()
 		self.tool_calling_method = self._set_tool_calling_method()
+
+		# Handle users trying to use use_vision=True with DeepSeek models
+		if 'deepseek' in self.model_name.lower():
+			logger.warning('⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision=False for now...')
+			self.settings.use_vision = False
+		if 'deepseek' in (self.planner_model_name or '').lower():
+			logger.warning(
+				'⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision_for_planner=False for now...'
+			)
+			self.settings.use_vision_for_planner = False
+
 		logger.info(
 			f'🧠 Starting an agent with main_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
-			f'{" +vision" if use_vision else ""}'
-			f'{" +memory" if enable_memory else ""}, '
+			f'{" +vision" if self.settings.use_vision else ""}'
+			f'{" +memory" if self.settings.enable_memory else ""}, '
 			f'planner_model={self.planner_model_name}'
-			f'{" +reasoning" if is_planner_reasoning else ""}'
-			f'{" +vision" if use_vision_for_planner else ""}, '
+			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
+			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
 			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
 		)
 
