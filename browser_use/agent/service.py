@@ -423,7 +423,7 @@ class Agent(Generic[Context]):
 				if page_filtered_actions:
 					all_actions += '\n' + page_filtered_actions
 
-				context_lines = self._message_manager.settings.message_context.split('\n')
+				context_lines = (self._message_manager.settings.message_context or '').split('\n')
 				non_action_lines = [line for line in context_lines if not line.startswith('Available actions:')]
 				updated_context = '\n'.join(non_action_lines)
 				if updated_context:
