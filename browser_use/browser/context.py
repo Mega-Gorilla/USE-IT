@@ -140,7 +140,7 @@ class BrowserContextConfig(BaseModel):
 	    timezone_id: None
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
 
-		force_new_context: False 
+		force_new_context: False
 			Forces a new browser context to be created. Useful when running locally with branded browser (e.g Chrome, Edge) and setting a custom config.
 	"""
 
@@ -188,8 +188,9 @@ class BrowserContextConfig(BaseModel):
 	permissions: list[str] | None = None
 	timezone_id: str | None = None
 
-	force_new_context: bool = False 
- 
+	force_new_context: bool = False
+
+
 @dataclass
 class CachedStateClickableElementsHashes:
 	"""
