@@ -139,6 +139,9 @@ class BrowserContextConfig(BaseModel):
 
 	    timezone_id: None
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
+
+		force_new_context: False 
+			Forces a new browser context to be created. Useful when running locally with branded browser (e.g Chrome, Edge) and setting a custom config.
 	"""
 
 	model_config = ConfigDict(
