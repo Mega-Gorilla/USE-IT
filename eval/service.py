@@ -4,7 +4,7 @@
 
 
 # Here is the command to run the evaluation:
-# python eval/service.py --model gpt-4o --parallel_runs 5 --parallel_evaluations 5 --max-steps 25 --start 0 --end 100
+# python eval/service.py --parallel_runs 5 --parallel_evaluations 5 --max-steps 25 --start 0 --end 100 --model gpt-4o
 # options:
 # --parallel_runs: Number of parallel tasks to run
 # --max-steps: Maximum steps per task
@@ -367,11 +367,10 @@ def get_llm(model_name: str):
 	api_key = os.getenv(api_key_env) if api_key_env else None
 
 	if not api_key and api_key_env:
-		# Only warn if the specified env var is set but key is missing/empty
 		logger.warning(
 			f'API key environment variable {api_key_env} not found or empty for model {model_name}. Trying without API key if possible.'
 		)
-		api_key = None  # Ensure api_key is None if not found
+		api_key = None
 
 	api_key_secret = SecretStr(api_key) if api_key else None
 
@@ -507,7 +506,7 @@ class TaskTracker:
 			'run_id': self.run_id,
 			'task': self.task_text,
 			'steps': self.step_results,
-			'action_history': [step['actions'][-1]['content'] or '' for step in self.step_results],
+			'action_history': [step['actions'][-1]['content'] if step['actions'] else 'None' for step in self.step_results],
 			'screenshot_paths': self.screenshots,
 			'final_result_response': (
 				last_action['content'] if (last_action := self.step_results[-1]['actions'][-1])['is_done'] else None
@@ -798,7 +797,7 @@ async def run_multiple_tasks(
 							'taskId': task.task_id,
 							'task': task.confirmed_task,
 							'actionHistory': result_data.get('action_history', []),
-							'finalResultResponse': result_data.get('final_result_response', ''),
+							'finalResultResponse': result_data.get('final_result_response', 'None'),
 							'selfReportCompleted': result_data.get('self_report_completed', False),
 							'selfReportSuccess': result_data.get('self_report_success', False),
 						}
@@ -807,7 +806,7 @@ async def run_multiple_tasks(
 						if evaluation and 'judgement' in evaluation:
 							server_payload.update(
 								{
-									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement') or '',
+									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement') or 'None',
 									'onlineMind2WebEvaluationError': evaluation.get('error') or None,
 									'onlineMind2WebEvaluationSuccess': evaluation.get('success', False),
 									'onlineMind2WebEvaluationScore': evaluation.get('score', 0.0),
@@ -818,7 +817,9 @@ async def run_multiple_tasks(
 							# Or if the evaluation dict exists but lacks 'judgement' key
 							server_payload.update(
 								{
-									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement', '') if evaluation else '',
+									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement', 'None')
+									if evaluation
+									else 'None',
 									'onlineMind2WebEvaluationError': evaluation.get('error')
 									if evaluation
 									else 'Evaluation failed to run',
@@ -1014,9 +1015,7 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 	}
 
 	logger.info(f'Sending request to save task result at {endpoint_url}...')
-	# Avoid logging secret key if it were ever passed
-	loggable_details = {k: v for k, v in result_details.items() if k != 'secret_key'}
-	logger.debug(f'Result details payload: {json.dumps(loggable_details, indent=2)}')  # Log details at debug level
+	logger.debug(f'Result details payload: {json.dumps(result_details, indent=2)}')  # Log details at debug level
 
 	try:
 		response = requests.post(endpoint_url, headers=headers, json=result_details)
