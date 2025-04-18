@@ -185,7 +185,8 @@ class BrowserContextConfig(BaseModel):
 	permissions: list[str] | None = None
 	timezone_id: str | None = None
 
-
+	force_new_context: bool = False 
+ 
 @dataclass
 class CachedStateClickableElementsHashes:
 	"""
@@ -436,9 +437,9 @@ class BrowserContext:
 
 	async def _create_context(self, browser: PlaywrightBrowser):
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
-		if self.browser.config.cdp_url and len(browser.contexts) > 0:
+		if self.browser.config.cdp_url and len(browser.contexts) > 0 and not self.config.force_new_context:
 			context = browser.contexts[0]
-		elif self.browser.config.browser_binary_path and len(browser.contexts) > 0:
+		elif self.browser.config.browser_binary_path and len(browser.contexts) > 0 and not self.config.force_new_context:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
 		else:
