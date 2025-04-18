@@ -518,14 +518,16 @@ class TaskTracker:
 		return formatted_result
 
 
-async def run_agent_with_tracing(task: Task, llm: BaseChatModel, browser: Browser | None = None, max_steps: int = 25):
+async def run_agent_with_tracing(
+	task: Task, llm: BaseChatModel, browser: Browser | None = None, max_steps: int = 25, use_vision: bool = True
+):
 	try:
 		# Create task tracker
 		tracker = TaskTracker(task.task_id, task.confirmed_task)
 
 		browser = browser or Browser()
 
-		agent = Agent(task=task.confirmed_task, llm=llm, browser=browser)
+		agent = Agent(task=task.confirmed_task, llm=llm, browser=browser, use_vision=use_vision)
 
 		# Pass our hook functions
 		result = await agent.run(max_steps=max_steps, on_step_start=tracker.on_step_start, on_step_end=tracker.on_step_end)
@@ -673,6 +675,7 @@ async def run_multiple_tasks(
 	start_index: int = 0,
 	end_index: Optional[int] = None,
 	headless: bool = False,
+	use_vision: bool = True,
 ) -> Dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -714,7 +717,9 @@ async def run_multiple_tasks(
 				browserConfig = BrowserConfig(headless=headless)
 				browser = Browser(config=browserConfig)
 				# Pass the llm to run_agent_with_tracing
-				result = await run_agent_with_tracing(task=task, llm=llm, browser=browser, max_steps=max_steps_per_task)
+				result = await run_agent_with_tracing(
+					task=task, llm=llm, browser=browser, max_steps=max_steps_per_task, use_vision=use_vision
+				)
 				logger.info(f'Completed task {task.task_id}')
 
 				# Extract relevant information from the agent history
@@ -769,10 +774,10 @@ if __name__ == '__main__':
 	parser.add_argument('--end', type=int, default=None, help='End index (exclusive)')
 	parser.add_argument('--headless', action='store_true', help='Run in headless mode')
 	parser.add_argument('--evaluate-only', action='store_true', help='Only evaluate existing results without running new tasks')
-	# Add model argument
 	parser.add_argument(
 		'--model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for the agent'
 	)
+	parser.add_argument('--no-vision', action='store_true', help='Disable vision capabilities in the agent')
 	args = parser.parse_args()
 
 	# Set up logging
@@ -814,6 +819,7 @@ if __name__ == '__main__':
 				start_index=args.start,
 				end_index=args.end,
 				headless=args.headless,
+				use_vision=not args.no_vision,
 			)
 		)
 
