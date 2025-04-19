@@ -17,9 +17,6 @@
 # options:
 # --parallel_evaluations: Number of parallel evaluations to run
 
-# To run a new evaluation, you need to first clear the saved_trajectories folder.
-# rm -rf saved_trajectories
-# Otherwise, the evaluation will continue on from the last saved trajectory.
 # ==============================================================================================================
 
 
@@ -59,6 +56,7 @@ import base64
 import io
 import logging
 import re
+import shutil
 
 from PIL import Image
 
@@ -501,18 +499,31 @@ class TaskTracker:
 		"""Save the consolidated results"""
 		# Create the final result object
 
+		# Ensure action history contains only strings, replacing None with "None"
+		action_history = []
+		for step in self.step_results:
+			if step['actions']:
+				content = step['actions'][-1]['content']
+				action_history.append(content if content is not None else 'None')
+			else:
+				action_history.append('None')  # Handle steps with no actions
+
 		formatted_result = {
 			'task_id': self.task_id,
 			'run_id': self.run_id,
 			'task': self.task_text,
 			'steps': self.step_results,
-			'action_history': [step['actions'][-1]['content'] if step['actions'] else 'None' for step in self.step_results],
+			'action_history': action_history,  # Use the cleaned list
 			'screenshot_paths': self.screenshots,
 			'final_result_response': (
 				last_action['content'] if (last_action := self.step_results[-1]['actions'][-1])['is_done'] else None
 			),
-			'self_report_completed': self.step_results[-1]['actions'][-1]['is_done'],
-			'self_report_success': self.step_results[-1]['actions'][-1]['success'],
+			'self_report_completed': self.step_results[-1]['actions'][-1]['is_done']
+			if self.step_results and self.step_results[-1]['actions']
+			else False,
+			'self_report_success': self.step_results[-1]['actions'][-1]['success']
+			if self.step_results and self.step_results[-1]['actions']
+			else None,
 		}
 
 		# Save to file
@@ -703,6 +714,7 @@ async def run_multiple_tasks(
 	end_index: Optional[int] = None,
 	headless: bool = False,
 	use_vision: bool = True,
+	fresh_start: bool = True,
 ) -> Dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1055,6 +1067,12 @@ if __name__ == '__main__':
 		'--model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for the agent'
 	)
 	parser.add_argument('--no-vision', action='store_true', help='Disable vision capabilities in the agent')
+	parser.add_argument(
+		'--fresh-start',
+		type=lambda x: (str(x).lower() == 'true'),
+		default=True,
+		help='Clear saved_trajectories before starting. Set to False to keep existing trajectories (default: True)',
+	)
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1080,6 +1098,32 @@ if __name__ == '__main__':
 		logger.info('Running tasks...')
 		# Run tasks and evaluate
 		load_dotenv()
+
+		# --- Clear trajectories if fresh_start is True ---
+		results_dir_path = Path('saved_trajectories')
+		if args.fresh_start:
+			logger.info(f'--fresh-start is True. Clearing {results_dir_path}...')
+			if results_dir_path.exists():
+				try:
+					shutil.rmtree(results_dir_path)
+					logger.info(f'Successfully removed {results_dir_path}.')
+				except OSError as e:
+					logger.error(f'Error removing directory {results_dir_path}: {e}')
+					# Decide if you want to exit or continue
+					# exit(1) # Uncomment to exit on error
+			else:
+				logger.info(f'{results_dir_path} does not exist, no need to clear.')
+
+			# Recreate the directory
+			try:
+				results_dir_path.mkdir(parents=True, exist_ok=True)
+				logger.info(f'Recreated directory {results_dir_path}.')
+			except OSError as e:
+				logger.error(f'Error creating directory {results_dir_path}: {e}')
+				# exit(1) # Uncomment to exit on error
+		else:
+			logger.info('--fresh-start is False. Existing trajectories in saved_trajectories will be kept.')
+		# -------------------------------------------------
 
 		# --- Fetch Tasks from Server ---
 		CONVEX_URL = os.getenv('EVALUATION_TOOL_URL')
@@ -1160,6 +1204,7 @@ if __name__ == '__main__':
 				end_index=args.end,
 				headless=args.headless,
 				use_vision=not args.no_vision,
+				fresh_start=args.fresh_start,
 			)
 		)
 
