@@ -215,7 +215,7 @@ The potentially important snapshots of the webpage in the agent's trajectory and
 			score = re.findall(pattern, score_text)[0]
 			record.append({'Response': response, 'Score': int(score)})
 		except Exception as e:
-			logger.error(f'Error processing response: {e}')
+			logger.error(f'Error processing response: {type(e).__name__}: {e}')
 			score = 0
 			record.append({'Response': response, 'Score': 0})
 
@@ -270,9 +270,9 @@ async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model
 			return await Online_Mind2Web_eval(task, last_actions, images_path, model, score_threshold)
 		except Exception as e:
 			if attempt == max_retries - 1:  # Last attempt
-				logger.error(f'Failed to evaluate after {max_retries} attempts. Error: {str(e)}')
+				logger.error(f'Failed to evaluate after {max_retries} attempts. Error: {type(e).__name__}: {str(e)}')
 				raise
-			logger.warning(f'Attempt {attempt + 1} failed. Retrying... Error: {str(e)}')
+			logger.warning(f'Attempt {attempt + 1} failed. Retrying... Error: {type(e).__name__}: {str(e)}')
 			await asyncio.sleep(2**attempt)  # Exponential backoff
 
 
@@ -683,7 +683,7 @@ def calculate_local_summary(results_dir: Optional[str] = None) -> Dict:
 						total_score += score
 						results_with_score += 1
 			except Exception as e:
-				logger.error(f'Error reading result file {result_file}: {e}')
+				logger.error(f'Error reading result file {result_file}: {type(e).__name__}: {e}')
 
 	# Calculate statistics
 	failed_tasks = total_tasks - successful_tasks
@@ -698,6 +698,241 @@ def calculate_local_summary(results_dir: Optional[str] = None) -> Dict:
 		'success_rate': success_rate,
 		'average_score': average_score,
 	}
+
+
+async def run_task_with_semaphore(
+	task: Task,
+	run_id: str,
+	convex_url: str,
+	secret_key: str,
+	eval_model: BaseChatModel,
+	llm: BaseChatModel,
+	max_steps_per_task: int,
+	headless: bool,
+	use_vision: bool,
+	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
+) -> dict:
+	"""Run a single task with semaphore, sequential execution, and robust error handling"""
+	# Acquire semaphore before starting any task-specific logic
+	async with semaphore_runs:
+		# --- Initialize State & Payload ---
+		task_folder = Path(f'saved_trajectories/{task.task_id}')
+		result_file = task_folder / 'result.json'
+
+		# Flags to track progress and errors
+		execution_needed = True
+		execution_succeeded = False
+		evaluation_needed = True
+		evaluation_succeeded = True  # Default to True, set to False if eval is needed but fails
+		local_processing_error = None
+
+		# Initialize the payload with basic info and default failure/unevaluated states
+		server_payload = {
+			'runId': run_id,
+			'taskId': task.task_id,
+			'task': task.confirmed_task,
+			'actionHistory': [],
+			'finalResultResponse': 'None',  # Default if execution doesn't happen or fails early
+			'selfReportCompleted': False,
+			'selfReportSuccess': None,
+			'onlineMind2WebEvaluationJudgement': 'Not Attempted',
+			'onlineMind2WebEvaluationError': None,
+			'onlineMind2WebEvaluationSuccess': False,
+			'onlineMind2WebEvaluationScore': 0.0,
+		}
+
+		# Initialize the return value for local processing status
+		local_task_status = {'task_id': task.task_id, 'success': False, 'error': None}
+
+		# --- Main Sequential Logic with Error Handling ---
+		try:
+			# 1. Check for Existing Result
+			if result_file.exists():
+				logger.info(f'Task {task.task_id}: Found existing result file.')
+				try:
+					with open(result_file) as f:
+						existing_result = json.load(f)
+
+					# Populate payload from existing file
+					server_payload['actionHistory'] = existing_result.get('action_history', [])
+					server_payload['finalResultResponse'] = existing_result.get('final_result_response', 'None')
+					server_payload['selfReportCompleted'] = existing_result.get('self_report_completed', False)
+					server_payload['selfReportSuccess'] = existing_result.get('self_report_success', None)
+
+					# Check if evaluation data is also present
+					if existing_eval := existing_result.get('Online_Mind2Web_evaluation'):
+						logger.info(f'Task {task.task_id}: Found existing evaluation data.')
+						# Ensure judgement is stored as string "None" if it was null/None in cache
+						cached_judgement = existing_eval.get('judgement')
+						server_payload['onlineMind2WebEvaluationJudgement'] = (
+							cached_judgement if cached_judgement is not None else 'None'
+						)
+						server_payload['onlineMind2WebEvaluationError'] = existing_eval.get('error')
+						server_payload['onlineMind2WebEvaluationSuccess'] = existing_eval.get('success', False)
+						server_payload['onlineMind2WebEvaluationScore'] = existing_eval.get('score', 0.0)
+						evaluation_needed = False  # Don't re-evaluate if already present
+						evaluation_succeeded = True  # Assume cached evaluation was successful
+					else:
+						# Evaluation not found, needs to run
+						evaluation_needed = True
+						evaluation_succeeded = False  # Mark as needing evaluation initially
+
+					execution_needed = False  # Don't execute if result exists
+					execution_succeeded = True  # Mark as "success" in terms of having data
+					logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
+
+				except Exception as e:
+					logger.warning(
+						f'Task {task.task_id}: Error reading existing result file {result_file}: {type(e).__name__}: {str(e)}. Proceeding with execution.'
+					)
+					# Keep execution_needed = True, payload defaults remain
+					execution_needed = True
+					execution_succeeded = False
+					evaluation_needed = True  # Might need eval after execution
+					evaluation_succeeded = False  # Reset eval status
+
+			# 2. Execute Task (if needed)
+			if execution_needed:
+				logger.info(f'Task {task.task_id}: Starting execution.')
+				browser = None  # Ensure browser is defined for finally block
+				try:
+					browserConfig = BrowserConfig(headless=headless)
+					browser = Browser(config=browserConfig)
+					# Pass the llm to run_agent_with_tracing
+					result = await run_agent_with_tracing(
+						task=task,
+						llm=llm,
+						browser=browser,
+						max_steps=max_steps_per_task,
+						use_vision=use_vision,
+						run_id=run_id,  # run_agent_with_tracing handles saving result.json
+					)
+					logger.info(f'Task {task.task_id}: Execution completed.')
+					execution_succeeded = True
+					evaluation_needed = True  # Need to evaluate the new result
+					evaluation_succeeded = False  # Reset eval status
+
+					# Load the result file that should have just been created
+					if result_file.exists():
+						with open(result_file) as f:
+							run_result_data = json.load(f)
+						server_payload['actionHistory'] = run_result_data.get('action_history', [])
+						server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+						server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+						server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+					else:
+						# This is unexpected if run_agent_with_tracing succeeded
+						logger.error(
+							f'Task {task.task_id}: Result file {result_file} missing after presumed successful execution.'
+						)
+						raise FileNotFoundError(f'Result file not found after execution for task {task.task_id}')
+
+				except Exception as e:
+					logger.error(
+						f'Task {task.task_id}: Error during execution with Type: {type(e).__name__} and Message: {str(e)}',
+						exc_info=True,
+					)  # Add stack trace
+					execution_succeeded = False
+					evaluation_needed = False  # Cannot evaluate if execution failed
+					evaluation_succeeded = False  # Evaluation definitely didn't succeed
+					# Update payload to reflect execution failure
+					server_payload['finalResultResponse'] = f'Execution Error: {type(e).__name__}: {str(e)}'
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Execution Failed'
+					server_payload['onlineMind2WebEvaluationError'] = f'Execution Error: {type(e).__name__}'
+				finally:
+					if browser:
+						try:
+							await browser.close()
+						except Exception as browser_close_e:
+							logger.warning(
+								f'Task {task.task_id}: Error closing browser: {type(browser_close_e).__name__}: {browser_close_e}'
+							)
+
+			# 3. Evaluate Task (if needed and possible)
+			if evaluation_needed and execution_succeeded:
+				logger.info(f'Task {task.task_id}: Starting evaluation.')
+				try:
+					# judge_task_result will attempt evaluation and save it back into result.json if successful
+					evaluation = await judge_task_result(eval_model, task_folder, score_threshold=3)
+
+					# Update payload directly from the evaluation function's return value
+					if evaluation:
+						# Ensure judgement is stored as string "None" if the evaluation returned None
+						judgement_value = evaluation.get('judgement')
+						server_payload['onlineMind2WebEvaluationJudgement'] = (
+							judgement_value if judgement_value is not None else 'None'
+						)
+						server_payload['onlineMind2WebEvaluationError'] = evaluation.get('error')
+						server_payload['onlineMind2WebEvaluationSuccess'] = evaluation.get('success', False)
+						server_payload['onlineMind2WebEvaluationScore'] = evaluation.get('score', 0.0)
+						# Mark evaluation as succeeded only if the evaluation itself didn't report an error
+						if evaluation.get('error'):
+							logger.warning(
+								f'Task {task.task_id}: Evaluation completed but reported an error: {evaluation.get("error")}'
+							)
+							evaluation_succeeded = False
+						else:
+							evaluation_succeeded = True  # Mark evaluation as successfully completed
+							logger.info(f'Task {task.task_id}: Evaluation successfully completed.')
+
+					else:
+						# Should not happen based on judge_task_result structure, but handle defensively
+						logger.error(f'Task {task.task_id}: Evaluation function returned None.')
+						evaluation_succeeded = False  # Mark as failed if None returned
+						server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Returned None'
+						server_payload['onlineMind2WebEvaluationError'] = 'Evaluation function returned None'
+
+				except Exception as e:
+					logger.error(
+						f'Task {task.task_id}: Error during evaluation process: {type(e).__name__}: {str(e)}', exc_info=True
+					)  # Add stack trace
+					evaluation_succeeded = False
+					# Update payload to reflect evaluation failure
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Process Error'
+					server_payload['onlineMind2WebEvaluationError'] = f'Evaluation Error: {type(e).__name__}: {str(e)}'
+					# Keep Success/Score as False/0.0 from defaults
+
+		except Exception as outer_e:
+			# Catch any unexpected errors in the flow above (e.g., reading existing file, setup issues)
+			logger.critical(f'Task {task.task_id}: CRITICAL UNHANDLED ERROR during processing: {str(outer_e)}', exc_info=True)
+			local_processing_error = f'Critical flow error: {str(outer_e)}'
+			# Ensure payload reflects a critical failure state
+			server_payload['finalResultResponse'] = f'Critical Error: {str(outer_e)}'
+			server_payload['onlineMind2WebEvaluationJudgement'] = 'Critical System Error'
+			server_payload['onlineMind2WebEvaluationError'] = local_processing_error
+			server_payload['onlineMind2WebEvaluationSuccess'] = False
+			server_payload['onlineMind2WebEvaluationScore'] = 0.0
+			execution_succeeded = False  # Mark stages as failed due to outer error
+			evaluation_succeeded = False
+
+		# --- Final Step: Save to Server (Always Attempt) ---
+		logger.info(f'Task {task.task_id}: Attempting to save final result to server...')
+		try:
+			save_success = save_task_result_to_server(convex_url, secret_key, server_payload)
+			if save_success:
+				logger.info(f'Task {task.task_id}: Successfully saved result to server.')
+			else:
+				logger.warning(f'Task {task.task_id}: Failed to save result to server (API issue or invalid payload).')
+				# Optionally accumulate this failure into local_processing_error
+				if local_processing_error:
+					local_processing_error += '; Server save failed'
+				else:
+					local_processing_error = 'Server save failed'
+
+		except Exception as e:
+			logger.error(f'Task {task.task_id}: Exception during attempt to save result to server: {type(e).__name__}: {str(e)}')
+			# Optionally accumulate this failure
+			if local_processing_error:
+				local_processing_error += f'; Server save exception: {str(e)}'
+			else:
+				local_processing_error = f'Server save exception: {str(e)}'
+
+		# --- Return Local Processing Status ---
+		# Overall success requires successful execution (or loading existing) AND successful evaluation (if needed).
+		local_task_status['success'] = execution_succeeded and evaluation_succeeded
+		local_task_status['error'] = local_processing_error  # Report any accumulated local errors
+
+		return local_task_status
 
 
 async def run_multiple_tasks(
@@ -722,151 +957,23 @@ async def run_multiple_tasks(
 	semaphore_runs = asyncio.Semaphore(max_parallel_runs)
 	tasks_to_run = tasks[start_index:end_index] if end_index else tasks[start_index:]
 
-	async def run_task_with_semaphore(
-		task: Task, run_id_for_task: str, convex_url_for_task: str, secret_key_for_task: str, eval_model_for_task: BaseChatModel
-	) -> dict:
-		"""Run a single task with semaphore and error handling"""
-		async with semaphore_runs:
-			# Check if task has already been completed
-			task_folder = Path(f'saved_trajectories/{task.task_id}')
-			result_file = task_folder / 'result.json'
-
-			if result_file.exists():
-				logger.info(f'Task {task.task_id} already completed, skipping execution...')
-				# Load existing result
-				try:
-					with open(result_file) as f:
-						existing_result = json.load(f)
-
-					# Set up success info for return
-					task_result = {
-						'task_id': task.task_id,
-						'success': True,
-						'result': {
-							'task_id': task.task_id,
-							'task': task.confirmed_task,
-							'is_done': existing_result.get('self_report_completed', False),
-							'is_successful': existing_result.get('self_report_success', False),
-							'final_result': existing_result.get('final_result_response', None),
-							'errors': [],
-						},
-					}
-				except Exception as e:
-					logger.error(f'Error reading existing result for task {task.task_id}: {str(e)}')
-					# If we can't read the existing result, we'll run the task again
-					task_result = None
-			else:
-				task_result = None
-
-			try:
-				if task_result is None:
-					logger.info(f'Starting task {task.task_id}')
-					# Create browser with headless configuration
-					browserConfig = BrowserConfig(headless=headless)
-					browser = Browser(config=browserConfig)
-
-					# Pass the llm to run_agent_with_tracing
-					result = await run_agent_with_tracing(
-						task=task,
-						llm=llm,
-						browser=browser,
-						max_steps=max_steps_per_task,
-						use_vision=use_vision,
-						run_id=run_id_for_task,
-					)
-					logger.info(f'Completed task {task.task_id}')
-
-					# Extract relevant information from the agent history
-					task_result = {
-						'task_id': task.task_id,
-						'success': True,
-						'result': {
-							'task_id': task.task_id,
-							'task': task.confirmed_task,
-							'is_done': result.is_done() if result else False,
-							'is_successful': result.is_successful() if result else None,
-							'final_result': result.final_result() if result else None,
-							'errors': result.errors() if result else [],
-						}
-						if result
-						else None,
-					}
-
-				# Evaluate the task result using the provided eval model
-				logger.info(f'Evaluating task {task.task_id}...')
-				# Await the now async judge_task_result
-				evaluation = await judge_task_result(eval_model_for_task, task_folder, score_threshold=3)
-
-				# Now read the result file since it should exist at this point
-				if result_file.exists():
-					try:
-						with open(result_file) as f:
-							result_data = json.load(f)
-
-						# Prepare the data payload for server upload
-						server_payload = {
-							'runId': run_id_for_task,
-							'taskId': task.task_id,
-							'task': task.confirmed_task,
-							'actionHistory': result_data.get('action_history', []),
-							'finalResultResponse': result_data.get('final_result_response', 'None'),
-							'selfReportCompleted': result_data.get('self_report_completed', False),
-							'selfReportSuccess': result_data.get('self_report_success', False),
-						}
-
-						# Add evaluation details if available
-						if evaluation and 'judgement' in evaluation:
-							server_payload.update(
-								{
-									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement') or 'None',
-									'onlineMind2WebEvaluationError': evaluation.get('error') or None,
-									'onlineMind2WebEvaluationSuccess': evaluation.get('success', False),
-									'onlineMind2WebEvaluationScore': evaluation.get('score', 0.0),
-								}
-							)
-						else:
-							# Handle cases where evaluation might fail entirely and not return the expected keys
-							# Or if the evaluation dict exists but lacks 'judgement' key
-							server_payload.update(
-								{
-									'onlineMind2WebEvaluationJudgement': evaluation.get('judgement', 'None')
-									if evaluation
-									else 'None',
-									'onlineMind2WebEvaluationError': evaluation.get('error')
-									if evaluation
-									else 'Evaluation failed to run',
-									'onlineMind2WebEvaluationSuccess': evaluation.get('success', False) if evaluation else False,
-									'onlineMind2WebEvaluationScore': evaluation.get('score', 0.0) if evaluation else 0.0,
-								}
-							)
-
-						# Save the result to the server
-						logger.info(f'Saving task {task.task_id} result to server...')
-						save_success = save_task_result_to_server(convex_url_for_task, secret_key_for_task, server_payload)
-
-						if save_success:
-							logger.info(f'Successfully saved task {task.task_id} result to server')
-						else:
-							logger.warning(f'Failed to save task {task.task_id} result to server')
-
-					except Exception as e:
-						logger.error(f'Error processing result for task {task.task_id}: {str(e)}')
-						# Continue even if saving to server fails
-				else:
-					logger.error(f'Result file for task {task.task_id} not found after execution/evaluation')
-
-				return task_result
-
-			except Exception as e:
-				logger.error(f'Error in task {task.task_id}: {str(e)}')
-				return {'task_id': task.task_id, 'success': False, 'error': str(e)}
-			finally:
-				if 'browser' in locals() and browser:
-					await browser.close()
-
 	# Run all tasks in parallel with additional parameters
 	task_results = await asyncio.gather(
-		*(run_task_with_semaphore(task, run_id, convex_url, secret_key, eval_model) for task in tasks_to_run)
+		*(
+			run_task_with_semaphore(
+				task=task,
+				run_id=run_id,
+				convex_url=convex_url,
+				secret_key=secret_key,
+				eval_model=eval_model,
+				llm=llm,  # Pass the agent LLM
+				max_steps_per_task=max_steps_per_task,
+				headless=headless,
+				use_vision=use_vision,
+				semaphore_runs=semaphore_runs,  # Pass the semaphore
+			)
+			for task in tasks_to_run
+		)
 	)
 
 	# After all tasks are complete, calculate a local summary
@@ -929,7 +1036,7 @@ def fetch_tasks_from_server(convex_url: str, secret_key: str, test_case_name: st
 			return None
 
 	except requests.exceptions.RequestException as e:
-		logger.error(f'Error during request to fetch test case: {e}')
+		logger.error(f'Error during request to fetch test case: {type(e).__name__}: {e}')
 		return None
 
 
@@ -948,7 +1055,7 @@ def get_git_info():
 		commit_timestamp = int(commit_timestamp_str)
 		return {'branch': branch, 'hash': commit_hash, 'timestamp': commit_timestamp}
 	except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
-		logger.warning(f'Could not retrieve git info: {e}. Using defaults.')
+		logger.warning(f'Could not retrieve git info: {type(e).__name__}: {e}. Using defaults.')
 		return {
 			'branch': 'unknown',
 			'hash': 'unknown',
@@ -999,7 +1106,7 @@ def start_new_run(convex_url: str, secret_key: str, run_details: dict):
 			return None
 
 	except requests.exceptions.RequestException as e:
-		logger.error(f'Error during startRun request: {e}')
+		logger.error(f'Error during startRun request: {type(e).__name__}: {e}')
 		return None
 
 
@@ -1050,7 +1157,7 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 			return False
 
 	except requests.exceptions.RequestException as e:
-		logger.error(f'Error during saveTaskResult request: {e}')
+		logger.error(f'Error during saveTaskResult request: {type(e).__name__}: {e}')
 		return False
 
 
@@ -1109,7 +1216,7 @@ if __name__ == '__main__':
 					shutil.rmtree(results_dir_path)
 					logger.info(f'Successfully removed {results_dir_path}.')
 				except OSError as e:
-					logger.error(f'Error removing directory {results_dir_path}: {e}')
+					logger.error(f'Error removing directory {results_dir_path}: {type(e).__name__}: {e}')
 					# Decide if you want to exit or continue
 					# exit(1) # Uncomment to exit on error
 			else:
@@ -1120,7 +1227,7 @@ if __name__ == '__main__':
 				results_dir_path.mkdir(parents=True, exist_ok=True)
 				logger.info(f'Recreated directory {results_dir_path}.')
 			except OSError as e:
-				logger.error(f'Error creating directory {results_dir_path}: {e}')
+				logger.error(f'Error creating directory {results_dir_path}: {type(e).__name__}: {e}')
 				# exit(1) # Uncomment to exit on error
 		else:
 			logger.info('--fresh-start is False. Existing trajectories in saved_trajectories will be kept.')
@@ -1147,7 +1254,7 @@ if __name__ == '__main__':
 			logger.info(f'Successfully loaded {len(tasks)} tasks from the server.')
 		except TypeError as e:
 			logger.error(
-				f'Error creating Task objects from fetched data. Ensure the data structure matches Task requirements (task_id, confirmed_task, etc.). Error: {e}'
+				f'Error creating Task objects from fetched data. Ensure the data structure matches Task requirements (task_id, confirmed_task, etc.). Error: {type(e).__name__}: {e}'
 			)
 			logger.error(f'First item in fetched data: {fetched_task_data[0] if fetched_task_data else "None"}')
 			exit(1)
