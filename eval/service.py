@@ -1073,6 +1073,7 @@ if __name__ == '__main__':
 		default=True,
 		help='Clear saved_trajectories before starting. Set to False to keep existing trajectories (default: True)',
 	)
+	parser.add_argument('--user-message', type=str, default='', help='User message to include in the run')
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1173,7 +1174,8 @@ if __name__ == '__main__':
 			'gitBranch': git_info['branch'],
 			'gitCommitHash': git_info['hash'],
 			'gitCommitTimestamp': git_info['timestamp'],
-			'userMessage': f'Automated run started by eval/service.py for model {args.model}',  # Example message
+			'userMessage': args.user_message,
+			'totalTasks': args.end - args.start,
 			'additionalData': additional_run_data,
 		}
 
