@@ -9,7 +9,6 @@ from langchain_core.messages import (
 	HumanMessage,
 )
 from langchain_core.messages.utils import convert_to_openai_messages
-from mem0 import Memory as Mem0Memory
 
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.message_manager.views import ManagedMessage, MessageMetadata
@@ -37,6 +36,7 @@ class Memory:
 		self.message_manager = message_manager
 		self.llm = llm
 
+		from mem0 import Memory as Mem0Memory
 		# Initialize configuration with defaults based on the LLM if not provided
 		if config is None:
 			config = MemoryConfig(
