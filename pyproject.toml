@@ -39,8 +39,8 @@ dependencies = [
 # Optional dependencies for memory functionality
 [project.optional-dependencies]
 memory = [
-    "mem0ai==0.1.88",
-    "sentence-transformers>=4.0.2"
+    "mem0ai==0.1.91",
+    "sentence-transformers>=4.0.2",
 ]
 
 # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py 
