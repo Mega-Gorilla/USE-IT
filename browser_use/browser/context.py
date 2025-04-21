@@ -14,12 +14,12 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
-from playwright._impl._errors import TimeoutError
-from playwright.async_api import Browser as PlaywrightBrowser
-from playwright.async_api import (
+from patchright._impl._errors import TimeoutError
+from patchright.async_api import Browser as PlaywrightBrowser
+from patchright.async_api import (
 	BrowserContext as PlaywrightBrowserContext,
 )
-from playwright.async_api import (
+from patchright.async_api import (
 	ElementHandle,
 	FrameLocator,
 	Page,
@@ -32,6 +32,7 @@ from browser_use.browser.views import (
 	TabInfo,
 	URLNotAllowedError,
 )
+from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import time_execution_async, time_execution_sync
@@ -86,7 +87,7 @@ class BrowserContextConfig(BaseModel):
 	    wait_between_actions: 1.0
 	        Time to wait between multiple per step actions
 
-	    browser_window_size: {'width': 1280, 'height': 1100}
+	    browser_window_size: BrowserContextWindowSize(width=1280, height=1100)
 	        Default browser window size
 
 	    no_viewport: False
@@ -167,9 +168,7 @@ class BrowserContextConfig(BaseModel):
 	save_har_path: str | None = None
 	trace_path: str | None = None
 	locale: str | None = None
-	user_agent: str = (
-		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36  (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36'
-	)
+	user_agent: str | None = None
 
 	highlight_elements: bool = True
 	viewport_expansion: int = 0
@@ -183,6 +182,16 @@ class BrowserContextConfig(BaseModel):
 	geolocation: dict | None = None
 	permissions: list[str] | None = None
 	timezone_id: str | None = None
+
+
+@dataclass
+class CachedStateClickableElementsHashes:
+	"""
+	Clickable elements hashes for the last state
+	"""
+
+	url: str
+	hashes: set[str]
 
 
 class BrowserSession:
@@ -234,6 +243,9 @@ class BrowserSession:
 		self.active_tab = None
 		self.context = context
 		self.cached_state = cached_state
+
+		self.cached_state_clickable_elements_hashes: CachedStateClickableElementsHashes | None = None
+
 		self.context.on('page', lambda page: page.add_init_script(init_script))
 
 
@@ -428,13 +440,17 @@ class BrowserContext:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
 		else:
-			# Original code for creating new context
+			kwargs = {}
+			if self.browser.config.headless:
+				kwargs['viewport'] = self.config.browser_window_size.model_dump()
+				kwargs['no_viewport'] = False
+			if self.config.user_agent is not None:
+				kwargs['user_agent'] = self.config.user_agent
+
 			context = await browser.new_context(
-				no_viewport=True,
-				user_agent=self.config.user_agent,
+				**kwargs,
 				java_script_enabled=True,
-				bypass_csp=self.config.disable_security,
-				ignore_https_errors=self.config.disable_security,
+				**({'bypass_csp': True, 'ignore_https_errors': True} if self.config.disable_security else {}),
 				record_video_dir=self.config.save_recording_path,
 				record_video_size=self.config.browser_window_size.model_dump(),
 				record_har_path=self.config.save_har_path,
@@ -473,38 +489,15 @@ class BrowserContext:
 		# Expose anti-detection scripts
 		await context.add_init_script(
 			"""
-            // Webdriver property
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
+			// Permissions
+			const originalQuery = window.navigator.permissions.query;
+			window.navigator.permissions.query = (parameters) => (
+				parameters.name === 'notifications' ?
+					Promise.resolve({ state: Notification.permission }) :
+					originalQuery(parameters)
+			);
 
-            // Languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US']
-            });
-
-            // Plugins
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-
-            // Chrome runtime
-            window.chrome = { runtime: {} };
-
-            // Permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-            (function () {
-                const originalAttachShadow = Element.prototype.attachShadow;
-                Element.prototype.attachShadow = function attachShadow(options) {
-                    return originalAttachShadow.call(this, { ...options, mode: "open" });
-                };
-            })();
-            """
+			"""
 		)
 
 		return context
@@ -878,11 +871,39 @@ class BrowserContext:
 		return structure
 
 	@time_execution_sync('--get_state')  # This decorator might need to be updated to handle async
-	async def get_state(self) -> BrowserState:
-		"""Get the current state of the browser"""
+	async def get_state(self, cache_clickable_elements_hashes: bool) -> BrowserState:
+		"""Get the current state of the browser
+
+		cache_clickable_elements_hashes: bool
+			If True, cache the clickable elements hashes for the current state. This is used to calculate which elements are new to the llm (from last message) -> reduces token usage.
+		"""
 		await self._wait_for_page_and_frames_load()
 		session = await self.get_session()
-		session.cached_state = await self._update_state()
+		updated_state = await self._get_updated_state()
+
+		# Find out which elements are new
+		# Do this only if url has not changed
+		if cache_clickable_elements_hashes:
+			# if we are on the same url as the last state, we can use the cached hashes
+			if (
+				session.cached_state_clickable_elements_hashes
+				and session.cached_state_clickable_elements_hashes.url == updated_state.url
+			):
+				# Pointers, feel free to edit in place
+				updated_state_clickable_elements = ClickableElementProcessor.get_clickable_elements(updated_state.element_tree)
+
+				for dom_element in updated_state_clickable_elements:
+					dom_element.is_new = (
+						ClickableElementProcessor.hash_dom_element(dom_element)
+						not in session.cached_state_clickable_elements_hashes.hashes  # see which elements are new from the last state where we cached the hashes
+					)
+			# in any case, we need to cache the new hashes
+			session.cached_state_clickable_elements_hashes = CachedStateClickableElementsHashes(
+				url=updated_state.url,
+				hashes=ClickableElementProcessor.get_clickable_elements_hashes(updated_state.element_tree),
+			)
+
+		session.cached_state = updated_state
 
 		# Save cookies if a file is specified
 		if self.config.cookies_file:
@@ -890,7 +911,7 @@ class BrowserContext:
 
 		return session.cached_state
 
-	async def _update_state(self, focus_element: int = -1) -> BrowserState:
+	async def _get_updated_state(self, focus_element: int = -1) -> BrowserState:
 		"""Update and return state."""
 		session = await self.get_session()
 
@@ -1170,6 +1191,9 @@ class BrowserContext:
 					css_selector += f'[{safe_attribute}]'
 				elif any(char in value for char in '"\'<>`\n\r\t'):
 					# Use contains for values with special characters
+					# For newline-containing text, only use the part before the newline
+					if '\n' in value:
+						value = value.split('\n')[0]
 					# Regex-substitute *any* whitespace with a single space, then strip.
 					collapsed_value = re.sub(r'\s+', ' ', value).strip()
 					# Escape embedded double-quotes.
