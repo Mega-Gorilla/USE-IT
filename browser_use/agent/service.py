@@ -151,6 +151,9 @@ class Agent(Generic[Context]):
 		enable_memory: bool = False,
 		memory_interval: int = 10,
 		memory_config: Optional[dict] = None,
+		# Playwright script generation
+		save_playwright_script_path: Optional[str] = None,
+
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -185,6 +188,7 @@ class Agent(Generic[Context]):
 			enable_memory=enable_memory,
 			memory_interval=memory_interval,
 			memory_config=memory_config,
+			save_playwright_script_path=save_playwright_script_path,
 		)
 
 		# Initialize state
@@ -873,6 +877,23 @@ class Agent(Generic[Context]):
 					total_duration_seconds=self.state.history.total_duration_seconds(),
 				)
 			)
+
+			# --- Script Generation Call ---
+			if self.settings.save_playwright_script_path:
+				logger.info(f"Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}")
+				try:
+					# Extract sensitive data keys if sensitive_data is provided
+					keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
+					# Pass browser and context config to the saving method
+					self.state.history.save_as_playwright_script(
+						self.settings.save_playwright_script_path,
+						sensitive_data_keys=keys,
+						browser_config=self.browser.config,
+						context_config=self.browser_context.config,
+					)
+				except Exception as script_gen_err:
+					# Log any error during script generation/saving
+					logger.error(f"Failed to save Playwright script: {script_gen_err}", exc_info=True)
 
 			await self.close()
 
