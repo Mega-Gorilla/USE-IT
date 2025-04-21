@@ -1,9 +1,9 @@
+import asyncio
 import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import asyncio
 import threading
 import time
 
@@ -55,7 +55,7 @@ def print_menu():
 	print('5. Exit')
 
 
-def main():
+async def main():
 	controller = AgentController()
 	agent_thread = None
 
@@ -95,4 +95,4 @@ def main():
 
 
 if __name__ == '__main__':
-	main()
+	asyncio.run(main())

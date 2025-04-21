@@ -234,8 +234,12 @@ class Agent(Generic[Context]):
 		# Start non-blocking LLM connection verification using create_task, checked later in step()
 		# This will run in parallel with browser launch without leaving dangling coroutines on unclean exits
 		self.llm._verified_api_keys = False
-		self._verification_task = asyncio.create_task(self._verify_llm_connection())
-		self._verification_task.add_done_callback(lambda _: None)
+		try:
+			self._verification_task = asyncio.create_task(self._verify_llm_connection())
+			self._verification_task.add_done_callback(lambda _: None)
+		except RuntimeError:
+			# ppl kept reporting _verify_llm_connection was never awaited errors but it's a red-herring:
+			logger.warning('No running event loop found. All browser-use code must be run inside an async context.')
 
 		# Initialize available actions for system prompt (only non-filtered actions)
 		# These will be used for the system prompt to maintain caching
@@ -803,9 +807,14 @@ class Agent(Generic[Context]):
 				pass
 
 		# Check that verification was successful
-		assert self.llm._verified_api_keys or SKIP_LLM_API_KEY_VERIFICATION, (
-			'Failed to connect to LLM API or LLM API is not responding correctly'
-		)
+		try:
+			assert self.llm._verified_api_keys or SKIP_LLM_API_KEY_VERIFICATION, (
+				'Failed to connect to LLM API or LLM API is not responding correctly'
+			)
+		except AssertionError:
+			logger.warning(
+				'⚠️ Could not connect to LLM API! Continuing anyway for now... (are your API keys valid and do you have enough money in your account?)'
+			)
 
 		try:
 			self._log_agent_run()
