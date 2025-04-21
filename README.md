@@ -28,6 +28,12 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
+For memory functionality (requires Python<3.13 due to PyTorch compatibility):  
+
+```bash
+pip install "browser-use[memory]"
+```
+
 Install Playwright:
 ```bash
 playwright install chromium
@@ -57,8 +63,8 @@ Add your API keys for the provider you want to use to your `.env` file.
 ```bash
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
-AZURE_ENDPOINT=
-AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
 GROK_API_KEY=

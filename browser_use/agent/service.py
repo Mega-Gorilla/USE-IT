@@ -23,7 +23,8 @@ from langchain_core.messages import (
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
-from browser_use.agent.memory.service import Memory, MemorySettings
+from browser_use.agent.memory.service import Memory
+from browser_use.agent.memory.views import MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import convert_input_messages, extract_json_from_model_output, save_conversation
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
@@ -143,14 +144,14 @@ class Agent(Generic[Context]):
 		planner_llm: Optional[BaseChatModel] = None,
 		planner_interval: int = 1,  # Run planner every N steps
 		is_planner_reasoning: bool = False,
+		extend_planner_system_message: Optional[str] = None,
 		# Inject state
 		injected_agent_state: Optional[AgentState] = None,
 		#
 		context: Context | None = None,
 		# Memory settings
-		enable_memory: bool = False,
-		memory_interval: int = 10,
-		memory_config: Optional[dict] = None,
+		enable_memory: bool = True,
+		memory_config: Optional[MemoryConfig] = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -182,10 +183,12 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
-			enable_memory=enable_memory,
-			memory_interval=memory_interval,
-			memory_config=memory_config,
+			extend_planner_system_message=extend_planner_system_message,
 		)
+
+		# Memory settings
+		self.enable_memory = enable_memory
+		self.memory_config = memory_config
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -260,19 +263,21 @@ class Agent(Generic[Context]):
 			state=self.state.message_manager_state,
 		)
 
-		if self.settings.enable_memory:
-			memory_settings = MemorySettings(
-				agent_id=self.state.agent_id,
-				interval=self.settings.memory_interval,
-				config=self.settings.memory_config,
-			)
-
-			# Initialize memory
-			self.memory = Memory(
-				message_manager=self._message_manager,
-				llm=self.llm,
-				settings=memory_settings,
-			)
+		if self.enable_memory:
+			try:
+				# Initialize memory
+				self.memory = Memory(
+					message_manager=self._message_manager,
+					llm=self.llm,
+					config=self.memory_config,
+				)
+			except ImportError:
+				logger.warning(
+					'Memory functionality was enabled but required packages are not installed. '
+					"Install with 'pip install browser-use[memory]' to use memory features."
+				)
+				self.memory = None
+				self.enable_memory = False
 		else:
 			self.memory = None
 
@@ -280,6 +285,7 @@ class Agent(Generic[Context]):
 		self.injected_browser = browser is not None
 		self.injected_browser_context = browser_context is not None
 		self.browser = browser or Browser()
+		self.browser.config.new_context_config.disable_security = self.browser.config.disable_security
 		self.browser_context = browser_context or BrowserContext(
 			browser=self.browser, config=self.browser.config.new_context_config
 		)
@@ -325,9 +331,9 @@ class Agent(Generic[Context]):
 				source = 'git'
 			else:
 				# If no repo files found, try getting version from pip
-				import pkg_resources
+				from importlib.metadata import version
 
-				version = pkg_resources.get_distribution('browser-use').version
+				version = version('browser-use')
 				source = 'pip'
 		except Exception:
 			version = 'unknown'
@@ -414,7 +420,7 @@ class Agent(Generic[Context]):
 			active_page = await self.browser_context.get_current_page()
 
 			# generate procedural memory if needed
-			if self.settings.enable_memory and self.memory and self.state.n_steps % self.settings.memory_interval == 0:
+			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
 				self.memory.create_procedural_memory(self.state.n_steps)
 
 			await self._raise_if_stopped_or_paused()
@@ -847,7 +853,24 @@ class Agent(Generic[Context]):
 					await self.log_completion()
 					break
 			else:
-				logger.info('❌ Failed to complete task in maximum steps')
+				error_message = 'Failed to complete task in maximum steps'
+
+				self.state.history.history.append(
+					AgentHistory(
+						model_output=None,
+						result=[ActionResult(error=error_message, include_in_memory=True)],
+						state=BrowserStateHistory(
+							url='',
+							title='',
+							tabs=[],
+							interacted_element=[],
+							screenshot=None,
+						),
+						metadata=None,
+					)
+				)
+
+				logger.info(f'❌ {error_message}')
 
 			return self.state.history
 
@@ -1260,7 +1283,10 @@ class Agent(Generic[Context]):
 
 		# Create planner message history using full message history with all available actions
 		planner_messages = [
-			PlannerPrompt(all_actions).get_system_message(self.settings.is_planner_reasoning),
+			PlannerPrompt(all_actions).get_system_message(
+				is_planner_reasoning=self.settings.is_planner_reasoning,
+				extended_planner_system_prompt=self.settings.extend_planner_system_message,
+			),
 			*self._message_manager.get_messages()[1:],  # Use full message history except the first
 		]
 
