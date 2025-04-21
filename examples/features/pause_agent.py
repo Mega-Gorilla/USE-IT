@@ -2,6 +2,10 @@ import asyncio
 import os
 import sys
 
+import dotenv
+
+dotenv.load_dotenv()
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import threading
@@ -61,7 +65,10 @@ async def main():
 
 	while True:
 		print_menu()
-		choice = input('Enter your choice (1-5): ')
+		try:
+			choice = input('Enter your choice (1-5): ')
+		except KeyboardInterrupt:
+			choice = '5'
 
 		if choice == '1' and not agent_thread:
 			print('Starting agent...')
