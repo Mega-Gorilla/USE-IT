@@ -42,6 +42,27 @@ class PlaywrightScriptGenerator:
         self._imports_helpers_added = False
         self._page_counter = 0 # Track pages for tab management
 
+        # Dictionary mapping action types to handler methods
+        self._action_handlers = {
+            'go_to_url': self._map_go_to_url,
+            'wait': self._map_wait,
+            'input_text': self._map_input_text,
+            'click_element': self._map_click_element,
+            'click_element_by_index': self._map_click_element, # Map legacy action
+            'scroll_down': self._map_scroll_down,
+            'scroll_up': self._map_scroll_up,
+            'send_keys': self._map_send_keys,
+            'go_back': self._map_go_back,
+            'open_tab': self._map_open_tab,
+            'close_tab': self._map_close_tab,
+            'switch_tab': self._map_switch_tab,
+            'search_google': self._map_search_google,
+            'drag_drop': self._map_drag_drop,
+            'extract_content': self._map_extract_content,
+            'click_download_button': self._map_click_download_button,
+            'done': self._map_done,
+        }
+
     def _generate_browser_launch_args(self) -> str:
         """Generates the arguments string for browser launch based on BrowserConfig."""
         if not self.browser_config:
@@ -262,273 +283,300 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
         logger.warning(f"Could not find a usable XPath or CSS selector for action index {action_index_in_step} (element index {element_data.get('highlight_index', 'N/A')}).")
         return None
 
+    def _get_goto_timeout(self) -> int:
+        """Gets the page navigation timeout in milliseconds."""
+        default_timeout = 90000 # Default 90 seconds
+        if self.context_config and self.context_config.maximum_wait_page_load_time:
+            # Convert seconds to milliseconds
+            return int(self.context_config.maximum_wait_page_load_time * 1000)
+        return default_timeout
+
+    # --- Action Mapping Methods ---
+    def _map_go_to_url(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        url = params.get('url')
+        goto_timeout = self._get_goto_timeout()
+        script_lines = []
+        if url and isinstance(url, str):
+            escaped_url = json.dumps(url)
+            script_lines.append(f'            print(f"Navigating to: {url} ({step_info_str})")')
+            script_lines.append(f"            await page.goto({escaped_url}, timeout={goto_timeout})")
+            script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
+            script_lines.append(f"            await page.wait_for_timeout(1000)") # Short pause
+        else:
+            script_lines.append(f"            # Skipping go_to_url ({step_info_str}): missing or invalid url")
+        return script_lines
+
+    def _map_wait(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        seconds = params.get('seconds', 3)
+        try: wait_seconds = int(seconds)
+        except (ValueError, TypeError): wait_seconds = 3
+        return [
+            f'            print(f"Waiting for {wait_seconds} seconds... ({step_info_str})")',
+            f"            await asyncio.sleep({wait_seconds})"
+        ]
+
+    def _map_input_text(self, params: dict, history_item: dict, action_index_in_step: int, step_info_str: str, **kwargs) -> List[str]:
+        index = params.get('index')
+        text = params.get('text', '')
+        selector = self._get_selector_for_action(history_item, action_index_in_step)
+        script_lines = []
+        if selector and index is not None:
+            clean_text_expression = f"replace_sensitive_data({json.dumps(str(text))}, SENSITIVE_DATA)"
+            escaped_selector = json.dumps(selector)
+            escaped_step_info = json.dumps(step_info_str)
+            script_lines.append(f'            await _try_locate_and_act(page, {escaped_selector}, "fill", text={clean_text_expression}, step_info={escaped_step_info})')
+        else:
+            script_lines.append(f"            # Skipping input_text ({step_info_str}): missing index ({index}) or selector ({selector})")
+        return script_lines
+
+    def _map_click_element(self, params: dict, history_item: dict, action_index_in_step: int, step_info_str: str, action_type: str, **kwargs) -> List[str]:
+        if action_type == 'click_element_by_index':
+            logger.warning(f"Mapping legacy 'click_element_by_index' to 'click_element' ({step_info_str})")
+        index = params.get('index')
+        selector = self._get_selector_for_action(history_item, action_index_in_step)
+        script_lines = []
+        if selector and index is not None:
+            escaped_selector = json.dumps(selector)
+            escaped_step_info = json.dumps(step_info_str)
+            script_lines.append(f'            await _try_locate_and_act(page, {escaped_selector}, "click", step_info={escaped_step_info})')
+        else:
+            script_lines.append(f"            # Skipping {action_type} ({step_info_str}): missing index ({index}) or selector ({selector})")
+        return script_lines
+
+    def _map_scroll_down(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        amount = params.get('amount')
+        script_lines = []
+        if amount and isinstance(amount, int):
+            script_lines.append(f'            print(f"Scrolling down by {amount} pixels ({step_info_str})")')
+            script_lines.append(f"            await page.evaluate('window.scrollBy(0, {amount})')")
+        else:
+            script_lines.append(f'            print(f"Scrolling down by one page height ({step_info_str})")')
+            script_lines.append("            await page.evaluate('window.scrollBy(0, window.innerHeight)')")
+        script_lines.append(f"            await page.wait_for_timeout(500)")
+        return script_lines
+
+    def _map_scroll_up(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        amount = params.get('amount')
+        script_lines = []
+        if amount and isinstance(amount, int):
+            script_lines.append(f'            print(f"Scrolling up by {amount} pixels ({step_info_str})")')
+            script_lines.append(f"            await page.evaluate('window.scrollBy(0, -{amount})')")
+        else:
+            script_lines.append(f'            print(f"Scrolling up by one page height ({step_info_str})")')
+            script_lines.append("            await page.evaluate('window.scrollBy(0, -window.innerHeight)')")
+        script_lines.append(f"            await page.wait_for_timeout(500)")
+        return script_lines
+
+    def _map_send_keys(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        keys = params.get('keys')
+        script_lines = []
+        if keys and isinstance(keys, str):
+            escaped_keys = json.dumps(keys)
+            script_lines.append(f'            print(f"Sending keys: {keys} ({step_info_str})")')
+            script_lines.append(f"            await page.keyboard.press({escaped_keys})")
+            script_lines.append(f"            await page.wait_for_timeout(500)")
+        else:
+            script_lines.append(f"            # Skipping send_keys ({step_info_str}): missing or invalid keys")
+        return script_lines
+
+    def _map_go_back(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        goto_timeout = self._get_goto_timeout()
+        return [
+            f'            await asyncio.sleep(60)  # Wait 1 minute (important) before going back',
+            f'            print(f"Navigating back using browser history ({step_info_str})")',
+            f"            await page.go_back(timeout={goto_timeout})",
+            f"            await page.wait_for_load_state('load', timeout={goto_timeout})",
+            f"            await page.wait_for_timeout(1000)"
+        ]
+
+    def _map_open_tab(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        url = params.get('url')
+        goto_timeout = self._get_goto_timeout()
+        script_lines = []
+        if url and isinstance(url, str):
+            escaped_url = json.dumps(url)
+            script_lines.append(f'            print(f"Opening new tab and navigating to: {url} ({step_info_str})")')
+            script_lines.append("            page = await context.new_page()")
+            script_lines.append(f"            await page.goto({escaped_url}, timeout={goto_timeout})")
+            script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
+            script_lines.append(f"            await page.wait_for_timeout(1000)")
+            self._page_counter += 1 # Increment page counter
+        else:
+            script_lines.append(f"            # Skipping open_tab ({step_info_str}): missing or invalid url")
+        return script_lines
+
+    def _map_close_tab(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        page_id = params.get('page_id')
+        script_lines = []
+        if page_id is not None:
+            script_lines.extend([
+                f'            print(f"Attempting to close tab with page_id {page_id} ({step_info_str})")',
+                f"            if {page_id} < len(context.pages):",
+                f"                target_page = context.pages[{page_id}]",
+                "                await target_page.close()",
+                "                await page.wait_for_timeout(500)",
+                f"                if context.pages: page = context.pages[-1]", # Switch to last page
+                f"                else:",
+                f"                    print('  Warning: No pages left after closing tab. Cannot switch.', file=sys.stderr)",
+                f"                    # Optionally, create a new page here if needed: page = await context.new_page()",
+                f"                if page: await page.bring_to_front()", # Bring to front if page exists
+                f"            else:",
+                f'                print(f"  Warning: Tab with page_id {page_id} not found to close ({step_info_str})", file=sys.stderr)'
+            ])
+        else:
+             script_lines.append(f"            # Skipping close_tab ({step_info_str}): missing page_id")
+        return script_lines
+
+    def _map_switch_tab(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+         page_id = params.get('page_id')
+         script_lines = []
+         if page_id is not None:
+             script_lines.extend([
+                 f'            print(f"Switching to tab with page_id {page_id} ({step_info_str})")',
+                 f"            if {page_id} < len(context.pages):",
+                 f"                page = context.pages[{page_id}]",
+                 f"                await page.bring_to_front()",
+                 f"                await page.wait_for_load_state('load', timeout=15000)",
+                 f"                await page.wait_for_timeout(500)",
+                 f"            else:",
+                 f'                print(f"  Warning: Tab with page_id {page_id} not found to switch ({step_info_str})", file=sys.stderr)'
+             ])
+         else:
+             script_lines.append(f"            # Skipping switch_tab ({step_info_str}): missing page_id")
+         return script_lines
+
+    def _map_search_google(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+         query = params.get('query')
+         goto_timeout = self._get_goto_timeout()
+         script_lines = []
+         if query and isinstance(query, str):
+             clean_query = f"replace_sensitive_data({json.dumps(query)}, SENSITIVE_DATA)"
+             search_url_expression = f'f"https://www.google.com/search?q={{ urllib.parse.quote_plus({clean_query}) }}&udm=14"'
+             script_lines.extend([
+                 f'            search_url = {search_url_expression}',
+                 f'            print(f"Searching Google for query related to: {{ {clean_query} }} ({step_info_str})")',
+                 f"            await page.goto(search_url, timeout={goto_timeout})",
+                 f"            await page.wait_for_load_state('load', timeout={goto_timeout})",
+                 f"            await page.wait_for_timeout(1000)"
+             ])
+         else:
+             script_lines.append(f"            # Skipping search_google ({step_info_str}): missing or invalid query")
+         return script_lines
+
+    def _map_drag_drop(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        source_sel = params.get('element_source')
+        target_sel = params.get('element_target')
+        source_coords = (params.get('coord_source_x'), params.get('coord_source_y'))
+        target_coords = (params.get('coord_target_x'), params.get('coord_target_y'))
+        script_lines = [f'            print(f"Attempting drag and drop ({step_info_str})")']
+        if source_sel and target_sel:
+            escaped_source = json.dumps(source_sel)
+            escaped_target = json.dumps(target_sel)
+            script_lines.append(f"            await page.drag_and_drop({escaped_source}, {escaped_target})")
+            script_lines.append(f"            print(f'  Dragged element {escaped_source} to {escaped_target}')")
+        elif all(c is not None for c in source_coords) and all(c is not None for c in target_coords):
+            sx, sy = source_coords
+            tx, ty = target_coords
+            script_lines.extend([
+                f"            await page.mouse.move({sx}, {sy})",
+                "            await page.mouse.down()",
+                f"            await page.mouse.move({tx}, {ty})",
+                "            await page.mouse.up()",
+                f"            print(f'  Dragged from ({sx},{sy}) to ({tx},{ty})')"
+            ])
+        else:
+            script_lines.append(f"            # Skipping drag_drop ({step_info_str}): requires either element selectors or full coordinates")
+        script_lines.append(f"            await page.wait_for_timeout(500)")
+        return script_lines
+
+    def _map_extract_content(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        goal = params.get('goal', 'content')
+        logger.warning(f"Action 'extract_content' ({step_info_str}) cannot be directly translated to Playwright script.")
+        return [f"            # Action: extract_content (Goal: {goal}) - Skipped in Playwright script ({step_info_str})"]
+
+    def _map_click_download_button(self, params: dict, history_item: dict, action_index_in_step: int, step_info_str: str, **kwargs) -> List[str]:
+         index = params.get('index')
+         selector = self._get_selector_for_action(history_item, action_index_in_step)
+         download_dir_in_script = "'./files'" # Default
+         if self.context_config and self.context_config.save_downloads_path:
+             download_dir_in_script = repr(self.context_config.save_downloads_path)
+
+         script_lines = []
+         if selector and index is not None:
+             script_lines.append(f'            print(f"Attempting to download file by clicking element ({selector}) ({step_info_str})")')
+             script_lines.append("            try:")
+             script_lines.append(f"                async with page.expect_download(timeout=120000) as download_info:") # 2 min timeout
+             step_info_for_download = f'{step_info_str} (triggering download)'
+             script_lines.append(f'                    await _try_locate_and_act(page, {json.dumps(selector)}, "click", step_info={json.dumps(step_info_for_download)})')
+             script_lines.append("                download = await download_info.value")
+             script_lines.append(f"                configured_download_dir = {download_dir_in_script}")
+             script_lines.append("                download_dir_path = Path(configured_download_dir).resolve()")
+             script_lines.append("                download_dir_path.mkdir(parents=True, exist_ok=True)")
+             script_lines.append("                base, ext = os.path.splitext(download.suggested_filename or f'download_{{len(list(download_dir_path.iterdir())) + 1}}.tmp')")
+             script_lines.append("                counter = 1")
+             script_lines.append("                download_path_obj = download_dir_path / f'{base}{ext}'")
+             script_lines.append("                while download_path_obj.exists():")
+             script_lines.append("                    download_path_obj = download_dir_path / f'{base}({{counter}}){ext}'")
+             script_lines.append("                    counter += 1")
+             script_lines.append("                await download.save_as(str(download_path_obj))")
+             script_lines.append("                print(f'  File downloaded successfully to: {str(download_path_obj)}')")
+             script_lines.append("            except PlaywrightActionError as pae:")
+             script_lines.append("                raise pae") # Re-raise to stop script
+             script_lines.append("            except Exception as download_err:")
+             script_lines.append(f"                raise PlaywrightActionError(f'Download failed for {step_info_str}: {{download_err}}') from download_err")
+         else:
+             script_lines.append(f"            # Skipping click_download_button ({step_info_str}): missing index ({index}) or selector ({selector})")
+         return script_lines
+
+    def _map_done(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
+        script_lines = []
+        if isinstance(params, dict):
+             final_text = params.get('text', '')
+             success_status = params.get('success', False)
+             escaped_final_text_with_placeholders = json.dumps(str(final_text))
+             script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
+             script_lines.append(f'            print(f"Agent reported success: {success_status}")')
+             script_lines.append(f'            # Final Message from agent (may contain placeholders):')
+             script_lines.append(f'            final_message = replace_sensitive_data({escaped_final_text_with_placeholders}, SENSITIVE_DATA)')
+             script_lines.append(f'            print(final_message)')
+        else:
+             script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
+             script_lines.append(f'            print("Success: N/A (invalid params)")')
+             script_lines.append(f'            print("Final Message: N/A (invalid params)")')
+        return script_lines
+
     def _map_action_to_playwright(self, action_dict: dict, history_item: dict, previous_history_item: Optional[dict], action_index_in_step: int, step_info_str: str) -> List[str]:
         """
-        Translates a single action dictionary into Playwright script lines.
-        Removed the 'success' checks as failure is now handled by exceptions.
-        Uses context_config for download path and goto timeout.
+        Translates a single action dictionary into Playwright script lines using dictionary dispatch.
         """
-        script_lines = []
         if not isinstance(action_dict, dict) or not action_dict:
-            step_info_value = step_info_str
-            return [f"            # Invalid action format: {action_dict} ({step_info_value})"]
+            return [f"            # Invalid action format: {action_dict} ({step_info_str})"]
 
         action_type = next(iter(action_dict.keys()), None)
         params = action_dict.get(action_type)
 
-        escaped_step_info = json.dumps(step_info_str)
-        step_info_value = step_info_str
-
         if not action_type or params is None:
-            if action_dict == {}: return [f"            # Empty action dictionary found ({step_info_value})"]
-            return [f"            # Could not determine action type or params: {action_dict} ({step_info_value})"]
+            if action_dict == {}: return [f"            # Empty action dictionary found ({step_info_str})"]
+            return [f"            # Could not determine action type or params: {action_dict} ({step_info_str})"]
 
-        # --- Action Mapping Logic ---
-        if action_type == 'go_to_url':
-            url = params.get('url')
-            # Determine timeout for goto
-            goto_timeout = 90000 # Default 90 seconds
-            if self.context_config and self.context_config.maximum_wait_page_load_time:
-                # Convert seconds to milliseconds
-                goto_timeout = int(self.context_config.maximum_wait_page_load_time * 1000)
+        # Get the handler function from the dictionary
+        handler = self._action_handlers.get(action_type)
 
-            if url and isinstance(url, str):
-                escaped_url = json.dumps(url)
-                script_lines.append(f'            print(f"Navigating to: {url} ({step_info_value})")')
-                # Add timeout to page.goto
-                script_lines.append(f"            await page.goto({escaped_url}, timeout={goto_timeout})")
-                # Keep wait_for_load_state as a safety measure, maybe increase its timeout too
-                script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
-                script_lines.append(f"            await page.wait_for_timeout(1000)") # Short pause after load
-            else:
-                script_lines.append(f"            # Skipping go_to_url ({step_info_value}): missing or invalid url")
-
-        elif action_type == 'wait':
-             seconds = params.get('seconds', 3)
-             try: wait_seconds = int(seconds)
-             except (ValueError, TypeError): wait_seconds = 3
-             script_lines.append(f'            print(f"Waiting for {wait_seconds} seconds... ({step_info_value})")')
-             script_lines.append(f"            await asyncio.sleep({wait_seconds})")
-
-        elif action_type == 'input_text':
-             index = params.get('index')
-             text = params.get('text', '')
-             selector = self._get_selector_for_action(history_item, action_index_in_step)
-             if selector and index is not None:
-                 clean_text_expression = f"replace_sensitive_data({json.dumps(str(text))}, SENSITIVE_DATA)"
-                 escaped_selector = json.dumps(selector)
-                 script_lines.append(f'            await _try_locate_and_act(page, {escaped_selector}, "fill", text={clean_text_expression}, step_info={escaped_step_info})')
-             else:
-                 script_lines.append(f"            # Skipping input_text ({step_info_value}): missing index ({index}) or selector ({selector})")
-
-        elif action_type == 'click_element' or action_type == 'click_element_by_index':
-             if action_type == 'click_element_by_index': logger.warning(f"Mapping legacy 'click_element_by_index' to 'click_element' ({step_info_value})")
-             index = params.get('index')
-             selector = self._get_selector_for_action(history_item, action_index_in_step)
-             if selector and index is not None:
-                 escaped_selector = json.dumps(selector)
-                 script_lines.append(f'            await _try_locate_and_act(page, {escaped_selector}, "click", step_info={escaped_step_info})')
-             else:
-                 script_lines.append(f"            # Skipping {action_type} ({step_info_value}): missing index ({index}) or selector ({selector})")
-
-        elif action_type == 'scroll_down':
-            amount = params.get('amount')
-            if amount and isinstance(amount, int):
-                script_lines.append(f'            print(f"Scrolling down by {amount} pixels ({step_info_value})")')
-                script_lines.append(f"            await page.evaluate('window.scrollBy(0, {amount})')")
-            else:
-                script_lines.append(f'            print(f"Scrolling down by one page height ({step_info_value})")')
-                script_lines.append("            await page.evaluate('window.scrollBy(0, window.innerHeight)')")
-            script_lines.append(f"            await page.wait_for_timeout(500)")
-
-        elif action_type == 'scroll_up':
-            amount = params.get('amount')
-            if amount and isinstance(amount, int):
-                script_lines.append(f'            print(f"Scrolling up by {amount} pixels ({step_info_value})")')
-                script_lines.append(f"            await page.evaluate('window.scrollBy(0, -{amount})')")
-            else:
-                script_lines.append(f'            print(f"Scrolling up by one page height ({step_info_value})")')
-                script_lines.append("            await page.evaluate('window.scrollBy(0, -window.innerHeight)')")
-            script_lines.append(f"            await page.wait_for_timeout(500)")
-
-        elif action_type == 'send_keys':
-            keys = params.get('keys')
-            if keys and isinstance(keys, str):
-                escaped_keys = json.dumps(keys)
-                script_lines.append(f'            print(f"Sending keys: {keys} ({step_info_value})")')
-                script_lines.append(f"            await page.keyboard.press({escaped_keys})")
-                script_lines.append(f"            await page.wait_for_timeout(500)")
-            else:
-                script_lines.append(f"            # Skipping send_keys ({step_info_value}): missing or invalid keys")
-
-        elif action_type == 'go_back':
-            # Use page.go_back() instead of page.goto(previous_url)
-            # Determine timeout (same logic as go_to_url)
-            goto_timeout = 90000 # Default 90 seconds
-            if self.context_config and self.context_config.maximum_wait_page_load_time:
-                goto_timeout = int(self.context_config.maximum_wait_page_load_time * 1000)
-
-            script_lines.append(f'            await asyncio.sleep(60)  # Wait 1 minute (important) before going back')
-            script_lines.append(f'            print(f"Navigating back using browser history ({step_info_value})")')
-            script_lines.append(f"            await page.go_back(timeout={goto_timeout})")
-            script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
-            script_lines.append(f"            await page.wait_for_timeout(1000)")
-
-        elif action_type == 'open_tab':
-            url = params.get('url')
-            # Determine timeout for goto (same logic as go_to_url)
-            goto_timeout = 90000 # Default 90 seconds
-            if self.context_config and self.context_config.maximum_wait_page_load_time:
-                goto_timeout = int(self.context_config.maximum_wait_page_load_time * 1000)
-
-            if url and isinstance(url, str):
-                escaped_url = json.dumps(url)
-                script_lines.append(f'            print(f"Opening new tab and navigating to: {url} ({step_info_value})")')
-                script_lines.append("            page = await context.new_page()")
-                script_lines.append(f"            await page.goto({escaped_url}, timeout={goto_timeout})") # Add timeout
-                script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
-                script_lines.append(f"            await page.wait_for_timeout(1000)")
-                self._page_counter += 1 # Increment page counter
-            else:
-                script_lines.append(f"            # Skipping open_tab ({step_info_value}): missing or invalid url")
-
-        elif action_type == 'close_tab':
-            page_id = params.get('page_id')
-            if page_id is not None:
-                script_lines.append(f'            print(f"Attempting to close tab with page_id {page_id} ({step_info_value})")')
-                script_lines.append(f"            if {page_id} < len(context.pages):")
-                script_lines.append(f"                target_page = context.pages[{page_id}]")
-                script_lines.append("                await target_page.close()")
-                script_lines.append("                await page.wait_for_timeout(500)")
-                script_lines.append(f"                if context.pages: page = context.pages[-1]") # Switch to last page if exists
-                script_lines.append(f"                else:")
-                script_lines.append(f"                    print('  Warning: No pages left after closing tab. Cannot switch.', file=sys.stderr)") # Log warning
-                script_lines.append(f"                    # Optionally, create a new page here if needed: page = await context.new_page()")
-                script_lines.append(f"                if page: await page.bring_to_front()") # Bring to front if page exists
-                script_lines.append(f"            else:")
-                script_lines.append(f'                print(f"  Warning: Tab with page_id {page_id} not found to close ({step_info_value})", file=sys.stderr)')
-            else:
-                 script_lines.append(f"            # Skipping close_tab ({step_info_value}): missing page_id")
-
-        elif action_type == 'switch_tab':
-             page_id = params.get('page_id')
-             if page_id is not None:
-                 script_lines.append(f'            print(f"Switching to tab with page_id {page_id} ({step_info_value})")')
-                 script_lines.append(f"            if {page_id} < len(context.pages):")
-                 script_lines.append(f"                page = context.pages[{page_id}]")
-                 script_lines.append(f"                await page.bring_to_front()")
-                 script_lines.append(f"                await page.wait_for_load_state('load', timeout=15000)")
-                 script_lines.append(f"                await page.wait_for_timeout(500)")
-                 script_lines.append(f"            else:")
-                 script_lines.append(f'                print(f"  Warning: Tab with page_id {page_id} not found to switch ({step_info_value})", file=sys.stderr)')
-             else:
-                 script_lines.append(f"            # Skipping switch_tab ({step_info_value}): missing page_id")
-
-        elif action_type == 'search_google':
-             query = params.get('query')
-             # Determine timeout for goto (same logic as go_to_url)
-             goto_timeout = 90000 # Default 90 seconds
-             if self.context_config and self.context_config.maximum_wait_page_load_time:
-                goto_timeout = int(self.context_config.maximum_wait_page_load_time * 1000)
-
-             if query and isinstance(query, str):
-                 clean_query = f"replace_sensitive_data({json.dumps(query)}, SENSITIVE_DATA)"
-                 search_url_expression = f'f"https://www.google.com/search?q={{ urllib.parse.quote_plus({clean_query}) }}&udm=14"'
-                 script_lines.append(f'            search_url = {search_url_expression}')
-                 script_lines.append(f'            print(f"Searching Google for query related to: {{ {clean_query} }} ({step_info_value})")')
-                 script_lines.append(f"            await page.goto(search_url, timeout={goto_timeout})") # Add timeout
-                 script_lines.append(f"            await page.wait_for_load_state('load', timeout={goto_timeout})")
-                 script_lines.append(f"            await page.wait_for_timeout(1000)")
-             else:
-                 script_lines.append(f"            # Skipping search_google ({step_info_value}): missing or invalid query")
-
-        elif action_type == 'drag_drop':
-            source_sel = params.get('element_source')
-            target_sel = params.get('element_target')
-            source_coords = (params.get('coord_source_x'), params.get('coord_source_y'))
-            target_coords = (params.get('coord_target_x'), params.get('coord_target_y'))
-            script_lines.append(f'            print(f"Attempting drag and drop ({step_info_value})")')
-            if source_sel and target_sel:
-                escaped_source = json.dumps(source_sel)
-                escaped_target = json.dumps(target_sel)
-                script_lines.append(f"            await page.drag_and_drop({escaped_source}, {escaped_target})")
-                script_lines.append(f"            print(f'  Dragged element {escaped_source} to {escaped_target}')")
-            elif all(c is not None for c in source_coords) and all(c is not None for c in target_coords):
-                sx, sy = source_coords
-                tx, ty = target_coords
-                script_lines.append(f"            await page.mouse.move({sx}, {sy})")
-                script_lines.append("            await page.mouse.down()")
-                script_lines.append(f"            await page.mouse.move({tx}, {ty})")
-                script_lines.append("            await page.mouse.up()")
-                script_lines.append(f"            print(f'  Dragged from ({sx},{sy}) to ({tx},{ty})')")
-            else:
-                script_lines.append(f"            # Skipping drag_drop ({step_info_value}): requires either element selectors or full coordinates")
-            script_lines.append(f"            await page.wait_for_timeout(500)")
-
-        elif action_type == 'extract_content':
-            goal = params.get('goal', 'content')
-            script_lines.append(f"            # Action: extract_content (Goal: {goal}) - Skipped in Playwright script ({step_info_value})")
-            logger.warning(f"Action 'extract_content' ({step_info_value}) cannot be directly translated to Playwright script.")
-
-        elif action_type == 'click_download_button':
-             index = params.get('index')
-             selector = self._get_selector_for_action(history_item, action_index_in_step)
-             # Determine download directory: Use config if set, otherwise default to './files'
-             download_dir_in_script = "'./files'" # Default relative path for the script
-             if self.context_config and self.context_config.save_downloads_path:
-                 # If a path was explicitly set in the original config, use it
-                 download_dir_in_script = repr(self.context_config.save_downloads_path)
-
-             if selector and index is not None:
-                 script_lines.append(f'            print(f"Attempting to download file by clicking element ({selector}) ({step_info_value})")')
-                 script_lines.append("            try:")
-                 # Increased timeout for expecting download, e.g., 2 minutes
-                 script_lines.append(f"                async with page.expect_download(timeout=120000) as download_info:")
-                 step_info_for_download = f'{step_info_value} (triggering download)'
-                 script_lines.append(f'                    await _try_locate_and_act(page, {json.dumps(selector)}, "click", step_info={json.dumps(step_info_for_download)})')
-                 script_lines.append("                download = await download_info.value")
-                 # Use the determined download directory for the script
-                 script_lines.append(f"                configured_download_dir = {download_dir_in_script}")
-                 script_lines.append("                download_dir_path = Path(configured_download_dir).resolve()")
-                 script_lines.append("                download_dir_path.mkdir(parents=True, exist_ok=True)")
-                 # Unique filename logic remains the same, but uses the determined path
-                 script_lines.append("                base, ext = os.path.splitext(download.suggested_filename or f'download_{{len(list(download_dir_path.iterdir())) + 1}}.tmp')")
-                 script_lines.append("                counter = 1")
-                 script_lines.append("                download_path_obj = download_dir_path / f'{base}{ext}'")
-                 script_lines.append("                while download_path_obj.exists():")
-                 script_lines.append("                    download_path_obj = download_dir_path / f'{base}({{counter}}){ext}'")
-                 script_lines.append("                    counter += 1")
-                 script_lines.append("                await download.save_as(str(download_path_obj))") # Save to unique path
-                 script_lines.append("                print(f'  File downloaded successfully to: {str(download_path_obj)}')")
-                 script_lines.append("            except PlaywrightActionError as pae:") # Catch specific action error
-                 script_lines.append("                # Re-raise action error to stop script")
-                 script_lines.append("                raise pae")
-                 script_lines.append("            except Exception as download_err:")
-                 script_lines.append(f"                # Use raise to stop the script on download failure")
-                 script_lines.append(f"                raise PlaywrightActionError(f'Download failed for {step_info_value}: {{download_err}}') from download_err")
-             else:
-                 script_lines.append(f"            # Skipping click_download_button ({step_info_value}): missing index ({index}) or selector ({selector})")
-
-        elif action_type == 'done':
-            if isinstance(params, dict):
-                 final_text = params.get('text', '')
-                 success_status = params.get('success', False)
-                 escaped_final_text_with_placeholders = json.dumps(str(final_text))
-                 script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_value}) ---")')
-                 script_lines.append(f'            print(f"Agent reported success: {success_status}")')
-                 script_lines.append(f'            # Final Message from agent (may contain placeholders):')
-                 script_lines.append(f'            final_message = replace_sensitive_data({escaped_final_text_with_placeholders}, SENSITIVE_DATA)')
-                 script_lines.append(f'            print(final_message)')
-            else:
-                 script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_value}) ---")')
-                 script_lines.append(f'            print("Success: N/A (invalid params)")')
-                 script_lines.append(f'            print("Final Message: N/A (invalid params)")')
-
+        if handler:
+            # Call the specific handler method
+            return handler(
+                params=params,
+                history_item=history_item,
+                action_index_in_step=action_index_in_step,
+                step_info_str=step_info_str,
+                action_type=action_type, # Pass action_type for legacy handling etc.
+                previous_history_item=previous_history_item
+            )
         else:
-            script_lines.append(f"            # Unsupported action type: {action_type} ({step_info_value})")
-            logger.warning(f"Unsupported action type encountered: {action_type} ({step_info_value})")
+            # Handle unsupported actions
+            logger.warning(f"Unsupported action type encountered: {action_type} ({step_info_str})")
+            return [f"            # Unsupported action type: {action_type} ({step_info_str})"]
 
-        return script_lines
 
     def generate_script_content(self) -> str:
         """Generates the full Playwright script content as a string."""
@@ -636,11 +684,11 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
 
                 step_info_str = f"Step {step_index + 1}, Action {action_index_in_step + 1}"
                 action_lines = self._map_action_to_playwright(
-                    action_detail,
-                    item_dict,
-                    previous_item_dict,
-                    action_index_in_step,
-                    step_info_str
+                    action_dict=action_detail,
+                    history_item=item_dict,
+                    previous_history_item=previous_item_dict,
+                    action_index_in_step=action_index_in_step,
+                    step_info_str=step_info_str
                 )
                 script_lines.extend(action_lines)
 
