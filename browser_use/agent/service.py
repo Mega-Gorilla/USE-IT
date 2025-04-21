@@ -215,7 +215,7 @@ class Agent(Generic[Context]):
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
-			f'{" +memory" if self.settings.enable_memory else ""}, '
+			f'{" +memory" if self.enable_memory else ""}, '
 			f'planner_model={self.planner_model_name}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
 			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
