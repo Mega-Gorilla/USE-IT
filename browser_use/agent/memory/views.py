@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class MemoryConfig(BaseModel):
 	"""Configuration for procedural memory."""
 
-	model_config = ConfigDict(from_attributes=True, validate_default=True, revalidate_instances='always')
+	model_config = ConfigDict(
+		from_attributes=True, validate_default=True, revalidate_instances='always', validate_assignment=True
+	)
 
 	# Memory settings
 	agent_id: str = Field(default='browser_use_agent', min_length=1)
@@ -24,7 +26,12 @@ class MemoryConfig(BaseModel):
 
 	# Vector store settings
 	vector_store_provider: Literal['faiss'] = 'faiss'
-	vector_store_path: str = Field(default='/tmp/mem0_384_faiss')
+	vector_store_base_path: str = Field(default='/tmp/mem0')
+
+	@property
+	def vector_store_path(self) -> str:
+		"""Returns the full vector store path for the current configuration. e.g. /tmp/mem0_384_faiss"""
+		return f'{self.vector_store_base_path}_{self.embedder_dims}_{self.vector_store_provider}'
 
 	@property
 	def embedder_config_dict(self) -> dict[str, Any]:
@@ -46,7 +53,7 @@ class MemoryConfig(BaseModel):
 			'provider': self.vector_store_provider,
 			'config': {
 				'embedding_model_dims': self.embedder_dims,
-				'path': f'{self.vector_store_path}_{self.embedder_dims}_faiss',
+				'path': self.vector_store_path,
 			},
 		}
 

@@ -293,7 +293,7 @@ The `MemoryConfig` model provides these configuration options:
 
 #### Vector Store Settings
 - `vector_store_provider`: Provider for vector storage (currently only `'faiss'` is supported)
-- `vector_store_path`: Path for storing vector data
+- `vector_store_base_path`: Path for storing vector data (e.g. /tmp/mem0)
 
 The model automatically sets appropriate defaults based on the LLM being used:
 - For `ChatOpenAI`: Uses OpenAI's `text-embedding-3-small` embeddings
