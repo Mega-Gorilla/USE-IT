@@ -9,13 +9,15 @@ from langchain_core.messages import (
 	HumanMessage,
 )
 from langchain_core.messages.utils import convert_to_openai_messages
+from mem0 import Memory as Mem0Memory
 
+from browser_use.agent.memory.views import MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.message_manager.views import ManagedMessage, MessageMetadata
 from browser_use.utils import time_execution_sync
-from browser_use.agent.memory.views import MemoryConfig
 
 logger = logging.getLogger(__name__)
+
 
 class Memory:
 	"""
@@ -31,48 +33,46 @@ class Memory:
 		self,
 		message_manager: MessageManager,
 		llm: BaseChatModel,
-		config: Optional[MemoryConfig] = None,
+		config: MemoryConfig | None = None,
 	):
 		self.message_manager = message_manager
 		self.llm = llm
 
-		from mem0 import Memory as Mem0Memory
 		# Initialize configuration with defaults based on the LLM if not provided
 		if config is None:
-			config = MemoryConfig(
-				llm_instance=llm,
-				agent_id=f"agent_{id(self)}"
-			)
+			self.config = MemoryConfig(llm_instance=llm, agent_id=f'agent_{id(self)}')
 
 			# Set appropriate embedder based on LLM type
 			llm_class = llm.__class__.__name__
 			if llm_class == 'ChatOpenAI':
-				config.embedder_provider = 'openai'
-				config.embedder_model = 'text-embedding-3-small'
-				config.embedder_dims = 1536
+				self.config.embedder_provider = 'openai'
+				self.config.embedder_model = 'text-embedding-3-small'
+				self.config.embedder_dims = 1536
 			elif llm_class == 'ChatGoogleGenerativeAI':
-				config.embedder_provider = 'gemini'
-				config.embedder_model = 'models/text-embedding-004'
-				config.embedder_dims = 768
+				self.config.embedder_provider = 'gemini'
+				self.config.embedder_model = 'models/text-embedding-004'
+				self.config.embedder_dims = 768
 			elif llm_class == 'ChatOllama':
-				config.embedder_provider = 'ollama'
-				config.embedder_model = 'nomic-embed-text'
-				config.embedder_dims = 512
+				self.config.embedder_provider = 'ollama'
+				self.config.embedder_model = 'nomic-embed-text'
+				self.config.embedder_dims = 512
 		else:
 			# Ensure LLM instance is set in the config
-			config.llm_instance = llm
-
-		self.config = config
+			self.config = config
+			self.config.llm_instance = llm
 
 		# Check if sentence_transformers is needed
-		if config.embedder_provider == 'huggingface':
+		if self.config.embedder_provider == 'huggingface':
 			try:
-				from sentence_transformers import SentenceTransformer
+				# check that required package is installed if huggingface is used
+				from sentence_transformers import SentenceTransformer  # noqa: F401
 			except ImportError:
-				raise ImportError(f'sentence_transformers is required for managing memory with huggingface embeddings. Please install it with `pip install sentence-transformers`.')
+				raise ImportError(
+					'sentence_transformers is required for managing memory with huggingface embeddings. Please install it with `pip install sentence-transformers`.'
+				)
 
 		# Initialize Mem0 with the configuration
-		self.mem0 = Mem0Memory.from_config(config_dict=config.full_config_dict)
+		self.mem0 = Mem0Memory.from_config(config_dict=self.config.full_config_dict)
 
 	@time_execution_sync('--create_procedural_memory')
 	def create_procedural_memory(self, current_step: int) -> None:
