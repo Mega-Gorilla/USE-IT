@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
     "posthog>=3.7.0",
+    "patchright>=1.51.0",
     "playwright>=1.51.0",
     "markdownify==1.1.0",
     "langchain-core==0.3.49",
@@ -34,10 +35,7 @@ dependencies = [
     "typing-extensions>=4.12.2",
     "psutil>=7.0.0",
     "faiss-cpu>=1.10.0",
-    "mem0ai==0.1.88",
-    "sentence-transformers>=4.0.2"
 ]
-
 # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py 
 # pydantic: >2.11 introduces many pydantic deprecation warnings until langchain-core upgrades their pydantic support lets keep it on 2.10
 # google-api-core: only used for Google LLM APIs
@@ -46,8 +44,16 @@ dependencies = [
 # screeninfo: only used to get screen resolution on Linux/Windows
 # markdownify: used for page text content extraction for passing to LLM
 # openai: datalib,voice-helpers are actually NOT NEEDED but openai produces noisy errors on exit without them TODO: fix
-urls = { "Repository" = "https://github.com/browser-use/browser-use" }
 
+# Optional dependencies for memory functionality
+[project.optional-dependencies]
+memory = [
+    "mem0ai==0.1.91",
+    "sentence-transformers>=4.0.2",
+]
+
+[project.urls]
+Repository = "https://github.com/browser-use/browser-use"
 
 [tool.codespell]
 ignore-words-list = "bu"
