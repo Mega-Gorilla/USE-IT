@@ -1,9 +1,13 @@
+import asyncio
 import os
 import sys
 
+import dotenv
+
+dotenv.load_dotenv()
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import asyncio
 import threading
 import time
 
@@ -55,13 +59,16 @@ def print_menu():
 	print('5. Exit')
 
 
-def main():
+async def main():
 	controller = AgentController()
 	agent_thread = None
 
 	while True:
 		print_menu()
-		choice = input('Enter your choice (1-5): ')
+		try:
+			choice = input('Enter your choice (1-5): ')
+		except KeyboardInterrupt:
+			choice = '5'
 
 		if choice == '1' and not agent_thread:
 			print('Starting agent...')
@@ -95,4 +102,4 @@ def main():
 
 
 if __name__ == '__main__':
-	main()
+	asyncio.run(main())

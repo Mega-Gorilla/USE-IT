@@ -342,7 +342,8 @@ class Browser:
 			# Then cleanup httpx clients
 			await self.cleanup_httpx_clients()
 		except Exception as e:
-			logger.debug(f'Failed to close browser properly: {e}')
+			if 'OpenAI error' not in str(e):
+				logger.debug(f'Failed to close browser properly: {e}')
 
 		finally:
 			self.playwright_browser = None

@@ -231,11 +231,8 @@ class Agent(Generic[Context]):
 			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
 		)
 
-		# Start non-blocking LLM connection verification using create_task, checked later in step()
-		# This will run in parallel with browser launch without leaving dangling coroutines on unclean exits
-		self.llm._verified_api_keys = False
-		self._verification_task = asyncio.create_task(self._verify_llm_connection())
-		self._verification_task.add_done_callback(lambda _: None)
+		# Verify we can connect to the LLM
+		self._verify_llm_connection()
 
 		# Initialize available actions for system prompt (only non-filtered actions)
 		# These will be used for the system prompt to maintain caching
@@ -273,8 +270,7 @@ class Agent(Generic[Context]):
 				)
 			except ImportError:
 				logger.warning(
-					'Memory functionality was enabled but required packages are not installed. '
-					"Install with 'pip install browser-use[memory]' to use memory features."
+					'⚠️ Agent(enable_memory=True) is set but missing some required packages, install and re-run to use memory features: pip install browser-use[memory]'
 				)
 				self.memory = None
 				self.enable_memory = False
@@ -794,18 +790,13 @@ class Agent(Generic[Context]):
 		)
 		signal_handler.register()
 
-		# Wait for verification task to complete if it exists
+		# Wait for LLM API _validate_llm_connection() task to complete if it exists
 		if hasattr(self, '_verification_task') and not self._verification_task.done():
 			try:
 				await self._verification_task
 			except Exception:
 				# Error already logged in the task
 				pass
-
-		# Check that verification was successful
-		assert self.llm._verified_api_keys or SKIP_LLM_API_KEY_VERIFICATION, (
-			'Failed to connect to LLM API or LLM API is not responding correctly'
-		)
 
 		try:
 			self._log_agent_run()
@@ -1215,41 +1206,41 @@ class Agent(Generic[Context]):
 
 		return converted_actions
 
-	async def _verify_llm_connection(self) -> bool:
+	def _verify_llm_connection(self) -> bool:
 		"""
 		Verify that the LLM API keys are setup and the LLM API is responding properly.
 		Helps prevent errors due to running out of API credits, missing env vars, or network issues.
 		"""
-		if getattr(self.llm, '_verified_api_keys', None) is True:
-			return True  # If the LLM API keys have already been verified during a previous run, skip the test
+		logger.debug(f'Verifying the {self.llm.__class__.__name__} LLM knows the capital of France...')
 
-		# Check if required environment variables are set for the model we're using
-		required_keys = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
-		if required_keys and not check_env_variables(required_keys, any_or_all=all):
-			error = f'LLM API Key environment variables not set up for {self.llm.__class__.__name__}, missing: {required_keys}'
-			logger.warning(f'❌ {error}')
-			if not SKIP_LLM_API_KEY_VERIFICATION:
-				self.llm._verified_api_keys = False
-				raise ValueError(error)
-
-		if SKIP_LLM_API_KEY_VERIFICATION:  # skip roundtrip connection test for speed in cloud environment
+		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+			# skip roundtrip connection test for speed in cloud environment
+			# If the LLM API keys have already been verified during a previous run, skip the test
 			self.llm._verified_api_keys = True
 			return True
 
+		# show a warning if it looks like any required environment variables are missing
+		required_keys = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
+		if required_keys and not check_env_variables(required_keys, any_or_all=all):
+			error = f'Expected LLM API Key environment variables might be missing for {self.llm.__class__.__name__}: {" ".join(required_keys)}'
+			logger.warning(f'❌ {error}')
+
+		# send a basic sanity-test question to the LLM and verify the response
 		test_prompt = 'What is the capital of France? Respond with a single word.'
 		test_answer = 'paris'
 		try:
-			response = await self.llm.ainvoke([HumanMessage(content=test_prompt)])
+			# dont convert this to async! it *should* block any subsequent llm calls from running
+			response = self.llm.invoke([HumanMessage(content=test_prompt)])  # noqa: ASYNC
 			response_text = str(response.content).lower()
 
 			if test_answer in response_text:
 				logger.debug(
-					f'🧠 LLM API keys {", ".join(required_keys)} verified, {self.llm.__class__.__name__} model is connected and responding correctly.'
+					f'🪪 LLM API keys {", ".join(required_keys)} work, {self.llm.__class__.__name__} model is connected & responding correctly.'
 				)
 				self.llm._verified_api_keys = True
 				return True
 			else:
-				logger.debug(
+				logger.warning(
 					'❌  Got bad LLM response to basic sanity check question: \n\t  %s\n\t\tEXPECTING: %s\n\t\tGOT: %s',
 					test_prompt,
 					test_answer,
@@ -1261,7 +1252,7 @@ class Agent(Generic[Context]):
 			logger.error(
 				f'\n\n❌  LLM {self.llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n\n{e}\n'
 			)
-			raise Exception(f'LLM API connection test failed: {e}') from e
+			return False
 
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
