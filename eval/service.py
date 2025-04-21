@@ -58,6 +58,7 @@ import logging
 import re
 import shutil
 
+import anyio
 from PIL import Image
 
 MAX_IMAGE = 5
@@ -467,8 +468,8 @@ class TaskTracker:
 		screenshot_path = self.trajectory_folder / f'step_{self.step_counter}.png'
 
 		# Save screenshot to file
-		with open(screenshot_path, 'wb') as f:
-			f.write(base64.b64decode(screenshot_b64))
+		async with await anyio.open_file(screenshot_path, 'wb') as f:
+			await f.write(base64.b64decode(screenshot_b64))
 
 		# Save screenshot path
 		self.screenshots.append(str(screenshot_path))
@@ -574,8 +575,8 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 		return {'task_id': task_folder.name, 'judgement': None, 'success': False, 'error': 'No result.json found', 'score': 0.0}
 
 	try:
-		with open(result_file) as f:
-			result = json.load(f)
+		async with await anyio.open_file(result_file) as f:
+			result = json.loads(await f.read())
 
 		# If a Online_Mind2Web_evaluation is already saved, we can skip the eval
 		if result.get('Online_Mind2Web_evaluation'):
@@ -609,8 +610,8 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 
 			# Save the Online_Mind2Web_evaluation into the result.json file
 			result['Online_Mind2Web_evaluation'] = evaluation
-			with open(result_file, 'w') as f:
-				json.dump(result, f, indent=2)
+			with anyio.open_file(result_file, 'w') as f:
+				await f.write(json.dumps(result, indent=2))
 
 			return evaluation
 
@@ -751,8 +752,8 @@ async def run_task_with_semaphore(
 			if result_file.exists():
 				logger.info(f'Task {task.task_id}: Found existing result file.')
 				try:
-					with open(result_file) as f:
-						existing_result = json.load(f)
+					with anyio.open_file(result_file) as f:
+						existing_result = json.loads(await f.read())
 
 					# Populate payload from existing file
 					server_payload['actionHistory'] = existing_result.get('action_history', [])
@@ -815,8 +816,8 @@ async def run_task_with_semaphore(
 
 					# Load the result file that should have just been created
 					if result_file.exists():
-						with open(result_file) as f:
-							run_result_data = json.load(f)
+						async with await anyio.open_file(result_file) as f:
+							run_result_data = json.loads(await f.read())
 						server_payload['actionHistory'] = run_result_data.get('action_history', [])
 						server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
 						server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
