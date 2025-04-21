@@ -84,20 +84,21 @@ class MessageManager:
 						""".strip(),
 							'memory': """
 							I searched for 'iPhone retailers' on Google. From the Google Search results page, 
-							I used the 'click_element' tool to click on a element labelled 'Best Buy' but calling 
-							the tool did not direct me to a new page. I then used the 'click_element' tool to click 
-							on a element labelled 'Apple' which redirected me to the 'Apple' company homepage. 
+							I used the 'click_element_by_index' tool to click on element at index [45] labeled 'Best Buy' but calling 
+							the tool did not direct me to a new page. I then used the 'click_element_by_index' tool to click 
+							on element at index [82] labeled 'Apple' which redirected me to the 'Apple' company homepage. 
 							Currently at step 3/15.
 						""".strip(),
 							'next_goal': """
 							Looking at reported structure of the current page, I can see the item '[127]<h3 iPhone/>' 
 							in the content. I think this button will lead to more information and potentially prices 
-							for iPhones. I'll click on the link to 'iPhone' at index [127] using the 'click_element' 
+							for iPhones. I'll click on the link at index [127] using the 'click_element_by_index' 
 							tool and hope to see prices on the next page.
 						""".strip(),
 						},
-						'action': [{'click_element': {'index': 127}}],
+						'action': [{'click_element_by_index': {'index': 127}}],
 					},
+					'action': [{'click_element_by_index': {'index': 127}}],
 					'id': str(self.state.tool_id),
 					'type': 'tool_call',
 				},
