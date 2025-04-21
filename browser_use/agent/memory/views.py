@@ -1,4 +1,4 @@
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,14 +20,14 @@ class MemoryConfig(BaseModel):
 
 	# LLM settings - the LLM instance can be passed separately
 	llm_provider: Literal['langchain'] = 'langchain'
-	llm_instance: Optional[BaseChatModel] = None
+	llm_instance: BaseChatModel | None = None
 
 	# Vector store settings
 	vector_store_provider: Literal['faiss'] = 'faiss'
 	vector_store_path: str = Field(default='/tmp/mem0_384_faiss')
 
 	@property
-	def embedder_config_dict(self) -> Dict[str, Any]:
+	def embedder_config_dict(self) -> dict[str, Any]:
 		"""Returns the embedder configuration dictionary."""
 		return {
 			'provider': self.embedder_provider,
@@ -35,12 +35,12 @@ class MemoryConfig(BaseModel):
 		}
 
 	@property
-	def llm_config_dict(self) -> Dict[str, Any]:
+	def llm_config_dict(self) -> dict[str, Any]:
 		"""Returns the LLM configuration dictionary."""
 		return {'provider': self.llm_provider, 'config': {'model': self.llm_instance}}
 
 	@property
-	def vector_store_config_dict(self) -> Dict[str, Any]:
+	def vector_store_config_dict(self) -> dict[str, Any]:
 		"""Returns the vector store configuration dictionary."""
 		return {
 			'provider': self.vector_store_provider,
@@ -51,7 +51,7 @@ class MemoryConfig(BaseModel):
 		}
 
 	@property
-	def full_config_dict(self) -> Dict[str, Dict[str, Any]]:
+	def full_config_dict(self) -> dict[str, dict[str, Any]]:
 		"""Returns the complete configuration dictionary for Mem0."""
 		return {
 			'embedder': self.embedder_config_dict,
