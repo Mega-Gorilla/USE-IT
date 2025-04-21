@@ -160,7 +160,6 @@ class Agent(Generic[Context]):
 		self.llm = llm
 		self.controller = controller
 		self.sensitive_data = sensitive_data
-        
 
 		self.settings = AgentSettings(
 			use_vision=use_vision,
@@ -265,7 +264,7 @@ class Agent(Generic[Context]):
 				)
 			except ImportError:
 				logger.warning(
-					"Memory functionality was enabled but required packages are not installed. "
+					'Memory functionality was enabled but required packages are not installed. '
 					"Install with 'pip install browser-use[memory]' to use memory features."
 				)
 				self.memory = None
@@ -846,24 +845,23 @@ class Agent(Generic[Context]):
 					break
 			else:
 				error_message = 'Failed to complete task in maximum steps'
-				
+
 				self.state.history.history.append(
 					AgentHistory(
 						model_output=None,
 						result=[ActionResult(error=error_message, include_in_memory=True)],
 						state=BrowserStateHistory(
-							url="",
-							title="",
+							url='',
+							title='',
 							tabs=[],
 							interacted_element=[],
 							screenshot=None,
 						),
-						metadata=None
+						metadata=None,
 					)
 				)
 
 				logger.info(f'❌ {error_message}')
-
 
 			return self.state.history
 

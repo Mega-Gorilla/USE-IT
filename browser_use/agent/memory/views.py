@@ -1,13 +1,18 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal, Optional, Dict, Any
+from typing import Any, Literal
+
 from langchain_core.language_models.chat_models import BaseChatModel
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class MemoryConfig(BaseModel):
 	"""Configuration for procedural memory."""
-	model_config = ConfigDict(from_attributes=True, validate_default=True, revalidate_instances='always')
+
+	model_config = ConfigDict(
+		from_attributes=True, validate_default=True, revalidate_instances='always', validate_assignment=True
+	)
 
 	# Memory settings
-	agent_id: str = Field(default="browser_use_agent", min_length=1)
+	agent_id: str = Field(default='browser_use_agent', min_length=1)
 	memory_interval: int = Field(default=10, gt=1, lt=100)
 
 	# Embedder settings
@@ -17,46 +22,43 @@ class MemoryConfig(BaseModel):
 
 	# LLM settings - the LLM instance can be passed separately
 	llm_provider: Literal['langchain'] = 'langchain'
-	llm_instance: Optional[BaseChatModel] = None
+	llm_instance: BaseChatModel | None = None
 
 	# Vector store settings
 	vector_store_provider: Literal['faiss'] = 'faiss'
-	vector_store_path: str = Field(default="/tmp/mem0_384_faiss")
+	vector_store_base_path: str = Field(default='/tmp/mem0')
 
 	@property
-	def embedder_config_dict(self) -> Dict[str, Any]:
+	def vector_store_path(self) -> str:
+		"""Returns the full vector store path for the current configuration. e.g. /tmp/mem0_384_faiss"""
+		return f'{self.vector_store_base_path}_{self.embedder_dims}_{self.vector_store_provider}'
+
+	@property
+	def embedder_config_dict(self) -> dict[str, Any]:
 		"""Returns the embedder configuration dictionary."""
 		return {
 			'provider': self.embedder_provider,
-			'config': {
-				'model': self.embedder_model,
-				'embedding_dims': self.embedder_dims
-			}
+			'config': {'model': self.embedder_model, 'embedding_dims': self.embedder_dims},
 		}
 
 	@property
-	def llm_config_dict(self) -> Dict[str, Any]:
+	def llm_config_dict(self) -> dict[str, Any]:
 		"""Returns the LLM configuration dictionary."""
-		return {
-			'provider': self.llm_provider,
-			'config': {
-				'model': self.llm_instance
-			}
-		}
+		return {'provider': self.llm_provider, 'config': {'model': self.llm_instance}}
 
 	@property
-	def vector_store_config_dict(self) -> Dict[str, Any]:
+	def vector_store_config_dict(self) -> dict[str, Any]:
 		"""Returns the vector store configuration dictionary."""
 		return {
 			'provider': self.vector_store_provider,
 			'config': {
 				'embedding_model_dims': self.embedder_dims,
-				'path': f"{self.vector_store_path}_{self.embedder_dims}_faiss"
-			}
+				'path': self.vector_store_path,
+			},
 		}
 
 	@property
-	def full_config_dict(self) -> Dict[str, Dict[str, Any]]:
+	def full_config_dict(self) -> dict[str, dict[str, Any]]:
 		"""Returns the complete configuration dictionary for Mem0."""
 		return {
 			'embedder': self.embedder_config_dict,
