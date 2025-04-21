@@ -98,7 +98,6 @@ class MessageManager:
 						},
 						'action': [{'click_element_by_index': {'index': 127}}],
 					},
-					'action': [{'click_element_by_index': {'index': 127}}],
 					'id': str(self.state.tool_id),
 					'type': 'tool_call',
 				},
