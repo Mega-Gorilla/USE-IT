@@ -70,6 +70,7 @@ class AgentSettings(BaseModel):
 	planner_interval: int = 1  # Run planner every N steps
 	is_planner_reasoning: bool = False  # type: ignore
 
+
 class AgentState(BaseModel):
 	"""Holds all state information for an Agent"""
 
