@@ -9,7 +9,6 @@ from langchain_core.messages import (
 	HumanMessage,
 )
 from langchain_core.messages.utils import convert_to_openai_messages
-from mem0 import Memory as Mem0Memory
 
 from browser_use.agent.memory.views import MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager
@@ -61,14 +60,19 @@ class Memory:
 			self.config = config
 			self.config.llm_instance = llm
 
-		# Check if sentence_transformers is needed
+		# Check for required packages
+		try:
+			from mem0 import Memory as Mem0Memory
+		except ImportError:
+			raise ImportError('mem0 is required when enable_memory=True. Please install it with `pip install mem0`.')
+
 		if self.config.embedder_provider == 'huggingface':
 			try:
 				# check that required package is installed if huggingface is used
 				from sentence_transformers import SentenceTransformer  # noqa: F401
 			except ImportError:
 				raise ImportError(
-					'sentence_transformers is required for managing memory with huggingface embeddings. Please install it with `pip install sentence-transformers`.'
+					'sentence_transformers is required when enable_memory=True and embedder_provider="huggingface". Please install it with `pip install sentence-transformers`.'
 				)
 
 		# Initialize Mem0 with the configuration
