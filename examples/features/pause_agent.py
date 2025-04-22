@@ -9,7 +9,6 @@ dotenv.load_dotenv()
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import threading
-import time
 
 from langchain_openai import ChatOpenAI
 
@@ -98,7 +97,7 @@ async def main():
 					agent_thread.join()
 			break
 
-		time.sleep(0.1)  # Small delay to prevent CPU spinning
+		await asyncio.sleep(0.1)  # Small delay to prevent CPU spinning
 
 
 if __name__ == '__main__':
