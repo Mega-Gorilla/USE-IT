@@ -1243,7 +1243,7 @@ class Agent(Generic[Context]):
 			self.llm._verified_api_keys = False
 			keys_msg = f' Check that {", ".join(required_keys)} is set correctly in .env and has sufficient funding.' if required_keys else ''
 			logger.error(
-				f'❌ LLM {self.llm.__class__.__name__} connection test failed.{keys_msg}\n\n{e}'
+				f'\n\n❌ LLM {self.llm.__class__.__name__} connection test failed.{keys_msg}\n\n{e}\n'
 			)
 			return False
 
