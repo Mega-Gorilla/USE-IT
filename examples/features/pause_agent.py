@@ -97,7 +97,7 @@ async def main():
 					agent_thread.join()
 			break
 
-		asyncio.sleep(0.1)  # Small delay to prevent CPU spinning
+		await asyncio.sleep(0.1)  # Small delay to prevent CPU spinning
 
 
 if __name__ == '__main__':
