@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 from dataclasses import dataclass
@@ -7,7 +6,7 @@ from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-	from playwright.async_api import Page
+	from patchright.async_api import Page
 
 from browser_use.dom.views import (
 	DOMBaseNode,

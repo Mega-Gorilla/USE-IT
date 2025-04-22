@@ -10,14 +10,11 @@ import socket
 import subprocess
 from typing import Literal
 
+import httpx
 import psutil
-import requests
 from dotenv import load_dotenv
-from playwright.async_api import Browser as PlaywrightBrowser
-from playwright.async_api import (
-	Playwright,
-	async_playwright,
-)
+from patchright.async_api import Browser as PlaywrightBrowser
+from patchright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 load_dotenv()
@@ -100,7 +97,9 @@ class BrowserConfig(BaseModel):
 	cdp_url: str | None = None
 
 	browser_class: Literal['chromium', 'firefox', 'webkit'] = 'chromium'
-	browser_binary_path: str | None = Field(default=None, alias=AliasChoices('browser_instance_path', 'chrome_instance_path'))
+	browser_binary_path: str | None = Field(
+		default=None, validation_alias=AliasChoices('browser_instance_path', 'chrome_instance_path')
+	)
 	extra_browser_args: list[str] = Field(default_factory=list)
 
 	headless: bool = False
@@ -133,7 +132,10 @@ class Browser:
 
 	async def new_context(self, config: BrowserContextConfig | None = None) -> BrowserContext:
 		"""Create a browser context"""
-		return BrowserContext(config=config or BrowserContextConfig(**(self.config.model_dump() if self.config else {})), browser=self)
+		browser_config = self.config.model_dump() if self.config else {}
+		context_config = config.model_dump() if config else {}
+		merged_config = {**browser_config, **context_config}
+		return BrowserContext(config=BrowserContextConfig(**merged_config), browser=self)
 
 	async def get_playwright_browser(self) -> PlaywrightBrowser:
 		"""Get a browser context"""
@@ -146,9 +148,9 @@ class Browser:
 	async def _init(self):
 		"""Initialize the browser session"""
 		playwright = await async_playwright().start()
-		browser = await self._setup_browser(playwright)
-
 		self.playwright = playwright
+
+		browser = await self._setup_browser(playwright)
 		self.playwright_browser = browser
 
 		return self.playwright_browser
@@ -186,16 +188,17 @@ class Browser:
 
 		try:
 			# Check if browser is already running
-			response = requests.get('http://localhost:9222/json/version', timeout=2)
-			if response.status_code == 200:
-				logger.info('🔌  Reusing existing browser found running on http://localhost:9222')
-				browser_class = getattr(playwright, self.config.browser_class)
-				browser = await browser_class.connect_over_cdp(
-					endpoint_url='http://localhost:9222',
-					timeout=20000,  # 20 second timeout for connection
-				)
-				return browser
-		except requests.ConnectionError:
+			async with httpx.AsyncClient() as client:
+				response = await client.get('http://localhost:9222/json/version', timeout=2)
+				if response.status == 200:
+					logger.info('🔌  Reusing existing browser found running on http://localhost:9222')
+					browser_class = getattr(playwright, self.config.browser_class)
+					browser = await browser_class.connect_over_cdp(
+						endpoint_url='http://localhost:9222',
+						timeout=20000,  # 20 second timeout for connection
+					)
+					return browser
+		except httpx.RequestError:
 			logger.debug('🌎  No existing Chrome instance found, starting a new one')
 
 		# Start a new Chrome instance
@@ -211,7 +214,7 @@ class Browser:
 			},
 		]
 		self._chrome_subprocess = psutil.Process(
-			subprocess.Popen(
+			await asyncio.create_subprocess_shell(
 				chrome_launch_cmd,
 				stdout=subprocess.DEVNULL,
 				stderr=subprocess.DEVNULL,
@@ -222,10 +225,11 @@ class Browser:
 		# Attempt to connect again after starting a new instance
 		for _ in range(10):
 			try:
-				response = requests.get('http://localhost:9222/json/version', timeout=2)
-				if response.status_code == 200:
-					break
-			except requests.ConnectionError:
+				async with httpx.AsyncClient() as client:
+					response = await client.get('http://localhost:9222/json/version', timeout=2)
+					if response.status == 200:
+						break
+			except httpx.RequestError:
 				pass
 			await asyncio.sleep(1)
 
@@ -289,6 +293,7 @@ class Browser:
 
 		browser = await browser_class.launch(
 			headless=self.config.headless,
+			channel='chrome',
 			args=args[self.config.browser_class],
 			proxy=self.config.proxy.model_dump() if self.config.proxy else None,
 			handle_sigterm=False,
@@ -339,7 +344,8 @@ class Browser:
 			# Then cleanup httpx clients
 			await self.cleanup_httpx_clients()
 		except Exception as e:
-			logger.debug(f'Failed to close browser properly: {e}')
+			if 'OpenAI error' not in str(e):
+				logger.debug(f'Failed to close browser properly: {e}')
 
 		finally:
 			self.playwright_browser = None
