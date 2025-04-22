@@ -790,14 +790,6 @@ class Agent(Generic[Context]):
 		)
 		signal_handler.register()
 
-		# Wait for LLM API _validate_llm_connection() task to complete if it exists
-		if hasattr(self, '_verification_task') and not self._verification_task.done():
-			try:
-				await self._verification_task
-			except Exception:
-				# Error already logged in the task
-				pass
-
 		try:
 			self._log_agent_run()
 
