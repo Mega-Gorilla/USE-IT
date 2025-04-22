@@ -1241,11 +1241,13 @@ class Agent(Generic[Context]):
 				raise Exception('LLM responded to a simple test question incorrectly')
 		except Exception as e:
 			self.llm._verified_api_keys = False
-			keys_msg = f' Check that {", ".join(required_keys)} is set correctly in .env and has sufficient funding.' if required_keys else ''
-			logger.error(
-				f'\n\n❌ LLM {self.llm.__class__.__name__} connection test failed.{keys_msg}\n\n{e}\n'
-			)
-			return False
+			if required_keys:
+				logger.error(
+					f'\n\n❌  LLM {self.llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n\n{e}\n'
+				)
+				return False
+			else:
+				pass
 
 	async def _run_planner(self) -> Optional[str]:
 		"""Run the planner to analyze state and suggest next steps"""
