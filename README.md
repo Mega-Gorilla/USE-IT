@@ -34,9 +34,9 @@ For memory functionality (requires Python<3.13 due to PyTorch compatibility):
 pip install "browser-use[memory]"
 ```
 
-Install Playwright:
+Install Patchright:
 ```bash
-playwright install chromium
+patchright install chromium
 ```
 
 Spin up your agent:
