@@ -70,6 +70,7 @@
         "development/local-setup",
         "development/telemetry",
         "development/observability",
+        "development/evaluations",
         "development/roadmap"
       ]
     },
