@@ -12,6 +12,7 @@ jobs:
       - run: uv run ruff check --no-fix --select PLE
       - run: uv run ruff format
       - run: uv run pre-commit run --all-files
+      - run: uv run pyright
       # TODO: Fix the ignored pytests.
       # openai.OpenAIError: The api_key client option must be set either by passing
       # api_key to the client or by setting the OPENAI_API_KEY environment variable
