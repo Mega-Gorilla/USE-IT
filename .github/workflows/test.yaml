@@ -1,16 +1,16 @@
-name: Test
+name: Tests
 on:
   push:
   pull_request:
   workflow_dispatch:
     
 jobs:
-  test:
+  tests:
     name: ${{ matrix.test }} 
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test: [tests/browser, tests/models, tests/functionality, tests/all]
+        test: [browser, models, functionality, all]
         
 
     steps:
@@ -20,10 +20,10 @@ jobs:
       - name: Run lint task
         run: |
           case "${{ matrix.test }}" in
-            tests/browser) uv run --with=dotenv pytest tests/test_browser.py || true ;;
-            tests/models)  uv run --with=dotenv pytest tests/test_models.py || true  ;;
-            tests/functionality) uv run --with=dotenv pytest test_core_functionality.py || true ;;
-            tests/all) uv run --with=dotenv pytest || true ;;
+            browser) uv run --with=dotenv pytest tests/test_browser.py || true ;;
+            models)  uv run --with=dotenv pytest tests/test_models.py || true  ;;
+            functionality) uv run --with=dotenv pytest test_core_functionality.py || true ;;
+            all) uv run --with=dotenv pytest || true ;;
           esac
 
 

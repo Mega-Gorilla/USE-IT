@@ -6,7 +6,7 @@ on:
 
 jobs:
   lint:
-    name: lint/${{ matrix.task }}  
+    name: ${{ matrix.task }}  
     runs-on: ubuntu-latest
     strategy:
       matrix:
