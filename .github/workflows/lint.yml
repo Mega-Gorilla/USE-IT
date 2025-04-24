@@ -3,13 +3,23 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+
 jobs:
-  ruff:
+  lint:
+    name: lint/${{ matrix.task }}  
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        task: [syntax, style, typecheck]
+
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv run ruff check --no-fix --select PLE
-      - run: uv run ruff format
-      - run: uv run pre-commit run --all-files
-      - run: uv run pyright
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+      - name: Run lint task
+        run: |
+          case "${{ matrix.task }}" in
+            syntax) uv run ruff check --no-fix --select PLE ;;
+            style)  uv run ruff format && uv run pre-commit run --all-files ;;
+            typecheck) uv run pyright ;;
+          esac
