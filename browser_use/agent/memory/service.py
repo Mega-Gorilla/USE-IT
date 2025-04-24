@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import logging
 from typing import List, Optional
 
@@ -62,6 +63,10 @@ class Memory:
 
 		# Check for required packages
 		try:
+			# Optionally disable mem0 telemetry:
+			# https://github.com/mem0ai/mem0/blob/64c3d34deb056aff01126b855f1f0b655fd86ad1/mem0/memory/telemetry.py#L11-L12
+			if os.getenv('ANONYMIZED_TELEMETRY', 'true').lower() == 'false':
+				os.environ['MEM0_TELEMETRY'] = 'False'
 			from mem0 import Memory as Mem0Memory
 		except ImportError:
 			raise ImportError('mem0 is required when enable_memory=True. Please install it with `pip install mem0`.')
