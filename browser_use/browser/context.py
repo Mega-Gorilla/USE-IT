@@ -44,7 +44,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-BROWSER_CHROME_HEIGHT = 85  # Height adjustment for browser chrome (title bar, tabs, etc.)
+# Default height adjustment for browser chrome (title bar, tabs, etc.)
+# This can vary by platform, browser, and display settings
+BROWSER_CHROME_HEIGHT_DEFAULT = 85
+BROWSER_CHROME_HEIGHT_WINDOWS = 85
+BROWSER_CHROME_HEIGHT_MACOS = 80
+BROWSER_CHROME_HEIGHT_LINUX = 90
+
+def get_browser_chrome_height() -> int:
+    """Determine appropriate browser chrome height based on platform"""
+    import platform
+    system = platform.system().lower()
+    
+    if system == 'darwin':
+        return BROWSER_CHROME_HEIGHT_MACOS
+    elif system == 'windows':
+        return BROWSER_CHROME_HEIGHT_WINDOWS
+    elif system == 'linux':
+        return BROWSER_CHROME_HEIGHT_LINUX
+    else:
+        return BROWSER_CHROME_HEIGHT_DEFAULT
+
+# Get the appropriate chrome height for current platform
+BROWSER_CHROME_HEIGHT = get_browser_chrome_height()
+
 
 class BrowserContextWindowSize(BaseModel):
 	"""Window size configuration for browser context"""
@@ -1747,12 +1770,18 @@ class BrowserContext:
 
 				# Fallback to using JavaScript
 				try:
-					await page.evaluate(f"""
-						() => {{
-							window.resizeTo({window_size['width']}, {window_size['height'] + BROWSER_CHROME_HEIGHT});
-						}}
-					""")
-					logger.debug(f'Used JavaScript to set window size to {window_size["width"]}x{window_size["height"] + BROWSER_CHROME_HEIGHT}')
+					await page.evaluate(
+						"""
+						(width, height) => {
+							window.resizeTo(width, height);
+						}
+						""",
+						window_size['width'],
+						window_size['height'] + BROWSER_CHROME_HEIGHT
+					)
+					logger.debug(
+						f'Used JavaScript to set window size to {window_size["width"]}x{window_size["height"] + BROWSER_CHROME_HEIGHT}'
+					)
 				except Exception as e:
 					logger.debug(f'JavaScript window resize failed: {e}')
 

@@ -27,7 +27,7 @@ from browser_use.browser.chrome import (
 	CHROME_HEADLESS_ARGS,
 )
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
-from browser_use.browser.utils.screen_resolution import get_window_adjustments, get_screen_resolution
+from browser_use.browser.utils.screen_resolution import get_screen_resolution, get_window_adjustments
 from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
@@ -299,22 +299,13 @@ class Browser:
 			],
 		}
 
-		# Add viewport size to launch options for non-headless mode
-		viewport = None
-		if (
-			not self.config.headless
-			and hasattr(self.config, 'new_context_config')
-			and hasattr(self.config.new_context_config, 'browser_window_size')
-		):
-			viewport = self.config.new_context_config.browser_window_size.model_dump()
-
 		browser = await browser_class.launch(
 			headless=self.config.headless,
 			channel='chrome',
 			args=args[self.config.browser_class],
 			proxy=self.config.proxy.model_dump() if self.config.proxy else None,
 			handle_sigterm=False,
-			handle_sigint=False,
+			handle_sigint=False
 		)
 		return browser
 
