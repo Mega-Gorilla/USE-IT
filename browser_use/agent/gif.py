@@ -16,6 +16,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 为GIF上的图片添加中文支持
+def decode_unicode_escapes_to_chinese(text: str) -> str:
+    try:
+        # 尝试转码到latin1编码
+        return text.encode('latin1').decode('unicode_escape')
+    except UnicodeEncodeError:
+        # 如果编码到latin1失败则返回原始文本
+        return text
 
 def create_history_gif(
 	task: str,
@@ -50,7 +58,16 @@ def create_history_gif(
 	try:
 		# Try different font options in order of preference
 		# ArialUni is a font that comes with Office and can render most non-alphabet characters
-		font_options = ['Helvetica', 'ArialUni', 'Arial', 'DejaVuSans', 'Verdana']
+		# 添加更多字体
+		font_options = [
+			'Microsoft YaHei',  # 微软雅黑
+			'SimHei',  # 黑体
+			'SimSun',  # 宋体
+			'Noto Sans CJK SC',  # 思源黑体
+			'WenQuanYi Micro Hei',  # 文泉驿微米黑
+			""" ↑ 中文字符 ↑ """
+			'Helvetica', 'Arial', 'DejaVuSans', 'Verdana'  # 原有字体
+		]
 		font_loaded = False
 
 		for font_name in font_options:
@@ -227,6 +244,8 @@ def _add_overlay_to_image(
 	"""Add step number and goal overlay to an image."""
 	from PIL import Image, ImageDraw
 
+	# 转码为中文
+	goal_text = decode_unicode_escapes_to_chinese(goal_text)
 	image = image.convert('RGBA')
 	txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
 	draw = ImageDraw.Draw(txt_layer)
@@ -322,6 +341,8 @@ def _wrap_text(text: str, font: 'ImageFont.FreeTypeFont', max_width: int) -> str
 	Returns:
 	    Wrapped text with newlines
 	"""
+	# 转码为中文
+	text = decode_unicode_escapes_to_chinese(text)
 	words = text.split()
 	lines = []
 	current_line = []
