@@ -1222,7 +1222,7 @@ class Agent(Generic[Context]):
 		test_answer = 'paris'
 		try:
 			# dont convert this to async! it *should* block any subsequent llm calls from running
-			response = self.llm.invoke([HumanMessage(content=test_prompt)])  # noqa: ASYNC
+			response = self.llm.invoke([HumanMessage(content=test_prompt)])  # noqa: RUF006
 			response_text = str(response.content).lower()
 
 			if test_answer in response_text:
