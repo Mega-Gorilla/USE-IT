@@ -17,12 +17,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # 为GIF上的图片添加中文支持
-def decode_unicode_escapes_to_chinese(text: str) -> str:
+def decode_unicode_escapes(text: str) -> str:
     try:
         # 尝试转码到latin1编码
         return text.encode('latin1').decode('unicode_escape')
     except UnicodeEncodeError:
         # 如果编码到latin1失败则返回原始文本
+        logger.warning(f"Failed to encode text to latin1: {text}")
+        return text
+    except UnicodeDecodeError:
+        # 如果从unicode_escape解码失败则返回原始文本
+        logger.warning(f"Failed to decode Unicode escape sequences: {text}")
         return text
 
 def create_history_gif(
