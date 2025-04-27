@@ -16,17 +16,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 为GIF上的图片添加中文支持
+# Add Chinese support to the pictures on the GIF
 def decode_unicode_escapes_to_chinese(text: str) -> str:
+    """Decode Unicode escape sequences in a string."""
     try:
-        # 尝试转码到latin1编码
+        # Try to decode Unicode escape sequences
         return text.encode('latin1').decode('unicode_escape')
     except UnicodeEncodeError:
-        # 如果编码到latin1失败则返回原始文本
+        # If encoding to latin1 fails, return the original text
         logger.warning(f"Failed to encode text to latin1: {text}")
         return text
     except UnicodeDecodeError:
-        # 如果从unicode_escape解码失败则返回原始文本
+        # If decoding from unicode_escape fails, return the original text
         logger.warning(f"Failed to decode Unicode escape sequences: {text}")
         return text
 
