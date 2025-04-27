@@ -1,0 +1,50 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+      - stable
+      - 'releases/**'
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+      - stable
+      - 'releases/**'
+  workflow_dispatch:
+    
+jobs:
+  tests:
+    name: ${{matrix.test}} 
+    runs-on: ubuntu-latest
+    if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
+    strategy:
+      matrix:
+        test:
+        - tests/browser/patchright
+        - tests/browser/user_binary
+        - tests/browser/remote_cdp
+        - tests/models/openai
+        - tests/models/google
+        - tests/models/anthropic
+        - tests/models/azure
+        - tests/models/deepseek
+        - tests/models/grok
+        - tests/functionality/click
+        - tests/functionality/tabs
+        - tests/functionality/input
+        - tests/functionality/scroll
+        - tests/functionality/upload
+        - tests/functionality/download
+        - tests/functionality/save
+        - tests/functionality/vision
+        - tests/functionality/memory
+        - tests/functionality/planner
+        - tests/functionality/hooks
+        
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --with=dotenv pytest ${{ matrix.test }}.py || true
