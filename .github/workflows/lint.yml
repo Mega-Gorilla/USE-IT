@@ -5,21 +5,34 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
-    name: ${{ matrix.task }}  
+  lint-syntax:
+    name: lint/Syntax
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [syntax, style, typecheck]
-
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv and cache packages
         uses: astral-sh/setup-uv@v5
-      - name: Run lint task
-        run: |
-          case "${{ matrix.task }}" in
-            syntax) uv run ruff check --no-fix --select PLE ;;
-            style)  uv run ruff format && uv run pre-commit run --all-files ;;
-            typecheck) uv run pyright ;;
-          esac
+      - run: uv run ruff check --no-fix --select PLE
+
+  lint-style:
+    name: lint/Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+      - run: uv run ruff format
+      - run: uv run pre-commit run --all-files
+
+  lint-typecheck:
+    name: lint/pyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+      - run: uv run pyright
+
+
+
+        
