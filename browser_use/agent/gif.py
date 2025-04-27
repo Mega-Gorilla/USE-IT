@@ -7,25 +7,28 @@ import os
 import platform
 from typing import TYPE_CHECKING, Optional
 
-from browser_use.agent.views import (
-	AgentHistoryList,
-)
+from browser_use.agent.views import AgentHistoryList
 
 if TYPE_CHECKING:
 	from PIL import Image, ImageFont
 
 logger = logging.getLogger(__name__)
 
+
 def decode_unicode_escapes_to_utf8(text: str) -> str:
-    """Handle decoding any unicode escape sequences embedded in a string (needed to render non-ASCII languages like chinese or arabic in the GIF overlay text)"""
-    if r'\u' not in text:
-        return text  # doesnt have any unicode escape sequences that need to be decoded
-    try:
-        # Try to decode Unicode escape sequences
-        return text.encode('latin1').decode('unicode_escape')
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        # logger.debug(f"Failed to decode unicode escape sequences while generating gif text: {text}")
-        return text
+	"""Handle decoding any unicode escape sequences embedded in a string (needed to render non-ASCII languages like chinese or arabic in the GIF overlay text)"""
+
+	if r'\u' not in text:
+		# doesn't have any escape sequences that need to be decoded
+		return text
+
+	try:
+		# Try to decode Unicode escape sequences
+		return text.encode('latin1').decode('unicode_escape')
+	except (UnicodeEncodeError, UnicodeDecodeError):
+		# logger.debug(f"Failed to decode unicode escape sequences while generating gif text: {text}")
+		return text
+
 
 def create_history_gif(
 	task: str,
@@ -66,8 +69,10 @@ def create_history_gif(
 			'SimSun',  # 宋体
 			'Noto Sans CJK SC',  # 思源黑体
 			'WenQuanYi Micro Hei',  # 文泉驿微米黑
-			# ↑ 中文字符 ↑
-			'Helvetica', 'Arial', 'DejaVuSans', 'Verdana'  # 原有字体
+			'Helvetica',
+			'Arial',
+			'DejaVuSans',
+			'Verdana',
 		]
 		font_loaded = False
 
@@ -243,9 +248,9 @@ def _add_overlay_to_image(
 	text_box_color: tuple[int, int, int, int] = (0, 0, 0, 255),
 ) -> 'Image.Image':
 	"""Add step number and goal overlay to an image."""
+
 	from PIL import Image, ImageDraw
 
-	# 转码为中文
 	goal_text = decode_unicode_escapes_to_utf8(goal_text)
 	image = image.convert('RGBA')
 	txt_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
