@@ -1,24 +1,24 @@
-name: Build and Test
+name: package
 on:
   push:
+    branches:
+      - main
+      - stable
+      - 'releases/**'
+    tags:
+      - '*'
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Package
+    name: pip-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-
-      - name: Build the package
-        run: uv build --python 3.12
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --python 3.12
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifact
           path: |
@@ -26,7 +26,7 @@ jobs:
             dist/*.tar.gz
 
   build_test:
-    name: ${{ matrix.os }} • ${{ matrix.python-version }}
+    name: pip-install-on-${{ matrix.os }}-py-${{ matrix.python-version }}
     needs: build
     runs-on: ${{ matrix.os }}
     strategy:
@@ -36,12 +36,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/download-artifact@v4
         with:
           name: dist-artifact
 
@@ -56,4 +52,3 @@ jobs:
           fi
           uv pip install *.whl
           python -c 'from browser_use import Agent, Browser, Controller, ActionModel, ActionResult'
-         

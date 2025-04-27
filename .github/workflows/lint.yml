@@ -1,38 +1,36 @@
-name: Lint
+name: lint
 on:
   push:
+    branches:
+      - main
+      - stable
+      - 'releases/**'
+    tags:
+      - '*'
   pull_request:
   workflow_dispatch:
 
 jobs:
   lint-syntax:
-    name: Syntax
+    name: syntax-errors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
       - run: uv run ruff check --no-fix --select PLE
 
   lint-style:
-    name: Style
+    name: code-style
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-      - run: uv run ruff format
+      - uses: astral-sh/setup-uv@v5
       - run: uv run pre-commit run --all-files
 
   lint-typecheck:
-    name: pyright
+    name: type-checker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
       - run: uv run pyright
-
-
-
-        
