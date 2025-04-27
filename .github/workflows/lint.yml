@@ -30,7 +30,17 @@ jobs:
     if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+      - run: uv run ruff check --no-fix --select PLE
+
+  lint-style:
+    name: Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
       - run: uv run ruff format
       - run: uv run pre-commit run --all-files
 
