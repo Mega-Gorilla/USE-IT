@@ -32,16 +32,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup uv and cache packages
         uses: astral-sh/setup-uv@v5
-      - run: uv run ruff check --no-fix --select PLE
-
-  lint-style:
-    name: Style
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-      - run: uv run ruff format
       - run: uv run pre-commit run --all-files
 
   lint-typecheck:

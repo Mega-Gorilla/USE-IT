@@ -16,20 +16,14 @@ on:
 
 jobs:
   build:
-    name: Build Package
+    name: pip-build
     runs-on: ubuntu-latest
     if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-
-      - name: Build the package
-        run: uv build --python 3.12
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --python 3.12
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifact
           path: |
@@ -37,7 +31,7 @@ jobs:
             dist/*.tar.gz
 
   build_test:
-    name: ${{ matrix.os }} • ${{ matrix.python-version }}
+    name: pip-install-${{ matrix.os }}-py-${{ matrix.python-version }}
     needs: build
     runs-on: ${{ matrix.os }}
     if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
@@ -48,12 +42,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup uv and cache packages
-        uses: astral-sh/setup-uv@v5
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/download-artifact@v4
         with:
           name: dist-artifact
 
