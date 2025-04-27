@@ -10,34 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test: [browser, models, functionality, all]
+        test:
+        - browser/builtin_patchright
+        - browser/user_binary
+        - browser/cdp
+        - models/openai
+        - models/google
+        - models/anthropic
+        # - models/azure         # (requires AZURE_OPENAI_API_KEY set)
+        # - models/deepseek      # (requires DEEPSEEK_API_KEY set)
+        # - models/grok          # (requires GROK_API_KEY set)
+        # - functionality/click
+        # - functionality/tabs
+        # - functionality/input
         
-
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv and cache packages
         uses: astral-sh/setup-uv@v5
-      - name: Run lint task
-        run: |
-          case "${{ matrix.test }}" in
-            browser) uv run --with=dotenv pytest tests/test_browser.py || true ;;
-            models)  uv run --with=dotenv pytest tests/test_models.py || true  ;;
-            functionality) uv run --with=dotenv pytest test_core_functionality.py || true ;;
-            all) uv run --with=dotenv pytest || true ;;
-          esac
+      - name: Run ${{ matrix.test }} test
+        run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
 
 
-# TODO: Fix the ignored pytests.
-# openai.OpenAIError: The api_key client option must be set either by passing
-# api_key to the client or by setting the OPENAI_API_KEY environment variable
-  #  uv run --with=dotenv pytest
-  #     --ignore=tests/test_dropdown_error.py
-  #     --ignore=tests/test_gif_path.py
-  #     --ignore=tests/test_models.py
-  #     --ignore=tests/test_react_dropdown.py
-  #     --ignore=tests/test_save_conversation.py
-  #     --ignore=tests/test_vision.py
-  #     --ignore=tests/test_wait_for_element.py || true ;;
-                      
 
       
