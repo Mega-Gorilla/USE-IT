@@ -190,7 +190,7 @@ class Browser:
 			# Check if browser is already running
 			async with httpx.AsyncClient() as client:
 				response = await client.get('http://localhost:9222/json/version', timeout=2)
-				if response.status == 200:
+				if response.status_code == 200:
 					logger.info('🔌  Reusing existing browser found running on http://localhost:9222')
 					browser_class = getattr(playwright, self.config.browser_class)
 					browser = await browser_class.connect_over_cdp(
@@ -227,7 +227,7 @@ class Browser:
 			try:
 				async with httpx.AsyncClient() as client:
 					response = await client.get('http://localhost:9222/json/version', timeout=2)
-					if response.status == 200:
+					if response.status_code == 200:
 						break
 			except httpx.RequestError:
 				pass
