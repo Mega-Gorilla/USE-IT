@@ -9,17 +9,12 @@ on:
     tags:
       - '*'
   pull_request:
-    branches:
-      - main
-      - stable
-      - 'releases/**'
   workflow_dispatch:
     
 jobs:
   tests:
     name: ${{matrix.test}} 
     runs-on: ubuntu-latest
-    if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     strategy:
       matrix:
         test:

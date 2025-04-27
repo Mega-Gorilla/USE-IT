@@ -8,17 +8,12 @@ on:
     tags:
       - '*'
   pull_request:
-    branches:
-      - main
-      - stable
-      - 'releases/**'
   workflow_dispatch:
 
 jobs:
   lint-syntax:
     name: syntax-errors
     runs-on: ubuntu-latest
-    if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -27,7 +22,6 @@ jobs:
   lint-style:
     name: code-style
     runs-on: ubuntu-latest
-    if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv and cache packages
@@ -37,7 +31,6 @@ jobs:
   lint-typecheck:
     name: type-checker
     runs-on: ubuntu-latest
-    if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.fork))
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
