@@ -18,28 +18,28 @@ jobs:
     strategy:
       matrix:
         test:
-        - tests/browser/patchright
-        - tests/browser/user_binary
-        - tests/browser/remote_cdp
-        - tests/models/openai
-        - tests/models/google
-        - tests/models/anthropic
-        - tests/models/azure
-        - tests/models/deepseek
-        - tests/models/grok
-        - tests/functionality/click
-        - tests/functionality/tabs
-        - tests/functionality/input
-        - tests/functionality/scroll
-        - tests/functionality/upload
-        - tests/functionality/download
-        - tests/functionality/save
-        - tests/functionality/vision
-        - tests/functionality/memory
-        - tests/functionality/planner
-        - tests/functionality/hooks
+        - browser/patchright
+        - browser/user_binary
+        - browser/remote_cdp
+        - models/openai
+        - models/google
+        - models/anthropic
+        - models/azure
+        - models/deepseek
+        - models/grok
+        - functionality/click
+        - functionality/tabs
+        - functionality/input
+        - functionality/scroll
+        - functionality/upload
+        - functionality/download
+        - functionality/save
+        - functionality/vision
+        - functionality/memory
+        - functionality/planner
+        - functionality/hooks
         
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run --with=dotenv pytest ${{ matrix.test }}.py || true
+      - run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
