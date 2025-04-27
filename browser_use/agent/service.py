@@ -488,10 +488,12 @@ class Agent(Generic[Context]):
 
 					if not model_output.action or all(action.model_dump() == {} for action in model_output.action):
 						logger.warning('Model still returned empty after retry. Inserting safe noop action.')
-						action_instance = self.ActionModel(done={
-							'success': False,
-							'text': 'No next action returned by LLM!',
-						})
+						action_instance = self.ActionModel(
+							done={
+								'success': False,
+								'text': 'No next action returned by LLM!',
+							}
+						)
 						model_output.action = [action_instance]
 
 				# Check again for paused/stopped state after getting model output
