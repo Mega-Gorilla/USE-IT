@@ -1,0 +1,36 @@
+name: Test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    
+jobs:
+  tests:
+    name: ${{matrix.test}} 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test:
+        - browser/builtin_patchright
+        - browser/user_binary
+        - browser/cdp
+        - models/openai
+        - models/google
+        - models/anthropic
+        # - models/azure         # (requires AZURE_OPENAI_API_KEY set)
+        # - models/deepseek      # (requires DEEPSEEK_API_KEY set)
+        # - models/grok          # (requires GROK_API_KEY set)
+        # - functionality/click
+        # - functionality/tabs
+        # - functionality/input
+        
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+      - name: Run ${{ matrix.test }} test
+        run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
+
+
+
+      
