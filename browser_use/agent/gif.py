@@ -16,9 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Add Chinese support to the pictures on the GIF
 def decode_unicode_escapes_to_utf8(text: str) -> str:
-    """Decode Unicode escape sequences in a string."""
+    """Handle decoding any unicode escape sequences embedded in a string (needed to render non-ASCII languages like chinese or arabic in the GIF overlay text)"""
     if r'\u' not in text:
         return text  # doesnt have any unicode escape sequences that need to be decoded
     try:
