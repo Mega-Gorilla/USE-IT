@@ -94,7 +94,6 @@ CHROME_DETERMINISTIC_RENDERING_ARGS = [
 	'--disable-back-forward-cache',  # disable browsing navigation cache
 ]
 
-CHROME_DEBUGGING_ARG = '--remote-debugging-port=%(chrome_remote_debugging_port)s'
 
 CHROME_ARGS = [
 	# Profile data dir setup

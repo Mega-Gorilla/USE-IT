@@ -22,7 +22,6 @@ load_dotenv()
 from browser_use.browser.chrome import (
 	CHROME_ARGS,
 	CHROME_DEBUG_PORT,
-	CHROME_DEBUGGING_ARG,
 	CHROME_DETERMINISTIC_RENDERING_ARGS,
 	CHROME_DISABLE_SECURITY_ARGS,
 	CHROME_DOCKER_ARGS,
@@ -217,7 +216,7 @@ class Browser:
 		# Start a new Chrome instance
 		chrome_launch_args = [
 			*{  # remove duplicates (usually preserves the order, but not guaranteed)
-				CHROME_DEBUGGING_ARG % {'chrome_remote_debugging_port': self.config.chrome_remote_debugging_port},
+				f'--remote-debugging-port={self.config.chrome_remote_debugging_port}',
 				*CHROME_ARGS,
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
@@ -274,7 +273,7 @@ class Browser:
 			offset_x, offset_y = get_window_adjustments()
 
 		chrome_args = {
-			CHROME_DEBUGGING_ARG % {'chrome_remote_debugging_port': self.config.chrome_remote_debugging_port},
+			f'--remote-debugging-port={self.config.chrome_remote_debugging_port}',
 			*CHROME_ARGS,
 			*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 			*(CHROME_HEADLESS_ARGS if self.config.headless else []),
