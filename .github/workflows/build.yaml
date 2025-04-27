@@ -1,4 +1,4 @@
-name: Build
+name: Build and Test
 on:
   push:
   pull_request:
@@ -6,28 +6,54 @@ on:
 
 jobs:
   build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv and cache packages
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build the package
+        run: uv build --python 3.12
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifact
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  build_test:
     name: ${{ matrix.os }} • ${{ matrix.python-version }}
+    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+
       - name: Setup uv and cache packages
         uses: astral-sh/setup-uv@v5
-      - run: uv build
-      - name: Set up isolated venv and test import
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifact
+
+      - name: Set up venv and test for OS/Python versions
         shell: bash
         run: |
-          uv venv /tmp/testenv
+          uv venv /tmp/testenv --python ${{ matrix.python-version }}
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             . /tmp/testenv/Scripts/activate
           else
             source /tmp/testenv/bin/activate
           fi
-          uv pip install dist/*.whl
-          python -c "import browser_use; print('browser_use package is imported and functional!')" 
+          uv pip install *.whl
+          python -c 'from browser_use import Agent, Browser, Controller, ActionModel, ActionResult'
+         
