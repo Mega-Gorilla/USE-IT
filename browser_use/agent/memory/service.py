@@ -65,7 +65,7 @@ class Memory:
 		try:
 			# Optionally disable mem0 telemetry:
 			# https://github.com/mem0ai/mem0/blob/64c3d34deb056aff01126b855f1f0b655fd86ad1/mem0/memory/telemetry.py#L11-L12
-			if os.getenv('ANONYMIZED_TELEMETRY', 'true').lower() == 'false':
+			if os.getenv('ANONYMIZED_TELEMETRY', 'true').lower() in 'fn0':
 				os.environ['MEM0_TELEMETRY'] = 'False'
 			from mem0 import Memory as Mem0Memory
 		except ImportError:
