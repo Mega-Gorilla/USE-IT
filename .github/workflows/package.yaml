@@ -1,4 +1,4 @@
-name: build
+name: package
 on:
   push:
     branches:
@@ -26,7 +26,7 @@ jobs:
             dist/*.tar.gz
 
   build_test:
-    name: pip-install-${{ matrix.os }}-py-${{ matrix.python-version }}
+    name: pip-install-on-${{ matrix.os }}-py-${{ matrix.python-version }}
     needs: build
     runs-on: ${{ matrix.os }}
     strategy:
