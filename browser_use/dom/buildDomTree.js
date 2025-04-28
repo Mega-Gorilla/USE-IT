@@ -933,12 +933,6 @@
       return false;
     }
 
-    // treat any element with cursor:pointer as distinct (e.g. expansion icons)
-    const style = getCachedComputedStyle(element);
-    if (style && style.cursor === 'pointer') {
-      return true;
-    }
-
     const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute('role');
 
