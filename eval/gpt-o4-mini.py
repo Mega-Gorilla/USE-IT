@@ -10,7 +10,6 @@ async def run_agent(task: str, browser: Browser | None = None, max_steps: int = 
 	browser = browser or Browser()
 	llm = ChatOpenAI(
 		model='o4-mini-2025-04-16',
-		temperature=0.0,
 	)
 	agent = Agent(task=task, llm=llm, browser=browser)
 	result = await agent.run(max_steps=max_steps)
