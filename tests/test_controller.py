@@ -9,7 +9,17 @@ from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
 from browser_use.controller.service import Controller
-from browser_use.controller.views import ClickElementAction, GoToUrlAction, InputTextAction, NoParamsAction, ScrollAction
+from browser_use.controller.views import (
+	ClickElementAction,
+	CloseTabAction,
+	GoToUrlAction,
+	InputTextAction,
+	NoParamsAction,
+	OpenTabAction,
+	ScrollAction,
+	SearchGoogleAction,
+	SwitchTabAction,
+)
 
 
 class TestControllerIntegration:
@@ -24,8 +34,20 @@ class TestControllerIntegration:
 
 	@pytest.fixture(scope='module')
 	async def browser(self, event_loop):
-		"""Create and provide a Browser instance."""
-		browser_instance = Browser(config=BrowserConfig(headless=True, disable_security=True))
+		"""Create and provide a Browser instance with security disabled."""
+		browser_instance = Browser(
+			config=BrowserConfig(
+				headless=True,
+				disable_security=True,  # This disables web security features
+				browser_args=[
+					'--disable-web-security',
+					'--disable-features=IsolateOrigins,site-per-process',
+					'--disable-site-isolation-trials',
+					'--disable-features=BlockInsecurePrivateNetworkRequests',
+					'--disable-blink-features=AutomationControlled',
+				],
+			)
+		)
 		yield browser_instance
 		await browser_instance.close()
 
@@ -302,3 +324,105 @@ class TestControllerIntegration:
 
 		# Try to verify we're back on the first page, but don't fail the test if not
 		assert 'google.com' in final_url, f'Expected to return to Google but got {final_url}'
+
+	@pytest.mark.asyncio
+	async def test_navigation_chain(self, controller, browser_context):
+		"""Test navigating through multiple pages and back through history."""
+		# Set up a chain of navigation: Google -> Wikipedia -> GitHub
+		urls = ['https://google.com', 'https://en.wikipedia.org', 'https://github.com']
+
+		# Navigate to each page in sequence
+		for url in urls:
+			action_data = {'go_to_url': GoToUrlAction(url=url)}
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: Optional[GoToUrlAction] = None
+
+			await controller.act(GoToUrlActionModel(**action_data), browser_context)
+
+			# Verify current page
+			page = await browser_context.get_current_page()
+			assert url.split('//')[1] in page.url
+
+		# Go back twice and verify each step
+		for expected_url in reversed(urls[:-1]):
+			go_back_action = {'go_back': NoParamsAction()}
+
+			class GoBackActionModel(ActionModel):
+				go_back: Optional[NoParamsAction] = None
+
+			await controller.act(GoBackActionModel(**go_back_action), browser_context)
+			await asyncio.sleep(1)  # Wait for navigation to complete
+
+			page = await browser_context.get_current_page()
+			assert expected_url.split('//')[1] in page.url
+
+	@pytest.mark.asyncio
+	async def test_concurrent_tab_operations(self, controller, browser_context):
+		"""Test operations across multiple tabs."""
+		# Create two tabs with different content
+		urls = ['https://google.com', 'https://yahoo.com']
+
+		# First tab
+		goto_action1 = {'go_to_url': GoToUrlAction(url=urls[0])}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: Optional[GoToUrlAction] = None
+
+		await controller.act(GoToUrlActionModel(**goto_action1), browser_context)
+
+		# Open second tab
+		open_tab_action = {'open_tab': OpenTabAction(url=urls[1])}
+
+		class OpenTabActionModel(ActionModel):
+			open_tab: Optional[OpenTabAction] = None
+
+		await controller.act(OpenTabActionModel(**open_tab_action), browser_context)
+
+		# Verify we're on second tab
+		page = await browser_context.get_current_page()
+		assert urls[1].split('//')[1] in page.url
+
+		# Switch back to first tab
+		switch_tab_action = {'switch_tab': SwitchTabAction(page_id=0)}
+
+		class SwitchTabActionModel(ActionModel):
+			switch_tab: Optional[SwitchTabAction] = None
+
+		await controller.act(SwitchTabActionModel(**switch_tab_action), browser_context)
+
+		# Verify we're back on first tab
+		page = await browser_context.get_current_page()
+		assert urls[0].split('//')[1] in page.url
+
+		# Close the second tab
+		close_tab_action = {'close_tab': CloseTabAction(page_id=1)}
+
+		class CloseTabActionModel(ActionModel):
+			close_tab: Optional[CloseTabAction] = None
+
+		await controller.act(CloseTabActionModel(**close_tab_action), browser_context)
+
+		# Verify only one tab remains
+		tabs_info = await browser_context.get_tabs_info()
+		assert len(tabs_info) == 1
+		assert urls[0].split('//')[1] in tabs_info[0].url
+
+	@pytest.mark.asyncio
+	async def test_search_google_action(self, controller, browser_context):
+		"""Test the search_google action."""
+		# Execute search_google action
+		search_action = {'search_google': SearchGoogleAction(query='Python web automation')}
+
+		class SearchGoogleActionModel(ActionModel):
+			search_google: Optional[SearchGoogleAction] = None
+
+		result = await controller.act(SearchGoogleActionModel(**search_action), browser_context)
+
+		# Verify the result
+		assert isinstance(result, ActionResult)
+		assert 'Searched for "Python web automation" in Google' in result.extracted_content
+
+		# Verify we're on Google search results page
+		page = await browser_context.get_current_page()
+		assert 'google.com/search' in page.url
