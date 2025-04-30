@@ -1,15 +1,13 @@
 import json
 import logging
 from typing import List, Optional, Dict, Any
+from pathlib import Path 
 
 from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
 
 logger = logging.getLogger(__name__)
 
-class PlaywrightActionError(Exception):
-    """Custom exception for errors during Playwright script action execution."""
-    pass
 
 class PlaywrightScriptGenerator:
     """Generates a Playwright script from AgentHistoryList."""
@@ -106,9 +104,9 @@ class PlaywrightScriptGenerator:
         if self.context_config.has_touch is not None:
             options_dict["has_touch"] = self.context_config.has_touch
         if self.context_config.save_recording_path:
-             options_dict["record_video_dir"] = self.context_config.save_recording_path
+            options_dict["record_video_dir"] = self.context_config.save_recording_path
         if self.context_config.save_har_path:
-             options_dict["record_har_path"] = self.context_config.save_har_path
+            options_dict["record_har_path"] = self.context_config.save_har_path
 
         # Handle viewport/window size
         if self.context_config.no_viewport:
@@ -129,82 +127,8 @@ class PlaywrightScriptGenerator:
         return options_str
 
     def _get_imports_and_helpers(self) -> List[str]:
-        """Generates necessary import statements and helper functions."""
-        # Updated _try_locate_and_act to raise PlaywrightActionError on failure
-        try_locate_and_act_code = """
-class PlaywrightActionError(Exception):
-    \"\"\"Custom exception for errors during Playwright script action execution.\"\"\"
-    pass
-
-async def _try_locate_and_act(page: Page, selector: str, action_type: str, text: str | None = None, step_info: str = '') -> None:
-    \"\"\"
-    Attempts an action (click/fill) with XPath fallback by trimming prefixes.
-    Raises PlaywrightActionError if the action fails after all fallbacks.
-    \"\"\"
-    print(f"Attempting {action_type} ({step_info}) using selector: {repr(selector)}")
-    original_selector = selector
-    MAX_FALLBACKS = 50 # Increased fallbacks
-    # Increased timeouts for potentially slow pages
-    INITIAL_TIMEOUT = 10000 # Milliseconds for the first attempt (10 seconds)
-    FALLBACK_TIMEOUT = 1000 # Shorter timeout for fallback attempts (1 second)
-
-    try:
-        locator = page.locator(selector).first
-        if action_type == 'click':
-            await locator.click(timeout=INITIAL_TIMEOUT)
-        elif action_type == 'fill' and text is not None:
-            await locator.fill(text, timeout=INITIAL_TIMEOUT)
-        else:
-            # This case should ideally not happen if called correctly
-            raise PlaywrightActionError(f"Invalid action_type '{action_type}' or missing text for fill. ({step_info})")
-        print(f"  Action '{action_type}' successful with original selector.")
-        await page.wait_for_timeout(500) # Wait after successful action
-        return # Successful exit
-    except Exception as e:
-        print(f"  Warning: Action '{action_type}' failed with original selector ({repr(selector)}): {e}. Starting fallback...")
-
-        # Fallback only works for XPath selectors
-        if not selector.startswith('xpath='):
-            # Raise error immediately if not XPath, as fallback won't work
-            raise PlaywrightActionError(f"Action '{action_type}' failed. Fallback not possible for non-XPath selector: {repr(selector)}. ({step_info})")
-
-        xpath_parts = selector.split('=', 1)
-        if len(xpath_parts) < 2:
-             raise PlaywrightActionError(f"Action '{action_type}' failed. Could not extract XPath string from selector: {repr(selector)}. ({step_info})")
-        xpath = xpath_parts[1] # Correctly get the XPath string
-
-        segments = [seg for seg in xpath.split('/') if seg]
-
-        for i in range(1, min(MAX_FALLBACKS + 1, len(segments))):
-            trimmed_xpath_raw = '/'.join(segments[i:])
-            fallback_xpath = f'xpath=//{trimmed_xpath_raw}'
-
-            print(f'    Fallback attempt {i}/{MAX_FALLBACKS}: Trying selector: {repr(fallback_xpath)}')
-            try:
-                locator = page.locator(fallback_xpath).first
-                if action_type == 'click':
-                     await locator.click(timeout=FALLBACK_TIMEOUT)
-                elif action_type == 'fill' and text is not None:
-                    try:
-                        await locator.clear(timeout=FALLBACK_TIMEOUT)
-                        await page.wait_for_timeout(100)
-                    except Exception as clear_error:
-                         print(f"    Warning: Failed to clear field during fallback ({step_info}): {clear_error}")
-                    await locator.fill(text, timeout=FALLBACK_TIMEOUT)
-
-                print(f"    Action '{action_type}' successful with fallback selector: {repr(fallback_xpath)}")
-                await page.wait_for_timeout(500)
-                return # Successful exit after fallback
-            except Exception as fallback_e:
-                print(f'    Fallback attempt {i} failed: {fallback_e}')
-                if i == MAX_FALLBACKS:
-                    # Raise exception after exhausting fallbacks
-                    raise PlaywrightActionError(f"Action '{action_type}' failed after {MAX_FALLBACKS} fallback attempts. Original selector: {repr(original_selector)}. ({step_info})")
-
-    # This part should not be reachable if logic is correct, but added as safeguard
-    raise PlaywrightActionError(f"Action '{action_type}' failed unexpectedly for {repr(original_selector)}. ({step_info})")
-
-"""
+        """Generates necessary import statements (excluding helper functions)."""
+        # Return only the standard imports needed by the main script body
         return [
             "import asyncio",
             "import json",
@@ -218,18 +142,7 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
             "# Load environment variables",
             "load_dotenv(override=True)",
             "",
-            "# --- Helper Function for Replacing Sensitive Data ---",
-            "def replace_sensitive_data(text: str, sensitive_map: dict) -> str:",
-            '    """Replaces sensitive data placeholders in text."""',
-            "    if not isinstance(text, str): return text",
-            "    for placeholder, value in sensitive_map.items():",
-            "        replacement_value = str(value) if value is not None else ''",
-            "        text = text.replace(f'<secret>{placeholder}</secret>', replacement_value)",
-            "    return text",
-            "",
-            "# --- Helper Function for Robust Action Execution ---",
-            try_locate_and_act_code, # Include the updated helper
-            ""
+            # Helper function definitions are no longer here
         ]
 
     def _get_sensitive_data_definitions(self) -> List[str]:
@@ -274,7 +187,7 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
         # Fallback to CSS selector if XPath is missing
         css_selector = element_data.get('css_selector')
         if isinstance(css_selector, str) and css_selector.strip():
-             return css_selector # Use CSS selector as is
+            return css_selector # Use CSS selector as is
 
         logger.warning(f"Could not find a usable XPath or CSS selector for action index {action_index_in_step} (element index {element_data.get('highlight_index', 'N/A')}).")
         return None
@@ -420,44 +333,44 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
                 f'                print(f"  Warning: Tab with page_id {page_id} not found to close ({step_info_str})", file=sys.stderr)'
             ])
         else:
-             script_lines.append(f"            # Skipping close_tab ({step_info_str}): missing page_id")
+            script_lines.append(f"            # Skipping close_tab ({step_info_str}): missing page_id")
         return script_lines
 
     def _map_switch_tab(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
-         page_id = params.get('page_id')
-         script_lines = []
-         if page_id is not None:
-             script_lines.extend([
-                 f'            print(f"Switching to tab with page_id {page_id} ({step_info_str})")',
-                 f"            if {page_id} < len(context.pages):",
-                 f"                page = context.pages[{page_id}]",
-                 f"                await page.bring_to_front()",
-                 f"                await page.wait_for_load_state('load', timeout=15000)",
-                 f"                await page.wait_for_timeout(500)",
-                 f"            else:",
-                 f'                print(f"  Warning: Tab with page_id {page_id} not found to switch ({step_info_str})", file=sys.stderr)'
-             ])
-         else:
-             script_lines.append(f"            # Skipping switch_tab ({step_info_str}): missing page_id")
-         return script_lines
+        page_id = params.get('page_id')
+        script_lines = []
+        if page_id is not None:
+            script_lines.extend([
+                f'            print(f"Switching to tab with page_id {page_id} ({step_info_str})")',
+                f"            if {page_id} < len(context.pages):",
+                f"                page = context.pages[{page_id}]",
+                f"                await page.bring_to_front()",
+                f"                await page.wait_for_load_state('load', timeout=15000)",
+                f"                await page.wait_for_timeout(500)",
+                f"            else:",
+                f'                print(f"  Warning: Tab with page_id {page_id} not found to switch ({step_info_str})", file=sys.stderr)'
+            ])
+        else:
+            script_lines.append(f"            # Skipping switch_tab ({step_info_str}): missing page_id")
+        return script_lines
 
     def _map_search_google(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
-         query = params.get('query')
-         goto_timeout = self._get_goto_timeout()
-         script_lines = []
-         if query and isinstance(query, str):
-             clean_query = f"replace_sensitive_data({json.dumps(query)}, SENSITIVE_DATA)"
-             search_url_expression = f'f"https://www.google.com/search?q={{ urllib.parse.quote_plus({clean_query}) }}&udm=14"'
-             script_lines.extend([
-                 f'            search_url = {search_url_expression}',
-                 f'            print(f"Searching Google for query related to: {{ {clean_query} }} ({step_info_str})")',
-                 f"            await page.goto(search_url, timeout={goto_timeout})",
-                 f"            await page.wait_for_load_state('load', timeout={goto_timeout})",
-                 f"            await page.wait_for_timeout(1000)"
-             ])
-         else:
-             script_lines.append(f"            # Skipping search_google ({step_info_str}): missing or invalid query")
-         return script_lines
+        query = params.get('query')
+        goto_timeout = self._get_goto_timeout()
+        script_lines = []
+        if query and isinstance(query, str):
+            clean_query = f"replace_sensitive_data({json.dumps(query)}, SENSITIVE_DATA)"
+            search_url_expression = f'f"https://www.google.com/search?q={{ urllib.parse.quote_plus({clean_query}) }}&udm=14"'
+            script_lines.extend([
+                f'            search_url = {search_url_expression}',
+                f'            print(f"Searching Google for query related to: {{ {clean_query} }} ({step_info_str})")',
+                f"            await page.goto(search_url, timeout={goto_timeout})",
+                f"            await page.wait_for_load_state('load', timeout={goto_timeout})",
+                f"            await page.wait_for_timeout(1000)"
+            ])
+        else:
+            script_lines.append(f"            # Skipping search_google ({step_info_str}): missing or invalid query")
+        return script_lines
 
     def _map_drag_drop(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
         source_sel = params.get('element_source')
@@ -491,54 +404,54 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
         return [f"            # Action: extract_content (Goal: {goal}) - Skipped in Playwright script ({step_info_str})"]
 
     def _map_click_download_button(self, params: dict, history_item: dict, action_index_in_step: int, step_info_str: str, **kwargs) -> List[str]:
-         index = params.get('index')
-         selector = self._get_selector_for_action(history_item, action_index_in_step)
-         download_dir_in_script = "'./files'" # Default
-         if self.context_config and self.context_config.save_downloads_path:
-             download_dir_in_script = repr(self.context_config.save_downloads_path)
+        index = params.get('index')
+        selector = self._get_selector_for_action(history_item, action_index_in_step)
+        download_dir_in_script = "'./files'" # Default
+        if self.context_config and self.context_config.save_downloads_path:
+            download_dir_in_script = repr(self.context_config.save_downloads_path)
 
-         script_lines = []
-         if selector and index is not None:
-             script_lines.append(f'            print(f"Attempting to download file by clicking element ({selector}) ({step_info_str})")')
-             script_lines.append("            try:")
-             script_lines.append(f"                async with page.expect_download(timeout=120000) as download_info:") # 2 min timeout
-             step_info_for_download = f'{step_info_str} (triggering download)'
-             script_lines.append(f'                    await _try_locate_and_act(page, {json.dumps(selector)}, "click", step_info={json.dumps(step_info_for_download)})')
-             script_lines.append("                download = await download_info.value")
-             script_lines.append(f"                configured_download_dir = {download_dir_in_script}")
-             script_lines.append("                download_dir_path = Path(configured_download_dir).resolve()")
-             script_lines.append("                download_dir_path.mkdir(parents=True, exist_ok=True)")
-             script_lines.append("                base, ext = os.path.splitext(download.suggested_filename or f'download_{{len(list(download_dir_path.iterdir())) + 1}}.tmp')")
-             script_lines.append("                counter = 1")
-             script_lines.append("                download_path_obj = download_dir_path / f'{base}{ext}'")
-             script_lines.append("                while download_path_obj.exists():")
-             script_lines.append("                    download_path_obj = download_dir_path / f'{base}({{counter}}){ext}'")
-             script_lines.append("                    counter += 1")
-             script_lines.append("                await download.save_as(str(download_path_obj))")
-             script_lines.append("                print(f'  File downloaded successfully to: {str(download_path_obj)}')")
-             script_lines.append("            except PlaywrightActionError as pae:")
-             script_lines.append("                raise pae") # Re-raise to stop script
-             script_lines.append("            except Exception as download_err:")
-             script_lines.append(f"                raise PlaywrightActionError(f'Download failed for {step_info_str}: {{download_err}}') from download_err")
-         else:
-             script_lines.append(f"            # Skipping click_download_button ({step_info_str}): missing index ({index}) or selector ({selector})")
-         return script_lines
+        script_lines = []
+        if selector and index is not None:
+            script_lines.append(f'            print(f"Attempting to download file by clicking element ({selector}) ({step_info_str})")')
+            script_lines.append("            try:")
+            script_lines.append(f"                async with page.expect_download(timeout=120000) as download_info:") # 2 min timeout
+            step_info_for_download = f'{step_info_str} (triggering download)'
+            script_lines.append(f'                    await _try_locate_and_act(page, {json.dumps(selector)}, "click", step_info={json.dumps(step_info_for_download)})')
+            script_lines.append("                download = await download_info.value")
+            script_lines.append(f"                configured_download_dir = {download_dir_in_script}")
+            script_lines.append("                download_dir_path = Path(configured_download_dir).resolve()")
+            script_lines.append("                download_dir_path.mkdir(parents=True, exist_ok=True)")
+            script_lines.append("                base, ext = os.path.splitext(download.suggested_filename or f'download_{{len(list(download_dir_path.iterdir())) + 1}}.tmp')")
+            script_lines.append("                counter = 1")
+            script_lines.append("                download_path_obj = download_dir_path / f'{base}{ext}'")
+            script_lines.append("                while download_path_obj.exists():")
+            script_lines.append("                    download_path_obj = download_dir_path / f'{base}({{counter}}){ext}'")
+            script_lines.append("                    counter += 1")
+            script_lines.append("                await download.save_as(str(download_path_obj))")
+            script_lines.append("                print(f'  File downloaded successfully to: {str(download_path_obj)}')")
+            script_lines.append("            except PlaywrightActionError as pae:")
+            script_lines.append("                raise pae") # Re-raise to stop script
+            script_lines.append("            except Exception as download_err:")
+            script_lines.append(f"                raise PlaywrightActionError(f'Download failed for {step_info_str}: {{download_err}}') from download_err")
+        else:
+            script_lines.append(f"            # Skipping click_download_button ({step_info_str}): missing index ({index}) or selector ({selector})")
+        return script_lines
 
     def _map_done(self, params: dict, step_info_str: str, **kwargs) -> List[str]:
         script_lines = []
         if isinstance(params, dict):
-             final_text = params.get('text', '')
-             success_status = params.get('success', False)
-             escaped_final_text_with_placeholders = json.dumps(str(final_text))
-             script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
-             script_lines.append(f'            print(f"Agent reported success: {success_status}")')
-             script_lines.append(f'            # Final Message from agent (may contain placeholders):')
-             script_lines.append(f'            final_message = replace_sensitive_data({escaped_final_text_with_placeholders}, SENSITIVE_DATA)')
-             script_lines.append(f'            print(final_message)')
+            final_text = params.get('text', '')
+            success_status = params.get('success', False)
+            escaped_final_text_with_placeholders = json.dumps(str(final_text))
+            script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
+            script_lines.append(f'            print(f"Agent reported success: {success_status}")')
+            script_lines.append(f'            # Final Message from agent (may contain placeholders):')
+            script_lines.append(f'            final_message = replace_sensitive_data({escaped_final_text_with_placeholders}, SENSITIVE_DATA)')
+            script_lines.append(f'            print(final_message)')
         else:
-             script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
-             script_lines.append(f'            print("Success: N/A (invalid params)")')
-             script_lines.append(f'            print("Final Message: N/A (invalid params)")')
+            script_lines.append(f'            print("\\n--- Task marked as Done by agent ({step_info_str}) ---")')
+            script_lines.append(f'            print("Success: N/A (invalid params)")')
+            script_lines.append(f'            print("Final Message: N/A (invalid params)")')
         return script_lines
 
     def _map_action_to_playwright(self, action_dict: dict, history_item: dict, previous_history_item: Optional[dict], action_index_in_step: int, step_info_str: str) -> List[str]:
@@ -580,10 +493,29 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
         self._page_counter = 0 # Reset page counter for new script generation
 
         if not self._imports_helpers_added:
-             script_lines.extend(self._get_imports_and_helpers())
-             self._imports_helpers_added = True
+            script_lines.extend(self._get_imports_and_helpers())
+            self._imports_helpers_added = True
+
+        # Read helper script content
+        helper_script_path = Path(__file__).parent / 'playwright_script_helpers.py'
+        try:
+            with open(helper_script_path, 'r', encoding='utf-8') as f_helper:
+                helper_script_content = f_helper.read()
+        except FileNotFoundError:
+            logger.error(f"Helper script not found at {helper_script_path}. Cannot generate script.")
+            return "# Error: Helper script file missing."
+        except Exception as e:
+            logger.error(f"Error reading helper script {helper_script_path}: {e}")
+            return f"# Error: Could not read helper script: {e}"
+
 
         script_lines.extend(self._get_sensitive_data_definitions())
+
+        # Add the helper script content after imports and sensitive data
+        script_lines.append("\n# --- Helper Functions (from playwright_script_helpers.py) ---")
+        script_lines.append(helper_script_content)
+        script_lines.append("# --- End Helper Functions ---")
+
 
         # Generate browser launch and context creation code
         browser_launch_args = self._generate_browser_launch_args()
@@ -595,7 +527,7 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
 
         script_lines.extend([
             "async def run_generated_script():",
-            "    global SENSITIVE_DATA",
+            "    global SENSITIVE_DATA", # Ensure sensitive data is accessible
             "    async with async_playwright() as p:",
             "        browser = None",
             "        context = None",
@@ -637,14 +569,14 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
             ])
 
         script_lines.extend([
-             "            # Initial page handling",
-             "            if context.pages:",
-             "                page = context.pages[0]",
-             "                print('Using initial page provided by context.')",
-             "            else:",
-             "                page = await context.new_page()",
-             "                print('Created a new page as none existed.')",
-             "            print('\\n--- Starting Generated Script Execution ---')",
+            "            # Initial page handling",
+            "            if context.pages:",
+            "                page = context.pages[0]",
+            "                print('Using initial page provided by context.')",
+            "            else:",
+            "                page = await context.new_page()",
+            "                print('Created a new page as none existed.')",
+            "            print('\\n--- Starting Generated Script Execution ---')",
         ])
 
         action_counter = 0
