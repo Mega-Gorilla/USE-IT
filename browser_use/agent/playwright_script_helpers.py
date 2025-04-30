@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from playwright.async_api import Page
+from patchright.async_api import Page
 
 # --- Helper Function for Replacing Sensitive Data ---
 def replace_sensitive_data(text: str, sensitive_map: dict) -> str:
