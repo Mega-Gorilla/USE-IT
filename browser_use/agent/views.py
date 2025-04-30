@@ -11,10 +11,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-# Import necessary config types
 from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
-# --- End Import ---
 
 from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory

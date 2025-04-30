@@ -899,7 +899,6 @@ class Agent(Generic[Context]):
 				)
 			)
 
-			# --- Script Generation Call ---
 			if self.settings.save_playwright_script_path:
 				logger.info(f"Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}")
 				try:

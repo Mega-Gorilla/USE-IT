@@ -1,16 +1,12 @@
 import json
 import logging
-import os # Added os import
 from typing import List, Optional, Dict, Any
 
-# Import necessary config types
 from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
-# --- End Import ---
 
 logger = logging.getLogger(__name__)
 
-# Define a custom exception for action failures within the generated script
 class PlaywrightActionError(Exception):
     """Custom exception for errors during Playwright script action execution."""
     pass
