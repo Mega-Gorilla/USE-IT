@@ -43,30 +43,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Constants
-# Default height adjustment for browser chrome (title bar, tabs, etc.)
-# This can vary by platform, browser, and display settings
-BROWSER_CHROME_HEIGHT_DEFAULT = 85
-BROWSER_CHROME_HEIGHT_WINDOWS = 85
-BROWSER_CHROME_HEIGHT_MACOS = 80
-BROWSER_CHROME_HEIGHT_LINUX = 90
+import platform
 
-def get_browser_chrome_height() -> int:
-    """Determine appropriate browser chrome height based on platform"""
-    import platform
-    system = platform.system().lower()
-    
-    if system == 'darwin':
-        return BROWSER_CHROME_HEIGHT_MACOS
-    elif system == 'windows':
-        return BROWSER_CHROME_HEIGHT_WINDOWS
-    elif system == 'linux':
-        return BROWSER_CHROME_HEIGHT_LINUX
-    else:
-        return BROWSER_CHROME_HEIGHT_DEFAULT
-
-# Get the appropriate chrome height for current platform
-BROWSER_CHROME_HEIGHT = get_browser_chrome_height()
+BROWSER_NAVBAR_HEIGHT = {
+	'windows': 85,
+	'darwin': 80,
+	'linux': 90,
+}.get(platform.system().lower(), 85)
 
 
 class BrowserContextWindowSize(BaseModel):
@@ -476,19 +459,28 @@ class BrowserContext:
 			context = browser.contexts[0]
 			# For existing contexts, we need to set the viewport size manually
 			if context.pages and not self.browser.config.headless:
-				await self._set_viewport_size_for_page(context.pages[0])
+				for page in context.pages:
+					await self._set_viewport_size_for_page(page)
 		elif self.browser.config.browser_binary_path and len(browser.contexts) > 0 and not self.config.force_new_context:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
 			# For existing contexts, we need to set the viewport size manually
 			if context.pages and not self.browser.config.headless:
-				await self._set_viewport_size_for_page(context.pages[0])
+				for page in context.pages:
+					await self._set_viewport_size_for_page(page)
 		else:
 			kwargs = {}
 			# Set viewport for both headless and non-headless modes
 			kwargs['viewport'] = self.config.browser_window_size.model_dump()
 			# Important: set no_viewport to False to ensure the viewport size is applied
 			kwargs['no_viewport'] = False
+			# Only set viewport in headless mode, let window size define viewport in headful mode
+			if self.browser.config.headless:
+				kwargs['viewport'] = self.config.browser_window_size.model_dump()
+				kwargs['no_viewport'] = False
+			else:
+				# In headful mode, let the window size set the viewport
+				kwargs['no_viewport'] = True
 
 			if self.config.user_agent is not None:
 				kwargs['user_agent'] = self.config.user_agent
@@ -1757,14 +1749,14 @@ class BrowserContext:
 						'windowId': window_id_result['windowId'],
 						'bounds': {
 							'width': window_size['width'],
-							'height': window_size['height'] + BROWSER_CHROME_HEIGHT,  # Add height for browser chrome
-							'windowState': 'normal',  # Ensure window is in normal state (not minimized/maximized)
+							'height': window_size['height'] + BROWSER_NAVBAR_HEIGHT,  # Add height for browser chrome
+							'windowState': 'normal',  # Ensure window is not minimized/maximized
 						},
 					},
 				)
 
 				await cdp_session.detach()
-				logger.debug(f'Set window size to {window_size["width"]}x{window_size["height"] + BROWSER_CHROME_HEIGHT}')
+				logger.debug(f'Set window size to {window_size["width"]}x{window_size["height"] + BROWSER_NAVBAR_HEIGHT}')
 			except Exception as e:
 				logger.debug(f'CDP window resize failed: {e}')
 
@@ -1777,10 +1769,10 @@ class BrowserContext:
 						}
 						""",
 						window_size['width'],
-						window_size['height'] + BROWSER_CHROME_HEIGHT
+						window_size['height'] + BROWSER_NAVBAR_HEIGHT,
 					)
 					logger.debug(
-						f'Used JavaScript to set window size to {window_size["width"]}x{window_size["height"] + BROWSER_CHROME_HEIGHT}'
+						f'Used JavaScript to set window size to {window_size["width"]}x{window_size["height"] + BROWSER_NAVBAR_HEIGHT}'
 					)
 				except Exception as e:
 					logger.debug(f'JavaScript window resize failed: {e}')

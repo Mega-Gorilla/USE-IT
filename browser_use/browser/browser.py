@@ -321,7 +321,7 @@ class Browser:
 			args=args[self.config.browser_class],
 			proxy=self.config.proxy.model_dump() if self.config.proxy else None,
 			handle_sigterm=False,
-			handle_sigint=False
+			handle_sigint=False,
 		)
 		return browser
 
