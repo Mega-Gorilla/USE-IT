@@ -1,7 +1,5 @@
-from pathlib import Path
-from typing import Optional
-
 from patchright.async_api import Page
+
 
 # --- Helper Function for Replacing Sensitive Data ---
 def replace_sensitive_data(text: str, sensitive_map: dict) -> str:
@@ -21,12 +19,12 @@ class PlaywrightActionError(Exception):
 	pass
 
 
-async def _try_locate_and_act(page: Page, selector: str, action_type: str, text: str | None = None, step_info: str = '') -> None: 
+async def _try_locate_and_act(page: Page, selector: str, action_type: str, text: str | None = None, step_info: str = '') -> None:
 	"""
 	Attempts an action (click/fill) with XPath fallback by trimming prefixes.
 	Raises PlaywrightActionError if the action fails after all fallbacks.
 	"""
-	print(f"Attempting {action_type} ({step_info}) using selector: {repr(selector)}")
+	print(f'Attempting {action_type} ({step_info}) using selector: {repr(selector)}')
 	original_selector = selector
 	MAX_FALLBACKS = 50  # Increased fallbacks
 	# Increased timeouts for potentially slow pages
@@ -78,7 +76,7 @@ async def _try_locate_and_act(page: Page, selector: str, action_type: str, text:
 						await locator.clear(timeout=FALLBACK_TIMEOUT)
 						await page.wait_for_timeout(100)
 					except Exception as clear_error:
-						print(f"    Warning: Failed to clear field during fallback ({step_info}): {clear_error}")
+						print(f'    Warning: Failed to clear field during fallback ({step_info}): {clear_error}')
 					await locator.fill(text, timeout=FALLBACK_TIMEOUT)
 
 				print(f"    Action '{action_type}' successful with fallback selector: {repr(fallback_xpath)}")

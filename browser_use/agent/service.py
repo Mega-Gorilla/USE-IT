@@ -900,7 +900,9 @@ class Agent(Generic[Context]):
 			)
 
 			if self.settings.save_playwright_script_path:
-				logger.info(f"Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}")
+				logger.info(
+					f'Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}'
+				)
 				try:
 					# Extract sensitive data keys if sensitive_data is provided
 					keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
@@ -913,7 +915,7 @@ class Agent(Generic[Context]):
 					)
 				except Exception as script_gen_err:
 					# Log any error during script generation/saving
-					logger.error(f"Failed to save Playwright script: {script_gen_err}", exc_info=True)
+					logger.error(f'Failed to save Playwright script: {script_gen_err}', exc_info=True)
 
 			await self.close()
 

@@ -11,10 +11,10 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
+from browser_use.agent.message_manager.views import MessageManagerState
+from browser_use.agent.playwright_script_generator import PlaywrightScriptGenerator
 from browser_use.browser.browser import BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
-
-from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
 from browser_use.dom.history_tree_processor.service import (
@@ -23,7 +23,6 @@ from browser_use.dom.history_tree_processor.service import (
 	HistoryTreeProcessor,
 )
 from browser_use.dom.views import SelectorMap
-from browser_use.agent.playwright_script_generator import PlaywrightScriptGenerator
 
 ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto']
 REQUIRED_LLM_API_ENV_VARS = {
@@ -76,7 +75,8 @@ class AgentSettings(BaseModel):
 	extend_planner_system_message: Optional[str] = None
 
 	# Playwright script generation setting
-	save_playwright_script_path: Optional[str] = None # Path to save the generated Playwright script
+	save_playwright_script_path: Optional[str] = None  # Path to save the generated Playwright script
+
 
 class AgentState(BaseModel):
 	"""Holds all state information for an Agent"""
@@ -191,7 +191,6 @@ class AgentHistory(BaseModel):
 				elements.append(None)
 		return elements
 
-
 	def model_dump(self, **kwargs) -> Dict[str, Any]:
 		"""Custom serialization handling circular references"""
 
@@ -279,12 +278,7 @@ class AgentHistoryList(BaseModel):
 		"""
 		try:
 			serialized_history = self.model_dump()['history']
-			generator = PlaywrightScriptGenerator(
-				serialized_history,
-				sensitive_data_keys,
-				browser_config,
-				context_config
-			)
+			generator = PlaywrightScriptGenerator(serialized_history, sensitive_data_keys, browser_config, context_config)
 			script_content = generator.generate_script_content()
 			path_obj = Path(output_path)
 			path_obj.parent.mkdir(parents=True, exist_ok=True)
