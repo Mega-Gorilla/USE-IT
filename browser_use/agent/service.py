@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import gc
 import inspect
@@ -150,11 +148,9 @@ class Agent(Generic[Context]):
 		planner_interval: int = 1,  # Run planner every N steps
 		is_planner_reasoning: bool = False,
 		extend_planner_system_message: Optional[str] = None,
-		# Inject state
 		injected_agent_state: Optional[AgentState] = None,
-		#
 		context: Context | None = None,
-		# Memory settings
+		save_playwright_script_path: Optional[str] = None,
 		enable_memory: bool = True,
 		memory_config: Optional[MemoryConfig] = None,
 	):
@@ -188,6 +184,7 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
+			save_playwright_script_path=save_playwright_script_path,
 			extend_planner_system_message=extend_planner_system_message,
 		)
 
@@ -906,6 +903,24 @@ class Agent(Generic[Context]):
 					total_duration_seconds=self.state.history.total_duration_seconds(),
 				)
 			)
+
+			if self.settings.save_playwright_script_path:
+				logger.info(
+					f'Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}'
+				)
+				try:
+					# Extract sensitive data keys if sensitive_data is provided
+					keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
+					# Pass browser and context config to the saving method
+					self.state.history.save_as_playwright_script(
+						self.settings.save_playwright_script_path,
+						sensitive_data_keys=keys,
+						browser_config=self.browser.config,
+						context_config=self.browser_context.config,
+					)
+				except Exception as script_gen_err:
+					# Log any error during script generation/saving
+					logger.error(f'Failed to save Playwright script: {script_gen_err}', exc_info=True)
 
 			await self.close()
 
