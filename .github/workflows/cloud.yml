@@ -10,7 +10,6 @@ on:
       commit_hash:
         description: Git commit hash of the library to build the Cloud eval image for
         required: false
-        default: "${{ github.sha }}"
 
 jobs:
   eval_deploy:
