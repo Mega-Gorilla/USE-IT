@@ -15,10 +15,10 @@ jobs:
         with:
           github-token: ${{ secrets.TRIGGER_CLOUD_BUILD_GH_KEY }}
           script: |
-            const result = await github.rest.actions.createWorkflowDispatch({
+            const result = await github.rest.repos.createDispatchEvent({
               owner: 'browser-use',
               repo: 'cloud',
-              workflow_id: 'eval-deploy.yml',
-              ref: 'main'
+              event_type: 'trigger-workflow',
+              client_payload: {"commit_hash": "${{ github.sha }}"}
             })
             console.log(result)
