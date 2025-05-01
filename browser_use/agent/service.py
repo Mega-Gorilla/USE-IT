@@ -153,6 +153,7 @@ class Agent(Generic[Context]):
 		save_playwright_script_path: Optional[str] = None,
 		enable_memory: bool = True,
 		memory_config: Optional[MemoryConfig] = None,
+		source: Optional[str] = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -336,7 +337,8 @@ class Agent(Generic[Context]):
 		except Exception:
 			version = 'unknown'
 			source = 'unknown'
-
+		if self.source is not None:
+			source = self.source
 		logger.debug(f'Version: {version}, Source: {source}')
 		self.version = version
 		self.source = source
