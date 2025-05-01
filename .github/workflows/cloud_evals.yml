@@ -1,4 +1,4 @@
-name: Trigger Cloud Evals
+name: cloud_evals
 
 on:
   push:
