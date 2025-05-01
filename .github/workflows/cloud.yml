@@ -6,6 +6,11 @@ on:
       - main
       - 'releases/*'
   workflow_dispatch:
+    inputs:
+      commit_hash:
+        description: Git commit hash of the library to build the Cloud eval image for
+        required: false
+        default: "${{ github.sha }}"
 
 jobs:
   eval_deploy:
@@ -19,6 +24,6 @@ jobs:
               owner: 'browser-use',
               repo: 'cloud',
               event_type: 'trigger-workflow',
-              client_payload: {"commit_hash": "${{ github.sha }}"}
+              client_payload: {"commit_hash": "${{ github.event.inputs.commit_hash || github.sha }}"}
             })
             console.log(result)
