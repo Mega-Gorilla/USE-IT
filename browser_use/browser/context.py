@@ -471,16 +471,13 @@ class BrowserContext:
 		else:
 			kwargs = {}
 			# Set viewport for both headless and non-headless modes
-			kwargs['viewport'] = self.config.browser_window_size.model_dump()
-			# Important: set no_viewport to False to ensure the viewport size is applied
-			kwargs['no_viewport'] = False
-			# Only set viewport in headless mode, let window size define viewport in headful mode
 			if self.browser.config.headless:
 				kwargs['viewport'] = self.config.browser_window_size.model_dump()
 				kwargs['no_viewport'] = False
 			else:
-				# In headful mode, let the window size set the viewport
-				kwargs['no_viewport'] = True
+				# In headful mode, respect user setting for no_viewport if provided, otherwise default to True
+				kwargs['viewport'] = self.config.browser_window_size.model_dump()
+				kwargs['no_viewport'] = self.config.no_viewport if self.config.no_viewport is not None else True
 
 			if self.config.user_agent is not None:
 				kwargs['user_agent'] = self.config.user_agent
@@ -505,7 +502,7 @@ class BrowserContext:
 			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
 		# Resize the window for non-headless mode
-		if not self.browser.config.headless and not self.config.no_viewport:
+		if not self.browser.config.headless:
 			await self._resize_window(context)
 
 		# Load cookies if they exist
