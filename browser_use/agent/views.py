@@ -24,7 +24,7 @@ from browser_use.dom.history_tree_processor.service import (
 )
 from browser_use.dom.views import SelectorMap
 
-ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto']
+ToolCallingMethod = Literal['function_calling', 'json_mode', 'raw', 'auto', 'tools']
 REQUIRED_LLM_API_ENV_VARS = {
 	'ChatOpenAI': ['OPENAI_API_KEY'],
 	'AzureChatOpenAI': ['AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_KEY'],
