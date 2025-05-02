@@ -46,7 +46,7 @@ jobs:
         with:
           enable-cache: true
           activate-environment: true
-      - name: Setup virtual environment and install dependencies
+      - name: Install patchright chrome browser
         if: matrix.test == 'test_controller'
         run: |
           # Install patchright browsers
