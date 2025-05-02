@@ -46,10 +46,8 @@ jobs:
         with:
           enable-cache: true
           activate-environment: true
-      - name: Install patchright chrome browser
+
+      - run: uv run patchright install chrome
         if: matrix.test == 'test_controller'
-        run: |
-          # Install patchright browsers
-          uv run patchright install chrome
-      - name: Run tests
-        run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
+
+      - run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true

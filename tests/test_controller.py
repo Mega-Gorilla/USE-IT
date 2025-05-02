@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Optional
 
 import pytest
 from pydantic import BaseModel
@@ -64,7 +63,7 @@ class TestControllerIntegration:
 
 		# Create the ActionModel instance
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		action_model = GoToUrlActionModel(**action_data)
 
@@ -86,7 +85,7 @@ class TestControllerIntegration:
 		goto_action = {'go_to_url': GoToUrlAction(url='https://google.com')}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
 
@@ -94,7 +93,7 @@ class TestControllerIntegration:
 		scroll_action = {'scroll_down': ScrollAction(amount=200)}
 
 		class ScrollActionModel(ActionModel):
-			scroll_down: Optional[ScrollAction] = None
+			scroll_down: ScrollAction | None = None
 
 		# Execute scroll down
 		result = await controller.act(ScrollActionModel(**scroll_action), browser_context)
@@ -107,7 +106,7 @@ class TestControllerIntegration:
 		scroll_up_action = {'scroll_up': ScrollAction(amount=100)}
 
 		class ScrollUpActionModel(ActionModel):
-			scroll_up: Optional[ScrollAction] = None
+			scroll_up: ScrollAction | None = None
 
 		# Execute scroll up
 		result = await controller.act(ScrollUpActionModel(**scroll_up_action), browser_context)
@@ -156,7 +155,7 @@ class TestControllerIntegration:
 		goto_action = {'go_to_url': GoToUrlAction(url='https://google.com')}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
 
@@ -164,7 +163,7 @@ class TestControllerIntegration:
 		custom_action_data = {'custom_action': CustomParams(text='test_value')}
 
 		class CustomActionModel(ActionModel):
-			custom_action: Optional[CustomParams] = None
+			custom_action: CustomParams | None = None
 
 		# Execute the custom action
 		result = await controller.act(CustomActionModel(**custom_action_data), browser_context)
@@ -195,7 +194,7 @@ class TestControllerIntegration:
 		goto_action = {'go_to_url': GoToUrlAction(url='https://yahoo.com')}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
 
@@ -215,7 +214,7 @@ class TestControllerIntegration:
 		input_action = {'input_text': InputTextAction(index=mock_input_index, text='Python programming')}
 
 		class InputTextActionModel(ActionModel):
-			input_text: Optional[InputTextAction] = None
+			input_text: InputTextAction | None = None
 
 		# The actual input might fail if the page structure changes or in headless mode
 		# So we'll just verify the controller correctly processes the action
@@ -235,7 +234,7 @@ class TestControllerIntegration:
 		invalid_action = {'click_element_by_index': ClickElementAction(index=9999)}
 
 		class ClickActionModel(ActionModel):
-			click_element_by_index: Optional[ClickElementAction] = None
+			click_element_by_index: ClickElementAction | None = None
 
 		# This should fail since the element doesn't exist
 		with pytest.raises(Exception) as excinfo:
@@ -251,7 +250,7 @@ class TestControllerIntegration:
 		wait_action = {'wait': {'seconds': 1}}  # Corrected format
 
 		class WaitActionModel(ActionModel):
-			wait: Optional[dict] = None
+			wait: dict | None = None
 
 		# Record start time
 		start_time = time.time()
@@ -276,7 +275,7 @@ class TestControllerIntegration:
 		goto_action1 = {'go_to_url': GoToUrlAction(url='https://google.com')}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		await controller.act(GoToUrlActionModel(**goto_action1), browser_context)
 
@@ -299,7 +298,7 @@ class TestControllerIntegration:
 		go_back_action = {'go_back': NoParamsAction()}
 
 		class GoBackActionModel(ActionModel):
-			go_back: Optional[NoParamsAction] = None
+			go_back: NoParamsAction | None = None
 
 		result = await controller.act(GoBackActionModel(**go_back_action), browser_context)
 
@@ -329,7 +328,7 @@ class TestControllerIntegration:
 			action_data = {'go_to_url': GoToUrlAction(url=url)}
 
 			class GoToUrlActionModel(ActionModel):
-				go_to_url: Optional[GoToUrlAction] = None
+				go_to_url: GoToUrlAction | None = None
 
 			await controller.act(GoToUrlActionModel(**action_data), browser_context)
 
@@ -342,7 +341,7 @@ class TestControllerIntegration:
 			go_back_action = {'go_back': NoParamsAction()}
 
 			class GoBackActionModel(ActionModel):
-				go_back: Optional[NoParamsAction] = None
+				go_back: NoParamsAction | None = None
 
 			await controller.act(GoBackActionModel(**go_back_action), browser_context)
 			await asyncio.sleep(1)  # Wait for navigation to complete
@@ -360,7 +359,7 @@ class TestControllerIntegration:
 		goto_action1 = {'go_to_url': GoToUrlAction(url=urls[0])}
 
 		class GoToUrlActionModel(ActionModel):
-			go_to_url: Optional[GoToUrlAction] = None
+			go_to_url: GoToUrlAction | None = None
 
 		await controller.act(GoToUrlActionModel(**goto_action1), browser_context)
 
@@ -368,7 +367,7 @@ class TestControllerIntegration:
 		open_tab_action = {'open_tab': OpenTabAction(url=urls[1])}
 
 		class OpenTabActionModel(ActionModel):
-			open_tab: Optional[OpenTabAction] = None
+			open_tab: OpenTabAction | None = None
 
 		await controller.act(OpenTabActionModel(**open_tab_action), browser_context)
 
@@ -380,7 +379,7 @@ class TestControllerIntegration:
 		switch_tab_action = {'switch_tab': SwitchTabAction(page_id=0)}
 
 		class SwitchTabActionModel(ActionModel):
-			switch_tab: Optional[SwitchTabAction] = None
+			switch_tab: SwitchTabAction | None = None
 
 		await controller.act(SwitchTabActionModel(**switch_tab_action), browser_context)
 
@@ -392,7 +391,7 @@ class TestControllerIntegration:
 		close_tab_action = {'close_tab': CloseTabAction(page_id=1)}
 
 		class CloseTabActionModel(ActionModel):
-			close_tab: Optional[CloseTabAction] = None
+			close_tab: CloseTabAction | None = None
 
 		await controller.act(CloseTabActionModel(**close_tab_action), browser_context)
 
@@ -408,7 +407,7 @@ class TestControllerIntegration:
 		search_action = {'search_google': SearchGoogleAction(query='Python web automation')}
 
 		class SearchGoogleActionModel(ActionModel):
-			search_google: Optional[SearchGoogleAction] = None
+			search_google: SearchGoogleAction | None = None
 
 		result = await controller.act(SearchGoogleActionModel(**search_action), browser_context)
 

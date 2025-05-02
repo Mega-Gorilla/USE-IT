@@ -5,7 +5,7 @@ This script shows how to set a custom window size for the browser.
 
 import asyncio
 import sys
-from typing import Any, Dict
+from typing import Any
 
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContextConfig, BrowserContextWindowSize
@@ -86,7 +86,7 @@ async def main():
 			await browser.close()
 
 
-def validate_window_size(configured: Dict[str, Any], actual: Dict[str, Any]) -> None:
+def validate_window_size(configured: dict[str, Any], actual: dict[str, Any]) -> None:
 	"""Compare configured window size with actual size and report differences"""
 	# Allow for small differences due to browser chrome, scrollbars, etc.
 	width_diff = abs(configured['width'] - actual['width'])

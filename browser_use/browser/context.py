@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import anyio
 from patchright._impl._errors import TimeoutError
@@ -173,7 +173,7 @@ class BrowserContextConfig(BaseModel):
 	browser_window_size: BrowserContextWindowSize = Field(
 		default_factory=lambda: BrowserContextWindowSize(width=1280, height=1100)
 	)
-	no_viewport: Optional[bool] = None
+	no_viewport: bool | None = None
 
 	save_recording_path: str | None = None
 	save_downloads_path: str | None = None
@@ -277,7 +277,7 @@ class BrowserContext:
 		self,
 		browser: 'Browser',
 		config: BrowserContextConfig | None = None,
-		state: Optional[BrowserContextState] = None,
+		state: BrowserContextState | None = None,
 	):
 		self.context_id = str(uuid.uuid4())
 
@@ -1256,7 +1256,7 @@ class BrowserContext:
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
 	@time_execution_async('--get_locate_element')
-	async def get_locate_element(self, element: DOMElementNode) -> Optional[ElementHandle]:
+	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
 		current_frame = await self.get_current_page()
 
 		# Start with the target element and collect all parents
@@ -1301,7 +1301,7 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_xpath')
-	async def get_locate_element_by_xpath(self, xpath: str) -> Optional[ElementHandle]:
+	async def get_locate_element_by_xpath(self, xpath: str) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided XPath.
 		"""
@@ -1321,7 +1321,7 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_css_selector')
-	async def get_locate_element_by_css_selector(self, css_selector: str) -> Optional[ElementHandle]:
+	async def get_locate_element_by_css_selector(self, css_selector: str) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided CSS selector.
 		"""
@@ -1342,8 +1342,8 @@ class BrowserContext:
 
 	@time_execution_async('--get_locate_element_by_text')
 	async def get_locate_element_by_text(
-		self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None
-	) -> Optional[ElementHandle]:
+		self, text: str, nth: int | None = 0, element_type: str | None = None
+	) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
@@ -1424,7 +1424,7 @@ class BrowserContext:
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	@time_execution_async('--click_element_node')
-	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
+	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
 		"""
@@ -1493,7 +1493,7 @@ class BrowserContext:
 		for page_id, page in enumerate(session.context.pages):
 			try:
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
-			except asyncio.TimeoutError:
+			except TimeoutError:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
 				logger.debug('⚠  Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
