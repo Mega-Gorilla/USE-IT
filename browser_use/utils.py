@@ -137,30 +137,30 @@ class SignalHandler:
 
 		# Force immediate exit - more reliable than sys.exit()
 		print('\n\n🛑  Got second Ctrl+C. Exiting immediately...\n', file=stderr)
-		
+
 		# Reset terminal to a clean state by sending multiple escape sequences
 		# Order matters for terminal resets - we try different approaches
-		
+
 		# Reset terminal modes for both stdout and stderr
 		print('\033[?25h', end='', flush=True, file=stderr)  # Show cursor
 		print('\033[?25h', end='', flush=True)  # Show cursor
-		
+
 		# Reset text attributes and terminal modes
-		print('\033[0m', end='', flush=True, file=stderr)    # Reset text attributes
-		print('\033[0m', end='', flush=True)                 # Reset text attributes
-		
+		print('\033[0m', end='', flush=True, file=stderr)  # Reset text attributes
+		print('\033[0m', end='', flush=True)  # Reset text attributes
+
 		# Disable special input modes that may cause arrow keys to output control chars
-		print('\033[?1l', end='', flush=True, file=stderr)   # Reset cursor keys to normal mode
-		print('\033[?1l', end='', flush=True)                # Reset cursor keys to normal mode
-		
+		print('\033[?1l', end='', flush=True, file=stderr)  # Reset cursor keys to normal mode
+		print('\033[?1l', end='', flush=True)  # Reset cursor keys to normal mode
+
 		# Disable bracketed paste mode
 		print('\033[?2004l', end='', flush=True, file=stderr)
 		print('\033[?2004l', end='', flush=True)
-		
+
 		# Carriage return helps ensure a clean line
 		print('\r', end='', flush=True, file=stderr)
 		print('\r', end='', flush=True)
-		
+
 		os._exit(0)
 
 	def sigint_handler(self) -> None:
