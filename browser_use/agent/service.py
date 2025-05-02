@@ -53,9 +53,7 @@ from browser_use.dom.history_tree_processor.service import (
 from browser_use.exceptions import LLMException
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
-	AgentEndTelemetryEvent,
-	AgentRunTelemetryEvent,
-	AgentStepTelemetryEvent,
+	AgentTelemetryEvent,
 )
 from browser_use.utils import check_env_variables, time_execution_async, time_execution_sync
 
@@ -558,16 +556,6 @@ class Agent(Generic[Context]):
 
 		finally:
 			step_end_time = time.time()
-			actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
-			self.telemetry.capture(
-				AgentStepTelemetryEvent(
-					agent_id=self.state.agent_id,
-					step=self.state.n_steps,
-					actions=actions,
-					consecutive_failures=self.state.consecutive_failures,
-					step_error=[r.error for r in result if r.error] if result else ['No result'],
-				)
-			)
 			if not result:
 				return
 
@@ -757,15 +745,47 @@ class Agent(Generic[Context]):
 		logger.info(f'🚀 Starting task: {self.task}')
 
 		logger.debug(f'Version: {self.version}, Source: {self.source}')
+
+	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
+		"""Log the agent event for this run"""
+
+		# Prepare action_history data correctly
+		action_history_data = []
+		for item in self.state.history.history:
+			if item.model_output and item.model_output.action:
+				# Convert each ActionModel in the step to its dictionary representation
+				step_actions = [
+					action.model_dump(exclude_unset=True)
+					for action in item.model_output.action
+					if action  # Ensure action is not None if list allows it
+				]
+				action_history_data.append(step_actions)
+			else:
+				# Append None or [] if a step had no actions or no model output
+				action_history_data.append(None)
+
+		final_res = self.state.history.final_result()
+		final_result_str = json.dumps(final_res) if final_res is not None else None
+
 		self.telemetry.capture(
-			AgentRunTelemetryEvent(
-				agent_id=self.state.agent_id,
-				use_vision=self.settings.use_vision,
+			AgentTelemetryEvent(
 				task=self.task,
-				model_name=self.model_name,
-				chat_model_library=self.chat_model_library,
+				model=self.model_name,
+				model_provider=self.chat_model_library,
+				planner_llm=self.planner_model_name,
+				max_steps=max_steps,
+				max_actions_per_step=self.settings.max_actions_per_step,
+				use_vision=self.settings.use_vision,
+				use_validation=self.settings.validate_output,
 				version=self.version,
-				source=self.source,
+				action_errors=self.state.history.errors(),
+				action_history=action_history_data,
+				steps=self.state.n_steps,
+				total_input_tokens=self.state.history.total_input_tokens(),
+				total_duration_seconds=self.state.history.total_duration_seconds(),
+				success=self.state.history.is_successful(),
+				final_result_response=final_result_str,
+				error_message=agent_run_error,
 			)
 		)
 
@@ -800,6 +820,7 @@ class Agent(Generic[Context]):
 		"""Execute the task with maximum number of steps"""
 
 		loop = asyncio.get_event_loop()
+		agent_run_error: str | None = None  # Initialize error tracking variable
 
 		# Set up the Ctrl+C signal handler with callbacks specific to this agent
 		from browser_use.utils import SignalHandler
@@ -830,16 +851,19 @@ class Agent(Generic[Context]):
 				# Check if we should stop due to too many failures
 				if self.state.consecutive_failures >= self.settings.max_failures:
 					logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
+					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
 					break
 
 				# Check control flags before each step
 				if self.state.stopped:
 					logger.info('Agent stopped')
+					agent_run_error = 'Agent stopped programmatically'
 					break
 
 				while self.state.paused:
 					await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
 					if self.state.stopped:  # Allow stopping while paused
+						agent_run_error = 'Agent stopped programmatically while paused'
 						break
 
 				if on_step_start is not None:
@@ -859,12 +883,12 @@ class Agent(Generic[Context]):
 					await self.log_completion()
 					break
 			else:
-				error_message = 'Failed to complete task in maximum steps'
+				agent_run_error = 'Failed to complete task in maximum steps'
 
 				self.state.history.history.append(
 					AgentHistory(
 						model_output=None,
-						result=[ActionResult(error=error_message, include_in_memory=True)],
+						result=[ActionResult(error=agent_run_error, include_in_memory=True)],
 						state=BrowserStateHistory(
 							url='',
 							title='',
@@ -876,31 +900,30 @@ class Agent(Generic[Context]):
 					)
 				)
 
-				logger.info(f'❌ {error_message}')
+				logger.info(f'❌ {agent_run_error}')
 
 			return self.state.history
 
 		except KeyboardInterrupt:
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
 			logger.info('Got KeyboardInterrupt during execution, returning current history')
+			agent_run_error = 'KeyboardInterrupt'
 			return self.state.history
+
+		except Exception as e:
+			logger.error(f'Agent run failed with exception: {e}', exc_info=True)
+			agent_run_error = str(e)
+			raise e
 
 		finally:
 			# Unregister signal handlers before cleanup
 			signal_handler.unregister()
 
-			self.telemetry.capture(
-				AgentEndTelemetryEvent(
-					agent_id=self.state.agent_id,
-					is_done=self.state.history.is_done(),
-					success=self.state.history.is_successful(),
-					steps=self.state.n_steps,
-					max_steps_reached=self.state.n_steps >= max_steps,
-					errors=self.state.history.errors(),
-					total_input_tokens=self.state.history.total_input_tokens(),
-					total_duration_seconds=self.state.history.total_duration_seconds(),
-				)
-			)
+			try:
+				self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
+				logger.info('Agent run telemetry logged.')
+			except Exception as log_e:  # Catch potential errors during logging itself
+				logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 
 			await self.close()
 
