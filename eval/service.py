@@ -544,7 +544,13 @@ async def run_agent_with_tracing(
 
 		browser = browser or Browser()
 
-		agent = Agent(task=task.confirmed_task, llm=llm, browser=browser, use_vision=use_vision)
+		agent = Agent(
+			task=task.confirmed_task,
+			llm=llm,
+			browser=browser,
+			use_vision=use_vision,
+			source='eval_platform',  # Override source detection
+		)
 
 		# Pass our hook functions
 		result = await agent.run(max_steps=max_steps, on_step_start=tracker.on_step_start, on_step_end=tracker.on_step_end)

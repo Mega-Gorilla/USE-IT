@@ -153,6 +153,7 @@ class Agent(Generic[Context]):
 		save_playwright_script_path: Optional[str] = None,
 		enable_memory: bool = True,
 		memory_config: Optional[MemoryConfig] = None,
+		source: Optional[str] = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -197,7 +198,7 @@ class Agent(Generic[Context]):
 
 		# Action setup
 		self._setup_action_models()
-		self._set_browser_use_version_and_source()
+		self._set_browser_use_version_and_source(source)
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 
 		# Model setup
@@ -311,7 +312,7 @@ class Agent(Generic[Context]):
 				self.settings.message_context = f'Available actions: {self.unfiltered_actions}'
 		return self.settings.message_context
 
-	def _set_browser_use_version_and_source(self) -> None:
+	def _set_browser_use_version_and_source(self, source_override: Optional[str] = None) -> None:
 		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
 		try:
 			# First check for repository-specific files
@@ -336,7 +337,8 @@ class Agent(Generic[Context]):
 		except Exception:
 			version = 'unknown'
 			source = 'unknown'
-
+		if source_override is not None:
+			source = source_override
 		logger.debug(f'Version: {version}, Source: {source}')
 		self.version = version
 		self.source = source
