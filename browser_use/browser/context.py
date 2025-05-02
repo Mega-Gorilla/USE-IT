@@ -498,6 +498,8 @@ class BrowserContext:
 				timezone_id=self.config.timezone_id,
 			)
 
+		await context.grant_permissions(['clipboard-read', 'clipboard-write', 'geolocation'])
+
 		if self.config.trace_path:
 			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
