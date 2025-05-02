@@ -210,57 +210,11 @@ class CachedStateClickableElementsHashes:
 
 class BrowserSession:
 	def __init__(self, context: PlaywrightBrowserContext, cached_state: BrowserState | None = None):
-		init_script = """
-			(() => {
-				if (!window.getEventListeners) {
-					window.getEventListeners = function (node) {
-						return node.__listeners || {};
-					};
-
-					// Save the original addEventListener
-					const originalAddEventListener = Element.prototype.addEventListener;
-
-					const eventProxy = {
-						addEventListener: function (type, listener, options = {}) {
-							// Initialize __listeners if not exists
-							const defaultOptions = { once: false, passive: false, capture: false };
-							if(typeof options === 'boolean') {
-								options = { capture: options };
-							}
-							options = { ...defaultOptions, ...options };
-							if (!this.__listeners) {
-								this.__listeners = {};
-							}
-
-							// Initialize array for this event type if not exists
-							if (!this.__listeners[type]) {
-								this.__listeners[type] = [];
-							}
-
-
-							// Add the listener to __listeners
-							this.__listeners[type].push({
-								listener: listener,
-								type: type,
-								...options
-							});
-
-							// Call original addEventListener using the saved reference
-							return originalAddEventListener.call(this, type, listener, options);
-						}
-					};
-
-					Element.prototype.addEventListener = eventProxy.addEventListener;
-				}
-			})()
-			"""
 		self.active_tab = None
 		self.context = context
 		self.cached_state = cached_state
 
 		self.cached_state_clickable_elements_hashes: CachedStateClickableElementsHashes | None = None
-
-		self.context.on('page', lambda page: page.add_init_script(init_script))
 
 
 @dataclass
@@ -527,9 +481,7 @@ class BrowserContext:
 				except json.JSONDecodeError as e:
 					logger.error(f'Failed to parse cookies file: {str(e)}')
 
-		# Expose anti-detection scripts
-		await context.add_init_script(
-			"""
+		init_script = """
 			// Permissions
 			const originalQuery = window.navigator.permissions.query;
 			window.navigator.permissions.query = (parameters) => (
@@ -537,9 +489,45 @@ class BrowserContext:
 					Promise.resolve({ state: Notification.permission }) :
 					originalQuery(parameters)
 			);
+			(() => {
+				if (window._eventListenerTrackerInitialized) return;
+				window._eventListenerTrackerInitialized = true;
 
+				const originalAddEventListener = EventTarget.prototype.addEventListener;
+				const eventListenersMap = new WeakMap();
+
+				EventTarget.prototype.addEventListener = function(type, listener, options) {
+					if (typeof listener === "function") {
+						let listeners = eventListenersMap.get(this);
+						if (!listeners) {
+							listeners = [];
+							eventListenersMap.set(this, listeners);
+						}
+
+						listeners.push({
+							type,
+							listener,
+							listenerPreview: listener.toString().slice(0, 100),
+							options
+						});
+					}
+
+					return originalAddEventListener.call(this, type, listener, options);
+				};
+
+				window.getEventListenersForNode = (node) => {
+					const listeners = eventListenersMap.get(node) || [];
+					return listeners.map(({ type, listenerPreview, options }) => ({
+						type,
+						listenerPreview,
+						options
+					}));
+				};
+			})();
 			"""
-		)
+
+		# Expose anti-detection scripts
+		await context.add_init_script(init_script)
 
 		return context
 
