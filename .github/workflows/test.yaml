@@ -38,8 +38,18 @@ jobs:
         - functionality/memory
         - functionality/planner
         - functionality/hooks
+        - test_controller
         
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          activate-environment: true
+      - name: Install patchright chrome browser
+        if: matrix.test == 'test_controller'
+        run: |
+          # Install patchright browsers
+          uv run patchright install chrome
+      - name: Run tests
+        run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py || true
