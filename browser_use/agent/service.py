@@ -385,7 +385,13 @@ class Agent(Generic[Context]):
 			elif self.chat_model_library == 'ChatOpenAI':
 				return 'function_calling'
 			elif self.chat_model_library == 'AzureChatOpenAI':
-				return 'function_calling'
+				# Azure OpenAI API requires 'tools' parameter for GPT-4
+				# The error 'content must be either a string or an array' occurs when 
+				# the API expects a tools array but gets something else
+				if 'gpt-4' in self.model_name.lower():
+					return 'tools'
+				else:
+					return 'function_calling'
 			else:
 				return None
 		else:
@@ -502,7 +508,6 @@ class Agent(Generic[Context]):
 						model_output.action = [action_instance]
 
 				# Check again for paused/stopped state after getting model output
-				# This is needed in case Ctrl+C was pressed during the get_next_action call
 				await self._raise_if_stopped_or_paused()
 
 				self.state.n_steps += 1
