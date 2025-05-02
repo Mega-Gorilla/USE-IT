@@ -386,7 +386,7 @@ class Agent(Generic[Context]):
 				return 'function_calling'
 			elif self.chat_model_library == 'AzureChatOpenAI':
 				# Azure OpenAI API requires 'tools' parameter for GPT-4
-				# The error 'content must be either a string or an array' occurs when 
+				# The error 'content must be either a string or an array' occurs when
 				# the API expects a tools array but gets something else
 				if 'gpt-4' in self.model_name.lower():
 					return 'tools'
