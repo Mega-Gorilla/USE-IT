@@ -50,7 +50,7 @@ def test_cases() -> List[Dict[str, Any]]:
 	file_path = os.path.join(os.path.dirname(__file__), 'mind2web_data/processed.json')
 	logger.info(f'Loading test cases from {file_path}')
 
-	with open(file_path, 'r') as f:
+	with open(file_path) as f:
 		data = json.load(f)
 
 	subset = data[:TEST_SUBSET_SIZE]

@@ -62,7 +62,7 @@ def save_jobs(job: Job):
 
 @controller.action('Read jobs from file')
 def read_jobs():
-	with open('jobs.csv', 'r') as f:
+	with open('jobs.csv') as f:
 		return f.read()
 
 

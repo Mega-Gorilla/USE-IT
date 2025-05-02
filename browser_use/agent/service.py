@@ -944,7 +944,7 @@ class Agent(Generic[Context]):
 		results = []
 
 		cached_selector_map = await self.browser_context.get_selector_map()
-		cached_path_hashes = set(e.hash.branch_path_hash for e in cached_selector_map.values())
+		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
 		await self.browser_context.remove_highlights()
 
@@ -964,7 +964,7 @@ class Agent(Generic[Context]):
 					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
 					break
 
-				new_path_hashes = set(e.hash.branch_path_hash for e in new_selector_map.values())
+				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
 				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
 					# next action requires index but there are new elements on the page
 					msg = f'Something new appeared after action {i} / {len(actions)}'

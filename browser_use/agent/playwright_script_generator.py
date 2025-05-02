@@ -552,7 +552,7 @@ class PlaywrightScriptGenerator:
 		# Read helper script content
 		helper_script_path = Path(__file__).parent / 'playwright_script_helpers.py'
 		try:
-			with open(helper_script_path, 'r', encoding='utf-8') as f_helper:
+			with open(helper_script_path, encoding='utf-8') as f_helper:
 				helper_script_content = f_helper.read()
 		except FileNotFoundError:
 			logger.error(f'Helper script not found at {helper_script_path}. Cannot generate script.')
