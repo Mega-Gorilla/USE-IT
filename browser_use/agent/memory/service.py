@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+import os
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
@@ -62,6 +62,9 @@ class Memory:
 
 		# Check for required packages
 		try:
+			# also disable mem0's telemetry when ANONYMIZED_TELEMETRY=False
+			if os.getenv('ANONYMIZED_TELEMETRY', 'true').lower()[0] in 'fn0':
+				os.environ['MEM0_TELEMETRY'] = 'False'
 			from mem0 import Memory as Mem0Memory
 		except ImportError:
 			raise ImportError('mem0 is required when enable_memory=True. Please install it with `pip install mem0`.')
@@ -131,7 +134,7 @@ class Memory:
 		self.message_manager.state.history.current_tokens += memory_tokens
 		logger.info(f'Messages consolidated: {len(messages_to_process)} messages converted to procedural memory')
 
-	def _create(self, messages: List[BaseMessage], current_step: int) -> Optional[str]:
+	def _create(self, messages: list[BaseMessage], current_step: int) -> str | None:
 		parsed_messages = convert_to_openai_messages(messages)
 		try:
 			results = self.mem0.add(

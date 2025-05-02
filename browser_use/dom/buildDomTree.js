@@ -211,7 +211,7 @@
         container.style.left = "0";
         container.style.width = "100%";
         container.style.height = "100%";
-        container.style.zIndex = "2147483647";
+        container.style.zIndex = "2147483640";
         container.style.backgroundColor = 'transparent';
         document.body.appendChild(container);
       }

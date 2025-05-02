@@ -133,32 +133,28 @@ Tell your computer what to do, and it gets it done.
 
 ### Agent
 
-- [ ] Improve agent memory (summarize, compress, RAG, etc.)
+- [ ] Improve agent memory to handle +100 steps
 - [ ] Enhance planning capabilities (load website specific context)
 - [ ] Reduce token consumption (system prompt, DOM state)
 
 ### DOM Extraction
 
-- [ ] Improve extraction for datepickers, dropdowns, special elements
-- [ ] Improve state representation for UI elements
+- [ ] Enable detection for all possible UI elements
+- [ ] Improve state representation for UI elements so that all LLMs can understand what's on the page
 
-### Rerunning tasks
-
-- [ ] LLM as fallback
-- [ ] Make it easy to define workflow templates where LLM fills in the details
-- [ ] Return playwright script from the agent
-
-### Datasets
-
-- [ ] Create datasets for complex tasks
-- [ ] Benchmark various models against each other
-- [ ] Fine-tuning models for specific tasks
+### Workflows
+- [ ] Let user record a workflow - which we can rerun with browser-use as a fallback
+- [ ] Make rerunning of workflows work, even if pages change
 
 ### User Experience
 
-- [ ] Human-in-the-loop execution
-- [ ] Improve the generated GIF quality
-- [ ] Create various demos for tutorial execution, job application, QA testing, social media, etc.
+- [ ] Create various templates for tutorial execution, job application, QA testing, social media, etc. which users can just copy & paste.
+- [ ] Improve docs
+- [ ] Make it faster
+
+### Parallelization
+- [ ] Human work is sequential. The real power of a browser agent comes into reality if we can parallelize similar tasks. For example, if you want to find contact information for 100 companies, this can all be done in parallel and reported back to a main agent, which processes the results and kicks off parallel subtasks again.
+
 
 ## Contributing
 
@@ -172,13 +168,6 @@ To learn more about the library, check out the [local setup 📕](https://docs.b
 `main` is the primary development branch with frequent changes. For production use, install a stable [versioned release](https://github.com/browser-use/browser-use/releases) instead.
 
 ---
-
-## Cooperations
-
-We are forming a commission to define best practices for UI/UX design for browser agents.
-Together, we're exploring how software redesign improves the performance of AI agents and gives these companies a competitive advantage by designing their existing software to be at the forefront of the agent age.
-
-Email [Toby](mailto:tbiddle@loop11.com?subject=I%20want%20to%20join%20the%20UI/UX%20commission%20for%20AI%20agents&body=Hi%20Toby%2C%0A%0AI%20found%20you%20in%20the%20browser-use%20GitHub%20README.%0A%0A) to apply for a seat on the committee.
 
 ## Swag
 
