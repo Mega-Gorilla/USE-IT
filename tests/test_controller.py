@@ -39,13 +39,6 @@ class TestControllerIntegration:
 			config=BrowserConfig(
 				headless=True,
 				disable_security=True,  # This disables web security features
-				browser_args=[
-					'--disable-web-security',
-					'--disable-features=IsolateOrigins,site-per-process',
-					'--disable-site-isolation-trials',
-					'--disable-features=BlockInsecurePrivateNetworkRequests',
-					'--disable-blink-features=AutomationControlled',
-				],
 			)
 		)
 		yield browser_instance
