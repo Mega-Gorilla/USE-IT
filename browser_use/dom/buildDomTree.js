@@ -673,6 +673,11 @@
     const role = element.getAttribute("role");
     const ariaRole = element.getAttribute("aria-role");
 
+    // Check for contenteditable attribute
+    if (element.getAttribute("contenteditable") === "true" || element.isContentEditable) {
+      return true;
+    }
+    
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
       element.classList.contains("button") ||
@@ -904,7 +909,7 @@
       element.hasAttribute("tabindex") ||
       element.hasAttribute("aria-") ||
       element.hasAttribute("data-action") ||
-      element.getAttribute("contenteditable") == "true";
+      element.getAttribute("contenteditable") === "true";
 
     return hasQuickInteractiveAttr;
   }
