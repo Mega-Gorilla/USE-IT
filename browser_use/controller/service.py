@@ -728,6 +728,82 @@ class Controller(Generic[Context]):
 				logger.error(error_msg)
 				return ActionResult(error=error_msg, include_in_memory=True)
 
+		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['sheets.google.com'])
+		async def get_sheet_contents(browser: BrowserContext):
+			page = await browser.get_current_page()
+
+			# select all cells
+			await page.keyboard.press('Enter')
+			await page.keyboard.press('Escape')
+			await page.keyboard.press('ControlOrMeta+A')
+			await page.keyboard.press('ControlOrMeta+C')
+
+			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
+			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
+
+		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['sheets.google.com'])
+		async def select_cell_or_range(browser: BrowserContext, cell_or_range: str):
+			page = await browser.get_current_page()
+
+			await page.keyboard.press('Enter')  # make sure we dont delete current cell contents if we were last editing
+			await page.keyboard.press('Escape')  # to clear current focus (otherwise select range popup is additive)
+			await asyncio.sleep(0.1)
+			await page.keyboard.press('Home')  # move cursor to the top left of the sheet first
+			await page.keyboard.press('ArrowUp')
+			await asyncio.sleep(0.1)
+			await page.keyboard.press('Control+G')  # open the goto range popup
+			await asyncio.sleep(0.2)
+			await page.keyboard.type(cell_or_range, delay=0.05)
+			await asyncio.sleep(0.2)
+			await page.keyboard.press('Enter')
+			await asyncio.sleep(0.2)
+			await page.keyboard.press('Escape')  # to make sure the popup still closes in the case where the jump failed
+			return ActionResult(extracted_content=f'Selected cell {cell_or_range}', include_in_memory=False)
+
+		@self.registry.action(
+			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['sheets.google.com']
+		)
+		async def get_range_contents(browser: BrowserContext, cell_or_range: str):
+			page = await browser.get_current_page()
+
+			await select_cell_or_range(browser, cell_or_range)
+
+			await page.keyboard.press('ControlOrMeta+C')
+			await asyncio.sleep(0.1)
+			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
+			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
+
+		@self.registry.action('Google Sheets: Clear the currently selected cells', domains=['sheets.google.com'])
+		async def clear_selected_range(browser: BrowserContext):
+			page = await browser.get_current_page()
+
+			await page.keyboard.press('Backspace')
+			return ActionResult(extracted_content='Cleared selected range', include_in_memory=False)
+
+		@self.registry.action('Google Sheets: Input text into the currently selected cell', domains=['sheets.google.com'])
+		async def input_selected_cell_text(browser: BrowserContext, text: str):
+			page = await browser.get_current_page()
+
+			await page.keyboard.type(text, delay=0.1)
+			await page.keyboard.press('Enter')  # make sure to commit the input so it doesn't get overwritten by the next action
+			await page.keyboard.press('ArrowUp')
+			return ActionResult(extracted_content=f'Inputted text {text}', include_in_memory=False)
+
+		@self.registry.action('Google Sheets: Batch update a range of cells', domains=['sheets.google.com'])
+		async def update_range_contents(browser: BrowserContext, range: str, new_contents_tsv: str):
+			page = await browser.get_current_page()
+
+			await select_cell_or_range(browser, range)
+
+			# simulate paste event from clipboard with TSV content
+			await page.evaluate(f"""
+				const clipboardData = new DataTransfer();
+				clipboardData.setData('text/plain', `{new_contents_tsv}`);
+				document.activeElement.dispatchEvent(new ClipboardEvent('paste', {{clipboardData}}));
+			""")
+
+			return ActionResult(extracted_content=f'Updated cell {range} with {new_contents_tsv}', include_in_memory=False)
+
 	# Register ---------------------------------------------------------------
 
 	def action(self, description: str, **kwargs):
