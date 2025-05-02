@@ -11,7 +11,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,8 +46,8 @@ class Job(BaseModel):
 	link: str
 	company: str
 	fit_score: float
-	location: Optional[str] = None
-	salary: Optional[str] = None
+	location: str | None = None
+	salary: str | None = None
 
 
 @controller.action('Save jobs to file - with a score how well it fits to my profile', param_model=Job)

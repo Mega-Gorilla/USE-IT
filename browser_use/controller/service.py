@@ -3,7 +3,7 @@ import enum
 import json
 import logging
 import re
-from typing import Dict, Generic, Optional, Tuple, Type, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
@@ -42,7 +42,7 @@ class Controller(Generic[Context]):
 	def __init__(
 		self,
 		exclude_actions: list[str] = [],
-		output_model: Optional[Type[BaseModel]] = None,
+		output_model: type[BaseModel] | None = None,
 	):
 		self.registry = Registry[Context](exclude_actions)
 
@@ -527,7 +527,7 @@ class Controller(Generic[Context]):
 				page: Page,
 				source_selector: str,
 				target_selector: str,
-			) -> Tuple[Optional[ElementHandle], Optional[ElementHandle]]:
+			) -> tuple[ElementHandle | None, ElementHandle | None]:
 				"""Get source and target elements with appropriate error handling."""
 				source_element = None
 				target_element = None
@@ -561,9 +561,9 @@ class Controller(Generic[Context]):
 			async def get_element_coordinates(
 				source_element: ElementHandle,
 				target_element: ElementHandle,
-				source_position: Optional[Position],
-				target_position: Optional[Position],
-			) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
+				source_position: Position | None,
+				target_position: Position | None,
+			) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
 				"""Get coordinates from elements with appropriate error handling."""
 				source_coords = None
 				target_coords = None
@@ -603,7 +603,7 @@ class Controller(Generic[Context]):
 				target_y: int,
 				steps: int,
 				delay_ms: int,
-			) -> Tuple[bool, str]:
+			) -> tuple[bool, str]:
 				"""Execute the drag operation with comprehensive error handling."""
 				try:
 					# Try to move to source position
@@ -646,10 +646,10 @@ class Controller(Generic[Context]):
 
 			try:
 				# Initialize variables
-				source_x: Optional[int] = None
-				source_y: Optional[int] = None
-				target_x: Optional[int] = None
-				target_y: Optional[int] = None
+				source_x: int | None = None
+				source_y: int | None = None
+				target_x: int | None = None
+				target_y: int | None = None
 
 				# Normalize parameters
 				steps = max(1, params.steps or 10)
@@ -745,9 +745,9 @@ class Controller(Generic[Context]):
 		action: ActionModel,
 		browser_context: BrowserContext,
 		#
-		page_extraction_llm: Optional[BaseChatModel] = None,
-		sensitive_data: Optional[Dict[str, str]] = None,
-		available_file_paths: Optional[list[str]] = None,
+		page_extraction_llm: BaseChatModel | None = None,
+		sensitive_data: dict[str, str] | None = None,
+		available_file_paths: list[str] | None = None,
 		#
 		context: Context | None = None,
 	) -> ActionResult:

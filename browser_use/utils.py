@@ -4,9 +4,10 @@ import os
 import platform
 import signal
 import time
+from collections.abc import Callable, Coroutine
 from functools import wraps
 from sys import stderr
-from typing import Any, Callable, Coroutine, List, Optional, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,12 @@ class SignalHandler:
 
 	def __init__(
 		self,
-		loop: Optional[asyncio.AbstractEventLoop] = None,
-		pause_callback: Optional[Callable[[], None]] = None,
-		resume_callback: Optional[Callable[[], None]] = None,
-		custom_exit_callback: Optional[Callable[[], None]] = None,
+		loop: asyncio.AbstractEventLoop | None = None,
+		pause_callback: Callable[[], None] | None = None,
+		resume_callback: Callable[[], None] | None = None,
+		custom_exit_callback: Callable[[], None] | None = None,
 		exit_on_second_int: bool = True,
-		interruptible_task_patterns: List[str] = None,
+		interruptible_task_patterns: list[str] = None,
 	):
 		"""
 		Initialize the signal handler.
