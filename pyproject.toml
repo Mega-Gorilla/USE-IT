@@ -36,6 +36,9 @@ dependencies = [
     "psutil>=7.0.0",
     "faiss-cpu>=1.9.0",
     "mem0ai==0.1.93",
+    "rich>=13.7.1",
+    "click>=8.1.7",
+    "textual>=0.47.1",
 ]
 # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py 
 # pydantic: >2.11 introduces many pydantic deprecation warnings until langchain-core upgrades their pydantic support lets keep it on 2.10
@@ -45,6 +48,9 @@ dependencies = [
 # screeninfo: only used to get screen resolution on Linux/Windows
 # markdownify: used for page text content extraction for passing to LLM
 # openai: datalib,voice-helpers are actually NOT NEEDED but openai produces noisy errors on exit without them TODO: fix
+# rich: used for terminal formatting and styling in CLI
+# click: used for command-line argument parsing
+# textual: used for terminal UI
 
 # Optional dependencies for memory functionality
 [project.optional-dependencies]
@@ -54,6 +60,9 @@ memory = [
 
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
+
+[project.scripts]
+browseruse = "browser_use.main:main"
 
 [tool.codespell]
 ignore-words-list = "bu"
