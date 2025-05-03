@@ -337,6 +337,7 @@ class BrowserUseApp(App):
 		padding: 1;
 		margin-bottom: 1;
 		height: auto;
+		dock: bottom;
 	}
 	
 	#task-label {
@@ -815,7 +816,7 @@ class BrowserUseApp(App):
 				# Add current state information
 				if hasattr(self.agent, 'running'):
 					if self.agent.running:
-						model_info.write('[yellow]LLM is thinking...[/]')
+						model_info.write('[yellow]LLM is thinking[blink]...[/][/]')
 					elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
 						model_info.write('[orange]LLM paused[/]')
 		else:
@@ -940,6 +941,11 @@ class BrowserUseApp(App):
 		tasks_panel = self.query_one('#tasks-panel')
 		tasks_panel.scroll_end(animate=False)
 
+	def scroll_to_input(self) -> None:
+		"""Scroll to the input field to ensure it's visible."""
+		input_container = self.query_one('#task-input-container')
+		input_container.scroll_visible()
+
 	def run_task(self, task: str) -> None:
 		"""Launch the task in a background worker."""
 		# Create or update the agent
@@ -991,8 +997,17 @@ class BrowserUseApp(App):
 				# No need to call update_info_panels() here as it's already updating via timer
 
 				logger.info('\n✅ Task completed!')
+
+				# Make sure the task input container is visible
+				task_input_container = self.query_one('#task-input-container')
+				task_input_container.display = True
+
 				# Refocus the input field
-				self.query_one('#task-input').focus()
+				input_field = self.query_one('#task-input')
+				input_field.focus()
+
+				# Ensure the input is visible by scrolling to it
+				self.call_after_refresh(self.scroll_to_input)
 
 		# Run the worker
 		self.run_worker(agent_task_worker, name='agent_task')
@@ -1037,6 +1052,7 @@ class BrowserUseApp(App):
 
 		# Exit the application
 		self.exit()
+		print('\nTry running tasks on our cloud: https://browser-use.com')
 
 	def compose(self) -> ComposeResult:
 		"""Create the UI layout."""
