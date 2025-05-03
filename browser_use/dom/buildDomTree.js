@@ -211,7 +211,7 @@
         container.style.left = "0";
         container.style.width = "100%";
         container.style.height = "100%";
-        container.style.zIndex = "2147483647";
+        container.style.zIndex = "2147483640";
         container.style.backgroundColor = 'transparent';
         document.body.appendChild(container);
       }
@@ -673,6 +673,11 @@
     const role = element.getAttribute("role");
     const ariaRole = element.getAttribute("aria-role");
 
+    // Check for contenteditable attribute
+    if (element.getAttribute("contenteditable") === "true" || element.isContentEditable) {
+      return true;
+    }
+    
     // Added enhancement to capture dropdown interactive elements
     if (element.classList && (
       element.classList.contains("button") ||
@@ -751,12 +756,12 @@
     let isAnyRectInViewport = false;
     for (const rect of rects) {
       // Use the same logic as isInExpandedViewport check
-      if (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
+      if (viewportExpansion === -1 || (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
         rect.bottom < -viewportExpansion ||
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      ) || viewportExpansion === -1) {
+      ))) {
         isAnyRectInViewport = true;
         break;
       }
@@ -822,8 +827,6 @@
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
-    return true
-
     if (viewportExpansion === -1) {
       return true;
     }
@@ -844,7 +847,6 @@
         boundingRect.left > window.innerWidth + viewportExpansion
       );
     }
-
 
     // Check if *any* client rect is within the viewport
     for (const rect of rects) {
@@ -904,7 +906,7 @@
       element.hasAttribute("tabindex") ||
       element.hasAttribute("aria-") ||
       element.hasAttribute("data-action") ||
-      element.getAttribute("contenteditable") == "true";
+      element.getAttribute("contenteditable") === "true";
 
     return hasQuickInteractiveAttr;
   }
