@@ -68,14 +68,16 @@ def get_default_config() -> dict[str, Any]:
 			'name': None,
 			'temperature': 0.0,
 			'api_keys': {
-				'openai': os.getenv('OPENAI_API_KEY', ''),
-				'anthropic': os.getenv('ANTHROPIC_API_KEY', ''),
-				'google': os.getenv('GOOGLE_API_KEY', ''),
+				'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
+				'ANTHROPIC_API_KEY': os.getenv('ANTHROPIC_API_KEY', ''),
+				'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', ''),
+				'DEEPSEEK_API_KEY': os.getenv('DEEPSEEK_API_KEY', ''),
+				'GROK_API_KEY': os.getenv('GROK_API_KEY', ''),
 			},
 		},
 		'agent': {},  # AgentSettings will use defaults
 		'browser': {
-			'headless': False,
+			'headless': True,
 		},
 		'browser_context': {
 			'keep_alive': True,
@@ -778,10 +780,10 @@ class BrowserUseApp(App):
 				memory_str = '+ memory ' if self.agent.enable_memory else ''
 				planner_str = '+ planner' if self.agent.settings.planner_llm else ''
 				model_info.write(
-					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__.lower()} [yellow]{model_name}[/] {temp_str}{vision_str}{memory_str}{planner_str}'
+					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/] {temp_str}{vision_str}{memory_str}{planner_str}'
 				)
 			else:
-				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__.lower()} [yellow]{model_name}[/]')
+				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/]')
 
 			# Show token usage statistics if agent exists and has history
 			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
@@ -901,12 +903,12 @@ class BrowserUseApp(App):
 							if eval_prev and idx > 1:  # Only show for steps after the first
 								eval_lines = eval_prev.strip().split('\n')
 								eval_summary = eval_lines[0]
-								eval_summary = eval_summary.replace('Success', '✅ ').replace('Failure', '❌ ').strip()
-								tasks_info.write(f'   [green]Evaluation:[/] {eval_summary}')
+								eval_summary = eval_summary.replace('Success', '✅ ').replace('Failed', '❌ ').strip()
+								tasks_info.write(f'   [tan]Evaluation:[/] {eval_summary}')
 
 						# Show actions taken in this step
 						if item.model_output and item.model_output.action:
-							tasks_info.write('   [magenta]Actions:[/]')
+							tasks_info.write('   [purple]Actions:[/]')
 							for action_idx, action in enumerate(item.model_output.action, 1):
 								action_type = action.__class__.__name__
 								if hasattr(action, 'model_dump'):
@@ -931,7 +933,7 @@ class BrowserUseApp(App):
 
 			# If agent is actively running, show a status indicator
 			if hasattr(self.agent, 'running') and self.agent.running:
-				tasks_info.write('[yellow]Agent is actively working...[/]')
+				tasks_info.write('[yellow]Agent is actively working[blink]...[/][/]')
 			elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
 				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
 		else:
