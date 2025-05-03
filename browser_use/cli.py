@@ -197,9 +197,9 @@ def get_llm(config: dict[str, Any]):
 	if os.getenv('OPENAI_API_KEY'):
 		return langchain_openai.ChatOpenAI(model='gpt-4o', temperature=temperature)
 	elif os.getenv('ANTHROPIC_API_KEY'):
-		return langchain_anthropic.ChatAnthropic(model='claude-3-sonnet-20240229', temperature=temperature)
+		return langchain_anthropic.ChatAnthropic(model='claude-3.5-sonnet-exp', temperature=temperature)
 	elif os.getenv('GOOGLE_API_KEY'):
-		return langchain_google_genai.ChatGoogleGenerativeAI(model='gemini-pro', temperature=temperature)
+		return langchain_google_genai.ChatGoogleGenerativeAI(model='gemini-2.0-flash-lite', temperature=temperature)
 	else:
 		print(
 			'⚠️  No API keys found. Please update your config or set one of: OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY.'
