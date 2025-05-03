@@ -1017,7 +1017,6 @@
       return false;
     }
 
-
     const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute('role');
 
@@ -1048,6 +1047,7 @@
     }
     // Check for other common interaction event listeners
     try {
+      const getEventListeners = window.getEventListenersForNode;
       if (typeof getEventListeners === 'function') {
         const listeners = getEventListeners(element);
         const interactionEvents = ['mousedown', 'mouseup', 'keydown', 'keyup', 'submit', 'change', 'input', 'focus', 'blur'];
