@@ -756,12 +756,12 @@
     let isAnyRectInViewport = false;
     for (const rect of rects) {
       // Use the same logic as isInExpandedViewport check
-      if (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
+      if (viewportExpansion === -1 || (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
         rect.bottom < -viewportExpansion ||
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      ) || viewportExpansion === -1) {
+      ))) {
         isAnyRectInViewport = true;
         break;
       }
@@ -827,8 +827,6 @@
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
-    return true
-
     if (viewportExpansion === -1) {
       return true;
     }
@@ -849,7 +847,6 @@
         boundingRect.left > window.innerWidth + viewportExpansion
       );
     }
-
 
     // Check if *any* client rect is within the viewport
     for (const rect of rects) {
