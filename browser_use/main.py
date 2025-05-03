@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ except ImportError:
 
 from browser_use import Agent, Browser, BrowserConfig, BrowserContextConfig, Controller
 from browser_use.agent.views import AgentSettings
+from browser_use.logging_config import addLoggingLevel
 
 # User settings file
 USER_CONFIG_FILE = Path.home() / '.browser_use.json'
@@ -202,6 +204,21 @@ def get_llm(config: dict[str, Any]):
 		sys.exit(1)
 
 
+class RichLogHandler(logging.Handler):
+	"""Custom logging handler that redirects logs to a RichLog widget."""
+
+	def __init__(self, rich_log: RichLog):
+		super().__init__()
+		self.rich_log = rich_log
+
+	def emit(self, record):
+		try:
+			msg = self.format(record)
+			self.rich_log.write(msg)
+		except Exception:
+			self.handleError(record)
+
+
 class BrowserUseApp(App):
 	"""Browser-use TUI application."""
 
@@ -308,6 +325,9 @@ class BrowserUseApp(App):
     #results-log {
         height: auto;
         overflow-y: scroll;
+        background: $surface;
+        color: $text;
+        width: 100%;
     }
     
     .log-entry {
@@ -320,6 +340,8 @@ class BrowserUseApp(App):
 		Binding('ctrl+c', 'quit', 'Quit', priority=True, show=True),
 		Binding('ctrl+q', 'quit', 'Quit', priority=True),
 		Binding('ctrl+d', 'quit', 'Quit', priority=True),
+		Binding('up', 'input_history_prev', 'Previous command', show=False),
+		Binding('down', 'input_history_next', 'Next command', show=False),
 	]
 
 	def __init__(self, config: dict[str, Any], *args, **kwargs):
@@ -333,6 +355,80 @@ class BrowserUseApp(App):
 		# Track current position in history for up/down navigation
 		self.history_index = len(self.task_history)
 
+	def setup_richlog_logging(self) -> None:
+		"""Set up logging to redirect to RichLog widget instead of stdout."""
+		# Try to add RESULT level if it doesn't exist
+		try:
+			addLoggingLevel('RESULT', 35)
+		except AttributeError:
+			pass  # Level already exists, which is fine
+
+		# Get the RichLog widget
+		rich_log = self.query_one('#results-log')
+
+		# Create and set up the custom handler
+		log_handler = RichLogHandler(rich_log)
+		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
+
+		class BrowserUseFormatter(logging.Formatter):
+			def format(self, record):
+				if isinstance(record.name, str) and record.name.startswith('browser_use.'):
+					record.name = record.name.split('.')[-2]
+				return super().format(record)
+
+		# Set up the formatter based on log type
+		if log_type == 'result':
+			log_handler.setLevel('RESULT')
+			log_handler.setFormatter(BrowserUseFormatter('%(message)s'))
+		else:
+			log_handler.setFormatter(BrowserUseFormatter('%(levelname)-8s [%(name)s] %(message)s'))
+
+		# Configure root logger
+		root = logging.getLogger()
+
+		# Remove any existing handlers that write to stdout
+		for handler in root.handlers[:]:
+			if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+				root.removeHandler(handler)
+
+		# Add our custom handler
+		root.addHandler(log_handler)
+
+		# Set log level based on environment variable
+		if log_type == 'result':
+			root.setLevel('RESULT')
+		elif log_type == 'debug':
+			root.setLevel(logging.DEBUG)
+		else:
+			root.setLevel(logging.INFO)
+
+		# Configure browser_use logger
+		browser_use_logger = logging.getLogger('browser_use')
+		browser_use_logger.propagate = False  # Don't propagate to root logger
+		browser_use_logger.addHandler(log_handler)
+		browser_use_logger.setLevel(root.level)
+
+		# Silence third-party loggers
+		for logger_name in [
+			'WDM',
+			'httpx',
+			'selenium',
+			'playwright',
+			'urllib3',
+			'asyncio',
+			'langchain',
+			'openai',
+			'httpcore',
+			'charset_normalizer',
+			'anthropic._base_client',
+			'PIL.PngImagePlugin',
+			'trafilatura.htmlprocessing',
+			'trafilatura',
+		]:
+			third_party = logging.getLogger(logger_name)
+			third_party.setLevel(logging.ERROR)
+			third_party.propagate = False
+
 	def on_mount(self) -> None:
 		"""Set up components when app is mounted."""
 		# Configure BrowserUse components
@@ -344,47 +440,63 @@ class BrowserUseApp(App):
 		self.controller = Controller()
 		self.llm = get_llm(self.config)
 
+		# Set up custom logging to RichLog (must be done after UI is mounted)
+		self.setup_richlog_logging()
+
 		# Set up input history if available
 		if READLINE_AVAILABLE and self.task_history:
 			for item in self.task_history:
 				readline.add_history(item)
 
-		# Hook up the input field events
+		# Focus the input field
 		input_field = self.query_one('#task-input')
 		input_field.focus()
 
-		# Register for key events on the input field
-		input_field.on_key = self.on_input_key
+	def on_input_key_up(self, event: events.Key) -> None:
+		"""Handle up arrow key in the input field."""
+		# Check if event is from the input field
+		if event.sender.id != 'task-input':
+			return
 
-	def on_input_key(self, event: events.Key) -> None:
-		"""Handle key events specifically for the input field."""
 		# Only process if we have history
 		if not self.task_history:
 			return
 
-		if event.key == 'up':
-			# Move back in history if possible
-			if self.history_index > 0:
-				self.history_index -= 1
-				self.query_one('#task-input').value = self.task_history[self.history_index]
-				# Move cursor to end of text
-				self.query_one('#task-input').cursor_position = len(self.query_one('#task-input').value)
-			event.stop()
-			event.prevent_default()
+		# Move back in history if possible
+		if self.history_index > 0:
+			self.history_index -= 1
+			self.query_one('#task-input').value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			self.query_one('#task-input').cursor_position = len(self.query_one('#task-input').value)
 
-		elif event.key == 'down':
-			# Move forward in history or clear input if at the end
-			if self.history_index < len(self.task_history) - 1:
-				self.history_index += 1
-				self.query_one('#task-input').value = self.task_history[self.history_index]
-				# Move cursor to end of text
-				self.query_one('#task-input').cursor_position = len(self.query_one('#task-input').value)
-			elif self.history_index == len(self.task_history) - 1:
-				# At the end of history, go to "new line" state
-				self.history_index += 1
-				self.query_one('#task-input').value = ''
-			event.stop()
-			event.prevent_default()
+		# Prevent default behavior (cursor movement)
+		event.prevent_default()
+		event.stop()
+
+	def on_input_key_down(self, event: events.Key) -> None:
+		"""Handle down arrow key in the input field."""
+		# Check if event is from the input field
+		if event.sender.id != 'task-input':
+			return
+
+		# Only process if we have history
+		if not self.task_history:
+			return
+
+		# Move forward in history or clear input if at the end
+		if self.history_index < len(self.task_history) - 1:
+			self.history_index += 1
+			self.query_one('#task-input').value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			self.query_one('#task-input').cursor_position = len(self.query_one('#task-input').value)
+		elif self.history_index == len(self.task_history) - 1:
+			# At the end of history, go to "new line" state
+			self.history_index += 1
+			self.query_one('#task-input').value = ''
+
+		# Prevent default behavior (cursor movement)
+		event.prevent_default()
+		event.stop()
 
 	async def on_key(self, event: events.Key) -> None:
 		"""Handle key events at the app level to ensure graceful exit."""
@@ -410,16 +522,50 @@ class BrowserUseApp(App):
 			# Reset history index to point past the end of history
 			self.history_index = len(self.task_history)
 
+			# Hide logo, links, and paths panels
+			self.hide_intro_panels()
+
 			# Process the task
 			self.run_task(task)
 
 			# Clear the input
 			event.input.value = ''
 
+	def hide_intro_panels(self) -> None:
+		"""Hide the intro panels and expand the log view."""
+		# Get the panels
+		logo_panel = self.query_one('#logo-panel')
+		links_panel = self.query_one('#links-panel')
+		paths_panel = self.query_one('#paths-panel')
+
+		# Hide them if they're visible
+		if logo_panel.display:
+			logo_panel.display = False
+			links_panel.display = False
+			paths_panel.display = False
+
+			# Make results container take full height
+			results_container = self.query_one('#results-container')
+			results_container.styles.height = '1fr'
+
+			# Configure the log
+			results_log = self.query_one('#results-log')
+			results_log.styles.height = 'auto'
+
 	def run_task(self, task: str) -> None:
 		"""Launch the task in a background worker."""
 		# Create or update the agent
 		agent_settings = AgentSettings.model_validate(self.config.get('agent', {}))
+
+		# Get the logger
+		logger = logging.getLogger('browser_use.app')
+
+		# Make sure intro is hidden and log is ready
+		self.hide_intro_panels()
+
+		# Clear the log to start fresh
+		rich_log = self.query_one('#results-log')
+		rich_log.clear()
 
 		if self.agent is None:
 			self.agent = Agent(
@@ -434,20 +580,52 @@ class BrowserUseApp(App):
 
 		# Let the agent run in the background
 		async def agent_task_worker() -> None:
-			print('\n🚀 Working on task:', task)
+			logger.info('\n🚀 Working on task: %s', task)
 
 			try:
-				# Run the agent task, letting it print to stdout
+				# Run the agent task, redirecting output to RichLog through our handler
 				await self.agent.run()
 			except Exception as e:
-				print(f'\nError running agent: {str(e)}')
+				logger.error('\nError running agent: %s', str(e))
 			finally:
-				print('\n✅ Task completed!')
+				logger.info('\n✅ Task completed!')
 				# Refocus the input field
 				self.query_one('#task-input').focus()
 
 		# Run the worker
 		self.run_worker(agent_task_worker, name='agent_task')
+
+	def action_input_history_prev(self) -> None:
+		"""Navigate to the previous item in command history."""
+		# Only process if we have history and input is focused
+		input_field = self.query_one('#task-input')
+		if not input_field.has_focus or not self.task_history:
+			return
+
+		# Move back in history if possible
+		if self.history_index > 0:
+			self.history_index -= 1
+			input_field.value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			input_field.cursor_position = len(input_field.value)
+
+	def action_input_history_next(self) -> None:
+		"""Navigate to the next item in command history or clear input."""
+		# Only process if we have history and input is focused
+		input_field = self.query_one('#task-input')
+		if not input_field.has_focus or not self.task_history:
+			return
+
+		# Move forward in history or clear input if at the end
+		if self.history_index < len(self.task_history) - 1:
+			self.history_index += 1
+			input_field.value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			input_field.cursor_position = len(input_field.value)
+		elif self.history_index == len(self.task_history) - 1:
+			# At the end of history, go to "new line" state
+			self.history_index += 1
+			input_field.value = ''
 
 	async def action_quit(self) -> None:
 		"""Quit the application and clean up resources."""
@@ -504,7 +682,7 @@ class BrowserUseApp(App):
 
 			# Results view with scrolling (place this before input to make input sticky at bottom)
 			with VerticalScroll(id='results-container'):
-				yield RichLog(highlight=True, markup=True, id='results-log')
+				yield RichLog(highlight=True, markup=True, id='results-log', wrap=True, auto_scroll=True)
 
 			# Task input container (now at the bottom)
 			with Container(id='task-input-container'):
@@ -526,6 +704,13 @@ async def textual_interface(config: dict[str, Any]):
 def main(ctx: click.Context, **kwargs):
 	"""Browser-Use Interactive TUI"""
 	load_dotenv()
+
+	# Create a no-op handler to prevent any logging to stdout
+	# This will be replaced with our RichLog handler once the app is mounted
+	null_handler = logging.NullHandler()
+	logging.getLogger().addHandler(null_handler)
+
+	# We're skipping the default setup_logging() which writes to sys.stdout
 
 	# Load user configuration
 	config = load_user_config()
