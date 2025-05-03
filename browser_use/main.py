@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -231,10 +232,35 @@ class BrowserUseApp(App):
         layout: vertical;
     }
     
-    #logo-panel, #links-panel, #paths-panel {
+    #logo-panel, #links-panel, #paths-panel, #info-panels {
         border: solid $primary;
         margin: 0 0 1 0; 
         padding: 0;
+    }
+    
+    #info-panels {
+        display: none;
+        layout: horizontal;
+        height: auto;
+        min-height: 5;
+    }
+    
+    #browser-panel, #model-panel, #tasks-panel {
+        width: 1fr;
+        height: auto;
+        border: solid $primary-darken-2;
+        padding: 1;
+        overflow: auto;
+        margin: 0 1 0 0;
+        padding: 1;
+    }
+    
+    #browser-panel {
+        border-left: solid $primary-darken-2;
+    }
+    
+    #tasks-panel {
+        margin-right: 0;
     }
     
     #logo-panel {
@@ -333,6 +359,15 @@ class BrowserUseApp(App):
     .log-entry {
         margin: 0;
         padding: 0;
+    }
+    
+    #browser-info, #model-info, #tasks-info {
+        height: auto;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow-y: auto;
+        min-height: 5;
     }
     """
 
@@ -452,6 +487,24 @@ class BrowserUseApp(App):
 		input_field = self.query_one('#task-input')
 		input_field.focus()
 
+		# Manually add content to panels for debugging to directly test if we can write to them
+		try:
+			logging.info('Testing panel initialization...')
+			browser_info = self.query_one('#browser-info')
+			browser_info.write('DEBUG: Panel initialized')
+
+			model_info = self.query_one('#model-info')
+			model_info.write('DEBUG: Panel initialized')
+
+			tasks_info = self.query_one('#tasks-info')
+			tasks_info.write('DEBUG: Panel initialized')
+			logging.info('Panels initialized with test content')
+		except Exception as e:
+			logging.error(f'Error initializing panels: {str(e)}')
+
+		# Start the continuous info panel updates
+		self.update_info_panels()
+
 	def on_input_key_up(self, event: events.Key) -> None:
 		"""Handle up arrow key in the input field."""
 		# Check if event is from the input field
@@ -532,25 +585,365 @@ class BrowserUseApp(App):
 			event.input.value = ''
 
 	def hide_intro_panels(self) -> None:
-		"""Hide the intro panels and expand the log view."""
-		# Get the panels
-		logo_panel = self.query_one('#logo-panel')
-		links_panel = self.query_one('#links-panel')
-		paths_panel = self.query_one('#paths-panel')
+		"""Hide the intro panels, show info panels, and expand the log view."""
+		try:
+			# Get the panels
+			logo_panel = self.query_one('#logo-panel')
+			links_panel = self.query_one('#links-panel')
+			paths_panel = self.query_one('#paths-panel')
+			info_panels = self.query_one('#info-panels')
+			tasks_panel = self.query_one('#tasks-panel')
+			# Hide intro panels if they're visible and show info panels
+			if logo_panel.display:
+				# Log for debugging
+				logging.info('Hiding intro panels and showing info panels')
 
-		# Hide them if they're visible
-		if logo_panel.display:
-			logo_panel.display = False
-			links_panel.display = False
-			paths_panel.display = False
+				logo_panel.display = False
+				links_panel.display = False
+				paths_panel.display = False
 
-			# Make results container take full height
-			results_container = self.query_one('#results-container')
-			results_container.styles.height = '1fr'
+				# Show info panels
+				info_panels.display = True
+				tasks_panel.display = True
 
-			# Configure the log
-			results_log = self.query_one('#results-log')
-			results_log.styles.height = 'auto'
+				# Directly force content into panels for debugging
+				browser_info = self.query_one('#browser-info')
+				browser_info.write('Showing browser info...')
+
+				model_info = self.query_one('#model-info')
+				model_info.write('Showing model info...')
+
+				tasks_info = self.query_one('#tasks-info')
+				tasks_info.write('Showing tasks info...')
+
+				# Make results container take full height
+				results_container = self.query_one('#results-container')
+				results_container.styles.height = '1fr'
+
+				# Configure the log
+				results_log = self.query_one('#results-log')
+				results_log.styles.height = 'auto'
+
+				logging.info('Panels should now be visible')
+		except Exception as e:
+			logging.error(f'Error in hide_intro_panels: {str(e)}')
+
+	def update_info_panels(self) -> None:
+		"""Update all information panels with current state."""
+		try:
+			# Force initial content into panels to ensure they're not empty
+			browser_info = self.query_one('#browser-info')
+			if not browser_info.lines:
+				browser_info.write('Initializing browser info...')
+
+			model_info = self.query_one('#model-info')
+			if not model_info.lines:
+				model_info.write('Initializing model info...')
+
+			tasks_info = self.query_one('#tasks-info')
+			if not tasks_info.lines:
+				tasks_info.write('Initializing tasks info...')
+
+			# Update actual content
+			self.update_browser_panel()
+			self.update_model_panel()
+			self.update_tasks_panel()
+		except Exception as e:
+			logging.error(f'Error in update_info_panels: {str(e)}')
+		finally:
+			# Always schedule the next update - will update at 1-second intervals
+			# This ensures continuous updates even if agent state changes
+			self.set_timer(1.0, self.update_info_panels)
+
+	def update_browser_panel(self) -> None:
+		"""Update browser information panel with details about the browser."""
+		browser_info = self.query_one('#browser-info')
+		browser_info.clear()
+
+		if self.browser:
+			# Get basic browser info
+			browser_type = self.browser.__class__.__name__
+			headless = self.browser.config.headless
+			browser_class = self.browser.config.browser_class
+
+			# Determine connection type based on config
+			connection_type = 'playwright'  # Default
+			if self.browser.config.cdp_url:
+				connection_type = 'CDP'
+			elif self.browser.config.wss_url:
+				connection_type = 'WSS'
+			elif self.browser.config.browser_binary_path:
+				connection_type = 'user-provided'
+
+			# Get window size details
+			window_width = self.browser.config.new_context_config.window_width
+			window_height = self.browser.config.new_context_config.window_height
+
+			# Try to get browser PID
+			browser_pid = 'Unknown'
+			connected = False
+			browser_status = '[red]Disconnected[/]'
+
+			try:
+				# First check if Chrome subprocess is available directly
+				if hasattr(self.browser, '_chrome_subprocess') and self.browser._chrome_subprocess:
+					try:
+						if hasattr(self.browser._chrome_subprocess, 'pid'):
+							browser_pid = str(self.browser._chrome_subprocess.pid)
+							connected = True
+							browser_status = '[green]Connected[/]'
+					except Exception as e:
+						browser_pid = f'Error: {str(e)}'
+				# Then check if we have a playwright browser connection
+				elif hasattr(self.browser, 'playwright_browser') and self.browser.playwright_browser:
+					connected = True
+					browser_status = '[green]Connected[/]'
+
+					# Try to get PID from related processes by checking for Chrome/Firefox
+					import psutil
+
+					for proc in psutil.process_iter(['pid', 'name']):
+						try:
+							if (
+								browser_class in proc.name().lower()
+								or 'chrome' in proc.name().lower()
+								or 'chromium' in proc.name().lower()
+								or 'firefox' in proc.name().lower()
+							):
+								browser_pid = str(proc.pid)
+								break
+						except (psutil.NoSuchProcess, psutil.AccessDenied):
+							pass
+			except Exception as e:
+				browser_pid = f'Error: {str(e)}'
+
+			# Display browser information
+			browser_info.write(f'[bold cyan]{browser_class}[/] Browser ({browser_status})')
+			browser_info.write(f'Type: [yellow]{connection_type}[/]')
+			browser_info.write(f'PID: [dim]{browser_pid}[/]')
+			browser_info.write(f'Headless: [{"green" if not headless else "red"}]{headless}[/]')
+			browser_info.write(f'CDP Port: {self.browser.config.chrome_remote_debugging_port}')
+
+			if window_width and window_height:
+				browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
+
+			# Include additional information about the browser if needed
+			if connected and hasattr(self, 'agent') and self.agent:
+				try:
+					# Show when the browser was connected
+					timestamp = int(time.time())
+					current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
+					browser_info.write(f'Last updated: [dim]{current_time}[/]')
+				except Exception as e:
+					pass
+		else:
+			browser_info.write('[red]Browser not initialized[/]')
+
+	def update_model_panel(self) -> None:
+		"""Update model information panel with details about the LLM."""
+		model_info = self.query_one('#model-info')
+		model_info.clear()
+
+		if self.llm:
+			# Get model details
+			model_name = 'Unknown'
+			if hasattr(self.llm, 'model_name'):
+				model_name = self.llm.model_name
+			elif hasattr(self.llm, 'model'):
+				model_name = self.llm.model
+
+			# Get provider API details
+			provider = 'Unknown'
+			if 'openai' in self.llm.__class__.__name__.lower():
+				provider = 'OpenAI'
+				api_key = os.getenv('OPENAI_API_KEY', '')
+				if api_key:
+					# Show only that API key is configured, no actual key parts
+					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
+			elif 'anthropic' in self.llm.__class__.__name__.lower():
+				provider = 'Anthropic'
+				api_key = os.getenv('ANTHROPIC_API_KEY', '')
+				if api_key:
+					# Show only that API key is configured, no actual key parts
+					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
+			elif 'google' in self.llm.__class__.__name__.lower():
+				provider = 'Google'
+				api_key = os.getenv('GOOGLE_API_KEY', '')
+				if api_key:
+					# Show only that API key is configured, no actual key parts
+					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
+
+			model_info.write(f'[white]LLM Provider:[/] [blue]{provider}[/]')
+
+			# Show model name
+			model_info.write(f'[white]Model:[/] [yellow]{model_name}[/]')
+
+			# Get and show temperature
+			if hasattr(self.llm, 'temperature'):
+				model_info.write(f'[white]Temperature:[/] [blue]{self.llm.temperature}[/]')
+
+			# Show token usage statistics if agent exists and has history
+			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
+				# Get total tokens used
+				total_tokens = self.agent.state.history.total_input_tokens()
+				model_info.write(f'[white]Input tokens:[/] [green]{total_tokens:,}[/]')
+
+				# Calculate tokens per step
+				num_steps = len(self.agent.state.history.history)
+				if num_steps > 0:
+					avg_tokens_per_step = total_tokens / num_steps
+					model_info.write(f'[white]Avg tokens/step:[/] [green]{avg_tokens_per_step:,.1f}[/]')
+
+				# Show total duration
+				total_duration = self.agent.state.history.total_duration_seconds()
+				if total_duration > 0:
+					model_info.write(f'[white]Total Duration:[/] [magenta]{total_duration:.2f}s[/]')
+
+				# Get the last step metadata to show the most recent LLM response time
+				if num_steps > 0 and self.agent.state.history.history[-1].metadata:
+					last_step = self.agent.state.history.history[-1]
+					step_duration = last_step.metadata.duration_seconds
+					step_tokens = last_step.metadata.input_tokens
+
+					# Calculate response time metrics
+					model_info.write(f'[white]Last Step Duration:[/] [magenta]{step_duration:.2f}s[/]')
+
+					if step_tokens > 0:
+						tokens_per_second = step_tokens / step_duration if step_duration > 0 else 0
+						model_info.write(f'[white]tokens/sec:[/] [magenta]{tokens_per_second:.1f}[/]')
+
+				# Add current state information
+				if hasattr(self.agent, 'running'):
+					if self.agent.running:
+						model_info.write('[yellow]LLM is thinking...[/]')
+					elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
+						model_info.write('[orange]LLM paused[/]')
+		else:
+			model_info.write('[red]Model not initialized[/]')
+
+	def update_tasks_panel(self) -> None:
+		"""Update tasks information panel with details about the tasks and steps hierarchy."""
+		tasks_info = self.query_one('#tasks-info')
+		tasks_info.clear()
+
+		if self.agent:
+			# Check if agent has tasks
+			task_history = []
+			message_history = []
+
+			# Try to extract tasks by looking at message history
+			if hasattr(self.agent, '_message_manager') and self.agent._message_manager:
+				message_history = self.agent._message_manager.state.history.messages
+
+				# Extract original task(s)
+				original_tasks = []
+				for msg in message_history:
+					if hasattr(msg, 'message') and hasattr(msg.message, 'content'):
+						content = msg.message.content
+						if isinstance(content, str) and 'Your ultimate task is:' in content:
+							task_text = content.split('"""')[1].strip()
+							original_tasks.append(task_text)
+
+				if original_tasks:
+					tasks_info.write('[bold green]TASK:[/]')
+					for i, task in enumerate(original_tasks, 1):
+						# Only show latest task if multiple task changes occurred
+						if i == len(original_tasks):
+							tasks_info.write(f'[white]{task}[/]')
+					tasks_info.write('')
+
+			# Get current state information
+			current_step = self.agent.state.n_steps if hasattr(self.agent, 'state') else 0
+
+			# Get all agent history items
+			history_items = []
+			if hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
+				history_items = self.agent.state.history.history
+
+				if history_items:
+					tasks_info.write('[bold yellow]STEPS:[/]')
+
+					for idx, item in enumerate(history_items, 1):
+						# Determine step status
+						step_style = '[green]✓[/]'
+
+						# For the current step, show it as in progress
+						if idx == current_step:
+							step_style = '[yellow]⟳[/]'
+
+						# Check if this step had an error
+						if item.result and any(result.error for result in item.result):
+							step_style = '[red]✗[/]'
+
+						# Show step number
+						tasks_info.write(f'{step_style} Step {idx}/{current_step}')
+
+						# Show goal if available
+						if item.model_output and hasattr(item.model_output, 'current_state'):
+							# Show memory (context) for this step
+							memory = item.model_output.current_state.memory
+							if memory:
+								memory_lines = memory.strip().split('\n')
+								memory_summary = memory_lines[0]
+								if len(memory_summary) > 60:
+									memory_summary = memory_summary[:57] + '...'
+								tasks_info.write(f'   [dim]Memory:[/] {memory_summary}')
+
+							# Show goal for this step
+							goal = item.model_output.current_state.next_goal
+							if goal:
+								# Truncate and sanitize goal for display
+								goal_lines = goal.strip().split('\n')
+								goal_summary = goal_lines[0]
+								if len(goal_summary) > 60:
+									goal_summary = goal_summary[:57] + '...'
+								tasks_info.write(f'   [cyan]Goal:[/] {goal_summary}')
+
+							# Show evaluation of previous goal (feedback)
+							eval_prev = item.model_output.current_state.evaluation_previous_goal
+							if eval_prev and idx > 1:  # Only show for steps after the first
+								eval_lines = eval_prev.strip().split('\n')
+								eval_summary = eval_lines[0]
+								if len(eval_summary) > 60:
+									eval_summary = eval_summary[:57] + '...'
+								tasks_info.write(f'   [green]Evaluation:[/] {eval_summary}')
+
+						# Show actions taken in this step
+						if item.model_output and item.model_output.action:
+							tasks_info.write('   [magenta]Actions:[/]')
+							for action_idx, action in enumerate(item.model_output.action, 1):
+								action_type = action.__class__.__name__
+								if hasattr(action, 'model_dump'):
+									# For proper actions, show the action type
+									action_dict = action.model_dump(exclude_unset=True)
+									if action_dict:
+										action_name = list(action_dict.keys())[0]
+										tasks_info.write(f'     {action_idx}. [blue]{action_name}[/]')
+
+						# Show results or errors from this step
+						if item.result:
+							for result in item.result:
+								if result.error:
+									error_text = result.error
+									if len(error_text) > 40:
+										error_text = error_text[:37] + '...'
+									tasks_info.write(f'   [red]Error:[/] {error_text}')
+								elif result.extracted_content:
+									content = result.extracted_content
+									if len(content) > 40:
+										content = content[:37] + '...'
+									tasks_info.write(f'   [green]Result:[/] {content}')
+
+						# Add a space between steps for readability
+						tasks_info.write('')
+
+			# If agent is actively running, show a status indicator
+			if hasattr(self.agent, 'running') and self.agent.running:
+				tasks_info.write('[yellow]Agent is actively working...[/]')
+			elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
+				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
+		else:
+			tasks_info.write('[dim]Agent not initialized[/]')
 
 	def run_task(self, task: str) -> None:
 		"""Launch the task in a background worker."""
@@ -562,6 +955,9 @@ class BrowserUseApp(App):
 
 		# Make sure intro is hidden and log is ready
 		self.hide_intro_panels()
+
+		# Start continuous updates of all info panels
+		self.update_info_panels()
 
 		# Clear the log to start fresh
 		rich_log = self.query_one('#results-log')
@@ -582,12 +978,23 @@ class BrowserUseApp(App):
 		async def agent_task_worker() -> None:
 			logger.info('\n🚀 Working on task: %s', task)
 
+			# Set flags to indicate the agent is running
+			self.agent.running = True
+			self.agent.last_response_time = 0
+
+			# Panel updates are already happening via the timer in update_info_panels
+
 			try:
 				# Run the agent task, redirecting output to RichLog through our handler
 				await self.agent.run()
 			except Exception as e:
 				logger.error('\nError running agent: %s', str(e))
 			finally:
+				# Clear the running flag
+				self.agent.running = False
+
+				# No need to call update_info_panels() here as it's already updating via timer
+
 				logger.info('\n✅ Task completed!')
 				# Refocus the input field
 				self.query_one('#task-input').focus()
@@ -629,8 +1036,11 @@ class BrowserUseApp(App):
 
 	async def action_quit(self) -> None:
 		"""Quit the application and clean up resources."""
+		# Close the browser if it exists
 		if self.browser:
 			await self.browser.close()
+
+		# Exit the application
 		self.exit()
 
 	def compose(self) -> ComposeResult:
@@ -641,6 +1051,20 @@ class BrowserUseApp(App):
 		with Container(id='main-container'):
 			# Logo panel
 			yield Static(BROWSER_LOGO, id='logo-panel', markup=True)
+
+			# Information panels (hidden by default)
+			with Container(id='info-panels'):
+				# Browser panel
+				with Container(id='browser-panel'):
+					yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
+
+				# Model panel
+				with Container(id='model-panel'):
+					yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
+
+				# Tasks panel
+				with Container(id='tasks-panel'):
+					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True)
 
 			# Links panel with URLs
 			with Container(id='links-panel'):
