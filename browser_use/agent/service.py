@@ -780,6 +780,7 @@ class Agent(Generic[Context]):
 				version=self.version,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
+				urls_visited=self.state.history.urls(),
 				steps=self.state.n_steps,
 				total_input_tokens=self.state.history.total_input_tokens(),
 				total_duration_seconds=self.state.history.total_duration_seconds(),
