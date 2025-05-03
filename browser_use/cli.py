@@ -36,17 +36,17 @@ MAX_HISTORY_LENGTH = 100
 
 # Logo components with styling for rich panels
 BROWSER_LOGO = """
-								  [white]   ++++++   +++++++++   [/]                                
-								  [white] +++     +++++     +++  [/]                                
-								  [white] ++    ++++   ++    ++  [/]                                
-								  [white] ++  +++       +++  ++  [/]                                
-								  [white]   ++++          +++    [/]                                
-								  [white]  +++             +++   [/]                                
-								  [white] +++               +++  [/]                                
-								  [white] ++   +++      +++  ++  [/]                                
-								  [white] ++    ++++   ++    ++  [/]                                
-								  [white] +++     ++++++    +++  [/]                                
-								  [white]   ++++++    +++++++    [/]                                
+				   [white]   ++++++   +++++++++   [/]                                
+				   [white] +++     +++++     +++  [/]                                
+				   [white] ++    ++++   ++    ++  [/]                                
+				   [white] ++  +++       +++  ++  [/]                                
+				   [white]   ++++          +++    [/]                                
+				   [white]  +++             +++   [/]                                
+				   [white] +++               +++  [/]                                
+				   [white] ++   +++      +++  ++  [/]                                
+				   [white] ++    ++++   ++    ++  [/]                                
+				   [white] +++     ++++++    +++  [/]                                
+				   [white]   ++++++    +++++++    [/]                                
 
 [white]██████╗ ██████╗  ██████╗ ██╗    ██╗███████╗███████╗██████╗[/]     [darkorange]██╗   ██╗███████╗███████╗[/]
 [white]██╔══██╗██╔══██╗██╔═══██╗██║    ██║██╔════╝██╔════╝██╔══██╗[/]    [darkorange]██║   ██║██╔════╝██╔════╝[/]
@@ -236,7 +236,7 @@ class BrowserUseApp(App):
 	
 	#logo-panel, #links-panel, #paths-panel, #info-panels {
 		border: solid $primary;
-		margin: 0 0 1 0; 
+		margin: 0 0 0 0; 
 		padding: 0;
 	}
 	
