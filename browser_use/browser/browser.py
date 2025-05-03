@@ -317,7 +317,6 @@ class Browser:
 
 		browser = await browser_class.launch(
 			headless=self.config.headless,
-			channel='chrome',
 			args=args[self.config.browser_class],
 			proxy=self.config.proxy.model_dump() if self.config.proxy else None,
 			handle_sigterm=False,
