@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import anyio
 from patchright._impl._errors import TimeoutError
@@ -43,25 +43,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+import platform
 
-class BrowserContextWindowSize(BaseModel):
-	"""Window size configuration for browser context"""
-
-	width: int
-	height: int
-
-	model_config = ConfigDict(
-		extra='allow',  # Allow extra fields to ensure compatibility with dictionary
-		populate_by_name=True,
-		from_attributes=True,
-	)
-
-	# Support dict-like behavior for compatibility
-	def __getitem__(self, key):
-		return getattr(self, key)
-
-	def get(self, key, default=None):
-		return getattr(self, key, default)
+BROWSER_NAVBAR_HEIGHT = {
+	'windows': 85,
+	'darwin': 80,
+	'linux': 90,
+}.get(platform.system().lower(), 85)
 
 
 class BrowserContextConfig(BaseModel):
@@ -88,11 +76,13 @@ class BrowserContextConfig(BaseModel):
 	    wait_between_actions: 1.0
 	        Time to wait between multiple per step actions
 
-	    browser_window_size: BrowserContextWindowSize(width=1280, height=1100)
-	        Default browser window size
+	    window_width: 1280
+	    window_height: 1100
+	        Default browser window dimensions
 
-	    no_viewport: False
-	        Disable viewport
+	    no_viewport: True
+	        When True (default), the browser window size determines the viewport.
+	        When False, forces a fixed viewport size using window_width and window_height. (constraint of the rendered content to a smaller area than the default of the entire window size)
 
 	    save_recording_path: None
 	        Path to save video recordings
@@ -162,10 +152,9 @@ class BrowserContextConfig(BaseModel):
 
 	disable_security: bool = False  # disable_security=True is dangerous as any malicious URL visited could embed an iframe for the user's bank, and use their cookies to steal money
 
-	browser_window_size: BrowserContextWindowSize = Field(
-		default_factory=lambda: BrowserContextWindowSize(width=1280, height=1100)
-	)
-	no_viewport: Optional[bool] = None
+	window_width: int = 1280
+	window_height: int = 1100
+	no_viewport: bool = True  # True is the default for headful mode - browser window size determines viewport
 
 	save_recording_path: str | None = None
 	save_downloads_path: str | None = None
@@ -202,57 +191,11 @@ class CachedStateClickableElementsHashes:
 
 class BrowserSession:
 	def __init__(self, context: PlaywrightBrowserContext, cached_state: BrowserState | None = None):
-		init_script = """
-			(() => {
-				if (!window.getEventListeners) {
-					window.getEventListeners = function (node) {
-						return node.__listeners || {};
-					};
-
-					// Save the original addEventListener
-					const originalAddEventListener = Element.prototype.addEventListener;
-
-					const eventProxy = {
-						addEventListener: function (type, listener, options = {}) {
-							// Initialize __listeners if not exists
-							const defaultOptions = { once: false, passive: false, capture: false };
-							if(typeof options === 'boolean') {
-								options = { capture: options };
-							}
-							options = { ...defaultOptions, ...options };
-							if (!this.__listeners) {
-								this.__listeners = {};
-							}
-
-							// Initialize array for this event type if not exists
-							if (!this.__listeners[type]) {
-								this.__listeners[type] = [];
-							}
-							
-
-							// Add the listener to __listeners
-							this.__listeners[type].push({
-								listener: listener,
-								type: type,
-								...options
-							});
-
-							// Call original addEventListener using the saved reference
-							return originalAddEventListener.call(this, type, listener, options);
-						}
-					};
-
-					Element.prototype.addEventListener = eventProxy.addEventListener;
-				}
-			})()
-			"""
 		self.active_tab = None
 		self.context = context
 		self.cached_state = cached_state
 
 		self.cached_state_clickable_elements_hashes: CachedStateClickableElementsHashes | None = None
-
-		self.context.on('page', lambda page: page.add_init_script(init_script))
 
 
 @dataclass
@@ -269,7 +212,7 @@ class BrowserContext:
 		self,
 		browser: 'Browser',
 		config: BrowserContextConfig | None = None,
-		state: Optional[BrowserContextState] = None,
+		state: BrowserContextState | None = None,
 	):
 		self.context_id = str(uuid.uuid4())
 
@@ -403,6 +346,17 @@ class BrowserContext:
 		await active_page.bring_to_front()
 		await active_page.wait_for_load_state('load')
 
+		# Set the viewport size for the active page
+		try:
+			if self.config.no_viewport is False:
+				viewport_size = {'width': self.config.window_width, 'height': self.config.window_height}
+				await active_page.set_viewport_size(viewport_size)
+				logger.debug(f'Set viewport size to {self.config.window_width}x{self.config.window_height}')
+			else:
+				logger.debug('Skipping viewport size setting in _initialize_session because no_viewport is not False')
+		except Exception as e:
+			logger.debug(f'Failed to set viewport size: {e}')
+
 		self.active_tab = active_page
 
 		return self.session
@@ -442,14 +396,33 @@ class BrowserContext:
 		"""Creates a new browser context with anti-detection measures and loads cookies if available."""
 		if self.browser.config.cdp_url and len(browser.contexts) > 0 and not self.config.force_new_context:
 			context = browser.contexts[0]
+			# For existing contexts, we need to set the viewport size manually
+			if context.pages and not self.browser.config.headless:
+				for page in context.pages:
+					await self._set_viewport_size_for_page(page)
 		elif self.browser.config.browser_binary_path and len(browser.contexts) > 0 and not self.config.force_new_context:
 			# Connect to existing Chrome instance instead of creating new one
 			context = browser.contexts[0]
+			# For existing contexts, we need to set the viewport size manually
+			if context.pages and not self.browser.config.headless:
+				for page in context.pages:
+					await self._set_viewport_size_for_page(page)
 		else:
 			kwargs = {}
+			# Set viewport for both headless and non-headless modes
 			if self.browser.config.headless:
-				kwargs['viewport'] = self.config.browser_window_size.model_dump()
+				# In headless mode, always set viewport and no_viewport=False
+				kwargs['viewport'] = {'width': self.config.window_width, 'height': self.config.window_height}
 				kwargs['no_viewport'] = False
+			else:
+				# In headful mode, use the no_viewport value from config (defaults to True)
+				no_viewport_value = self.config.no_viewport
+				kwargs['no_viewport'] = no_viewport_value
+
+				# Only set viewport if no_viewport is False
+				if not no_viewport_value:
+					kwargs['viewport'] = {'width': self.config.window_width, 'height': self.config.window_height}
+
 			if self.config.user_agent is not None:
 				kwargs['user_agent'] = self.config.user_agent
 
@@ -458,7 +431,7 @@ class BrowserContext:
 				java_script_enabled=True,
 				**({'bypass_csp': True, 'ignore_https_errors': True} if self.config.disable_security else {}),
 				record_video_dir=self.config.save_recording_path,
-				record_video_size=self.config.browser_window_size.model_dump(),
+				record_video_size={'width': self.config.window_width, 'height': self.config.window_height},
 				record_har_path=self.config.save_har_path,
 				locale=self.config.locale,
 				http_credentials=self.config.http_credentials,
@@ -469,8 +442,14 @@ class BrowserContext:
 				timezone_id=self.config.timezone_id,
 			)
 
+		await context.grant_permissions(['clipboard-read', 'clipboard-write', 'geolocation'])
+
 		if self.config.trace_path:
 			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
+
+		# Resize the window for non-headless mode
+		if not self.browser.config.headless:
+			await self._resize_window(context)
 
 		# Load cookies if they exist
 		if self.config.cookies_file and os.path.exists(self.config.cookies_file):
@@ -492,9 +471,7 @@ class BrowserContext:
 				except json.JSONDecodeError as e:
 					logger.error(f'Failed to parse cookies file: {str(e)}')
 
-		# Expose anti-detection scripts
-		await context.add_init_script(
-			"""
+		init_script = """
 			// Permissions
 			const originalQuery = window.navigator.permissions.query;
 			window.navigator.permissions.query = (parameters) => (
@@ -502,11 +479,60 @@ class BrowserContext:
 					Promise.resolve({ state: Notification.permission }) :
 					originalQuery(parameters)
 			);
+			(() => {
+				if (window._eventListenerTrackerInitialized) return;
+				window._eventListenerTrackerInitialized = true;
 
+				const originalAddEventListener = EventTarget.prototype.addEventListener;
+				const eventListenersMap = new WeakMap();
+
+				EventTarget.prototype.addEventListener = function(type, listener, options) {
+					if (typeof listener === "function") {
+						let listeners = eventListenersMap.get(this);
+						if (!listeners) {
+							listeners = [];
+							eventListenersMap.set(this, listeners);
+						}
+
+						listeners.push({
+							type,
+							listener,
+							listenerPreview: listener.toString().slice(0, 100),
+							options
+						});
+					}
+
+					return originalAddEventListener.call(this, type, listener, options);
+				};
+
+				window.getEventListenersForNode = (node) => {
+					const listeners = eventListenersMap.get(node) || [];
+					return listeners.map(({ type, listenerPreview, options }) => ({
+						type,
+						listenerPreview,
+						options
+					}));
+				};
+			})();
 			"""
-		)
+
+		# Expose anti-detection scripts
+		await context.add_init_script(init_script)
 
 		return context
+
+	async def _set_viewport_size_for_page(self, page: Page) -> None:
+		"""Helper method to set viewport size for a page"""
+		try:
+			# Only set viewport size if no_viewport is False
+			if self.config.no_viewport is False:
+				viewport_size = {'width': self.config.window_width, 'height': self.config.window_height}
+				await page.set_viewport_size(viewport_size)
+				logger.debug(f'Set viewport size to {self.config.window_width}x{self.config.window_height}')
+			else:
+				logger.debug('Skipping viewport size setting because no_viewport is not False')
+		except Exception as e:
+			logger.debug(f'Failed to set viewport size for page: {e}')
 
 	async def _wait_for_stable_network(self):
 		page = await self.get_current_page()
@@ -717,16 +743,15 @@ class BrowserContext:
 		try:
 			from urllib.parse import urlparse
 
-			parsed_url = urlparse(url)
-			domain = parsed_url.netloc.lower()
-
 			# Special case: Allow 'about:blank' explicitly
 			if url == 'about:blank':
 				return True
 
-			# Remove port number if present
-			if ':' in domain:
-				domain = domain.split(':')[0]
+			parsed_url = urlparse(url)
+
+			# Extract only the hostname component (without auth credentials or port)
+			# Hostname returns only the domain portion, ignoring username:password and port
+			domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
 
 			# Check if domain matches any allowed domain pattern
 			return any(
@@ -1216,7 +1241,7 @@ class BrowserContext:
 			return f"{tag_name}[highlight_index='{element.highlight_index}']"
 
 	@time_execution_async('--get_locate_element')
-	async def get_locate_element(self, element: DOMElementNode) -> Optional[ElementHandle]:
+	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
 		current_frame = await self.get_current_page()
 
 		# Start with the target element and collect all parents
@@ -1261,7 +1286,7 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_xpath')
-	async def get_locate_element_by_xpath(self, xpath: str) -> Optional[ElementHandle]:
+	async def get_locate_element_by_xpath(self, xpath: str) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided XPath.
 		"""
@@ -1281,7 +1306,7 @@ class BrowserContext:
 			return None
 
 	@time_execution_async('--get_locate_element_by_css_selector')
-	async def get_locate_element_by_css_selector(self, css_selector: str) -> Optional[ElementHandle]:
+	async def get_locate_element_by_css_selector(self, css_selector: str) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided CSS selector.
 		"""
@@ -1302,8 +1327,8 @@ class BrowserContext:
 
 	@time_execution_async('--get_locate_element_by_text')
 	async def get_locate_element_by_text(
-		self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None
-	) -> Optional[ElementHandle]:
+		self, text: str, nth: int | None = 0, element_type: str | None = None
+	) -> ElementHandle | None:
 		"""
 		Locates an element on the page using the provided text.
 		If `nth` is provided, it returns the nth matching element (0-based).
@@ -1384,7 +1409,7 @@ class BrowserContext:
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	@time_execution_async('--click_element_node')
-	async def _click_element_node(self, element_node: DOMElementNode) -> Optional[str]:
+	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
 		"""
@@ -1453,7 +1478,7 @@ class BrowserContext:
 		for page_id, page in enumerate(session.context.pages):
 			try:
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
-			except asyncio.TimeoutError:
+			except TimeoutError:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
 				logger.debug('⚠  Failed to get tab info for tab #%s: %s (ignoring)', page_id, page.url)
@@ -1489,6 +1514,17 @@ class BrowserContext:
 		await page.bring_to_front()
 		await page.wait_for_load_state()
 
+		# Set the viewport size for the tab if no_viewport is False
+		try:
+			if self.config.no_viewport is False:
+				viewport_size = {'width': self.config.window_width, 'height': self.config.window_height}
+				await page.set_viewport_size(viewport_size)
+				logger.debug(f'Set viewport size to {self.config.window_width}x{self.config.window_height}')
+			else:
+				logger.debug('Skipping viewport size setting in switch_to_tab because no_viewport is not False')
+		except Exception as e:
+			logger.debug(f'Failed to set viewport size: {e}')
+
 	@time_execution_async('--create_new_tab')
 	async def create_new_tab(self, url: str | None = None) -> None:
 		"""Create a new tab and optionally navigate to a URL"""
@@ -1501,6 +1537,17 @@ class BrowserContext:
 		self.active_tab = new_page
 
 		await new_page.wait_for_load_state()
+
+		# Set the viewport size for the new tab if no_viewport is False
+		try:
+			if self.config.no_viewport is False:
+				viewport_size = {'width': self.config.window_width, 'height': self.config.window_height}
+				await new_page.set_viewport_size(viewport_size)
+				logger.debug(f'Set viewport size to {self.config.window_width}x{self.config.window_height}')
+			else:
+				logger.debug('Skipping viewport size setting in create_new_tab because no_viewport is not False')
+		except Exception as e:
+			logger.debug(f'Failed to set viewport size: {e}')
 
 		if url:
 			await new_page.goto(url)
@@ -1661,6 +1708,72 @@ class BrowserContext:
 		except Exception as e:
 			logger.debug(f'Failed to get CDP targets: {e}')
 			return []
+
+	async def _resize_window(self, context: PlaywrightBrowserContext) -> None:
+		"""Resize the browser window to match the configured size"""
+		try:
+			if not context.pages:
+				return
+
+			page = context.pages[0]
+			window_size = {'width': self.config.window_width, 'height': self.config.window_height}
+
+			# First, set the viewport size if no_viewport is False
+			try:
+				if self.config.no_viewport is False:
+					await page.set_viewport_size(window_size)
+					logger.debug(f'Set viewport size to {window_size["width"]}x{window_size["height"]}')
+				else:
+					logger.debug('Skipping viewport size setting in _resize_window because no_viewport is not False')
+			except Exception as e:
+				logger.debug(f'Viewport resize failed: {e}')
+
+			# Then, try to set the actual window size using CDP
+			try:
+				cdp_session = await context.new_cdp_session(page)
+
+				# Get the window ID
+				window_id_result = await cdp_session.send('Browser.getWindowForTarget')
+
+				# Set the window bounds
+				await cdp_session.send(
+					'Browser.setWindowBounds',
+					{
+						'windowId': window_id_result['windowId'],
+						'bounds': {
+							'width': window_size['width'],
+							'height': window_size['height'] + BROWSER_NAVBAR_HEIGHT,  # Add height for browser chrome
+							'windowState': 'normal',  # Ensure window is not minimized/maximized
+						},
+					},
+				)
+
+				await cdp_session.detach()
+				logger.debug(f'Set window size to {window_size["width"]}x{window_size["height"] + BROWSER_NAVBAR_HEIGHT}')
+			except Exception as e:
+				logger.debug(f'CDP window resize failed: {e}')
+
+				# Fallback to using JavaScript
+				try:
+					await page.evaluate(
+						"""
+						(width, height) => {
+							window.resizeTo(width, height);
+						}
+						""",
+						window_size['width'],
+						window_size['height'] + BROWSER_NAVBAR_HEIGHT,
+					)
+					logger.debug(
+						f'Used JavaScript to set window size to {window_size["width"]}x{window_size["height"] + BROWSER_NAVBAR_HEIGHT}'
+					)
+				except Exception as e:
+					logger.debug(f'JavaScript window resize failed: {e}')
+
+			logger.debug(f'Attempted to resize window to {window_size["width"]}x{window_size["height"]}')
+		except Exception as e:
+			logger.debug(f'Failed to resize browser window: {e}')
+			# Non-critical error, continue execution
 
 	async def wait_for_element(self, selector: str, timeout: float) -> None:
 		"""
