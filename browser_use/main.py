@@ -36,17 +36,17 @@ MAX_HISTORY_LENGTH = 100
 
 # Logo components with styling for rich panels
 BROWSER_LOGO = """
-                                  [white]   ++++++   +++++++++   [/]                                
-                                  [white] +++     +++++     +++  [/]                                
-                                  [white] ++    ++++   ++    ++  [/]                                
-                                  [white] ++  +++       +++  ++  [/]                                
-                                  [white]   ++++          +++    [/]                                
-                                  [white]  +++             +++   [/]                                
-                                  [white] +++               +++  [/]                                
-                                  [white] ++   +++      +++  ++  [/]                                
-                                  [white] ++    ++++   ++    ++  [/]                                
-                                  [white] +++     ++++++    +++  [/]                                
-                                  [white]   ++++++    +++++++    [/]                                
+								  [white]   ++++++   +++++++++   [/]                                
+								  [white] +++     +++++     +++  [/]                                
+								  [white] ++    ++++   ++    ++  [/]                                
+								  [white] ++  +++       +++  ++  [/]                                
+								  [white]   ++++          +++    [/]                                
+								  [white]  +++             +++   [/]                                
+								  [white] +++               +++  [/]                                
+								  [white] ++   +++      +++  ++  [/]                                
+								  [white] ++    ++++   ++    ++  [/]                                
+								  [white] +++     ++++++    +++  [/]                                
+								  [white]   ++++++    +++++++    [/]                                
 
 [white]██████╗ ██████╗  ██████╗ ██╗    ██╗███████╗███████╗██████╗[/]     [darkorange]██╗   ██╗███████╗███████╗[/]
 [white]██╔══██╗██╔══██╗██╔═══██╗██║    ██║██╔════╝██╔════╝██╔══██╗[/]    [darkorange]██║   ██║██╔════╝██╔════╝[/]
@@ -227,149 +227,167 @@ class BrowserUseApp(App):
 	# MODES = {"light"}  # Ensure app is inline, not fullscreen
 
 	CSS = """
-    #main-container {
-        height: 100%;
-        layout: vertical;
-    }
-    
-    #logo-panel, #links-panel, #paths-panel, #info-panels {
-        border: solid $primary;
-        margin: 0 0 1 0; 
-        padding: 0;
-    }
-    
-    #info-panels {
-        display: none;
-        layout: horizontal;
-        height: auto;
-        min-height: 5;
-    }
-    
-    #browser-panel, #model-panel, #tasks-panel {
-        width: 1fr;
-        height: auto;
-        border: solid $primary-darken-2;
-        padding: 1;
-        overflow: auto;
-        margin: 0 1 0 0;
-        padding: 1;
-    }
-    
-    #browser-panel {
-        border-left: solid $primary-darken-2;
-    }
-    
-    #tasks-panel {
-        margin-right: 0;
-    }
-    
-    #logo-panel {
-        width: 100%;
-        height: auto;
-        content-align: center middle;
-        text-align: center;
-    }
-    
-    #links-panel {
-        width: 100%;
-        padding: 1;
-        border: solid $primary;
-        height: auto;
-    }
-    
-    .link-white {
-        color: white;
-    }
-    
-    .link-purple {
-        color: purple;
-    }
-    
-    .link-magenta {
-        color: magenta;
-    }
-    
-    .link-green {
-        color: green;
-    }
+	#main-container {
+		height: 100%;
+		layout: vertical;
+	}
+	
+	#logo-panel, #links-panel, #paths-panel, #info-panels {
+		border: solid $primary;
+		margin: 0 0 1 0; 
+		padding: 0;
+	}
+	
+	#info-panels {
+		display: none;
+		layout: vertical;
+		height: auto;
+		min-height: 5;
+	}
+	
+	#top-panels {
+		layout: horizontal;
+		height: auto;
+		width: 100%;
+		min-height: 5;
+	}
+	
+	#browser-panel, #model-panel {
+		width: 1fr;
+		height: auto;
+		border: solid $primary-darken-2;
+		padding: 1;
+		overflow: auto;
+		margin: 0 1 0 0;
+		padding: 1;
+	}
+	
+	#tasks-panel {
+		width: 100%;
+		height: 1fr;
+		min-height: 20;
+		max-height: 60vh;
+		border: solid $primary-darken-2;
+		padding: 1;
+		overflow-y: scroll;
+		margin: 1 0 0 0;
+	}
+	
+	#browser-panel {
+		border-left: solid $primary-darken-2;
+	}
+	
+	#results-container {
+		display: none;
+	}
+	
+	#logo-panel {
+		width: 100%;
+		height: auto;
+		content-align: center middle;
+		text-align: center;
+	}
+	
+	#links-panel {
+		width: 100%;
+		padding: 1;
+		border: solid $primary;
+		height: auto;
+	}
+	
+	.link-white {
+		color: white;
+	}
+	
+	.link-purple {
+		color: purple;
+	}
+	
+	.link-magenta {
+		color: magenta;
+	}
+	
+	.link-green {
+		color: green;
+	}
 
-    HorizontalGroup {
-        height: auto;
-    }
-    
-    .link-label {
-        width: auto;
-    }
-    
-    .link-url {
-        width: auto;
-    }
-    
-    .link-row {
-        width: 100%;
-        height: auto;
-    }
-    
-    #paths-panel {
-        color: $text-muted;
-    }
-    
-    #task-input-container {
-        border: solid $accent;
-        padding: 1;
-        margin-bottom: 1;
-        height: auto;
-    }
-    
-    #task-label {
-        color: $accent;
-        padding-bottom: 1;
-    }
-    
-    #task-input {
-        width: 100%;
-    }
-    
-    #working-panel {
-        border: solid $warning;
-        padding: 1;
-        margin: 1 0;
-    }
-    
-    #completion-panel {
-        border: solid $success;
-        padding: 1;
-        margin: 1 0;
-    }
-    
-    #results-container {
-        height: 1fr;
-        overflow: auto;
-        border: none;
-    }
-    
-    #results-log {
-        height: auto;
-        overflow-y: scroll;
-        background: $surface;
-        color: $text;
-        width: 100%;
-    }
-    
-    .log-entry {
-        margin: 0;
-        padding: 0;
-    }
-    
-    #browser-info, #model-info, #tasks-info {
-        height: auto;
-        margin: 0;
-        padding: 0;
-        background: transparent;
-        overflow-y: auto;
-        min-height: 5;
-    }
-    """
+	HorizontalGroup {
+		height: auto;
+	}
+	
+	.link-label {
+		width: auto;
+	}
+	
+	.link-url {
+		width: auto;
+	}
+	
+	.link-row {
+		width: 100%;
+		height: auto;
+	}
+	
+	#paths-panel {
+		color: $text-muted;
+	}
+	
+	#task-input-container {
+		border: solid $accent;
+		padding: 1;
+		margin-bottom: 1;
+		height: auto;
+	}
+	
+	#task-label {
+		color: $accent;
+		padding-bottom: 1;
+	}
+	
+	#task-input {
+		width: 100%;
+	}
+	
+	#working-panel {
+		border: solid $warning;
+		padding: 1;
+		margin: 1 0;
+	}
+	
+	#completion-panel {
+		border: solid $success;
+		padding: 1;
+		margin: 1 0;
+	}
+	
+	#results-container {
+		height: 1fr;
+		overflow: auto;
+		border: none;
+	}
+	
+	#results-log {
+		height: auto;
+		overflow-y: scroll;
+		background: $surface;
+		color: $text;
+		width: 100%;
+	}
+	
+	.log-entry {
+		margin: 0;
+		padding: 0;
+	}
+	
+	#browser-info, #model-info, #tasks-info {
+		height: auto;
+		margin: 0;
+		padding: 0;
+		background: transparent;
+		overflow-y: auto;
+		min-height: 5;
+	}
+	"""
 
 	BINDINGS = [
 		Binding('ctrl+c', 'quit', 'Quit', priority=True, show=True),
@@ -752,35 +770,17 @@ class BrowserUseApp(App):
 			elif hasattr(self.llm, 'model'):
 				model_name = self.llm.model
 
-			# Get provider API details
-			provider = 'Unknown'
-			if 'openai' in self.llm.__class__.__name__.lower():
-				provider = 'OpenAI'
-				api_key = os.getenv('OPENAI_API_KEY', '')
-				if api_key:
-					# Show only that API key is configured, no actual key parts
-					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
-			elif 'anthropic' in self.llm.__class__.__name__.lower():
-				provider = 'Anthropic'
-				api_key = os.getenv('ANTHROPIC_API_KEY', '')
-				if api_key:
-					# Show only that API key is configured, no actual key parts
-					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
-			elif 'google' in self.llm.__class__.__name__.lower():
-				provider = 'Google'
-				api_key = os.getenv('GOOGLE_API_KEY', '')
-				if api_key:
-					# Show only that API key is configured, no actual key parts
-					model_info.write('[white]API Key:[/] [dim]✓ Configured[/]')
-
-			model_info.write(f'[white]LLM Provider:[/] [blue]{provider}[/]')
-
 			# Show model name
-			model_info.write(f'[white]Model:[/] [yellow]{model_name}[/]')
-
-			# Get and show temperature
-			if hasattr(self.llm, 'temperature'):
-				model_info.write(f'[white]Temperature:[/] [blue]{self.llm.temperature}[/]')
+			if self.agent:
+				temp_str = f'{self.llm.temperature}ºC ' if self.llm.temperature else ''
+				vision_str = '+ vision ' if self.agent.settings.use_vision else ''
+				memory_str = '+ memory ' if self.agent.enable_memory else ''
+				planner_str = '+ planner' if self.agent.settings.planner_llm else ''
+				model_info.write(
+					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__.lower()} [yellow]{model_name}[/] {temp_str}{vision_str}{memory_str}{planner_str}'
+				)
+			else:
+				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__.lower()} [yellow]{model_name}[/]')
 
 			# Show token usage statistics if agent exists and has history
 			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
@@ -794,23 +794,23 @@ class BrowserUseApp(App):
 					avg_tokens_per_step = total_tokens / num_steps
 					model_info.write(f'[white]Avg tokens/step:[/] [green]{avg_tokens_per_step:,.1f}[/]')
 
-				# Show total duration
-				total_duration = self.agent.state.history.total_duration_seconds()
-				if total_duration > 0:
-					model_info.write(f'[white]Total Duration:[/] [magenta]{total_duration:.2f}s[/]')
-
-				# Get the last step metadata to show the most recent LLM response time
+					# Get the last step metadata to show the most recent LLM response time
 				if num_steps > 0 and self.agent.state.history.history[-1].metadata:
 					last_step = self.agent.state.history.history[-1]
 					step_duration = last_step.metadata.duration_seconds
 					step_tokens = last_step.metadata.input_tokens
 
-					# Calculate response time metrics
-					model_info.write(f'[white]Last Step Duration:[/] [magenta]{step_duration:.2f}s[/]')
-
 					if step_tokens > 0:
 						tokens_per_second = step_tokens / step_duration if step_duration > 0 else 0
-						model_info.write(f'[white]tokens/sec:[/] [magenta]{tokens_per_second:.1f}[/]')
+						model_info.write(f'[white]Avg tokens/sec:[/] [magenta]{tokens_per_second:.1f}[/]')
+
+				# Show total duration
+				total_duration = self.agent.state.history.total_duration_seconds()
+				if total_duration > 0:
+					model_info.write(f'[white]Total Duration:[/] [magenta]{total_duration:.2f}s[/]')
+
+					# Calculate response time metrics
+					model_info.write(f'[white]Last Step Duration:[/] [magenta]{step_duration:.2f}s[/]')
 
 				# Add current state information
 				if hasattr(self.agent, 'running'):
@@ -885,18 +885,14 @@ class BrowserUseApp(App):
 							if memory:
 								memory_lines = memory.strip().split('\n')
 								memory_summary = memory_lines[0]
-								if len(memory_summary) > 60:
-									memory_summary = memory_summary[:57] + '...'
 								tasks_info.write(f'   [dim]Memory:[/] {memory_summary}')
 
 							# Show goal for this step
 							goal = item.model_output.current_state.next_goal
 							if goal:
-								# Truncate and sanitize goal for display
+								# Take just the first line for display
 								goal_lines = goal.strip().split('\n')
 								goal_summary = goal_lines[0]
-								if len(goal_summary) > 60:
-									goal_summary = goal_summary[:57] + '...'
 								tasks_info.write(f'   [cyan]Goal:[/] {goal_summary}')
 
 							# Show evaluation of previous goal (feedback)
@@ -904,8 +900,7 @@ class BrowserUseApp(App):
 							if eval_prev and idx > 1:  # Only show for steps after the first
 								eval_lines = eval_prev.strip().split('\n')
 								eval_summary = eval_lines[0]
-								if len(eval_summary) > 60:
-									eval_summary = eval_summary[:57] + '...'
+								eval_summary = eval_summary.replace('Success', '✅ ').replace('Failure', '❌ ').strip()
 								tasks_info.write(f'   [green]Evaluation:[/] {eval_summary}')
 
 						# Show actions taken in this step
@@ -925,13 +920,9 @@ class BrowserUseApp(App):
 							for result in item.result:
 								if result.error:
 									error_text = result.error
-									if len(error_text) > 40:
-										error_text = error_text[:37] + '...'
 									tasks_info.write(f'   [red]Error:[/] {error_text}')
 								elif result.extracted_content:
 									content = result.extracted_content
-									if len(content) > 40:
-										content = content[:37] + '...'
 									tasks_info.write(f'   [green]Result:[/] {content}')
 
 						# Add a space between steps for readability
@@ -944,6 +935,10 @@ class BrowserUseApp(App):
 				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
 		else:
 			tasks_info.write('[dim]Agent not initialized[/]')
+
+		# Force scroll to bottom
+		tasks_panel = self.query_one('#tasks-panel')
+		tasks_panel.scroll_end(animate=False)
 
 	def run_task(self, task: str) -> None:
 		"""Launch the task in a background worker."""
@@ -1054,17 +1049,19 @@ class BrowserUseApp(App):
 
 			# Information panels (hidden by default)
 			with Container(id='info-panels'):
-				# Browser panel
-				with Container(id='browser-panel'):
-					yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
+				# Top row with browser and model panels side by side
+				with Container(id='top-panels'):
+					# Browser panel
+					with Container(id='browser-panel'):
+						yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
 
-				# Model panel
-				with Container(id='model-panel'):
-					yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
+					# Model panel
+					with Container(id='model-panel'):
+						yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
 
-				# Tasks panel
-				with Container(id='tasks-panel'):
-					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True)
+				# Tasks panel (full width, below browser and model)
+				with VerticalScroll(id='tasks-panel'):
+					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True, auto_scroll=True)
 
 			# Links panel with URLs
 			with Container(id='links-panel'):
