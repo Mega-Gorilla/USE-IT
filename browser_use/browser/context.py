@@ -125,8 +125,8 @@ class BrowserContextConfig(BaseModel):
 	    geolocation: None
 	        Geolocation to be used in the browser context. Example: {'latitude': 59.95, 'longitude': 30.31667}
 
-	    permissions: None
-	        Browser permissions to grant. Values might include: ['geolocation', 'notifications']
+	    permissions: ['clipboard-read', 'clipboard-write']
+	        Browser permissions to grant. See full list here: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-grant-permissions
 
 	    timezone_id: None
 	        Changes the timezone of the browser. Example: 'Europe/Berlin'
@@ -173,7 +173,12 @@ class BrowserContextConfig(BaseModel):
 	is_mobile: bool | None = None
 	has_touch: bool | None = None
 	geolocation: dict | None = None
-	permissions: list[str] | None = None
+	permissions: list[str] = Field(
+		default_factory=lambda: [
+			'clipboard-read',
+			'clipboard-write',
+		]
+	)
 	timezone_id: str | None = None
 
 	force_new_context: bool = False
@@ -442,7 +447,16 @@ class BrowserContext:
 				timezone_id=self.config.timezone_id,
 			)
 
-		await context.grant_permissions(['clipboard-read', 'clipboard-write', 'geolocation'])
+		# Ensure required permissions are granted
+		required_permissions = ['clipboard-read', 'clipboard-write']  # needed for google sheets automation
+		if self.config.geolocation:
+			required_permissions.append('geolocation')
+		missing_permissions = [p for p in required_permissions if p not in self.config.permissions]
+		if any(missing_permissions):
+			logger.warning(
+				f'⚠️ Some permissions required by browser-use {missing_permissions} are missing from BrowserContextConfig(permissions={self.config.permissions}), some features may not work properly!'
+			)
+		await context.grant_permissions(self.config.permissions)
 
 		if self.config.trace_path:
 			await context.tracing.start(screenshots=True, snapshots=True, sources=True)
