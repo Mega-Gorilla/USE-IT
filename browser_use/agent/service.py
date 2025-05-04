@@ -445,7 +445,7 @@ class Agent(Generic[Context]):
 
 		try:
 			state = await self.browser_context.get_state(cache_clickable_elements_hashes=True)
-			active_page = await self.browser_context.get_current_page()
+			current_page = await self.browser_context.get_current_page()
 
 			# generate procedural memory if needed
 			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
@@ -454,10 +454,10 @@ class Agent(Generic[Context]):
 			await self._raise_if_stopped_or_paused()
 
 			# Update action models with page-specific actions
-			await self._update_action_models_for_page(active_page)
+			await self._update_action_models_for_page(current_page)
 
 			# Get page-specific filtered actions
-			page_filtered_actions = self.controller.registry.get_prompt_description(active_page)
+			page_filtered_actions = self.controller.registry.get_prompt_description(current_page)
 
 			# If there are page-specific actions, add them as a special message for this step only
 			if page_filtered_actions:
