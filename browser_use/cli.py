@@ -751,6 +751,11 @@ class BrowserUseApp(App):
 			# Include additional information about the browser if needed
 			if connected and hasattr(self, 'agent') and self.agent:
 				try:
+					# Show the agent's current page URL if available
+					if hasattr(self.agent, 'current_page') and self.agent.current_page:
+						current_url = self.agent.current_page.url
+						browser_info.write(f'👁️ [green]{current_url}[/]')
+
 					# Show when the browser was connected
 					timestamp = int(time.time())
 					current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
