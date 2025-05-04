@@ -32,6 +32,7 @@ class BrowserState(DOMState):
 	url: str
 	title: str
 	tabs: list[TabInfo]
+	current_tab_id: int = 0
 	screenshot: str | None = None
 	pixels_above: int = 0
 	pixels_below: int = 0
