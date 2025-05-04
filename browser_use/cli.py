@@ -1144,7 +1144,13 @@ class BrowserUseApp(App):
 
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
+	logger = logging.getLogger('browser_use.startup')
+	logger.info('Initializing BrowserUseApp instance...')
 	app = BrowserUseApp(config)
+	logger.info('BrowserUseApp instance created successfully')
+
+	logger.info('Starting Textual app with run_async()...')
+	# No more logging after this point as we're in fullscreen mode
 	await app.run_async()
 
 
@@ -1153,26 +1159,52 @@ async def textual_interface(config: dict[str, Any]):
 @click.pass_context
 def main(ctx: click.Context, **kwargs):
 	"""Browser-Use Interactive TUI"""
+	# Set up initial stdout logging to diagnose startup issues
+	logging.basicConfig(
+		level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S', force=True
+	)
+	logger = logging.getLogger('browser_use.startup')
+	logger.info('Starting Browser-Use initialization...')
+
+	logger.info('Loading environment variables from .env file...')
 	load_dotenv()
+	logger.info('Environment variables loaded')
 
 	# Create a no-op handler to prevent any logging to stdout
 	# This will be replaced with our RichLog handler once the app is mounted
+	logger.info('Setting up logging handlers...')
 	null_handler = logging.NullHandler()
 	logging.getLogger().addHandler(null_handler)
+	logger.info('Logging handlers set up')
 
 	# We're skipping the default setup_logging() which writes to sys.stdout
 
 	# Load user configuration
+	logger.info('Loading user configuration...')
 	config = load_user_config()
+	logger.info(f'User configuration loaded from {USER_CONFIG_FILE}')
 
 	# Update config with command-line arguments
+	logger.info('Updating configuration with command line arguments...')
 	config = update_config_with_click_args(config, ctx)
+	logger.info('Configuration updated')
 
 	# Save updated config
+	logger.info('Saving user configuration...')
 	save_user_config(config)
+	logger.info('Configuration saved')
 
 	# Run the Textual UI interface
-	asyncio.run(textual_interface(config))
+	logger.info('Starting Textual UI interface...')
+	try:
+		asyncio.run(textual_interface(config))
+	except Exception as e:
+		logger.error(f'Error launching Textual UI: {str(e)}', exc_info=True)
+		print(f'Error launching Browser-Use UI: {str(e)}')
+		import traceback
+
+		traceback.print_exc()
+		sys.exit(1)
 
 
 if __name__ == '__main__':
