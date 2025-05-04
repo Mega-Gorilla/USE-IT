@@ -39,7 +39,7 @@ jobs:
         - functionality/planner
         - functionality/hooks
         - test_controller
-        
+        - test_tab_management
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
