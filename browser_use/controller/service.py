@@ -201,7 +201,7 @@ class Controller(Generic[Context]):
 		async def open_tab(params: OpenTabAction, browser: BrowserContext):
 			await browser.create_new_tab(params.url)
 			# Ensure tab references are properly synchronized
-			page = await browser.get_agent_current_page()
+			await browser.get_agent_current_page()  # this has side-effects (even though it looks like a getter)
 			msg = f'🔗  Opened new tab with {params.url}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
