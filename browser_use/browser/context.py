@@ -1219,7 +1219,6 @@ class BrowserContext:
 				url=page.url,
 				title=await page.title(),
 				tabs=tabs_info,
-				current_tab_id=agent_current_page_id,
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
