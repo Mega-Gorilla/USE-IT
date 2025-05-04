@@ -288,11 +288,11 @@ class Agent(Generic[Context]):
 				'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserContextConfig(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
 				'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
 				'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
-				'Waiting 30 seconds before continuing... Press [Ctrl+C] to abort.'
+				'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
 			)
 			if sys.stdin.isatty():
 				try:
-					time.sleep(30)
+					time.sleep(10)
 				except KeyboardInterrupt:
 					print(
 						'\n\n 🛑 Exiting now... set BrowserContextConfig(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
