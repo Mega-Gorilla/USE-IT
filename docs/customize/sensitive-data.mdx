@@ -45,6 +45,14 @@ In this example:
 2. When the model wants to use your password it outputs x_password - and we replace it with the actual value.
 3. When your password is visible on the current page, we replace it in the LLM input - so that the model never has it in its state.
 
+### Missing or Empty Values
+
+When working with sensitive data, keep these details in mind:
+
+- If a key referenced by the model (`<secret>key_name</secret>`) is missing from your `sensitive_data` dictionary, a warning will be logged but the substitution tag will be preserved.
+- If you provide an empty value for a key in the `sensitive_data` dictionary, it will be treated the same as a missing key.
+- The system will always attempt to process all valid substitutions, even if some keys are missing or empty.
+
 Warning: Vision models still see the image of the page - where the sensitive data might be visible.
 
 This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
