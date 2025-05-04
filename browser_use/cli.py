@@ -740,9 +740,10 @@ class BrowserUseApp(App):
 
 			# Display browser information
 			browser_info.write(f'[bold cyan]{browser_class}[/] Browser ({browser_status})')
-			browser_info.write(f'Type: [yellow]{connection_type}[/]')
+			browser_info.write(
+				f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
+			)
 			browser_info.write(f'PID: [dim]{browser_pid}[/]')
-			browser_info.write(f'Headless: [{"green" if not headless else "red"}]{headless}[/]')
 			browser_info.write(f'CDP Port: {self.browser.config.chrome_remote_debugging_port}')
 
 			if window_width and window_height:
@@ -751,17 +752,22 @@ class BrowserUseApp(App):
 			# Include additional information about the browser if needed
 			if connected and hasattr(self, 'agent') and self.agent:
 				try:
-					# Show the agent's current page URL if available
-					if hasattr(self.agent, 'current_page') and self.agent.current_page:
-						current_url = self.agent.current_page.url
-						browser_info.write(f'👁️ [green]{current_url}[/]')
-
 					# Show when the browser was connected
 					timestamp = int(time.time())
 					current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
 					browser_info.write(f'Last updated: [dim]{current_time}[/]')
 				except Exception as e:
 					pass
+
+				# Show the agent's current page URL if available
+				if hasattr(self.agent.browser_context, 'agent_current_page') and self.agent.browser_context.agent_current_page:
+					current_url = (
+						self.agent.browser_context.agent_current_page.url.replace('https://', '')
+						.replace('http://', '')
+						.replace('www.', '')[:36]
+						+ '…'
+					)
+					browser_info.write(f'👁️  [green]{current_url}[/]')
 		else:
 			browser_info.write('[red]Browser not initialized[/]')
 
