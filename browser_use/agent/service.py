@@ -290,7 +290,7 @@ class Agent(Generic[Context]):
 				'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
 				'Waiting 30 seconds before continuing... Press [Ctrl+C] to abort.'
 			)
-			if not sys.stdin.isatty():
+			if sys.stdin.isatty():
 				try:
 					time.sleep(30)
 				except KeyboardInterrupt:
