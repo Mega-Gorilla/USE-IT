@@ -11,12 +11,15 @@ from browser_use.controller.service import Controller
 from browser_use.controller.views import (
 	ClickElementAction,
 	CloseTabAction,
+	DoneAction,
+	DragDropAction,
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
 	OpenTabAction,
 	ScrollAction,
 	SearchGoogleAction,
+	SendKeysAction,
 	SwitchTabAction,
 )
 
@@ -418,3 +421,498 @@ class TestControllerIntegration:
 		# Verify we're on Google search results page
 		page = await browser_context.get_current_page()
 		assert 'google.com/search' in page.url
+
+	@pytest.mark.asyncio
+	async def test_drag_drop_action(self, controller, browser_context):
+		"""Test that DragDropAction correctly drags and drops elements."""
+		# Create a simple HTML file for testing drag and drop
+		import os
+		import tempfile
+
+		html_content = """
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Drag and Drop Test</title>
+				<style>
+					body { font-family: Arial, sans-serif; padding: 20px; }
+					.container { display: flex; }
+					.dropzone {
+						width: 200px;
+						height: 200px;
+						border: 2px dashed #ccc;
+						margin: 10px;
+						padding: 10px;
+						transition: background-color 0.3s;
+					}
+					.draggable {
+						width: 80px;
+						height: 80px;
+						background-color: #3498db;
+						color: white;
+						text-align: center;
+						line-height: 80px;
+						cursor: move;
+						user-select: none;
+					}
+					#log {
+						margin-top: 20px;
+						padding: 10px;
+						border: 1px solid #ccc;
+						height: 150px;
+						overflow-y: auto;
+					}
+				</style>
+			</head>
+			<body>
+				<h1>Drag and Drop Test</h1>
+				
+				<div class="container">
+					<div id="zone1" class="dropzone">
+						Zone 1
+						<div id="draggable" class="draggable" draggable="true">Drag me</div>
+					</div>
+					
+					<div id="zone2" class="dropzone">
+						Zone 2
+					</div>
+				</div>
+				
+				<div id="log">Event log:</div>
+				
+				<script>
+					// Track item position for verification
+					function updateStatus() {
+						const element = document.getElementById('draggable');
+						const parent = element.parentElement;
+						document.getElementById('status').textContent = 
+							`Item is in: ${parent.id}, dropped count: ${dropCount}`;
+					}
+					
+					// Element references
+					const draggable = document.getElementById('draggable');
+					const dropzones = document.querySelectorAll('.dropzone');
+					const log = document.getElementById('log');
+					
+					// Counters for verification
+					let dragStartCount = 0;
+					let dropCount = 0;
+					
+					// Log events
+					function logEvent(event) {
+						const info = event.type;
+						log.textContent += info + ';';
+					}
+					
+					// Add status display
+					const statusDiv = document.createElement('div');
+					statusDiv.id = 'status';
+					document.body.appendChild(statusDiv);
+					
+					// Drag events for the draggable element
+					draggable.addEventListener('dragstart', (e) => {
+						dragStartCount++;
+						logEvent(e);
+						// Required for Firefox
+						e.dataTransfer.setData('text/plain', '');
+						e.target.style.opacity = '0.5';
+					});
+					
+					draggable.addEventListener('dragend', (e) => {
+						logEvent(e);
+						e.target.style.opacity = '1';
+						updateStatus();
+					});
+					
+					// Events for the dropzones
+					dropzones.forEach(zone => {
+						zone.addEventListener('dragover', (e) => {
+							e.preventDefault(); // Allow drop
+							logEvent(e);
+							zone.style.backgroundColor = '#f0f0f0';
+						});
+						
+						zone.addEventListener('dragleave', (e) => {
+							logEvent(e);
+							zone.style.backgroundColor = '';
+						});
+						
+						zone.addEventListener('drop', (e) => {
+							e.preventDefault();
+							logEvent(e);
+							zone.style.backgroundColor = '';
+							
+							// Only append if it's our draggable element
+							if (e.dataTransfer.types.includes('text/plain')) {
+								dropCount++;
+								zone.appendChild(draggable);
+							}
+						});
+					});
+					
+					// Mouse events
+					draggable.addEventListener('mousedown', (e) => logEvent(e));
+					document.addEventListener('mouseup', (e) => logEvent(e));
+					
+					// Initialize status
+					updateStatus();
+				</script>
+			</body>
+			</html>
+		"""
+
+		# Create a temporary file
+		with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w') as f:
+			f.write(html_content)
+			temp_html_path = f.name
+
+		try:
+			# Step 1: Navigate to the HTML file
+			file_url = f'file://{temp_html_path}'
+			goto_action = {'go_to_url': GoToUrlAction(url=file_url)}
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+			# Verify navigation worked
+			assert goto_result.error is None, f'Navigation failed: {goto_result.error}'
+			assert 'Navigated to file://' in goto_result.extracted_content
+
+			# Get page reference
+			page = await browser_context.get_current_page()
+
+			# Verify we loaded the page correctly
+			title = await page.title()
+			assert title == 'Drag and Drop Test', f'Page did not load correctly, got title: {title}'
+
+			# Step 2: Verify initial state - draggable should be in zone1
+			initial_parent = await page.evaluate('() => document.getElementById("draggable").parentElement.id')
+			assert initial_parent == 'zone1', f'Element should start in zone1, but found in {initial_parent}'
+
+			# Step 3: Get the element positions for drag operation
+			element_info = await page.evaluate("""
+				() => {
+					const draggable = document.getElementById("draggable");
+					const zone2 = document.getElementById("zone2");
+					
+					const draggableRect = draggable.getBoundingClientRect();
+					const zone2Rect = zone2.getBoundingClientRect();
+					
+					return {
+						source: {
+							x: Math.round(draggableRect.left + draggableRect.width/2),
+							y: Math.round(draggableRect.top + draggableRect.height/2)
+						},
+						target: {
+							x: Math.round(zone2Rect.left + zone2Rect.width/2),
+							y: Math.round(zone2Rect.top + zone2Rect.height/2)
+						}
+					};
+				}
+			""")
+
+			print(f'Source element position: {element_info["source"]}')
+			print(f'Target position: {element_info["target"]}')
+
+			# Step 4: Use the controller's DragDropAction to perform the drag
+			drag_action = {
+				'drag_drop': DragDropAction(
+					# Use the coordinate-based approach
+					coord_source_x=element_info['source']['x'],
+					coord_source_y=element_info['source']['y'],
+					coord_target_x=element_info['target']['x'],
+					coord_target_y=element_info['target']['y'],
+					steps=10,  # More steps for smoother movement
+					delay_ms=10,  # Small delay for browser to process events
+				)
+			}
+
+			class DragDropActionModel(ActionModel):
+				drag_drop: DragDropAction | None = None
+
+			# Execute the drag action through the controller
+			result = await controller.act(DragDropActionModel(**drag_action), browser_context)
+
+			# Step 5: Verify the controller action result
+			assert result.error is None, f'Drag operation failed with error: {result.error}'
+			assert result.is_done is False
+			assert '🖱️ Dragged from' in result.extracted_content
+
+			# Step 6: Verify the element was moved by checking its new parent
+			final_parent = await page.evaluate('() => document.getElementById("draggable").parentElement.id')
+
+			# Step 7: Get the event log to see what events were fired
+			event_log = await page.evaluate('() => document.getElementById("log").textContent')
+			print(f'Event log: {event_log}')
+
+			# Check that mousedown and mouseup events were recorded
+			assert 'mousedown' in event_log, 'No mousedown event detected'
+
+			# Step 8: Verify the status shows the item was dropped
+			status_text = await page.evaluate('() => document.getElementById("status").textContent')
+
+			drag_succeeded = final_parent == 'zone2'
+
+			assert drag_succeeded, "Drag and drop events weren't fired correctly"
+
+		finally:
+			# Clean up the temporary file
+			os.unlink(temp_html_path)
+
+	@pytest.mark.asyncio
+	async def test_send_keys_action(self, controller, browser_context):
+		"""Test SendKeysAction using a controlled local HTML file."""
+		# Create a temporary HTML file with form elements
+		import os
+		import tempfile
+
+		html_content = """
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Keyboard Test</title>
+				<style>
+					body { font-family: Arial, sans-serif; margin: 20px; }
+					input, textarea { margin: 10px 0; padding: 5px; width: 300px; }
+					#result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; min-height: 30px; }
+				</style>
+			</head>
+			<body>
+				<h1>Keyboard Actions Test</h1>
+				<form id="testForm">
+					<div>
+						<label for="textInput">Text Input:</label>
+						<input type="text" id="textInput" placeholder="Type here...">
+					</div>
+					<div>
+						<label for="textarea">Textarea:</label>
+						<textarea id="textarea" rows="4" placeholder="Type here..."></textarea>
+					</div>
+				</form>
+				<div id="result"></div>
+				
+				<script>
+					// Track focused element
+					document.addEventListener('focus', function(e) {
+						document.getElementById('result').textContent = 'Focused on: ' + e.target.id;
+					}, true);
+					
+					// Track key events
+					document.addEventListener('keydown', function(e) {
+						const element = document.activeElement;
+						if (element.id) {
+							const resultEl = document.getElementById('result');
+							resultEl.textContent += '\\nKeydown: ' + e.key;
+							
+							// For Ctrl+A, detect and show selection
+							if (e.key === 'a' && e.ctrlKey) {
+								setTimeout(() => {
+									resultEl.textContent += '\\nSelection length: ' + 
+										(window.getSelection().toString().length || 
+										(element.selectionEnd - element.selectionStart));
+								}, 50);
+							}
+						}
+					});
+				</script>
+			</body>
+			</html>
+		"""
+
+		# Create a temporary file
+		with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w') as f:
+			f.write(html_content)
+			temp_html_path = f.name
+
+		try:
+			# Navigate to the local HTML file
+			file_url = f'file://{temp_html_path}'
+			goto_action = {'go_to_url': GoToUrlAction(url=file_url)}
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			# Execute navigation
+			goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+			await asyncio.sleep(0.1)
+
+			# Verify navigation result
+			assert isinstance(goto_result, ActionResult)
+			assert 'Navigated to file://' in goto_result.extracted_content
+			assert goto_result.error is None
+			assert goto_result.is_done is False
+
+			# Get the page object
+			page = await browser_context.get_current_page()
+
+			# Verify page loaded
+			title = await page.title()
+			assert title == 'Keyboard Test'
+
+			# Verify initial page state
+			h1_text = await page.evaluate('() => document.querySelector("h1").textContent')
+			assert h1_text == 'Keyboard Actions Test'
+
+			# 1. Test Tab key to focus the first input
+			tab_keys_action = {'send_keys': SendKeysAction(keys='Tab')}
+
+			class SendKeysActionModel(ActionModel):
+				send_keys: SendKeysAction | None = None
+
+			tab_result = await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+			await asyncio.sleep(0.1)
+
+			# Verify Tab action result
+			assert isinstance(tab_result, ActionResult)
+			assert 'Sent keys: Tab' in tab_result.extracted_content
+			assert tab_result.error is None
+			assert tab_result.is_done is False
+
+			# Verify Tab worked by checking focused element
+			active_element_id = await page.evaluate('() => document.activeElement.id')
+			assert active_element_id == 'textInput', f"Expected 'textInput' to be focused, got '{active_element_id}'"
+
+			# Verify result text in the DOM
+			result_text = await page.evaluate('() => document.getElementById("result").textContent')
+			assert 'Focused on: textInput' in result_text
+
+			# 2. Type text into the input
+			test_text = 'This is a test'
+			type_action = {'send_keys': SendKeysAction(keys=test_text)}
+			type_result = await controller.act(SendKeysActionModel(**type_action), browser_context)
+			await asyncio.sleep(0.1)
+
+			# Verify typing action result
+			assert isinstance(type_result, ActionResult)
+			assert f'Sent keys: {test_text}' in type_result.extracted_content
+			assert type_result.error is None
+			assert type_result.is_done is False
+
+			# Verify text was entered
+			input_value = await page.evaluate('() => document.getElementById("textInput").value')
+			assert input_value == test_text, f"Expected input value '{test_text}', got '{input_value}'"
+
+			# Verify key events were recorded
+			result_text = await page.evaluate('() => document.getElementById("result").textContent')
+			for char in test_text:
+				assert f'Keydown: {char}' in result_text, f"Missing key event for '{char}'"
+
+			# 3. Test Ctrl+A for select all
+			select_all_action = {'send_keys': SendKeysAction(keys='Control+a')}
+			select_all_result = await controller.act(SendKeysActionModel(**select_all_action), browser_context)
+			await asyncio.sleep(0.1)
+
+			# Verify select all action result
+			assert isinstance(select_all_result, ActionResult)
+			assert 'Sent keys: Control+a' in select_all_result.extracted_content
+			assert select_all_result.error is None
+
+			# Verify selection length matches the text length
+			selection_length = await page.evaluate(
+				'() => document.activeElement.selectionEnd - document.activeElement.selectionStart'
+			)
+			assert selection_length == len(test_text), f'Expected selection length {len(test_text)}, got {selection_length}'
+
+			# Verify selection in result text
+			result_text = await page.evaluate('() => document.getElementById("result").textContent')
+			assert 'Keydown: a' in result_text
+			assert 'Selection length:' in result_text
+
+			# 4. Test Tab to next field
+			tab_result2 = await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+			await asyncio.sleep(0.1)
+
+			# Verify second Tab action result
+			assert isinstance(tab_result2, ActionResult)
+			assert 'Sent keys: Tab' in tab_result2.extracted_content
+			assert tab_result2.error is None
+
+			# Verify we moved to the textarea
+			active_element_id = await page.evaluate('() => document.activeElement.id')
+			assert active_element_id == 'textarea', f"Expected 'textarea' to be focused, got '{active_element_id}'"
+
+			# Verify focus changed in result text
+			result_text = await page.evaluate('() => document.getElementById("result").textContent')
+			assert 'Focused on: textarea' in result_text
+
+			# 5. Type in the textarea
+			textarea_text = 'Testing multiline\ninput text'
+			textarea_action = {'send_keys': SendKeysAction(keys=textarea_text)}
+			textarea_result = await controller.act(SendKeysActionModel(**textarea_action), browser_context)
+
+			# Verify textarea typing action result
+			assert isinstance(textarea_result, ActionResult)
+			assert f'Sent keys: {textarea_text}' in textarea_result.extracted_content
+			assert textarea_result.error is None
+			assert textarea_result.is_done is False
+
+			# Verify text was entered in textarea
+			textarea_value = await page.evaluate('() => document.getElementById("textarea").value')
+			assert textarea_value == textarea_text, f"Expected textarea value '{textarea_text}', got '{textarea_value}'"
+
+			# Verify newline was properly handled
+			lines = textarea_value.split('\n')
+			assert len(lines) == 2, f'Expected 2 lines in textarea, got {len(lines)}'
+			assert lines[0] == 'Testing multiline'
+			assert lines[1] == 'input text'
+
+			# Test that Tab cycles back to the first element if we tab again
+			await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+			await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+
+			active_element_id = await page.evaluate('() => document.activeElement.id')
+			assert active_element_id == 'textInput', 'Tab cycling through form elements failed'
+
+			# Verify the test input still has its value
+			input_value = await page.evaluate('() => document.getElementById("textInput").value')
+			assert input_value == test_text, "Input value shouldn't have changed after tabbing"
+
+		finally:
+			# Clean up the temporary file
+			os.unlink(temp_html_path)
+
+	@pytest.mark.asyncio
+	async def test_done_action(self, controller, browser_context):
+		"""Test that DoneAction completes a task and reports success or failure."""
+		# First navigate to a page
+		goto_action = {'go_to_url': GoToUrlAction(url='https://google.com')}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: GoToUrlAction | None = None
+
+		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+		success_done_message = 'Successfully completed task'
+
+		# Create done action with success
+		done_action = {'done': DoneAction(text=success_done_message, success=True)}
+
+		class DoneActionModel(ActionModel):
+			done: DoneAction | None = None
+
+		# Execute done action
+		result = await controller.act(DoneActionModel(**done_action), browser_context)
+
+		# Verify the result
+		assert isinstance(result, ActionResult)
+		assert success_done_message in result.extracted_content
+		assert result.success is True
+		assert result.is_done is True
+		assert result.error is None
+
+		failed_done_message = 'Failed to complete task'
+
+		# Test with failure case
+		failed_done_action = {'done': DoneAction(text=failed_done_message, success=False)}
+
+		# Execute failed done action
+		result = await controller.act(DoneActionModel(**failed_done_action), browser_context)
+
+		# Verify the result
+		assert isinstance(result, ActionResult)
+		assert failed_done_message in result.extracted_content
+		assert result.success is False
+		assert result.is_done is True
+		assert result.error is None
