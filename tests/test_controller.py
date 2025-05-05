@@ -1063,3 +1063,85 @@ class TestControllerIntegration:
 
 		finally:
 			os.unlink(temp_path)
+
+	@pytest.mark.asyncio
+	async def test_select_dropdown_option(self, controller, browser_context):
+		"""Test that select_dropdown_option correctly selects an option from a dropdown."""
+		# Create a simple HTML file with a dropdown for testing
+		import os
+		import tempfile
+
+		# Create a temporary HTML file with a dropdown
+		with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w') as f:
+			f.write("""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Dropdown Test</title>
+			</head>
+			<body>
+				<h1>Dropdown Test</h1>
+				<select id="test-dropdown" name="test-dropdown">
+					<option value="">Please select</option>
+					<option value="option1">First Option</option>
+					<option value="option2">Second Option</option>
+					<option value="option3">Third Option</option>
+				</select>
+			</body>
+			</html>
+			""")
+			temp_path = f.name
+
+		try:
+			# Navigate to the HTML file using go_to_url
+			file_url = f'file://{temp_path.replace(os.sep, "/")}'
+			goto_action = {'go_to_url': GoToUrlAction(url=file_url)}
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			# Navigate to the page
+			await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+			# Wait for the page to load
+			page = await browser_context.get_current_page()
+			await page.wait_for_load_state()
+
+			# populate the selector map with highlight indices
+			await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+			# Now get the selector map which should contain our dropdown
+			selector_map = await browser_context.get_selector_map()
+
+			# Find the dropdown element in the selector map
+			dropdown_index = None
+			for idx, element in selector_map.items():
+				if element.tag_name.lower() == 'select':
+					dropdown_index = idx
+					break
+			assert dropdown_index is not None, 'dropdown_index is None'
+
+			# Create a model for the standard select_dropdown_option action
+			class SelectDropdownOptionModel(ActionModel):
+				select_dropdown_option: dict
+
+			# Execute the action with the dropdown index
+			result = await controller.act(
+				SelectDropdownOptionModel(select_dropdown_option={'index': dropdown_index, 'text': 'Second Option'}),
+				browser_context,
+			)
+
+			# Verify the result structure
+			assert isinstance(result, ActionResult)
+
+			# Core logic validation: Verify selection was successful
+			assert 'selected option' in result.extracted_content.lower()
+			assert 'Second Option' in result.extracted_content
+
+			# Verify the actual dropdown selection was made by checking the DOM
+			selected_value = await page.evaluate("document.getElementById('test-dropdown').value")
+			assert selected_value == 'option2'  # Second Option has value "option2"
+
+		finally:
+			# Clean up the temporary file
+			os.unlink(temp_path)
