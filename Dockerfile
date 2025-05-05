@@ -1,10 +1,10 @@
-FROM python:3.11.3-slim
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Install minimal system dependencies required for Chrome
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq \
     git \
     curl \
     unzip \
@@ -29,13 +29,12 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Install Python dependencies
-RUN pip install --upgrade pip \
-    && pip install .
+# Build Python package
+RUN python3 setup.py sdist
 
-# Healthcheck (optional)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+# Install Python dependencies from built package
+RUN python3 -m pip install --upgrade pip --quiet \
+    && python3 -m pip install dist/*.tar.gz --quiet
 
 # Default command
-CMD ["python", "-m", "browser_use"]
+CMD ["python3", "-m", "browser_use"]
