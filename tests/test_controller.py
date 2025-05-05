@@ -979,64 +979,32 @@ class TestControllerIntegration:
 					dropdown_index = idx
 					break
 
-			# If we still can't find the dropdown in the selector map, use a direct DOM approach
-			if dropdown_index is None:
-				# Log the selector map contents for debugging
-				print('Selector map contents:', selector_map)
+			assert dropdown_index is not None, (
+				f'Could not find select element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+			)
 
-				# Create a direct test for get_dropdown_options using the DOM API
-				@controller.action('Get dropdown options')
-				async def get_dropdown_options_test(browser: BrowserContext):
-					page = await browser.get_current_page()
+			# Create a model for the standard get_dropdown_options action
+			class GetDropdownOptionsModel(ActionModel):
+				get_dropdown_options: dict
 
-					# Use the same approach as the controller's get_dropdown_options function
-					options_data = await page.evaluate("""
-						() => {
-							const select = document.getElementById('test-dropdown');
-							return {
-								options: Array.from(select.options).map(opt => ({
-									text: opt.text,
-									value: opt.value,
-									index: opt.index
-								})),
-								id: select.id,
-								name: select.name
-							};
-						}
-					""")
+			# Execute the action with the dropdown index
+			result = await controller.act(
+				GetDropdownOptionsModel(get_dropdown_options={'index': dropdown_index}), browser_context
+			)
 
-					formatted_options = []
-					for opt in options_data['options']:
-						formatted_options.append(f'{opt["index"]}: text="{opt["text"]}"')
-
-					return ActionResult(
-						extracted_content='\n'.join(formatted_options) + '\nUse the exact text string in select_dropdown_option',
-						include_in_memory=True,
-					)
-
-				# Create a model for our action
-				class GetDropdownOptionsTestModel(ActionModel):
-					get_dropdown_options_test: dict = {}
-
-				# Execute the action
-				result = await controller.act(GetDropdownOptionsTestModel(), browser_context)
-			else:
-				# Create a model for the standard get_dropdown_options action
-				class GetDropdownOptionsModel(ActionModel):
-					get_dropdown_options: dict
-
-				# Execute the action with the dropdown index
-				result = await controller.act(
-					GetDropdownOptionsModel(get_dropdown_options={'index': dropdown_index}), browser_context
-				)
+			expected_options = [
+				{'index': 0, 'text': 'Please select', 'value': ''},
+				{'index': 1, 'text': 'First Option', 'value': 'option1'},
+				{'index': 2, 'text': 'Second Option', 'value': 'option2'},
+				{'index': 3, 'text': 'Third Option', 'value': 'option3'},
+			]
 
 			# Verify the result structure
 			assert isinstance(result, ActionResult)
 
 			# Core logic validation: Verify all options are returned
-			assert 'First Option' in result.extracted_content
-			assert 'Second Option' in result.extracted_content
-			assert 'Third Option' in result.extracted_content
+			for option in expected_options[1:]:  # Skip the placeholder option
+				assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
 
 			# Verify the instruction for using the text in select_dropdown_option is included
 			assert 'Use the exact text string in select_dropdown_option' in result.extracted_content
@@ -1053,13 +1021,17 @@ class TestControllerIntegration:
 			""")
 
 			# Verify the dropdown has the expected options
-			assert len(dropdown_options) == 4, f'Expected 4 options, got {len(dropdown_options)}'
-			assert dropdown_options[1]['text'] == 'First Option'
-			assert dropdown_options[1]['value'] == 'option1'
-			assert dropdown_options[2]['text'] == 'Second Option'
-			assert dropdown_options[2]['value'] == 'option2'
-			assert dropdown_options[3]['text'] == 'Third Option'
-			assert dropdown_options[3]['value'] == 'option3'
+			assert len(dropdown_options) == len(expected_options), (
+				f'Expected {len(expected_options)} options, got {len(dropdown_options)}'
+			)
+			for i, expected in enumerate(expected_options):
+				actual = dropdown_options[i]
+				assert actual['text'] == expected['text'], (
+					f"Option at index {i} has wrong text: expected '{expected['text']}', got '{actual['text']}'"
+				)
+				assert actual['value'] == expected['value'], (
+					f"Option at index {i} has wrong value: expected '{expected['value']}', got '{actual['value']}'"
+				)
 
 		finally:
 			os.unlink(temp_path)
@@ -1119,7 +1091,10 @@ class TestControllerIntegration:
 				if element.tag_name.lower() == 'select':
 					dropdown_index = idx
 					break
-			assert dropdown_index is not None, 'dropdown_index is None'
+
+			assert dropdown_index is not None, (
+				f'Could not find select element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+			)
 
 			# Create a model for the standard select_dropdown_option action
 			class SelectDropdownOptionModel(ActionModel):
