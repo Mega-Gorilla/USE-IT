@@ -42,6 +42,7 @@ class AgentTelemetryEvent(BaseTelemetryEvent):
 	# step details
 	action_errors: Sequence[str | None]
 	action_history: Sequence[list[dict] | None]
+	urls_visited: Sequence[str | None]
 	# end details
 	steps: int
 	total_input_tokens: int
