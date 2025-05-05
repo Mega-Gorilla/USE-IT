@@ -1145,3 +1145,124 @@ class TestControllerIntegration:
 		finally:
 			# Clean up the temporary file
 			os.unlink(temp_path)
+
+	@pytest.mark.asyncio
+	async def test_click_element_by_index(self, controller, browser_context):
+		"""Test that click_element_by_index correctly clicks an element and handles different outcomes."""
+		# Create a simple HTML file with clickable elements for testing
+		import os
+		import tempfile
+
+		# Create a temporary HTML file with various clickable elements
+		with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w') as f:
+			f.write("""
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<title>Click Test</title>
+					<style>
+						.clickable {
+							margin: 10px;
+							padding: 10px;
+							border: 1px solid #ccc;
+							cursor: pointer;
+						}
+						#result {
+							margin-top: 20px;
+							padding: 10px;
+							border: 1px solid #ddd;
+							min-height: 20px;
+						}
+					</style>
+				</head>
+				<body>
+					<h1>Click Test</h1>
+					<div class="clickable" id="button1" onclick="updateResult('Button 1 clicked')">Button 1</div>
+					<div class="clickable" id="button2" onclick="updateResult('Button 2 clicked')">Button 2</div>
+					<a href="#" class="clickable" id="link1" onclick="updateResult('Link 1 clicked'); return false;">Link 1</a>
+					<div id="result"></div>
+					
+					<script>
+						function updateResult(text) {
+							document.getElementById('result').textContent = text;
+						}
+					</script>
+				</body>
+				</html>
+			""")
+			temp_path = f.name
+
+		try:
+			# Navigate to the HTML file using go_to_url
+			file_url = f'file://{temp_path.replace(os.sep, "/")}'
+			goto_action = {'go_to_url': GoToUrlAction(url=file_url)}
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			# Navigate to the page
+			await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+			# Wait for the page to load
+			page = await browser_context.get_current_page()
+			await page.wait_for_load_state()
+
+			# Initialize the DOM state to populate the selector map
+			await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+			# Get the selector map
+			selector_map = await browser_context.get_selector_map()
+
+			# Find a clickable element in the selector map
+			button_index = None
+			button_text = None
+
+			for idx, element in selector_map.items():
+				# Look for the first div with class "clickable"
+				if element.tag_name.lower() == 'div' and 'clickable' in str(element.attributes.get('class', '')):
+					button_index = idx
+					button_text = element.get_all_text_till_next_clickable_element(max_depth=2).strip()
+					break
+
+			# Verify we found a clickable element
+			assert button_index is not None, (
+				f'Could not find clickable element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+			)
+
+			# Define expected test data
+			expected_button_text = 'Button 1'
+			expected_result_text = 'Button 1 clicked'
+
+			# Verify the button text matches what we expect
+			assert expected_button_text in button_text, (
+				f"Expected button text '{expected_button_text}' not found in '{button_text}'"
+			)
+
+			# Create a model for the click_element_by_index action
+			class ClickElementActionModel(ActionModel):
+				click_element_by_index: ClickElementAction | None = None
+
+			# Execute the action with the button index
+			result = await controller.act(
+				ClickElementActionModel(click_element_by_index={'index': button_index}), browser_context
+			)
+
+			# Verify the result structure
+			assert isinstance(result, ActionResult), 'Result should be an ActionResult instance'
+			assert result.error is None, f'Expected no error but got: {result.error}'
+
+			# Core logic validation: Verify click was successful
+			assert f'Clicked button with index {button_index}' in result.extracted_content, (
+				f'Expected click confirmation in result content, got: {result.extracted_content}'
+			)
+			assert button_text in result.extracted_content, (
+				f"Button text '{button_text}' not found in result content: {result.extracted_content}"
+			)
+
+			# Verify the click actually had an effect on the page
+			result_text = await page.evaluate("document.getElementById('result').textContent")
+			assert result_text == expected_result_text, f"Expected result text '{expected_result_text}', got '{result_text}'"
+
+		finally:
+			# Clean up the temporary file
+			os.unlink(temp_path)
