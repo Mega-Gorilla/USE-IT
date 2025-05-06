@@ -38,7 +38,6 @@ class TestTabManagement:
 		browser_instance = Browser(
 			config=BrowserConfig(
 				headless=True,
-				disable_security=True,
 			)
 		)
 		yield browser_instance
