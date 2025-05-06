@@ -747,7 +747,7 @@ class Agent(Generic[Context]):
 		logger.debug(f'Version: {self.version}, Source: {self.source}')
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
-		"""Log the agent event for this run"""
+		"""Sent the agent event for this run to telemetry"""
 
 		# Prepare action_history data correctly
 		action_history_data = []
@@ -822,15 +822,24 @@ class Agent(Generic[Context]):
 
 		loop = asyncio.get_event_loop()
 		agent_run_error: str | None = None  # Initialize error tracking variable
+		self._force_exit_telemetry_logged = False  # ADDED: Flag for custom telemetry on force exit
 
 		# Set up the Ctrl+C signal handler with callbacks specific to this agent
 		from browser_use.utils import SignalHandler
+
+		# Define the custom exit callback function for second CTRL+C
+		def on_force_exit_log_telemetry():
+			self._log_agent_event(max_steps=max_steps, agent_run_error='SIGINT: Cancelled by user')
+			# NEW: Call the flush method on the telemetry instance
+			if hasattr(self, 'telemetry') and self.telemetry:
+				self.telemetry.flush()
+			self._force_exit_telemetry_logged = True  # Set the flag
 
 		signal_handler = SignalHandler(
 			loop=loop,
 			pause_callback=self.pause,
 			resume_callback=self.resume,
-			custom_exit_callback=None,  # No special cleanup needed on forced exit
+			custom_exit_callback=on_force_exit_log_telemetry,  # Pass the new telemetrycallback
 			exit_on_second_int=True,
 		)
 		signal_handler.register()
@@ -920,11 +929,15 @@ class Agent(Generic[Context]):
 			# Unregister signal handlers before cleanup
 			signal_handler.unregister()
 
-			try:
-				self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-				logger.info('Agent run telemetry logged.')
-			except Exception as log_e:  # Catch potential errors during logging itself
-				logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
+			if not self._force_exit_telemetry_logged:  # MODIFIED: Check the flag
+				try:
+					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
+					logger.info('Agent run telemetry logged.')
+				except Exception as log_e:  # Catch potential errors during logging itself
+					logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
+			else:
+				# ADDED: Info message when custom telemetry for SIGINT was already logged
+				logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
 			await self.close()
 
