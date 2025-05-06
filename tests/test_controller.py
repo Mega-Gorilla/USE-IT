@@ -40,7 +40,6 @@ class TestControllerIntegration:
 		browser_instance = Browser(
 			config=BrowserConfig(
 				headless=True,
-				disable_security=True,  # This disables web security features
 			)
 		)
 		yield browser_instance
