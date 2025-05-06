@@ -516,7 +516,7 @@ async def test_browser_window_size(monkeypatch):
 
 		async def close(self):
 			pass
-		
+
 		async def grant_permissions(self, permissions, origin=None):
 			pass
 
