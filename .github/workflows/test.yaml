@@ -49,8 +49,10 @@ jobs:
           enable-cache: true
           activate-environment: true
 
+      - run: uv pip install .
+
       - name: Detect installed Playwright or Patchright version
-        run: echo "PLAYWRIGHT_VERSION=$(grep -oP 'patchright>=\K[0-9.]+' pyproject.toml)" >> $GITHUB_ENV
+        run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "patchright") | .version')" >> $GITHUB_ENV
 
       - name: Cache playwright binaries
         uses: actions/cache@v3
