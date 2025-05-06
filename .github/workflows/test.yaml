@@ -49,7 +49,7 @@ jobs:
           enable-cache: true
           activate-environment: true
 
-      - run: uv pip install .
+      - run: uv sync
 
       - name: Detect installed Playwright or Patchright version
         run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "patchright") | .version')" >> $GITHUB_ENV
