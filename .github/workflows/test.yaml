@@ -61,6 +61,6 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}
 
-      - run: uv run patchright install --no-shell chromium
+      - run: patchright install --no-shell chromium
 
-      - run: uv run --with=dotenv pytest tests/${{ matrix.test }}.py
+      - run: pytest tests/${{ matrix.test }}.py
