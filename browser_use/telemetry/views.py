@@ -40,6 +40,7 @@ class AgentTelemetryEvent(BaseTelemetryEvent):
 	use_vision: bool
 	use_validation: bool
 	version: str
+	source: str
 	# step details
 	action_errors: Sequence[str | None]
 	action_history: Sequence[list[dict] | None]

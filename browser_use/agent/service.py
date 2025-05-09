@@ -809,6 +809,7 @@ class Agent(Generic[Context]):
 				use_vision=self.settings.use_vision,
 				use_validation=self.settings.validate_output,
 				version=self.version,
+				source=self.source,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
