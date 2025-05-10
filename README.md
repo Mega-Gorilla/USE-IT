@@ -34,7 +34,7 @@ For memory functionality (requires Python<3.13 due to PyTorch compatibility):
 pip install "browser-use[memory]"
 ```
 
-Install Patchright:
+Install the browser:
 ```bash
 playwright install chromium --with-deps --no-shell
 ```
