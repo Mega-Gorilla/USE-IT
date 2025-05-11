@@ -1511,7 +1511,7 @@ class BrowserContext:
 				element_handle = await current_frame.query_selector(css_selector)
 				if element_handle:
 					is_visible = await self._is_visible(element_handle)
-					if not is_visible:
+					if is_visible:
 						await element_handle.scroll_into_view_if_needed()
 					return element_handle
 				return None
