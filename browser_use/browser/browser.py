@@ -271,6 +271,7 @@ class Browser:
 			and hasattr(self.config, 'new_context_config')
 			and hasattr(self.config.new_context_config, 'window_width')
 			and hasattr(self.config.new_context_config, 'window_height')
+			and not self.config.new_context_config.no_viewport
 		):
 			screen_size = {
 				'width': self.config.new_context_config.window_width,
