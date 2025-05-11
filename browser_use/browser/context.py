@@ -1530,8 +1530,8 @@ class BrowserContext:
 			# Use XPath to locate the element
 			element_handle = await current_frame.query_selector(f'xpath={xpath}')
 			if element_handle:
-				is_hidden = await element_handle.is_hidden()
-				if not is_hidden:
+				is_visible = await self._is_visible(element_handle)
+				if is_visible:
 					await element_handle.scroll_into_view_if_needed()
 				return element_handle
 			return None
@@ -1550,8 +1550,8 @@ class BrowserContext:
 			# Use CSS selector to locate the element
 			element_handle = await current_frame.query_selector(css_selector)
 			if element_handle:
-				is_hidden = await element_handle.is_hidden()
-				if not is_hidden:
+				is_visible = await self._is_visible(element_handle)
+				if is_visible:
 					await element_handle.scroll_into_view_if_needed()
 				return element_handle
 			return None
@@ -1589,8 +1589,8 @@ class BrowserContext:
 			else:
 				element_handle = elements[0]
 
-			is_hidden = await element_handle.is_hidden()
-			if not is_hidden:
+			is_visible = await self._is_visible(element_handle)
+			if is_visible:
 				await element_handle.scroll_into_view_if_needed()
 			return element_handle
 		except Exception as e:
@@ -1616,8 +1616,8 @@ class BrowserContext:
 			# Ensure element is ready for input
 			try:
 				await element_handle.wait_for_element_state('stable', timeout=1000)
-				is_hidden = await element_handle.is_hidden()
-				if not is_hidden:
+				is_visible = await self._is_visible(element_handle)
+				if is_visible:
 					await element_handle.scroll_into_view_if_needed(timeout=1000)
 			except Exception:
 				pass
