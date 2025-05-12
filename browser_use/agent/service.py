@@ -311,8 +311,6 @@ class Agent(Generic[Context]):
 				pass  # no point waiting if we're not in an interactive shell
 			logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
 
-
-
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
