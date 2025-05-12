@@ -213,10 +213,16 @@ class Browser:
 		except httpx.RequestError:
 			logger.debug('🌎  No existing Chrome instance found, starting a new one')
 
+		from platformdirs import user_config_dir
+
+		config_dir = user_config_dir('browseruse', ensure_exists=True)
+		chrome_profile_dir = config_dir / 'browser_profiles' / 'default'
+
 		# Start a new Chrome instance
 		chrome_launch_args = [
 			*{  # remove duplicates (usually preserves the order, but not guaranteed)
 				f'--remote-debugging-port={self.config.chrome_remote_debugging_port}',
+				'--user-data-dir={chrome_profile_dir}',
 				*CHROME_ARGS,
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),
