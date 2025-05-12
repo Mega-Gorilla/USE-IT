@@ -8,6 +8,8 @@ import logging
 import os
 import socket
 import subprocess
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Literal
 
 import httpx
@@ -18,6 +20,7 @@ from playwright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 load_dotenv()
+
 
 from browser_use.browser.chrome import (
 	CHROME_ARGS,
@@ -213,16 +216,33 @@ class Browser:
 		except httpx.RequestError:
 			logger.debug('🌎  No existing Chrome instance found, starting a new one')
 
-		from platformdirs import user_config_dir
+		provided_user_data_dir = [arg for arg in self.config.extra_browser_args if '--user-data-dir=' in arg]
 
-		config_dir = user_config_dir('browseruse', ensure_exists=True)
-		chrome_profile_dir = config_dir / 'browser_profiles' / 'default'
+		if provided_user_data_dir:
+			user_data_dir = Path(provided_user_data_dir[0].split('=')[-1])
+		else:
+			fallback_user_data_dir = Path(gettempdir()) / 'browseruse' / 'profiles' / 'default'  # /tmp/browseruse
+			try:
+				# ~/.config/browseruse/profiles/default
+				user_data_dir = Path('~/.config') / 'browseruse' / 'profiles' / 'default'
+				user_data_dir.expanduser().mkdir(parents=True, exist_ok=True)
+			except Exception as e:
+				logger.error(f'❌  Failed to create ~/.config/browseruse directory: {type(e).__name__}: {e}')
+				user_data_dir = fallback_user_data_dir
+				user_data_dir.mkdir(parents=True, exist_ok=True)
+
+		logger.info(f'🌐  Storing Browser Profile user data dir in: {user_data_dir}')
+		try:
+			# Remove any existing SingletonLock file to allow the browser to start
+			(user_data_dir / 'Default' / 'SingletonLock').unlink()
+		except (FileNotFoundError, PermissionError, OSError):
+			pass
 
 		# Start a new Chrome instance
 		chrome_launch_args = [
 			*{  # remove duplicates (usually preserves the order, but not guaranteed)
 				f'--remote-debugging-port={self.config.chrome_remote_debugging_port}',
-				'--user-data-dir={chrome_profile_dir}',
+				*([f'--user-data-dir={user_data_dir.resolve()}'] if not provided_user_data_dir else []),
 				*CHROME_ARGS,
 				*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
 				*(CHROME_HEADLESS_ARGS if self.config.headless else []),

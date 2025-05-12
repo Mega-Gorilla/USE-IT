@@ -163,7 +163,7 @@ CHROME_ARGS = [
 	'--safebrowsing-disable-auto-update',
 	# '--deny-permission-prompts',
 	'--disable-external-intent-requests',
-	'--disable-notifications',
+	# '--disable-notifications',
 	'--disable-desktop-notifications',
 	'--noerrdialogs',
 	'--disable-prompt-on-repost',
