@@ -168,7 +168,7 @@ CHROME_ARGS = [
 	'--noerrdialogs',
 	'--disable-prompt-on-repost',
 	'--silent-debugger-extension-api',
-	'--block-new-web-contents',
+	# '--block-new-web-contents',
 	'--metrics-recording-only',
 	'--disable-breakpad',
 	# other feature flags
