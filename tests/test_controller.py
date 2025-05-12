@@ -964,3 +964,293 @@ class TestControllerIntegration:
 		# Verify the test input still has its value
 		input_value = await page.evaluate('() => document.getElementById("textInput").value')
 		assert input_value == test_text, "Input value shouldn't have changed after tabbing"
+
+	@pytest.mark.asyncio
+	async def test_get_dropdown_options(self, controller, browser_context, base_url, http_server):
+		"""Test that get_dropdown_options correctly retrieves options from a dropdown."""
+		# Add route for dropdown test page
+		http_server.expect_request('/dropdown1').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Dropdown Test</title>
+			</head>
+			<body>
+				<h1>Dropdown Test</h1>
+				<select id="test-dropdown" name="test-dropdown">
+					<option value="">Please select</option>
+					<option value="option1">First Option</option>
+					<option value="option2">Second Option</option>
+					<option value="option3">Third Option</option>
+				</select>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the dropdown test page
+		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/dropdown1')}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: GoToUrlAction | None = None
+
+		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+		# Wait for the page to load
+		page = await browser_context.get_current_page()
+		await page.wait_for_load_state()
+
+		# Initialize the DOM state to populate the selector map
+		await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+		# Interact with the dropdown to ensure it's recognized
+		await page.click('select#test-dropdown')
+
+		# Update the state after interaction
+		await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+		# Get the selector map
+		selector_map = await browser_context.get_selector_map()
+
+		# Find the dropdown element in the selector map
+		dropdown_index = None
+		for idx, element in selector_map.items():
+			if element.tag_name.lower() == 'select':
+				dropdown_index = idx
+				break
+
+		assert dropdown_index is not None, (
+			f'Could not find select element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+		)
+
+		# Create a model for the standard get_dropdown_options action
+		class GetDropdownOptionsModel(ActionModel):
+			get_dropdown_options: dict
+
+		# Execute the action with the dropdown index
+		result = await controller.act(GetDropdownOptionsModel(get_dropdown_options={'index': dropdown_index}), browser_context)
+
+		expected_options = [
+			{'index': 0, 'text': 'Please select', 'value': ''},
+			{'index': 1, 'text': 'First Option', 'value': 'option1'},
+			{'index': 2, 'text': 'Second Option', 'value': 'option2'},
+			{'index': 3, 'text': 'Third Option', 'value': 'option3'},
+		]
+
+		# Verify the result structure
+		assert isinstance(result, ActionResult)
+
+		# Core logic validation: Verify all options are returned
+		for option in expected_options[1:]:  # Skip the placeholder option
+			assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
+
+		# Verify the instruction for using the text in select_dropdown_option is included
+		assert 'Use the exact text string in select_dropdown_option' in result.extracted_content
+
+		# Verify the actual dropdown options in the DOM
+		dropdown_options = await page.evaluate("""
+			() => {
+				const select = document.getElementById('test-dropdown');
+				return Array.from(select.options).map(opt => ({
+					text: opt.text,
+					value: opt.value
+				}));
+			}
+		""")
+
+		# Verify the dropdown has the expected options
+		assert len(dropdown_options) == len(expected_options), (
+			f'Expected {len(expected_options)} options, got {len(dropdown_options)}'
+		)
+		for i, expected in enumerate(expected_options):
+			actual = dropdown_options[i]
+			assert actual['text'] == expected['text'], (
+				f"Option at index {i} has wrong text: expected '{expected['text']}', got '{actual['text']}'"
+			)
+			assert actual['value'] == expected['value'], (
+				f"Option at index {i} has wrong value: expected '{expected['value']}', got '{actual['value']}'"
+			)
+
+	@pytest.mark.asyncio
+	async def test_select_dropdown_option(self, controller, browser_context, base_url, http_server):
+		"""Test that select_dropdown_option correctly selects an option from a dropdown."""
+		# Add route for dropdown test page
+		http_server.expect_request('/dropdown2').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Dropdown Test</title>
+			</head>
+			<body>
+				<h1>Dropdown Test</h1>
+				<select id="test-dropdown" name="test-dropdown">
+					<option value="">Please select</option>
+					<option value="option1">First Option</option>
+					<option value="option2">Second Option</option>
+					<option value="option3">Third Option</option>
+				</select>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the dropdown test page
+		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/dropdown2')}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: GoToUrlAction | None = None
+
+		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+		# Wait for the page to load
+		page = await browser_context.get_current_page()
+		await page.wait_for_load_state()
+
+		# populate the selector map with highlight indices
+		await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+		# Now get the selector map which should contain our dropdown
+		selector_map = await browser_context.get_selector_map()
+
+		# Find the dropdown element in the selector map
+		dropdown_index = None
+		for idx, element in selector_map.items():
+			if element.tag_name.lower() == 'select':
+				dropdown_index = idx
+				break
+
+		assert dropdown_index is not None, (
+			f'Could not find select element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+		)
+
+		# Create a model for the standard select_dropdown_option action
+		class SelectDropdownOptionModel(ActionModel):
+			select_dropdown_option: dict
+
+		# Execute the action with the dropdown index
+		result = await controller.act(
+			SelectDropdownOptionModel(select_dropdown_option={'index': dropdown_index, 'text': 'Second Option'}),
+			browser_context,
+		)
+
+		# Verify the result structure
+		assert isinstance(result, ActionResult)
+
+		# Core logic validation: Verify selection was successful
+		assert 'selected option' in result.extracted_content.lower()
+		assert 'Second Option' in result.extracted_content
+
+		# Verify the actual dropdown selection was made by checking the DOM
+		selected_value = await page.evaluate("document.getElementById('test-dropdown').value")
+		assert selected_value == 'option2'  # Second Option has value "option2"
+
+	@pytest.mark.asyncio
+	async def test_click_element_by_index(self, controller, browser_context, base_url, http_server):
+		"""Test that click_element_by_index correctly clicks an element and handles different outcomes."""
+		# Add route for clickable elements test page
+		http_server.expect_request('/clickable').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Click Test</title>
+				<style>
+					.clickable {
+						margin: 10px;
+						padding: 10px;
+						border: 1px solid #ccc;
+						cursor: pointer;
+					}
+					#result {
+						margin-top: 20px;
+						padding: 10px;
+						border: 1px solid #ddd;
+						min-height: 20px;
+					}
+				</style>
+			</head>
+			<body>
+				<h1>Click Test</h1>
+				<div class="clickable" id="button1" onclick="updateResult('Button 1 clicked')">Button 1</div>
+				<div class="clickable" id="button2" onclick="updateResult('Button 2 clicked')">Button 2</div>
+				<a href="#" class="clickable" id="link1" onclick="updateResult('Link 1 clicked'); return false;">Link 1</a>
+				<div id="result"></div>
+				
+				<script>
+					function updateResult(text) {
+						document.getElementById('result').textContent = text;
+					}
+				</script>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the clickable elements test page
+		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/clickable')}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: GoToUrlAction | None = None
+
+		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+
+		# Wait for the page to load
+		page = await browser_context.get_current_page()
+		await page.wait_for_load_state()
+
+		# Initialize the DOM state to populate the selector map
+		await browser_context.get_state(cache_clickable_elements_hashes=True)
+
+		# Get the selector map
+		selector_map = await browser_context.get_selector_map()
+
+		# Find a clickable element in the selector map
+		button_index = None
+		button_text = None
+
+		for idx, element in selector_map.items():
+			# Look for the first div with class "clickable"
+			if element.tag_name.lower() == 'div' and 'clickable' in str(element.attributes.get('class', '')):
+				button_index = idx
+				button_text = element.get_all_text_till_next_clickable_element(max_depth=2).strip()
+				break
+
+		# Verify we found a clickable element
+		assert button_index is not None, (
+			f'Could not find clickable element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+		)
+
+		# Define expected test data
+		expected_button_text = 'Button 1'
+		expected_result_text = 'Button 1 clicked'
+
+		# Verify the button text matches what we expect
+		assert expected_button_text in button_text, f"Expected button text '{expected_button_text}' not found in '{button_text}'"
+
+		# Create a model for the click_element_by_index action
+		class ClickElementActionModel(ActionModel):
+			click_element_by_index: ClickElementAction | None = None
+
+		# Execute the action with the button index
+		result = await controller.act(ClickElementActionModel(click_element_by_index={'index': button_index}), browser_context)
+
+		# Verify the result structure
+		assert isinstance(result, ActionResult), 'Result should be an ActionResult instance'
+		assert result.error is None, f'Expected no error but got: {result.error}'
+
+		# Core logic validation: Verify click was successful
+		assert f'Clicked button with index {button_index}' in result.extracted_content, (
+			f'Expected click confirmation in result content, got: {result.extracted_content}'
+		)
+		assert button_text in result.extracted_content, (
+			f"Button text '{button_text}' not found in result content: {result.extracted_content}"
+		)
+
+		# Verify the click actually had an effect on the page
+		result_text = await page.evaluate("document.getElementById('result').textContent")
+		assert result_text == expected_result_text, f"Expected result text '{expected_result_text}', got '{result_text}'"
