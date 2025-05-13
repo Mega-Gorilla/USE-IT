@@ -6,18 +6,15 @@ Simple try of the agent.
 
 import os
 import sys
-
-from dotenv import load_dotenv
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 
-from langchain_openai import AzureChatOpenAI
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from browser_use import Agent
-
+from dotenv import load_dotenv
 load_dotenv()
+
+from langchain_openai import AzureChatOpenAI
+from browser_use import Agent
 
 # Retrieve Azure-specific environment variables
 azure_openai_api_key = os.getenv('AZURE_OPENAI_KEY')

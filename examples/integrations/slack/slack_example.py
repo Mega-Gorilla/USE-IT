@@ -1,13 +1,15 @@
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
-
 from browser_use import BrowserConfig
 from examples.integrations.slack.slack_api import SlackBot, app
-
-load_dotenv()
 
 # load credentials from environment variables
 bot_token = os.getenv('SLACK_BOT_TOKEN')

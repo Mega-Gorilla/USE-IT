@@ -5,17 +5,14 @@ Simple script that runs the task of opening amazon and searching.
 
 import os
 import sys
-
-from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
-
-# Load environment variables from .env file
-load_dotenv()
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_anthropic import ChatAnthropic
 from browser_use import Agent
 
 llm = ChatAnthropic(model_name='claude-3-7-sonnet-20250219', temperature=0.0, timeout=30, stop=None)

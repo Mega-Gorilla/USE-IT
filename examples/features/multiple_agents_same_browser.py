@@ -1,12 +1,13 @@
 import os
 import sys
-
-from langchain_openai import ChatOpenAI
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_openai import ChatOpenAI
 from browser_use import Agent, Browser
 
 

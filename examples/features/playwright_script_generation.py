@@ -3,16 +3,14 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-
 # Ensure the project root is in the Python path if running directly
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from browser_use import Agent, Browser, BrowserConfig
-
-# Load environment variables (e.g., OPENAI_API_KEY)
+from dotenv import load_dotenv
 load_dotenv()
+
+from langchain_openai import ChatOpenAI
+from browser_use import Agent, Browser, BrowserConfig
 
 # Define the task for the agent
 TASK_DESCRIPTION = """

@@ -33,15 +33,17 @@ Five Steps to create and invite a Discord bot:
 """
 
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
-
 from browser_use import BrowserConfig
 from examples.integrations.discord.discord_api import DiscordBot
-
-load_dotenv()
 
 # load credentials from environment variables
 bot_token = os.getenv('DISCORD_BOT_TOKEN')

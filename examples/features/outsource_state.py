@@ -6,22 +6,18 @@ Show how to use custom outputs.
 
 import os
 import sys
-
-import anyio
-
-from browser_use.agent.views import AgentState
-from browser_use.browser.browser import Browser, BrowserConfig
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import asyncio
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-
-from browser_use import Agent
-
 load_dotenv()
+
+import anyio
+from langchain_openai import ChatOpenAI
+from browser_use import Agent
+from browser_use.agent.views import AgentState
+from browser_use.browser.browser import Browser, BrowserConfig
 
 
 async def main():
