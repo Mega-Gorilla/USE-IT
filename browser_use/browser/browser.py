@@ -236,6 +236,7 @@ class Browser:
 		try:
 			# Remove any existing SingletonLock file to allow the browser to start
 			(user_data_dir / 'Default' / 'SingletonLock').unlink()
+			self.config.extra_browser_args.append('--no-first-run')
 		except (FileNotFoundError, PermissionError, OSError):
 			pass
 
