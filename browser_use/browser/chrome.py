@@ -142,7 +142,6 @@ CHROME_ARGS = [
 	# Suppress first-run features, popups, hints, updates, etc.
 	# chrome://system
 	'--no-pings',
-	'--no-first-run',
 	'--no-default-browser-check',
 	'--no-startup-window',
 	'--ash-no-nudges',
