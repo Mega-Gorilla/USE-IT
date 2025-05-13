@@ -1,5 +1,5 @@
-name: 🎯 Interactive Element Detection Issue
-description: Agent fails to click, scroll, input, or otherwise interact with some type of element
+name: 🎯 Agent Page Interaction Issue
+description: Agent fails to detect, click, scroll, input, or otherwise interact with some type of element on some page(s)
 labels: ["bug", "element-detection"]
 body:
   - type: markdown
