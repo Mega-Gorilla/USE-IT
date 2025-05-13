@@ -22,10 +22,10 @@ body:
       label: Bug Description, Steps to Reproduce, Screenshots
       description: A clear and concise description of what the bug is + steps taken, drag screenshots in showing any error messages and relevant pages.
       placeholder: |
-        1. Installed browser-use library using `uv pip install browser-use`
-        2. Installed the browser using `playwright install chromium --with-deps`
-        2. Ran the code below with the following prompt: "go to example.com and do xyz..."
-        3. Agent crashes and shows the following error: ...
+        1. Installed browser-use library by running: `uv pip install browser-use`
+        2. Installed the browser by running: `playwright install chromium --with-deps`
+        3. Ran the code below with the following prompt: `go to example.com and do xyz...`
+        4. Agent crashed and showed the following error: ...
     validations:
       required: true
 
