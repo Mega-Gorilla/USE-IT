@@ -669,7 +669,7 @@ class BrowserContext:
 
 		init_script = """
 			// check to make sure we're not inside the PDF viewer
-			window.isPdfViewer = !!document.body.querySelector('body > embed[type="application/pdf"][width="100%"]')
+			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
 			if (!window.isPdfViewer) {
 	
 				// Permissions
