@@ -45,8 +45,8 @@ body:
   - type: textarea
     id: prompt
     attributes:
-      label: Task Prompt Given to Agent
-      description: The full task prompt you're giving the agent (redact any sensitive data).
+      label: Screenshots, Description, and Task Prompt Given to Agent
+      description: The full task prompt you're giving the agent (redact any sensitive data) + a description of the issue and screenshots.
       placeholder: |
         1. go to https://example.com and click the xyz button...
         2. type "abc" in the dropdown search to find the "abc" option, select it
@@ -60,7 +60,7 @@ body:
     id: html
     attributes:
       label: HTML around where it's failing
-      description: A copy of the HTML around the elements the Agent is failing to interact with.
+      description: A snippet of the HTML from the failing page around where the Agent is failing to interact.
       render: html
       placeholder: |
         <form na-someform="abc">
@@ -85,15 +85,25 @@ body:
   - type: textarea
     id: code
     attributes:
-      label: Code Sample
+      label: Python Code Sample
       description: Include some python code that reproduces the issue
       render: python
+      placeholder: |
+        from dotenv import load_dotenv
+        load_dotenv()
+        from browser_use import Agent, Browser, Controller
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(model="gpt-4o")
+        browser = Browser(chrome_binary_path='/usr/bin/google-chrome')
+        agent = Agent(llm=llm, browser=browser))
+        ...
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Log Output
-      description: Please copy and paste the full log output from the start of the run. Make sure to set `BROWSER_USE_LOG_LEVEL=DEBUG` in your environment.
+      label: Full DEBUG Log Output
+      description: Please copy and paste the *full* log output *from the start of the run*. Make sure to set `BROWSER_USE_LOG_LEVEL=DEBUG` in your `.env` or shell environment.
       render: shell
       placeholder: |
         $ python /app/browser-use/examples/browser/real_browser.py
