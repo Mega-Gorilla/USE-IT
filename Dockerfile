@@ -19,8 +19,7 @@ WORKDIR /app
 COPY pyproject.toml /app/
 
 # 6. Install patchright (version from pyproject.toml)
-RUN python3 -m pip install --upgrade pip --quiet \
- && python3 -m pip install patchright --quiet
+RUN pip install playwright==$PLAYWRIGHT_VERSION
 
 # 7. Install Chromium via patchright
 RUN playwright install --with-deps --no-shell chromium
