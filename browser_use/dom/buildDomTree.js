@@ -1037,8 +1037,8 @@
    * Heuristically determines if an element should be considered as independently interactive,
    * even if it's nested inside another interactive container.
    *
-   * This function is useful for identifying nested actionable elements (e.g., buttons inside menus),
-   * especially when they do not meet the full criteria of interactive elements but still appear clickable.
+   * This function helps detect deeply nested actionable elements (e.g., menu items within a button)
+   * that may not be picked up by strict interactivity checks.
    */
   function isHeuristicallyInteractive(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
@@ -1062,12 +1062,10 @@
     );
 
     // Ensure the element has at least one visible child (to avoid marking empty wrappers)
-    const hasVisibleChildren = Array.from(element.children).some(
-      (child) => isElementVisible(child)
-    );
+    const hasVisibleChildren = [...element.children].some(isElementVisible);
 
     // Avoid highlighting elements whose parent is <body> (top-level wrappers)
-    const isParentBody = element.parentElement?.isSameNode(document.body);
+    const isParentBody = element.parentElement && element.parentElement.isSameNode(document.body);
 
     return (
       (isInteractiveElement(element) || hasInteractiveAttributes || hasInteractiveClass) &&
