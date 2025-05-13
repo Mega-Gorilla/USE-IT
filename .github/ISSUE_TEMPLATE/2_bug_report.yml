@@ -20,7 +20,7 @@ body:
     id: description
     attributes:
       label: Bug Description, Steps to Reproduce, Screenshots
-      description: A clear and concise description of what the bug is + steps taken.
+      description: A clear and concise description of what the bug is + steps taken, drag screenshots in showing any error messages and relevant pages.
       placeholder: |
         1. Installed browser-use library using `uv pip install browser-use`
         2. Installed the browser using `playwright install chromium --with-deps`
@@ -33,7 +33,7 @@ body:
     id: code
     attributes:
       label: Failing Python Code
-      description: Include the exact python code you ran that encountered the issue
+      description: Include the exact python code you ran that encountered the issue, redact any sensitive URLs and API keys.
       render: python
       placeholder: |
         from dotenv import load_dotenv
