@@ -225,7 +225,8 @@ class Browser:
 			try:
 				# ~/.config/browseruse/profiles/default
 				user_data_dir = Path('~/.config') / 'browseruse' / 'profiles' / 'default'
-				user_data_dir.expanduser().mkdir(parents=True, exist_ok=True)
+				user_data_dir = user_data_dir.expanduser()
+				user_data_dir.mkdir(parents=True, exist_ok=True)
 			except Exception as e:
 				logger.error(f'❌  Failed to create ~/.config/browseruse directory: {type(e).__name__}: {e}')
 				user_data_dir = fallback_user_data_dir
