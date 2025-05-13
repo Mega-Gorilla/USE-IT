@@ -18,8 +18,9 @@ WORKDIR /app
 # 5. Copy only dependency manifest
 COPY pyproject.toml /app/
 
-# 6. Install patchright (version from pyproject.toml)
-RUN pip install playwright==$PLAYWRIGHT_VERSION
+# 6. Install playwright (version from pyproject.toml)
+RUN PLAYWRIGHT_VERSION=$(grep -oP '(p....right>=\K[0-9.]+' pyproject.toml)\
+	&& pip install playwright==$PLAYWRIGHT_VERSION
 
 # 7. Install Chromium via patchright
 RUN playwright install --with-deps --no-shell chromium
