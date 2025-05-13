@@ -29,7 +29,7 @@ RUN playwright install --with-deps --no-shell chromium
 COPY . /app
 
 # 9. Install the application package
-RUN python3 -m pip install . --quiet
+RUN pip install -e .
 
 # 10. Switch to non-root user
 USER appuser
