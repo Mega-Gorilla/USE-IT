@@ -23,7 +23,7 @@ RUN python3 -m pip install --upgrade pip --quiet \
  && python3 -m pip install patchright --quiet
 
 # 7. Install Chromium via patchright
-RUN patchright install --with-deps --no-shell chromium
+RUN playwright install --with-deps --no-shell chromium
 
 # 8. Copy the rest of the codebase
 COPY . /app
