@@ -1034,6 +1034,50 @@
   ]);
 
   /**
+   * Heuristically determines if an element should be considered as independently interactive,
+   * even if it's nested inside another interactive container.
+   *
+   * This function is useful for identifying nested actionable elements (e.g., buttons inside menus),
+   * especially when they do not meet the full criteria of interactive elements but still appear clickable.
+   */
+  function isHeuristicallyInteractive(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+
+    // Skip non-visible elements early for performance
+    if (!isElementVisible(element)) return false;
+
+    // Check for common attributes that often indicate interactivity
+    const hasInteractiveAttributes =
+      element.hasAttribute('role') ||
+      element.hasAttribute('tabindex') ||
+      element.hasAttribute('onclick') ||
+      typeof element.onclick === 'function';
+
+    // Check for semantic class names suggesting interactivity
+    const hasInteractiveClass = /\b(btn|clickable|menu|item|entry|link)\b/i.test(element.className || '');
+
+    // Determine whether the element is inside a known interactive container
+    const isInKnownContainer = Boolean(
+      element.closest('button,a,[role="button"],.menu,.dropdown,.list,.toolbar')
+    );
+
+    // Ensure the element has at least one visible child (to avoid marking empty wrappers)
+    const hasVisibleChildren = Array.from(element.children).some(
+      (child) => isElementVisible(child)
+    );
+
+    // Avoid highlighting elements whose parent is <body> (top-level wrappers)
+    const isParentBody = element.parentElement?.isSameNode(document.body);
+
+    return (
+      (isInteractiveElement(element) || hasInteractiveAttributes || hasInteractiveClass) &&
+      hasVisibleChildren &&
+      isInKnownContainer &&
+      !isParentBody
+    );
+  }
+
+  /**
    * Checks if an element likely represents a distinct interaction
    * separate from its parent (if the parent is also interactive).
    */
@@ -1093,6 +1137,10 @@
       // If checking listeners fails, rely on other checks
     }
 
+    // if the element is not strictly interactive but appears clickable based on heuristic signals
+    if (isHeuristicallyInteractive(element)) {
+      return true;
+    }
 
     // Default to false: if it's interactive but doesn't match above,
     // assume it triggers the same action as the parent.
