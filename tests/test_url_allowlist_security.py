@@ -2,7 +2,7 @@ from browser_use.browser.context import BrowserContext, BrowserContextConfig
 
 
 class TestUrlAllowlistSecurity:
-	"""Tests for URL allowlist security bypass prevention."""
+	"""Tests for URL allowlist security bypass prevention and URL allowlist glob pattern matching."""
 
 	def test_authentication_bypass_prevention(self):
 		"""Test that the URL allowlist cannot be bypassed using authentication credentials."""
@@ -63,3 +63,29 @@ class TestUrlAllowlistSecurity:
 		assert glob_context._is_url_allowed('https://subdomain.example.com@evil.com') is False
 		assert glob_context._is_url_allowed('https://sub.example.com%20@malicious.org') is False
 		assert stars_context._is_url_allowed('https://anygoogle.com@evil.org') is False
+
+	def test_glob_pattern_edge_cases(self):
+		"""Test edge cases for glob pattern matching to ensure proper behavior."""
+		# Test with domains containing glob pattern in the middle
+		stars_config = BrowserContextConfig(allowed_domains=['*google.com', 'wiki*'])
+		stars_context = BrowserContext(browser=None, config=stars_config)
+
+		# Verify that 'wiki*' pattern doesn't match domains that merely contain 'wiki' in the middle
+		assert stars_context._is_url_allowed('https://notawiki.com') is False
+		assert stars_context._is_url_allowed('https://havewikipages.org') is False
+		assert stars_context._is_url_allowed('https://my-wiki-site.com') is False
+
+		# Verify that '*google.com' doesn't match domains that have 'google' in the middle
+		assert stars_context._is_url_allowed('https://mygoogle.company.com') is False
+
+		# Create context with potentially risky glob pattern that demonstrates security concerns
+		risky_config = BrowserContextConfig(allowed_domains=['*.google.*'])
+		risky_context = BrowserContext(browser=None, config=risky_config)
+
+		# Should match legitimate Google domains
+		assert risky_context._is_url_allowed('https://www.google.com') is True
+		assert risky_context._is_url_allowed('https://mail.google.co.uk') is True
+
+		# But could also match potentially malicious domains with a subdomain structure
+		# This demonstrates why such wildcard patterns can be risky
+		assert risky_context._is_url_allowed('https://www.google.evil.com') is True
