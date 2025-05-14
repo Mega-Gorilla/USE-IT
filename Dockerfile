@@ -134,8 +134,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
         libavahi-common-data libavahi-common3 libcups2 libfontenc1 libice6 libnspr4 libnss3 libsm6 libunwind8 \
         libxaw7 libxcomposite1 libxdamage1 libxfont2 \
         # 5. x11/xvfb dependencies:
-        # libxkbfile1 libxmu6 libxpm4 libxt6 x11-xkb-utils x11-utils xfonts-encodings \
-        # xfonts-scalable xfonts-utils xserver-common xvfb \
+        libxkbfile1 libxmu6 libxpm4 libxt6 x11-xkb-utils x11-utils xfonts-encodings \
+        xfonts-scalable xfonts-utils xserver-common xvfb \
      && rm -rf /var/lib/apt/lists/*
 
 # Copy only dependency manifest
