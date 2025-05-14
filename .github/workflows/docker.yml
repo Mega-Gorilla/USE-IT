@@ -43,7 +43,7 @@ jobs:
         with:
           images: |
             browseruse/browseruse
-            ghcr.io/browseruse/browseruse
+            ghcr.io/browser-use/browser-use
           tags: |
             type=ref,event=branch
             type=ref,event=pr
