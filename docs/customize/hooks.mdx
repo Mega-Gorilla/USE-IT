@@ -46,7 +46,7 @@ async def my_step_hook(agent):
     #   https://playwright.dev/python/docs/api/class-page
 
     # Example: listen for events on the page, interact with the DOM, run JS directly, etc.
-    await page.on('domcontentloaded', async lambda: print('page navigated to a new url...'))
+    await page.on('domcontentloaded', lambda: print('page navigated to a new url...'))
     await page.locator("css=form > input[type=submit]").click()
     await page.evaluate('() => alert(1)')
     await page.browser.new_tab
