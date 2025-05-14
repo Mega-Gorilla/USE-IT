@@ -303,7 +303,7 @@ llm = ChatOpenAI(base_url='https://api-inference.modelscope.cn/v1/', model='Qwen
 agent = Agent(
     task="Your task here",
     llm=llm,
-    use_vision=False
+    use_vision=True
 )
 ```
 
