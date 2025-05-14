@@ -142,7 +142,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy only dependency manifest
 WORKDIR /app
-COPY pyproject.toml uv.lock /app/
+COPY pyproject.toml uv.lock* /app/
 
 RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
     echo "[+] Setting up venv using uv in $VENV_DIR..." \
