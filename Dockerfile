@@ -183,7 +183,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
 RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
      echo "[+] Installing browser-use pip sub-dependencies..." \
      && ( \
-        uv sync --locked --all-extras --no-dev --no-install-project \
+        uv sync --all-extras --no-dev --no-install-project \
         && echo -e '\n\n' \
      ) | tee -a /VERSION.txt
 
