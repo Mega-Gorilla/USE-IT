@@ -42,8 +42,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            browseruse/browser-use
-            ghcr.io/browseruse/browser-use
+            browseruse/browseruse
+            ghcr.io/browseruse/browseruse
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -61,5 +61,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=browseruse/browser-use:buildcache
-          cache-to: type=registry,ref=browseruse/browser-use:buildcache,mode=max
+          cache-from: type=registry,ref=browseruse/browseruse:buildcache
+          cache-to: type=registry,ref=browseruse/browseruse:buildcache,mode=max

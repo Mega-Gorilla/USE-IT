@@ -163,12 +163,13 @@ RUN pip install -e ".[all]"
 USER browseruse
 
 RUN mkdir -p "$CONFIG_DIR" \
-    && chown browseruse:browseruse "$CONFIG_DIR" "$CONFIG_DIR/*"
-    && (echo -e "\n\n[√] Finished Docker build successfully. Saving build summary in: /VERSION.txt" \
-    && echo -e "PLATFORM=${TARGETPLATFORM} ARCH=$(uname -m) ($(uname -s) ${TARGETARCH} ${TARGETVARIANT})\n" \
-    && echo -e "BUILD_END_TIME=$(date +"%Y-%m-%d %H:%M:%S %s")\n\n" \
-    && which browser-use \
-    && browser-use --version 2>&1 | tee -a /VERSION.txt
+    && chown browseruse:browseruse "$CONFIG_DIR" "$CONFIG_DIR/*" \
+    && ( \
+        echo -e "\n\n[√] Finished Docker build successfully. Saving build summary in: /VERSION.txt" \
+        && echo -e "PLATFORM=${TARGETPLATFORM} ARCH=$(uname -m) ($(uname -s) ${TARGETARCH} ${TARGETVARIANT})\n" \
+        && echo -e "BUILD_END_TIME=$(date +"%Y-%m-%d %H:%M:%S %s")\n\n" \
+        && which browser-use \
+        && browser-use --version 2>&1 \
     ) | tee -a /VERSION.txt
 
 VOLUME "$CONFIG_DIR"
