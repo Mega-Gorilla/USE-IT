@@ -9,7 +9,7 @@ RUN groupadd appgroup \
 RUN apt-get update -qq \
  && apt-get install -y --no-install-recommends -qq \
       unzip libnss3 libxss1 libasound2 libx11-xcb1 \
-      curl git \
+      curl git grep \
  && rm -rf /var/lib/apt/lists/*
 
 # 4. Set working directory
@@ -19,8 +19,7 @@ WORKDIR /app
 COPY pyproject.toml /app/
 
 # 6. Install playwright (version from pyproject.toml)
-RUN PLAYWRIGHT_VERSION=$(grep -oP '(p....right>=\K[0-9.]+' pyproject.toml)\
-	&& pip install playwright==$PLAYWRIGHT_VERSION
+RUN pip install playwright=="$(grep -oP '(p....right>=\K[0-9.]+' pyproject.toml)"
 
 # 7. Install Chromium via patchright
 RUN playwright install --with-deps --no-shell chromium
