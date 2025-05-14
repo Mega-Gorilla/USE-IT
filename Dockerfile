@@ -134,7 +134,7 @@ COPY pyproject.toml /app/
 
 # Install playwright (with version from pyproject.toml)
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-$TARGETARCH$TARGETVARIANT \
-     && pip install "$(ggrep -oP 'p....right>=([0-9.])+' pyproject.toml)" \
+     pip install "$(ggrep -oP 'p....right>=([0-9.])+' pyproject.toml)" \
      && ( \
          which playwright && playwright --version \
          && echo -e '\n\n' \
@@ -156,8 +156,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
 # 8. Copy the rest of the codebase
 COPY . /app
 
-# 9. Install the application package
-RUN pip install -e ".[all]"
+# 9. Install the browser-use package and all its dependencies
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-$TARGETARCH$TARGETVARIANT \
+     pip install -e ".[all]" \
+     && ( \
+        which browser-use \
+        && browser-use --version 2>&1 \
+        && echo -e '\n\n' \
+     ) | tee -a /VERSION.txt
 
 # 10. Switch to non-root user
 USER browseruse
@@ -168,8 +174,6 @@ RUN mkdir -p "$CONFIG_DIR" \
         echo -e "\n\n[√] Finished Docker build successfully. Saving build summary in: /VERSION.txt" \
         && echo -e "PLATFORM=${TARGETPLATFORM} ARCH=$(uname -m) ($(uname -s) ${TARGETARCH} ${TARGETVARIANT})\n" \
         && echo -e "BUILD_END_TIME=$(date +"%Y-%m-%d %H:%M:%S %s")\n\n" \
-        && which browser-use \
-        && browser-use --version 2>&1 \
     ) | tee -a /VERSION.txt
 
 VOLUME "$CONFIG_DIR"
