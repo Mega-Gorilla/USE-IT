@@ -957,7 +957,7 @@ class BrowserContext:
 			parsed_url = urlparse(url)
 
 			# Special case: Allow 'about:blank' explicitly
-			if url == 'about:blank' or parsed_url.scheme in ('chrome', 'brave', 'edge', 'chrome-extension'):
+			if url == 'about:blank' or parsed_url.scheme.lower() in ('chrome', 'brave', 'edge', 'chrome-extension'):
 				return True
 
 			# Extract only the hostname component (without auth credentials or port)
@@ -984,12 +984,12 @@ class BrowserContext:
 							return True
 				else:
 					# Standard matching (exact or subdomain)
-					if domain == allowed_domain or domain.endswith('.' + allowed_domain):
+					if domain == allowed_domain:
 						return True
 
 			return False
 		except Exception as e:
-			logger.error(f'⛔️  Error checking URL allowlist: {str(e)}')
+			logger.error(f'⛔️  Error checking URL allowlist: {type(e).__name__}: {e}')
 			return False
 
 	async def _check_and_handle_navigation(self, page: Page) -> None:
