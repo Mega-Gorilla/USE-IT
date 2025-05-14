@@ -10,6 +10,7 @@ __pycache__/
 *$py.class
 .mypy_cache/
 .ruff_cache/
+.pytest_cache/
 .ipynb_checkpoints
 
 # Virtual Environments
