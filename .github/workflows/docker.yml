@@ -41,7 +41,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: browseruse/browser-use
+          images: |
+            browseruse/browser-use
+            ghcr.io/browseruse/browser-use
           tags: |
             type=ref,event=branch
             type=ref,event=pr
