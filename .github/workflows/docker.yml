@@ -3,8 +3,6 @@ name: DockerHub
 on:
   pull_request:
   push:
-    branches:
-      - main
   release:
     types: [published]
 
@@ -33,11 +31,17 @@ jobs:
             username: ${{ secrets.DOCKER_USERNAME }}
             password: ${{ secrets.DOCKER_PASSWORD }}
 
-        - name: Extract metadata (tags, labels) for Docker
+        - name: Compute Docker tags based on tag/branch
           id: meta
-          uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+          uses: docker/metadata-action@v5
           with:
             images: browseruse/browser-use
+            tags: |
+              type=ref,event=branch
+              type=ref,event=pr
+              type=pep440,pattern={{version}}
+              type=pep440,pattern={{major}}.{{minor}}
+              type=sha
 
         - name: Build and push Docker image
           id: push
