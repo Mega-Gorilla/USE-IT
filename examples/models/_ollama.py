@@ -11,9 +11,11 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langchain_ollama import ChatOllama
+
 from browser_use import Agent
 from browser_use.agent.views import AgentHistoryList
 

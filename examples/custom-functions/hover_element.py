@@ -1,14 +1,16 @@
+import asyncio
 import os
 import sys
-import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
+
 from browser_use import Agent, Controller
 from browser_use.agent.views import ActionResult
 from browser_use.browser.browser import Browser, BrowserConfig

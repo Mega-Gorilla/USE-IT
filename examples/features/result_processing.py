@@ -1,14 +1,16 @@
+import asyncio
 import os
 import sys
-import asyncio
 from pprint import pprint
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langchain_openai import ChatOpenAI
+
 from browser_use import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.browser import Browser, BrowserConfig, BrowserContextConfig

@@ -11,10 +11,12 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
+
 from browser_use import Agent
 
 api_key = os.getenv('NOVITA_API_KEY', '')
