@@ -51,6 +51,8 @@ BROWSER_NAVBAR_HEIGHT = {
 	'linux': 90,
 }.get(platform.system().lower(), 85)
 
+_GLOB_WARNING_SHOWN = False
+
 
 class BrowserContextConfig(BaseModel):
 	"""
@@ -947,8 +949,20 @@ class BrowserContext:
 		- *.example.com will match sub.example.com and example.com
 		- *google.com will match google.com, agoogle.com, and www.google.com
 		"""
+
 		if not self.config.allowed_domains:
 			return True
+
+		def _show_glob_warning(domain: str, glob: str):
+			global _GLOB_WARNING_SHOWN
+			if not _GLOB_WARNING_SHOWN:
+				logger.warning(
+					# glob patterns are very easy to mess up and match too many domains by accident
+					# e.g. if you only need to access gmail, don't use *.google.com because an attacker could convince the agent to visit a malicious doc
+					# on docs.google.com/s/some/evil/doc to set up a prompt injection attack
+					"⚠️ Allowing agent to visit {domain} based on allowed_domains=['{glob}', ...]. Set allowed_domains=['{domain}', ...] explicitly to avoid the security risks of glob patterns!"
+				)
+				_GLOB_WARNING_SHOWN = True
 
 		try:
 			import fnmatch
@@ -977,10 +991,12 @@ class BrowserContext:
 						# If pattern is *.example.com, also allow example.com (without subdomain)
 						parent_domain = allowed_domain[2:]  # Remove the '*.' prefix
 						if domain == parent_domain or fnmatch.fnmatch(domain, allowed_domain):
+							_show_glob_warning(domain, allowed_domain)
 							return True
 					else:
 						# For other glob patterns like *google.com
 						if fnmatch.fnmatch(domain, allowed_domain):
+							_show_glob_warning(domain, allowed_domain)
 							return True
 				else:
 					# Standard matching (exact or subdomain)
