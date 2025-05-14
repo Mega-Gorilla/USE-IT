@@ -54,9 +54,10 @@ ENV TZ=UTC \
     PYTHONIOENCODING=UTF-8 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    UV_SYSTEM_PYTHON=1 \
     UV_CACHE_DIR=/root/.cache/uv \
     UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_PREFERENCE=only-system \
     npm_config_loglevel=error \
     IN_DOCKER=True
 
@@ -68,12 +69,11 @@ ENV BROWSERUSE_USER="browseruse" \
 # Paths
 ENV CODE_DIR=/app \
     DATA_DIR=/data \
-    VENV_DIR=/app/.venv/bin
+    VENV_DIR=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 
 # Build shell config
 SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-o", "errtrace", "-o", "nounset", "-c"] 
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Force apt to leave downloaded binaries in /var/cache/apt (massively speeds up Docker builds)
 RUN echo 'Binary::apt::APT::Keep-Downloaded-Packages "1";' > /etc/apt/apt.conf.d/99keep-cache \
@@ -95,7 +95,6 @@ RUN (echo "[i] Docker build for Browser Use $(cat /VERSION.txt) starting..." \
     && echo -e '\n\n' && env && echo -e '\n\n' \
     && which python && python --version \
     && which pip && pip --version \
-    && which uv && uv --version \
     && echo -e '\n\n' \
     ) | tee -a /VERSION.txt
 
@@ -122,43 +121,58 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
     && apt-get update -qq \
     && apt-get install -qq -y --no-install-recommends \
         # 1. packaging dependencies
-        apt-transport-https ca-certificates apt-utils gnupg2 curl wget \
+        apt-transport-https ca-certificates apt-utils gnupg2 unzip curl wget grep \
         # 2. docker and init system dependencies:
-        zlib1g-dev dumb-init gosu cron unzip grep dnsutils \
+        # dumb-init gosu cron zlib1g-dev \
         # 3. frivolous CLI helpers to make debugging failed archiving easierL
-        tree nano iputils-ping dnsutils jq yq procps \
-        # 4. browser dependencies: 
-        libnss3 libxss1 libasound2 libx11-xcb1 \
-        fontconfig fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-khmeros fonts-kacst fonts-symbola fonts-noto fonts-freefont-ttf \
-        at-spi2-common fonts-liberation fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libavahi-client3 \
-        libavahi-common-data libavahi-common3 libcups2 libfontenc1 libice6 libnspr4 libnss3 libsm6 libunwind8 \
-        libxaw7 libxcomposite1 libxdamage1 libxfont2 \
-        # 5. x11/xvfb dependencies:
-        libxkbfile1 libxmu6 libxpm4 libxt6 x11-xkb-utils x11-utils xfonts-encodings \
-        xfonts-scalable xfonts-utils xserver-common xvfb \
+        nano iputils-ping dnsutils jq \
+        # tree yq procps \
+        # 4. browser dependencies: (auto-installed by playwright install --with-deps chromium)
+     #    libnss3 libxss1 libasound2 libx11-xcb1 \
+     #    fontconfig fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-khmeros fonts-kacst fonts-symbola fonts-noto fonts-freefont-ttf \
+     #    at-spi2-common fonts-liberation fonts-noto-color-emoji fonts-tlwg-loma-otf fonts-unifont libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libavahi-client3 \
+     #    libavahi-common-data libavahi-common3 libcups2 libfontenc1 libice6 libnspr4 libnss3 libsm6 libunwind8 \
+     #    libxaw7 libxcomposite1 libxdamage1 libxfont2 \
+     #    # 5. x11/xvfb dependencies:
+     #    libxkbfile1 libxmu6 libxpm4 libxt6 x11-xkb-utils x11-utils xfonts-encodings \
+     #    xfonts-scalable xfonts-utils xserver-common xvfb \
      && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy only dependency manifest
 WORKDIR /app
-COPY pyproject.toml /app/
+COPY pyproject.toml uv.lock /app/
+
+RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
+    echo "[+] Setting up venv using uv in $VENV_DIR..." \
+    && ( \
+     which uv && uv --version \
+     && uv venv \
+     && which python | grep "$VENV_DIR" \
+     && python --version \
+    ) | tee -a /VERSION.txt
 
 # Install playwright using pip (with version from pyproject.toml)
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-$TARGETARCH$TARGETVARIANT \
-     uv pip install "$(grep -oP 'p....right>=([0-9.])+' pyproject.toml)" \
+RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
+     echo "[+] Installing playwright via pip using version from pyproject.toml..." \
      && ( \
-         which playwright && playwright --version \
-         && echo -e '\n\n' \
+        uv pip install "$(grep -oP 'p....right>=([0-9.])+' pyproject.toml)" \
+        && which playwright \
+        && playwright --version \
+        && echo -e '\n\n' \
      ) | tee -a /VERSION.txt
 
 # Install Chromium using playwright
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$TARGETVARIANT \
-    --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=uv-$TARGETARCH$TARGETVARIANT \
-    --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-$TARGETARCH$TARGETVARIANT \
-    --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked,id=browsers-$TARGETARCH$TARGETVARIANT \
-    echo "[+] Installing Browser binary dependencies to /root/.cache/ms-playwright..." \
+    --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
+    echo "[+] Installing chromium apt pkgs and binary to /root/.cache/ms-playwright..." \
+    && apt-get update -qq \
     && playwright install --with-deps --no-shell chromium \
+    && rm -rf /var/lib/apt/lists/* \
     && export CHROME_BINARY="$(python -c 'from playwright.sync_api import sync_playwright; print(sync_playwright().start().chromium.executable_path)')" \
     && ln -s "$CHROME_BINARY" /usr/bin/chromium-browser \
+    && ln -s "$CHROME_BINARY" /app/chromium-browser \
     && mkdir -p "/home/${BROWSERUSE_USER}/.config/chromium/Crash Reports/pending/" \
     && chown -R "$BROWSERUSE_USER:$BROWSERUSE_USER" "/home/${BROWSERUSE_USER}/.config" \
     && ( \
@@ -166,14 +180,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
         && echo -e '\n\n' \
     ) | tee -a /VERSION.txt
 
+RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
+     echo "[+] Installing browser-use pip sub-dependencies..." \
+     && ( \
+        uv sync --locked --all-extras --no-dev --no-install-project \
+        && echo -e '\n\n' \
+     ) | tee -a /VERSION.txt
+
 # Copy the rest of the browser-use codebase
 COPY . /app
 
 # Install the browser-use package and all of its optional dependencies
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked,id=pip-$TARGETARCH$TARGETVARIANT --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=uv-$TARGETARCH$TARGETVARIANT \
-     uv pip install -e ".[all]" \
+RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
+     echo "[+] Installing browser-use pip library from source..." \
      && ( \
-        uv pip show browser-use \
+        uv sync --all-extras --locked --no-dev \
         && which browser-use \
         && browser-use --version 2>&1 \
         && echo -e '\n\n' \
