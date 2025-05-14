@@ -940,28 +940,54 @@ class BrowserContext:
 			await asyncio.sleep(remaining)
 
 	def _is_url_allowed(self, url: str) -> bool:
-		"""Check if a URL is allowed based on the whitelist configuration."""
+		"""
+		Check if a URL is allowed based on the whitelist configuration.
+
+		Supports glob patterns in allowed_domains:
+		- *.example.com will match sub.example.com and example.com
+		- *google.com will match google.com, agoogle.com, and www.google.com
+		"""
 		if not self.config.allowed_domains:
 			return True
 
 		try:
+			import fnmatch
 			from urllib.parse import urlparse
 
-			# Special case: Allow 'about:blank' explicitly
-			if url == 'about:blank':
-				return True
-
 			parsed_url = urlparse(url)
+
+			# Special case: Allow 'about:blank' explicitly
+			if url == 'about:blank' or parsed_url.scheme in ('chrome', 'brave', 'edge', 'chrome-extension'):
+				return True
 
 			# Extract only the hostname component (without auth credentials or port)
 			# Hostname returns only the domain portion, ignoring username:password and port
 			domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
 
-			# Check if domain matches any allowed domain pattern
-			return any(
-				domain == allowed_domain.lower() or domain.endswith('.' + allowed_domain.lower())
-				for allowed_domain in self.config.allowed_domains
-			)
+			if not domain:
+				return False
+
+			for allowed_domain in self.config.allowed_domains:
+				allowed_domain = allowed_domain.lower()
+
+				# Handle glob patterns
+				if '*' in allowed_domain:
+					# Special handling for *.domain.tld pattern to also match the bare domain
+					if allowed_domain.startswith('*.'):
+						# If pattern is *.example.com, also allow example.com (without subdomain)
+						parent_domain = allowed_domain[2:]  # Remove the '*.' prefix
+						if domain == parent_domain or fnmatch.fnmatch(domain, allowed_domain):
+							return True
+					else:
+						# For other glob patterns like *google.com
+						if fnmatch.fnmatch(domain, allowed_domain):
+							return True
+				else:
+					# Standard matching (exact or subdomain)
+					if domain == allowed_domain or domain.endswith('.' + allowed_domain):
+						return True
+
+			return False
 		except Exception as e:
 			logger.error(f'⛔️  Error checking URL allowlist: {str(e)}')
 			return False

@@ -175,6 +175,10 @@ async def run_search():
 - **allowed_domains** (default: `None`)
   List of allowed domains that the agent can access. If None, all domains are allowed.
   Example: ['google.com', 'wikipedia.org'] - Here the agent will only be able to access google and wikipedia.
+  
+  Glob patterns are supported:
+  - `['*.example.com']` will match both `sub.example.com` and `example.com`
+  - `['*google.com']` will match `google.com`, `www.google.com`, and `anygoogle.com`
 
 ### Session Management
 
