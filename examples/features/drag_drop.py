@@ -13,9 +13,9 @@ from pydantic import SecretStr
 
 from browser_use import Agent
 
-api_key = os.getenv('GEMINI_API_KEY')
+api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key:
-	raise ValueError('GEMINI_API_KEY is not set')
+	raise ValueError('GOOGLE_API_KEY is not set')
 
 llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash-exp', api_key=SecretStr(api_key))
 

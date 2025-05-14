@@ -70,7 +70,7 @@ def get_default_config() -> dict[str, Any]:
 			'api_keys': {
 				'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
 				'ANTHROPIC_API_KEY': os.getenv('ANTHROPIC_API_KEY', ''),
-				'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', ''),
+				'GOOGLE_API_KEY': os.getenv('GOOGLE_API_KEY', ''),
 				'DEEPSEEK_API_KEY': os.getenv('DEEPSEEK_API_KEY', ''),
 				'GROK_API_KEY': os.getenv('GROK_API_KEY', ''),
 			},

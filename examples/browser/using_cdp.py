@@ -8,7 +8,7 @@ To test this locally, follow these steps:
 3. Open a web browser and navigate to `http://localhost:9222/json/version` to verify that the Remote Debugging Protocol (CDP) is running.
 4. Launch this example.
 
-@dev You need to set the `GEMINI_API_KEY` environment variable before proceeding.
+@dev You need to set the `GOOGLE_API_KEY` environment variable before proceeding.
 """
 
 import asyncio
@@ -27,9 +27,9 @@ from pydantic import SecretStr
 from browser_use import Agent, Controller
 from browser_use.browser.browser import Browser, BrowserConfig
 
-api_key = os.getenv('GEMINI_API_KEY')
+api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key:
-	raise ValueError('GEMINI_API_KEY is not set')
+	raise ValueError('GOOGLE_API_KEY is not set')
 
 browser = Browser(
 	config=BrowserConfig(
