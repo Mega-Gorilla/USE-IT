@@ -422,6 +422,6 @@ class Browser:
 		except Exception as e:
 			logger.debug(f'Failed to cleanup browser in destructor: {e}')
 
-	# no-op because httpx clients are by their creators, not by the Browser class
 	async def cleanup_httpx_clients(self):
+		"""No-op method - browser instances shouldn't close httpx clients they didn't create."""
 		pass
