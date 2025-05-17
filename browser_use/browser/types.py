@@ -319,6 +319,8 @@ class BrowserContextArgs(BaseModel):
 	"""
 	Base model for common browser context parameters used by
 	both new_context() and launch_persistent_context().
+
+	https://playwright.dev/python/docs/api/class-browser#browser-new-context
 	"""
 
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
@@ -372,6 +374,9 @@ class BrowserConnectArgs(BaseModel):
 	"""
 	Base model for common browser connect parameters used by
 	both connect_over_cdp() and connect_over_ws().
+
+	https://playwright.dev/python/docs/api/class-browsertype#browser-type-connect
+	https://playwright.dev/python/docs/api/class-browsertype#browser-type-connect-over-cdp
 	"""
 
 	model_config = ConfigDict(extra='ignore', validate_assignment=True, revalidate_instances='always')
@@ -385,6 +390,8 @@ class BrowserLaunchArgs(BaseModel):
 	"""
 	Base model for common browser launch parameters used by
 	both launch() and launch_persistent_context().
+
+	https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch
 	"""
 
 	model_config = ConfigDict(
@@ -445,6 +452,8 @@ class BrowserNewContextArgs(BrowserContextArgs):
 	"""
 	Pydantic model for new_context() arguments.
 	Extends BaseContextParams with storage_state parameter.
+
+	https://playwright.dev/python/docs/api/class-browser#browser-new-context
 	"""
 
 	# storage_state is not supported in launch_persistent_context()
@@ -476,6 +485,8 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 	Pydantic model for launch_persistent_context() arguments.
 	Combines browser launch parameters and context parameters,
 	plus adds the user_data_dir parameter.
+
+	https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context
 	"""
 
 	# Required parameter specific to launch_persistent_context
@@ -517,12 +528,13 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
 	"""
-	A BrowserProfile is a static collection of kwargs that can be passed to:
+	A BrowserProfile is a static collection of kwargs that get passed to:
 		- BrowserType.launch(**BrowserLaunchArgs)
 		- BrowserType.connect(**BrowserConnectArgs)
 		- BrowserType.connect_over_cdp(**BrowserConnectArgs)
 		- BrowserType.launch_persistent_context(**BrowserLaunchPersistentContextArgs)
 		- BrowserContext.new_context(**BrowserNewContextArgs)
+		- BrowserSession(**BrowserProfile)
 	"""
 
 	model_config = ConfigDict(
