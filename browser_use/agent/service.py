@@ -13,8 +13,6 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
-from browser_use.browser.types import BrowserProfile
-
 load_dotenv()
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -26,7 +24,6 @@ from langchain_core.messages import (
 from playwright.async_api import Browser, BrowserContext
 from pydantic import BaseModel, ValidationError
 
-# from lmnr.sdk.decorators import observe
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
@@ -51,7 +48,9 @@ from browser_use.agent.views import (
 	StepMetadata,
 	ToolCallingMethod,
 )
-from browser_use.browser import BrowserSession
+from browser_use.browser import BrowserProfile, BrowserSession
+
+# from lmnr.sdk.decorators import observe
 from browser_use.browser.views import BrowserState
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
@@ -60,7 +59,7 @@ from browser_use.dom.history_tree_processor.service import (
 	HistoryTreeProcessor,
 )
 from browser_use.exceptions import LLMException
-from browser_use.telemetry import ProductTelemetry
+from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentTelemetryEvent,
 )

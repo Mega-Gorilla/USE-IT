@@ -1,28 +1,32 @@
 DEPRECATION_MESSAGE = """
-⚠️ {} is deprecated. Use the ✨ new, simplified BrowserSession(**all_config_here) ✨ instead!\n
-	from browser_use.browser import BrowserSession, BrowserProfile
+⚠️ {} is deprecated. Use the ✨ new, simplified BrowserProfile and BrowserSession ✨ instead!\n
+	from browser_use.browser import BrowserProfile, BrowserSession
  
 	browser_profile = BrowserProfile(
-		# ⬇️ the old BrowserConfig, BrowserContextConfig kwargs all go in one place now:
+		# ⬇️ the old BrowserConfig, BrowserContextConfig, and playwright launch/context kwargs all go in one place now:
 		headless=False,
 		disable_security=False,
 		keep_alive=True,
-		extra_browser_args=['--start-maximized'],
+		args=['--start-maximized'],
+		ignore_default_args=['--enable-automation'],
 		allowed_domains=['example.com', '*.google.com'],
-		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		user_data_dir='/path/to/user_data_dir',
+		downloads_path='/path/to/downloads',
 		...
+		# ⬆️ see the full list of options here: https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context
 	)
 
 	# then start a session using the profile to connect/launch to the live browser:
 	browser_session = BrowserSession(
-		profile=browser_profile,
+		browser_profile=browser_profile,
 		# pass a CDP URL to connect to an existing browser instance:
 		cdp_url='http://localhost:9222',
 		# or provide a custom binary to launch:
-		browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-		# or pass live playwright or patchright objects to use them directly:
-		browser=playwright_browser,
-		browser_context=playwright_browser_context,
+		executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+		# or pass live playwright or patchright objects to use an existing browser connection directly:
+		browser=playwright_browser_obj,
+		browser_context=playwright_browser_context_obj,
 	)
 	agent = Agent(browser_session=browser_session, ...)
 	...
