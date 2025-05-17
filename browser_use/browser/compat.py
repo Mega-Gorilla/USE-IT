@@ -1,32 +1,54 @@
 DEPRECATION_MESSAGE = """
-⚠️ {} is deprecated. Use the ✨ new, simplified BrowserProfile and BrowserSession ✨ instead!\n
+↗️ We have moved to a new, simplified BrowserProfile and BrowserSession API. Old code that uses browser_use.browser.{} must be updated.
+
+👍 Thank you for your patience as we work to simplify our API! Migration is easy:
+
 	from browser_use.browser import BrowserProfile, BrowserSession
+	
+	# the new 👤 BrowserProfile(...) and 🚀 BrowserSession(...) support 100% standard 🎭 playwright options:
+	#    
  
+	# 1. 👤 create a BrowserProfile() object and put *all* your browser-related config into it
 	browser_profile = BrowserProfile(
-		# ⬇️ the old BrowserConfig, BrowserContextConfig, and playwright launch/context kwargs all go in one place now:
-		headless=False,
-		disable_security=False,
-		keep_alive=True,
-		args=['--start-maximized'],
-		ignore_default_args=['--enable-automation'],
-		allowed_domains=['example.com', '*.google.com'],
+		# 🎭 all the standard Playwright launch & context options can go here:
 		executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 		user_data_dir='/path/to/user_data_dir',
-		downloads_path='/path/to/downloads',
-		...
-		# ⬆️ see the full list of options here: https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context
+		headless=False,
+		args=['--start-maximized'],
+		ignore_default_args=['--enable-automation'],
+		viewport={'width': 1920, 'height': 1080},
+		has_touch=False,
+		user_agent='...',
+		# ... see more: https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context
+		
+		# ♾️ Browser-Use's browser options can also go here:
+		#    Browser(...)				➡️ move here	⬇️  ...
+		# 	 BrowserConfig(...)			➡️ move here	⬇️  ...
+		# 	 BrowserContextConfig(...)	➡️ move here	⬇️  ...
+		highlight_elements=True,
+		allowed_domains=['example.com', '*.google.com'],
+		disable_security=False,
+		keep_alive=True,
+		window_size={'width': 1920, 'height': 1080},
+		# ... see more: https://docs.browser-use.com/customize/browser-settings#context-configuration
 	)
 
-	# then start a session using the profile to connect/launch to the live browser:
+	# 2. 🚀 create a BrowserSession() to connect to a browser
 	browser_session = BrowserSession(
+		# A. Local: pass a 👤 BrowserProfile to launch a local browser with that config
 		browser_profile=browser_profile,
-		# pass a CDP URL to connect to an existing browser instance:
-		cdp_url='http://localhost:9222',
-		# or provide a custom binary to launch:
-		executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-		# or pass live playwright or patchright objects to use an existing browser connection directly:
-		browser=playwright_browser_obj,
-		browser_context=playwright_browser_context_obj,
+		# ... extra kwargs can be passed to override browser_profile settings on a per-session basis, e.g.:
+		# executable_path='/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+		# user_data_dir='~/Desktop/new-test-profile',
+		# headless=True,
+		
+		# OR B. Remote: pass 🔗 cdp_url or wss_URL to use an existing remote browser
+		# cdp_url='http://localhost:9222',
+		# wss_url='ws://some-playwright-node-server:9292',
+		
+		# OR C. Existing: pass existing playwright/patchright browser objects
+		# browser=playwright_browser_obj,
+		# browser_context=playwright_browser_context_obj,
 	)
 	agent = Agent(browser_session=browser_session, ...)
 	...
@@ -37,7 +59,7 @@ class DeprecatedClass:
 	def __init__(self, *_args, **_kwargs):
 		print(DEPRECATION_MESSAGE.format(type(self).__name__))
 		raise NotImplementedError(
-			f'{type(self).__name__} is deprecated. Use browser_use.browser.BrowserProfile and BrowserSession instead.'
+			'The Browser, BrowserConfig, BrowserContext, BrowserContextConfig models have been moved to a simplified new design => 1 BrowserProfile + 1 BrowserSession.'
 		)
 
 
