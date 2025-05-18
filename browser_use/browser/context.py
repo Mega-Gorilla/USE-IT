@@ -1910,12 +1910,12 @@ class BrowserContext:
 		pixels_above = scroll_y
 		pixels_below = total_height - (scroll_y + viewport_height)
 		return pixels_above, pixels_below
-	
+
 	async def _scroll_container(self, pixels: int) -> None:
 		"""Scroll the element that truly owns vertical scroll.Starts at the focused node ➜ climbs to the first big, scroll-enabled ancestor otherwise picks the first scrollable element or the root, then calls `element.scrollBy` (or `window.scrollBy` for the root) by the supplied pixel value."""
-		
+
 		page = await self.get_agent_current_page()
-	  
+
 		# An element can *really* scroll if: overflow-y is auto|scroll|overlay, it has more content than fits, its own viewport is not a postage stamp (more than 50 % of window).
 		SMART_SCROLL_JS = """(dy) => {
 			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;

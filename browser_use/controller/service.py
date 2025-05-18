@@ -252,49 +252,45 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg)
 
 		@self.registry.action(
-           "Scroll down the page by pixel amount - if none is given, scroll one page",
-           param_model=ScrollAction,
-       )
+			'Scroll down the page by pixel amount - if none is given, scroll one page',
+			param_model=ScrollAction,
+		)
 		async def scroll_down(params: ScrollAction, browser: BrowserContext):
 			"""
 			(a) Use browser._scroll_container for container-aware scrolling.
 			(b) If that JavaScript throws, fall back to window.scrollBy().
 			"""
 			page = await browser.get_current_page()
-			dy = params.amount or await page.evaluate("() => window.innerHeight")
-
+			dy = params.amount or await page.evaluate('() => window.innerHeight')
 
 			try:
 				await browser._scroll_container(dy)
 			except Exception as e:
 				# Hard fallback: always works on root scroller
-				await page.evaluate("(y) => window.scrollBy(0, y)", dy)
-				logger.debug("Smart scroll failed; used window.scrollBy fallback", exc_info=e)
+				await page.evaluate('(y) => window.scrollBy(0, y)', dy)
+				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
-
-			amount_str = f"{params.amount} pixels" if params.amount is not None else "one page"
-			msg = f"🔍 Scrolled down the page by {amount_str}"
+			amount_str = f'{params.amount} pixels' if params.amount is not None else 'one page'
+			msg = f'🔍 Scrolled down the page by {amount_str}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		@self.registry.action(
-			"Scroll up the page by pixel amount - if none is given, scroll one page",
+			'Scroll up the page by pixel amount - if none is given, scroll one page',
 			param_model=ScrollAction,
 		)
 		async def scroll_up(params: ScrollAction, browser: BrowserContext):
 			page = await browser.get_current_page()
-			dy = -(params.amount or await page.evaluate("() => window.innerHeight"))
-
+			dy = -(params.amount or await page.evaluate('() => window.innerHeight'))
 
 			try:
 				await browser._scroll_container(dy)
 			except Exception as e:
-				await page.evaluate("(y) => window.scrollBy(0, y)", dy)
-				logger.debug("Smart scroll failed; used window.scrollBy fallback", exc_info=e)
+				await page.evaluate('(y) => window.scrollBy(0, y)', dy)
+				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
-
-			amount_str = f"{params.amount} pixels" if params.amount is not None else "one page"
-			msg = f"🔍 Scrolled up the page by {amount_str}"
+			amount_str = f'{params.amount} pixels' if params.amount is not None else 'one page'
+			msg = f'🔍 Scrolled up the page by {amount_str}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
