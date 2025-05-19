@@ -13,7 +13,7 @@ body:
       description: |
         Describe the problem or need that your feature request solves, feel free to include any screenshots or examples.
       placeholder: |
-        e.g. I need to be able to simulate hovering in a circle to test a drawing feature on a particular site https://example.com/draw.
+        e.g. I need to be able to simulate dragging in a circle to test the paint feature on a drawing site: https://example.com/draw
     validations:
       required: true
 
@@ -24,8 +24,9 @@ body:
       description: |
         Describe the ideal specific solution you'd want, *and whether it fits into any broader scope of changes*.
       placeholder: |
-        e.g. I want to add a default controller action that can hover/drag the mouse on a path when given a series of x,y coordinates.
-        More broadly it may be useful add a computer-use x,y-coordinate style automation fallback method that can do complex mouse interaction tasks.
+        e.g. I want to add a default controller action that can hover/drag the mouse on a path when given a series 
+        of x,y coordinates. More broadly it may be useful add a computer-use x,y-coordinate style automation 
+        fallback method that can do complex mouse interaction tasks.
     validations:
       required: true
 
@@ -34,11 +35,11 @@ body:
     attributes:
       label: "What hacks or alternative solutions have you tried to solve the problem?"
       description: |
-        A description of any alternative approaches, workarounds, or other solutions you've considered to fix the problem.
+        A description of any troubleshooting, alternative approaches, workarounds, or other ideas you've considered to fix the problem.
       placeholder: |
-        e.g. I tried upgrading to the latest version and telling it to hover in the prompt. I also tried telling the agent
-        to ask for human help (using a custom controller action) when it gets to this step, then I manually click a browser extension
-        called "XYZ Mouse" that I have installed in the profile that automates the mouse movevement.
+        e.g. I tried upgrading to the latest version and telling it to hover in the prompt. I also tried 
+        telling the agent to ask for human help (using a custom controller action) when it gets to this 
+        step, then I manually click a browser extension in the navbar that automates the mouse movevement.
     validations:
       required: true
 
