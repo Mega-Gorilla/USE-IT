@@ -1,10 +1,10 @@
 name: 💡 Feature or enhancement request
-description: Suggest an idea or improvement for this project
+description: Suggest an idea or improvement for the browser-use library or Agent capabilities
 title: "Feature Request: ..."
 assignees:
   - pirate
 type: 'Enhancement'
-labels: 'status: idea phase'
+labels: 'enhancement'
 body:
   - type: textarea
     id: current_problem
@@ -36,12 +36,13 @@ body:
       description: |
         A description of any alternative approaches, workarounds, or other solutions you've considered to fix the problem.
       placeholder: |
-        e.g. I wait tell the agent to ask for human help using a custom controller action when it gets to this step,
-        then I click a browser extension I have installed "XYZ Mouse" that automates the mouse movevement.
+        e.g. I tried upgrading to the latest version and telling it to hover in the prompt. I also tried telling the agent
+        to ask for human help (using a custom controller action) when it gets to this step, then I manually click a browser extension
+        called "XYZ Mouse" that I have installed in the profile that automates the mouse movevement.
     validations:
       required: true
 
-  - type: text
+  - type: input
     id: version
     attributes:
       label: What version of the browser-use library are you currently using?
