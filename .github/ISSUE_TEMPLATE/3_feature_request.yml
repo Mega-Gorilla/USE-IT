@@ -75,7 +75,8 @@ body:
     attributes:
       value: |
         ---
-        🚀 While you wait for a response, please **double-check you are on the [*latest release*](https://github.com/browser-use/browser-use/releases)**, we ship fast!
+        > [!TIP]
+        > 🚀 While you wait for a response, please ***double-check you are on the [latest release](https://github.com/browser-use/browser-use/releases)***, we ship fast!
           
         Start discussions about your feature request in other places too, the more hype we see around a request the more likely we are to add it!
 
