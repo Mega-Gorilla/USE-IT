@@ -824,26 +824,20 @@
 
     if (hasInteractiveRole) return true;
 
-    // check whether element has event listeners
-    try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
-        const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
-        for (const eventType of mouseEvents) {
-          if (listeners[eventType] && listeners[eventType].length > 0) {
-            return true; // Found a mouse interaction listener
-          }
-        }
-      } else {
-        // Fallback: Check common event attributes if getEventListeners is not available
-        const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
-        if (commonMouseAttrs.some(attr => element.hasAttribute(attr))) {
-          return true;
-        }
+    // Enhanced event listener check
+    if (window._eventListeners && window._eventListeners.has(element)) {
+      const map = window._eventListeners.get(element);
+      return Object.keys(map).length > 0;
+    }
+    const eventAttrs = [
+      'onclick', 'onmousedown', 'onmouseup', 'ondblclick',
+      'onmouseover', 'onmouseout', 'onfocus', 'onblur',
+      'onkeydown', 'onkeyup', 'onchange', 'onsubmit'
+    ];
+    for (const attr of eventAttrs) {
+      if (element.hasAttribute(attr) || typeof element[attr] === 'function') {
+        return true;
       }
-    } catch (e) {
-      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
-      // If checking listeners fails, rely on other checks
     }
 
     return false
