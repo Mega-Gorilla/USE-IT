@@ -82,7 +82,7 @@ line-length = 130
 fix = true
 
 [tool.ruff.lint]
-select = ["ASYNC", "E", "F", "FAST", "I", "PLE", "E261"]
+select = ["ASYNC", "E", "F", "FAST", "I", "PLE"]
 ignore = ["ASYNC109", "E101", "E402", "E501", "F841", "E731", "W291"]  # TODO: determine if adding timeouts to all the unbounded async functions is needed / worth-it so we can un-ignore ASYNC109
 unfixable = ["E101", "E402", "E501", "F841", "E731"]
 
