@@ -17,8 +17,7 @@ from playwright._impl._api_structures import (
 	StorageState,
 	ViewportSize,
 )
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
-from uuid_extensions import uuid7str
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 # fix pydantic error on python 3.11
 # PydanticUserError: Please use `typing_extensions.TypedDict` instead of `typing.TypedDict` on Python < 3.12.
@@ -92,6 +91,8 @@ CHROME_DOCKER_ARGS = [
 	'--disable-setuid-sandbox',
 	'--disable-dev-shm-usage',
 	'--no-xshm',
+	# '--no-zygote',
+	# '--single-process',
 ]
 
 CHROME_DISABLE_SECURITY_ARGS = [
@@ -323,7 +324,7 @@ class BrowserContextArgs(BaseModel):
 	https://playwright.dev/python/docs/api/class-browser#browser-new-context
 	"""
 
-	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
+	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always', populate_by_name=True)
 
 	# Browser context parameters
 	accept_downloads: bool = True
@@ -379,7 +380,7 @@ class BrowserConnectArgs(BaseModel):
 	https://playwright.dev/python/docs/api/class-browsertype#browser-type-connect-over-cdp
 	"""
 
-	model_config = ConfigDict(extra='ignore', validate_assignment=True, revalidate_instances='always')
+	model_config = ConfigDict(extra='ignore', validate_assignment=True, revalidate_instances='always', populate_by_name=True)
 
 	headers: dict[str, str] = Field(default_factory=dict)
 	slow_mo: float = 0.0
@@ -403,25 +404,43 @@ class BrowserLaunchArgs(BaseModel):
 		validate_by_alias=True,
 	)
 
-	env: dict[str, str | float | bool] = Field(default_factory=dict)
-	executable_path: str | Path | None = Field(default=None, validation_alias='chrome_binary_path')
-	headless: bool | None = None
-	args: list[CliArgStr] = Field(default_factory=list)
+	env: dict[str, str | float | bool] = Field(
+		default_factory=dict, description='Extra environment variables to set when launching the browser.'
+	)
+	executable_path: str | Path | None = Field(
+		default=None,
+		validation_alias=AliasChoices('chrome_binary_path', 'browser_binary_path'),
+		description='Path to the chromium-based browser executable to use.',
+	)
+	headless: bool | None = Field(default=None, description='Whether to run the browser in headless or windowed mode.')
+	args: list[CliArgStr] = Field(
+		default_factory=list, description='List of *extra* CLI args to pass to the browser when launching.'
+	)
 	ignore_default_args: list[CliArgStr] = Field(
 		default_factory=lambda: ['--enable-automation', '--disable-extensions'],
 		description='List of default CLI args to stop playwright from applying (see https://github.com/microsoft/playwright/blob/41008eeddd020e2dee1c540f7c0cdfa337e99637/packages/playwright-core/src/server/chromium/chromiumSwitches.ts)',
 	)
-	channel: BrowserChannel = BrowserChannel.CHROMIUM
-	chromium_sandbox: bool = False
-	devtools: bool = False
-	slow_mo: float = 0
-	timeout: float = 30000
-	proxy: ProxySettings | None = None
-	downloads_path: str | Path | None = None
-	traces_dir: str | Path | None = None
-	handle_sighup: bool = True
-	handle_sigint: bool = True
-	handle_sigterm: bool = True
+	channel: BrowserChannel = BrowserChannel.CHROMIUM  # https://playwright.dev/docs/browsers#chromium-headless-shell
+	chromium_sandbox: bool = Field(
+		default=not IN_DOCKER, description='Whether to enable Chromium sandboxing (recommended unless inside Docker).'
+	)
+	devtools: bool = Field(
+		default=False, description='Whether to open DevTools panel automatically for every page, only works when headless=False.'
+	)
+	slow_mo: float = Field(default=0, description='Slow down actions by this many milliseconds.')
+	timeout: float = Field(default=30000, description='Default timeout in milliseconds for connecting to a remote browser.')
+	proxy: ProxySettings | None = Field(default=None, description='Proxy settings to use to connect to the browser.')
+	downloads_path: str | Path | None = Field(default=None, description='Directory to save downloads to.')
+	traces_dir: str | Path | None = Field(default=None, description='Directory to save HAR trace files to.')
+	handle_sighup: bool = Field(
+		default=True, description='Whether playwright should swallow SIGHUP signals and kill the browser.'
+	)
+	handle_sigint: bool = Field(
+		default=True, description='Whether playwright should swallow SIGINT signals and kill the browser.'
+	)
+	handle_sigterm: bool = Field(
+		default=True, description='Whether playwright should swallow SIGTERM signals and kill the browser.'
+	)
 	# firefox_user_prefs: dict[str, str | float | bool] = Field(default_factory=dict)
 
 	@model_validator(mode='after')
@@ -456,7 +475,7 @@ class BrowserNewContextArgs(BrowserContextArgs):
 	https://playwright.dev/python/docs/api/class-browser#browser-new-context
 	"""
 
-	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
+	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always', populate_by_name=True)
 
 	# storage_state is not supported in launch_persistent_context()
 	storage_state: str | Path | dict[str, Any] | None = None
@@ -493,41 +512,8 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
 
-	# Required parameter specific to launch_persistent_context
-	user_data_dir: str | Path = BROWSERUSE_PROFILES_DIR / 'default'
-
-	# @field_validator('user_data_dir', mode='after')
-	# def validate_user_data_dir(self) -> Self:
-	# 	"""Ensure that user_data_dir is a valid path."""
-
-	# 	self.user_data_dir = Path(self.user_data_dir).expanduser().resolve()
-	# 	self.user_data_dir.mkdir(parents=True, exist_ok=True)
-
-	# 	# check if they passed a chrome profile subdir by accident
-	# 	if (self.user_data_dir / 'History').is_file() and (self.user_data_dir / 'Cookies').is_file():
-	# 		raise ValueError(
-	# 			f'user_data_dir={self.user_data_dir} is incorrect, you should pass the parent dir instead: {self.user_data_dir.parent}'
-	# 		)
-
-	# 	launch_args = self.args or []
-	# 	launch_args.append('--no-default-browser-check')
-	# 	launch_args.append('--disable-first-run-ui')
-
-	# 	# check if the user_data_dir is initialized
-	# 	if (self.user_data_dir / 'Local State').is_file() and (self.user_data_dir / self.profile_directory).is_dir():
-	# 		# profile dir already exists and is fully set up, skip first-run inits
-	# 		launch_args.append('--no-first-run')
-	# 		self._user_data_dir_is_initialized = True
-	# 	else:
-	# 		# profile dir is empty or has not been initialized yet, it's our first run
-	# 		self._user_data_dir_is_initialized = False
-	# 		if self.ignore_default_args is not True:
-	# 			self.ignore_default_args = (self.ignore_default_args or []).append('--no-first-run')
-
-	# 	# assignment is required to re-trigger the args field validator
-	# 	self.args = launch_args
-
-	# 	return self
+	# Required parameter specific to launch_persistent_context, but can be None to use incognito temp dir
+	user_data_dir: str | Path | None = BROWSERUSE_PROFILES_DIR / 'default'
 
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
@@ -548,10 +534,14 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		from_attributes=True,
 		validate_by_name=True,
 		validate_by_alias=True,
+		populate_by_name=True,
 	)
 
-	id: str = Field(default_factory=uuid7str)
-	label: str = 'default'
+	# ... extends options defined in:
+	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
+
+	# id: str = Field(default_factory=uuid7str)
+	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
@@ -561,6 +551,12 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	window_size: ViewportSize | None = Field(
 		default=None,
 		description='Window size to use for the browser when headless=False.',
+	)
+	window_height: int | None = Field(
+		default=None, description='DEPRECATED, use window_size["height"] instead', deprecated=True, exclude=True
+	)
+	window_width: int | None = Field(
+		default=None, description='DEPRECATED, use window_size["width"] instead', deprecated=True, exclude=True
 	)
 	window_position: ViewportSize | None = Field(
 		default_factory=lambda: {'width': 0, 'height': 0},
@@ -585,6 +581,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	save_har_path: str | None = Field(default=None, description='Directory for saving HAR files.')
 	trace_path: str | None = Field(default=None, description='Directory for saving trace files.')
 
+	cookies_file: str | None = Field(default=None, description='File to save cookies to.')
+
 	# extension_ids_to_preinstall: list[str] = Field(
 	# 	default_factory=list, description='List of Chrome extension IDs to preinstall.'
 	# )
@@ -594,17 +592,27 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# )
 
 	# # --- File paths ---
-	# downloads_dir: Path = Field(
-	# 	default_factory=lambda: Path('~/.config/browseruse/profiles/default/downloads').expanduser(),
-	# 	description='Directory for downloads.',
-	# )
+	downloads_dir: Path | str = Field(
+		default=Path('~/.config/browseruse/downloads').expanduser(),
+		description='Directory for downloads.',
+	)
 	# uploads_dir: Path | None = Field(default=None, description='Directory for uploads (defaults to downloads_dir if not set).')
 
 	def __repr__(self) -> str:
-		return f'BrowserProfile(label={self.label})'
+		short_dir = str(self.user_data_dir).replace(str(Path('~').expanduser()), '~')
+		return f'BrowserProfile(user_data_dir={short_dir}, headless={self.headless})'
 
 	def __str__(self) -> str:
 		return repr(self)
+
+	@model_validator(mode='after')
+	def copy_old_config_names_to_new(self) -> Self:
+		"""Copy old config window_width & window_height to window_size."""
+		if self.window_width or self.window_height:
+			self.window_size = self.window_size or {}
+			self.window_size['width'] = (self.window_size or {}).get('width') or self.window_width or 1280
+			self.window_size['height'] = (self.window_size or {}).get('height') or self.window_height or 1100
+		return self
 
 	def get_args(self) -> list[str]:
 		return BrowserLaunchArgs.args_as_list(  # convert back to ['--arg=value', '--arg', '--arg=value', ...]
@@ -620,7 +628,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 					*(
 						[f'--window-size={self.window_size["height"]},{self.window_size["width"]}']
 						if self.window_size
-						else (['--start-maximized' if not self.headless else []])
+						else (['--start-maximized'] if not self.headless else [])
 					),
 					*(
 						[f'--window-position={self.window_position["width"]},{self.window_position["height"]}']
@@ -664,6 +672,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 					f'⚠️ Multiple chrome processes may be trying to share user_data_dir={self.user_data_dir} which can lead to crashes and profile data corruption!'
 				)
 
+		if self.downloads_dir:
+			self.downloads_dir = Path(self.downloads_dir).expanduser().resolve()
+			self.downloads_dir.mkdir(parents=True, exist_ok=True)
+
 	# def preinstall_extensions(self) -> None:
 	# 	"""Preinstall the extensions."""
 
@@ -681,7 +693,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# 			# TODO: copy this from ArchiveBox implementation
 
 	def detect_display_configuration(self) -> None:
-		"""Detect the display size and set the screen option."""
+		"""
+		Detect the system display size and initialize the display-related config defaults:
+		        screen, window_size, window_position, viewport, no_viewport, device_scale_factor
+		"""
 
 		display_size = get_display_size()
 		if display_size:

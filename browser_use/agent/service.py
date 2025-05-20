@@ -51,7 +51,7 @@ from browser_use.agent.views import (
 from browser_use.browser import BrowserProfile, BrowserSession
 
 # from lmnr.sdk.decorators import observe
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import (
@@ -109,8 +109,8 @@ class Agent(Generic[Context]):
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
-			Callable[['BrowserState', 'AgentOutput', int], None]  # Sync callback
-			| Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]]  # Async callback
+			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # Sync callback
+			| Callable[['BrowserStateSummary', 'AgentOutput', int], Awaitable[None]]  # Async callback
 			| None
 		) = None,
 		register_done_callback: (
@@ -321,7 +321,7 @@ class Agent(Generic[Context]):
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
 
 		# Context
-		self.context = context
+		self.context: Context | None = context
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
@@ -460,7 +460,7 @@ class Agent(Generic[Context]):
 		tokens = 0
 
 		try:
-			state = await self.browser_session.get_state(cache_clickable_elements_hashes=True)
+			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
 
 			# generate procedural memory if needed
@@ -551,9 +551,9 @@ class Agent(Generic[Context]):
 
 				if self.register_new_step_callback:
 					if inspect.iscoroutinefunction(self.register_new_step_callback):
-						await self.register_new_step_callback(state, model_output, self.state.n_steps)
+						await self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 					else:
-						self.register_new_step_callback(state, model_output, self.state.n_steps)
+						self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
 					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
 					save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
@@ -615,7 +615,7 @@ class Agent(Generic[Context]):
 					step_end_time=step_end_time,
 					input_tokens=tokens,
 				)
-				self._make_history_item(model_output, state, result, metadata)
+				self._make_history_item(model_output, browser_state_summary, result, metadata)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -665,23 +665,23 @@ class Agent(Generic[Context]):
 	def _make_history_item(
 		self,
 		model_output: AgentOutput | None,
-		state: BrowserState,
+		browser_state_summary: BrowserStateSummary,
 		result: list[ActionResult],
 		metadata: StepMetadata | None = None,
 	) -> None:
 		"""Create and store history item"""
 
 		if model_output:
-			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, browser_state_summary.selector_map)
 		else:
 			interacted_elements = [None]
 
 		state_history = BrowserStateHistory(
-			url=state.url,
-			title=state.title,
-			tabs=state.tabs,
+			url=browser_state_summary.url,
+			title=browser_state_summary.title,
+			tabs=browser_state_summary.tabs,
 			interacted_element=interacted_elements,
-			screenshot=state.screenshot,
+			screenshot=browser_state_summary.screenshot,
 		)
 
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history, metadata=metadata)
@@ -1032,8 +1032,8 @@ class Agent(Generic[Context]):
 
 		for i, action in enumerate(actions):
 			if action.get_index() is not None and i != 0:
-				new_state = await self.browser_session.get_state(cache_clickable_elements_hashes=False)
-				new_selector_map = new_state.selector_map
+				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+				new_selector_map = new_browser_state_summary.selector_map
 
 				# Detect index change after previous action
 				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
@@ -1058,11 +1058,11 @@ class Agent(Generic[Context]):
 				await self._raise_if_stopped_or_paused()
 
 				result = await self.controller.act(
-					action,
-					self.browser_session,
-					self.settings.page_extraction_llm,
-					self.sensitive_data,
-					self.settings.available_file_paths,
+					action=action,
+					browser_session=self.browser_session,
+					page_extraction_llm=self.settings.page_extraction_llm,
+					sensitive_data=self.sensitive_data,
+					available_file_paths=self.settings.available_file_paths,
 					context=self.context,
 				)
 
@@ -1099,9 +1099,9 @@ class Agent(Generic[Context]):
 		)
 
 		if self.browser_context:
-			state = await self.browser_session.get_state(cache_clickable_elements_hashes=False)
+			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 			content = AgentMessagePrompt(
-				state=state,
+				state=browser_state_summary,
 				result=self.state.last_result,
 				include_attributes=self.settings.include_attributes,
 			)
@@ -1209,7 +1209,7 @@ class Agent(Generic[Context]):
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-		state = await self.browser_context.get_state(cache_clickable_elements_hashes=False)
+		state = await self.browser_context.get_state_summary(cache_clickable_elements_hashes=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
@@ -1233,16 +1233,18 @@ class Agent(Generic[Context]):
 		self,
 		historical_element: DOMHistoryElement | None,
 		action: ActionModel,  # Type this properly based on your action model
-		current_state: BrowserState,
+		browser_state_summary: BrowserStateSummary,
 	) -> ActionModel | None:
 		"""
 		Update action indices based on current page state.
 		Returns updated action or None if element cannot be found.
 		"""
-		if not historical_element or not current_state.element_tree:
+		if not historical_element or not browser_state_summary.element_tree:
 			return action
 
-		current_element = HistoryTreeProcessor.find_history_element_in_tree(historical_element, current_state.element_tree)
+		current_element = HistoryTreeProcessor.find_history_element_in_tree(
+			historical_element, browser_state_summary.element_tree
+		)
 
 		if not current_element or current_element.highlight_index is None:
 			return None

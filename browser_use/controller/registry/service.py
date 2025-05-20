@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Callable
 from inspect import iscoroutinefunction, signature
 from typing import Any, Generic, Optional, TypeVar
@@ -21,6 +22,8 @@ from browser_use.utils import time_execution_async
 
 Context = TypeVar('Context')
 
+logger = logging.getLogger(__name__)
+
 
 class Registry(Generic[Context]):
 	"""Service for registering and managing actions"""
@@ -37,7 +40,11 @@ class Registry(Generic[Context]):
 		params = {
 			name: (param.annotation, ... if param.default == param.empty else param.default)
 			for name, param in sig.parameters.items()
-			if name != 'browser' and name != 'page_extraction_llm' and name != 'available_file_paths'
+			if name != 'browser'
+			and name != 'page_extraction_llm'
+			and name != 'available_file_paths'
+			and name != 'browser_session'
+			and name != 'browser_context'
 		}
 		# TODO: make the types here work
 		return create_model(
@@ -109,7 +116,10 @@ class Registry(Generic[Context]):
 		action = self.registry.actions[action_name]
 		try:
 			# Create the validated Pydantic model
-			validated_params = action.param_model(**params)
+			try:
+				validated_params = action.param_model(**params)
+			except Exception as e:
+				raise ValueError(f'Invalid parameters {params} for action {action_name}: {type(e)}: {e}') from e
 
 			# Check if the first parameter is a Pydantic model
 			sig = signature(action.function)
@@ -121,7 +131,9 @@ class Registry(Generic[Context]):
 				validated_params = self._replace_sensitive_data(validated_params, sensitive_data)
 
 			# Check if the action requires browser
-			if 'browser_session' in parameter_names and not browser_session:
+			if (
+				'browser_session' in parameter_names or 'browser' in parameter_names or 'browser_context' in parameter_names
+			) and not browser_session:
 				raise ValueError(f'Action {action_name} requires browser_session but none provided.')
 			if 'page_extraction_llm' in parameter_names and not page_extraction_llm:
 				raise ValueError(f'Action {action_name} requires page_extraction_llm but none provided.')
@@ -137,6 +149,16 @@ class Registry(Generic[Context]):
 				extra_args['context'] = context
 			if 'browser_session' in parameter_names:
 				extra_args['browser_session'] = browser_session
+			if 'browser' in parameter_names:  # support legacy browser: BrowserContext arg
+				logger.debug(
+					f'You should update this action {action_name}(browser: BrowserContext)  -> to take {action_name}(browser_session: BrowserSession) instead'
+				)
+				extra_args['browser'] = browser_session
+			if 'browser_context' in parameter_names:  # support legacy browser: BrowserContext arg
+				logger.debug(
+					f'You should update this action {action_name}(browser_context: BrowserContext)  -> to take {action_name}(browser_session: BrowserSession) instead'
+				)
+				extra_args['browser_context'] = browser_session
 			if 'page_extraction_llm' in parameter_names:
 				extra_args['page_extraction_llm'] = page_extraction_llm
 			if 'available_file_paths' in parameter_names:

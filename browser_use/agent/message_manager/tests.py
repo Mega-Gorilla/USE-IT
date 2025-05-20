@@ -5,7 +5,7 @@ from langchain_openai import AzureChatOpenAI, ChatOpenAI
 
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.views import ActionResult
-from browser_use.browser.views import BrowserState, TabInfo
+from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import DOMElementNode, DOMTextNode
 
 
@@ -42,7 +42,7 @@ def test_initial_messages(message_manager: MessageManager):
 
 def test_add_state_message(message_manager: MessageManager):
 	"""Test adding browser state message"""
-	state = BrowserState(
+	state = BrowserStateSummary(
 		url='https://test.com',
 		title='Test Page',
 		element_tree=DOMElementNode(
@@ -66,7 +66,7 @@ def test_add_state_message(message_manager: MessageManager):
 
 def test_add_state_with_memory_result(message_manager: MessageManager):
 	"""Test adding state with result that should be included in memory"""
-	state = BrowserState(
+	state = BrowserStateSummary(
 		url='https://test.com',
 		title='Test Page',
 		element_tree=DOMElementNode(
@@ -95,7 +95,7 @@ def test_add_state_with_memory_result(message_manager: MessageManager):
 
 def test_add_state_with_non_memory_result(message_manager: MessageManager):
 	"""Test adding state with result that should not be included in memory"""
-	state = BrowserState(
+	state = BrowserStateSummary(
 		url='https://test.com',
 		title='Test Page',
 		element_tree=DOMElementNode(
@@ -130,7 +130,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 	# Create a long sequence of interactions
 	for i in range(200):  # Simulate 40 steps of interaction
 		# Create state with varying content length
-		state = BrowserState(
+		state = BrowserStateSummary(
 			url=f'https://test{i}.com',
 			title=f'Test Page {i}',
 			element_tree=DOMElementNode(

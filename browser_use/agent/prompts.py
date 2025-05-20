@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import ActionResult, AgentStepInfo
-	from browser_use.browser.views import BrowserState
+	from browser_use.browser.views import BrowserStateSummary
 
 
 class SystemPrompt:
@@ -62,12 +62,12 @@ class SystemPrompt:
 class AgentMessagePrompt:
 	def __init__(
 		self,
-		state: 'BrowserState',
+		browser_state_summary: 'BrowserStateSummary',
 		result: list['ActionResult'] | None = None,
 		include_attributes: list[str] | None = None,
 		step_info: Optional['AgentStepInfo'] = None,
 	):
-		self.state = state
+		self.state = browser_state_summary
 		self.result = result
 		self.include_attributes = include_attributes or []
 		self.step_info = step_info
