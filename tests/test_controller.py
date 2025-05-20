@@ -6,8 +6,7 @@ from pydantic import BaseModel
 from pytest_httpserver import HTTPServer
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.context import BrowserContext
+from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.controller.service import Controller
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -83,22 +82,17 @@ class TestControllerIntegration:
 		return f'http://{http_server.host}:{http_server.port}'
 
 	@pytest.fixture(scope='module')
-	async def browser(self, event_loop):
+	async def browser_session(self, event_loop):
 		"""Create and provide a Browser instance with security disabled."""
-		browser_instance = Browser(
-			config=BrowserConfig(
+		browser_session = BrowserSession(
+			browser_profile=BrowserProfile(
 				headless=True,
-			)
+			),
+			user_data_dir=None,
 		)
-		yield browser_instance
-		await browser_instance.close()
-
-	@pytest.fixture
-	async def browser_context(self, browser):
-		"""Create and provide a BrowserContext instance."""
-		context = BrowserContext(browser=browser)
-		yield context
-		await context.close()
+		await browser_session.start()
+		yield browser_session
+		await browser_session.stop()
 
 	@pytest.fixture
 	def controller(self):
@@ -106,7 +100,7 @@ class TestControllerIntegration:
 		return Controller()
 
 	@pytest.mark.asyncio
-	async def test_go_to_url_action(self, controller, browser_context, base_url):
+	async def test_go_to_url_action(self, controller, browser_session, base_url):
 		"""Test that GoToUrlAction navigates to the specified URL."""
 		# Create action model for go_to_url
 		action_data = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
@@ -118,18 +112,18 @@ class TestControllerIntegration:
 		action_model = GoToUrlActionModel(**action_data)
 
 		# Execute the action
-		result = await controller.act(action_model, browser_context)
+		result = await controller.act(action_model, browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert f'Navigated to {base_url}/page1' in result.extracted_content
 
 		# Verify the current page URL
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		assert f'{base_url}/page1' in page.url
 
 	@pytest.mark.asyncio
-	async def test_scroll_actions(self, controller, browser_context, base_url):
+	async def test_scroll_actions(self, controller, browser_session, base_url):
 		"""Test that scroll actions correctly scroll the page."""
 		# First navigate to a page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
@@ -137,7 +131,7 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Create scroll down action
 		scroll_action = {'scroll_down': ScrollAction(amount=200)}
@@ -146,7 +140,7 @@ class TestControllerIntegration:
 			scroll_down: ScrollAction | None = None
 
 		# Execute scroll down
-		result = await controller.act(ScrollActionModel(**scroll_action), browser_context)
+		result = await controller.act(ScrollActionModel(**scroll_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -159,14 +153,14 @@ class TestControllerIntegration:
 			scroll_up: ScrollAction | None = None
 
 		# Execute scroll up
-		result = await controller.act(ScrollUpActionModel(**scroll_up_action), browser_context)
+		result = await controller.act(ScrollUpActionModel(**scroll_up_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert 'Scrolled up' in result.extracted_content
 
 	@pytest.mark.asyncio
-	async def test_registry_actions(self, controller, browser_context):
+	async def test_registry_actions(self, controller, browser_session):
 		"""Test that the registry contains the expected default actions."""
 		# Check that common actions are registered
 		common_actions = [
@@ -189,7 +183,7 @@ class TestControllerIntegration:
 			assert controller.registry.registry.actions[action].description is not None
 
 	@pytest.mark.asyncio
-	async def test_custom_action_registration(self, controller, browser_context, base_url):
+	async def test_custom_action_registration(self, controller, browser_session, base_url):
 		"""Test registering a custom action and executing it."""
 
 		# Define a custom action
@@ -197,8 +191,8 @@ class TestControllerIntegration:
 			text: str
 
 		@controller.action('Test custom action', param_model=CustomParams)
-		async def custom_action(params: CustomParams, browser):
-			page = await browser.get_current_page()
+		async def custom_action(params: CustomParams, browser_session):
+			page = await browser_session.get_current_page()
 			return ActionResult(extracted_content=f'Custom action executed with: {params.text} on {page.url}')
 
 		# Navigate to a page first
@@ -207,7 +201,7 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Create the custom action model
 		custom_action_data = {'custom_action': CustomParams(text='test_value')}
@@ -216,7 +210,7 @@ class TestControllerIntegration:
 			custom_action: CustomParams | None = None
 
 		# Execute the custom action
-		result = await controller.act(CustomActionModel(**custom_action_data), browser_context)
+		result = await controller.act(CustomActionModel(**custom_action_data), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -224,7 +218,7 @@ class TestControllerIntegration:
 		assert f'{base_url}/page1' in result.extracted_content
 
 	@pytest.mark.asyncio
-	async def test_input_text_action(self, controller, browser_context, base_url, http_server):
+	async def test_input_text_action(self, controller, browser_session, base_url, http_server):
 		"""Test that InputTextAction correctly inputs text into form fields."""
 		# Set up search form endpoint for this test
 		http_server.expect_request('/searchform').respond_with_data(
@@ -249,11 +243,11 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Get the search input field index
-		page = await browser_context.get_current_page()
-		selector_map = await browser_context.get_selector_map()
+		page = await browser_session.get_current_page()
+		selector_map = await browser_session.get_selector_map()
 
 		# Find the search input field - this requires examining the DOM
 		# We'll mock this part since we can't rely on specific element indices
@@ -272,7 +266,7 @@ class TestControllerIntegration:
 		# The actual input might fail if the page structure changes or in headless mode
 		# So we'll just verify the controller correctly processes the action
 		try:
-			result = await controller.act(InputTextActionModel(**input_action), browser_context)
+			result = await controller.act(InputTextActionModel(**input_action), browser_session)
 			# If successful, verify the result
 			assert isinstance(result, ActionResult)
 			assert 'Input' in result.extracted_content
@@ -281,7 +275,7 @@ class TestControllerIntegration:
 			assert 'Element index' in str(e) or 'does not exist' in str(e)
 
 	@pytest.mark.asyncio
-	async def test_error_handling(self, controller, browser_context):
+	async def test_error_handling(self, controller, browser_session):
 		"""Test error handling when an action fails."""
 		# Create an action with an invalid index
 		invalid_action = {'click_element_by_index': ClickElementAction(index=9999)}
@@ -291,13 +285,13 @@ class TestControllerIntegration:
 
 		# This should fail since the element doesn't exist
 		with pytest.raises(Exception) as excinfo:
-			await controller.act(ClickActionModel(**invalid_action), browser_context)
+			await controller.act(ClickActionModel(**invalid_action), browser_session)
 
 		# Verify that an appropriate error is raised
 		assert 'does not exist' in str(excinfo.value) or 'Element with index' in str(excinfo.value)
 
 	@pytest.mark.asyncio
-	async def test_wait_action(self, controller, browser_context):
+	async def test_wait_action(self, controller, browser_session):
 		"""Test that the wait action correctly waits for the specified duration."""
 		# Create wait action for 1 second - fix to use a dictionary
 		wait_action = {'wait': {'seconds': 1}}  # Corrected format
@@ -309,7 +303,7 @@ class TestControllerIntegration:
 		start_time = time.time()
 
 		# Execute wait action
-		result = await controller.act(WaitActionModel(**wait_action), browser_context)
+		result = await controller.act(WaitActionModel(**wait_action), browser_session)
 
 		# Record end time
 		end_time = time.time()
@@ -322,7 +316,7 @@ class TestControllerIntegration:
 		assert end_time - start_time >= 0.9  # Allow some timing margin
 
 	@pytest.mark.asyncio
-	async def test_go_back_action(self, controller, browser_context, base_url):
+	async def test_go_back_action(self, controller, browser_session, base_url):
 		"""Test that go_back action navigates to the previous page."""
 		# Navigate to first page
 		goto_action1 = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
@@ -330,19 +324,19 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action1), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action1), browser_session)
 
 		# Store the first page URL
-		page1 = await browser_context.get_current_page()
+		page1 = await browser_session.get_current_page()
 		first_url = page1.url
 		print(f'First page URL: {first_url}')
 
 		# Navigate to second page
 		goto_action2 = {'go_to_url': GoToUrlAction(url=f'{base_url}/page2')}
-		await controller.act(GoToUrlActionModel(**goto_action2), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action2), browser_session)
 
 		# Verify we're on the second page
-		page2 = await browser_context.get_current_page()
+		page2 = await browser_session.get_current_page()
 		second_url = page2.url
 		print(f'Second page URL: {second_url}')
 		assert f'{base_url}/page2' in second_url
@@ -353,7 +347,7 @@ class TestControllerIntegration:
 		class GoBackActionModel(ActionModel):
 			go_back: NoParamsAction | None = None
 
-		result = await controller.act(GoBackActionModel(**go_back_action), browser_context)
+		result = await controller.act(GoBackActionModel(**go_back_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -363,7 +357,7 @@ class TestControllerIntegration:
 		await asyncio.sleep(1)
 
 		# Verify we're back on a different page than before
-		page3 = await browser_context.get_current_page()
+		page3 = await browser_session.get_current_page()
 		final_url = page3.url
 		print(f'Final page URL after going back: {final_url}')
 
@@ -371,7 +365,7 @@ class TestControllerIntegration:
 		assert f'{base_url}/page1' in final_url, f'Expected to return to page1 but got {final_url}'
 
 	@pytest.mark.asyncio
-	async def test_navigation_chain(self, controller, browser_context, base_url):
+	async def test_navigation_chain(self, controller, browser_session, base_url):
 		"""Test navigating through multiple pages and back through history."""
 		# Set up a chain of navigation: Home -> Page1 -> Page2
 		urls = [f'{base_url}/', f'{base_url}/page1', f'{base_url}/page2']
@@ -383,10 +377,10 @@ class TestControllerIntegration:
 			class GoToUrlActionModel(ActionModel):
 				go_to_url: GoToUrlAction | None = None
 
-			await controller.act(GoToUrlActionModel(**action_data), browser_context)
+			await controller.act(GoToUrlActionModel(**action_data), browser_session)
 
 			# Verify current page
-			page = await browser_context.get_current_page()
+			page = await browser_session.get_current_page()
 			assert url in page.url
 
 		# Go back twice and verify each step
@@ -396,14 +390,14 @@ class TestControllerIntegration:
 			class GoBackActionModel(ActionModel):
 				go_back: NoParamsAction | None = None
 
-			await controller.act(GoBackActionModel(**go_back_action), browser_context)
+			await controller.act(GoBackActionModel(**go_back_action), browser_session)
 			await asyncio.sleep(1)  # Wait for navigation to complete
 
-			page = await browser_context.get_current_page()
+			page = await browser_session.get_current_page()
 			assert expected_url in page.url
 
 	@pytest.mark.asyncio
-	async def test_concurrent_tab_operations(self, controller, browser_context, base_url):
+	async def test_concurrent_tab_operations(self, controller, browser_session, base_url):
 		"""Test operations across multiple tabs."""
 		# Create two tabs with different content
 		urls = [f'{base_url}/page1', f'{base_url}/page2']
@@ -414,7 +408,7 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action1), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action1), browser_session)
 
 		# Open second tab
 		open_tab_action = {'open_tab': OpenTabAction(url=urls[1])}
@@ -422,10 +416,10 @@ class TestControllerIntegration:
 		class OpenTabActionModel(ActionModel):
 			open_tab: OpenTabAction | None = None
 
-		await controller.act(OpenTabActionModel(**open_tab_action), browser_context)
+		await controller.act(OpenTabActionModel(**open_tab_action), browser_session)
 
 		# Verify we're on second tab
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		assert urls[1] in page.url
 
 		# Switch back to first tab
@@ -434,10 +428,10 @@ class TestControllerIntegration:
 		class SwitchTabActionModel(ActionModel):
 			switch_tab: SwitchTabAction | None = None
 
-		await controller.act(SwitchTabActionModel(**switch_tab_action), browser_context)
+		await controller.act(SwitchTabActionModel(**switch_tab_action), browser_session)
 
 		# Verify we're back on first tab
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		assert urls[0] in page.url
 
 		# Close the second tab
@@ -446,15 +440,15 @@ class TestControllerIntegration:
 		class CloseTabActionModel(ActionModel):
 			close_tab: CloseTabAction | None = None
 
-		await controller.act(CloseTabActionModel(**close_tab_action), browser_context)
+		await controller.act(CloseTabActionModel(**close_tab_action), browser_session)
 
 		# Verify only one tab remains
-		tabs_info = await browser_context.get_tabs_info()
+		tabs_info = await browser_session.get_tabs_info()
 		assert len(tabs_info) == 1
 		assert urls[0] in tabs_info[0].url
 
 	@pytest.mark.asyncio
-	async def test_excluded_actions(self, browser_context):
+	async def test_excluded_actions(self, browser_session):
 		"""Test that excluded actions are not registered."""
 		# Create controller with excluded actions
 		excluded_controller = Controller(exclude_actions=['search_google', 'open_tab'])
@@ -468,10 +462,10 @@ class TestControllerIntegration:
 		assert 'click_element_by_index' in excluded_controller.registry.registry.actions
 
 	@pytest.mark.asyncio
-	async def test_search_google_action(self, controller, browser_context, base_url):
+	async def test_search_google_action(self, controller, browser_session, base_url):
 		"""Test the search_google action."""
-		# Add a custom search handler for our test server
-		# Since this is a mock test, we'll just navigate to the /search page
+
+		await browser_session.get_current_page()
 
 		# Execute search_google action - it will actually navigate to our search results page
 		search_action = {'search_google': SearchGoogleAction(query='Python web automation')}
@@ -479,18 +473,18 @@ class TestControllerIntegration:
 		class SearchGoogleActionModel(ActionModel):
 			search_google: SearchGoogleAction | None = None
 
-		result = await controller.act(SearchGoogleActionModel(**search_action), browser_context)
+		result = await controller.act(SearchGoogleActionModel(**search_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert 'Searched for "Python web automation" in Google' in result.extracted_content
 
 		# For our test purposes, we just verify we're on some URL
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		assert page.url is not None and 'Python' in page.url
 
 	@pytest.mark.asyncio
-	async def test_done_action(self, controller, browser_context, base_url):
+	async def test_done_action(self, controller, browser_session, base_url):
 		"""Test that DoneAction completes a task and reports success or failure."""
 		# First navigate to a page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
@@ -498,7 +492,7 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		success_done_message = 'Successfully completed task'
 
@@ -509,7 +503,7 @@ class TestControllerIntegration:
 			done: DoneAction | None = None
 
 		# Execute done action
-		result = await controller.act(DoneActionModel(**done_action), browser_context)
+		result = await controller.act(DoneActionModel(**done_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -524,7 +518,7 @@ class TestControllerIntegration:
 		failed_done_action = {'done': DoneAction(text=failed_done_message, success=False)}
 
 		# Execute failed done action
-		result = await controller.act(DoneActionModel(**failed_done_action), browser_context)
+		result = await controller.act(DoneActionModel(**failed_done_action), browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -534,7 +528,7 @@ class TestControllerIntegration:
 		assert result.error is None
 
 	@pytest.mark.asyncio
-	async def test_drag_drop_action(self, controller, browser_context, base_url, http_server):
+	async def test_drag_drop_action(self, controller, browser_session, base_url, http_server):
 		"""Test that DragDropAction correctly drags and drops elements."""
 		# Set up drag and drop test page for this test
 		http_server.expect_request('/dragdrop').respond_with_data(
@@ -678,14 +672,14 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Verify navigation worked
 		assert goto_result.error is None, f'Navigation failed: {goto_result.error}'
 		assert f'Navigated to {base_url}/dragdrop' in goto_result.extracted_content
 
 		# Get page reference
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 
 		# Verify we loaded the page correctly
 		title = await page.title()
@@ -737,7 +731,7 @@ class TestControllerIntegration:
 			drag_drop: DragDropAction | None = None
 
 		# Execute the drag action through the controller
-		result = await controller.act(DragDropActionModel(**drag_action), browser_context)
+		result = await controller.act(DragDropActionModel(**drag_action), browser_session)
 
 		# Step 5: Verify the controller action result
 		assert result.error is None, f'Drag operation failed with error: {result.error}'
@@ -762,7 +756,7 @@ class TestControllerIntegration:
 		assert drag_succeeded, "Drag and drop events weren't fired correctly"
 
 	@pytest.mark.asyncio
-	async def test_send_keys_action(self, controller, browser_context, base_url, http_server):
+	async def test_send_keys_action(self, controller, browser_session, base_url, http_server):
 		"""Test SendKeysAction using a controlled local HTML file."""
 		# Set up keyboard test page for this test
 		http_server.expect_request('/keyboard').respond_with_data(
@@ -829,7 +823,7 @@ class TestControllerIntegration:
 			go_to_url: GoToUrlAction | None = None
 
 		# Execute navigation
-		goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		goto_result = await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.1)
 
 		# Verify navigation result
@@ -839,7 +833,7 @@ class TestControllerIntegration:
 		assert goto_result.is_done is False
 
 		# Get the page object
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 
 		# Verify page loaded
 		title = await page.title()
@@ -855,7 +849,7 @@ class TestControllerIntegration:
 		class SendKeysActionModel(ActionModel):
 			send_keys: SendKeysAction | None = None
 
-		tab_result = await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+		tab_result = await controller.act(SendKeysActionModel(**tab_keys_action), browser_session)
 		await asyncio.sleep(0.1)
 
 		# Verify Tab action result
@@ -875,7 +869,7 @@ class TestControllerIntegration:
 		# 2. Type text into the input
 		test_text = 'This is a test'
 		type_action = {'send_keys': SendKeysAction(keys=test_text)}
-		type_result = await controller.act(SendKeysActionModel(**type_action), browser_context)
+		type_result = await controller.act(SendKeysActionModel(**type_action), browser_session)
 		await asyncio.sleep(0.1)
 
 		# Verify typing action result
@@ -895,7 +889,7 @@ class TestControllerIntegration:
 
 		# 3. Test Ctrl+A for select all
 		select_all_action = {'send_keys': SendKeysAction(keys='ControlOrMeta+a')}
-		select_all_result = await controller.act(SendKeysActionModel(**select_all_action), browser_context)
+		select_all_result = await controller.act(SendKeysActionModel(**select_all_action), browser_session)
 		# Wait longer for selection to take effect
 		await asyncio.sleep(1.0)
 
@@ -917,7 +911,7 @@ class TestControllerIntegration:
 		assert 'Selection length:' in result_text
 
 		# 4. Test Tab to next field
-		tab_result2 = await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+		tab_result2 = await controller.act(SendKeysActionModel(**tab_keys_action), browser_session)
 		await asyncio.sleep(0.1)
 
 		# Verify second Tab action result
@@ -936,7 +930,7 @@ class TestControllerIntegration:
 		# 5. Type in the textarea
 		textarea_text = 'Testing multiline\ninput text'
 		textarea_action = {'send_keys': SendKeysAction(keys=textarea_text)}
-		textarea_result = await controller.act(SendKeysActionModel(**textarea_action), browser_context)
+		textarea_result = await controller.act(SendKeysActionModel(**textarea_action), browser_session)
 
 		# Verify textarea typing action result
 		assert isinstance(textarea_result, ActionResult)
@@ -955,8 +949,8 @@ class TestControllerIntegration:
 		assert lines[1] == 'input text'
 
 		# Test that Tab cycles back to the first element if we tab again
-		await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
-		await controller.act(SendKeysActionModel(**tab_keys_action), browser_context)
+		await controller.act(SendKeysActionModel(**tab_keys_action), browser_session)
+		await controller.act(SendKeysActionModel(**tab_keys_action), browser_session)
 
 		active_element_id = await page.evaluate('() => document.activeElement.id')
 		assert active_element_id == 'textInput', 'Tab cycling through form elements failed'
@@ -966,7 +960,7 @@ class TestControllerIntegration:
 		assert input_value == test_text, "Input value shouldn't have changed after tabbing"
 
 	@pytest.mark.asyncio
-	async def test_get_dropdown_options(self, controller, browser_context, base_url, http_server):
+	async def test_get_dropdown_options(self, controller, browser_session, base_url, http_server):
 		"""Test that get_dropdown_options correctly retrieves options from a dropdown."""
 		# Add route for dropdown test page
 		http_server.expect_request('/dropdown1').respond_with_data(
@@ -996,23 +990,23 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		await page.wait_for_load_state()
 
 		# Initialize the DOM state to populate the selector map
-		await browser_context.get_state(cache_clickable_elements_hashes=True)
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 
 		# Interact with the dropdown to ensure it's recognized
 		await page.click('select#test-dropdown')
 
 		# Update the state after interaction
-		await browser_context.get_state(cache_clickable_elements_hashes=True)
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 
 		# Get the selector map
-		selector_map = await browser_context.get_selector_map()
+		selector_map = await browser_session.get_selector_map()
 
 		# Find the dropdown element in the selector map
 		dropdown_index = None
@@ -1027,10 +1021,13 @@ class TestControllerIntegration:
 
 		# Create a model for the standard get_dropdown_options action
 		class GetDropdownOptionsModel(ActionModel):
-			get_dropdown_options: dict
+			get_dropdown_options: dict[str, int]
 
 		# Execute the action with the dropdown index
-		result = await controller.act(GetDropdownOptionsModel(get_dropdown_options={'index': dropdown_index}), browser_context)
+		result = await controller.act(
+			action=GetDropdownOptionsModel(get_dropdown_options={'index': dropdown_index}),
+			browser_session=browser_session,
+		)
 
 		expected_options = [
 			{'index': 0, 'text': 'Please select', 'value': ''},
@@ -1074,7 +1071,7 @@ class TestControllerIntegration:
 			)
 
 	@pytest.mark.asyncio
-	async def test_select_dropdown_option(self, controller, browser_context, base_url, http_server):
+	async def test_select_dropdown_option(self, controller, browser_session, base_url, http_server):
 		"""Test that select_dropdown_option correctly selects an option from a dropdown."""
 		# Add route for dropdown test page
 		http_server.expect_request('/dropdown2').respond_with_data(
@@ -1104,17 +1101,17 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		await page.wait_for_load_state()
 
 		# populate the selector map with highlight indices
-		await browser_context.get_state(cache_clickable_elements_hashes=True)
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 
 		# Now get the selector map which should contain our dropdown
-		selector_map = await browser_context.get_selector_map()
+		selector_map = await browser_session.get_selector_map()
 
 		# Find the dropdown element in the selector map
 		dropdown_index = None
@@ -1134,7 +1131,7 @@ class TestControllerIntegration:
 		# Execute the action with the dropdown index
 		result = await controller.act(
 			SelectDropdownOptionModel(select_dropdown_option={'index': dropdown_index, 'text': 'Second Option'}),
-			browser_context,
+			browser_session,
 		)
 
 		# Verify the result structure
@@ -1149,7 +1146,7 @@ class TestControllerIntegration:
 		assert selected_value == 'option2'  # Second Option has value "option2"
 
 	@pytest.mark.asyncio
-	async def test_click_element_by_index(self, controller, browser_context, base_url, http_server):
+	async def test_click_element_by_index(self, controller, browser_session, base_url, http_server):
 		"""Test that click_element_by_index correctly clicks an element and handles different outcomes."""
 		# Add route for clickable elements test page
 		http_server.expect_request('/clickable').respond_with_data(
@@ -1197,17 +1194,17 @@ class TestControllerIntegration:
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_context)
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 		await page.wait_for_load_state()
 
 		# Initialize the DOM state to populate the selector map
-		await browser_context.get_state(cache_clickable_elements_hashes=True)
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 
 		# Get the selector map
-		selector_map = await browser_context.get_selector_map()
+		selector_map = await browser_session.get_selector_map()
 
 		# Find a clickable element in the selector map
 		button_index = None
@@ -1237,7 +1234,7 @@ class TestControllerIntegration:
 			click_element_by_index: ClickElementAction | None = None
 
 		# Execute the action with the button index
-		result = await controller.act(ClickElementActionModel(click_element_by_index={'index': button_index}), browser_context)
+		result = await controller.act(ClickElementActionModel(click_element_by_index={'index': button_index}), browser_session)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult), 'Result should be an ActionResult instance'
