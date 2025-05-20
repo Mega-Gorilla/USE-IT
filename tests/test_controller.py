@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from pytest_httpserver import HTTPServer
 
 from browser_use.agent.views import ActionModel, ActionResult
-from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser import BrowserSession
 from browser_use.controller.service import Controller
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -85,9 +85,8 @@ class TestControllerIntegration:
 	async def browser_session(self, event_loop):
 		"""Create and provide a Browser instance with security disabled."""
 		browser_session = BrowserSession(
-			browser_profile=BrowserProfile(
-				headless=True,
-			),
+			# browser_profile=BrowserProfile(),
+			headless=True,
 			user_data_dir=None,
 		)
 		await browser_session.start()

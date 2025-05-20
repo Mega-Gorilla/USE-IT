@@ -31,7 +31,7 @@ class ElementTreeSerializer:
 # run with: pytest browser_use/browser/tests/test_clicks.py
 @pytest.mark.asyncio
 async def test_highlight_elements():
-	browser = Browser(config=BrowserConfig(headless=False, disable_security=True))
+	browser = Browser(config=BrowserConfig(headless=False, disable_security=True, user_data_dir=None))
 
 	async with await browser.new_context() as context:
 		page = await context.get_current_page()

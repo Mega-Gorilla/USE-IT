@@ -233,6 +233,10 @@ class BrowserSession(BaseModel):
 		"""Shortcut for self.stop()"""
 		await self.stop()
 
+	async def new_context(self, **kwargs):
+		"""Create a new browser context with the given kwargs"""
+		return self
+
 	async def __aenter__(self) -> BrowserSession:
 		await self.start()
 		return self
@@ -316,7 +320,9 @@ class BrowserSession(BaseModel):
 
 		# if we still have no browser_context by now, launch a new local one using launch_persistent_context()
 		if not self.browser_context:
-			logger.info(f'🌎 Launching local playwright chromium context with user_data_dir={self.browser_profile.user_data_dir}')
+			logger.info(
+				f'🌎 Launching local {str(type(self.playwright).__module__).split(".")[0]} {self.browser_profile.channel.name.lower()} context with user_data_dir={self.browser_profile.user_data_dir or "<tmp incognito>"}'
+			)
 			if not self.browser_profile.user_data_dir:
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
 				self.browser = self.browser or await self.playwright.chromium.launch(
@@ -327,6 +333,7 @@ class BrowserSession(BaseModel):
 				)
 			else:
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
+				self.browser_profile.prepare_user_data_dir()
 				self.browser_context = await self.playwright.chromium.launch_persistent_context(
 					**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
 				)

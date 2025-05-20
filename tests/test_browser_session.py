@@ -68,7 +68,6 @@ class TestBrowserContext:
 			# browser_profile=BrowserProfile(...),
 			headless=True,
 			user_data_dir=None,
-			disable_security=False,
 		)
 		await browser_session.start()
 		yield browser_session

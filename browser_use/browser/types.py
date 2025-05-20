@@ -382,7 +382,7 @@ class BrowserConnectArgs(BaseModel):
 
 	model_config = ConfigDict(extra='ignore', validate_assignment=True, revalidate_instances='always', populate_by_name=True)
 
-	headers: dict[str, str] = Field(default_factory=dict)
+	headers: dict[str, str] | None = Field(default=None, description='Additional HTTP headers to be sent with connect request')
 	slow_mo: float = 0.0
 	timeout: float = 30_000
 

@@ -1,3 +1,8 @@
-from browser_use.browser.compat import Browser, BrowserConfig, BrowserContext, BrowserContextConfig
+from browser_use.browser.session import BrowserSession
+from browser_use.browser.types import BrowserProfile
 
-__all__ = ['Browser', 'BrowserConfig', 'BrowserContext', 'BrowserContextConfig']
+BrowserConfig = BrowserProfile
+BrowserContextConfig = BrowserProfile
+Browser = BrowserSession
+
+__all__ = ['BrowserConfig', 'BrowserContextConfig', 'Browser']
