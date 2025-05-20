@@ -96,7 +96,7 @@ body:
 
         llm = ChatOpenAI(model="gpt-4o")
         browser_session = BrowserSession(executable_path='/usr/bin/google-chrome')
-        agent = Agent(llm=llm, browser_session=browser_session))
+        agent = Agent(llm=llm, browser_session=browser_session)
         ...
 
   - type: textarea
