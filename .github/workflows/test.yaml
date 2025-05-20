@@ -67,6 +67,7 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}
 
-      - run: playwright install --no-shell chromium
+      - run: playwright install chrome
+      - run: playwright install chromium
 
       - run: pytest tests/${{ matrix.test }}.py
