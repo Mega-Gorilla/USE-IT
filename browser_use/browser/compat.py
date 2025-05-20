@@ -52,6 +52,13 @@ DEPRECATION_MESSAGE = """
 	)
 	agent = Agent(browser_session=browser_session, ...)
 	...
+
+	# custom actions should be updated to take browser_session instead of browser_context:
+	@controller.registry.action('Custom action to insert some text into a field')
+	def insert_text_into_field(text: str, browser_session: BrowserSession):
+		page = await browser_session.get_current_page()
+		await page.keyboard.type(text)
+		return ActionResult(result=text)
 """
 
 
