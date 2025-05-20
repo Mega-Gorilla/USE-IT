@@ -227,7 +227,7 @@ class Agent(Generic[Context]):
 			self.settings.use_vision_for_planner = False
 
 		logger.info(
-			f'🧠 Starting an agent with main_model={self.model_name}'
+			f'🧠 Starting a v{self.version} agent with main_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
