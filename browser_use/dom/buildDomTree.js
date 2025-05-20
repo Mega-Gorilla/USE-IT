@@ -523,6 +523,26 @@
    */
   function isTextNodeVisible(textNode) {
     try {
+      // Special case: when viewportExpansion is -1, consider all text nodes as visible
+      if (viewportExpansion === -1) {
+        // Still check parent visibility for basic filtering
+        const parentElement = textNode.parentElement;
+        if (!parentElement) return false;
+
+        try {
+          return parentElement.checkVisibility({
+            checkOpacity: true,
+            checkVisibilityCSS: true,
+          });
+        } catch (e) {
+          // Fallback if checkVisibility is not supported
+          const style = window.getComputedStyle(parentElement);
+          return style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            style.opacity !== '0';
+        }
+      }
+      
       const range = document.createRange();
       range.selectNodeContents(textNode);
       const rects = range.getClientRects(); // Use getClientRects for Range
@@ -545,7 +565,7 @@
             rect.top > window.innerHeight + viewportExpansion ||
             rect.right < -viewportExpansion ||
             rect.left > window.innerWidth + viewportExpansion
-          ) || viewportExpansion === -1) {
+          )) {
             isAnyRectInViewport = true;
             break; // Found a visible rect in viewport, no need to check others
           }
@@ -834,6 +854,11 @@
    * Checks if an element is the topmost element at its position.
    */
   function isTopElement(element) {
+    // Special case: when viewportExpansion is -1, consider all elements as "top" elements
+    if (viewportExpansion === -1) {
+      return true;
+    }
+    
     const rects = getCachedClientRects(element); // Replace element.getClientRects()
 
     if (!rects || rects.length === 0) {
@@ -843,12 +868,12 @@
     let isAnyRectInViewport = false;
     for (const rect of rects) {
       // Use the same logic as isInExpandedViewport check
-      if (viewportExpansion === -1 || (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
+      if (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
         rect.bottom < -viewportExpansion ||
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      ))) {
+      )) {
         isAnyRectInViewport = true;
         break;
       }
@@ -1009,6 +1034,48 @@
   ]);
 
   /**
+   * Heuristically determines if an element should be considered as independently interactive,
+   * even if it's nested inside another interactive container.
+   *
+   * This function helps detect deeply nested actionable elements (e.g., menu items within a button)
+   * that may not be picked up by strict interactivity checks.
+   */
+  function isHeuristicallyInteractive(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+
+    // Skip non-visible elements early for performance
+    if (!isElementVisible(element)) return false;
+
+    // Check for common attributes that often indicate interactivity
+    const hasInteractiveAttributes =
+      element.hasAttribute('role') ||
+      element.hasAttribute('tabindex') ||
+      element.hasAttribute('onclick') ||
+      typeof element.onclick === 'function';
+
+    // Check for semantic class names suggesting interactivity
+    const hasInteractiveClass = /\b(btn|clickable|menu|item|entry|link)\b/i.test(element.className || '');
+
+    // Determine whether the element is inside a known interactive container
+    const isInKnownContainer = Boolean(
+      element.closest('button,a,[role="button"],.menu,.dropdown,.list,.toolbar')
+    );
+
+    // Ensure the element has at least one visible child (to avoid marking empty wrappers)
+    const hasVisibleChildren = [...element.children].some(isElementVisible);
+
+    // Avoid highlighting elements whose parent is <body> (top-level wrappers)
+    const isParentBody = element.parentElement && element.parentElement.isSameNode(document.body);
+
+    return (
+      (isInteractiveElement(element) || hasInteractiveAttributes || hasInteractiveClass) &&
+      hasVisibleChildren &&
+      isInKnownContainer &&
+      !isParentBody
+    );
+  }
+
+  /**
    * Checks if an element likely represents a distinct interaction
    * separate from its parent (if the parent is also interactive).
    */
@@ -1068,6 +1135,10 @@
       // If checking listeners fails, rely on other checks
     }
 
+    // if the element is not strictly interactive but appears clickable based on heuristic signals
+    if (isHeuristicallyInteractive(element)) {
+      return true;
+    }
 
     // Default to false: if it's interactive but doesn't match above,
     // assume it triggers the same action as the parent.
@@ -1098,7 +1169,10 @@
     if (shouldHighlight) {
       // Check viewport status before assigning index and highlighting
       nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
-      if (nodeData.isInViewport) {
+      
+      // When viewportExpansion is -1, all interactive elements should get a highlight index
+      // regardless of viewport status
+      if (nodeData.isInViewport || viewportExpansion === -1) {
         nodeData.highlightIndex = highlightIndex++;
 
         if (doHighlightElements) {

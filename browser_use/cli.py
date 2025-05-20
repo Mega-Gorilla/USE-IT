@@ -7,16 +7,24 @@ import time
 from pathlib import Path
 from typing import Any
 
-import click
+from dotenv import load_dotenv
+
+load_dotenv()
+
+try:
+	import click
+	from textual import events
+	from textual.app import App, ComposeResult
+	from textual.binding import Binding
+	from textual.containers import Container, HorizontalGroup, VerticalScroll
+	from textual.widgets import Footer, Header, Input, Label, Link, RichLog, Static
+except ImportError:
+	print('⚠️ CLI addon is not installed. Please install it with: `pip install browser-use[cli]` and try again.')
+	sys.exit(1)
+
 import langchain_anthropic
 import langchain_google_genai
 import langchain_openai
-from dotenv import load_dotenv
-from textual import events
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Container, HorizontalGroup, VerticalScroll
-from textual.widgets import Footer, Header, Input, Label, Link, RichLog, Static
 
 try:
 	import readline
@@ -30,9 +38,19 @@ from browser_use import Agent, Browser, BrowserConfig, BrowserContextConfig, Con
 from browser_use.agent.views import AgentSettings
 from browser_use.logging_config import addLoggingLevel
 
-# User settings file
-USER_CONFIG_FILE = Path.home() / '.browser_use.json'
+# Paths
+USER_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
+USER_CONFIG_FILE = USER_CONFIG_DIR / 'config.json'
+CHROME_PROFILES_DIR = USER_CONFIG_DIR / 'profiles'
+USER_DATA_DIR = CHROME_PROFILES_DIR / 'default'
+
+# Default User settings
 MAX_HISTORY_LENGTH = 100
+
+# Ensure directories exist
+USER_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # Logo components with styling for rich panels
 BROWSER_LOGO = """
@@ -70,7 +88,7 @@ def get_default_config() -> dict[str, Any]:
 			'api_keys': {
 				'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
 				'ANTHROPIC_API_KEY': os.getenv('ANTHROPIC_API_KEY', ''),
-				'GEMINI_API_KEY': os.getenv('GEMINI_API_KEY', ''),
+				'GOOGLE_API_KEY': os.getenv('GOOGLE_API_KEY', ''),
 				'DEEPSEEK_API_KEY': os.getenv('DEEPSEEK_API_KEY', ''),
 				'GROK_API_KEY': os.getenv('GROK_API_KEY', ''),
 			},
@@ -116,9 +134,6 @@ def save_user_config(config: dict[str, Any]) -> None:
 	if 'command_history' in config and isinstance(config['command_history'], list):
 		if len(config['command_history']) > MAX_HISTORY_LENGTH:
 			config['command_history'] = config['command_history'][-MAX_HISTORY_LENGTH:]
-
-	# Create parent directories if they don't exist
-	USER_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 	with open(USER_CONFIG_FILE, 'w') as f:
 		json.dump(config, f, indent=2)
@@ -403,10 +418,10 @@ class BrowserUseApp(App):
 	def __init__(self, config: dict[str, Any], *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.config = config
-		self.browser = None
-		self.controller = None
+		self.browser = None  # Will be set before app.run_async()
+		self.controller = None  # Will be set before app.run_async()
 		self.agent = None
-		self.llm = None
+		self.llm = None  # Will be set before app.run_async()
 		self.task_history = config.get('command_history', [])
 		# Track current position in history for up/down navigation
 		self.history_index = len(self.task_history)
@@ -439,15 +454,11 @@ class BrowserUseApp(App):
 		else:
 			log_handler.setFormatter(BrowserUseFormatter('%(levelname)-8s [%(name)s] %(message)s'))
 
-		# Configure root logger
+		# Configure root logger - Replace ALL handlers, not just stdout handlers
 		root = logging.getLogger()
 
-		# Remove any existing handlers that write to stdout
-		for handler in root.handlers[:]:
-			if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
-				root.removeHandler(handler)
-
-		# Add our custom handler
+		# Clear all existing handlers and add only our richlog handler
+		root.handlers = []
 		root.addHandler(log_handler)
 
 		# Set log level based on environment variable
@@ -461,7 +472,7 @@ class BrowserUseApp(App):
 		# Configure browser_use logger
 		browser_use_logger = logging.getLogger('browser_use')
 		browser_use_logger.propagate = False  # Don't propagate to root logger
-		browser_use_logger.addHandler(log_handler)
+		browser_use_logger.handlers = [log_handler]  # Replace any existing handlers
 		browser_use_logger.setLevel(root.level)
 
 		# Silence third-party loggers
@@ -484,47 +495,74 @@ class BrowserUseApp(App):
 			third_party = logging.getLogger(logger_name)
 			third_party.setLevel(logging.ERROR)
 			third_party.propagate = False
+			third_party.handlers = []  # Clear any existing handlers
 
 	def on_mount(self) -> None:
 		"""Set up components when app is mounted."""
-		# Configure BrowserUse components
-		browser_config = BrowserConfig.model_validate(self.config.get('browser', {}))
-		context_config = BrowserContextConfig.model_validate(self.config.get('browser_context', {}))
-		browser_config.new_context_config = context_config
+		# We'll use a file logger since stdout is now controlled by Textual
+		logger = logging.getLogger('browser_use.on_mount')
+		logger.debug('on_mount() method started')
 
-		self.browser = Browser(config=browser_config)
-		self.controller = Controller()
-		self.llm = get_llm(self.config)
-
-		# Set up custom logging to RichLog (must be done after UI is mounted)
-		self.setup_richlog_logging()
-
-		# Set up input history if available
-		if READLINE_AVAILABLE and self.task_history:
-			for item in self.task_history:
-				readline.add_history(item)
-
-		# Focus the input field
-		input_field = self.query_one('#task-input')
-		input_field.focus()
-
-		# Manually add content to panels for debugging to directly test if we can write to them
+		# Step 1: Set up custom logging to RichLog
+		logger.debug('Setting up RichLog logging...')
 		try:
-			logging.info('Testing panel initialization...')
+			self.setup_richlog_logging()
+			logger.debug('RichLog logging set up successfully')
+		except Exception as e:
+			logger.error(f'Error setting up RichLog logging: {str(e)}', exc_info=True)
+			raise RuntimeError(f'Failed to set up RichLog logging: {str(e)}')
+
+		# Step 2: Set up input history
+		logger.debug('Setting up readline history...')
+		try:
+			if READLINE_AVAILABLE and self.task_history:
+				for item in self.task_history:
+					readline.add_history(item)
+				logger.debug(f'Added {len(self.task_history)} items to readline history')
+			else:
+				logger.debug('No readline history to set up')
+		except Exception as e:
+			logger.error(f'Error setting up readline history: {str(e)}', exc_info=False)
+			# Non-critical, continue
+
+		# Step 3: Focus the input field
+		logger.debug('Focusing input field...')
+		try:
+			input_field = self.query_one('#task-input')
+			input_field.focus()
+			logger.debug('Input field focused')
+		except Exception as e:
+			logger.error(f'Error focusing input field: {str(e)}', exc_info=True)
+			# Non-critical, continue
+
+		# Step 4: Initialize panels with test content
+		logger.debug('Testing panel initialization...')
+		try:
 			browser_info = self.query_one('#browser-info')
 			browser_info.write('DEBUG: Panel initialized')
+			logger.debug('Browser panel initialized')
 
 			model_info = self.query_one('#model-info')
 			model_info.write('DEBUG: Panel initialized')
+			logger.debug('Model panel initialized')
 
 			tasks_info = self.query_one('#tasks-info')
 			tasks_info.write('DEBUG: Panel initialized')
-			logging.info('Panels initialized with test content')
+			logger.debug('Tasks panel initialized')
 		except Exception as e:
-			logging.error(f'Error initializing panels: {str(e)}')
+			logger.error(f'Error initializing panels: {str(e)}', exc_info=True)
+			# Non-critical, continue
 
-		# Start the continuous info panel updates
-		self.update_info_panels()
+		# Step 5: Start continuous info panel updates
+		logger.debug('Starting info panel updates...')
+		try:
+			self.update_info_panels()
+			logger.debug('Info panel updates started')
+		except Exception as e:
+			logger.error(f'Error starting info panel updates: {str(e)}', exc_info=True)
+			# Non-critical, continue
+
+		logger.debug('on_mount() completed successfully')
 
 	def on_input_key_up(self, event: events.Key) -> None:
 		"""Handle up arrow key in the input field."""
@@ -740,9 +778,10 @@ class BrowserUseApp(App):
 
 			# Display browser information
 			browser_info.write(f'[bold cyan]{browser_class}[/] Browser ({browser_status})')
-			browser_info.write(f'Type: [yellow]{connection_type}[/]')
+			browser_info.write(
+				f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
+			)
 			browser_info.write(f'PID: [dim]{browser_pid}[/]')
-			browser_info.write(f'Headless: [{"green" if not headless else "red"}]{headless}[/]')
 			browser_info.write(f'CDP Port: {self.browser.config.chrome_remote_debugging_port}')
 
 			if window_width and window_height:
@@ -757,6 +796,16 @@ class BrowserUseApp(App):
 					browser_info.write(f'Last updated: [dim]{current_time}[/]')
 				except Exception as e:
 					pass
+
+				# Show the agent's current page URL if available
+				if hasattr(self.agent.browser_context, 'agent_current_page') and self.agent.browser_context.agent_current_page:
+					current_url = (
+						self.agent.browser_context.agent_current_page.url.replace('https://', '')
+						.replace('http://', '')
+						.replace('www.', '')[:36]
+						+ '…'
+					)
+					browser_info.write(f'👁️  [green]{current_url}[/]')
 		else:
 			browser_info.write('[red]Browser not initialized[/]')
 
@@ -979,7 +1028,7 @@ class BrowserUseApp(App):
 
 		# Let the agent run in the background
 		async def agent_task_worker() -> None:
-			logger.info('\n🚀 Working on task: %s', task)
+			logger.debug('\n🚀 Working on task: %s', task)
 
 			# Set flags to indicate the agent is running
 			self.agent.running = True
@@ -998,7 +1047,7 @@ class BrowserUseApp(App):
 
 				# No need to call update_info_panels() here as it's already updating via timer
 
-				logger.info('\n✅ Task completed!')
+				logger.debug('\n✅ Task completed!')
 
 				# Make sure the task input container is visible
 				task_input_container = self.query_one('#task-input-container')
@@ -1050,7 +1099,11 @@ class BrowserUseApp(App):
 		"""Quit the application and clean up resources."""
 		# Close the browser if it exists
 		if self.browser:
-			await self.browser.close()
+			try:
+				await self.browser.close()
+				logging.debug('Browser closed successfully')
+			except Exception as e:
+				logging.error(f'Error closing browser: {str(e)}')
 
 		# Exit the application
 		self.exit()
@@ -1133,35 +1186,206 @@ class BrowserUseApp(App):
 
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
-	app = BrowserUseApp(config)
-	await app.run_async()
+	logger = logging.getLogger('browser_use.startup')
+
+	# Set up logging for Textual UI - prevent any logging to stdout
+	def setup_textual_logging():
+		# Replace all handlers with null handler
+		root_logger = logging.getLogger()
+		for handler in root_logger.handlers:
+			root_logger.removeHandler(handler)
+
+		# Add null handler to ensure no output to stdout/stderr
+		null_handler = logging.NullHandler()
+		root_logger.addHandler(null_handler)
+		logger.debug('Logging configured for Textual UI')
+
+	logger.debug('Setting up Browser, Controller, and LLM...')
+
+	# Step 1: Configure BrowserUse components
+	logger.debug('Validating browser configs...')
+	try:
+		browser_config = BrowserConfig.model_validate(config.get('browser', {}))
+		context_config = BrowserContextConfig.model_validate(config.get('browser_context', {}))
+		browser_config.new_context_config = context_config
+		logger.info(f'Browser type: {browser_config.browser_class}')
+		if browser_config.browser_binary_path:
+			logger.info(f'Browser binary: {browser_config.browser_binary_path}')
+		if browser_config.headless:
+			logger.info('Browser mode: headless')
+		else:
+			logger.info('Browser mode: visible')
+		logger.debug('Browser configs validated successfully')
+	except Exception as e:
+		logger.error(f'Error validating browser configs: {str(e)}', exc_info=True)
+		raise RuntimeError(f'Failed to validate browser configuration: {str(e)}')
+
+	# Step 2: Initialize Browser
+	logger.debug('Initializing Browser...')
+	try:
+		browser = Browser(config=browser_config)
+		logger.debug('Browser initialized successfully')
+
+		# Log browser version if available
+		try:
+			if hasattr(browser, 'version') and browser.version:
+				logger.info(f'Browser version: {browser.version}')
+			elif hasattr(browser, 'playwright_browser') and browser.playwright_browser:
+				version = browser.playwright_browser.version
+				logger.info(f'Browser version: {version}')
+		except Exception as e:
+			logger.debug(f'Could not determine browser version: {e}')
+	except Exception as e:
+		logger.error(f'Error initializing Browser: {str(e)}', exc_info=True)
+		raise RuntimeError(f'Failed to initialize Browser: {str(e)}')
+
+	# Step 3: Initialize Controller
+	logger.debug('Initializing Controller...')
+	try:
+		controller = Controller()
+		logger.debug('Controller initialized successfully')
+	except Exception as e:
+		logger.error(f'Error initializing Controller: {str(e)}', exc_info=True)
+		raise RuntimeError(f'Failed to initialize Controller: {str(e)}')
+
+	# Step 4: Get LLM
+	logger.debug('Getting LLM...')
+	try:
+		llm = get_llm(config)
+		# Log LLM details
+		model_name = getattr(llm, 'model_name', None) or getattr(llm, 'model', 'Unknown model')
+		provider = llm.__class__.__name__
+		temperature = getattr(llm, 'temperature', 0.0)
+		logger.info(f'LLM: {provider} ({model_name}), temperature: {temperature}')
+		logger.debug(f'LLM initialized successfully: {provider}')
+	except Exception as e:
+		logger.error(f'Error getting LLM: {str(e)}', exc_info=True)
+		raise RuntimeError(f'Failed to initialize LLM: {str(e)}')
+
+	logger.debug('Initializing BrowserUseApp instance...')
+	try:
+		app = BrowserUseApp(config)
+		# Pass the initialized components to the app
+		app.browser = browser
+		app.controller = controller
+		app.llm = llm
+
+		# Configure logging for Textual UI before going fullscreen
+		setup_textual_logging()
+
+		# Log browser and model configuration that will be used
+		browser_type = config.get('browser', {}).get('browser_class', 'Chrome')
+		model_name = config.get('model', {}).get('name', 'auto-detected')
+		headless = config.get('browser', {}).get('headless', True)
+		headless_str = 'headless' if headless else 'visible'
+
+		logger.info(f'Preparing {browser_type} browser ({headless_str}) with {model_name} LLM')
+
+		logger.debug('Starting Textual app with run_async()...')
+		# No more logging after this point as we're in fullscreen mode
+		await app.run_async()
+	except Exception as e:
+		logger.error(f'Error in textual_interface: {str(e)}', exc_info=True)
+		# Make sure to close browser if app initialization fails
+		if 'browser' in locals():
+			await browser.close()
+		raise
 
 
 @click.command()
+@click.option('--version', is_flag=True, help='Print version and exit')
 @click.option('--model', type=str, help='Model to use (e.g., gpt-4o, claude-3-opus-20240229, gemini-pro)')
+@click.option('--debug', is_flag=True, help='Enable verbose startup logging')
+@click.option('--headless', is_flag=True, help='Run browser in headless mode', default=None)
+@click.option('--window-width', type=int, help='Browser window width')
+@click.option('--window-height', type=int, help='Browser window height')
 @click.pass_context
-def main(ctx: click.Context, **kwargs):
+def main(ctx: click.Context, debug: bool = False, **kwargs):
 	"""Browser-Use Interactive TUI"""
+
+	if kwargs['version']:
+		from importlib.metadata import version
+
+		print(version('browser-use'))
+		sys.exit(0)
+
+	# Configure console logging
+	console_handler = logging.StreamHandler(sys.stdout)
+	console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', '%H:%M:%S'))
+
+	# Configure root logger
+	root_logger = logging.getLogger()
+	root_logger.setLevel(logging.INFO if not debug else logging.DEBUG)
+	root_logger.addHandler(console_handler)
+
+	logger = logging.getLogger('browser_use.startup')
+	logger.info('Starting Browser-Use initialization')
+	if debug:
+		logger.debug(f'System info: Python {sys.version.split()[0]}, Platform: {sys.platform}')
+
+	logger.debug('Loading environment variables from .env file...')
 	load_dotenv()
-
-	# Create a no-op handler to prevent any logging to stdout
-	# This will be replaced with our RichLog handler once the app is mounted
-	null_handler = logging.NullHandler()
-	logging.getLogger().addHandler(null_handler)
-
-	# We're skipping the default setup_logging() which writes to sys.stdout
+	logger.debug('Environment variables loaded')
 
 	# Load user configuration
-	config = load_user_config()
+	logger.debug('Loading user configuration...')
+	try:
+		config = load_user_config()
+		logger.debug(f'User configuration loaded from {USER_CONFIG_FILE}')
+	except Exception as e:
+		logger.error(f'Error loading user configuration: {str(e)}', exc_info=True)
+		print(f'Error loading configuration: {str(e)}')
+		sys.exit(1)
 
 	# Update config with command-line arguments
-	config = update_config_with_click_args(config, ctx)
+	logger.debug('Updating configuration with command line arguments...')
+	try:
+		config = update_config_with_click_args(config, ctx)
+		logger.debug('Configuration updated')
+	except Exception as e:
+		logger.error(f'Error updating config with command line args: {str(e)}', exc_info=True)
+		print(f'Error updating configuration: {str(e)}')
+		sys.exit(1)
 
 	# Save updated config
-	save_user_config(config)
+	logger.debug('Saving user configuration...')
+	try:
+		save_user_config(config)
+		logger.debug('Configuration saved')
+	except Exception as e:
+		logger.error(f'Error saving user configuration: {str(e)}', exc_info=True)
+		print(f'Error saving configuration: {str(e)}')
+		sys.exit(1)
 
-	# Run the Textual UI interface
-	asyncio.run(textual_interface(config))
+	# Setup handlers for console output before entering Textual UI
+	logger.debug('Setting up handlers for Textual UI...')
+
+	# Log browser and model configuration that will be used
+	browser_type = config.get('browser', {}).get('browser_class', 'Chrome')
+	model_name = config.get('model', {}).get('name', 'auto-detected')
+	headless = config.get('browser', {}).get('headless', True)
+	headless_str = 'headless' if headless else 'visible'
+
+	logger.info(f'Preparing {browser_type} browser ({headless_str}) with {model_name} LLM')
+
+	try:
+		# Run the Textual UI interface - now all the initialization happens before we go fullscreen
+		logger.debug('Starting Textual UI interface...')
+		asyncio.run(textual_interface(config))
+	except Exception as e:
+		# Restore console logging for error reporting
+		root_logger.setLevel(logging.INFO)
+		for handler in root_logger.handlers:
+			root_logger.removeHandler(handler)
+		root_logger.addHandler(console_handler)
+
+		logger.error(f'Error initializing Browser-Use: {str(e)}', exc_info=debug)
+		print(f'\nError launching Browser-Use: {str(e)}')
+		if debug:
+			import traceback
+
+			traceback.print_exc()
+		sys.exit(1)
 
 
 if __name__ == '__main__':
