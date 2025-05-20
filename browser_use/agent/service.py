@@ -34,7 +34,6 @@ from browser_use.agent.message_manager.utils import (
 )
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
-	REQUIRED_LLM_API_ENV_VARS,
 	ActionResult,
 	AgentError,
 	AgentHistory,
@@ -60,7 +59,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentTelemetryEvent,
 )
-from browser_use.utils import check_env_variables, time_execution_async, time_execution_sync
+from browser_use.utils import time_execution_async, time_execution_sync
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -203,7 +202,9 @@ class Agent(Generic[Context]):
 
 		# Model setup
 		self._set_model_names()
-		self.tool_calling_method = self._set_tool_calling_method()
+
+		# Verify we can connect to the LLM and setup the tool calling method
+		self._verify_and_setup_llm()
 
 		# Handle users trying to use use_vision=True with DeepSeek models
 		if 'deepseek' in self.model_name.lower():
@@ -233,9 +234,6 @@ class Agent(Generic[Context]):
 			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
 			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
 		)
-
-		# Verify we can connect to the LLM
-		self._verify_llm_connection()
 
 		# Initialize available actions for system prompt (only non-filtered actions)
 		# These will be used for the system prompt to maintain caching
@@ -396,27 +394,78 @@ class Agent(Generic[Context]):
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
 		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 
-	def _set_tool_calling_method(self) -> ToolCallingMethod | None:
-		tool_calling_method = self.settings.tool_calling_method
-		if tool_calling_method == 'auto':
-			if is_model_without_tool_support(self.model_name):
-				return 'raw'
-			elif self.chat_model_library == 'ChatGoogleGenerativeAI':
-				return None
-			elif self.chat_model_library == 'ChatOpenAI':
-				return 'function_calling'
-			elif self.chat_model_library == 'AzureChatOpenAI':
-				# Azure OpenAI API requires 'tools' parameter for GPT-4
-				# The error 'content must be either a string or an array' occurs when
-				# the API expects a tools array but gets something else
-				if 'gpt-4' in self.model_name.lower():
-					return 'tools'
-				else:
-					return 'function_calling'
+	def _test_tool_calling_method(self, method: str) -> bool:
+		"""Test if a specific tool calling method works with the current LLM."""
+		try:
+			# Create a simple test message
+			test_message = HumanMessage(content='Hello, world!')
+
+			if method == 'raw':
+				# For raw mode, we just check if we can invoke the model
+				response = self.llm.invoke([test_message])
+				# Basic validation of response
+				if not response or not hasattr(response, 'content'):
+					return False
+				return True
 			else:
-				return None
-		else:
-			return tool_calling_method
+				# For other methods, try to use structured output
+				structured_llm = self.llm.with_structured_output(self.ActionModel, include_raw=True, method=method)
+				# Try a simple invocation to test the method
+				response = structured_llm.invoke([test_message])
+				# TODO: add validation of response
+				return True
+
+		except Exception as e:
+			logger.debug(f"Tool calling method '{method}' test failed: {str(e)}")
+			return False
+
+	def _detect_best_tool_calling_method(self) -> str | None:
+		"""Detect the best supported tool calling method by testing each one."""
+		# Order of preference for tool calling methods
+		methods_to_try = [
+			'function_calling',  # Most capable and efficient
+			'tools',  # Works with some models that don't support function_calling
+			'json_mode',  # More basic structured output
+			'raw',  # Fallback - no tool calling support
+		]
+
+		for method in methods_to_try:
+			logger.debug(f'Testing tool calling method: {method}')
+			if self._test_tool_calling_method(method):
+				# if we found the method which means api is verified.
+				self.llm._verified_api_keys = True
+				logger.info(f'Selected tool calling method: {method}')
+				return method
+
+		# If we get here, no methods worked
+		raise ConnectionError('Failed to connect to LLM. Please check your API key and network connection.')
+
+	def _set_tool_calling_method(self) -> str | None:
+		"""Determine the best tool calling method to use with the current LLM."""
+		# If a specific method is set, use it
+		if self.settings.tool_calling_method != 'auto':
+			if not self._test_tool_calling_method(self.settings.tool_calling_method):
+				if self.settings.tool_calling_method == 'raw':
+					# if raw failed means error in API key or network connection
+					raise ConnectionError('Failed to connect to LLM. Please check your API key and network connection.')
+				else:
+					raise RuntimeError(
+						f"Configured tool calling method '{self.settings.tool_calling_method}' "
+						'is not supported by the current LLM.'
+					)
+			return self.settings.tool_calling_method
+
+		# For models known to not support tool calling, use raw mode
+		if is_model_without_tool_support(self.model_name):
+			fallback_method = 'raw'
+			if not self._test_tool_calling_method(fallback_method):
+				# if raw failed means error in API key or network connection
+				raise ConnectionError('Failed to connect to LLM. Please check your API key and network connection.')
+			logger.debug('Model is known to not support tool calling, using raw mode')
+			return fallback_method
+
+		# Auto-detect the best method
+		return self._detect_best_tool_calling_method()
 
 	def add_new_task(self, new_task: str) -> None:
 		self._message_manager.add_new_task(new_task)
@@ -1315,56 +1364,18 @@ class Agent(Generic[Context]):
 
 		return converted_actions
 
-	def _verify_llm_connection(self) -> bool:
+	def _verify_and_setup_llm(self) -> bool:
 		"""
 		Verify that the LLM API keys are setup and the LLM API is responding properly.
-		Helps prevent errors due to running out of API credits, missing env vars, or network issues.
+		Also handles tool calling method detection if in auto mode.
 		"""
-		logger.debug(f'Verifying the {self.llm.__class__.__name__} LLM knows the capital of France...')
+		self.tool_calling_method = self._set_tool_calling_method()
+		logger.info(f'Using tool calling method: {self.tool_calling_method or "None"}')
 
+		# Skip verification if already done
 		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
-			# skip roundtrip connection test for speed in cloud environment
-			# If the LLM API keys have already been verified during a previous run, skip the test
 			self.llm._verified_api_keys = True
 			return True
-
-		# show a warning if it looks like any required environment variables are missing
-		required_keys = REQUIRED_LLM_API_ENV_VARS.get(self.llm.__class__.__name__, [])
-		if required_keys and not check_env_variables(required_keys, any_or_all=all):
-			error = f'Expected LLM API Key environment variables might be missing for {self.llm.__class__.__name__}: {" ".join(required_keys)}'
-			logger.warning(f'❌ {error}')
-
-		# send a basic sanity-test question to the LLM and verify the response
-		test_prompt = 'What is the capital of France? Respond with a single word.'
-		test_answer = 'paris'
-		try:
-			# dont convert this to async! it *should* block any subsequent llm calls from running
-			response = self.llm.invoke([HumanMessage(content=test_prompt)])
-			response_text = str(response.content).lower()
-
-			if test_answer in response_text:
-				logger.debug(
-					f'🪪 LLM API keys {", ".join(required_keys)} work, {self.llm.__class__.__name__} model is connected & responding correctly.'
-				)
-				self.llm._verified_api_keys = True
-				return True
-			else:
-				logger.warning(
-					'❌  Got bad LLM response to basic sanity check question: \n\t  %s\n\t\tEXPECTING: %s\n\t\tGOT: %s',
-					test_prompt,
-					test_answer,
-					response,
-				)
-				raise Exception('LLM responded to a simple test question incorrectly')
-		except Exception as e:
-			self.llm._verified_api_keys = False
-			if required_keys:
-				logger.error(
-					f'\n\n❌  LLM {self.llm.__class__.__name__} connection test failed. Check that {", ".join(required_keys)} is set correctly in .env and that the LLM API account has sufficient funding.\n\n{e}\n'
-				)
-				return False
-			else:
-				pass
 
 	async def _run_planner(self) -> str | None:
 		"""Run the planner to analyze state and suggest next steps"""
