@@ -16,7 +16,7 @@ DEPRECATION_MESSAGE = """
 		headless=False,
 		args=['--start-maximized'],
 		ignore_default_args=['--enable-automation'],
-		viewport={'width': 1920, 'height': 1080},
+		viewport={{'width': 1920, 'height': 1080}},
 		has_touch=False,
 		user_agent='...',
 		# ... see more: https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context
@@ -29,7 +29,7 @@ DEPRECATION_MESSAGE = """
 		allowed_domains=['example.com', '*.google.com'],
 		disable_security=False,
 		keep_alive=True,
-		window_size={'width': 1920, 'height': 1080},
+		window_size={{'width': 1920, 'height': 1080}},
 		# ... see more: https://docs.browser-use.com/customize/browser-settings#context-configuration
 	)
 
@@ -66,7 +66,7 @@ class DeprecatedClass:
 	def __init__(self, *_args, **_kwargs):
 		print(DEPRECATION_MESSAGE.format(type(self).__name__))
 		raise NotImplementedError(
-			'The Browser, BrowserConfig, BrowserContext, BrowserContextConfig models have been moved to a simplified new design => 1 BrowserProfile + 1 BrowserSession.'
+			'The old Browser, BrowserConfig, BrowserContext, BrowserContextConfig have been deprecated in favor of a simplified BrowserProfile + BrowserSession.'
 		)
 
 
