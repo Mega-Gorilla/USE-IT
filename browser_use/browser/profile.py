@@ -746,23 +746,3 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.viewport = None
 			self.device_scale_factor = None
 			self.screen = None
-
-
-# For convenience, example function signatures:
-"""
-def launch(
-    **kwargs: Unpack[LaunchArgs]
-) -> Browser:
-    ...
-
-def new_context(
-    **kwargs: Unpack[NewContextArgs]
-) -> BrowserContext:
-    ...
-
-def launch_persistent_context(
-    user_data_dir: str | Path,
-    **kwargs: Unpack[LaunchPersistentContextArgs]
-) -> BrowserContext:
-    ...
-"""
