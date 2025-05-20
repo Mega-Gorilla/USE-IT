@@ -2,8 +2,8 @@ import os
 
 import pytest
 
+from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.session import BrowserSession
-from browser_use.browser.types import BrowserProfile, ProxySettings
 
 
 @pytest.mark.asyncio

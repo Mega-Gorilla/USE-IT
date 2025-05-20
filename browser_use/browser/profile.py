@@ -79,6 +79,7 @@ CHROME_DISABLED_COMPONENTS = [
 	'CrashReporting',
 	'OverscrollHistoryNavigation',
 	'InfiniteSessionRestore',
+	'ExtensionDisableUnsupportedDeveloper',
 ]
 
 CHROME_HEADLESS_ARGS = [
@@ -108,11 +109,11 @@ CHROME_DISABLE_SECURITY_ARGS = [
 CHROME_DETERMINISTIC_RENDERING_ARGS = [
 	'--deterministic-mode',
 	'--js-flags=--random-seed=1157259159',
-	# '--force-device-scale-factor=1',
-	# '--enable-webgl',
+	'--force-device-scale-factor=1',
+	'--enable-webgl',
 	# '--disable-skia-runtime-opts',
 	# '--disable-2d-canvas-clip-aa',
-	# '--font-render-hinting=none',
+	'--font-render-hinting=none',
 	'--force-color-profile=srgb',
 ]
 
@@ -152,6 +153,7 @@ CHROME_DEFAULT_ARGS = [
 	# // https://issues.chromium.org/41491762
 	'--unsafely-disable-devtools-self-xss-warnings',
 	'--enable-features=NetworkService,NetworkServiceInProcess',
+	'--enable-network-information-downlink-max',
 	# added by us:
 	'--test-type=gpu',
 	'--disable-sync',
@@ -618,14 +620,21 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return self
 
 	def get_args(self) -> list[str]:
+		if isinstance(self.ignore_default_args, list):
+			default_args = set(CHROME_DEFAULT_ARGS) - set(self.ignore_default_args)
+		elif self.ignore_default_args is True:
+			default_args = []
+		elif not self.ignore_default_args:
+			default_args = CHROME_DEFAULT_ARGS
+
 		return BrowserLaunchArgs.args_as_list(  # convert back to ['--arg=value', '--arg', '--arg=value', ...]
 			BrowserLaunchArgs.args_as_dict(  # uniquify via dict {'arg': 'value', 'arg2': 'value2', ...}
 				[
-					*(CHROME_DEFAULT_ARGS if self.ignore_default_args is not True else []),
+					*default_args,
 					*self.args,
 					f'--profile-directory={self.profile_directory}',
 					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-					# *(CHROME_HEADLESS_ARGS if self.headless else []),
+					*(CHROME_HEADLESS_ARGS if self.headless else []),
 					*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
 					*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
 					*(

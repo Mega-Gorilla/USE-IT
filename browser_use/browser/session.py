@@ -19,7 +19,7 @@ from playwright.async_api import BrowserContext as PlaywrightBrowserContext
 from playwright.async_api import ElementHandle, FrameLocator, Page, Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
 
-from browser_use.browser.types import BrowserProfile
+from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.views import (
 	BrowserError,
 	BrowserStateSummary,
@@ -342,10 +342,34 @@ class BrowserSession(BaseModel):
 
 				# search for potentially conflicting local processes running on the same user_data_dir
 				for proc in psutil.process_iter(['pid', 'cmdline']):
-					if str(self.browser_profile.user_data_dir) in ' '.join(proc.info['cmdline'] or []):
+					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
+						# suffix_num = str(self.browser_profile.user_data_dir).rsplit('.', 1)[-1] or '1'
+						# suffix_num = int(suffix_num) if suffix_num.isdigit() else 1
+
+						# dir_name = self.browser_profile.user_data_dir.name
+						# incremented_name = dir_name.replace(f'.{suffix_num}', f'.{suffix_num + 1}')
+						# fork_path = self.browser_profile.user_data_dir.parent / incremented_name
+
+						# # keep incrementing the suffix_num until we find a path that doesn't exist
+						# while fork_path.exists():
+						# 	suffix_num += 1
+						# 	fork_path = self.browser_profile.user_data_dir.parent / (
+						# 		dir_name.rsplit('.', 1)[0] + f'.{suffix_num}'
+						# 	)
+
 						logger.warning(
 							f'🚨 Found potentially conflicting Chrome process pid={proc.info["pid"]} already running with the same user_data_dir={self.browser_profile.user_data_dir}'
 						)
+						# use shutil to recursively copy the user_data_dir to a new location
+						# shutil.copytree(
+						# 	str(self.browser_profile.user_data_dir),
+						# 	str(fork_path),
+						# 	symlinks=True,
+						# 	ignore_dangling_symlinks=True,
+						# 	dirs_exist_ok=False,
+						# )
+						# self.browser_profile.user_data_dir = fork_path
+						# self.browser_profile.prepare_user_data_dir()
 						break
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir

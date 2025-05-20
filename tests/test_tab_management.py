@@ -8,8 +8,8 @@ from pytest_httpserver import HTTPServer
 load_dotenv()
 
 from browser_use.agent.views import ActionModel
+from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
-from browser_use.browser.types import BrowserProfile
 from browser_use.controller.service import Controller
 
 # Set up test logging
