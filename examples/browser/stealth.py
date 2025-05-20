@@ -24,9 +24,11 @@ terminal_width, terminal_height = shutil.get_terminal_size((80, 20))
 async def main():
 	# Default Playwright Chromium Browser
 	normal_browser_session = BrowserSession(
-		headless=False,
+		# executable_path=<defaults to playwright builtin browser stored in ms-cache directory>,
 		user_data_dir=None,
+		headless=False,
 		# deterministic_rendering=False,
+		# disable_security=False,
 	)
 	await normal_browser_session.start()
 	await normal_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
@@ -40,9 +42,9 @@ async def main():
 		# cdp_url='wss://browser.zenrows.com?apikey=your-api-key-here&proxy_region=na',
 		#                or try anchor browser, browserless, steel.dev, browserbase, oxylabs, brightdata, etc.
 		playwright=await async_patchright().start(),
+		user_data_dir='~/.config/browseruse/profiles/stealth',
 		headless=False,
 		disable_security=False,
-		user_data_dir='~/.config/browseruse/profiles/stealth',
 		deterministic_rendering=False,
 	)
 	await patchright_browser_session.start()
