@@ -97,7 +97,7 @@ async def test_focus_vs_all_elements():
 
 					# Get/refresh the state (includes removing old highlights)
 					print('\nGetting page state...')
-					all_elements_state = await context.get_state(True)
+					all_elements_state = await context.get_state_summary(True)
 
 					selector_map = all_elements_state.selector_map
 					total_elements = len(selector_map.keys())
