@@ -105,7 +105,7 @@ async def test_focus_vs_all_elements():
 
 					# print(all_elements_state.element_tree.clickable_elements_to_string())
 					prompt = AgentMessagePrompt(
-						state=all_elements_state,
+						browser_state_summary=all_elements_state,
 						result=None,
 						include_attributes=DEFAULT_INCLUDE_ATTRIBUTES,
 						step_info=None,

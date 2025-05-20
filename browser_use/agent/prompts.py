@@ -67,10 +67,11 @@ class AgentMessagePrompt:
 		include_attributes: list[str] | None = None,
 		step_info: Optional['AgentStepInfo'] = None,
 	):
-		self.state = browser_state_summary
+		self.state: 'BrowserStateSummary' = browser_state_summary
 		self.result = result
 		self.include_attributes = include_attributes or []
 		self.step_info = step_info
+		assert self.state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
 		elements_text = self.state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)

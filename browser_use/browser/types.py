@@ -5,7 +5,7 @@ from enum import Enum
 from functools import cache
 from pathlib import Path
 from re import Pattern
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlparse
 from venv import logger
 
@@ -108,12 +108,12 @@ CHROME_DISABLE_SECURITY_ARGS = [
 CHROME_DETERMINISTIC_RENDERING_ARGS = [
 	'--deterministic-mode',
 	'--js-flags=--random-seed=1157259159',
-	'--force-device-scale-factor=1',
-	'--enable-webgl',
-	'--font-render-hinting=none',
+	# '--force-device-scale-factor=1',
+	# '--enable-webgl',
+	# '--disable-skia-runtime-opts',
+	# '--disable-2d-canvas-clip-aa',
+	# '--font-render-hinting=none',
 	'--force-color-profile=srgb',
-	'--disable-skia-runtime-opts',
-	'--disable-2d-canvas-clip-aa',
 ]
 
 CHROME_DEFAULT_ARGS = [
@@ -334,7 +334,10 @@ class BrowserContextArgs(BaseModel):
 	# Security options
 	proxy: ProxySettings | None = None
 	permissions: list[str] = Field(
-		default_factory=lambda: ['clipboard-read', 'clipboard-write'], description='Browser permissions to grant.'
+		default_factory=lambda: ['clipboard-read', 'clipboard-write', 'notifications'],
+		description='Browser permissions to grant.',
+		# clipboard is for google sheets and pyperclip automations
+		# notifications are to avoid browser fingerprinting
 	)
 	bypass_csp: bool = False
 	client_certificates: list[ClientCertificate] = Field(default_factory=list)
@@ -416,7 +419,7 @@ class BrowserLaunchArgs(BaseModel):
 	args: list[CliArgStr] = Field(
 		default_factory=list, description='List of *extra* CLI args to pass to the browser when launching.'
 	)
-	ignore_default_args: list[CliArgStr] = Field(
+	ignore_default_args: list[CliArgStr] | Literal[True] = Field(
 		default_factory=lambda: ['--enable-automation', '--disable-extensions'],
 		description='List of default CLI args to stop playwright from applying (see https://github.com/microsoft/playwright/blob/41008eeddd020e2dee1c540f7c0cdfa337e99637/packages/playwright-core/src/server/chromium/chromiumSwitches.ts)',
 	)
@@ -436,10 +439,10 @@ class BrowserLaunchArgs(BaseModel):
 		default=True, description='Whether playwright should swallow SIGHUP signals and kill the browser.'
 	)
 	handle_sigint: bool = Field(
-		default=True, description='Whether playwright should swallow SIGINT signals and kill the browser.'
+		default=False, description='Whether playwright should swallow SIGINT signals and kill the browser.'
 	)
 	handle_sigterm: bool = Field(
-		default=True, description='Whether playwright should swallow SIGTERM signals and kill the browser.'
+		default=False, description='Whether playwright should swallow SIGTERM signals and kill the browser.'
 	)
 	# firefox_user_prefs: dict[str, str | float | bool] = Field(default_factory=dict)
 
@@ -618,11 +621,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return BrowserLaunchArgs.args_as_list(  # convert back to ['--arg=value', '--arg', '--arg=value', ...]
 			BrowserLaunchArgs.args_as_dict(  # uniquify via dict {'arg': 'value', 'arg2': 'value2', ...}
 				[
-					*CHROME_DEFAULT_ARGS,
+					*(CHROME_DEFAULT_ARGS if self.ignore_default_args is not True else []),
 					*self.args,
 					f'--profile-directory={self.profile_directory}',
 					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-					*(CHROME_HEADLESS_ARGS if self.headless else []),
+					# *(CHROME_HEADLESS_ARGS if self.headless else []),
 					*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
 					*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
 					*(

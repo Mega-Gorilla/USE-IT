@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Self
 
 import psutil
+from patchright.async_api import Playwright as PatchrightPlaywright
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import BrowserContext as PlaywrightBrowserContext
 from playwright.async_api import ElementHandle, FrameLocator, Page, Playwright, async_playwright
@@ -120,9 +121,9 @@ class BrowserSession(BaseModel):
 	chrome_pid: int | None = Field(
 		default=None, description='pid of the running chrome process to connect to on localhost (optional)'
 	)
-	playwright: Playwright | None = Field(
+	playwright: Playwright | PatchrightPlaywright | Playwright | None = Field(
 		default=None,
-		description='Playwright library object returned by (playwright or patchright).async_playwright().start()',
+		description='Playwright library object returned by: await (playwright or patchright).async_playwright().start()',
 		exclude=True,
 	)
 	browser: InstanceOf[PlaywrightBrowser] | None = Field(
@@ -247,6 +248,11 @@ class BrowserSession(BaseModel):
 	async def setup_playwright(self) -> None:
 		"""Override to customize the set up of the playwright or patchright library object"""
 		self.playwright = self.playwright or await async_playwright().start()
+
+		# if isinstance(self.playwright, PatchrightPlaywright):
+		# 	# patchright handles all its own default args, dont mess with them
+		# 	self.browser_profile.ignore_default_args = True
+
 		return self.playwright
 
 	async def setup_browser_connection(self) -> None:
@@ -466,34 +472,30 @@ class BrowserSession(BaseModel):
 
 		# First, set the viewport size on any existing pages
 		viewport = self.browser_profile.viewport
-		if self.browser_profile.viewport or self.browser_profile.window_size or self.browser_profile.screen:
-			logger.debug(
-				'📐 Setting up viewport options: '
-				+ f'headless={self.browser_profile.headless} '
-				+ (
-					f'viewport={self.browser_profile.viewport["width"]}x{self.browser_profile.viewport["height"]}px '
-					if self.browser_profile.viewport
-					else '(no viewport) '
-				)
-				+ (
-					f'window={self.browser_profile.window_size["width"]}x{self.browser_profile.window_size["height"]}px '
-					if self.browser_profile.window_size
-					else '(no window) '
-				)
-				+ (
-					f'screen={self.browser_profile.screen["width"]}x{self.browser_profile.screen["height"]}px '
-					if self.browser_profile.screen
-					else ''
-				)
-				+ f'is_mobile={self.browser_profile.is_mobile} '
-				+ f'device_scale_factor={self.browser_profile.device_scale_factor or 1.0} '
-				+ (f'color_scheme={self.browser_profile.color_scheme.value} ' if self.browser_profile.color_scheme else '')
-				+ (f'locale={self.browser_profile.locale} ' if self.browser_profile.locale else '')
-				+ (f'timezone_id={self.browser_profile.timezone_id} ' if self.browser_profile.timezone_id else '')
-				+ (f'geolocation={self.browser_profile.geolocation} ' if self.browser_profile.geolocation else '')
+		logger.debug(
+			'📐 Setting up viewport options: '
+			+ f'headless={self.browser_profile.headless} '
+			+ (f'viewport={viewport["width"]}x{viewport["height"]}px ' if viewport else '(no viewport) ')
+			+ (
+				f'window={self.browser_profile.window_size["width"]}x{self.browser_profile.window_size["height"]}px '
+				if self.browser_profile.window_size
+				else '(no window) '
 			)
+			+ (
+				f'screen={self.browser_profile.screen["width"]}x{self.browser_profile.screen["height"]}px '
+				if self.browser_profile.screen
+				else ''
+			)
+			+ f'is_mobile={self.browser_profile.is_mobile} '
+			+ f'device_scale_factor={self.browser_profile.device_scale_factor or 1.0} '
+			+ (f'color_scheme={self.browser_profile.color_scheme.value} ' if self.browser_profile.color_scheme else '')
+			+ (f'locale={self.browser_profile.locale} ' if self.browser_profile.locale else '')
+			+ (f'timezone_id={self.browser_profile.timezone_id} ' if self.browser_profile.timezone_id else '')
+			+ (f'geolocation={self.browser_profile.geolocation} ' if self.browser_profile.geolocation else '')
+		)
+		if viewport:
 			for page in self.browser_context.pages:
-				await page.set_viewport_size(self.browser_profile.viewport)
+				await page.set_viewport_size(viewport)
 
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
@@ -501,7 +503,7 @@ class BrowserSession(BaseModel):
 
 		# get-or-create the browser_context if it's not already set up
 		if not self.browser_context:
-			self.start()
+			await self.start()
 			assert self.browser_context, 'BrowserContext is not set up'
 
 		# if either focused page is closed, clear it so we dont use a dead object
@@ -1260,6 +1262,7 @@ class BrowserSession(BaseModel):
 				hashes=ClickableElementProcessor.get_clickable_elements_hashes(updated_state.element_tree),
 			)
 
+		assert updated_state
 		self._cached_browser_state_summary = updated_state
 
 		# Save cookies if a file is specified
@@ -1329,7 +1332,7 @@ class BrowserSession(BaseModel):
 
 			return self.browser_state_summary
 		except Exception as e:
-			logger.error(f'❌  Failed to update state: {str(e)}')
+			logger.error(f'❌  Failed to update state: {e}')
 			# Return last known good state if available
 			if hasattr(self, 'browser_state_summary'):
 				return self.browser_state_summary

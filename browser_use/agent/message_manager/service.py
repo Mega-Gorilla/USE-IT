@@ -146,9 +146,10 @@ class MessageManager:
 					result = None  # if result in history, we dont want to add it again
 
 		# otherwise add state message and result to next message (which will not stay in memory)
+		assert browser_state_summary
 		state_message = AgentMessagePrompt(
-			browser_state_summary,
-			result,
+			browser_state_summary=browser_state_summary,
+			result=result,
 			include_attributes=self.settings.include_attributes,
 			step_info=step_info,
 		).get_user_message(use_vision)

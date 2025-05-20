@@ -36,6 +36,7 @@ dependencies = [
     "faiss-cpu>=1.9.0",
     "mem0ai==0.1.93",
     "uuid7>=0.1.0",
+    "patchright>=1.52.4",
 ]
 # pydantic: >2.11 introduces many pydantic deprecation warnings until langchain-core upgrades their pydantic support lets keep it on 2.10
 # google-api-core: only used for Google LLM APIs

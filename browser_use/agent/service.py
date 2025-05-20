@@ -499,7 +499,12 @@ class Agent(Generic[Context]):
 					updated_context = f'Available actions: {all_actions}'
 				self._message_manager.settings.message_context = updated_context
 
-			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
+			self._message_manager.add_state_message(
+				browser_state_summary=browser_state_summary,
+				result=self.state.last_result,
+				step_info=step_info,
+				use_vision=self.settings.use_vision,
+			)
 
 			# Run planner at specified intervals if planner is configured
 			if self.settings.planner_llm and self.state.n_steps % self.settings.planner_interval == 0:
@@ -1102,8 +1107,9 @@ class Agent(Generic[Context]):
 
 		if self.browser_context:
 			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			assert browser_state_summary
 			content = AgentMessagePrompt(
-				state=browser_state_summary,
+				browser_state_summary=browser_state_summary,
 				result=self.state.last_result,
 				include_attributes=self.settings.include_attributes,
 			)
@@ -1282,7 +1288,9 @@ class Agent(Generic[Context]):
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		print('\n\n⏸️  Got Ctrl+C, paused the agent and left the browser open.')
+		print(
+			'\n\n⏸️  Got [Ctrl+C], paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.'
+		)
 		self.state.paused = True
 		self._external_pause_event.clear()
 
