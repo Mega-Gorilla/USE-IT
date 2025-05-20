@@ -321,7 +321,7 @@ class BrowserSession(BaseModel):
 		# if we still have no browser_context by now, launch a new local one using launch_persistent_context()
 		if not self.browser_context:
 			logger.info(
-				f'🌎 Launching local {str(type(self.playwright).__module__).split(".")[0]} {self.browser_profile.channel.name.lower()} context with user_data_dir={self.browser_profile.user_data_dir or "<tmp incognito>"}'
+				f'🌎 Launching local {str(type(self.playwright).__module__).split(".")[0]} {self.browser_profile.channel.name.lower()} browser with user_data_dir={self.browser_profile.user_data_dir or "None (incognito)"}'
 			)
 			if not self.browser_profile.user_data_dir:
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
@@ -332,8 +332,17 @@ class BrowserSession(BaseModel):
 					**self.browser_profile.kwargs_for_new_context().model_dump()
 				)
 			else:
-				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
 				self.browser_profile.prepare_user_data_dir()
+
+				# search for potentially conflicting local processes running on the same user_data_dir
+				for proc in psutil.process_iter(['pid', 'cmdline']):
+					if str(self.browser_profile.user_data_dir) in ' '.join(proc.info['cmdline'] or []):
+						logger.warning(
+							f'🚨 Found potentially conflicting Chrome process pid={proc.info["pid"]} already running with the same user_data_dir={self.browser_profile.user_data_dir}'
+						)
+						break
+
+				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
 				self.browser_context = await self.playwright.chromium.launch_persistent_context(
 					**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
 				)
@@ -353,7 +362,11 @@ class BrowserSession(BaseModel):
 				self.browser_profile.keep_alive = False
 
 		if self.browser:
-			assert self.browser.is_connected(), 'Browser is not connected, did the browser process crash or get killed?'
+			connection_method = 'CDP' if self.cdp_url else 'WSS' if self.wss_url else 'Local'
+			assert self.browser.is_connected(), (
+				f'Browser is not connected, did the browser process crash or get killed? (connection method: {connection_method})'
+			)
+			logger.debug(f'🌎 {connection_method} Browser connected: {self.browser.version}')
 		assert self.browser_context, f'BrowserContext {self.browser_context} is not set up'
 
 		return self.browser_context
@@ -379,7 +392,9 @@ class BrowserSession(BaseModel):
 		foreground_page = None
 		if pages:
 			foreground_page = pages[0]
-			logger.debug(f'👁️ Found {len(pages)} existing pages in browser, agent will start with: {foreground_page.url}')
+			logger.debug(
+				f'📜 Found {len(pages)} existing pages in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+			)
 		else:
 			foreground_page = await self.browser_context.new_page()
 			pages = [foreground_page]
@@ -450,15 +465,32 @@ class BrowserSession(BaseModel):
 			return
 
 		# First, set the viewport size on any existing pages
-		use_viewport = (not self.browser_profile.no_viewport) and self.browser_profile.viewport
-		if use_viewport:
+		viewport = self.browser_profile.viewport
+		if self.browser_profile.viewport or self.browser_profile.window_size or self.browser_profile.screen:
 			logger.debug(
-				'👁️ Resizing existing pages '
-				f'headless={self.browser_profile.headless}'
-				f'use_viewport={use_viewport} '
-				f'screen={self.browser_profile.screen["width"] if self.browser_profile.screen else "0"}x{self.browser_profile.screen["height"] if self.browser_profile.screen else "0"} '
-				f'window={self.browser_profile.window_size["width"] if self.browser_profile.window_size else "0"}x{self.browser_profile.window_size["height"] if self.browser_profile.window_size else "0"} '
-				f'viewport={self.browser_profile.viewport["width"] if self.browser_profile.viewport else "0"}x{self.browser_profile.viewport["height"] if self.browser_profile.viewport else "0"} '
+				'📐 Setting up viewport options: '
+				+ f'headless={self.browser_profile.headless} '
+				+ (
+					f'viewport={self.browser_profile.viewport["width"]}x{self.browser_profile.viewport["height"]}px '
+					if self.browser_profile.viewport
+					else '(no viewport) '
+				)
+				+ (
+					f'window={self.browser_profile.window_size["width"]}x{self.browser_profile.window_size["height"]}px '
+					if self.browser_profile.window_size
+					else '(no window) '
+				)
+				+ (
+					f'screen={self.browser_profile.screen["width"]}x{self.browser_profile.screen["height"]}px '
+					if self.browser_profile.screen
+					else ''
+				)
+				+ f'is_mobile={self.browser_profile.is_mobile} '
+				+ f'device_scale_factor={self.browser_profile.device_scale_factor or 1.0} '
+				+ (f'color_scheme={self.browser_profile.color_scheme.value} ' if self.browser_profile.color_scheme else '')
+				+ (f'locale={self.browser_profile.locale} ' if self.browser_profile.locale else '')
+				+ (f'timezone_id={self.browser_profile.timezone_id} ' if self.browser_profile.timezone_id else '')
+				+ (f'geolocation={self.browser_profile.geolocation} ' if self.browser_profile.geolocation else '')
 			)
 			for page in self.browser_context.pages:
 				await page.set_viewport_size(self.browser_profile.viewport)
@@ -1854,7 +1886,12 @@ class BrowserSession(BaseModel):
 	# async def _resize_window(self, context: PlaywrightBrowserContext) -> None:
 	# 	"""Old approach to resize the browser window to match the configured size"""
 
-	# 	BROWSER_NAVBAR_HEIGHT = 40
+	#
+	# BROWSER_NAVBAR_HEIGHT = {
+	# 'windows': 85,
+	# 'darwin': 80,
+	# 'linux': 90,
+	# }.get(platform.system().lower(), 85)
 
 	# 	try:
 	# 		if not context.pages:
