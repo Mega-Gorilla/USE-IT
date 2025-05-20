@@ -12,19 +12,20 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
 	HumanMessage,
 	SystemMessage,
 )
-
-# from lmnr.sdk.decorators import observe
+from playwright.async_api import Browser, BrowserContext
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
-from browser_use.agent.memory.service import Memory
-from browser_use.agent.memory.views import MemoryConfig
+from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.message_manager.utils import (
 	convert_input_messages,
@@ -43,12 +44,14 @@ from browser_use.agent.views import (
 	AgentSettings,
 	AgentState,
 	AgentStepInfo,
+	BrowserStateHistory,
 	StepMetadata,
 	ToolCallingMethod,
 )
-from browser_use.browser.browser import Browser
-from browser_use.browser.context import BrowserContext
-from browser_use.browser.views import BrowserState, BrowserStateHistory
+from browser_use.browser import BrowserProfile, BrowserSession
+
+# from lmnr.sdk.decorators import observe
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import (
@@ -62,7 +65,6 @@ from browser_use.telemetry.views import (
 )
 from browser_use.utils import check_env_variables, time_execution_async, time_execution_sync
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
@@ -99,14 +101,16 @@ class Agent(Generic[Context]):
 		# Optional parameters
 		browser: Browser | None = None,
 		browser_context: BrowserContext | None = None,
+		browser_profile: BrowserProfile | None = None,
+		browser_session: BrowserSession | None = None,
 		controller: Controller[Context] = Controller(),
 		# Initial agent run parameters
 		sensitive_data: dict[str, str] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
-			Callable[['BrowserState', 'AgentOutput', int], None]  # Sync callback
-			| Callable[['BrowserState', 'AgentOutput', int], Awaitable[None]]  # Async callback
+			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # Sync callback
+			| Callable[['BrowserStateSummary', 'AgentOutput', int], Awaitable[None]]  # Async callback
 			| None
 		) = None,
 		register_done_callback: (
@@ -223,7 +227,7 @@ class Agent(Generic[Context]):
 			self.settings.use_vision_for_planner = False
 
 		logger.info(
-			f'🧠 Starting an agent with main_model={self.model_name}'
+			f'🧠 Starting a v{self.version} agent with main_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
@@ -281,18 +285,20 @@ class Agent(Generic[Context]):
 			self.memory = None
 
 		# Browser setup
-		self.injected_browser = browser is not None
-		self.injected_browser_context = browser_context is not None
-		self.browser = browser or Browser()
-		self.browser.config.new_context_config.disable_security = self.browser.config.disable_security
-		self.browser_context = browser_context or BrowserContext(
-			browser=self.browser, config=self.browser.config.new_context_config
+		assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
+		assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
+		assert not (browser_profile and browser), 'Cannot provide both browser_profile and browser'
+		assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
+		assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
+		assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
+
+		self.browser_session = browser_session or BrowserSession(
+			profile=browser_profile, browser=browser, browser_context=browser_context
 		)
 
-		# Huge security warning if sensitive_data is provided but allowed_domains is not set
-		if self.sensitive_data and not self.browser_context.config.allowed_domains:
+		if self.sensitive_data and not self.browser_profile.allowed_domains:
 			logger.error(
-				'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserContextConfig(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
+				'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
 				'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
 				'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
 				'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
@@ -302,7 +308,7 @@ class Agent(Generic[Context]):
 					time.sleep(10)
 				except KeyboardInterrupt:
 					print(
-						'\n\n 🛑 Exiting now... set BrowserContextConfig(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
+						'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
 					)
 					sys.exit(0)
 			else:
@@ -315,7 +321,7 @@ class Agent(Generic[Context]):
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
 
 		# Context
-		self.context = context
+		self.context: Context | None = context
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
@@ -324,6 +330,18 @@ class Agent(Generic[Context]):
 			logger.info(f'Saving conversation to {self.settings.save_conversation_path}')
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
+
+	@property
+	def browser(self) -> Browser:
+		return self.browser_session.browser
+
+	@property
+	def browser_context(self) -> BrowserContext:
+		return self.browser_session.browser_context
+
+	@property
+	def browser_profile(self) -> BrowserProfile:
+		return self.browser_session.browser_profile
 
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
@@ -444,8 +462,8 @@ class Agent(Generic[Context]):
 		tokens = 0
 
 		try:
-			state = await self.browser_context.get_state(cache_clickable_elements_hashes=True)
-			current_page = await self.browser_context.get_current_page()
+			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+			current_page = await self.browser_session.get_current_page()
 
 			# generate procedural memory if needed
 			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
@@ -481,7 +499,12 @@ class Agent(Generic[Context]):
 					updated_context = f'Available actions: {all_actions}'
 				self._message_manager.settings.message_context = updated_context
 
-			self._message_manager.add_state_message(state, self.state.last_result, step_info, self.settings.use_vision)
+			self._message_manager.add_state_message(
+				browser_state_summary=browser_state_summary,
+				result=self.state.last_result,
+				step_info=step_info,
+				use_vision=self.settings.use_vision,
+			)
 
 			# Run planner at specified intervals if planner is configured
 			if self.settings.planner_llm and self.state.n_steps % self.settings.planner_interval == 0:
@@ -535,9 +558,9 @@ class Agent(Generic[Context]):
 
 				if self.register_new_step_callback:
 					if inspect.iscoroutinefunction(self.register_new_step_callback):
-						await self.register_new_step_callback(state, model_output, self.state.n_steps)
+						await self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 					else:
-						self.register_new_step_callback(state, model_output, self.state.n_steps)
+						self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
 					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
 					save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
@@ -599,7 +622,7 @@ class Agent(Generic[Context]):
 					step_end_time=step_end_time,
 					input_tokens=tokens,
 				)
-				self._make_history_item(model_output, state, result, metadata)
+				self._make_history_item(model_output, browser_state_summary, result, metadata)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -649,23 +672,23 @@ class Agent(Generic[Context]):
 	def _make_history_item(
 		self,
 		model_output: AgentOutput | None,
-		state: BrowserState,
+		browser_state_summary: BrowserStateSummary,
 		result: list[ActionResult],
 		metadata: StepMetadata | None = None,
 	) -> None:
 		"""Create and store history item"""
 
 		if model_output:
-			interacted_elements = AgentHistory.get_interacted_element(model_output, state.selector_map)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, browser_state_summary.selector_map)
 		else:
 			interacted_elements = [None]
 
 		state_history = BrowserStateHistory(
-			url=state.url,
-			title=state.title,
-			tabs=state.tabs,
+			url=browser_state_summary.url,
+			title=browser_state_summary.title,
+			tabs=browser_state_summary.tabs,
 			interacted_element=interacted_elements,
-			screenshot=state.screenshot,
+			screenshot=browser_state_summary.screenshot,
 		)
 
 		history_item = AgentHistory(model_output=model_output, result=result, state=state_history, metadata=metadata)
@@ -984,8 +1007,7 @@ class Agent(Generic[Context]):
 					self.state.history.save_as_playwright_script(
 						self.settings.save_playwright_script_path,
 						sensitive_data_keys=keys,
-						browser_config=self.browser.config,
-						context_config=self.browser_context.config,
+						browser_profile=self.browser_session.browser_profile,
 					)
 				except Exception as script_gen_err:
 					# Log any error during script generation/saving
@@ -1010,15 +1032,15 @@ class Agent(Generic[Context]):
 		"""Execute multiple actions"""
 		results = []
 
-		cached_selector_map = await self.browser_context.get_selector_map()
+		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
-		await self.browser_context.remove_highlights()
+		await self.browser_session.remove_highlights()
 
 		for i, action in enumerate(actions):
 			if action.get_index() is not None and i != 0:
-				new_state = await self.browser_context.get_state(cache_clickable_elements_hashes=False)
-				new_selector_map = new_state.selector_map
+				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+				new_selector_map = new_browser_state_summary.selector_map
 
 				# Detect index change after previous action
 				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
@@ -1043,11 +1065,11 @@ class Agent(Generic[Context]):
 				await self._raise_if_stopped_or_paused()
 
 				result = await self.controller.act(
-					action,
-					self.browser_context,
-					self.settings.page_extraction_llm,
-					self.sensitive_data,
-					self.settings.available_file_paths,
+					action=action,
+					browser_session=self.browser_session,
+					page_extraction_llm=self.settings.page_extraction_llm,
+					sensitive_data=self.sensitive_data,
+					available_file_paths=self.settings.available_file_paths,
 					context=self.context,
 				)
 
@@ -1057,7 +1079,7 @@ class Agent(Generic[Context]):
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
-				await asyncio.sleep(self.browser_context.config.wait_between_actions)
+				await asyncio.sleep(self.browser_profile.wait_between_actions)
 				# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
 			except asyncio.CancelledError:
@@ -1083,10 +1105,11 @@ class Agent(Generic[Context]):
 			f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
 		)
 
-		if self.browser_context.session:
-			state = await self.browser_context.get_state(cache_clickable_elements_hashes=False)
+		if self.browser_context:
+			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			assert browser_state_summary
 			content = AgentMessagePrompt(
-				state=state,
+				browser_state_summary=browser_state_summary,
 				result=self.state.last_result,
 				include_attributes=self.settings.include_attributes,
 			)
@@ -1194,7 +1217,7 @@ class Agent(Generic[Context]):
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-		state = await self.browser_context.get_state(cache_clickable_elements_hashes=False)
+		state = await self.browser_context.get_state_summary(cache_clickable_elements_hashes=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
@@ -1218,16 +1241,18 @@ class Agent(Generic[Context]):
 		self,
 		historical_element: DOMHistoryElement | None,
 		action: ActionModel,  # Type this properly based on your action model
-		current_state: BrowserState,
+		browser_state_summary: BrowserStateSummary,
 	) -> ActionModel | None:
 		"""
 		Update action indices based on current page state.
 		Returns updated action or None if element cannot be found.
 		"""
-		if not historical_element or not current_state.element_tree:
+		if not historical_element or not browser_state_summary.element_tree:
 			return action
 
-		current_element = HistoryTreeProcessor.find_history_element_in_tree(historical_element, current_state.element_tree)
+		current_element = HistoryTreeProcessor.find_history_element_in_tree(
+			historical_element, browser_state_summary.element_tree
+		)
 
 		if not current_element or current_element.highlight_index is None:
 			return None
@@ -1263,7 +1288,9 @@ class Agent(Generic[Context]):
 
 	def pause(self) -> None:
 		"""Pause the agent before the next step"""
-		print('\n\n⏸️  Got Ctrl+C, paused the agent and left the browser open.')
+		print(
+			'\n\n⏸️  Got [Ctrl+C], paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.'
+		)
 		self.state.paused = True
 		self._external_pause_event.clear()
 
@@ -1442,10 +1469,7 @@ class Agent(Generic[Context]):
 		"""Close all resources"""
 		try:
 			# First close browser resources
-			if self.browser_context and not self.injected_browser_context:
-				await self.browser_context.close()
-			if self.browser and not self.injected_browser:
-				await self.browser.close()
+			await self.browser_session.stop()
 
 			# Force garbage collection
 			gc.collect()

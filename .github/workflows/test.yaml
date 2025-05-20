@@ -15,6 +15,8 @@ jobs:
   tests:
     name: ${{matrix.test}} 
     runs-on: ubuntu-latest
+    env:
+      IN_DOCKER: 'True'
     strategy:
       matrix:
         test:
@@ -40,7 +42,9 @@ jobs:
         # - functionality/memory
         # - functionality/planner
         # - functionality/hooks
+        - test_browser
         - test_controller
+        - test_browser_session
         - test_tab_management
         - test_sensitive_data
         - test_url_allowlist_security
@@ -63,6 +67,7 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}
 
-      - run: playwright install --no-shell chromium
+      - run: playwright install chrome
+      - run: playwright install chromium
 
       - run: pytest tests/${{ matrix.test }}.py

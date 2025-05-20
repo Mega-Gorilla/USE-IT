@@ -18,7 +18,13 @@ class TabInfo(BaseModel):
 
 
 @dataclass
-class BrowserState(DOMState):
+class BrowserStateSummary(DOMState):
+	"""The summary of the browser's current state designed for an LLM to process"""
+
+	# provided by DOMState:
+	# element_tree: DOMElementNode
+	# selector_map: SelectorMap
+
 	url: str
 	title: str
 	tabs: list[TabInfo]
@@ -30,6 +36,8 @@ class BrowserState(DOMState):
 
 @dataclass
 class BrowserStateHistory:
+	"""The summary of the browser's state at a past point in time to usse in LLM message history"""
+
 	url: str
 	title: str
 	tabs: list[TabInfo]
