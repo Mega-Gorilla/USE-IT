@@ -7,16 +7,16 @@ from browser_use.browser import BrowserSession
 @pytest.mark.asyncio
 async def test_connection_via_cdp(monkeypatch):
 	browser_session = BrowserSession(
-		cdp_url='http://localhost:9222',
+		cdp_url='http://localhost:9898',
 	)
 	with pytest.raises(Exception) as e:
 		await browser_session.start()
 
 	# Assert on the exception value outside the context manager
-	assert 'Failed to connect to browser' in str(e.value)
+	assert 'ECONNREFUSED' in str(e.value)
 
 	playwright = await async_playwright().start()
-	browser = await playwright.chromium.launch(args=['--remote-debugging-port=9222'])
+	browser = await playwright.chromium.launch(args=['--remote-debugging-port=9898'])
 
 	await browser_session.start()
 	await browser_session.create_new_tab()
