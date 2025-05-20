@@ -41,6 +41,7 @@ jobs:
         # - functionality/planner
         # - functionality/hooks
         - test_controller
+        - test_browser_session
         - test_tab_management
         - test_sensitive_data
         - test_url_allowlist_security
