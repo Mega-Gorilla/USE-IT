@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from browser_use.browser import BrowserContext, BrowserContextConfig
+from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.views import BrowserState
 from browser_use.dom.views import DOMElementNode
 
@@ -22,14 +22,14 @@ def test_is_url_allowed():
 	# Set an empty config for dummy_browser; it won't be used in _is_url_allowed.
 	dummy_browser.config = Mock()
 	# Scenario 1: allowed_domains is None, any URL should be allowed.
-	config1 = BrowserContextConfig(allowed_domains=None)
-	context1 = BrowserContext(browser=dummy_browser, config=config1)
+	config1 = BrowserProfile(allowed_domains=None)
+	context1 = BrowserSession(browser=dummy_browser, browser_profile=config1)
 	assert context1._is_url_allowed('http://anydomain.com') is True
 	assert context1._is_url_allowed('https://anotherdomain.org/path') is True
 	# Scenario 2: allowed_domains is provided.
 	allowed = ['example.com', 'mysite.org']
-	config2 = BrowserContextConfig(allowed_domains=allowed)
-	context2 = BrowserContext(browser=dummy_browser, config=config2)
+	config2 = BrowserProfile(allowed_domains=allowed)
+	context2 = BrowserSession(browser=dummy_browser, browser_profile=config2)
 	# URL exactly matching
 	assert context2._is_url_allowed('http://example.com') is True
 	# URL with subdomain (should be allowed)
