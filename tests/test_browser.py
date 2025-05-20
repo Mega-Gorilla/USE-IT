@@ -11,7 +11,9 @@ async def test_connection_via_cdp(monkeypatch):
 	)
 	with pytest.raises(Exception) as e:
 		await browser_session.start()
-		assert 'Failed to connect to browser' in str(e)
+
+	# Assert on the exception value outside the context manager
+	assert 'Failed to connect to browser' in str(e.value)
 
 	playwright = await async_playwright().start()
 	browser = await playwright.chromium.launch(args=['--remote-debugging-port=9222'])
