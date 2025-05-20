@@ -92,8 +92,8 @@ CHROME_DOCKER_ARGS = [
 	'--disable-setuid-sandbox',
 	'--disable-dev-shm-usage',
 	'--no-xshm',
-	# '--no-zygote',
-	# '--single-process',
+	'--no-zygote',
+	'--single-process',
 ]
 
 CHROME_DISABLE_SECURITY_ARGS = [
@@ -109,7 +109,7 @@ CHROME_DISABLE_SECURITY_ARGS = [
 CHROME_DETERMINISTIC_RENDERING_ARGS = [
 	'--deterministic-mode',
 	'--js-flags=--random-seed=1157259159',
-	'--force-device-scale-factor=1',
+	'--force-device-scale-factor=2',
 	'--enable-webgl',
 	# '--disable-skia-runtime-opts',
 	# '--disable-2d-canvas-clip-aa',
@@ -140,7 +140,7 @@ CHROME_DEFAULT_ARGS = [
 	'--disable-popup-blocking',
 	'--disable-prompt-on-repost',
 	'--disable-renderer-backgrounding',
-	'--force-color-profile=srgb',
+	# '--force-color-profile=srgb',  # moved to CHROME_DETERMINISTIC_RENDERING_ARGS
 	'--metrics-recording-only',
 	'--no-first-run',
 	'--password-store=basic',
@@ -407,6 +407,7 @@ class BrowserLaunchArgs(BaseModel):
 		from_attributes=True,
 		validate_by_name=True,
 		validate_by_alias=True,
+		populate_by_name=True,
 	)
 
 	env: dict[str, str | float | bool] = Field(

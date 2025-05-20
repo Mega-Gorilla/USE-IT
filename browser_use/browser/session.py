@@ -228,7 +228,8 @@ class BrowserSession(BaseModel):
 				try:
 					psutil.Process(pid=self.chrome_pid).terminate()
 				except Exception as e:
-					logger.debug(f'❌ Error terminating chrome subprocess pid={self.chrome_pid}: {type(e).__name__}: {e}')
+					if 'NoSuchProcess' not in type(e).__name__:
+						logger.debug(f'❌ Error terminating chrome subprocess pid={self.chrome_pid}: {type(e).__name__}: {e}')
 
 	async def close(self) -> None:
 		"""Shortcut for self.stop()"""
@@ -396,7 +397,7 @@ class BrowserSession(BaseModel):
 			assert self.browser.is_connected(), (
 				f'Browser is not connected, did the browser process crash or get killed? (connection method: {connection_method})'
 			)
-			logger.debug(f'🌎 {connection_method} Browser connected: {self.browser.version}')
+			logger.debug(f'🌎 {connection_method} Browser connected: v{self.browser.version}')
 		assert self.browser_context, f'BrowserContext {self.browser_context} is not set up'
 
 		return self.browser_context
@@ -1804,7 +1805,7 @@ class BrowserSession(BaseModel):
 			await new_page.set_viewport_size(self.browser_profile.viewport)
 
 		if url:
-			await new_page.goto(url)
+			await new_page.goto(url, wait_until='domcontentloaded', timeout=10000)
 			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
 
 		assert self.human_current_page is not None

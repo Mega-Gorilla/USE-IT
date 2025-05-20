@@ -13,7 +13,6 @@ load_dotenv()
 from imgcat import imgcat
 from langchain_openai import ChatOpenAI
 from patchright.async_api import async_playwright as async_patchright
-from playwright.async_api import async_playwright
 
 from browser_use.browser import BrowserSession
 
@@ -23,15 +22,21 @@ terminal_width, terminal_height = shutil.get_terminal_size((80, 20))
 
 
 async def main():
-	browser_session = BrowserSession(
-		playwright=await async_playwright().start(),
+	# Default Playwright Chromium Browser
+	normal_browser_session = BrowserSession(
 		headless=False,
-		disable_security=True,
 		user_data_dir=None,
-		deterministic_rendering=True,
+		# deterministic_rendering=False,
 	)
+	await normal_browser_session.start()
+	await normal_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
+	await asyncio.sleep(5)
+	await (await normal_browser_session.get_current_page()).screenshot(path='normal_browser.png')
+	imgcat(Path('normal_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
+	await normal_browser_session.close()
 
-	stealth_browser_session = BrowserSession(
+	print('\n\nPATCHRIGHT STEALTH BROWSER:')
+	patchright_browser_session = BrowserSession(
 		# cdp_url='wss://browser.zenrows.com?apikey=your-api-key-here&proxy_region=na',
 		#                or try anchor browser, browserless, steel.dev, browserbase, oxylabs, brightdata, etc.
 		playwright=await async_patchright().start(),
@@ -40,20 +45,50 @@ async def main():
 		user_data_dir='~/.config/browseruse/profiles/stealth',
 		deterministic_rendering=False,
 	)
-	await browser_session.start()
-	await stealth_browser_session.start()
-	await browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
-	await stealth_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
+	await patchright_browser_session.start()
+	await patchright_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
 	await asyncio.sleep(5)
-	await (await browser_session.get_current_page()).screenshot(path='normal_browser.png')
-	print('NORMAL BROWSER:')
-	imgcat(Path('normal_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
-	print()
-	print()
+	await (await patchright_browser_session.get_current_page()).screenshot(path='patchright_browser.png')
+	imgcat(Path('patchright_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
+	await patchright_browser_session.close()
 
-	print('STEALTH BROWSER:')
-	await (await stealth_browser_session.get_current_page()).screenshot(path='stealth_browser.png')
-	imgcat(Path('stealth_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
+	# Brave Browser
+	if Path('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser').is_file():
+		print('\n\nBRAVE BROWSER:')
+		brave_browser_session = BrowserSession(
+			executable_path='/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+			headless=False,
+			disable_security=False,
+			user_data_dir='~/.config/browseruse/profiles/brave',
+			deterministic_rendering=False,
+		)
+		await brave_browser_session.start()
+		await brave_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
+		await asyncio.sleep(5)
+		await (await brave_browser_session.get_current_page()).screenshot(path='brave_browser.png')
+		imgcat(Path('brave_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
+		await brave_browser_session.close()
+
+	if Path('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser').is_file():
+		print('\n\nBRAVE + PATCHRIGHT STEALTH BROWSER:')
+		brave_patchright_browser_session = BrowserSession(
+			executable_path='/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+			playwright=await async_patchright().start(),
+			headless=False,
+			disable_security=False,
+			user_data_dir=None,
+			deterministic_rendering=False,
+		)
+		await brave_patchright_browser_session.start()
+		await brave_patchright_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
+		await asyncio.sleep(5)
+		await (await brave_patchright_browser_session.get_current_page()).screenshot(path='brave_patchright_browser.png')
+		imgcat(Path('brave_patchright_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
+
+		input('Press [Enter] to close the browser...')
+		await brave_patchright_browser_session.close()
+
+	# print()
 	# agent = Agent(
 	# 	task="""
 	#         Go to https://abrahamjuliot.github.io/creepjs/ and verify that the detection score is >50%.
@@ -103,7 +138,7 @@ async def main():
 	# )
 	# await agent.run()
 
-	input('Press Enter to close the browser...')
+	# input('Press Enter to close the browser...')
 
 
 if __name__ == '__main__':
