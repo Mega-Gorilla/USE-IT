@@ -588,33 +588,6 @@ class Task:
 		return self.__str__()
 
 
-# class ScreenshotTracker:
-# 	def __init__(self, task_id: str, task: str, run_id: str):
-# 		self.task_id = task_id
-# 		self.trajectory_dir = Path(f'saved_trajectories/{task_id}/trajectory')
-# 		self.trajectory_dir.mkdir(parents=True, exist_ok=True)
-# 		self.step_counter = 0
-
-# 	async def on_step_start(self, agent):
-# 		"""No-op for step start"""
-# 		pass
-
-# 	async def on_step_end(self, agent):
-# 		"""Only take and save annotated screenshots"""
-# 		browser_context = agent.browser_context
-# 		screenshot_path = self.trajectory_dir / f'step_{self.step_counter}.png'
-# 		screenshot_b64 = await browser_context.take_screenshot()
-
-# 		async with await anyio.open_file(screenshot_path, 'wb') as f:
-# 			await f.write(base64.b64decode(screenshot_b64))
-
-# 		self.step_counter += 1
-
-# 	def save_results(self):
-# 		"""No-op as we don't save results anymore"""
-# 		pass
-
-
 async def judge_task_result(model, task_folder: Path, score_threshold: float = 3) -> dict:
 	"""
 	Judge a single task result based on the success value of the final action.
@@ -861,9 +834,6 @@ async def run_task_with_semaphore(
 				logger.info(f'Task {task.task_id}: Starting execution.')
 				browser = None
 				try:
-					# Create simplified tracker just for annotated screenshots
-					# tracker = ScreenshotTracker(task.task_id, task.confirmed_task, run_id)
-
 					# Create a unique user_data_dir for each task
 					# Get parent like C:\\Users\\alexa\\.config\\browseruse\\profiles
 					base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
@@ -891,9 +861,10 @@ async def run_task_with_semaphore(
 						source='eval_platform',
 					)
 
-					# Pass hook functions
-					await agent.run(
-						max_steps=max_steps_per_task,  # on_step_start=tracker.on_step_start, on_step_end=tracker.on_step_end
+					# Wrap agent.run with asyncio.wait_for for a 10-minute timeout
+					await asyncio.wait_for(
+						agent.run(max_steps=max_steps_per_task),
+						timeout=600,
 					)
 					logger.info(f'Task {task.task_id}: Execution completed.')
 
