@@ -13,6 +13,8 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
+from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
+
 load_dotenv()
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -291,7 +293,7 @@ class Agent(Generic[Context]):
 		assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
 		assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
 		assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
-
+		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 		self.browser_session = browser_session or BrowserSession(
 			profile=browser_profile, browser=browser, browser_context=browser_context
 		)
