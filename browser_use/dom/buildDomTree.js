@@ -839,8 +839,10 @@
       } else {
         // Fallback: Check common event attributes if getEventListeners is not available
         const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
-        if (commonMouseAttrs.some(attr => element.hasAttribute(attr))) {
-          return true;
+        for (const attr of commonMouseAttrs) {
+          if (element.hasAttribute(attr) || typeof element[attr] === 'function') {
+            return true;
+          }
         }
       }
     } catch (e) {
