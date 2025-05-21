@@ -1810,10 +1810,6 @@ class BrowserSession(BaseModel):
 
 		assert self.human_current_page is not None
 		assert self.agent_current_page is not None
-		if url:
-			assert self.agent_current_page.url == url
-		else:
-			assert self.agent_current_page.url == 'about:blank'
 
 		return new_page
 
