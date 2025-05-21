@@ -51,7 +51,6 @@ import io
 import logging
 import re
 import shutil
-import sys
 
 import anyio
 from PIL import Image
@@ -844,7 +843,6 @@ async def run_task_with_semaphore(
 						browser_profile=BrowserProfile(
 							user_data_dir=str(unique_user_data_dir),  # Pass the unique path
 							headless=headless,
-							timeout=31000,
 							chromium_sandbox=False,  # This is needed for the browser to run on GitHub Actions
 						),
 					)
@@ -1249,14 +1247,6 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 
 
 if __name__ == '__main__':
-	# --- Environment Variable Debugging ---
-	logger.info(f'[DEBUG] DISPLAY environment variable: {os.getenv("DISPLAY")}')
-	logger.info(f'[DEBUG] IN_DOCKER environment variable: {os.getenv("IN_DOCKER")}')
-	logger.info(f'[DEBUG] XDG_RUNTIME_DIR environment variable: {os.getenv("XDG_RUNTIME_DIR")}')
-	logger.info(f'[DEBUG] Python executable: {sys.executable}')
-	logger.info(f'[DEBUG] Current working directory: {os.getcwd()}')
-	# --- End Environment Variable Debugging ---
-
 	parser = argparse.ArgumentParser(description='Run and evaluate browser automation tasks')
 	parser.add_argument('--parallel_runs', type=int, default=3, help='Number of parallel tasks to run')
 	parser.add_argument('--max_steps', type=int, default=25, help='Maximum steps per task')
