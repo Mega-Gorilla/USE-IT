@@ -229,15 +229,16 @@ class Agent(Generic[Context]):
 			self.settings.use_vision_for_planner = False
 
 		logger.info(
-			f'🧠 Starting a v{self.version} agent with main_model={self.model_name}'
+			f'🧠 Starting a browser-use agent with base_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
 			f'{" +memory" if self.enable_memory else ""}, '
-			f'planner_model={self.planner_model_name}'
+			f'{" +planner_model={self.planner_model_name}" if self.planner_model_name else ""}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
 			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
-			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
+			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}, '
+			f'" on version v{self.version}"'
 		)
 
 		# Verify we can connect to the LLM
