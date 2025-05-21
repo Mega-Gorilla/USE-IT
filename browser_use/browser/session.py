@@ -166,7 +166,7 @@ class BrowserSession(BaseModel):
 		session_own_fields = type(self).model_fields.keys()
 
 		# get all the extra BrowserProfile kwarg overrides passed to BrowserSession(...) that are not Fields on self
-		overrides = self.model_dump(exclude=session_own_fields)
+		overrides = self.model_dump(exclude=set(session_own_fields))
 
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
@@ -198,7 +198,7 @@ class BrowserSession(BaseModel):
 		await self.setup_playwright()
 		await self.setup_browser_connection()  # connects to existing browser if available
 		await self.setup_browser_context()  # creates a new context in existing browser or launches a new persistent context
-		assert self.browser_context
+		assert self.browser_context is not None, 'BrowserContext object is not set'
 
 		# resize the existing pages and set up foreground tab detection
 		await self.setup_viewport_sizing()
@@ -254,7 +254,7 @@ class BrowserSession(BaseModel):
 		# 	# patchright handles all its own default args, dont mess with them
 		# 	self.browser_profile.ignore_default_args = True
 
-		return self.playwright
+		# return self.playwright
 
 	async def setup_browser_connection(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
@@ -274,6 +274,7 @@ class BrowserSession(BaseModel):
 
 		if self.wss_url:
 			logger.info(f'🌎 Connecting to remote chromium playwright node.js server over WSS: {self.wss_url}')
+			assert self.playwright, 'Playwright object is not set'
 			self.browser = self.browser or await self.playwright.chromium.connect(
 				self.wss_url,
 				**self.browser_profile.kwargs_for_connect().model_dump(),
@@ -295,7 +296,7 @@ class BrowserSession(BaseModel):
 		# self.setup_browser_context() will be called next and if it finds self.browser is None, it will
 		# launch a new browser+context all in one go using launch_persistent_context()
 
-		return self.browser
+		# return self.browser
 
 	async def setup_browser_context(self) -> None:
 		# if we have a browser_context but no browser, use the browser from the context
@@ -400,7 +401,7 @@ class BrowserSession(BaseModel):
 			logger.debug(f'🌎 {connection_method} Browser connected: v{self.browser.version}')
 		assert self.browser_context, f'BrowserContext {self.browser_context} is not set up'
 
-		return self.browser_context
+		# return self.browser_context
 
 	async def setup_foreground_tab_detection(self) -> None:
 		# Uses a combination of:
@@ -419,6 +420,7 @@ class BrowserSession(BaseModel):
 		#         - https://github.com/microsoft/playwright/issues/13989
 
 		# set up / detect foreground page
+		assert self.browser_context is not None, 'BrowserContext object is not set'
 		pages = self.browser_context.pages
 		foreground_page = None
 		if pages:
@@ -439,6 +441,8 @@ class BrowserSession(BaseModel):
 
 			# Update human foreground tab state
 			old_foreground = self.human_current_page
+			assert self.browser_context is not None, 'BrowserContext object is not set'
+			assert old_foreground is not None, 'Old foreground page is not set'
 			old_tab_idx = self.browser_context.pages.index(old_foreground)
 			self.human_current_page = new_page
 			new_tab_idx = self.browser_context.pages.index(new_page)
@@ -570,6 +574,7 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	async def switch_tab(self, tab_index: int) -> Page:
+		assert self.browser_context is not None, 'BrowserContext object is not set'
 		pages = self.browser_context.pages
 		if not pages or tab_index >= len(pages):
 			raise IndexError('Tab index out of range')
@@ -621,60 +626,60 @@ class BrowserSession(BaseModel):
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
 
-	@time_execution_async('--input_text_element_node')
-	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
-		"""
-		Input text into an element with proper error handling and state management.
-		Handles different types of input fields and ensures proper element state before input.
-		"""
-		try:
-			# Highlight before typing
-			# if element_node.highlight_index is not None:
-			# 	await self._update_state(focus_element=element_node.highlight_index)
+	# @time_execution_async('--input_text_element_node')
+	# async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
+	# 	"""
+	# 	Input text into an element with proper error handling and state management.
+	# 	Handles different types of input fields and ensures proper element state before input.
+	# 	"""
+	# 	try:
+	# 		# Highlight before typing
+	# 		# if element_node.highlight_index is not None:
+	# 		# 	await self._update_state(focus_element=element_node.highlight_index)
 
-			element_handle = await self.get_locate_element(element_node)
+	# 		element_handle = await self.get_locate_element(element_node)
 
-			if element_handle is None:
-				raise BrowserError(f'Element: {repr(element_node)} not found')
+	# 		if element_handle is None:
+	# 			raise BrowserError(f'Element: {repr(element_node)} not found')
 
-			# Ensure element is ready for input
-			try:
-				await element_handle.wait_for_element_state('stable', timeout=1000)
-				is_visible = await self._is_visible(element_handle)
-				if is_visible:
-					await element_handle.scroll_into_view_if_needed(timeout=1000)
-			except Exception:
-				pass
+	# 		# Ensure element is ready for input
+	# 		try:
+	# 			await element_handle.wait_for_element_state('stable', timeout=1000)
+	# 			is_visible = await self._is_visible(element_handle)
+	# 			if is_visible:
+	# 				await element_handle.scroll_into_view_if_needed(timeout=1000)
+	# 		except Exception:
+	# 			pass
 
-			# Get element properties to determine input method
-			tag_handle = await element_handle.get_property('tagName')
-			tag_name = (await tag_handle.json_value()).lower()
-			is_contenteditable = await element_handle.get_property('isContentEditable')
-			readonly_handle = await element_handle.get_property('readOnly')
-			disabled_handle = await element_handle.get_property('disabled')
+	# 		# Get element properties to determine input method
+	# 		tag_handle = await element_handle.get_property('tagName')
+	# 		tag_name = (await tag_handle.json_value()).lower()
+	# 		is_contenteditable = await element_handle.get_property('isContentEditable')
+	# 		readonly_handle = await element_handle.get_property('readOnly')
+	# 		disabled_handle = await element_handle.get_property('disabled')
 
-			readonly = await readonly_handle.json_value() if readonly_handle else False
-			disabled = await disabled_handle.json_value() if disabled_handle else False
+	# 		readonly = await readonly_handle.json_value() if readonly_handle else False
+	# 		disabled = await disabled_handle.json_value() if disabled_handle else False
 
-			# always click the element first to make sure it's in the focus
-			await element_handle.click()
-			await asyncio.sleep(0.1)
+	# 		# always click the element first to make sure it's in the focus
+	# 		await element_handle.click()
+	# 		await asyncio.sleep(0.1)
 
-			try:
-				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
-					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-					await element_handle.type(text, delay=5)
-				else:
-					await element_handle.fill(text)
-			except Exception:
-				# last resort fallback, assume it's already focused after we clicked on it,
-				# just simulate keypresses on the entire page
-				page = await self.get_current_page()
-				await page.keyboard.type(text)
+	# 		try:
+	# 			if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
+	# 				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
+	# 				await element_handle.type(text, delay=5)
+	# 			else:
+	# 				await element_handle.fill(text)
+	# 		except Exception:
+	# 			# last resort fallback, assume it's already focused after we clicked on it,
+	# 			# just simulate keypresses on the entire page
+	# 			page = await self.get_current_page()
+	# 			await page.keyboard.type(text)
 
-		except Exception as e:
-			logger.debug(f'❌  Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
-			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
+	# 	except Exception as e:
+	# 		logger.debug(f'❌  Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
+	# 		raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
 	@time_execution_async('--click_element_node')
 	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
@@ -1151,6 +1156,8 @@ class BrowserSession(BaseModel):
 		not necessarily the tab that is visible to the user (human_current_page).
 		If they are the same tab, both references will be updated.
 		"""
+		assert self.browser_context is not None, 'Browser context is not set'
+		assert self.agent_current_page is not None, 'Agent current page is not set'
 
 		# Check if this is the foreground tab as well
 		is_foreground = self.agent_current_page == self.human_current_page
@@ -1369,6 +1376,7 @@ class BrowserSession(BaseModel):
 		"""
 		Returns a base64 encoded screenshot of the current page.
 		"""
+		assert self.agent_current_page is not None, 'Agent current page is not set'
 
 		# We no longer force tabs to the foreground as it disrupts user focus
 		# await self.agent_current_page.bring_to_front()
@@ -1757,6 +1765,7 @@ class BrowserSession(BaseModel):
 	@time_execution_async('--switch_to_tab')
 	async def switch_to_tab(self, page_id: int) -> Page:
 		"""Switch to a specific tab by its page_id (aka tab index exposed to LLM)"""
+		assert self.browser_context is not None, 'Browser context is not set'
 		pages = self.browser_context.pages
 
 		if page_id >= len(pages):
