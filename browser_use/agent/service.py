@@ -455,7 +455,7 @@ class Agent(Generic[Context]):
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
 		logger.info(f'📍 Step {self.state.n_steps}')
-		state = None
+		browser_state_summary = None
 		model_output = None
 		result: list[ActionResult] = []
 		step_start_time = time.time()
@@ -615,7 +615,7 @@ class Agent(Generic[Context]):
 			if not result:
 				return
 
-			if state:
+			if browser_state_summary:
 				metadata = StepMetadata(
 					step_number=self.state.n_steps,
 					step_start_time=step_start_time,
