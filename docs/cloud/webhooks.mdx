@@ -21,6 +21,11 @@ To receive webhook notifications, you need to:
 2. Configure your webhook URL in the Browser Use dashboard
 3. Implement signature verification to ensure webhook authenticity
 
+<Note>
+  When adding a webhook URL in the dashboard, it must be a valid HTTPS URL that can receive POST requests. 
+  On creation, we will send a test payload `{"test": "ok"}` to verify the endpoint is working correctly before creating the actual webhook!
+</Note>
+
 ## Webhook Events
 
 Browser Use currently only sends status updates for your running tasks:
