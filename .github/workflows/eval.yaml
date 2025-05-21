@@ -22,8 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: "new-browser-session"
-          # ref: "experiment-timeouts"
+          ref: "new-eval"
 
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@v6
