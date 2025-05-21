@@ -397,22 +397,80 @@ class Agent(Generic[Context]):
 	def _test_tool_calling_method(self, method: str) -> bool:
 		"""Test if a specific tool calling method works with the current LLM."""
 		try:
-			# Create a simple test message
-			test_message = HumanMessage(content='Hello, world!')
+			# Test configuration
+			CAPITAL_QUESTION = 'What is the capital of France? Respond with just the city name in lowercase.'
+			EXPECTED_ANSWER = 'paris'
+
+			class CapitalResponse(BaseModel):
+				"""Response model for capital city question"""
+
+				answer: str  # The name of the capital city in lowercase
+
+			def is_valid_raw_response(response, expected_answer: str) -> bool:
+				"""
+				Cleans and validates a raw JSON response string against an expected answer.
+				"""
+				content = getattr(response, 'content', '').strip()
+				logger.debug(f'Raw response content: {content}')
+
+				# Remove surrounding markdown code blocks if present
+				if content.startswith('```json') and content.endswith('```'):
+					content = content[7:-3].strip()
+				elif content.startswith('```') and content.endswith('```'):
+					content = content[3:-3].strip()
+
+				# Attempt to parse and validate the answer
+				try:
+					result = json.loads(content)
+					answer = str(result.get('answer', '')).strip().lower().strip(' .')
+
+					if expected_answer.lower() not in answer:
+						logger.debug(f"Validation failed: expected '{expected_answer}', got '{answer}'")
+						return False
+
+					return True
+
+				except (json.JSONDecodeError, AttributeError, TypeError) as e:
+					logger.debug(f'Failed to parse JSON content: {e}')
+					return False
 
 			if method == 'raw':
-				# For raw mode, we just check if we can invoke the model
-				response = self.llm.invoke([test_message])
+				# For raw mode, test JSON response format
+				test_prompt = f"""{CAPITAL_QUESTION}
+					Respond with a JSON object like: {{"answer": "city_name_in_lowercase"}}"""
+
+				response = self.llm.invoke([test_prompt])
 				# Basic validation of response
 				if not response or not hasattr(response, 'content'):
 					return False
+
+				if not is_valid_raw_response(response, EXPECTED_ANSWER):
+					return False
 				return True
+
 			else:
 				# For other methods, try to use structured output
-				structured_llm = self.llm.with_structured_output(self.ActionModel, include_raw=True, method=method)
-				# Try a simple invocation to test the method
-				response = structured_llm.invoke([test_message])
-				# TODO: add validation of response
+				structured_llm = self.llm.with_structured_output(CapitalResponse, include_raw=True, method=method)
+				response = structured_llm.invoke([HumanMessage(content=CAPITAL_QUESTION)])
+
+				if not response:
+					logger.debug(f'Method {method} failed validation: empty response')
+					return False
+
+				def extract_parsed(response: Any) -> CapitalResponse | None:
+					if isinstance(response, dict):
+						return response.get('parsed')
+					return getattr(response, 'parsed', None)
+
+				parsed = extract_parsed(response)
+
+				if not isinstance(parsed, CapitalResponse):
+					logger.debug(f'Method {method} failed validation: parsed is not CapitalResponse')
+					return False
+
+				if EXPECTED_ANSWER not in parsed.answer.lower():
+					logger.debug(f'Method {method} failed validation: expected answer not in response')
+					return False
 				return True
 
 		except Exception as e:
