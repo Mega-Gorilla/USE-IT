@@ -20,8 +20,6 @@ When you create a **new file**:
 
   ```python
   # @file purpose: Defines <purpose>
-  # @dependencies: Requires <dependencies>
-  # @usage: Used by <other parts of the system>
   ```
 
 ---
@@ -31,9 +29,11 @@ When you create a **new file**:
 * ✅ **Always use [`uv`](mdc:https:/github.com/astral-sh/uv) instead of `pip`**
   For deterministic and fast dependency installs.
 
-  ```bash
-  uv pip install -r requirements.txt
-  ```
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv sync
+```
 
 * ✅ **Use real model names**
   Do **not** replace `gpt-4o` with `gpt-4`. The model `gpt-4o` is a distinct release and supported.
