@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.1.47"
+version = "0.2.1"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -35,6 +35,8 @@ dependencies = [
     "psutil>=7.0.0",
     "faiss-cpu>=1.9.0",
     "mem0ai==0.1.93",
+    "uuid7>=0.1.0",
+    "patchright>=1.52.4",
 ]
 # pydantic: >2.11 introduces many pydantic deprecation warnings until langchain-core upgrades their pydantic support lets keep it on 2.10
 # google-api-core: only used for Google LLM APIs
@@ -60,6 +62,7 @@ cli = [
 examples = [
     # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py
     "botocore>=1.37.23",
+    "imgcat>=0.6.0",
 ]
 all = [
     "browser-use[memory,cli,examples]",
@@ -82,13 +85,16 @@ fix = true
 
 [tool.ruff.lint]
 select = ["ASYNC", "E", "F", "FAST", "I", "PLE"]
-ignore = ["ASYNC109", "E101", "E402", "E501", "F841", "E731"]  # TODO: determine if adding timeouts to all the unbounded async functions is needed / worth-it so we can un-ignore ASYNC109
+ignore = ["ASYNC109", "E101", "E402", "E501", "F841", "E731", "W291"]  # TODO: determine if adding timeouts to all the unbounded async functions is needed / worth-it so we can un-ignore ASYNC109
 unfixable = ["E101", "E402", "E501", "F841", "E731"]
 
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "tab"
+line-ending = "lf"
 docstring-code-format = true
+docstring-code-line-length = 140
+skip-magic-trailing-comma = false
 
 [tool.pyright]
 typeCheckingMode = "off"

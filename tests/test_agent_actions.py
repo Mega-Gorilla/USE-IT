@@ -8,7 +8,6 @@ from pydantic import BaseModel, SecretStr
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.views import BrowserState
 
 
 @pytest.fixture
@@ -202,7 +201,7 @@ async def test_captcha_solver(llm, context, captcha: CaptchaTest):
 
 	history: AgentHistoryList = await agent.run(max_steps=7)
 
-	state: BrowserState = await context.get_state()
+	state = await context.get_state_summary()
 
 	all_text = state.element_tree.get_all_text_till_next_clickable_element()
 

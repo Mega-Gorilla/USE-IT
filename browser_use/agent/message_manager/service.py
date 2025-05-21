@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from browser_use.agent.message_manager.views import MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo, MessageManagerState
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,7 @@ class MessageManager:
 	@time_execution_sync('--add_state_message')
 	def add_state_message(
 		self,
-		state: BrowserState,
+		browser_state_summary: BrowserStateSummary,
 		result: list[ActionResult] | None = None,
 		step_info: AgentStepInfo | None = None,
 		use_vision=True,
@@ -146,9 +146,10 @@ class MessageManager:
 					result = None  # if result in history, we dont want to add it again
 
 		# otherwise add state message and result to next message (which will not stay in memory)
+		assert browser_state_summary
 		state_message = AgentMessagePrompt(
-			state,
-			result,
+			browser_state_summary=browser_state_summary,
+			result=result,
 			include_attributes=self.settings.include_attributes,
 			step_info=step_info,
 		).get_user_message(use_vision)

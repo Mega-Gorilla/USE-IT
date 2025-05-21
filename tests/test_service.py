@@ -9,7 +9,7 @@ from browser_use.agent.service import Agent
 from browser_use.agent.views import ActionResult
 from browser_use.browser.browser import Browser
 from browser_use.browser.context import BrowserContext
-from browser_use.browser.views import BrowserState
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
@@ -101,8 +101,8 @@ class TestAgent:
 
 			# Mock the browser_context
 			agent.browser_context = AsyncMock()
-			agent.browser_context.get_state = AsyncMock(
-				return_value=BrowserState(
+			agent.browser_context.get_state_summary = AsyncMock(
+				return_value=BrowserStateSummary(
 					url='https://example.com',
 					title='Example',
 					element_tree=MagicMock(),  # Mocked element tree
@@ -237,8 +237,8 @@ class TestAgentRetry:
 	@pytest.fixture
 	def mock_browser_context(self):
 		browser_context = Mock()
-		browser_context.get_state = AsyncMock(
-			return_value=BrowserState(
+		browser_context.get_state_summary = AsyncMock(
+			return_value=BrowserStateSummary(
 				url='https://parabank.parasoft.com/parabank/index.htm',
 				title='ParaBank',
 				element_tree=MagicMock(),
