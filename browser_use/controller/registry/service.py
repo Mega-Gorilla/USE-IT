@@ -168,14 +168,31 @@ class Registry(Generic[Context]):
 				extra_args['has_sensitive_data'] = True
 
 			if is_pydantic:
+				# Check for browser-related fields in Pydantic model
+				model_dict = validated_params.model_dump()
+				for key in ['browser_session', 'browser', 'browser_context']:
+					if key in model_dict and key in extra_args:
+						# If browser is in both places, remove from model
+						model_copy = validated_params.model_copy(deep=True)
+						setattr(model_copy, key, None)
+						validated_params = model_copy
+						break
 				return await action.function(
 					validated_params,
 					**extra_args,
 				)
 
+			# Convert validated params to dict
+			param_dict = validated_params.model_dump()
+
+			# Remove browser_session from params if it exists to avoid passing it twice
+			for key in ['browser_session', 'browser', 'browser_context']:
+				if key in param_dict and key in extra_args:
+					del param_dict[key]
+
 			return await action.function(
 				**{
-					**validated_params.model_dump(),
+					**param_dict,
 					**extra_args,
 				}
 			)
