@@ -224,16 +224,19 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information from the page, e.g. all company names, a specific description, all information about, links with companies in structured format or simply links',
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specific description, all information about xyc, 4 links with companies in structured format. Use include_links true if the goal requires links',
 		)
 		async def extract_content(
-			goal: str, should_strip_link_urls: bool, browser_session: BrowserSession, page_extraction_llm: BaseChatModel
+			goal: str,
+			browser_session: BrowserSession,
+			page_extraction_llm: BaseChatModel,
+			include_links: bool = False,
 		):
 			page = await browser_session.get_current_page()
 			import markdownify
 
 			strip = []
-			if should_strip_link_urls:
+			if not include_links:
 				strip = ['a', 'img']
 
 			content = markdownify.markdownify(await page.content(), strip=strip)
@@ -256,6 +259,28 @@ class Controller(Generic[Context]):
 				msg = f'📄  Extracted from page\n: {content}\n'
 				logger.info(msg)
 				return ActionResult(extracted_content=msg)
+
+		@self.registry.action(
+			'Get the accessibility tree of the page in the format "role name" with the number_of_elements to return',
+		)
+		async def get_ax_tree(number_of_elements: int, browser_session: BrowserSession):
+			page = await browser_session.get_current_page()
+			node = await page.accessibility.snapshot(interesting_only=True)
+
+			def flatten_ax_tree(node, lines):
+				if not node:
+					return
+				role = node.get('role', '')
+				name = node.get('name', '')
+				lines.append(f'{role} {name}')
+				for child in node.get('children', []):
+					flatten_ax_tree(child, lines)
+
+			lines = []
+			flatten_ax_tree(node, lines)
+			msg = '\n'.join(lines)
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=False)
 
 		@self.registry.action(
 			'Scroll down the page by pixel amount - if none is given, scroll one page',
