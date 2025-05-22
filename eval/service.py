@@ -431,6 +431,9 @@ def get_llm(model_name: str):
 	match provider:
 		case 'openai':
 			kwargs = {'model': config['model_name'], 'temperature': 0.0}
+			# Must set temperatue=1 if model is gpt-o4-mini
+			if model_name == 'gpt-o4-mini':
+				kwargs['temperature'] = 1
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			return ChatOpenAI(**kwargs)
@@ -446,9 +449,6 @@ def get_llm(model_name: str):
 			return ChatGoogleGenerativeAI(**kwargs)
 		case 'openai_compatible':
 			kwargs = {'model': config['model_name'], 'base_url': config['base_url'], 'temperature': 0.0}
-			# Must set temperatue=1.0 if model is gpt-o4-mini
-			if model_name == 'gpt-o4-mini':
-				kwargs['temperature'] = 1.0
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			elif config.get('base_url'):
