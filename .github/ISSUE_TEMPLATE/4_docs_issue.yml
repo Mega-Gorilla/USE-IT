@@ -35,7 +35,7 @@ body:
     attributes:
       label: Issue Description
       description: "Describe what's wrong or missing in the documentation"
-      placeholder: e.g. Docs should clarify whether BrowserSession(no_viewport=False) needs to also be set when BrowserSession(headless=False) is passed...
+      placeholder: e.g. Docs should clarify whether BrowserSession(no_viewport=False) is supported when running in BrowserSession(headless=False) mode...
     validations:
       required: true
 
