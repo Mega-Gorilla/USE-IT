@@ -105,5 +105,5 @@ body:
       value: |
         ---
         > [!IMPORTANT]
-        > 🙏 Please ***DOUBLE-CHECK YOU ARE ON THE [LATEST VERSION](https://github.com/browser-use/browser-use/releases)***, we might've already shipped your feature!  
+        > 🙏 Please **go check *right now before submitting* that that you are on the [NEWEST VERSION](https://github.com/browser-use/browser-use/releases)**. We might've already shipped a fix for this yesterday!  
         > (If you are running an old version, the **first thing we will ask you to do is try the latest version**)
