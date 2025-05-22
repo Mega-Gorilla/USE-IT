@@ -48,7 +48,7 @@ body:
         e.g. The documentation could be improved by adding one more line here:
         ```diff
         Use `BrowserSession(headless=False)` to open the browser window (aka headful mode).
-        + Viewports are not supported in headful mode, when `headless=False` it will force `no_viewport=True`.
+        + Viewports are not supported when headful, if `headless=False` it will force `no_viewport=True`.
         ```
     validations:
       required: false
