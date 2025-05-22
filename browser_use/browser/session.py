@@ -636,7 +636,7 @@ class BrowserSession(BaseModel):
 
 	def _set_browser_keep_alive(self, keep_alive: bool | None) -> None:
 		"""set the keep_alive flag on the browser_profile, defaulting to True if keep_alive is None"""
-		if keep_alive is None:
+		if self.browser_profile.keep_alive is None:
 			self.browser_profile.keep_alive = keep_alive
 
 	# --- Tab management ---
