@@ -8,7 +8,6 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from functools import wraps
 from pathlib import Path
 from typing import Any, Self
@@ -31,7 +30,7 @@ from browser_use.browser.views import (
 from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import match_url_with_domain_pattern, time_execution_async, time_execution_sync
 
 # Check if running in Docker
 IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
@@ -1161,57 +1160,24 @@ class BrowserSession(BaseModel):
 		if not self.browser_profile.allowed_domains:
 			return True  # allowed_domains are not configured, allow everything by default
 
-		allowed_domain = None
-		try:
-			parsed_url = urlparse(url)
+		# Special case: Always allow 'about:blank' new tab page
+		if url == 'about:blank':
+			return True
 
-			# Special case: Always allow 'about:blank' new tab page
-			if url == 'about:blank':
-				return True
-
-			# Extract only the hostname and scheme components (without http basic auth user:pass@ prefix or :port suffix)
-			scheme = parsed_url.scheme.lower() if parsed_url.scheme else ''
-			domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
-			assert scheme and domain
-
-			for allowed_domain in self.browser_profile.allowed_domains:
-				allowed_domain = allowed_domain.lower()
-				if '://' in allowed_domain:
-					allowed_scheme, allowed_domain = allowed_domain.split('://', 1)
-				else:
-					allowed_scheme = 'http*'
-
-				# if scheme doesn't match, skip checking domain
-				if not fnmatch(scheme, allowed_scheme):
-					continue
-
-				# Check for exact match
-				if allowed_domain == '*' or domain == allowed_domain:
-					return True
-
-				# Handle glob patterns
-				if '*' in allowed_domain:
-					bare_domain = allowed_domain.replace('.*', '').replace('*.', '')
-					if '*' in bare_domain:
-						logger.error(
-							f'⛔️ allowed_domains only supports *.abc or abc.* style patterns, ignoring allowed_domains=[{allowed_domain}]'
-						)
-						continue
-
-					# Special handling so that *.google.com also matches bare google.com
-					if len(allowed_domain) > 2 and allowed_domain.startswith('*.'):
-						parent_domain = allowed_domain[2:]
-						if domain == parent_domain or fnmatch(domain, parent_domain):
-							_show_glob_warning(domain, allowed_domain)
-							return True
-
-					# Normal case: match domain abc.google.com against pattern *.google.com
-					if fnmatch(domain, allowed_domain):
+		for allowed_domain in self.browser_profile.allowed_domains:
+			try:
+				if match_url_with_domain_pattern(url, allowed_domain, log_warnings=True):
+					# If it's a pattern with wildcards, show a warning
+					if '*' in allowed_domain:
+						parsed_url = urlparse(url)
+						domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
 						_show_glob_warning(domain, allowed_domain)
-						return True
-		except Exception as e:
-			failing_domain = allowed_domain or ', '.join(self.browser_profile.allowed_domains)
-			logger.error(f'⛔️  Error checking if page URL is in allowed_domains=[{failing_domain}]: {type(e).__name__}: {e}')
+					return True
+			except AssertionError:
+				# This would only happen if about:blank is passed to match_url_with_domain_pattern,
+				# which shouldn't occur since we check for it above
+				continue
+
 		return False
 
 	async def _check_and_handle_navigation(self, page: Page) -> None:

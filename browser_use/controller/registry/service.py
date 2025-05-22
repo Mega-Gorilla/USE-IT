@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from inspect import iscoroutinefunction, signature
 from typing import Any, Generic, Optional, TypeVar
@@ -18,7 +19,7 @@ from browser_use.telemetry.views import (
 	ControllerRegisteredFunctionsTelemetryEvent,
 	RegisteredFunction,
 )
-from browser_use.utils import time_execution_async
+from browser_use.utils import match_url_with_domain_pattern, time_execution_async
 
 Context = TypeVar('Context')
 
@@ -104,7 +105,7 @@ class Registry(Generic[Context]):
 		params: dict,
 		browser_session: BrowserSession | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
-		sensitive_data: dict[str, str] | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		#
 		context: Context | None = None,
@@ -128,7 +129,7 @@ class Registry(Generic[Context]):
 			parameter_names = [param.name for param in parameters]
 
 			if sensitive_data:
-				validated_params = self._replace_sensitive_data(validated_params, sensitive_data)
+				validated_params = self._replace_sensitive_data(validated_params, sensitive_data, browser_session)
 
 			# Check if the action requires browser
 			if (
@@ -182,26 +183,65 @@ class Registry(Generic[Context]):
 		except Exception as e:
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 
-	def _replace_sensitive_data(self, params: BaseModel, sensitive_data: dict[str, str]) -> BaseModel:
-		"""Replaces the sensitive data in the params"""
-		# if there are any str with <secret>placeholder</secret> in the params, replace them with the actual value from sensitive_data
+	def _replace_sensitive_data(
+		self, params: BaseModel, sensitive_data: dict[str, Any], browser_session: BrowserSession = None
+	) -> BaseModel:
+		"""
+		Replaces sensitive data placeholders in params with actual values.
 
-		import logging
-		import re
+		Args:
+			params: The parameter object containing <secret>placeholder</secret> tags
+			sensitive_data: Dictionary of sensitive data, either in old format {key: value}
+						   or new format {domain_pattern: {key: value}}
+			browser_session: Optional browser session to get the current URL for domain matching
 
-		logger = logging.getLogger(__name__)
+		Returns:
+			BaseModel: The parameter object with placeholders replaced by actual values
+		"""
 		secret_pattern = re.compile(r'<secret>(.*?)</secret>')
 
 		# Set to track all missing placeholders across the full object
 		all_missing_placeholders = set()
+
+		# Determine current URL if browser_session is provided
+		current_url = None
+		if browser_session:
+			try:
+				# Get current URL from browser session - do this synchronously to avoid complications
+				loop = asyncio.get_event_loop()
+				current_page = loop.run_until_complete(browser_session.get_current_page())
+				current_url = current_page.url if current_page else None
+			except Exception as e:
+				logger.debug(f'Failed to get current URL from browser session: {e}')
+
+		# Process sensitive data based on format and current URL
+		applicable_secrets = {}
+
+		for domain_or_key, content in sensitive_data.items():
+			if isinstance(content, dict):
+				# New format: {domain_pattern: {key: value}}
+				# Only include secrets for domains that match the current URL
+				if current_url is None:
+					# No URL available, include all secrets for all domains
+					applicable_secrets.update(content)
+				elif current_url != 'about:blank':
+					# Don't expose domain-specific secrets on about:blank
+					if match_url_with_domain_pattern(current_url, domain_or_key):
+						applicable_secrets.update(content)
+			else:
+				# Old format: {key: value}
+				applicable_secrets[domain_or_key] = content
+
+		# Filter out empty values
+		applicable_secrets = {k: v for k, v in applicable_secrets.items() if v}
 
 		def replace_secrets(value):
 			if isinstance(value, str):
 				matches = secret_pattern.findall(value)
 
 				for placeholder in matches:
-					if placeholder in sensitive_data and sensitive_data[placeholder]:
-						value = value.replace(f'<secret>{placeholder}</secret>', sensitive_data[placeholder])
+					if placeholder in applicable_secrets:
+						value = value.replace(f'<secret>{placeholder}</secret>', applicable_secrets[placeholder])
 					else:
 						# Keep track of missing placeholders
 						all_missing_placeholders.add(placeholder)

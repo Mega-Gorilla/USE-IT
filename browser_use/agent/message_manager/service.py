@@ -26,7 +26,8 @@ class MessageManagerSettings(BaseModel):
 	image_tokens: int = 800
 	include_attributes: list[str] = []
 	message_context: str | None = None
-	sensitive_data: dict[str, str] | None = None
+	# Support both old format {key: value} and new format {domain: {key: value}}
+	sensitive_data: dict[str, str | dict[str, str]] | None = None
 	available_file_paths: list[str] | None = None
 
 
@@ -218,16 +219,26 @@ class MessageManager:
 			if not self.settings.sensitive_data:
 				return value
 
-			# Create a dictionary with all key-value pairs from sensitive_data where value is not None or empty
-			valid_sensitive_data = {k: v for k, v in self.settings.sensitive_data.items() if v}
+			# Collect all sensitive values from both old and new formats
+			sensitive_values: dict[str, str] = {}
+
+			# Process all sensitive data entries
+			for domain_or_key, content in self.settings.sensitive_data.items():
+				if isinstance(content, dict):
+					# New format: {domain: {key: value}}
+					for key, val in content.items():
+						if val:  # Skip empty values
+							sensitive_values[key] = val
+				elif content:  # Old format: {key: value}
+					sensitive_values[domain_or_key] = content
 
 			# If there are no valid sensitive data entries, just return the original value
-			if not valid_sensitive_data:
+			if not sensitive_values:
 				logger.warning('No valid entries found in sensitive_data dictionary')
 				return value
 
 			# Replace all valid sensitive data values with their placeholder tags
-			for key, val in valid_sensitive_data.items():
+			for key, val in sensitive_values.items():
 				value = value.replace(val, f'<secret>{key}</secret>')
 
 			return value

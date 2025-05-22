@@ -107,7 +107,7 @@ class Agent(Generic[Context]):
 		browser_session: BrowserSession | None = None,
 		controller: Controller[Context] = Controller(),
 		# Initial agent run parameters
-		sensitive_data: dict[str, str] | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
@@ -299,24 +299,66 @@ class Agent(Generic[Context]):
 			profile=browser_profile, browser=browser, browser_context=browser_context
 		)
 
-		if self.sensitive_data and not self.browser_profile.allowed_domains:
-			logger.error(
-				'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
-				'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
-				'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
-				'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
-			)
-			if sys.stdin.isatty():
-				try:
-					time.sleep(10)
-				except KeyboardInterrupt:
-					print(
-						'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
-					)
-					sys.exit(0)
-			else:
-				pass  # no point waiting if we're not in an interactive shell
-			logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
+		if self.sensitive_data:
+			# Check if sensitive_data has domain-specific credentials
+			has_domain_specific_credentials = any(isinstance(v, dict) for v in self.sensitive_data.values())
+
+			# If no allowed_domains are configured, show a security warning
+			if not self.browser_profile.allowed_domains:
+				logger.error(
+					'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
+					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
+					'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
+					'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
+				)
+				if sys.stdin.isatty():
+					try:
+						time.sleep(10)
+					except KeyboardInterrupt:
+						print(
+							'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
+						)
+						sys.exit(0)
+				else:
+					pass  # no point waiting if we're not in an interactive shell
+				logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
+
+			# If we're using domain-specific credentials, validate domain patterns
+			elif has_domain_specific_credentials:
+				# For domain-specific format, ensure all domain patterns are included in allowed_domains
+				domain_patterns = [k for k, v in self.sensitive_data.items() if isinstance(v, dict)]
+
+				# Validate each domain pattern against allowed_domains
+				for domain_pattern in domain_patterns:
+					is_allowed = False
+					for allowed_domain in self.browser_profile.allowed_domains:
+						# Special cases that don't require URL matching
+						if domain_pattern == allowed_domain or allowed_domain == '*':
+							is_allowed = True
+							break
+
+						# Need to create example URLs to compare the patterns
+						# Extract the domain parts, ignoring scheme
+						pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
+						allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
+
+						# Check if pattern is covered by an allowed domain
+						# Example: "google.com" is covered by "*.google.com"
+						if pattern_domain == allowed_domain_part or (
+							allowed_domain_part.startswith('*.')
+							and (
+								pattern_domain == allowed_domain_part[2:]
+								or pattern_domain.endswith('.' + allowed_domain_part[2:])
+							)
+						):
+							is_allowed = True
+							break
+
+					if not is_allowed:
+						logger.warning(
+							f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
+							f'   This may be a security risk as credentials could be used on unintended domains.'
+						)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
