@@ -780,8 +780,8 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=f'Selected cell {cell_or_range}', include_in_memory=False)
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['sheets.google.com'])
-		def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
-			return _select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
+		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
+			return await _select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
 
 		@self.registry.action(
 			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['sheets.google.com']
