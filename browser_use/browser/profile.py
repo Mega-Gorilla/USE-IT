@@ -622,19 +622,12 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return self
 
 	def get_args(self) -> list[str]:
-		logger.info(f'[DEBUG] Initial self.args in profile: {self.args}')
 		if isinstance(self.ignore_default_args, list):
 			default_args = set(CHROME_DEFAULT_ARGS) - set(self.ignore_default_args)
 		elif self.ignore_default_args is True:
 			default_args = []
 		elif not self.ignore_default_args:
 			default_args = CHROME_DEFAULT_ARGS
-
-		logger.info(f'[DEBUG] Calculated default_args to use: {list(default_args)}')
-		logger.info(f'[DEBUG] IN_DOCKER value: {IN_DOCKER}')
-		logger.info(f'[DEBUG] self.headless value: {self.headless}')
-		logger.info(f'[DEBUG] CHROME_DOCKER_ARGS being considered: {CHROME_DOCKER_ARGS if IN_DOCKER else "Not in Docker"}')
-		logger.info(f'[DEBUG] CHROME_HEADLESS_ARGS being considered: {CHROME_HEADLESS_ARGS if self.headless else "Not headless"}')
 
 		# Capture args before conversion for logging
 		pre_conversion_args = [
@@ -656,10 +649,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				else []
 			),
 		]
-		logger.info(f'[DEBUG] Pre-conversion Chrome launch arguments list: {pre_conversion_args}')
 
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
-		logger.info(f'[DEBUG] Final computed Chrome launch arguments: {final_args_list}')
 		return final_args_list
 
 	def kwargs_for_launch_persistent_context(self) -> BrowserLaunchPersistentContextArgs:
@@ -722,15 +713,12 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		display_size = get_display_size()
-		logger.info(f'[DEBUG] display_size detected by get_display_size(): {display_size}')
 		if display_size:
 			self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
 
-		logger.info(f'[DEBUG] self.headless initial value before display detection: {self.headless}')
 		# if no headless preference specified, prefer headful if there is a display available
 		if self.headless is None:
 			self.headless = not bool(display_size)
-		logger.info(f'[DEBUG] self.headless after display detection logic: {self.headless}')
 
 		# set up window size and position if headful
 		if self.headless:
@@ -745,17 +733,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
 
-		logger.info(f'[DEBUG] self.window_size after display logic: {self.window_size}')
-		logger.info(f'[DEBUG] self.viewport after display logic: {self.viewport}')
-		logger.info(f'[DEBUG] self.no_viewport initial value: {self.no_viewport}')
-
 		# automatically setup viewport if any config requires it
 		use_viewport = self.headless or self.viewport or self.device_scale_factor
 		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
 		use_viewport = not self.no_viewport
-
-		logger.info(f'[DEBUG] self.no_viewport final value: {self.no_viewport}')
-		logger.info(f'[DEBUG] use_viewport calculated as: {use_viewport}')
 
 		if use_viewport:
 			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
@@ -767,7 +748,3 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.viewport = None
 			self.device_scale_factor = None
 			self.screen = None
-
-		logger.info(f'[DEBUG] Final self.viewport: {self.viewport}')
-		logger.info(f'[DEBUG] Final self.device_scale_factor: {self.device_scale_factor}')
-		logger.info(f'[DEBUG] Final self.screen: {self.screen}')
