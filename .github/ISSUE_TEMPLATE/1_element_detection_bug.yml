@@ -48,16 +48,16 @@ body:
   - type: textarea
     id: prompt
     attributes:
-      label: Screenshots, Description, and Task Prompt Given to Agent
+      label: Screenshots, Description, and task prompt given to Agent
       description: |
-        A description of the issue + screenshots, and the full task prompt you're giving the agent (redact sensitive data).
+        A description of the issue + screenshots, and the full task prompt you're giving the agent (redact sensitive data).  
         To help us fix it even faster, screenshot the Chome devtools `Computed Styles` pane for each failing element.
       placeholder: |
-        🎯 My high-level goal: Compare the prices of 3 items on a few different seller pages
-        💬 Agent prompt used:
-        1. go to https://example.com and click the xyz dropdown...
-        2. type "abc" in the dropdown search and select the "abc" option  ⬅️ agent fails to click option here
-        3. ...
+        🎯 High-level goal: Compare the prices of 3 items on a few different seller pages
+        💬 Agent(task='''
+           1. go to https://example.com and click the xyz dropdown...
+           2. type "abc" in the dropdown search and select the "abc" option  ⬅️ agent fails to click option here
+           3. ...
         ☝️ please include real URLs 🔗 and screenshots 📸 when possible!
     validations:
       required: true
