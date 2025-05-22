@@ -49,15 +49,16 @@ body:
     id: prompt
     attributes:
       label: Screenshots, Description, and Task Prompt Given to Agent
-      description: "The full task prompt you're giving the agent (redact any sensitive data) + a description of the issue and screenshots."
+      description: |
+        A description of the issue + screenshots, and the full task prompt you're giving the agent (redact sensitive data).
+        To help us fix it even faster, screenshot the Chome devtools `Computed Styles` pane for each failing element.
       placeholder: |
         🎯 My high-level goal: Compare the prices of 3 items on a few different seller pages
         💬 Agent prompt used:
         1. go to https://example.com and click the xyz dropdown...
         2. type "abc" in the dropdown search and select the "abc" option  ⬅️ agent fails to click option here
         3. ...
-        ☝️ include full URLs 🔗 and (redacted) screenshots 📸 of the failing page(s) if possible
-        To help us fix it even faster, screenshot the Chome devtools "Computed Styles" pane for the failing element(s).
+        ☝️ please include real URLs 🔗 and screenshots 📸 when possible!
     validations:
       required: true
 
@@ -68,7 +69,7 @@ body:
       description: A snippet of the HTML from the failing page around where the Agent is failing to interact.
       render: html
       placeholder: |
-        <form na-someform="abc">   <!-- ⬅️ please provide at least one parent elem above -->
+        <form na-someform="abc">                  <!-- ⬅️ at least one parent elem above -->
           <div class="element-to-click">
             <div data-isbutton="true">Click me</div>
           </div>
