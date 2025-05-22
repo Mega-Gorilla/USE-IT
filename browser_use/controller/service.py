@@ -224,16 +224,19 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information from the page, e.g. all company names, a specific description, all information about, links with companies in structured format or simply links',
+			'Extract page content to retrieve specific information from the page, e.g. all company names, a specific description, all information about xyc, 4 links with companies in structured format. Use include_links true if the goal requires links',
 		)
 		async def extract_content(
-			goal: str, should_strip_link_urls: bool, browser_session: BrowserSession, page_extraction_llm: BaseChatModel
+			goal: str,
+			browser_session: BrowserSession,
+			page_extraction_llm: BaseChatModel,
+			include_links: bool = False,
 		):
 			page = await browser_session.get_current_page()
 			import markdownify
 
 			strip = []
-			if should_strip_link_urls:
+			if not include_links:
 				strip = ['a', 'img']
 
 			content = markdownify.markdownify(await page.content(), strip=strip)
