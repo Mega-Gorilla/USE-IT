@@ -785,7 +785,7 @@ class Controller(Generic[Context]):
 		async def get_range_contents(browser_session: BrowserSession, cell_or_range: str):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session, cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range)
 
 			await page.keyboard.press('ControlOrMeta+C')
 			await asyncio.sleep(0.1)
@@ -812,7 +812,7 @@ class Controller(Generic[Context]):
 		async def update_range_contents(browser_session: BrowserSession, range: str, new_contents_tsv: str):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session, range)
+			await select_cell_or_range(cell_or_range=range)
 
 			# simulate paste event from clipboard with TSV content
 			await page.evaluate(f"""

@@ -165,9 +165,19 @@ class Registry(Generic[Context]):
 				extra_args['available_file_paths'] = available_file_paths
 			if action_name == 'input_text' and sensitive_data:
 				extra_args['has_sensitive_data'] = True
+
 			if is_pydantic:
-				return await action.function(validated_params, **extra_args)
-			return await action.function(**{**validated_params.model_dump(), **extra_args})
+				return await action.function(
+					validated_params,
+					**extra_args,
+				)
+
+			return await action.function(
+				**{
+					**validated_params.model_dump(),
+					**extra_args,
+				}
+			)
 
 		except Exception as e:
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
