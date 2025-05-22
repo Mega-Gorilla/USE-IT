@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: Browser Use Version
-      description: What version of the `browser-use` library are you using? (Run `uv pip show browser-use` or `git log -n 1` to find out) **DO NOT JUST WRITE `latest version` or `main`**
+      description: What version of `browser-use` are you using? (Run `uv pip show browser-use` or `git log -n 1`) **DO NOT JUST WRITE `latest` or `main`**
       placeholder: "e.g. 0.4.45 or 62760baaefd"
     validations:
       required: true
@@ -109,5 +109,5 @@ body:
         > 🚀 We ship fast and we might've already fixed your issue yesterday!  
         > <a href="https://github.com/browser-use/browser-use/releases"><img src="https://github.com/user-attachments/assets/4cd34ee6-bafb-4f24-87e2-27a31dc5b9a4" width="500px"/></a>
         > If you are running an old version, the **first thing we will ask you to do is *try the latest version***:
-        > [beta](https://docs.browser-use.com/development/local-setup):   `pip install --upgrade git+https://github.com/browser-use/browser-use.git@main`
-        > [stable](https://pypi.org/project/browser-use/#history): `pip install --upgrade browser-use`
+        > - 🆕 [*beta*](https://docs.browser-use.com/development/local-setup):   `uv pip install --upgrade git+https://github.com/browser-use/browser-use.git@main`
+        > - 📦 [stable](https://pypi.org/project/browser-use/#history): `uv pip install --upgrade browser-use`
