@@ -60,7 +60,8 @@ body:
       value: |
         ---
         > [!TIP]
-        > 🚀 Please ***double-check you are on the [latest release](https://github.com/browser-use/browser-use/releases)***, we might've already shipped your feature!
+        > 🚀 Please ***double-check you are on the [latest release](https://github.com/browser-use/browser-use/releases)***, we might've already shipped your feature!  
+        > (If you are not on the latest release, our very first comment will be to ask you to try the latest version)
 
   - type: checkboxes
     id: priority
