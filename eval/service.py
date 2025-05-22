@@ -311,6 +311,11 @@ SUPPORTED_MODELS = {
 		'model_name': 'claude-sonnet-4-20250514',
 		'api_key_env': 'ANTHROPIC_API_KEY',
 	},
+	'claude-opus-4': {
+		'provider': 'anthropic',
+		'model_name': 'claude-opus-4-20250514',
+		'api_key_env': 'ANTHROPIC_API_KEY',
+	},
 	# Deepseek (via OpenAI Compatible API)
 	'deepseek-reasoner': {
 		'provider': 'openai_compatible',
