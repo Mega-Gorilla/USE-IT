@@ -446,9 +446,6 @@ def get_llm(model_name: str):
 			return ChatGoogleGenerativeAI(**kwargs)
 		case 'openai_compatible':
 			kwargs = {'model': config['model_name'], 'base_url': config['base_url'], 'temperature': 0.0}
-			# Must set temperatue=1.0 if model is gpt-o4-mini
-			if model_name == 'gpt-o4-mini':
-				kwargs['temperature'] = 1.0
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			elif config.get('base_url'):
@@ -730,303 +727,6 @@ def calculate_local_summary(results_dir: str | None = None) -> dict:
 	}
 
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any
-
-
-class Stage(Enum):
-	LOAD_EXISTING = 'load_existing'
-	SETUP_BROWSER = 'setup_browser'
-	RUN_AGENT = 'run_agent'
-	FORMAT_HISTORY = 'format_history'
-	EVALUATE = 'evaluate'
-	SAVE_SERVER = 'save_server'
-
-
-@dataclass
-class StageError(Exception):
-	stage: Stage
-	error_type: str  # "timeout", "cancelled", "exception"
-	message: str
-
-
-class TaskResult:
-	"""Simplified task state tracker with auto-updating server payload"""
-
-	def __init__(self, task_id: str, run_id: str, task_description: str, task: Task, max_steps: int):
-		self.task_id = task_id
-		self.completed_stages = set()
-		self.stage_data = {}  # Store actual results from each stage
-		self.failed_stages = {}  # Store errors from failed stages
-		self.local_error = None
-
-		# Initialize server payload with defaults
-		self.server_payload = {
-			'runId': run_id,
-			'taskId': task_id,
-			'task': task_description,
-			'taskWebsite': task.website,
-			'taskReferenceLength': task.reference_length,
-			'taskLevel': task.level,
-			'actionHistory': [],
-			'finalResultResponse': 'None',
-			'selfReportCompleted': False,
-			'selfReportSuccess': None,
-			'browserCrash': False,
-			'browserCrashReason': None,
-			'onlineMind2WebEvaluationJudgement': 'Not Attempted',
-			'onlineMind2WebEvaluationError': None,
-			'onlineMind2WebEvaluationSuccess': False,
-			'onlineMind2WebEvaluationScore': 0.0,
-			'completeHistory': [],
-			'maxSteps': max_steps,
-			'tokensUsed': 0,
-			'taskDuration': None,
-			'steps': 0,
-		}
-
-	def stage_completed(self, stage: Stage, data: Any = None):
-		"""Mark stage as completed and update server payload"""
-		self.completed_stages.add(stage)
-		if data is not None:
-			self.stage_data[stage] = data
-		self._auto_update_payload()
-
-	def stage_failed(self, stage: Stage, error: StageError):
-		"""Mark stage as failed and update server payload"""
-		self.failed_stages[stage] = error
-		self._auto_update_payload()
-
-	def has_execution_data(self) -> bool:
-		"""Check if we have execution data from either loading existing or completing execution"""
-		return Stage.LOAD_EXISTING in self.completed_stages or Stage.FORMAT_HISTORY in self.completed_stages
-
-	def execution_succeeded(self) -> bool:
-		"""Check if execution pipeline succeeded"""
-		return (
-			Stage.LOAD_EXISTING in self.completed_stages or Stage.FORMAT_HISTORY in self.completed_stages
-		) and not self._has_execution_failures()
-
-	def _has_execution_failures(self) -> bool:
-		"""Check if any execution-related stages failed"""
-		execution_stages = {Stage.SETUP_BROWSER, Stage.RUN_AGENT, Stage.FORMAT_HISTORY}
-		return any(stage in self.failed_stages for stage in execution_stages)
-
-	def _auto_update_payload(self):
-		"""Automatically update server_payload based on current state"""
-		# Update execution data if available
-		if Stage.LOAD_EXISTING in self.completed_stages:
-			existing_data = self.stage_data[Stage.LOAD_EXISTING]
-			self.server_payload.update(
-				{
-					'actionHistory': existing_data.get('action_history', []),
-					'finalResultResponse': existing_data.get('final_result_response', 'None'),
-					'selfReportCompleted': existing_data.get('self_report_completed', False),
-					'selfReportSuccess': existing_data.get('self_report_success', None),
-					'completeHistory': existing_data.get('complete_history', []),
-					'taskDuration': existing_data.get('task_duration'),
-					'steps': existing_data.get('steps', 0),
-					'tokensUsed': existing_data.get('tokensUsed', 0),
-				}
-			)
-		elif Stage.FORMAT_HISTORY in self.completed_stages:
-			formatted_data = self.stage_data[Stage.FORMAT_HISTORY]
-			self.server_payload.update(
-				{
-					'actionHistory': formatted_data.get('action_history', []),
-					'finalResultResponse': formatted_data.get('final_result_response', 'None'),
-					'selfReportCompleted': formatted_data.get('self_report_completed', False),
-					'selfReportSuccess': formatted_data.get('self_report_success', None),
-					'completeHistory': formatted_data.get('complete_history', []),
-					'taskDuration': formatted_data.get('task_duration'),
-					'steps': formatted_data.get('steps', 0),
-					'tokensUsed': formatted_data.get('tokensUsed', 0),
-				}
-			)
-
-		# Update evaluation data if available
-		if Stage.EVALUATE in self.completed_stages:
-			eval_data = self.stage_data[Stage.EVALUATE]
-			judgement = eval_data.get('judgement')
-			self.server_payload.update(
-				{
-					'onlineMind2WebEvaluationJudgement': judgement if judgement is not None else 'None',
-					'onlineMind2WebEvaluationError': eval_data.get('error'),
-					'onlineMind2WebEvaluationSuccess': eval_data.get('success', False),
-					'onlineMind2WebEvaluationScore': eval_data.get('score', 0.0),
-				}
-			)
-
-		# Update failure states
-		self._update_failure_states()
-
-	def _update_failure_states(self):
-		"""Update server payload based on failed stages"""
-		# Check for browser/execution failures
-		for stage, error in self.failed_stages.items():
-			if stage in {Stage.SETUP_BROWSER, Stage.RUN_AGENT}:
-				self.server_payload['browserCrash'] = True
-				if error.error_type == 'timeout':
-					self.server_payload['browserCrashReason'] = f'{stage.value} timed out: {error.message}'
-				elif error.error_type == 'cancelled':
-					self.server_payload['browserCrashReason'] = f'{stage.value} was cancelled: {error.message}'
-				else:
-					self.server_payload['browserCrashReason'] = f'{stage.value} failed: {error.message}'
-
-			# Update evaluation failures
-			elif stage == Stage.EVALUATE:
-				if error.error_type == 'timeout':
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Timed Out'
-					self.server_payload['onlineMind2WebEvaluationError'] = 'Evaluation process timed out'
-				elif error.error_type == 'cancelled':
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Cancelled'
-					self.server_payload['onlineMind2WebEvaluationError'] = 'Evaluation was cancelled'
-				else:
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Process Error'
-					self.server_payload['onlineMind2WebEvaluationError'] = f'Evaluation Error: {error.message}'
-
-	def mark_cancelled(self):
-		"""Mark task as cancelled"""
-		self.server_payload.update(
-			{
-				'finalResultResponse': 'Task was cancelled',
-				'onlineMind2WebEvaluationJudgement': 'Task Cancelled',
-				'onlineMind2WebEvaluationError': 'Task was cancelled',
-				'onlineMind2WebEvaluationSuccess': False,
-				'onlineMind2WebEvaluationScore': 0.0,
-			}
-		)
-		self.local_error = 'Task cancelled'
-
-	def mark_critical_error(self, error_msg: str):
-		"""Mark task as having critical error"""
-		self.server_payload.update(
-			{
-				'finalResultResponse': f'Critical Error: {error_msg}',
-				'onlineMind2WebEvaluationJudgement': 'Critical System Error',
-				'onlineMind2WebEvaluationError': f'Critical flow error: {error_msg}',
-				'onlineMind2WebEvaluationSuccess': False,
-				'onlineMind2WebEvaluationScore': 0.0,
-			}
-		)
-		self.local_error = f'Critical flow error: {error_msg}'
-
-	def mark_server_save_failed(self, error_msg: str):
-		"""Mark server save as failed"""
-		if self.local_error:
-			self.local_error += f'; Server save failed: {error_msg}'
-		else:
-			self.local_error = f'Server save failed: {error_msg}'
-
-	def get_local_status(self) -> dict:
-		"""Return local processing status"""
-		success = self.execution_succeeded() and (
-			Stage.EVALUATE in self.completed_stages or not self.has_execution_data() or Stage.EVALUATE in self.failed_stages
-		)
-		return {'task_id': self.task_id, 'success': success and not self.local_error, 'error': self.local_error}
-
-
-async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
-	"""Generic stage runner with timeout"""
-	if timeout:
-		return await asyncio.wait_for(stage_func(), timeout)
-	return await stage_func()
-
-
-async def load_existing_result(task_folder: Path) -> dict:
-	"""Load existing result if available"""
-	result_file = task_folder / 'result.json'
-	if not result_file.exists():
-		raise FileNotFoundError('No existing result found')
-
-	async with await anyio.open_file(result_file) as f:
-		existing_result = json.loads(await f.read())
-
-	# Check if evaluation is also present
-	existing_eval = existing_result.get('Online_Mind2Web_evaluation')
-	if existing_eval:
-		existing_result['has_evaluation'] = True
-		existing_result['evaluation_data'] = existing_eval
-	else:
-		existing_result['has_evaluation'] = False
-
-	return existing_result
-
-
-async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
-	"""Setup browser session for the task"""
-	# Create unique user data directory
-	base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
-	unique_user_data_dir = base_user_data_dir / f'task_{task.task_id}'
-	unique_user_data_dir.mkdir(parents=True, exist_ok=True)
-
-	browser_session = BrowserSession(
-		browser_profile=BrowserProfile(
-			user_data_dir=str(unique_user_data_dir),
-			headless=headless,
-			chromium_sandbox=False,
-		),
-	)
-
-	await browser_session.start()
-	return browser_session
-
-
-async def run_agent_with_browser(
-	browser_session: BrowserSession, task: Task, llm: BaseChatModel, max_steps: int, use_vision: bool
-) -> AgentHistoryList:
-	"""Run agent with the browser session"""
-	initial_actions = [{'go_to_url': {'url': task.website}}]
-	agent = Agent(
-		task=task.confirmed_task,
-		llm=llm,
-		browser_session=browser_session,
-		initial_actions=initial_actions,
-		use_vision=use_vision,
-		source='eval_platform',
-	)
-
-	await agent.run(max_steps=max_steps)
-	return agent.state.history
-
-
-async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path) -> dict:
-	"""Evaluate the task result"""
-	return await judge_task_result(eval_model, task_folder, score_threshold=3)
-
-
-def save_result_to_server(convex_url: str, secret_key: str, payload: dict) -> bool:
-	"""Save result to server (sync function for use with asyncio.to_thread)"""
-	return save_task_result_to_server(convex_url, secret_key, payload)
-
-
-async def cleanup_browser_safe(browser_session: BrowserSession):
-	"""Safe browser cleanup with timeout"""
-	try:
-		await asyncio.wait_for(browser_session.close(), timeout=30)
-	except Exception as e:
-		logger.warning(f'Browser cleanup failed: {e}')
-
-
-def determine_current_stage(completed_stages: set) -> Stage:
-	"""Determine current stage based on completed stages"""
-	if Stage.SAVE_SERVER in completed_stages:
-		return Stage.SAVE_SERVER
-	elif Stage.EVALUATE in completed_stages:
-		return Stage.EVALUATE
-	elif Stage.FORMAT_HISTORY in completed_stages:
-		return Stage.FORMAT_HISTORY
-	elif Stage.RUN_AGENT in completed_stages:
-		return Stage.RUN_AGENT
-	elif Stage.SETUP_BROWSER in completed_stages:
-		return Stage.SETUP_BROWSER
-	elif Stage.LOAD_EXISTING in completed_stages:
-		return Stage.LOAD_EXISTING
-	else:
-		return Stage.LOAD_EXISTING  # Default starting stage
-
-
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,
@@ -1040,97 +740,375 @@ async def run_task_with_semaphore(
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
 	fresh_start: bool = True,
 ) -> dict:
-	"""Clean pipeline approach for running tasks"""
+	"""Run a single task with semaphore, sequential execution, and robust error handling"""
+	# Acquire semaphore before starting any task-specific logic
 	async with semaphore_runs:
-		task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task)
-		browser_session = None
+		# --- Initialize State & Payload ---
 		task_folder = Path(f'saved_trajectories/{task.task_id}')
+		result_file = task_folder / 'result.json'  # Now points to the file created by reformat_agent_history
 
+		# Flags to track progress and errors
+		execution_needed = True
+		execution_succeeded = False
+		evaluation_needed = True
+		evaluation_succeeded = True  # Default to True, set to False if eval is needed but fails
+		local_processing_error = None
+
+		# Initialize the payload with basic info and default failure/unevaluated states
+		# Using server-expected keys now
+		server_payload = {
+			'runId': run_id,
+			'taskId': task.task_id,
+			'task': task.confirmed_task,
+			'taskWebsite': task.website,
+			'taskReferenceLength': task.reference_length,
+			'taskLevel': task.level,
+			'actionHistory': [],
+			'finalResultResponse': 'None',
+			'selfReportCompleted': False,
+			'selfReportSuccess': None,
+			'browserCrash': False,
+			'browserCrashReason': None,
+			'onlineMind2WebEvaluationJudgement': 'Not Attempted',
+			'onlineMind2WebEvaluationError': None,
+			'onlineMind2WebEvaluationSuccess': False,
+			'onlineMind2WebEvaluationScore': 0.0,
+			'completeHistory': [],  # Initialize new field
+			'maxSteps': max_steps_per_task,
+			'tokensUsed': 0,
+			'taskDuration': None,
+			'steps': 0,
+		}
+
+		# Initialize the return value for local processing status
+		local_task_status = {'task_id': task.task_id, 'success': False, 'error': None}
+
+		# --- Main Sequential Logic with Error Handling ---
 		try:
-			# Stage 1: Try to load existing result
-			try:
-				existing_data = await run_stage(Stage.LOAD_EXISTING, lambda: load_existing_result(task_folder))
-				task_result.stage_completed(Stage.LOAD_EXISTING, existing_data)
-
-				# If evaluation is also present, mark it as completed
-				if existing_data.get('has_evaluation'):
-					task_result.stage_completed(Stage.EVALUATE, existing_data['evaluation_data'])
-
-				logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
-
-			except Exception:
-				# No existing result, need to execute full pipeline
-				logger.info(f'Task {task.task_id}: No existing result found. Starting execution pipeline.')
-
-				# Stage 2: Setup browser
-				browser_session = await run_stage(Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120)
-				task_result.stage_completed(Stage.SETUP_BROWSER)
-				logger.info(f'Task {task.task_id}: Browser session started.')
-
-				# Stage 3: Run agent
-				agent_history = await run_stage(
-					Stage.RUN_AGENT,
-					lambda: run_agent_with_browser(browser_session, task, llm, max_steps_per_task, use_vision),
-					timeout=600,
-				)
-				task_result.stage_completed(Stage.RUN_AGENT)
-				logger.info(f'Task {task.task_id}: Agent run completed.')
-
-				# Stage 4: Format history
-				formatted_data = await run_stage(
-					Stage.FORMAT_HISTORY, lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task)
-				)
-				task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-				logger.info(f'Task {task.task_id}: Agent history formatted.')
-
-			# Stage 5: Evaluate (if we have execution data and no existing evaluation)
-			if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
+			# 1. Check for Existing Result
+			if result_file.exists():
+				logger.info(f'Task {task.task_id}: Found existing result file.')
 				try:
-					evaluation = await run_stage(
-						Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
-					)
-					task_result.stage_completed(Stage.EVALUATE, evaluation)
-					logger.info(f'Task {task.task_id}: Evaluation completed.')
+					async with await anyio.open_file(result_file) as f:
+						existing_result = json.loads(await f.read())
+
+					# Populate payload from existing file (including new fields)
+					server_payload['actionHistory'] = existing_result.get('action_history', [])
+					server_payload['finalResultResponse'] = existing_result.get('final_result_response', 'None')
+					server_payload['selfReportCompleted'] = existing_result.get('self_report_completed', False)
+					server_payload['selfReportSuccess'] = existing_result.get('self_report_success', None)
+					server_payload['completeHistory'] = existing_result.get('complete_history', [])
+					server_payload['taskDuration'] = existing_result.get('task_duration')
+					server_payload['steps'] = existing_result.get('steps', 0)
+					server_payload['tokensUsed'] = existing_result.get('tokensUsed', 0)  # Ensure tokensUsed is loaded
+
+					# Check if evaluation data is also present
+					if existing_eval := existing_result.get('Online_Mind2Web_evaluation'):
+						logger.info(f'Task {task.task_id}: Found existing evaluation data.')
+						# Ensure judgement is stored as string "None" if it was null/None in cache
+						cached_judgement = existing_eval.get('judgement')
+						server_payload['onlineMind2WebEvaluationJudgement'] = (
+							cached_judgement if cached_judgement is not None else 'None'
+						)
+						server_payload['onlineMind2WebEvaluationError'] = existing_eval.get('error')
+						server_payload['onlineMind2WebEvaluationSuccess'] = existing_eval.get('success', False)
+						server_payload['onlineMind2WebEvaluationScore'] = existing_eval.get('score', 0.0)
+						evaluation_needed = False  # Don't re-evaluate if already present
+						evaluation_succeeded = True  # Assume cached evaluation was successful
+					else:
+						evaluation_needed = True
+						evaluation_succeeded = False
+
+					execution_needed = False
+					execution_succeeded = True
+					logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
+
 				except Exception as e:
-					error = StageError(Stage.EVALUATE, 'exception', str(e))
-					task_result.stage_failed(Stage.EVALUATE, error)
-					logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+					logger.warning(
+						f'Task {task.task_id}: Error reading existing result file {result_file}: {type(e).__name__}: {str(e)}. Proceeding with execution.'
+					)
+					execution_needed = True
+					execution_succeeded = False
+					evaluation_needed = True
+					evaluation_succeeded = False
 
-			# Stage 6: Save to server (always attempt)
-			try:
-				await run_stage(
-					Stage.SAVE_SERVER,
-					lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
-					timeout=60,
-				)
-				task_result.stage_completed(Stage.SAVE_SERVER)
-				logger.info(f'Task {task.task_id}: Successfully saved result to server.')
-			except Exception as e:
-				error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
-				task_result.stage_failed(Stage.SAVE_SERVER, error)
-				task_result.mark_server_save_failed(str(e))
-				logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
+			# 2. Execute Task (if needed)
+			if execution_needed:
+				logger.info(f'Task {task.task_id}: Starting execution.')
+				agent_for_history = None  # For safe access in except/finally
+				browser_session_for_cleanup = None  # For safe access in finally
+				operation_timed_out = None  # To specify which operation timed out
 
-		except TimeoutError:
-			current_stage = determine_current_stage(task_result.completed_stages)
-			error = StageError(current_stage, 'timeout', 'Operation timed out')
-			task_result.stage_failed(current_stage, error)
-			logger.error(f'Task {task.task_id}: {current_stage.value} timed out')
+				try:
+					# Create a unique user_data_dir for each task
+					# Get parent like C:\\\\Users\\\\alexa\\\\.config\\\\browseruse\\\\profiles
+					base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
+					unique_user_data_dir = base_user_data_dir / f'task_{task.task_id}'
+					unique_user_data_dir.mkdir(parents=True, exist_ok=True)  # Ensure it exists
+
+					browser_session = BrowserSession(
+						browser_profile=BrowserProfile(
+							user_data_dir=str(unique_user_data_dir),  # Pass the unique path
+							headless=headless,
+							chromium_sandbox=False,  # This is needed for the browser to run on GitHub Actions
+						),
+					)
+					browser_session_for_cleanup = browser_session
+
+					try:
+						logger.info(f'Task {task.task_id}: Starting browser session (timeout 120s)...')
+						await asyncio.wait_for(browser_session.start(), timeout=120)
+						logger.info(f'Task {task.task_id}: Browser session started.')
+					except TimeoutError as e:
+						operation_timed_out = 'browser_session.start()'
+						raise e  # Re-raise to be caught by the outer TimeoutError handler
+
+					initial_actions = [{'go_to_url': {'url': task.website}}]
+					agent = Agent(
+						task=task.confirmed_task,
+						llm=llm,
+						browser_session=browser_session,
+						initial_actions=initial_actions,
+						use_vision=use_vision,
+						source='eval_platform',
+					)
+					agent_for_history = agent
+
+					try:
+						logger.info(f'Task {task.task_id}: Starting agent run (timeout 600s)...')
+						await asyncio.wait_for(
+							agent.run(max_steps=max_steps_per_task),
+							timeout=600,
+						)
+						logger.info(f'Task {task.task_id}: Agent run completed.')
+					except TimeoutError as e:
+						logger.info(f'Task {task.task_id}: Agent run errored with timeout.')
+						operation_timed_out = 'agent.run()'
+						raise e  # Re-raise to be caught by the outer TimeoutError handler
+
+					# Reformat agent history to create result.json
+					run_result_data = await reformat_agent_history(
+						agent_history=agent_for_history.state.history,
+						task_id=task.task_id,
+						run_id=run_id,
+						task=task.confirmed_task,
+					)
+
+					if not run_result_data:
+						# This shouldn't happen if reformat succeeded, but handle defensively
+						logger.error(f'Task {task.task_id}: reformat_agent_history did not return results.')
+						raise ValueError('Result formatting failed')
+
+					execution_succeeded = True
+					evaluation_needed = True
+					evaluation_succeeded = False  # Will be set to True if evaluation runs and succeeds
+
+					# Populate payload from the newly created results
+					server_payload['actionHistory'] = run_result_data.get('action_history', [])
+					server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+					server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+					server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+					server_payload['completeHistory'] = run_result_data.get('complete_history', [])
+					server_payload['taskDuration'] = run_result_data.get('task_duration')
+					server_payload['steps'] = run_result_data.get('steps', 0)
+					server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+
+				except TimeoutError as e:
+					timeout_location_msg = f'Operation "{operation_timed_out}"' if operation_timed_out else 'An operation'
+					logger.error(
+						f'Task {task.task_id}: Timeout during execution. {timeout_location_msg} timed out. Error: {str(e)}',
+						exc_info=True,
+					)
+					execution_succeeded = False
+					evaluation_needed = False
+					evaluation_succeeded = False
+					server_payload['browserCrash'] = True
+					server_payload['browserCrashReason'] = (
+						f'Execution Timeout: {timeout_location_msg} timed out. Error: {type(e).__name__}: {str(e)}'
+					)
+					logger.info('added browser crash reason due to timeout: ' + server_payload['browserCrashReason'])
+
+					if agent_for_history and agent_for_history.state.history:
+						try:
+							logger.info(f'Task {task.task_id}: Attempting to reformat partial history after timeout.')
+							run_result_data = await reformat_agent_history(
+								agent_history=agent_for_history.state.history,
+								task_id=task.task_id,
+								run_id=run_id,
+								task=task.confirmed_task,
+							)
+							if run_result_data:
+								server_payload['actionHistory'] = run_result_data.get('action_history', [])
+								server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+								server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+								server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+								server_payload['completeHistory'] = run_result_data.get('complete_history', [])
+								server_payload['taskDuration'] = run_result_data.get('task_duration')
+								server_payload['steps'] = run_result_data.get('steps', 0)
+								server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+						except Exception as hist_e:
+							logger.error(
+								f'Task {task.task_id}: Error reformatting agent history after timeout: {type(hist_e).__name__}: {str(hist_e)}'
+							)
+
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Execution Timed Out'
+					server_payload['onlineMind2WebEvaluationSuccess'] = False
+					server_payload['onlineMind2WebEvaluationScore'] = 0.0
+
+				except Exception as e:
+					logger.error(
+						f'Task {task.task_id}: Browser Error during execution/reformatting with Type: {type(e).__name__} and Message: {str(e)}',
+						exc_info=True,
+					)
+					execution_succeeded = False
+					evaluation_needed = False
+					evaluation_succeeded = False
+					# Update payload to reflect execution failure
+					server_payload['browserCrash'] = True
+					server_payload['browserCrashReason'] = f'Execution Error: {type(e).__name__}: {str(e)}'
+					logger.info('added browser crash reason: ' + server_payload['browserCrashReason'])
+					# Try very carefully to add partial results if available
+					if agent_for_history and agent_for_history.state.history:
+						try:
+							logger.info(f'Task {task.task_id}: Attempting to reformat partial history after general error.')
+							run_result_data = await reformat_agent_history(
+								agent_history=agent_for_history.state.history,
+								task_id=task.task_id,
+								run_id=run_id,
+								task=task.confirmed_task,
+							)
+							if run_result_data:
+								server_payload['actionHistory'] = run_result_data.get('action_history', [])
+								server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+								server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+								server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+								server_payload['completeHistory'] = run_result_data.get('complete_history', [])
+								server_payload['taskDuration'] = run_result_data.get('task_duration')
+								server_payload['steps'] = run_result_data.get('steps', 0)
+								server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+						except Exception as hist_e:
+							logger.error(
+								f'Task {task.task_id}: Error reformatting agent history after general error: {type(hist_e).__name__}: {str(hist_e)}'
+							)
+
+					# Automatically set Online_Mind2Web_evaluation to failed
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Browser Execution Failed'
+					server_payload['onlineMind2WebEvaluationSuccess'] = False
+					server_payload['onlineMind2WebEvaluationScore'] = 0.0
+				finally:
+					if browser_session_for_cleanup:
+						try:
+							logger.info(f'Task {task.task_id}: Closing browser session in finally block.')
+							# Add timeout to prevent hanging on browser close
+							await asyncio.wait_for(browser_session_for_cleanup.close(), timeout=30)
+						except TimeoutError:
+							logger.warning(f'Task {task.task_id}: Browser close timed out after 30 seconds')
+						except Exception as browser_close_e:
+							logger.warning(
+								f'Task {task.task_id}: Error closing browser: {type(browser_close_e).__name__}: {browser_close_e}'
+							)
+
+			# 3. Evaluate Task (if needed and possible)
+			if evaluation_needed and execution_succeeded:
+				logger.info(f'Task {task.task_id}: Starting evaluation.')
+				try:
+					# Add timeout to prevent hanging on evaluation
+					evaluation = await asyncio.wait_for(
+						judge_task_result(eval_model, task_folder, score_threshold=3),
+						timeout=300,  # 5 minutes for evaluation
+					)
+
+					# Update payload directly from the evaluation function's return value
+					if evaluation:
+						judgement_value = evaluation.get('judgement')
+						server_payload['onlineMind2WebEvaluationJudgement'] = (
+							judgement_value if judgement_value is not None else 'None'
+						)
+						server_payload['onlineMind2WebEvaluationError'] = evaluation.get('error')
+						server_payload['onlineMind2WebEvaluationSuccess'] = evaluation.get('success', False)
+						server_payload['onlineMind2WebEvaluationScore'] = evaluation.get('score', 0.0)
+						if evaluation.get('error'):
+							logger.warning(
+								f'Task {task.task_id}: Evaluation completed but reported an error: {evaluation.get("error")}'
+							)
+							evaluation_succeeded = False
+						else:
+							evaluation_succeeded = True
+							logger.info(f'Task {task.task_id}: Evaluation successfully completed.')
+					else:
+						logger.error(f'Task {task.task_id}: Evaluation function returned None.')
+						evaluation_succeeded = False
+						server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Returned None'
+						server_payload['onlineMind2WebEvaluationError'] = 'Evaluation function returned None'
+
+				except TimeoutError:
+					logger.error(f'Task {task.task_id}: Evaluation timed out after 5 minutes')
+					evaluation_succeeded = False
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Timed Out'
+					server_payload['onlineMind2WebEvaluationError'] = 'Evaluation process timed out after 5 minutes'
+				except Exception as e:
+					logger.error(
+						f'Task {task.task_id}: Error during evaluation process: {type(e).__name__}: {str(e)}', exc_info=True
+					)
+					evaluation_succeeded = False
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Process Error'
+					server_payload['onlineMind2WebEvaluationError'] = f'Evaluation Error: {type(e).__name__}: {str(e)}'
 
 		except asyncio.CancelledError:
-			task_result.mark_cancelled()
-			logger.warning(f'Task {task.task_id}: Task was cancelled')
+			logger.warning(f'Task {task.task_id}: Task was cancelled (likely due to another task failure)')
+			local_processing_error = 'Task cancelled'
+			server_payload['finalResultResponse'] = 'Task was cancelled'
+			server_payload['onlineMind2WebEvaluationJudgement'] = 'Task Cancelled'
+			server_payload['onlineMind2WebEvaluationError'] = local_processing_error
+			server_payload['onlineMind2WebEvaluationSuccess'] = False
+			server_payload['onlineMind2WebEvaluationScore'] = 0.0
+			execution_succeeded = False
+			evaluation_succeeded = False
+		except Exception as outer_e:
+			logger.critical(f'Task {task.task_id}: CRITICAL UNHANDLED ERROR during processing: {str(outer_e)}', exc_info=True)
+			local_processing_error = f'Critical flow error: {str(outer_e)}'
+			server_payload['finalResultResponse'] = f'Critical Error: {str(outer_e)}'
+			server_payload['onlineMind2WebEvaluationJudgement'] = 'Critical System Error'
+			server_payload['onlineMind2WebEvaluationError'] = local_processing_error
+			server_payload['onlineMind2WebEvaluationSuccess'] = False
+			server_payload['onlineMind2WebEvaluationScore'] = 0.0
+			execution_succeeded = False
+			evaluation_succeeded = False
 
+		# --- Final Step: Save to Server (Always Attempt) ---
+		logger.info(f'Task {task.task_id}: Attempting to save final result to server...')
+		try:
+			# Add timeout to prevent hanging on server save
+			save_success = await asyncio.wait_for(
+				asyncio.to_thread(save_task_result_to_server, convex_url, secret_key, server_payload), timeout=60
+			)
+			if save_success:
+				logger.info(f'Task {task.task_id}: Successfully saved result to server.')
+			else:
+				logger.warning(f'Task {task.task_id}: Failed to save result to server (API issue or invalid payload).')
+				if local_processing_error:
+					local_processing_error += '; Server save failed'
+				else:
+					local_processing_error = 'Server save failed'
+
+		except TimeoutError:
+			logger.error(f'Task {task.task_id}: Server save timed out after 60 seconds')
+			if local_processing_error:
+				local_processing_error += '; Server save timed out'
+			else:
+				local_processing_error = 'Server save timed out'
 		except Exception as e:
-			task_result.mark_critical_error(str(e))
-			logger.critical(f'Task {task.task_id}: Critical error: {str(e)}', exc_info=True)
+			logger.error(f'Task {task.task_id}: Exception during attempt to save result to server: {type(e).__name__}: {str(e)}')
+			if local_processing_error:
+				local_processing_error += f'; Server save exception: {str(e)}'
+			else:
+				local_processing_error = f'Server save exception: {str(e)}'
 
-		finally:
-			# Always cleanup browser if it was created
-			if browser_session:
-				await cleanup_browser_safe(browser_session)
+		# --- Return Local Processing Status ---
+		local_task_status['success'] = execution_succeeded and evaluation_succeeded
+		local_task_status['error'] = local_processing_error
 
-		return task_result.get_local_status()
+		return local_task_status
 
 
 async def run_multiple_tasks(
