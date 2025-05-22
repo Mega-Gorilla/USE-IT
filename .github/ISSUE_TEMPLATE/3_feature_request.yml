@@ -24,9 +24,9 @@ body:
       description: |
         Describe the ideal specific solution you'd want, *and whether it fits into any broader scope of changes*.
       placeholder: |
-        e.g. I want to add a default controller action that can hover/drag the mouse on a path when given a series 
-        of x,y coordinates. More broadly it may be useful add a computer-use x,y-coordinate style automation 
-        fallback method that can do complex mouse interaction tasks.
+        e.g. I want to add a default action that can hover/drag the mouse on a path when given a series
+        of x,y coordinates. More broadly it may be useful add a computer-use x,y-coordinate style fallback automation 
+        method that can do complex mouse movements.
     validations:
       required: true
 
