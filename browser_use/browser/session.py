@@ -626,61 +626,6 @@ class BrowserSession(BaseModel):
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
 
-	# @time_execution_async('--input_text_element_node')
-	# async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
-	# 	"""
-	# 	Input text into an element with proper error handling and state management.
-	# 	Handles different types of input fields and ensures proper element state before input.
-	# 	"""
-	# 	try:
-	# 		# Highlight before typing
-	# 		# if element_node.highlight_index is not None:
-	# 		# 	await self._update_state(focus_element=element_node.highlight_index)
-
-	# 		element_handle = await self.get_locate_element(element_node)
-
-	# 		if element_handle is None:
-	# 			raise BrowserError(f'Element: {repr(element_node)} not found')
-
-	# 		# Ensure element is ready for input
-	# 		try:
-	# 			await element_handle.wait_for_element_state('stable', timeout=1000)
-	# 			is_visible = await self._is_visible(element_handle)
-	# 			if is_visible:
-	# 				await element_handle.scroll_into_view_if_needed(timeout=1000)
-	# 		except Exception:
-	# 			pass
-
-	# 		# Get element properties to determine input method
-	# 		tag_handle = await element_handle.get_property('tagName')
-	# 		tag_name = (await tag_handle.json_value()).lower()
-	# 		is_contenteditable = await element_handle.get_property('isContentEditable')
-	# 		readonly_handle = await element_handle.get_property('readOnly')
-	# 		disabled_handle = await element_handle.get_property('disabled')
-
-	# 		readonly = await readonly_handle.json_value() if readonly_handle else False
-	# 		disabled = await disabled_handle.json_value() if disabled_handle else False
-
-	# 		# always click the element first to make sure it's in the focus
-	# 		await element_handle.click()
-	# 		await asyncio.sleep(0.1)
-
-	# 		try:
-	# 			if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
-	# 				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-	# 				await element_handle.type(text, delay=5)
-	# 			else:
-	# 				await element_handle.fill(text)
-	# 		except Exception:
-	# 			# last resort fallback, assume it's already focused after we clicked on it,
-	# 			# just simulate keypresses on the entire page
-	# 			page = await self.get_current_page()
-	# 			await page.keyboard.type(text)
-
-	# 	except Exception as e:
-	# 		logger.debug(f'❌  Failed to input text into element: {repr(element_node)}. Error: {str(e)}')
-	# 		raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
-
 	@time_execution_async('--click_element_node')
 	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
