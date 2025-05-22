@@ -52,7 +52,7 @@ def print_all_fields(node, depth=0):
 		if k != 'children':
 			print(f'{indent}{k}: {v!r}')
 	if 'children' in node:
-		print(f'{indent}children: {len(node["children"])})')
+		print(f'{indent}children: {len(node["children"])}')
 		for child in node['children']:
 			print_all_fields(child, depth + 1)
 
