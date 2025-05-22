@@ -169,14 +169,19 @@ class Registry(Generic[Context]):
 
 			if is_pydantic:
 				# Check for browser-related fields in Pydantic model
-				model_dict = validated_params.model_dump()
-				for key in ['browser_session', 'browser', 'browser_context']:
-					if key in model_dict and key in extra_args:
-						# If browser is in both places, remove from model
-						model_copy = validated_params.model_copy(deep=True)
-						setattr(model_copy, key, None)
-						validated_params = model_copy
-						break
+				# Another approach to fix the issue
+				# First check if validated_params has browser_session field via reflection
+				model_fields = vars(validated_params).get('__fields__', {})
+
+				# Log some debug info
+				logger.debug(f'Action: {action_name}, Model fields: {model_fields}')
+
+				# Remove any browser-related keys from extra_args for Pydantic models
+				browser_keys = ['browser_session', 'browser', 'browser_context']
+				for key in browser_keys:
+					if key in extra_args:
+						logger.debug(f'Removing {key} from extra_args for Pydantic model {action_name}')
+						extra_args.pop(key, None)
 				return await action.function(
 					validated_params,
 					**extra_args,

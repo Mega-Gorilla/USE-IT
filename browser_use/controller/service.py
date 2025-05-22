@@ -781,7 +781,8 @@ class Controller(Generic[Context]):
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['sheets.google.com'])
 		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
-			return await _select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
+			# Don't pass browser_session by name to avoid the multiple values error
+			return await _select_cell_or_range(browser_session, cell_or_range=cell_or_range)
 
 		@self.registry.action(
 			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['sheets.google.com']
@@ -816,7 +817,8 @@ class Controller(Generic[Context]):
 		async def update_range_contents(browser_session: BrowserSession, range: str, new_contents_tsv: str):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session=browser_session, cell_or_range=range)
+			# Don't pass browser_session by name to avoid the multiple values error
+			await select_cell_or_range(browser_session, cell_or_range=range)
 
 			# simulate paste event from clipboard with TSV content
 			await page.evaluate(f"""
