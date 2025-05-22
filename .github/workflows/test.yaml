@@ -12,6 +12,16 @@ on:
   workflow_dispatch:
     
 jobs:
+  find_tests:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: echo "::set-output name=matrix::$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')"
+        # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
+
   tests:
     name: ${{matrix.test}} 
     runs-on: ubuntu-latest
@@ -19,7 +29,14 @@ jobs:
       IN_DOCKER: 'True'
     strategy:
       matrix:
-        test:
+        test: ${{ fromJson(needs.find_tests.outputs.matrix) }}
+        # should be working in matrix ^
+        # - test_browser
+        # - test_controller
+        # - test_browser_session
+        # - test_tab_management
+        # - test_sensitive_data
+        # - test_url_allowlist_security
         # TODO:
         # - browser/patchright
         # - browser/playwright
@@ -42,12 +59,6 @@ jobs:
         # - functionality/memory
         # - functionality/planner
         # - functionality/hooks
-        - test_browser
-        - test_controller
-        - test_browser_session
-        - test_tab_management
-        - test_sensitive_data
-        - test_url_allowlist_security
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
