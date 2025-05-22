@@ -50,7 +50,7 @@ body:
       description: |
         Run `pip show browser-use` or `git log -n 1` and share the exact number or git hash. DO NOT JUST ENTER `latest release` OR `main`.  
         We need to know what version of the browser-use library you're running in order to contextualize your feature request.  
-        We may have already added your feature in a new version, or sometimes features need to be enabled in specific versions.
+        Sometimes features are already available and just need to be enabled with config on certain versions.
       placeholder: "e.g. 0.1.48 or 62760baaefd"
     validations:
       required: true
@@ -78,9 +78,9 @@ body:
           required: false
         - label: "It would be nice to add it sometime in the next 2 years"
           required: false
-        - label: "💪 I'm willing to [start a PR](https://docs.browser-use.com/development/contribution-guide) to develop this myself"
+        - label: "💪 I'm willing to [start a PR](https://docs.browser-use.com/development/contribution-guide) to work on this myself"
           required: false
-        - label: "💼 My company would spend >$5k/mo on Browser-Use Cloud if it solved this need completely for us"
+        - label: "💼 My company would spend >$5k on [Browser-Use Cloud](https://browser-use.com) if it solved this reliably for us"
           required: false
 
   - type: markdown
@@ -88,8 +88,8 @@ body:
       value: |
         ---
         > [!TIP]
-        > Start discussions about your feature request in other places too, the more  
+        > Start conversations about your feature request in other places too, the more  
         > 📣 hype we see around a request the more likely we are to add it!
         >
         > - 👾 Discord: [https://link.browser-use.com/discord](https://link.browser-use.com/discord)
-        > - 𝕏 Twitter/X: [https://x.com/browser_use](https://x.com/browser_use)
+        > - 𝕏  Twitter: [https://x.com/browser_use](https://x.com/browser_use)
