@@ -57,6 +57,7 @@ body:
         2. type "abc" in the dropdown search and select the "abc" option  ⬅️ agent fails to click option here
         3. ...
         ☝️ include full URLs 🔗 and (redacted) screenshots 📸 of the failing page(s) if possible
+        To help us fix it even faster, screenshot the Chome devtools "Computed Styles" pane for the failing element(s).
     validations:
       required: true
 
@@ -64,7 +65,7 @@ body:
     id: html
     attributes:
       label: "HTML around where it's failing"
-      description: A snippet of the HTML from the failing page around where the Agent is failing to interact.  If possible, include a screenshot of the chome debug tools "computed styles" pane on the failing element above.
+      description: A snippet of the HTML from the failing page around where the Agent is failing to interact.
       render: html
       placeholder: |
         <form na-someform="abc">   <!-- ⬅️ please provide at least one parent elem above -->
@@ -84,7 +85,7 @@ body:
       description: What operating system and browser are you using?
       placeholder: "e.g. Ubuntu 24.04 + playwright chromium v136, Windows 11 + Chrome.exe v133, macOS ..."
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: code
@@ -127,7 +128,7 @@ body:
         ---
         > [!IMPORTANT]
         > 🙏 Please **go check *right now before submitting* that that you are on the [⬆️ LATEST VERSION](https://github.com/browser-use/browser-use/releases)**.
-        > 🚀 We ship fast and we might've already fixed your issue yesterday!  
+        > 🚀 We ship new agent and element detection improvements every day and we might've already fixed your issue!  
         > <a href="https://github.com/browser-use/browser-use/releases"><img src="https://github.com/user-attachments/assets/4cd34ee6-bafb-4f24-87e2-27a31dc5b9a4" width="500px"/></a>
         > If you are running an old version, the **first thing we will ask you to do is *try the latest `beta`***:
         > - 🆕 [`beta`](https://docs.browser-use.com/development/local-setup):   `uv pip install --upgrade git+https://github.com/browser-use/browser-use.git@main`
