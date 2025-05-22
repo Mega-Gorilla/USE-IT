@@ -219,18 +219,19 @@ class MessageManager:
 			if not self.settings.sensitive_data:
 				return value
 
-			# Collect all sensitive values from both old and new formats
+			# Collect all sensitive values, immediately converting old format to new format
 			sensitive_values: dict[str, str] = {}
 
 			# Process all sensitive data entries
-			for domain_or_key, content in self.settings.sensitive_data.items():
+			for key_or_domain, content in self.settings.sensitive_data.items():
 				if isinstance(content, dict):
-					# New format: {domain: {key: value}}
+					# Already in new format: {domain: {key: value}}
 					for key, val in content.items():
 						if val:  # Skip empty values
 							sensitive_values[key] = val
-				elif content:  # Old format: {key: value}
-					sensitive_values[domain_or_key] = content
+				elif content:  # Old format: {key: value} - convert to new format internally
+					# We treat this as if it was {'http*://*': {key_or_domain: content}}
+					sensitive_values[key_or_domain] = content
 
 			# If there are no valid sensitive data entries, just return the original value
 			if not sensitive_values:
