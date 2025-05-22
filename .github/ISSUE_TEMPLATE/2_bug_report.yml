@@ -19,15 +19,6 @@ body:
     validations:
       required: true
 
-  - type: markdown
-    attributes:
-      value: |
-        ---
-        > [!IMPORTANT]
-        > 🙏 Please ***DOUBLE-CHECK YOU ARE ON THE [LATEST VERSION](https://github.com/browser-use/browser-use/releases)***, we might've already shipped your feature!  
-        > (If you are *not* running the newest version available, the first thing we will ask you to do is try the latest version)
-
-
   - type: textarea
     id: description
     attributes:
@@ -108,3 +99,11 @@ body:
         DEBUG    [langsmith.client] Sending multipart request with context: trace=91282a01-6667-48a1-8cd7-21aa9337a580,id=91282a01-6667-48a1-8cd7-21aa9337a580
         DEBUG    [agent] 🪪 LLM API keys OPENAI_API_KEY work, ChatOpenAI model is connected & responding correctly.
         ...
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        > [!IMPORTANT]
+        > 🙏 Please ***DOUBLE-CHECK YOU ARE ON THE [LATEST VERSION](https://github.com/browser-use/browser-use/releases)***, we might've already shipped your feature!  
+        > (If you are running an old version, the **first thing we will ask you to do is try the latest version**)
