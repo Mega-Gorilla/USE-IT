@@ -29,8 +29,13 @@ def message_manager():
 	)
 
 
-def test_replace_sensitive_data_with_missing_keys(registry):
+def test_replace_sensitive_data_with_missing_keys(registry, caplog):
 	"""Test that _replace_sensitive_data handles missing keys gracefully"""
+	# Set log level to capture warnings
+	import logging
+
+	caplog.set_level(logging.WARNING)
+
 	# Create a simple Pydantic model with sensitive data placeholders
 	params = SensitiveParams(text='Please enter <secret>username</secret> and <secret>password</secret>')
 
@@ -40,6 +45,8 @@ def test_replace_sensitive_data_with_missing_keys(registry):
 	assert 'user123' in result.text
 	assert 'pass456' in result.text
 	# Both keys should be replaced
+	assert 'Missing' not in caplog.text
+	caplog.clear()
 
 	# Case 2: One key missing
 	sensitive_data = {'username': 'user123'}  # password is missing
@@ -47,6 +54,8 @@ def test_replace_sensitive_data_with_missing_keys(registry):
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text
 	# Verify the behavior - username replaced, password kept as tag
+	assert 'password' in caplog.text
+	caplog.clear()
 
 	# Case 3: Multiple keys missing
 	sensitive_data = {}  # both keys missing
@@ -54,6 +63,8 @@ def test_replace_sensitive_data_with_missing_keys(registry):
 	assert '<secret>username</secret>' in result.text
 	assert '<secret>password</secret>' in result.text
 	# Verify both tags are preserved when keys are missing
+	assert 'Missing' in caplog.text
+	caplog.clear()
 
 	# Case 4: One key empty
 	sensitive_data = {'username': 'user123', 'password': ''}
@@ -61,10 +72,17 @@ def test_replace_sensitive_data_with_missing_keys(registry):
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text
 	# Empty value should be treated the same as missing key
+	assert 'password' in caplog.text
+	caplog.clear()
 
 
-def test_simple_domain_specific_sensitive_data(registry):
+def test_simple_domain_specific_sensitive_data(registry, caplog):
 	"""Test the basic functionality of domain-specific sensitive data replacement"""
+	# Set log level to capture warnings
+	import logging
+
+	caplog.set_level(logging.WARNING)
+
 	# Create a simple Pydantic model with sensitive data placeholders
 	params = SensitiveParams(text='Please enter <secret>username</secret> and <secret>password</secret>')
 
@@ -78,6 +96,8 @@ def test_simple_domain_specific_sensitive_data(registry):
 	result = registry._replace_sensitive_data(params, sensitive_data)
 	assert 'example_user' in result.text
 	assert '<secret>password</secret>' in result.text  # Password is missing in sensitive_data
+	assert 'password' in caplog.text
+	caplog.clear()
 
 
 def test_match_url_with_domain_pattern():
