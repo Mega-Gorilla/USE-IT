@@ -258,6 +258,28 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg)
 
 		@self.registry.action(
+			'Get the accessibility tree of the page in the format "role name" with the number_of_elements to return',
+		)
+		async def get_ax_tree(number_of_elements: int, browser_session: BrowserSession):
+			page = await browser_session.get_current_page()
+			node = await page.accessibility.snapshot(interesting_only=True)
+
+			def flatten_ax_tree(node, lines):
+				if not node:
+					return
+				role = node.get('role', '')
+				name = node.get('name', '')
+				lines.append(f'{role} {name}')
+				for child in node.get('children', []):
+					flatten_ax_tree(child, lines)
+
+			lines = []
+			flatten_ax_tree(node, lines)
+			msg = '\n'.join(lines)
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=False)
+
+		@self.registry.action(
 			'Scroll down the page by pixel amount - if none is given, scroll one page',
 			param_model=ScrollAction,
 		)
