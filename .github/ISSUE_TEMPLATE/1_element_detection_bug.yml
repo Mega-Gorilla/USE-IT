@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: Browser Use Version
-      description: What version of `browser-use` are you using? (Run `uv pip show browser-use` or `git log -n 1`) **DO NOT JUST WRITE `latest` or `main`**
+      description: What version of `browser-use` are you using? (Run `uv pip show browser-use` or `git log -n 1`) **DO NOT JUST WRITE `latest release` or `main`**
       placeholder: "e.g. 0.4.45 or 62760baaefd"
     validations:
       required: true
