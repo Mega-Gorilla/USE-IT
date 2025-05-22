@@ -760,7 +760,7 @@ class Controller(Generic[Context]):
 			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
 			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
 
-		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['sheets.google.com'])
+		# preserve undecorated function as util so other functions can use it by passing browser_session in manually
 		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
 			page = await browser_session.get_current_page()
 
@@ -779,13 +779,17 @@ class Controller(Generic[Context]):
 			await page.keyboard.press('Escape')  # to make sure the popup still closes in the case where the jump failed
 			return ActionResult(extracted_content=f'Selected cell {cell_or_range}', include_in_memory=False)
 
+		# ^^ decorates the undecorated util function so it can be used as an action
+		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['sheets.google.com'])(
+			select_cell_or_range
+		)
 		@self.registry.action(
 			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['sheets.google.com']
 		)
 		async def get_range_contents(browser_session: BrowserSession, cell_or_range: str):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(cell_or_range=cell_or_range)
+			await select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
 
 			await page.keyboard.press('ControlOrMeta+C')
 			await asyncio.sleep(0.1)
@@ -812,7 +816,7 @@ class Controller(Generic[Context]):
 		async def update_range_contents(browser_session: BrowserSession, range: str, new_contents_tsv: str):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(cell_or_range=range)
+			await select_cell_or_range(browser_session=browser_session, cell_or_range=range)
 
 			# simulate paste event from clipboard with TSV content
 			await page.evaluate(f"""
