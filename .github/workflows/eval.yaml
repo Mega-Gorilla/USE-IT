@@ -84,9 +84,9 @@ jobs:
 
           CMD="python eval/service.py \
             --model \"$MODEL\" \
-            --eval_model \"$EVAL_MODEL\" \
-            --parallel_runs \"$PARALLEL_RUNS\" \
-            --max_steps \"$MAX_STEPS\" \
+            --eval-model \"$EVAL_MODEL\" \
+            --parallel-runs \"$PARALLEL_RUNS\" \
+            --max-steps \"$MAX_STEPS\" \
             --start \"$START_INDEX\""
 
           # Handle optional end_index with its default
