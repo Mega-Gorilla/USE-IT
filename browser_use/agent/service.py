@@ -238,7 +238,7 @@ class Agent(Generic[Context]):
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
 			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
 			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}, '
-			f'" on version v{self.version}"'
+			f' on version v{self.version}'
 		)
 
 		# Verify we can connect to the LLM
