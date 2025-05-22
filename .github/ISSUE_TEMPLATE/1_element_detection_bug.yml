@@ -56,7 +56,7 @@ body:
         🎯 High-level goal: Compare the prices of 3 items on a few different seller pages
         💬 Agent(task='''
            1. go to https://example.com and click the "xyz" dropdown
-           2. type "abc" into search then select the "abc" option  ❌ agent fails to select option
+           2. type "abc" into search then select the "abc" option  <- ❌ agent fails to select this option
            3. ...
         ☝️ please include real URLs 🔗 and screenshots 📸 when possible!
     validations:
