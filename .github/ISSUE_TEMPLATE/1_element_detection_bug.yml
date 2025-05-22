@@ -49,13 +49,14 @@ body:
     id: prompt
     attributes:
       label: Screenshots, Description, and Task Prompt Given to Agent
-      description: The full task prompt you're giving the agent (redact any sensitive data) + a description of the issue and screenshots.
+      description: "The full task prompt you're giving the agent (redact any sensitive data) + a description of the issue and screenshots."
       placeholder: |
-        1. go to https://example.com and click the xyz button...
-        2. type "abc" in the dropdown search to find the "abc" option  <- agent fails to click dropdown here
-        3. Click the "Submit" button, then extract the result as JSON
-        ...
-        include relevant URLs and/or redacted screenshots of the relevant page(s) if possible
+        🎯 My high-level goal: Compare the prices of 3 items on a few different seller pages
+        💬 Agent prompt used:
+        1. go to https://example.com and click the xyz dropdown...
+        2. type "abc" in the dropdown search and select the "abc" option  ⬅️ agent fails to click option here
+        3. ...
+        ☝️ include full URLs 🔗 and (redacted) screenshots 📸 of the failing page(s) if possible
     validations:
       required: true
 
@@ -63,7 +64,7 @@ body:
     id: html
     attributes:
       label: "HTML around where it's failing"
-      description: A snippet of the HTML from the failing page around where the Agent is failing to interact.
+      description: A snippet of the HTML from the failing page around where the Agent is failing to interact.  If possible, include a screenshot of the chome debug tools "computed styles" pane on the failing element above.
       render: html
       placeholder: |
         <form na-someform="abc">   <!-- ⬅️ please provide at least one parent elem above -->
@@ -93,13 +94,15 @@ body:
       render: python
       placeholder: |
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv()   # tip: always load_dotenv() before the other imports
         from browser_use import Agent, BrowserSession, Controller
         from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(model="gpt-4o")
-        browser_session = BrowserSession(executable_path='/usr/bin/google-chrome')
-        agent = Agent(llm=llm, browser_session=browser_session)
+        agent = Agent(
+            task='...',
+            llm=ChatOpenAI(model="gpt-4o"),
+            browser_session=BrowserSession(headless=False),
+        )
         ...
 
   - type: textarea
