@@ -21,6 +21,21 @@ uv sync --all-extras --dev
 echo "BROWSER_USE_LOGGING_LEVEL=debug" >> .env
 ```
 
+## Helper Scripts
+
+We provide several convenient shell scripts in the `bin/` directory to help with common development tasks:
+
+```bash
+# Complete setup script - installs uv, creates a venv, and installs dependencies
+./bin/setup.sh
+
+# Run all pre-commit hooks (formatting, linting, type checking)
+./bin/lint.sh
+
+# Run the core test suite that's executed in CI
+./bin/test.sh
+```
+
 ## Prerequisites
 
 Browser Use requires Python 3.11 or higher. We recommend using [uv](https://docs.astral.sh/uv/) for Python environment management.
@@ -98,6 +113,8 @@ After setup, you can:
 ```bash
 # Run the linter on the whole project (must pass for PR to be allowed to merge)
 uv run pre-commit run --all-files
+# or use our convenience script
+./bin/lint.sh
 
 # Install the linter & formatter pre-commit hooks to run automatically
 pre-commit install --install-hooks
@@ -109,7 +126,10 @@ uv run type
 ### Tests
 
 ```bash
-# Run tests
+# Run all tests that run in CI
+./bin/test.sh
+
+# Run specific tests
 uv run pytest                                                                         # run everything
 uv run pytest tests/test_controller.py                                                # run a specific test file
 uv run pytest tests/test_sensitive_data.py tests/test_tab_management.py               # run two test files
