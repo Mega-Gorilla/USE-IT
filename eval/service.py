@@ -1,15 +1,8 @@
 # ==============================================================================================================
 # Documentation for this evaluation file.
-# The import
-
 
 # Here is the command to run the evaluation:
-# Example multiline terminal command:
-# python eval/service.py --parallel_runs 2 --max_steps 25 --start 0 --end 100 --model llama-4-maverick --eval_model gpt-4.1 --no-vision --eval-group "PRTests" --user-message "message here"
-
-# Here is the command to run the evaluation only:
-# python eval/service.py --evaluate-only
-# options:
+# python eval/service.py --parallel-runs 2 --max-steps 25 --start 0 --end 100 --model llama-4-maverick --eval-model gpt-4.1 --no-vision --eval-group "PRTests" --user-message "message here"
 
 # ==============================================================================================================
 
@@ -311,6 +304,11 @@ SUPPORTED_MODELS = {
 	'claude-3.7-sonnet-exp': {
 		'provider': 'anthropic',
 		'model_name': 'claude-3-7-sonnet-20250219',
+		'api_key_env': 'ANTHROPIC_API_KEY',
+	},
+	'claude-sonnet-4': {
+		'provider': 'anthropic',
+		'model_name': 'claude-sonnet-4-20250514',
 		'api_key_env': 'ANTHROPIC_API_KEY',
 	},
 	# Deepseek (via OpenAI Compatible API)
@@ -831,10 +829,13 @@ async def run_task_with_semaphore(
 			# 2. Execute Task (if needed)
 			if execution_needed:
 				logger.info(f'Task {task.task_id}: Starting execution.')
-				browser = None
+				agent_for_history = None  # For safe access in except/finally
+				browser_session_for_cleanup = None  # For safe access in finally
+				operation_timed_out = None  # To specify which operation timed out
+
 				try:
 					# Create a unique user_data_dir for each task
-					# Get parent like C:\\Users\\alexa\\.config\\browseruse\\profiles
+					# Get parent like C:\\\\Users\\\\alexa\\\\.config\\\\browseruse\\\\profiles
 					base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
 					unique_user_data_dir = base_user_data_dir / f'task_{task.task_id}'
 					unique_user_data_dir.mkdir(parents=True, exist_ok=True)  # Ensure it exists
@@ -846,8 +847,15 @@ async def run_task_with_semaphore(
 							chromium_sandbox=False,  # This is needed for the browser to run on GitHub Actions
 						),
 					)
+					browser_session_for_cleanup = browser_session
 
-					await browser_session.start()
+					try:
+						logger.info(f'Task {task.task_id}: Starting browser session (timeout 120s)...')
+						await asyncio.wait_for(browser_session.start(), timeout=120)
+						logger.info(f'Task {task.task_id}: Browser session started.')
+					except TimeoutError as e:
+						operation_timed_out = 'browser_session.start()'
+						raise e  # Re-raise to be caught by the outer TimeoutError handler
 
 					initial_actions = [{'go_to_url': {'url': task.website}}]
 					agent = Agent(
@@ -858,17 +866,22 @@ async def run_task_with_semaphore(
 						use_vision=use_vision,
 						source='eval_platform',
 					)
+					agent_for_history = agent
 
-					# Wrap agent.run with asyncio.wait_for for a 10-minute timeout
-					await asyncio.wait_for(
-						agent.run(max_steps=max_steps_per_task),
-						timeout=600,
-					)
-					logger.info(f'Task {task.task_id}: Execution completed.')
+					try:
+						logger.info(f'Task {task.task_id}: Starting agent run (timeout 600s)...')
+						await asyncio.wait_for(
+							agent.run(max_steps=max_steps_per_task),
+							timeout=600,
+						)
+						logger.info(f'Task {task.task_id}: Agent run completed.')
+					except TimeoutError as e:
+						operation_timed_out = 'agent.run()'
+						raise e  # Re-raise to be caught by the outer TimeoutError handler
 
 					# Reformat agent history to create result.json
 					run_result_data = await reformat_agent_history(
-						agent_history=agent.state.history,
+						agent_history=agent_for_history.state.history,
 						task_id=task.task_id,
 						run_id=run_id,
 						task=task.confirmed_task,
@@ -881,7 +894,7 @@ async def run_task_with_semaphore(
 
 					execution_succeeded = True
 					evaluation_needed = True
-					evaluation_succeeded = False
+					evaluation_succeeded = False  # Will be set to True if evaluation runs and succeeds
 
 					# Populate payload from the newly created results
 					server_payload['actionHistory'] = run_result_data.get('action_history', [])
@@ -892,6 +905,48 @@ async def run_task_with_semaphore(
 					server_payload['taskDuration'] = run_result_data.get('task_duration')
 					server_payload['steps'] = run_result_data.get('steps', 0)
 					server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+
+				except TimeoutError as e:
+					timeout_location_msg = f'Operation "{operation_timed_out}"' if operation_timed_out else 'An operation'
+					logger.error(
+						f'Task {task.task_id}: Timeout during execution. {timeout_location_msg} timed out. Error: {str(e)}',
+						exc_info=True,
+					)
+					execution_succeeded = False
+					evaluation_needed = False
+					evaluation_succeeded = False
+					server_payload['browserCrash'] = True
+					server_payload['browserCrashReason'] = (
+						f'Execution Timeout: {timeout_location_msg} timed out. Error: {type(e).__name__}: {str(e)}'
+					)
+					logger.info('added browser crash reason due to timeout: ' + server_payload['browserCrashReason'])
+
+					if agent_for_history and agent_for_history.state.history:
+						try:
+							logger.info(f'Task {task.task_id}: Attempting to reformat partial history after timeout.')
+							run_result_data = await reformat_agent_history(
+								agent_history=agent_for_history.state.history,
+								task_id=task.task_id,
+								run_id=run_id,
+								task=task.confirmed_task,
+							)
+							if run_result_data:
+								server_payload['actionHistory'] = run_result_data.get('action_history', [])
+								server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+								server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+								server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+								server_payload['completeHistory'] = run_result_data.get('complete_history', [])
+								server_payload['taskDuration'] = run_result_data.get('task_duration')
+								server_payload['steps'] = run_result_data.get('steps', 0)
+								server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+						except Exception as hist_e:
+							logger.error(
+								f'Task {task.task_id}: Error reformatting agent history after timeout: {type(hist_e).__name__}: {str(hist_e)}'
+							)
+
+					server_payload['onlineMind2WebEvaluationJudgement'] = 'Execution Timed Out'
+					server_payload['onlineMind2WebEvaluationSuccess'] = False
+					server_payload['onlineMind2WebEvaluationScore'] = 0.0
 
 				except Exception as e:
 					logger.error(
@@ -906,38 +961,38 @@ async def run_task_with_semaphore(
 					server_payload['browserCrashReason'] = f'Execution Error: {type(e).__name__}: {str(e)}'
 					logger.info('added browser crash reason: ' + server_payload['browserCrashReason'])
 					# Try very carefully to add partial results if available
-					if agent:
-						if agent.state.history:
-							try:
-								run_result_data = await reformat_agent_history(
-									agent_history=agent.state.history,
-									task_id=task.task_id,
-									run_id=run_id,
-									task=task.confirmed_task,
-								)
-								if run_result_data:
-									server_payload['actionHistory'] = run_result_data.get('action_history', [])
-									server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
-									server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
-									server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
-									server_payload['completeHistory'] = run_result_data.get('complete_history', [])
-									server_payload['taskDuration'] = run_result_data.get('task_duration')
-									server_payload['steps'] = run_result_data.get('steps', 0)
-
-									server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
-							except Exception as e:
-								logger.error(
-									f'Task {task.task_id}: Error reformatting agent history: {type(e).__name__}: {str(e)}'
-								)
+					if agent_for_history and agent_for_history.state.history:
+						try:
+							logger.info(f'Task {task.task_id}: Attempting to reformat partial history after general error.')
+							run_result_data = await reformat_agent_history(
+								agent_history=agent_for_history.state.history,
+								task_id=task.task_id,
+								run_id=run_id,
+								task=task.confirmed_task,
+							)
+							if run_result_data:
+								server_payload['actionHistory'] = run_result_data.get('action_history', [])
+								server_payload['finalResultResponse'] = run_result_data.get('final_result_response', 'None')
+								server_payload['selfReportCompleted'] = run_result_data.get('self_report_completed', False)
+								server_payload['selfReportSuccess'] = run_result_data.get('self_report_success', None)
+								server_payload['completeHistory'] = run_result_data.get('complete_history', [])
+								server_payload['taskDuration'] = run_result_data.get('task_duration')
+								server_payload['steps'] = run_result_data.get('steps', 0)
+								server_payload['tokensUsed'] = run_result_data.get('tokensUsed', 0)
+						except Exception as hist_e:
+							logger.error(
+								f'Task {task.task_id}: Error reformatting agent history after general error: {type(hist_e).__name__}: {str(hist_e)}'
+							)
 
 					# Automatically set Online_Mind2Web_evaluation to failed
 					server_payload['onlineMind2WebEvaluationJudgement'] = 'Browser Execution Failed'
 					server_payload['onlineMind2WebEvaluationSuccess'] = False
 					server_payload['onlineMind2WebEvaluationScore'] = 0.0
 				finally:
-					if browser:
+					if browser_session_for_cleanup:
 						try:
-							await browser.close()
+							logger.info(f'Task {task.task_id}: Closing browser session in finally block.')
+							await browser_session_for_cleanup.close()
 						except Exception as browser_close_e:
 							logger.warning(
 								f'Task {task.task_id}: Error closing browser: {type(browser_close_e).__name__}: {browser_close_e}'
@@ -1248,8 +1303,8 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Run and evaluate browser automation tasks')
-	parser.add_argument('--parallel_runs', type=int, default=3, help='Number of parallel tasks to run')
-	parser.add_argument('--max_steps', type=int, default=25, help='Maximum steps per task')
+	parser.add_argument('--parallel-runs', type=int, default=3, help='Number of parallel tasks to run')
+	parser.add_argument('--max-steps', type=int, default=25, help='Maximum steps per task')
 	parser.add_argument('--start', type=int, default=0, help='Start index')
 	parser.add_argument('--end', type=int, default=None, help='End index (exclusive)')
 	parser.add_argument('--headless', action='store_true', help='Run in headless mode')
@@ -1258,7 +1313,7 @@ if __name__ == '__main__':
 		'--model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for the agent'
 	)
 	parser.add_argument(
-		'--eval_model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for evaluation'
+		'--eval-model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for evaluation'
 	)
 	parser.add_argument('--no-vision', action='store_true', help='Disable vision capabilities in the agent')
 	parser.add_argument(
@@ -1269,6 +1324,7 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('--user-message', type=str, default='', help='User message to include in the run')
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
+	parser.add_argument('--developer-id', type=str, default='unknown', help='Name of the developer starting the run')
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1371,6 +1427,7 @@ if __name__ == '__main__':
 			'gitCommitTimestamp': git_info['timestamp'],
 			'userMessage': args.user_message,
 			'evalGroup': args.eval_group,
+			'developerId': args.developer_id,
 			'totalTasks': len(tasks) - args.start if args.end is None else args.end - args.start,
 			'additionalData': additional_run_data,
 		}

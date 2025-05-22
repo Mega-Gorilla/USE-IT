@@ -69,6 +69,7 @@ jobs:
           FRESH_START_PAYLOAD="${{ github.event.client_payload.script_args.fresh_start }}"
           EVAL_GROUP_PAYLOAD="${{ github.event.client_payload.script_args.eval_group }}"
           USER_MESSAGE_PAYLOAD="${{ github.event.client_payload.script_args.user_message }}"
+          DEVELOPER_ID_PAYLOAD="${{ github.event.client_payload.script_args.developer_id }}"
 
           # Apply defaults for string/numeric types
           MODEL="${MODEL_PAYLOAD:-llama-4-maverick}"
@@ -78,6 +79,7 @@ jobs:
           START_INDEX="${START_INDEX_PAYLOAD:-0}"
           EVAL_GROUP="${EVAL_GROUP_PAYLOAD:-PRTests}"
           USER_MESSAGE="${USER_MESSAGE_PAYLOAD:-GitHub Action Run}"
+          DEVELOPER_ID="${DEVELOPER_ID_PAYLOAD}"
           FRESH_START_VALUE="${FRESH_START_PAYLOAD:-true}" # Default for fresh_start is true
 
           CMD="python eval/service.py \
@@ -109,6 +111,11 @@ jobs:
           CMD="$CMD --fresh-start $FRESH_START_VALUE \
             --eval-group \"$EVAL_GROUP\" \
             --user-message \"$USER_MESSAGE\""
+
+          # Only add developer-id if it was provided in the payload
+          if [[ -n "$DEVELOPER_ID_PAYLOAD" ]]; then
+            CMD="$CMD --developer-id \"$DEVELOPER_ID_PAYLOAD\""
+          fi
 
           # Prepend xvfb-run if running in headed mode
           if [[ "$HEADLESS_EFFECTIVE_VALUE" == "false" ]]; then
