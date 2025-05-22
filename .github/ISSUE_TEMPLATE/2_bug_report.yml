@@ -80,7 +80,7 @@ body:
     attributes:
       label: Operating System & Browser Versions
       description: What operating system and browser are you using?
-      placeholder: "e.g. Ubuntu 24.05 + playwright Chromium v136, Windows 11 + Google Chrome.exe v133"
+      placeholder: "e.g. Ubuntu 24.04 + playwright chromium v136, Windows 11 + Chrome.exe v133, macOS ..."
     validations:
       required: true
 
@@ -105,7 +105,9 @@ body:
       value: |
         ---
         > [!IMPORTANT]
-        > 🙏 Please **go check *right now before submitting* that that you are on the [⬆️ NEWEST VERSION](https://github.com/browser-use/browser-use/releases)**. We might've already shipped a fix for this yesterday!  
-        > If you are running an old version, the **first thing we will ask you to do is *try the latest version***:
-        > `pip install --upgrade browser-use` or `uv pip install -U git+https://github.com/browser-use/browser-use.git@main`
+        > 🙏 Please **go check *right now before submitting* that that you are on the [⬆️ NEWEST VERSION](https://github.com/browser-use/browser-use/releases)**.
+        > 🚀 We might've already shipped a fix for this yesterday!  
         > <a href="https://github.com/browser-use/browser-use/releases"><img src="https://github.com/user-attachments/assets/4cd34ee6-bafb-4f24-87e2-27a31dc5b9a4" width="500px"/></a>
+        > If you are running an old version, the **first thing we will ask you to do is *try the latest version***:
+        > beta:   `pip install --upgrade git+https://github.com/browser-use/browser-use.git@main`
+        > stable: `pip install --upgrade browser-use`
