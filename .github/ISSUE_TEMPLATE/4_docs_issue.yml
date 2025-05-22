@@ -1,11 +1,12 @@
 name: 📚 Documentation Issue
 description: Report an issue in the browser-use documentation
 labels: ["documentation"]
+title: "Documentation: ..."
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to improve our documentation! Please fill out the form below to help us understand the issue.
+        Thanks for taking the time to improve our documentation! Please fill out the form below to help us fix the issue quickly.
 
   - type: dropdown
     id: type
