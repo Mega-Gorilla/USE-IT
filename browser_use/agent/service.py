@@ -1593,7 +1593,7 @@ class Agent(Generic[Context]):
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-		state = await self.browser_context.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
@@ -1737,7 +1737,7 @@ class Agent(Generic[Context]):
 			return None
 
 		# Get current state to filter actions by page
-		page = await self.browser_context.get_current_page()
+		page = await self.browser_session.get_current_page()
 
 		# Get all standard actions (no filter) and page-specific actions
 		standard_actions = self.controller.registry.get_prompt_description()  # No page = system prompt actions

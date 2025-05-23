@@ -7,39 +7,37 @@ import asyncio
 import sys
 from typing import Any
 
-from browser_use.browser.browser import Browser, BrowserConfig
-from browser_use.browser.context import BrowserContextConfig
+from browser_use.browser import BrowserProfile, BrowserSession
 
 
 async def main():
 	"""Demonstrate setting a custom browser window size"""
-	# Create a browser with a specific window size
-	config = BrowserContextConfig(window_width=800, window_height=400)  # Small size to clearly demonstrate the fix
+	# Create a browser profile with a specific window size
+	profile = BrowserProfile(
+		window_width=800,
+		window_height=400,  # Small size to clearly demonstrate the fix
+		headless=False,  # Use non-headless mode to see the window
+	)
 
-	browser = None
-	browser_context = None
+	browser_session = None
 
 	try:
-		# Initialize the browser with error handling
+		# Initialize the browser session with error handling
 		try:
-			browser = Browser(
-				config=BrowserConfig(
-					headless=False,  # Use non-headless mode to see the window
-				)
-			)
+			browser_session = BrowserSession(profile)
 		except Exception as e:
-			print(f'Failed to initialize browser: {e}')
+			print(f'Failed to initialize browser session: {e}')
 			return 1
 
-		# Create a browser context
+		# Start the browser session
 		try:
-			browser_context = await browser.new_context(config=config)
+			await browser_session.start()
 		except Exception as e:
-			print(f'Failed to create browser context: {e}')
+			print(f'Failed to start browser session: {e}')
 			return 1
 
 		# Get the current page
-		page = await browser_context.get_current_page()
+		page = await browser_session.get_current_page()
 
 		# Navigate to a test page with error handling
 		try:
@@ -62,11 +60,11 @@ async def main():
 			}
 		""")
 
-		print(f'Configured window size: width={config.window_width}, height={config.window_height}')
+		print(f'Configured window size: width={profile.window_width}, height={profile.window_height}')
 		print(f'Actual viewport size: {viewport_size}')
 
 		# Validate the window size
-		validate_window_size({'width': config.window_width, 'height': config.window_height}, viewport_size)
+		validate_window_size({'width': profile.window_width, 'height': profile.window_height}, viewport_size)
 
 		# Wait a bit more to see the window
 		await asyncio.sleep(3)
@@ -79,10 +77,8 @@ async def main():
 
 	finally:
 		# Close resources
-		if browser_context:
-			await browser_context.close()
-		if browser:
-			await browser.close()
+		if browser_session:
+			await browser_session.stop()
 
 
 def validate_window_size(configured: dict[str, Any], actual: dict[str, Any]) -> None:
