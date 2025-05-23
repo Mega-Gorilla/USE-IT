@@ -46,29 +46,30 @@ async def main():
 	async with browser_session:
 		model = ChatOpenAI(model='gpt-4o')
 
-		eraser = Agent(
-			task="""
-                Clear all the existing values in columns A through M in this Google Sheet:
-                https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
-            """,
-			llm=model,
-			browser_session=browser_session,
-			controller=controller,
-		)
-		await eraser.run()
+		# eraser = Agent(
+		# 	task="""
+		#         Clear all the existing values in columns A through M in this Google Sheet:
+		#         https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+		#     """,
+		# 	llm=model,
+		# 	browser_session=browser_session,
+		# 	controller=controller,
+		# )
+		# await eraser.run()
 
 		researcher = Agent(
 			task="""
 				Open this Google Sheet and read it to understand the structure: https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
                 Make sure column headers are present and all existing values in the sheet are formatted correctly.
-                Columns:
-                    A: Company Name
-                    B: CEO Full Name
-                    C: CEO Country of Birth
-                    D: Source URL where the information was found
-                Then Google to find the full name and nationality of the CEO of the top 10 Fortune 100 companies.
-                For each company, append a row to this existing Google Sheet.
-				At the end, double check the formatting and structure and fix any issues by updating/overwriting cells.
+                Columns should be labeled using the top row of cells:
+                    A: "Company Name"
+                    B: "CEO Full Name"
+                    C: "CEO Country of Birth"
+                    D: "Source URL where the information was found"
+                Then Google to find the full name and nationality of each CEO of the top Fortune 100 companies and for each company,
+                append a row to this existing Google Sheet. You can do a few searches at a time,
+                but make sure to check the sheet for errors after inserting a new batch of rows.
+                At the end, double check the formatting and structure and fix any issues by updating/overwriting cells.
             """,
 			llm=model,
 			browser_session=browser_session,
@@ -76,16 +77,16 @@ async def main():
 		)
 		await researcher.run()
 
-		improvised_continuer = Agent(
-			task="""
-                Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
-                Add 3 more rows to the bottom continuing the existing pattern, make sure any data you add is sourced correctly.
-            """,
-			llm=model,
-			browser_session=browser_session,
-			controller=controller,
-		)
-		await improvised_continuer.run()
+		# improvised_continuer = Agent(
+		# 	task="""
+		#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+		#         Add 3 more rows to the bottom continuing the existing pattern, make sure any data you add is sourced correctly.
+		#     """,
+		# 	llm=model,
+		# 	browser_session=browser_session,
+		# 	controller=controller,
+		# )
+		# await improvised_continuer.run()
 
 		# final_fact_checker = Agent(
 		# 	task="""
