@@ -792,20 +792,7 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			# Count messages and check for images
-			message_count = len(input_messages)
-			total_chars = sum(len(str(msg.content)) for msg in input_messages)
-			has_images = any(
-				hasattr(msg, 'content')
-				and isinstance(msg.content, list)
-				and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
-				for msg in input_messages
-			)
-			current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
-
-			logger.debug(
-				f'🧠 LLM call: {self.chat_model_library} ({self.tool_calling_method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {"📷 images" if has_images else "no images"} | raw text output'
-			)
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			try:
 				output = self.llm.invoke(input_messages)
 				response = {'raw': output, 'parsed': None}
@@ -833,20 +820,7 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			# Count messages and check for images
-			message_count = len(input_messages)
-			total_chars = sum(len(str(msg.content)) for msg in input_messages)
-			has_images = any(
-				hasattr(msg, 'content')
-				and isinstance(msg.content, list)
-				and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
-				for msg in input_messages
-			)
-			current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
-
-			logger.debug(
-				f'🧠 LLM call: {self.chat_model_library} ({self.tool_calling_method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {"📷 images" if has_images else "no images"} | structured output + tools'
-			)
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
@@ -970,6 +944,27 @@ class Agent(Generic[Context]):
 
 		logger.info(
 			f'📍 Step {self.state.n_steps}: Complete. Ran {action_count} action{"s" if action_count != 1 else ""} in {step_duration:.2f}s: {status_str}'
+		)
+
+	def _log_llm_call_info(self, input_messages: list[BaseMessage], method: str) -> None:
+		"""Log comprehensive information about the LLM call being made"""
+		# Count messages and check for images
+		message_count = len(input_messages)
+		total_chars = sum(len(str(msg.content)) for msg in input_messages)
+		has_images = any(
+			hasattr(msg, 'content')
+			and isinstance(msg.content, list)
+			and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
+			for msg in input_messages
+		)
+		current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
+
+		# Determine output type
+		output_type = 'raw text output' if method == 'raw' else 'structured output + tools'
+		image_status = '📷 images' if has_images else 'no images'
+
+		logger.debug(
+			f'🧠 LLM call: {self.chat_model_library} ({method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {image_status} | {output_type}'
 		)
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:

@@ -772,7 +772,7 @@ class Controller(Generic[Context]):
 				logger.error(error_msg)
 				return ActionResult(error=error_msg, include_in_memory=True)
 
-		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['docs.google.com'])
+		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
 		async def get_sheet_contents(browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
@@ -785,7 +785,7 @@ class Controller(Generic[Context]):
 			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
 			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
 
-		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['docs.google.com'])
+		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
 		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
 			page = await browser_session.get_current_page()
 
@@ -804,7 +804,9 @@ class Controller(Generic[Context]):
 			await page.keyboard.press('Escape')  # to make sure the popup still closes in the case where the jump failed
 			return ActionResult(extracted_content=f'Selected cell {cell_or_range}', include_in_memory=False)
 
-		@self.registry.action('Google Sheets: Get the contents of a specific cell or range of cells', domains=['docs.google.com'])
+		@self.registry.action(
+			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['https://docs.google.com']
+		)
 		async def get_range_contents(browser_session: BrowserSession, cell_or_range: str):
 			page = await browser_session.get_current_page()
 
@@ -815,14 +817,14 @@ class Controller(Generic[Context]):
 			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
 			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
 
-		@self.registry.action('Google Sheets: Clear the currently selected cells', domains=['docs.google.com'])
+		@self.registry.action('Google Sheets: Clear the currently selected cells', domains=['https://docs.google.com'])
 		async def clear_selected_range(browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
 			await page.keyboard.press('Backspace')
 			return ActionResult(extracted_content='Cleared selected range', include_in_memory=False)
 
-		@self.registry.action('Google Sheets: Input text into the currently selected cell', domains=['docs.google.com'])
+		@self.registry.action('Google Sheets: Input text into the currently selected cell', domains=['https://docs.google.com'])
 		async def input_selected_cell_text(browser_session: BrowserSession, text: str):
 			page = await browser_session.get_current_page()
 
@@ -831,7 +833,7 @@ class Controller(Generic[Context]):
 			await page.keyboard.press('ArrowUp')
 			return ActionResult(extracted_content=f'Inputted text {text}', include_in_memory=False)
 
-		@self.registry.action('Google Sheets: Batch update a range of cells', domains=['docs.google.com'])
+		@self.registry.action('Google Sheets: Batch update a range of cells', domains=['https://docs.google.com'])
 		async def update_range_contents(browser_session: BrowserSession, range: str, new_contents_tsv: str):
 			page = await browser_session.get_current_page()
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import textwrap
 
 from langchain_core.messages import (
 	AIMessage,
@@ -182,6 +183,62 @@ class MessageManager:
 			msg = AIMessage(content=plan)
 			self._add_message_with_tokens(msg, position)
 
+	def _get_message_emoji(self, message_type: str) -> str:
+		"""Get emoji for a message type"""
+		emoji_map = {
+			'HumanMessage': '💬',
+			'AIMessage': '🧠',
+			'ToolMessage': '🔨',
+		}
+		return emoji_map.get(message_type, '🎮')
+
+	def _clean_whitespace(self, text: str) -> str:
+		"""Replace all repeated whitespace with single space and strip"""
+		return re.sub(r'\s+', ' ', text).strip()
+
+	def _truncate_text(self, text: str, max_length: int) -> str:
+		"""Truncate text to max_length and add ellipsis if needed"""
+		if len(text) <= max_length:
+			return text
+		return text[:max_length] + '...'
+
+	def _extract_text_from_list_content(self, content: list) -> str:
+		"""Extract text from list content structure"""
+		text_content = ''
+		for item in content:
+			if isinstance(item, dict) and 'text' in item:
+				text_content += item['text']
+		return text_content
+
+	def _format_agent_output_content(self, tool_call: dict) -> str:
+		"""Format AgentOutput tool call into readable content"""
+		args = tool_call.get('args', {})
+		action_info = ''
+
+		# Get action name
+		if 'action' in args and args['action']:
+			first_action = args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
+			if isinstance(first_action, dict):
+				action_name = next(iter(first_action.keys())) if first_action else 'unknown'
+				action_info = f'{action_name}()'
+
+		# Get goal
+		goal_info = ''
+		if 'current_state' in args and isinstance(args['current_state'], dict):
+			next_goal = args['current_state'].get('next_goal', '').strip()
+			if next_goal:
+				goal_info = f': {self._truncate_text(next_goal, 40)}'
+
+		# Combine action and goal info
+		if action_info and goal_info:
+			return f'{action_info}{goal_info}'
+		elif action_info:
+			return action_info
+		elif goal_info:
+			return goal_info[2:]  # Remove ': ' prefix for goal-only
+		else:
+			return 'AgentOutput'
+
 	def _generate_history_log(self) -> str:
 		"""Generate a formatted log string of message history for debugging / printing to terminal"""
 		total_input_tokens = 0
@@ -193,106 +250,56 @@ class MessageManager:
 
 			# Get emoji based on message type
 			message_type = m.message.__class__.__name__
-			if message_type == 'HumanMessage':
-				emoji = '💬'
-			elif message_type == 'AIMessage':
-				emoji = '🧠'
-			elif message_type == 'ToolMessage':
-				emoji = '🔨'
-			else:
-				emoji = '🎮'  # fallback for other message types produced by controller
+			emoji = self._get_message_emoji(message_type)
 
-			# Special handling for last message if it's a HumanMessage with list content
+			# Extract content based on message structure
 			if is_last_message and message_type == 'HumanMessage' and isinstance(m.message.content, list):
-				# Extract text from the list content
-				text_content = ''
-				for item in m.message.content:
-					if isinstance(item, dict) and 'text' in item:
-						text_content += item['text']
-
-				# Clean up whitespace
-				text_content = re.sub(r'\s+', ' ', text_content).strip()
+				# Special handling for last message with list content
+				text_content = self._extract_text_from_list_content(m.message.content)
+				text_content = self._clean_whitespace(text_content)
 
 				# Look for current state section
 				if '[Current state starts here]' in text_content:
-					# Extract just the current state portion
 					start_idx = text_content.find('[Current state starts here]')
-					content = text_content[start_idx : start_idx + 150]  # Show more of current state
-					if len(text_content) > start_idx + 150:
-						content += '...'
+					content = self._truncate_text(text_content[start_idx:], 150)
 				else:
-					# Fallback to showing beginning of content
-					content = text_content[:150]
-					if len(text_content) > 150:
-						content += '...'
+					content = self._truncate_text(text_content, 150)
 			else:
-				# Get simple content preview - replace all repeated whitespace with single space
-				content = str(m.message.content)[:80]
-				content = re.sub(r'\s+', ' ', content).strip()
+				# Standard content extraction
+				content = self._clean_whitespace(str(m.message.content)[:80])
 
-				# For AIMessages with empty content but tool calls, show useful tool info
-				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content.strip():
+				# Handle AIMessages with tool calls
+				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content:
 					tool_call = m.message.tool_calls[0]
 					tool_name = tool_call.get('name', 'unknown')
 
 					if tool_name == 'AgentOutput':
-						# Extract useful info from AgentOutput
-						args = tool_call.get('args', {})
-						action_info = ''
-						if 'action' in args and args['action']:
-							# Get the action name
-							first_action = (
-								args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
-							)
-							if isinstance(first_action, dict):
-								action_name = next(iter(first_action.keys())) if first_action else 'unknown'
-								action_info = f' → {action_name}()'
-
-						# Get the goal
-						goal_info = ''
-						if 'current_state' in args and isinstance(args['current_state'], dict):
-							next_goal = args['current_state'].get('next_goal', '').strip()
-							if next_goal:
-								goal_info = f': {next_goal[:40]}{"..." if len(next_goal) > 40 else ""}'
-
-						if action_info and goal_info:
-							content = f'{action_info[3:]}{goal_info}'  # Remove ' → ' prefix
-						elif action_info:
-							content = action_info[3:]  # Just the action name without ' → '
-						elif goal_info:
-							content = goal_info[2:]  # Remove ': ' prefix for goal-only
-						else:
-							content = 'AgentOutput'
+						content = self._format_agent_output_content(tool_call)
 					else:
 						content = f'[TOOL: {tool_name}]'
 				elif len(str(m.message.content)) > 80:
 					content += '...'
 
-			# Left-justify the emoji and token count for alignment
+			# Format the message line
 			left_part = f'  {emoji}[{m.metadata.tokens}]'
 
 			# For last message, allow multiple lines if needed
 			if is_last_message and '\n' not in content:
-				# Wrap long last messages nicely
-				import textwrap
-
 				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 14)
 				if len(wrapped) > 2:
 					wrapped = wrapped[:2]
-					wrapped[-1] = wrapped[-1][:77] + '...'
+					wrapped[-1] = self._truncate_text(wrapped[-1], 77)
 				message_lines.append(f'{left_part.ljust(12)}: {wrapped[0]}')
-				for line in wrapped[1:]:
-					message_lines.append(line)
+				message_lines.extend(wrapped[1:])
 			else:
 				message_lines.append(f'{left_part.ljust(12)}: {content}')
 
-		# Log all messages in a single call
-		history_log = (
+		# Build final log message
+		return (
 			f'Messages in history: {len(self.state.history.messages)}:\n'
 			+ '\n'.join(message_lines)
 			+ f'\nTotal input tokens: {total_input_tokens}'
 		)
-		return history_log
 
 	@time_execution_sync('--get_messages')
 	def get_messages(self) -> list[BaseMessage]:
