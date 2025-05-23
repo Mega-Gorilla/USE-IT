@@ -695,7 +695,6 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	async def switch_tab(self, tab_index: int) -> Page:
-		assert self.browser_context is not None, 'BrowserContext object is not set'
 		pages = self.browser_context.pages
 		if not pages or tab_index >= len(pages):
 			raise IndexError('Tab index out of range')
