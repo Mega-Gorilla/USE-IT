@@ -57,7 +57,7 @@ class Memory:
 				self.config.embedder_dims = 512
 		else:
 			# Ensure LLM instance is set in the config
-			self.config = MemoryConfig.model_validate(config) # Validate using the Pydantic v2
+			self.config = MemoryConfig.model_validate(config)  # revalidate using Pydantic
 			self.config.llm_instance = llm
 
 		# Check for required packages
