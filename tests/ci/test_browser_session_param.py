@@ -30,16 +30,22 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-# Mock BrowserSession for testing
-class MockBrowserSession:
-	"""Mock browser session for testing"""
+# Use real browser session for testing
+import pytest
 
-	async def get_current_page(self):
-		return None
+from browser_use.browser import BrowserSession
 
-	async def create_new_tab(self, url=None):
-		logger.info(f'Creating new tab with URL: {url}')
-		return None
+
+@pytest.fixture
+async def browser_session():
+	"""Create and provide a real BrowserSession instance."""
+	browser_session = BrowserSession(
+		headless=True,
+		user_data_dir=None,
+	)
+	await browser_session.start()
+	yield browser_session
+	await browser_session.stop()
 
 
 # Model that doesn't include browser_session (renamed to avoid pytest collecting it)
@@ -50,7 +56,7 @@ class CellActionParams(ActionModel):
 # Model that includes browser_session
 class ModelWithBrowser(ActionModel):
 	value: str = Field(description='Test value')
-	browser_session: MockBrowserSession = None
+	browser_session: BrowserSession = None
 
 
 # Simple context for testing
@@ -58,7 +64,7 @@ class TestContext:
 	pass
 
 
-async def main():
+async def main(browser_session):
 	"""Run the test to diagnose browser_session parameter issue
 
 	This test demonstrates the problem and our fix. The issue happens because:
@@ -102,8 +108,7 @@ async def main():
 	class CellRangeParams(ActionModel):
 		cell_or_range: str = Field(description='Cell or range to select')
 
-	# Create mock browser session
-	mock_browser = MockBrowserSession()
+	# Use the provided real browser session
 
 	# Test with the real issue: select_cell_or_range
 	logger.info('\n\n=== Test: Simulating select_cell_or_range issue with correct model ===')
@@ -117,7 +122,7 @@ async def main():
 	# This simulates the actual issue we're seeing in the real code
 	# The browser_session parameter is in both the function signature and passed as a named arg
 	@registry.action('Google Sheets: Select a cell or range', param_model=CellRangeParams)
-	async def select_cell_or_range(browser_session: MockBrowserSession, cell_or_range: str):
+	async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
 		logger.info(f'select_cell_or_range called with browser_session={browser_session}, cell_or_range={cell_or_range}')
 
 		# PROBLEMATIC LINE: browser_session is passed by name, matching the parameter name
@@ -126,7 +131,7 @@ async def main():
 
 	# Fix attempt: Register a version that uses positional args instead
 	@registry.action('Google Sheets: Select a cell or range (fixed)', param_model=CellRangeParams)
-	async def select_cell_or_range_fixed(browser_session: MockBrowserSession, cell_or_range: str):
+	async def select_cell_or_range_fixed(browser_session: BrowserSession, cell_or_range: str):
 		logger.info(f'select_cell_or_range_fixed called with browser_session={browser_session}, cell_or_range={cell_or_range}')
 
 		# FIXED LINE: browser_session is passed positionally, avoiding the parameter name conflict
@@ -134,7 +139,7 @@ async def main():
 
 	# Another attempt: explicitly call using **kwargs to simulate what the registry does
 	@registry.action('Google Sheets: Select with kwargs', param_model=CellRangeParams)
-	async def select_with_kwargs(browser_session: MockBrowserSession, cell_or_range: str):
+	async def select_with_kwargs(browser_session: BrowserSession, cell_or_range: str):
 		logger.info(f'select_with_kwargs called with browser_session={browser_session}, cell_or_range={cell_or_range}')
 
 		# Get params and extra_args, like in Registry.execute_action
@@ -164,7 +169,7 @@ async def main():
 	logger.info('\n--- Testing original problematic version ---')
 	try:
 		result1 = await registry.execute_action(
-			'select_cell_or_range', {'cell_or_range': 'A1:F100'}, browser_session=mock_browser
+			'select_cell_or_range', {'cell_or_range': 'A1:F100'}, browser_session=browser_session
 		)
 		logger.info(f'Success! Result: {result1}')
 	except Exception as e:
@@ -174,7 +179,7 @@ async def main():
 	logger.info('\n--- Testing fixed version (positional args) ---')
 	try:
 		result2 = await registry.execute_action(
-			'select_cell_or_range_fixed', {'cell_or_range': 'A1:F100'}, browser_session=mock_browser
+			'select_cell_or_range_fixed', {'cell_or_range': 'A1:F100'}, browser_session=browser_session
 		)
 		logger.info(f'Success! Result: {result2}')
 	except Exception as e:
@@ -183,7 +188,9 @@ async def main():
 	# Test with kwargs version that simulates what Registry.execute_action does
 	logger.info('\n--- Testing kwargs simulation version ---')
 	try:
-		result3 = await registry.execute_action('select_with_kwargs', {'cell_or_range': 'A1:F100'}, browser_session=mock_browser)
+		result3 = await registry.execute_action(
+			'select_with_kwargs', {'cell_or_range': 'A1:F100'}, browser_session=browser_session
+		)
 		logger.info(f'Success! Result: {result3}')
 	except Exception as e:
 		logger.error(f'Error: {str(e)}')
@@ -196,7 +203,7 @@ async def main():
 
 		# First check if the extra_args approach works
 		logger.info('Checking if extra_args approach works:')
-		extra_args = {'browser_session': mock_browser}
+		extra_args = {'browser_session': browser_session}
 
 		# If we were to modify Registry.execute_action:
 		# 1. Check if the function parameter needs browser_session
@@ -231,12 +238,20 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_browser_session_parameter_issue():
+async def test_browser_session_parameter_issue(browser_session):
 	"""Test that the browser_session parameter issue is fixed."""
 	# Run the main test logic
-	await main()
+	await main(browser_session)
 
 
 if __name__ == '__main__':
 	# For direct execution (not through pytest)
-	asyncio.run(main())
+	async def run_with_real_browser():
+		browser_session = BrowserSession(headless=True, user_data_dir=None)
+		await browser_session.start()
+		try:
+			await main(browser_session)
+		finally:
+			await browser_session.stop()
+
+	asyncio.run(run_with_real_browser())

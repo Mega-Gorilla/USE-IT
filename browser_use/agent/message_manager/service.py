@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from langchain_core.messages import (
 	AIMessage,
@@ -181,18 +182,125 @@ class MessageManager:
 			msg = AIMessage(content=plan)
 			self._add_message_with_tokens(msg, position)
 
+	def _generate_history_log(self) -> str:
+		"""Generate a formatted log string of message history for debugging / printing to terminal"""
+		total_input_tokens = 0
+		message_lines = []
+
+		for i, m in enumerate(self.state.history.messages):
+			total_input_tokens += m.metadata.tokens
+			is_last_message = i == len(self.state.history.messages) - 1
+
+			# Get emoji based on message type
+			message_type = m.message.__class__.__name__
+			if message_type == 'HumanMessage':
+				emoji = '💬'
+			elif message_type == 'AIMessage':
+				emoji = '🧠'
+			elif message_type == 'ToolMessage':
+				emoji = '🔨'
+			else:
+				emoji = '🎮'  # fallback for other message types produced by controller
+
+			# Special handling for last message if it's a HumanMessage with list content
+			if is_last_message and message_type == 'HumanMessage' and isinstance(m.message.content, list):
+				# Extract text from the list content
+				text_content = ''
+				for item in m.message.content:
+					if isinstance(item, dict) and 'text' in item:
+						text_content += item['text']
+
+				# Clean up whitespace
+				text_content = re.sub(r'\s+', ' ', text_content).strip()
+
+				# Look for current state section
+				if '[Current state starts here]' in text_content:
+					# Extract just the current state portion
+					start_idx = text_content.find('[Current state starts here]')
+					content = text_content[start_idx : start_idx + 150]  # Show more of current state
+					if len(text_content) > start_idx + 150:
+						content += '...'
+				else:
+					# Fallback to showing beginning of content
+					content = text_content[:150]
+					if len(text_content) > 150:
+						content += '...'
+			else:
+				# Get simple content preview - replace all repeated whitespace with single space
+				content = str(m.message.content)[:80]
+				content = re.sub(r'\s+', ' ', content).strip()
+
+				# For AIMessages with empty content but tool calls, show useful tool info
+				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content.strip():
+					tool_call = m.message.tool_calls[0]
+					tool_name = tool_call.get('name', 'unknown')
+
+					if tool_name == 'AgentOutput':
+						# Extract useful info from AgentOutput
+						args = tool_call.get('args', {})
+						action_info = ''
+						if 'action' in args and args['action']:
+							# Get the action name
+							first_action = (
+								args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
+							)
+							if isinstance(first_action, dict):
+								action_name = next(iter(first_action.keys())) if first_action else 'unknown'
+								action_info = f' → {action_name}()'
+
+						# Get the goal
+						goal_info = ''
+						if 'current_state' in args and isinstance(args['current_state'], dict):
+							next_goal = args['current_state'].get('next_goal', '').strip()
+							if next_goal:
+								goal_info = f': {next_goal[:40]}{"..." if len(next_goal) > 40 else ""}'
+
+						if action_info and goal_info:
+							content = f'{action_info[3:]}{goal_info}'  # Remove ' → ' prefix
+						elif action_info:
+							content = action_info[3:]  # Just the action name without ' → '
+						elif goal_info:
+							content = goal_info[2:]  # Remove ': ' prefix for goal-only
+						else:
+							content = 'AgentOutput'
+					else:
+						content = f'[TOOL: {tool_name}]'
+				elif len(str(m.message.content)) > 80:
+					content += '...'
+
+			# Left-justify the emoji and token count for alignment
+			left_part = f'  {emoji}[{m.metadata.tokens}]'
+
+			# For last message, allow multiple lines if needed
+			if is_last_message and '\n' not in content:
+				# Wrap long last messages nicely
+				import textwrap
+
+				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 14)
+				if len(wrapped) > 2:
+					wrapped = wrapped[:2]
+					wrapped[-1] = wrapped[-1][:77] + '...'
+				message_lines.append(f'{left_part.ljust(12)}: {wrapped[0]}')
+				for line in wrapped[1:]:
+					message_lines.append(line)
+			else:
+				message_lines.append(f'{left_part.ljust(12)}: {content}')
+
+		# Log all messages in a single call
+		history_log = (
+			f'Messages in history: {len(self.state.history.messages)}:\n'
+			+ '\n'.join(message_lines)
+			+ f'\nTotal input tokens: {total_input_tokens}'
+		)
+		return history_log
+
 	@time_execution_sync('--get_messages')
 	def get_messages(self) -> list[BaseMessage]:
 		"""Get current message list, potentially trimmed to max tokens"""
-
 		msg = [m.message for m in self.state.history.messages]
-		# debug which messages are in history with token count # log
-		total_input_tokens = 0
-		logger.debug(f'Messages in history: {len(self.state.history.messages)}:')
-		for m in self.state.history.messages:
-			total_input_tokens += m.metadata.tokens
-			logger.debug(f'{m.message.__class__.__name__} - Token count: {m.metadata.tokens}')
-		logger.debug(f'Total input tokens: {total_input_tokens}')
+
+		# Log message history for debugging
+		logger.debug(self._generate_history_log())
 
 		return msg
 

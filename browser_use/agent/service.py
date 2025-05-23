@@ -72,21 +72,46 @@ logger = logging.getLogger(__name__)
 SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
-def log_response(response: AgentOutput) -> None:
+def log_response(response: AgentOutput, registry=None) -> None:
 	"""Utility function to log the model's response."""
 
 	if 'Success' in response.current_state.evaluation_previous_goal:
 		emoji = '👍'
 	elif 'Failed' in response.current_state.evaluation_previous_goal:
-		emoji = '⚠'
+		emoji = '⚠️'
 	else:
-		emoji = '🤷'
+		emoji = '❓'
 
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
 	for i, action in enumerate(response.action):
-		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
+		# Extract action name and parameters from the action model
+		action_data = action.model_dump(exclude_unset=True)
+		action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+
+		# Get the parameters for this action
+		action_params = action_data.get(action_name, {}) if action_data else {}
+
+		# Get actual function module if registry is available
+		module_path = 'browser_use.controller.service'
+		if registry and action_name in registry.actions:
+			action_function = registry.actions[action_name].function
+			if hasattr(action_function, '__module__'):
+				module_path = action_function.__module__
+
+		# Format parameters as function call arguments
+		if action_params:
+			param_strings = []
+			for key, value in action_params.items():
+				if isinstance(value, str):
+					param_strings.append(f'{key}="{value}"')
+				else:
+					param_strings.append(f'{key}={value}')
+			params_str = ', '.join(param_strings)
+			logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {module_path}.{action_name}({params_str})')
+		else:
+			logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {module_path}.{action_name}()')
 
 
 Context = TypeVar('Context')
@@ -498,7 +523,6 @@ class Agent(Generic[Context]):
 	@time_execution_async('--step (agent)')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
-		logger.info(f'📍 Step {self.state.n_steps}')
 		browser_state_summary = None
 		model_output = None
 		result: list[ActionResult] = []
@@ -508,6 +532,8 @@ class Agent(Generic[Context]):
 		try:
 			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
+
+			self._log_step_context(current_page, browser_state_summary)
 
 			# generate procedural memory if needed
 			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
@@ -668,6 +694,9 @@ class Agent(Generic[Context]):
 				)
 				self._make_history_item(model_output, browser_state_summary, result, metadata)
 
+			# Log step completion summary
+			self._log_step_completion_summary(step_start_time, result)
+
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
@@ -763,7 +792,20 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
+			# Count messages and check for images
+			message_count = len(input_messages)
+			total_chars = sum(len(str(msg.content)) for msg in input_messages)
+			has_images = any(
+				hasattr(msg, 'content')
+				and isinstance(msg.content, list)
+				and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
+				for msg in input_messages
+			)
+			current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
+
+			logger.debug(
+				f'🧠 LLM call: {self.chat_model_library} ({self.tool_calling_method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {"📷 images" if has_images else "no images"} | raw text output'
+			)
 			try:
 				output = self.llm.invoke(input_messages)
 				response = {'raw': output, 'parsed': None}
@@ -791,7 +833,20 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
+			# Count messages and check for images
+			message_count = len(input_messages)
+			total_chars = sum(len(str(msg.content)) for msg in input_messages)
+			has_images = any(
+				hasattr(msg, 'content')
+				and isinstance(msg.content, list)
+				and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
+				for msg in input_messages
+			)
+			current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
+
+			logger.debug(
+				f'🧠 LLM call: {self.chat_model_library} ({self.tool_calling_method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {"📷 images" if has_images else "no images"} | structured output + tools'
+			)
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
@@ -836,8 +891,9 @@ class Agent(Generic[Context]):
 			parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
 		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
-			log_response(parsed)
+			log_response(parsed, self.controller.registry.registry)
 
+		self._log_next_action_summary(parsed)
 		return parsed
 
 	def _log_agent_run(self) -> None:
@@ -845,6 +901,76 @@ class Agent(Generic[Context]):
 		logger.info(f'🚀 Starting task: {self.task}')
 
 		logger.debug(f'Version: {self.version}, Source: {self.source}')
+
+	def _log_step_context(self, current_page, browser_state_summary) -> None:
+		"""Log step context information"""
+		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
+		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
+		logger.info(f'📍 Step {self.state.n_steps}: Evaluating {url_short} ({interactive_count} interactive elements)...')
+
+	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
+		"""Log a comprehensive summary of the next action(s)"""
+		if not (logger.isEnabledFor(logging.DEBUG) and parsed.action):
+			return
+
+		action_count = len(parsed.action)
+
+		# Collect action details
+		action_details = []
+		for i, action in enumerate(parsed.action):
+			action_data = action.model_dump(exclude_unset=True)
+			action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+			action_params = action_data.get(action_name, {}) if action_data else {}
+
+			# Format key parameters concisely
+			param_summary = []
+			if isinstance(action_params, dict):
+				for key, value in action_params.items():
+					if key == 'index':
+						param_summary.append(f'#{value}')
+					elif key == 'text' and isinstance(value, str):
+						text_preview = value[:30] + '...' if len(value) > 30 else value
+						param_summary.append(f'text="{text_preview}"')
+					elif key == 'url':
+						param_summary.append(f'url="{value}"')
+					elif key == 'success':
+						param_summary.append(f'success={value}')
+					elif isinstance(value, (str, int, bool)) and len(str(value)) < 20:
+						param_summary.append(f'{key}={value}')
+
+			param_str = f'({", ".join(param_summary)})' if param_summary else ''
+			action_details.append(f'{action_name}{param_str}')
+
+		# Create summary based on single vs multi-action
+		if action_count == 1:
+			logger.debug(f'⚡️ Decided next action: {action_details[0]}')
+		else:
+			summary_lines = [f'⚡️ Decided next {action_count} multi-actions:']
+			for i, detail in enumerate(action_details):
+				summary_lines.append(f'          {i + 1}. {detail}')
+			logger.debug('\n'.join(summary_lines))
+
+	def _log_step_completion_summary(self, step_start_time: float, result: list[ActionResult]) -> None:
+		"""Log step completion summary with action count, timing, and success/failure stats"""
+		if not result:
+			return
+
+		step_duration = time.time() - step_start_time
+		action_count = len(result)
+
+		# Count success and failures
+		success_count = sum(1 for r in result if not r.error)
+		failure_count = action_count - success_count
+
+		# Format success/failure indicators
+		success_indicator = f'✅ {success_count}' if success_count > 0 else ''
+		failure_indicator = f'❌ {failure_count}' if failure_count > 0 else ''
+		status_parts = [part for part in [success_indicator, failure_indicator] if part]
+		status_str = ' | '.join(status_parts) if status_parts else '✅ 0'
+
+		logger.info(
+			f'📍 Step {self.state.n_steps}: Complete. Ran {action_count} action{"s" if action_count != 1 else ""} in {step_duration:.2f}s: {status_str}'
+		)
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
 		"""Sent the agent event for this run to telemetry"""
@@ -1118,7 +1244,10 @@ class Agent(Generic[Context]):
 
 				results.append(result)
 
-				logger.debug(f'Executed action {i + 1} / {len(actions)}')
+				# Get action name from the action model
+				action_data = action.model_dump(exclude_unset=True)
+				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+				logger.debug(f'Executed action {i + 1} / {len(actions)}: {action_name}()')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
@@ -1183,11 +1312,10 @@ class Agent(Generic[Context]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
-		logger.info('✅ Task completed')
 		if self.state.history.is_successful():
-			logger.info('✅ Successfully')
+			logger.info('✅ Task completed successfully')
 		else:
-			logger.info('❌ Unfinished')
+			logger.info('❌ Task completed without success')
 
 		total_tokens = self.state.history.total_input_tokens()
 		logger.debug(f'📝 Total input tokens used (approximate): {total_tokens}')

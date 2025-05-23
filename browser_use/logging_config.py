@@ -119,6 +119,8 @@ def setup_logging():
 		'urllib3',
 		'asyncio',
 		'langchain',
+		'langsmith',
+		'langsmith.client',
 		'openai',
 		'httpcore',
 		'charset_normalizer',

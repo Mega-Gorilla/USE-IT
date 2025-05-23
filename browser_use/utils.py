@@ -306,7 +306,9 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 			start_time = time.time()
 			result = func(*args, **kwargs)
 			execution_time = time.time() - start_time
-			logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+			# Only log if execution takes more than 0.25 seconds
+			if execution_time > 0.25:
+				logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
 			return result
 
 		return wrapper
@@ -323,7 +325,9 @@ def time_execution_async(
 			start_time = time.time()
 			result = await func(*args, **kwargs)
 			execution_time = time.time() - start_time
-			logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+			# Only log if execution takes more than 0.25 seconds
+			if execution_time > 0.25:
+				logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
 			return result
 
 		return wrapper
