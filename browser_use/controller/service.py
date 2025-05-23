@@ -79,18 +79,19 @@ class Controller(Generic[Context]):
 
 		# Basic Navigation Actions
 		@self.registry.action(
-			'Search the query in Google in the current tab, the query should be a search query like humans search in Google, concrete and not vague or super long. More the single most important items. ',
+			'Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long.',
 			param_model=SearchGoogleAction,
 		)
 		async def search_google(params: SearchGoogleAction, browser_session: BrowserSession):
 			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
 
 			page = await browser_session.get_current_page()
-			if page:
+			if page.url in ('about:blank', 'https://www.google.com'):
 				await page.goto(search_url)
 				await page.wait_for_load_state()
 			else:
 				page = await browser_session.create_new_tab(search_url)
+
 			msg = f'🔍  Searched for "{params.query}" in Google'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -179,9 +180,7 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
 		# Save PDF
-		@self.registry.action(
-			'Save the current page as a PDF file',
-		)
+		@self.registry.action('Save the current page as a PDF file')
 		async def save_pdf(browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 			short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
@@ -205,7 +204,9 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action('Open url in new tab', param_model=OpenTabAction)
+		@self.registry.action(
+			'Open url in new tab, (for Google search use search_google action instead)', param_model=OpenTabAction
+		)
 		async def open_tab(params: OpenTabAction, browser_session: BrowserSession):
 			await browser_session.create_new_tab(params.url)
 			msg = f'🔗  Opened new tab with {params.url}'
@@ -218,7 +219,9 @@ class Controller(Generic[Context]):
 			page = await browser_session.get_current_page()
 			url = page.url
 			await page.close()
-			msg = f'❌  Closed tab #{params.page_id} with url {url}'
+			new_page = await browser_session.get_current_page()
+			new_page_idx = browser_session.tabs.index(new_page)
+			msg = f'❌  Closed tab #{params.page_id} with {url}, now focused on tab #{new_page_idx} with url {new_page.url}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
@@ -773,7 +776,7 @@ class Controller(Generic[Context]):
 				return ActionResult(error=error_msg, include_in_memory=True)
 
 		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
-		async def get_sheet_contents(browser_session: BrowserSession):
+		async def read_sheet_contents(browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
 			# select all cells
@@ -784,6 +787,43 @@ class Controller(Generic[Context]):
 
 			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
 			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
+
+		@self.registry.action('Google Sheets: Get the contents of a cell or range of cells', domains=['https://docs.google.com'])
+		async def read_cell_contents(browser_session: BrowserSession, cell_or_range: str):
+			page = await browser_session.get_current_page()
+
+			await select_cell_or_range(browser_session, cell_or_range)
+
+			await page.keyboard.press('ControlOrMeta+C')
+			await asyncio.sleep(0.1)
+			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
+			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
+
+		@self.registry.action(
+			'Google Sheets: Update the content of a cell or range of cells', domains=['https://docs.google.com']
+		)
+		async def update_cell_contents(browser_session: BrowserSession, cell_or_range: str, new_contents_tsv: str):
+			page = await browser_session.get_current_page()
+
+			await select_cell_or_range(browser_session, cell_or_range)
+
+			# simulate paste event from clipboard with TSV content
+			await page.evaluate(f"""
+				const clipboardData = new DataTransfer();
+				clipboardData.setData('text/plain', `{new_contents_tsv}`);
+				document.activeElement.dispatchEvent(new ClipboardEvent('paste', {{clipboardData}}));
+			""")
+
+			return ActionResult(extracted_content=f'Updated cells: {cell_or_range} = {new_contents_tsv}', include_in_memory=False)
+
+		@self.registry.action('Google Sheets: Clear whatever cells are currently selected', domains=['https://docs.google.com'])
+		async def clear_cell_contents(browser_session: BrowserSession, cell_or_range: str):
+			page = await browser_session.get_current_page()
+
+			await select_cell_or_range(browser_session, cell_or_range)
+
+			await page.keyboard.press('Backspace')
+			return ActionResult(extracted_content=f'Cleared cells: {cell_or_range}', include_in_memory=False)
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
 		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
@@ -802,52 +842,19 @@ class Controller(Generic[Context]):
 			await page.keyboard.press('Enter')
 			await asyncio.sleep(0.2)
 			await page.keyboard.press('Escape')  # to make sure the popup still closes in the case where the jump failed
-			return ActionResult(extracted_content=f'Selected cell {cell_or_range}', include_in_memory=False)
+			return ActionResult(extracted_content=f'Selected cells: {cell_or_range}', include_in_memory=False)
 
 		@self.registry.action(
-			'Google Sheets: Get the contents of a specific cell or range of cells', domains=['https://docs.google.com']
+			'Google Sheets: Fallback method to type text into (only one) currently selected cell',
+			domains=['https://docs.google.com'],
 		)
-		async def get_range_contents(browser_session: BrowserSession, cell_or_range: str):
-			page = await browser_session.get_current_page()
-
-			await select_cell_or_range(browser_session, cell_or_range)
-
-			await page.keyboard.press('ControlOrMeta+C')
-			await asyncio.sleep(0.1)
-			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
-			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
-
-		@self.registry.action('Google Sheets: Clear the currently selected cells', domains=['https://docs.google.com'])
-		async def clear_selected_range(browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
-
-			await page.keyboard.press('Backspace')
-			return ActionResult(extracted_content='Cleared selected range', include_in_memory=False)
-
-		@self.registry.action('Google Sheets: Input text into the currently selected cell', domains=['https://docs.google.com'])
-		async def input_selected_cell_text(browser_session: BrowserSession, text: str):
+		async def fallback_input_into_single_selected_cell(browser_session: BrowserSession, text: str):
 			page = await browser_session.get_current_page()
 
 			await page.keyboard.type(text, delay=0.1)
 			await page.keyboard.press('Enter')  # make sure to commit the input so it doesn't get overwritten by the next action
 			await page.keyboard.press('ArrowUp')
 			return ActionResult(extracted_content=f'Inputted text {text}', include_in_memory=False)
-
-		@self.registry.action('Google Sheets: Batch update a range of cells', domains=['https://docs.google.com'])
-		async def update_range_contents(browser_session: BrowserSession, range: str, new_contents_tsv: str):
-			page = await browser_session.get_current_page()
-
-			# Pass browser_session positionally to avoid the "multiple values" error
-			await select_cell_or_range(browser_session, range)
-
-			# simulate paste event from clipboard with TSV content
-			await page.evaluate(f"""
-				const clipboardData = new DataTransfer();
-				clipboardData.setData('text/plain', `{new_contents_tsv}`);
-				document.activeElement.dispatchEvent(new ClipboardEvent('paste', {{clipboardData}}));
-			""")
-
-			return ActionResult(extracted_content=f'Updated cell {range} with {new_contents_tsv}', include_in_memory=False)
 
 	# Register ---------------------------------------------------------------
 

@@ -48,7 +48,7 @@ async def main():
 
 		eraser = Agent(
 			task="""
-                Clear all the existing values in columns A through F in this Google Sheet:
+                Clear all the existing values in columns A through M in this Google Sheet:
                 https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
             """,
 			llm=model,
@@ -59,15 +59,16 @@ async def main():
 
 		researcher = Agent(
 			task="""
-                Google to find the full name, nationality, and date of birth of the CEO of the top 10 Fortune 100 companies.
-                For each company, append a row to this existing Google Sheet: https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+				Open this Google Sheet and read it to understand the structure: https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
                 Make sure column headers are present and all existing values in the sheet are formatted correctly.
                 Columns:
                     A: Company Name
                     B: CEO Full Name
                     C: CEO Country of Birth
-                    D: CEO Date of Birth (YYYY-MM-DD)
-                    E: Source URL where the information was found
+                    D: Source URL where the information was found
+                Then Google to find the full name and nationality of the CEO of the top 10 Fortune 100 companies.
+                For each company, append a row to this existing Google Sheet.
+				At the end, double check the formatting and structure and fix any issues by updating/overwriting cells.
             """,
 			llm=model,
 			browser_session=browser_session,
@@ -86,17 +87,17 @@ async def main():
 		)
 		await improvised_continuer.run()
 
-		final_fact_checker = Agent(
-			task="""
-                Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
-                Fact-check every entry, add a new column F with your findings for each row.
-                Make sure to check the source URL for each row, and make sure the information is correct.
-            """,
-			llm=model,
-			browser_session=browser_session,
-			controller=controller,
-		)
-		await final_fact_checker.run()
+		# final_fact_checker = Agent(
+		# 	task="""
+		#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+		#         Fact-check every entry, add a new column F with your findings for each row.
+		#         Make sure to check the source URL for each row, and make sure the information is correct.
+		#     """,
+		# 	llm=model,
+		# 	browser_session=browser_session,
+		# 	controller=controller,
+		# )
+		# await final_fact_checker.run()
 
 
 if __name__ == '__main__':

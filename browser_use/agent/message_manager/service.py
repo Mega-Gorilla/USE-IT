@@ -268,6 +268,10 @@ class MessageManager:
 				# Standard content extraction
 				content = self._clean_whitespace(str(m.message.content)[:80])
 
+				# Shorten "Action result:" to "Result:" for display
+				if content.startswith('Action result:'):
+					content = 'Result:' + content[14:]
+
 				# Handle AIMessages with tool calls
 				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content:
 					tool_call = m.message.tool_calls[0]
@@ -281,24 +285,23 @@ class MessageManager:
 					content += '...'
 
 			# Format the message line
-			left_part = f'  {emoji}[{m.metadata.tokens}]'
+			left_part = f'          {emoji}[{m.metadata.tokens}]'
 
 			# For last message, allow multiple lines if needed
 			if is_last_message and '\n' not in content:
-				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 14)
+				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 20)
 				if len(wrapped) > 2:
 					wrapped = wrapped[:2]
 					wrapped[-1] = self._truncate_text(wrapped[-1], 77)
-				message_lines.append(f'{left_part.ljust(12)}: {wrapped[0]}')
+				message_lines.append(f'{left_part.ljust(16)}: {wrapped[0]}')
 				message_lines.extend(wrapped[1:])
 			else:
-				message_lines.append(f'{left_part.ljust(12)}: {content}')
+				message_lines.append(f'{left_part.ljust(16)}: {content}')
 
 		# Build final log message
 		return (
-			f'Messages in history: {len(self.state.history.messages)}:\n'
+			f'📜 LLM Message history ({len(self.state.history.messages)} messages, {total_input_tokens} tokens):\n'
 			+ '\n'.join(message_lines)
-			+ f'\nTotal input tokens: {total_input_tokens}'
 		)
 
 	@time_execution_sync('--get_messages')

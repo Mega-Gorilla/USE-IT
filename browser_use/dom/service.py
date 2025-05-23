@@ -108,7 +108,7 @@ class DomService:
 
 			# Get key metrics for summary
 			total_nodes = perf.get('nodeMetrics', {}).get('totalNodes', 0)
-			processed_nodes = perf.get('nodeMetrics', {}).get('processedNodes', 0)
+			# processed_nodes = perf.get('nodeMetrics', {}).get('processedNodes', 0)
 
 			# Count interactive elements from the DOM map
 			interactive_count = 0
@@ -120,11 +120,11 @@ class DomService:
 			# Create concise summary
 			url_short = self.page.url[:50] + '...' if len(self.page.url) > 50 else self.page.url
 			logger.debug(
-				'ran buildDOMTree.js on: %s total_nodes=%d processed=%d interactive=%d',
+				'🔎 Ran buildDOMTree.js interactive element detection on: %s interactive=%d total=%d',
 				url_short,
-				total_nodes,
-				processed_nodes,
 				interactive_count,
+				total_nodes,
+				# processed_nodes,
 			)
 
 		return await self._construct_dom_tree(eval_page)

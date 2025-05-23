@@ -628,10 +628,14 @@ class BrowserSession(BaseModel):
 		#   TODO: implement applying self.stroage_state to an existing browser_context
 		# 	await self.browser_context.set_storage_state(self.storage_state)
 
-		# apply viewport size settings to any existing pages
-		if viewport:
-			for page in self.browser_context.pages:
+		for page in self.browser_context.pages:
+			# apply viewport size settings to any existing pages
+			if viewport:
 				await page.set_viewport_size(viewport)
+
+			# show browser-use dvd screensaver-style bouncing loading animation on any about:blank pages
+			if page.url == 'about:blank':
+				await self._show_dvd_screensaver_loading_animation(page)
 
 	def _set_browser_keep_alive(self, keep_alive: bool | None) -> None:
 		"""set the keep_alive flag on the browser_profile, defaulting to True if keep_alive is None"""
@@ -1914,6 +1918,14 @@ class BrowserSession(BaseModel):
 		# else:
 		# 	assert self.agent_current_page.url == 'about:blank'
 
+		# if there are any unused about:blank tabs after we open a new tab, close them to clean up unused tabs
+		for page in self.browser_context.pages:
+			if page.url == 'about:blank' and page != self.agent_current_page:
+				await page.close()
+				self.human_current_page = (  # in case we just closed the human's tab, fix the refs
+					self.human_current_page if not self.human_current_page.is_closed() else self.agent_current_page
+				)
+
 		return new_page
 
 	# region - Helper methods for easier access to the DOM
@@ -2000,3 +2012,96 @@ class BrowserSession(BaseModel):
 		}"""
 		page = await self.get_current_page()
 		await page.evaluate(SMART_SCROLL_JS, pixels)
+
+	# --- DVD Screensaver Loading Animation Helper ---
+	async def _show_dvd_screensaver_loading_animation(self, page: Page) -> None:
+		"""
+		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
+		This is used to visually indicate that the browser is setting up or waiting.
+		"""
+		await page.evaluate("""() => {
+			document.title = 'Setting up...';
+
+			// Create the main overlay
+			const loadingOverlay = document.createElement('div');
+			loadingOverlay.id = 'pretty-loading-animation';
+			loadingOverlay.style.position = 'fixed';
+			loadingOverlay.style.top = '0';
+			loadingOverlay.style.left = '0';
+			loadingOverlay.style.width = '100vw';
+			loadingOverlay.style.height = '100vh';
+			loadingOverlay.style.background = '#000';
+			loadingOverlay.style.zIndex = '99999';
+			loadingOverlay.style.overflow = 'hidden';
+
+			// Create the image element
+			const img = document.createElement('img');
+			img.src = 'https://github.com/browser-use.png';
+			img.alt = 'Browser-Use';
+			img.style.width = '200px';
+			img.style.height = 'auto';
+			img.style.position = 'absolute';
+			img.style.left = '0px';
+			img.style.top = '0px';
+			img.style.zIndex = '2';
+			img.style.opacity = '0.8';
+
+			loadingOverlay.appendChild(img);
+			document.body.appendChild(loadingOverlay);
+
+			// DVD screensaver bounce logic
+			let x = Math.random() * (window.innerWidth - 300);
+			let y = Math.random() * (window.innerHeight - 300);
+			let dx = 1.2 + Math.random() * 0.4; // px per frame
+			let dy = 1.2 + Math.random() * 0.4;
+			// Randomize direction
+			if (Math.random() > 0.5) dx = -dx;
+			if (Math.random() > 0.5) dy = -dy;
+
+			function animate() {
+				const imgWidth = img.offsetWidth || 300;
+				const imgHeight = img.offsetHeight || 300;
+				x += dx;
+				y += dy;
+
+				if (x <= 0) {
+					x = 0;
+					dx = Math.abs(dx);
+				} else if (x + imgWidth >= window.innerWidth) {
+					x = window.innerWidth - imgWidth;
+					dx = -Math.abs(dx);
+				}
+				if (y <= 0) {
+					y = 0;
+					dy = Math.abs(dy);
+				} else if (y + imgHeight >= window.innerHeight) {
+					y = window.innerHeight - imgHeight;
+					dy = -Math.abs(dy);
+				}
+
+				img.style.left = `${x}px`;
+				img.style.top = `${y}px`;
+
+				requestAnimationFrame(animate);
+			}
+			animate();
+
+			// Responsive: update bounds on resize
+			window.addEventListener('resize', () => {
+				x = Math.min(x, window.innerWidth - img.offsetWidth);
+				y = Math.min(y, window.innerHeight - img.offsetHeight);
+			});
+
+			// Add a little CSS for smoothness
+			const style = document.createElement('style');
+			style.innerHTML = `
+				#pretty-loading-animation {
+					/*backdrop-filter: blur(2px) brightness(0.9);*/
+				}
+				#pretty-loading-animation img {
+					user-select: none;
+					pointer-events: none;
+				}
+			`;
+			document.head.appendChild(style);
+		}""")

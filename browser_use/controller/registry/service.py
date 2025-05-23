@@ -256,6 +256,12 @@ class Registry(Generic[Context]):
 		except Exception as e:
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 
+	def _log_sensitive_data_usage(self, placeholders_used: set[str], current_url: str | None) -> None:
+		"""Log when sensitive data is being used on a page"""
+		if placeholders_used:
+			url_info = f' on {current_url}' if current_url and current_url != 'about:blank' else ''
+			logger.info(f'🔒 Using sensitive data placeholders: {", ".join(sorted(placeholders_used))}{url_info}')
+
 	def _replace_sensitive_data(
 		self, params: BaseModel, sensitive_data: dict[str, Any], browser_session: BrowserSession = None
 	) -> BaseModel:
@@ -275,6 +281,8 @@ class Registry(Generic[Context]):
 
 		# Set to track all missing placeholders across the full object
 		all_missing_placeholders = set()
+		# Set to track successfully replaced placeholders
+		replaced_placeholders = set()
 
 		# Determine current URL if browser_session is provided
 		current_url = None
@@ -315,6 +323,7 @@ class Registry(Generic[Context]):
 				for placeholder in matches:
 					if placeholder in applicable_secrets:
 						value = value.replace(f'<secret>{placeholder}</secret>', applicable_secrets[placeholder])
+						replaced_placeholders.add(placeholder)
 					else:
 						# Keep track of missing placeholders
 						all_missing_placeholders.add(placeholder)
@@ -329,6 +338,9 @@ class Registry(Generic[Context]):
 
 		params_dump = params.model_dump()
 		processed_params = replace_secrets(params_dump)
+
+		# Log sensitive data usage
+		self._log_sensitive_data_usage(replaced_placeholders, current_url)
 
 		# Log a warning if any placeholders are missing
 		if all_missing_placeholders:

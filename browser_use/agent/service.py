@@ -85,33 +85,33 @@ def log_response(response: AgentOutput, registry=None) -> None:
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
-	for i, action in enumerate(response.action):
-		# Extract action name and parameters from the action model
-		action_data = action.model_dump(exclude_unset=True)
-		action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+	# for i, action in enumerate(response.action):
+	# Extract action name and parameters from the action model
+	# action_data = action.model_dump(exclude_unset=True)
+	# action_name = next(iter(action_data.keys())) if action_data else 'unknown'
 
-		# Get the parameters for this action
-		action_params = action_data.get(action_name, {}) if action_data else {}
+	# Get the parameters for this action
+	# action_params = action_data.get(action_name, {}) if action_data else {}
 
-		# Get actual function module if registry is available
-		module_path = 'browser_use.controller.service'
-		if registry and action_name in registry.actions:
-			action_function = registry.actions[action_name].function
-			if hasattr(action_function, '__module__'):
-				module_path = action_function.__module__
+	# Get actual function module if registry is available
+	# module_path = 'browser_use.controller.service'
+	# if registry and action_name in registry.actions:
+	# 	action_function = registry.actions[action_name].function
+	# 	if hasattr(action_function, '__module__'):
+	# 		module_path = action_function.__module__
 
-		# Format parameters as function call arguments
-		if action_params:
-			param_strings = []
-			for key, value in action_params.items():
-				if isinstance(value, str):
-					param_strings.append(f'{key}="{value}"')
-				else:
-					param_strings.append(f'{key}={value}')
-			params_str = ', '.join(param_strings)
-			logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {module_path}.{action_name}({params_str})')
-		else:
-			logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {module_path}.{action_name}()')
+	# Format parameters as function call arguments
+	# if action_params:
+	# 	param_strings = []
+	# 	for key, value in action_params.items():
+	# 		if isinstance(value, str):
+	# 			param_strings.append(f'{key}="{value}"')
+	# 		else:
+	# 			param_strings.append(f'{key}={value}')
+	# 	params_str = ', '.join(param_strings)
+	# 	logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {action_name}({params_str})')
+	# else:
+	# 	logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {action_name}()')  # {module_path}.{action_name}
 
 
 Context = TypeVar('Context')
@@ -880,7 +880,9 @@ class Agent(Generic[Context]):
 		"""Log step context information"""
 		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
 		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
-		logger.info(f'📍 Step {self.state.n_steps}: Evaluating {url_short} ({interactive_count} interactive elements)...')
+		logger.info(
+			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
+		)
 
 	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
 		"""Log a comprehensive summary of the next action(s)"""
@@ -917,12 +919,12 @@ class Agent(Generic[Context]):
 
 		# Create summary based on single vs multi-action
 		if action_count == 1:
-			logger.debug(f'⚡️ Decided next action: {action_details[0]}')
+			logger.info(f'⚡️ Decided next action: {action_details[0]}')
 		else:
 			summary_lines = [f'⚡️ Decided next {action_count} multi-actions:']
 			for i, detail in enumerate(action_details):
 				summary_lines.append(f'          {i + 1}. {detail}')
-			logger.debug('\n'.join(summary_lines))
+			logger.info('\n'.join(summary_lines))
 
 	def _log_step_completion_summary(self, step_start_time: float, result: list[ActionResult]) -> None:
 		"""Log step completion summary with action count, timing, and success/failure stats"""
@@ -942,9 +944,7 @@ class Agent(Generic[Context]):
 		status_parts = [part for part in [success_indicator, failure_indicator] if part]
 		status_str = ' | '.join(status_parts) if status_parts else '✅ 0'
 
-		logger.info(
-			f'📍 Step {self.state.n_steps}: Complete. Ran {action_count} action{"s" if action_count != 1 else ""} in {step_duration:.2f}s: {status_str}'
-		)
+		logger.info(f'📍 Step {self.state.n_steps}: Ran {action_count} actions in {step_duration:.2f}s: {status_str}')
 
 	def _log_llm_call_info(self, input_messages: list[BaseMessage], method: str) -> None:
 		"""Log comprehensive information about the LLM call being made"""
@@ -963,7 +963,7 @@ class Agent(Generic[Context]):
 		output_type = 'raw text output' if method == 'raw' else 'structured output + tools'
 		image_status = '📷 images' if has_images else 'no images'
 
-		logger.debug(
+		logger.info(
 			f'🧠 LLM call: {self.chat_model_library} ({method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {image_status} | {output_type}'
 		)
 
@@ -1088,7 +1088,7 @@ class Agent(Generic[Context]):
 
 				# Check control flags before each step
 				if self.state.stopped:
-					logger.info('Agent stopped')
+					logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
 					break
 
@@ -1242,7 +1242,7 @@ class Agent(Generic[Context]):
 				# Get action name from the action model
 				action_data = action.model_dump(exclude_unset=True)
 				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
-				logger.debug(f'Executed action {i + 1} / {len(actions)}: {action_name}()')
+				logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
