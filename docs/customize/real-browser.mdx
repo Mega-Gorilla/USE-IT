@@ -1,20 +1,20 @@
 ---
 title: "Connect to your Browser"
-description: "With this you can connect to your real browser, where you are logged in with all your accounts."
+description: "With this you can connect to an existing running browser or launch a new local browser"
 icon: "computer"
 ---
 
 ## Overview
 
-You can connect the agent to your real Chrome browser instance, allowing it to access your existing browser profile with all your logged-in accounts and settings. This is particularly useful when you want the agent to interact with services where you're already authenticated.
+As of Chrome v133, connecting a debugger is no longer supported with your default browser profile.  
+Browser-Use has transitioned to creating a new dedicated profile for agents in `~/.config/browseruse/profiles/default`.  
+You can set up this profile by logging into everything you need your agent to have access to, and it will persist over time.
 
 ## Connection Methods
 
-Browser-use attempts connections in the following order:
+### Method A: Launch a New Local Browser (Default)
 
-### Method A: Launch a New Local Browser
-
-Launch a local browser using a provided `executable_path` or builtin default (playwright chromium):
+Launch a local browser using builtin default (playwright chromium) or a provided `executable_path`:
 
 ```python
 from browser_use import Agent, BrowserSession
@@ -29,7 +29,7 @@ browser_session = BrowserSession(
     # Use a specific data directory on disk (optional)
     user_data_dir='~/.config/browseruse/profiles/default',
     # ... any other BrowserProfile or playwright launch_persistnet_context config...
-    headless=False,
+    # headless=False,
 )
 
 agent = Agent(
@@ -41,7 +41,7 @@ agent = Agent(
 
 ### Method B: Connect Using Existing Playwright Objects
 
-Pass existing page, browser_context, and/or browser Playwright objects to `Agent(...)` or to `BrowserSession(...)`:
+Pass existing Playwright `Page`, `BrowserContext`, and/or `Browser` objects to `Agent(...)` and/or `BrowserSession(...)`:
 
 ```python
 from browser_use import Agent
@@ -77,12 +77,12 @@ from browser_use import Agent, BrowserSession
 # /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9242
 
 # Then connect using the process ID
-session = BrowserSession(browser_pid=12345)  # Replace with actual Chrome PID
+browser_session = BrowserSession(browser_pid=12345)  # Replace with actual Chrome PID
 
 agent = Agent(
     task="Your task here",
     llm=llm,
-    browser=session,
+    browser_session=browser_session,
 )
 ```
 
@@ -94,12 +94,12 @@ Connect to Playwright Node.js server providers:
 from browser_use import Agent, BrowserSession
 
 # Connect to a playwright server
-session = BrowserSession(wss_url="wss://your-playwright-server.com/ws")
+browser_session = BrowserSession(wss_url="wss://your-playwright-server.com/ws")
 
 agent = Agent(
     task="Your task here",
     llm=llm,
-    browser=session,
+    browser_session=browser_session,
 )
 ```
 
@@ -111,12 +111,12 @@ Connect to any remote Chromium-based browser:
 from browser_use import Agent, BrowserSession
 
 # Connect to Chrome via CDP
-session = BrowserSession(cdp_url="http://localhost:9222")
+browser_session = BrowserSession(cdp_url="http://localhost:9222")
 
 agent = Agent(
     task="Your task here",
     llm=llm,
-    browser=session,
+    browser_session=browser_session,
 )
 ```
 
@@ -137,17 +137,17 @@ agent = Agent(
 
 ## Best Practices
 
-1. **Use a dedicated profile**: Consider creating a separate Chrome profile specifically for agent use:
+1. **Use isolated profiles**: Create separate Chrome profiles for different agents to limit scope of risk:
    ```python
    profile = BrowserProfile(
        user_data_dir='~/.config/browseruse/profiles/default',
-       profile_directory='Default'
+       # profile_directory='Default'
    )
    ```
 
 2. **Limit domain access**: Restrict which sites the agent can visit:
    ```python
-   profile = BrowserProfile(
+   browser_session = BrowserSession(
        allowed_domains=['example.com', 'http*://*.github.com'],
        # ... other settings
    )
@@ -155,7 +155,7 @@ agent = Agent(
 
 3. **Enable keep_alive for multiple tasks**: Keep the browser open between agent runs:
    ```python
-   profile = BrowserProfile(
+   browser_session = BrowserSession(
        keep_alive=True,
        # ... other settings
    )
