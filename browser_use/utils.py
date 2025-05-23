@@ -308,7 +308,7 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 			execution_time = time.time() - start_time
 			# Only log if execution takes more than 0.25 seconds
 			if execution_time > 0.25:
-				logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
 		return wrapper
@@ -328,7 +328,7 @@ def time_execution_async(
 			# Only log if execution takes more than 0.25 seconds to avoid spamming the logs
 			# you can lower this threshold locally when you're doing dev work to performance optimize stuff
 			if execution_time > 0.25:
-				logger.debug(f'⏳ {additional_text} Execution time: {execution_time:.2f} seconds')
+				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
 		return wrapper

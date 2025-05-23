@@ -444,7 +444,9 @@ class BrowserSession(BaseModel):
 			assert self.browser.is_connected(), (
 				f'Browser is not connected, did the browser process crash or get killed? (connection method: {connection_method})'
 			)
-			logger.debug(f'🌎 {connection_method} Browser connected: v{self.browser.version}')
+			logger.debug(
+				f'🌎 {connection_method} browser connected: v{self.browser.version} {self.cdp_url or self.wss_url or self.browser_profile.executable_path or "(playwright)"}'
+			)
 
 		assert self.browser_context, (
 			f'Failed to create a playwright BrowserContext {self.browser_context} for browser={self.browser}'
@@ -497,12 +499,12 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			logger.debug(
-				f'📜 Found {len(pages)} existing pages in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'📜 Found {len(pages)} existing tabs in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
 			pages = [foreground_page]
-			logger.debug('📄 Opened new page in empty fresh browser context...')
+			logger.debug('➕ Opened new tab in empty browser context...')
 
 		self.agent_current_page = self.agent_current_page or foreground_page
 		self.human_current_page = self.human_current_page or foreground_page
@@ -572,9 +574,8 @@ class BrowserSession(BaseModel):
 		# log the viewport settings to terminal
 		viewport = self.browser_profile.viewport
 		logger.debug(
-			'📐 Setting up viewport options: '
+			'📐 Setting up viewport: '
 			+ f'headless={self.browser_profile.headless} '
-			+ (f'viewport={viewport["width"]}x{viewport["height"]}px ' if viewport else '(no viewport) ')
 			+ (
 				f'window={self.browser_profile.window_size["width"]}x{self.browser_profile.window_size["height"]}px '
 				if self.browser_profile.window_size
@@ -585,8 +586,9 @@ class BrowserSession(BaseModel):
 				if self.browser_profile.screen
 				else ''
 			)
-			+ f'is_mobile={self.browser_profile.is_mobile} '
+			+ (f'viewport={viewport["width"]}x{viewport["height"]}px ' if viewport else '(no viewport) ')
 			+ f'device_scale_factor={self.browser_profile.device_scale_factor or 1.0} '
+			+ f'is_mobile={self.browser_profile.is_mobile} '
 			+ (f'color_scheme={self.browser_profile.color_scheme.value} ' if self.browser_profile.color_scheme else '')
 			+ (f'locale={self.browser_profile.locale} ' if self.browser_profile.locale else '')
 			+ (f'timezone_id={self.browser_profile.timezone_id} ' if self.browser_profile.timezone_id else '')
@@ -1093,6 +1095,7 @@ class BrowserSession(BaseModel):
 		page.on('request', on_request)
 		page.on('response', on_response)
 
+		now = asyncio.get_event_loop().time()
 		try:
 			# Wait for idle time
 			start_time = asyncio.get_event_loop().time()
@@ -1116,7 +1119,9 @@ class BrowserSession(BaseModel):
 			page.remove_listener('request', on_request)
 			page.remove_listener('response', on_response)
 
-		logger.debug(f'⚖️  Network stabilized for {self.browser_profile.wait_for_network_idle_page_load_time} seconds')
+		elapsed = now - start_time
+		if elapsed > 1:
+			logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
@@ -1144,7 +1149,32 @@ class BrowserSession(BaseModel):
 		elapsed = time.time() - start_time
 		remaining = max((timeout_overwrite or self.browser_profile.minimum_wait_page_load_time) - elapsed, 0)
 
-		logger.debug(f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds')
+		# just for logging, calculate how much data was downloaded
+		try:
+			bytes_used = await page.evaluate("""
+				() => {
+					let total = 0;
+					for (const entry of performance.getEntriesByType('resource')) {
+						total += entry.transferSize || 0;
+					}
+					for (const nav of performance.getEntriesByType('navigation')) {
+						total += nav.transferSize || 0;
+					}
+					return total;
+				}
+			""")
+		except Exception:
+			bytes_used = None
+
+		tab_idx = self.tabs.index(page)
+		if bytes_used is not None:
+			logger.debug(
+				f'➡️ Page navigation [{tab_idx}]{truncate_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
+			)
+		else:
+			logger.debug(
+				f'➡️ Page navigation [{tab_idx}]{truncate_url(page.url, 40)} took {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
+			)
 
 		# Sleep remaining time if needed
 		if remaining > 0:
