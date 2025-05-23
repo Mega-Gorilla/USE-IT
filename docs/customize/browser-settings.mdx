@@ -4,56 +4,66 @@ description: "Configure browser behavior and context settings"
 icon: "globe"
 ---
 
-Browser Use allows you to customize the browser's behavior through two main configuration classes: `BrowserConfig` and `BrowserContextConfig`. These settings control everything from headless mode to proxy settings and page load behavior.
+Browser Use provides a flexible configuration system through `BrowserSession` and `BrowserProfile` classes. These allow you to customize browser behavior, connect to existing browsers, and manage persistent sessions.
 
 <Note>
-  We are currently working on improving how browser contexts are managed. The
-  system will soon transition to a "1 agent, 1 browser, 1 context" model for
-  better stability and developer experience.
+  The new `BrowserSession` and `BrowserProfile` system is compatible with Playwright's [launch_persistent_context](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) API, giving you full control over browser settings.
 </Note>
 
 # Browser Configuration
 
-The `BrowserConfig` class controls the core browser behavior and connection settings.
+The `BrowserSession` and `BrowserProfile` classes control browser behavior and connection settings.
 
 ```python
-from browser_use import BrowserConfig
+from browser_use import Agent, BrowserSession, BrowserProfile
 
 # Basic configuration
-config = BrowserConfig(
+profile = BrowserProfile(
     headless=False,
     disable_security=False
 )
 
-browser = Browser(config=config)
+session = BrowserSession(browser_profile=profile)
+await session.start()
 
 agent = Agent(
-    browser=browser,
+    browser=session,
     # ...
 )
 ```
 
 ## Core Settings
 
-- **headless** (default: `False`)
-  Runs the browser without a visible UI. Note that some websites may detect headless mode.
+### BrowserProfile Settings
 
-- **disable_security** (default: `False`)
-  Disables browser security features. While this can fix certain functionality issues (like cross-site iFrames), it should be used cautiously, especially when visiting untrusted websites.
+- **headless** (bool | None, default: `None`)
+  Runs the browser without a visible UI. If None, auto-detects based on display availability.
 
-- **keep_alive** (default: `False`)
-  Keeps the browser alive after the agent has finished running. This is useful when you need to run multiple tasks with the same browser instance.
+- **disable_security** (bool, default: `False`)
+  Disables browser security features. While this can fix certain functionality issues (like cross-site iFrames), it should be used cautiously.
+
+- **keep_alive** (bool | None, default: `None`)
+  Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
+
+- **user_data_dir** (str | Path | None, default: `'~/.config/browseruse/profiles/default'`)
+  Directory for browser profile data. Set to None for incognito mode.
+
+- **channel** (BrowserChannel, default: `'chromium'`)
+  Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, `'msedge-beta'`, `'msedge-dev'`, `'msedge-canary'`
 
 ### Additional Settings
 
-- **extra_browser_args** (default: `[]`)
-  Additional arguments are passed to the browser at launch. See the [full list of available arguments](https://github.com/browser-use/browser-use/blob/main/browser_use/browser/browser.py#L180).
+- **args** (list[str], default: `[]`)
+  Additional command-line arguments to pass to the browser.
 
-- **proxy** (default: `None`)
-  Standard Playwright proxy settings for using external proxy services.
+- **proxy** (dict | None, default: `None`)
+  Proxy settings. Example: `{"server": "http://proxy.com:8080", "username": "user", "password": "pass"}`
 
-- **new_context_config** (default: `BrowserContextConfig()`)
-  Default settings for new browser contexts. See Context Configuration below.
+- **executable_path** (str | Path | None, default: `None`)
+  Path to browser executable for custom installations.
+
+- **env** (dict[str, str], default: `{}`)
+  Environment variables to set when launching browser.
 
 <Note>
   For web scraping tasks on sites that restrict automated access, we recommend
@@ -62,19 +72,19 @@ agent = Agent(
 
 ## Alternative Initialization
 
-These settings allow you to connect to external browser providers or use a local Chrome instance.
+BrowserSession supports multiple ways to connect to browsers:
 
 ### External Browser Provider (wss)
 
 Connect to cloud-based browser services for enhanced reliability and proxy capabilities.
 
 ```python
-config = BrowserConfig(
+session = BrowserSession(
     wss_url="wss://your-browser-provider.com/ws"
 )
 ```
 
-- **wss_url** (default: `None`)
+- **wss_url** (str | None, default: `None`)
   WebSocket URL for connecting to external browser providers (e.g., [anchorbrowser.io](https://anchorbrowser.io), steel.dev, browserbase.com, browserless.io, [TestingBot](https://testingbot.com/support/ai/integrations/browser-use)).
 
 <Note>
@@ -87,12 +97,12 @@ config = BrowserConfig(
 Connect to cloud or local Chrome instances using Chrome DevTools Protocol (CDP) for use with tools like `headless-shell` or `browserless`.
 
 ```python
-config = BrowserConfig(
+session = BrowserSession(
     cdp_url="http://localhost:9222"
 )
 ```
 
-- **cdp_url** (default: `None`)
+- **cdp_url** (str | None, default: `None`)
   URL for connecting to a Chrome instance via CDP. Commonly used for debugging or connecting to locally running Chrome instances.
 
 ### Local Chrome Instance (binary)
@@ -100,28 +110,35 @@ config = BrowserConfig(
 Connect to your existing Chrome installation to access saved states and cookies.
 
 ```python
-config = BrowserConfig(
-    browser_binary_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Option 1: Use executable_path in profile
+profile = BrowserProfile(
+    executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 )
+session = BrowserSession(browser_profile=profile)
+
+# Option 2: Connect to running Chrome process by PID
+session = BrowserSession(browser_pid=12345)
 ```
 
-- **browser_binary_path** (default: `None`)
-  Path to connect to an existing Browser installation. Particularly useful for workflows requiring existing login states or browser preferences.
+- **executable_path** (str | Path | None, default: `None`)
+  Path to browser executable for custom installations.
 
-<Note>This will overwrite other browser settings.</Note>
+- **browser_pid** (int | None, default: `None`)
+  Process ID of running Chrome to connect to.
+
+<Note>When connecting to existing Chrome process, ensure it was started with --remote-debugging-port flag.</Note>
 
 # Context Configuration
 
-The `BrowserContextConfig` class controls settings for individual browser contexts.
+The `BrowserProfile` class includes all context settings for the browser.
 
 ```python
-from browser_use.browser.context import BrowserContextConfig
+from browser_use import BrowserSession, BrowserProfile
 
-config = BrowserContextConfig(
+profile = BrowserProfile(
     cookies_file="path/to/cookies.json",
     wait_for_network_idle_page_load_time=3.0,
-    window_width=1280,
-    window_height=1100,
+    viewport={"width": 1280, "height": 1100},
     locale='en-US',
     user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36',
     highlight_elements=True,
@@ -129,13 +146,11 @@ config = BrowserContextConfig(
     allowed_domains=['google.com', 'wikipedia.org'],
 )
 
-browser = Browser()
-context = BrowserContext(browser=browser, config=config)
-
+session = BrowserSession(browser_profile=profile)
 
 async def run_search():
 	agent = Agent(
-		browser_context=context,
+		browser=session,
 		task='Your task',
 		llm=llm)
 ```
@@ -144,35 +159,65 @@ async def run_search():
 
 ### Page Load Settings
 
-- **minimum_wait_page_load_time** (default: `0.5`)
+- **minimum_wait_page_load_time** (float, default: `0.25`)
   Minimum time to wait before capturing page state for LLM input.
 
-- **wait_for_network_idle_page_load_time** (default: `1.0`)
+- **wait_for_network_idle_page_load_time** (float, default: `0.5`)
   Time to wait for network activity to cease. Increase to 3-5s for slower websites. This tracks essential content loading, not dynamic elements like videos.
 
-- **maximum_wait_page_load_time** (default: `5.0`)
+- **maximum_wait_page_load_time** (float, default: `5.0`)
   Maximum time to wait for page load before proceeding.
+
+- **wait_between_actions** (float, default: `0.5`)
+  Time to wait between agent actions.
+
+- **default_timeout** (float | None, default: `None`)
+  Default timeout for Playwright operations in milliseconds.
+
+- **default_navigation_timeout** (float | None, default: `None`)
+  Default timeout for page navigation in milliseconds.
 
 ### Display Settings
 
-- **window_width** (default: `1280`) and **window_height** (default: `1100`)
-  Browser window dimensions. The default size is optimized for general use cases and interaction with common UI elements like cookie banners.
+- **viewport** (dict | None, default: `None`)
+  Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720}`
 
-- **locale** (default: `None`)
-  Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator. Language value, Accept-Language request header value as well as number and date formatting rules. If not provided, defaults to the system default locale.
+- **window_size** (dict | None, default: `None`)
+  Browser window size for headful mode. Example: `{"width": 1920, "height": 1080}`
 
-- **highlight_elements** (default: `True`)
+- **window_position** (dict | None, default: `{"width": 0, "height": 0}`)
+  Window position from top-left corner.
+
+- **no_viewport** (bool | None, default: `None`)
+  Disable fixed viewport. Content will resize with window.
+
+- **device_scale_factor** (float | None, default: `None`)
+  Device scale factor (DPI). Useful for high-resolution screenshots.
+
+- **screen** (dict | None, default: `None`)
+  Screen size available to browser. Auto-detected if not specified.
+
+- **locale** (str | None, default: `None`)
+  Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator.language value, Accept-Language request header value as well as number and date formatting rules.
+
+- **timezone_id** (str | None, default: `None`)
+  Timezone identifier (e.g., 'America/New_York').
+
+- **color_scheme** (str, default: `'light'`)
+  Preferred color scheme: `'light'`, `'dark'`, `'no-preference'`
+
+- **highlight_elements** (bool, default: `True`)
   Highlight interactive elements on the screen with colorful bounding boxes.
 
-- **viewport_expansion** (default: `500`)
-  Viewport expansion in pixels. With this you can control how much of the page is included in the context of the LLM. Setting this parameter controls the highlighting of elements:
+- **viewport_expansion** (int, default: `500`)
+  Viewport expansion in pixels. With this you can control how much of the page is included in the context of the LLM:
   - `-1`: All elements from the entire page will be included, regardless of visibility (highest token usage but most complete).
   - `0`: Only elements which are currently visible in the viewport will be included.
   - `500` (default): Elements in the viewport plus an additional 500 pixels in each direction will be included, providing a balance between context and token usage.
 
 ### Restrict URLs
 
-- **allowed_domains** (default: `None`)
+- **allowed_domains** (list[str] | None, default: `None`)
   List of allowed domains that the agent can access. If None, all domains are allowed.
   Example: ['google.com', '*.wikipedia.org'] - Here the agent will only be able to access `google.com` exactly and `wikipedia.org` + `*.wikipedia.org`.
   
@@ -187,16 +232,82 @@ async def run_search():
 
 ### Session Management
 
-- **keep_alive** (default: `False`)
+- **keep_alive** (bool | None, default: `None`)
   Keeps the browser context (tab/session) alive after an agent task has completed. This is useful for maintaining session state across multiple tasks.
+
+- **storage_state** (str | Path | dict | None, default: `None`)
+  Browser storage state (cookies, localStorage). Can be file path or dict.
+
+- **cookies_file** (str | None, default: `None`)
+  File to save cookies to.
 
 ### Debug and Recording
 
-- **save_recording_path** (default: `None`)
+- **save_recording_path** (str | None, default: `None`)
   Directory path for saving video recordings.
 
-- **trace_path** (default: `None`)
+- **trace_path** (str | None, default: `None`)
   Directory path for saving trace files. Files are automatically named as `{trace_path}/{context_id}.zip`.
 
-- **save_playwright_script_path** (default: `None`)
-  BETA: Filename to save a replayable playwright python script to containing the steps the agent took.
+- **record_video_dir** (str | Path | None, default: `None`)
+  Directory to save video recordings.
+
+- **record_video_size** (dict | None, default: `None`)
+  Video size. Example: `{"width": 1280, "height": 720}`
+
+- **record_har_path** (str | Path | None, default: `None`)
+  Path to save HAR file with network activity.
+
+- **slow_mo** (float, default: `0`)
+  Slow down operations by specified milliseconds.
+
+- **devtools** (bool, default: `False`)
+  Auto-open DevTools panel (headful only).
+
+## Complete BrowserProfile Parameters
+
+For reference, here's the complete list of all available BrowserProfile parameters:
+
+### Browser and Network
+- `user_agent` - Custom user agent string
+- `proxy` - Proxy settings
+- `http_credentials` - HTTP authentication
+- `extra_http_headers` - Additional HTTP headers
+- `offline` - Emulate network offline
+- `ignore_https_errors` - Ignore HTTPS errors
+- `bypass_csp` - Bypass Content-Security-Policy
+- `base_url` - Base URL for relative navigation
+
+### JavaScript and Content
+- `java_script_enabled` - Enable JavaScript
+- `service_workers` - Service workers mode: 'allow', 'block'
+- `accept_downloads` - Accept file downloads
+- `permissions` - Granted permissions list
+- `strict_selectors` - Strict selector mode
+- `client_certificates` - Client certificates list
+
+### Mobile and Touch
+- `is_mobile` - Enable mobile emulation
+- `has_touch` - Enable touch events
+- `geolocation` - Geolocation coordinates
+
+### Appearance
+- `forced_colors` - Forced colors mode
+- `reduced_motion` - Reduced motion preference
+- `contrast` - Contrast preference
+
+### Performance
+- `deterministic_rendering` - Deterministic rendering
+- `include_dynamic_attributes` - Include dynamic attributes in selectors
+- `chromium_sandbox` - Enable Chromium sandboxing
+- `ignore_default_args` - List of default args to ignore
+- `handle_sigint` - Handle SIGINT signals
+- `handle_sighup` - Handle SIGHUP signals
+- `handle_sigterm` - Handle SIGTERM signals
+
+### File Paths
+- `downloads_dir` - Directory for downloads
+- `save_downloads_path` - Alternative downloads directory
+- `profile_directory` - Chrome profile directory name
+
+For more details on Playwright's browser context options, see the [official documentation](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context).
