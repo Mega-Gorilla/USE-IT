@@ -56,79 +56,62 @@ agent = Agent(
   support.
 </Note>
 
-## (Reuse) Browser Configuration
-
-You can configure how the agent interacts with the browser. To see more `Browser` options refer to the <a href="/customize/browser-settings">Browser Settings</a> documentation.
-
-### Reuse Existing Browser
-
-`browser`: A Browser Use Browser instance. When provided, the agent will reuse this browser instance and automatically create new contexts for each `run()`.
-
-```python
-from browser_use import Agent, Browser
-from browser_use.browser.context import BrowserContext
-
-# Reuse existing browser
-browser = Browser()
-agent = Agent(
-    task=task1,
-    llm=llm,
-    browser=browser  # Browser instance will be reused
-)
-
-await agent.run()
-
-# Manually close the browser
-await browser.close()
-```
-
-<Note>
-  Remember: in this scenario the `Browser` will not be closed automatically.
-</Note>
 
 ### Reuse Existing Browser Context
 
-You can pass any of the following Playwright objects to the Agent: `page`, `browser_context`, `browser`, `browser_session`, or `browser_profile`. These all get passed down to create a `BrowserSession`:
+By default browser-use launches its own builtin browser using playwright chromium.
+You can also connect to a remote browser or pass any of the following 
+existing playwright objects to the Agent: `page`, `browser_context`, `browser`, `browser_session`, or `browser_profile`.
+
+These all get passed down to create a `BrowserSession` for the `Agent`:
+
 
 ```python
-browser_session = browser_session or BrowserSession(page, browser_context, browser_profile)
+agent = Agent(
+    task='book a flight to fiji',
+    llm=llm,
+    browser_profile=browser_profile,  # use this profile to create a BrowserSession
+    browser_session=BrowserSession(   # use an existing BrowserSession
+      cdp_url=...,                      # remote CDP browser to connect to
+      # or
+      wss_url=...,                      # remote wss playwright server provider
+      # or
+      browser_pid=...                   # pid of a locally running browser process to attach to
+      # or
+      executable_path=...               # provide a custom chrome binary path
+      # or
+      channel=...                       # specify chrome, chromium, ms-edge, etc.
+      # or
+      page=page,                        # use an existing playwright Page object
+      # or
+      browser_context=browser_context,  # use an existing playwright BrowserContext object
+      # or
+      browser=browser,                  # use an existing playwright Browser object
+    ),
+)
 ```
 
-`browser_context`: A Playwright browser context. Useful for maintaining persistent sessions. See <a href="/customize/persistent-browser">Persistent Browser</a> for more details.
-
+For example, to connect to an existing browser over CDP you could do:
 ```python
-from browser_use import Agent, Browser
-from playwright.async_api import BrowserContext
-
-# Use specific browser context (preferred method)
-async with await browser.new_context() as context:
-    agent = Agent(
-        task=task2,
-        llm=llm,
-        browser_context=context  # Use persistent context
-    )
-
-    # Run the agent
-    await agent.run()
-
-    # Pass the context to the next agent
-    next_agent = Agent(
-        task=task2,
-        llm=llm,
-        browser_context=context
-    )
-
+agent = Agent(
     ...
-
-await browser.close()
+    browser_session=BrowserSession(cdp_url='http://localhost:9222'),
+)
 ```
 
-For more information about how browser context works, refer to the [Playwright
-documentation](https://playwright.dev/docs/api/class-browsercontext).
+For example, to connect to a local running chrome instance you can do:
+```python
+agent = Agent(
+    ...
+    browser_session=BrowserSession(browser_pid=1234),
+)
+```
+
+See <a href="/customize/real-browser">Connect to your Browser</a> for more info.
 
 <Note>
-  You can reuse the same context for multiple agents. If you do nothing, the
-  browser will be automatically created and closed on `run()` completion.
+  You can reuse the same `BrowserSession` after an agent has completed running. If you do nothing, the
+  browser will be automatically closed on `run()` completion only if it was launched by us.
 </Note>
 
 ## Running the Agent

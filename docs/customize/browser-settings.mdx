@@ -40,13 +40,13 @@ agent = Agent(
   Runs the browser without a visible UI. If None, auto-detects based on display availability.
 
 - **disable_security** (bool, default: `False`)
-  Disables browser security features. While this can fix certain functionality issues (like cross-site iFrames), it should be used cautiously.
+  Completely disables all basic browser security features. Allows interacting across cross-site iFrames boundaries, but very INSECURE, don't visit untrusted URLs or use cookies.
 
 - **keep_alive** (bool | None, default: `None`)
   Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
 
 - **user_data_dir** (str | Path | None, default: `'~/.config/browseruse/profiles/default'`)
-  Directory for browser profile data. Set to None for incognito mode.
+  Directory for browser profile data. Set to None to use an ephemeral profile aka incognito mode.
 
 - **channel** (BrowserChannel, default: `'chromium'`)
   Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, `'msedge-beta'`, `'msedge-dev'`, `'msedge-canary'`
@@ -72,7 +72,7 @@ agent = Agent(
 
 ## Alternative Initialization
 
-BrowserSession supports multiple ways to connect to browsers:
+`BrowserSession` supports multiple ways to connect to browsers:
 
 ### External Browser Provider (wss)
 
