@@ -3,6 +3,47 @@ name: Run Evaluation Script
 on:
   repository_dispatch:
     types: [run-eval]
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Agent model"
+        required: false
+        default: "llama-4-maverick"
+        type: choice
+        options:
+          [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "claude-3.5-sonnet",
+            "llama-4-maverick",
+            "gemini-1.5-flash",
+          ]
+      eval_model:
+        description: "Evaluation model"
+        required: false
+        default: "gpt-4o"
+        type: choice
+        options: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"]
+      enable_memory:
+        description: "Enable memory system"
+        required: false
+        default: false
+        type: boolean
+      validate_output:
+        description: "Enable output validation"
+        required: false
+        default: false
+        type: boolean
+      use_serp:
+        description: "Use SERP search instead of Google search"
+        required: false
+        default: false
+        type: boolean
+      max_steps:
+        description: "Maximum steps per task"
+        required: false
+        default: "25"
+        type: string
 
 jobs:
   run_evaluation:
@@ -49,85 +90,111 @@ jobs:
         run: playwright install --no-shell chromium
 
       - name: Install Xvfb for headed mode
-        if: github.event.client_payload.script_args.headless == 'false'
+        if: steps.eval_params.outputs.NEEDS_XVFB == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
 
-      - name: Construct eval command
-        id: eval_command
+      - name: Setup evaluation parameters
+        id: eval_params
         run: |
-          # Extract values from client_payload.script_args, applying defaults if not provided
-          MODEL_PAYLOAD="${{ github.event.client_payload.script_args.model }}"
-          EVAL_MODEL_PAYLOAD="${{ github.event.client_payload.script_args.eval_model }}"
-          PARALLEL_RUNS_PAYLOAD="${{ github.event.client_payload.script_args.parallel_runs }}"
-          MAX_STEPS_PAYLOAD="${{ github.event.client_payload.script_args.max_steps }}"
-          START_INDEX_PAYLOAD="${{ github.event.client_payload.script_args.start_index }}"
-          END_INDEX_PAYLOAD="${{ github.event.client_payload.script_args.end_index }}"
-          NO_VISION_PAYLOAD="${{ github.event.client_payload.script_args.no_vision }}"
-          HEADLESS_PAYLOAD="${{ github.event.client_payload.script_args.headless }}"
-          FRESH_START_PAYLOAD="${{ github.event.client_payload.script_args.fresh_start }}"
-          EVAL_GROUP_PAYLOAD="${{ github.event.client_payload.script_args.eval_group }}"
-          USER_MESSAGE_PAYLOAD="${{ github.event.client_payload.script_args.user_message }}"
-          DEVELOPER_ID_PAYLOAD="${{ github.event.client_payload.script_args.developer_id }}"
+          # Define default configuration
+          cat > /tmp/defaults.json << 'EOF'
+          {
+            "model": "llama-4-maverick",
+            "eval_model": "gpt-4o",
+            "parallel_runs": 2,
+            "max_steps": 25,
+            "start_index": 0,
+            "end_index": 100,
+            "headless": true,
+            "no_vision": false,
+            "fresh_start": true,
+            "eval_group": "PRTests",
+            "memory_interval": 10,
+            "max_actions_per_step": 10,
+            "planner_interval": 1,
+            "use_serp": false,
+            "enable_memory": false,
+            "validate_output": false
+          }
+          EOF
 
-          # Apply defaults for string/numeric types
-          MODEL="${MODEL_PAYLOAD:-llama-4-maverick}"
-          EVAL_MODEL="${EVAL_MODEL_PAYLOAD:-gpt-4o}"
-          PARALLEL_RUNS="${PARALLEL_RUNS_PAYLOAD:-2}"
-          MAX_STEPS="${MAX_STEPS_PAYLOAD:-25}"
-          START_INDEX="${START_INDEX_PAYLOAD:-0}"
-          EVAL_GROUP="${EVAL_GROUP_PAYLOAD:-PRTests}"
-          USER_MESSAGE="${USER_MESSAGE_PAYLOAD}"
-          DEVELOPER_ID="${DEVELOPER_ID_PAYLOAD}"
-          FRESH_START_VALUE="${FRESH_START_PAYLOAD:-true}" # Default for fresh_start is true
-
-          CMD="python eval/service.py \
-            --model \"$MODEL\" \
-            --eval-model \"$EVAL_MODEL\" \
-            --parallel-runs \"$PARALLEL_RUNS\" \
-            --max-steps \"$MAX_STEPS\" \
-            --start \"$START_INDEX\""
-
-          # Handle optional end_index with its default
-          if [[ -n "$END_INDEX_PAYLOAD" ]]; then
-            CMD="$CMD --end \"$END_INDEX_PAYLOAD\""
+          # Get input source (repository_dispatch or workflow_dispatch)
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            # Repository dispatch - extract from client_payload
+            echo '${{ toJson(github.event.client_payload.script_args) }}' > /tmp/input.json
           else
-            CMD="$CMD --end 100" # Default end_index if not in client_payload
+            # Workflow dispatch - extract from inputs
+            echo '${{ toJson(github.event.inputs) }}' > /tmp/input.json
           fi
 
-          # Handle boolean flags (only add if true or default to true)
-          if [[ "$NO_VISION_PAYLOAD" == "true" ]]; then
-            CMD="$CMD --no-vision"
+          # Merge defaults with input, giving priority to input
+          jq -s '.[0] * (.[1] // {})' /tmp/defaults.json /tmp/input.json > /tmp/config.json
+
+          # Extract individual values using jq
+          MODEL=$(jq -r '.model' /tmp/config.json)
+          EVAL_MODEL=$(jq -r '.eval_model' /tmp/config.json)
+          PARALLEL_RUNS=$(jq -r '.parallel_runs' /tmp/config.json)
+          MAX_STEPS=$(jq -r '.max_steps' /tmp/config.json)
+          START_INDEX=$(jq -r '.start_index' /tmp/config.json)
+          END_INDEX=$(jq -r '.end_index' /tmp/config.json)
+          HEADLESS=$(jq -r '.headless' /tmp/config.json)
+          NO_VISION=$(jq -r '.no_vision' /tmp/config.json)
+          FRESH_START=$(jq -r '.fresh_start' /tmp/config.json)
+          EVAL_GROUP=$(jq -r '.eval_group' /tmp/config.json)
+          MEMORY_INTERVAL=$(jq -r '.memory_interval' /tmp/config.json)
+          MAX_ACTIONS_PER_STEP=$(jq -r '.max_actions_per_step' /tmp/config.json)
+          PLANNER_INTERVAL=$(jq -r '.planner_interval' /tmp/config.json)
+          USE_SERP=$(jq -r '.use_serp' /tmp/config.json)
+          ENABLE_MEMORY=$(jq -r '.enable_memory' /tmp/config.json)
+          VALIDATE_OUTPUT=$(jq -r '.validate_output' /tmp/config.json)
+          USER_MESSAGE=$(jq -r '.user_message // empty' /tmp/config.json)
+          DEVELOPER_ID=$(jq -r '.developer_id // empty' /tmp/config.json)
+          PLANNER_MODEL=$(jq -r '.planner_model // empty' /tmp/config.json)
+
+          # Build command array for cleaner construction
+          ARGS=(
+            "python" "eval/service.py"
+            "--model" "$MODEL"
+            "--eval-model" "$EVAL_MODEL"
+            "--parallel-runs" "$PARALLEL_RUNS"
+            "--max-steps" "$MAX_STEPS"
+            "--start" "$START_INDEX"
+            "--end" "$END_INDEX"
+            "--fresh-start" "$FRESH_START"
+            "--eval-group" "$EVAL_GROUP"
+            "--memory-interval" "$MEMORY_INTERVAL"
+            "--max-actions-per-step" "$MAX_ACTIONS_PER_STEP"
+            "--planner-interval" "$PLANNER_INTERVAL"
+          )
+
+          # Add boolean flags conditionally
+          [[ "$NO_VISION" == "true" ]] && ARGS+=("--no-vision")
+          [[ "$HEADLESS" == "true" ]] && ARGS+=("--headless")
+          [[ "$USE_SERP" == "true" ]] && ARGS+=("--use-serp")
+          [[ "$ENABLE_MEMORY" == "true" ]] && ARGS+=("--enable-memory")
+          [[ "$VALIDATE_OUTPUT" == "true" ]] && ARGS+=("--validate-output")
+
+          # Add optional string parameters
+          [[ -n "$USER_MESSAGE" ]] && ARGS+=("--user-message" "$USER_MESSAGE")
+          [[ -n "$DEVELOPER_ID" ]] && ARGS+=("--developer-id" "$DEVELOPER_ID")
+          [[ -n "$PLANNER_MODEL" ]] && ARGS+=("--planner-model" "$PLANNER_MODEL")
+
+          # Convert array to command string
+          printf -v CMD_STRING '%q ' "${ARGS[@]}"
+
+          # Add xvfb wrapper if needed
+          if [[ "$HEADLESS" == "false" ]]; then
+            CMD_STRING="xvfb-run --auto-servernum --server-args='-screen 0 1280x1024x24' $CMD_STRING"
           fi
 
-          # --headless is action='store_true', default for input was true.
-          # So, add --headless if payload is "true" or if payload is empty (use default "true")
-          HEADLESS_EFFECTIVE_VALUE="${HEADLESS_PAYLOAD:-true}"
-          if [[ "$HEADLESS_EFFECTIVE_VALUE" == "true" ]]; then
-            CMD="$CMD --headless"
-          fi
-            
-          CMD="$CMD --fresh-start $FRESH_START_VALUE \
-            --eval-group \"$EVAL_GROUP\" \
+          echo "FULL_COMMAND=$CMD_STRING" >> $GITHUB_OUTPUT
+          echo "NEEDS_XVFB=$([[ "$HEADLESS" == "false" ]] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
 
-          # Only add user-message if it was provided in the payload
-          if [[ -n "$USER_MESSAGE_PAYLOAD" ]]; then
-            CMD="$CMD --user-message \"$USER_MESSAGE_PAYLOAD\""
-          fi
-
-          # Only add developer-id if it was provided in the payload
-          if [[ -n "$DEVELOPER_ID_PAYLOAD" ]]; then
-            CMD="$CMD --developer-id \"$DEVELOPER_ID_PAYLOAD\""
-          fi
-
-          # Prepend xvfb-run if running in headed mode
-          if [[ "$HEADLESS_EFFECTIVE_VALUE" == "false" ]]; then
-            CMD="xvfb-run --auto-servernum --server-args='-screen 0 1280x1024x24' $CMD"
-          fi
-
-          echo "FULL_COMMAND=$CMD" >> $GITHUB_OUTPUT
-          echo "::notice title=Eval Command::$CMD"
+          # Log configuration for debugging
+          echo "::notice title=Configuration::$(cat /tmp/config.json)"
+          echo "::notice title=Command::$CMD_STRING"
 
       - name: Run evaluation script
-        run: ${{ steps.eval_command.outputs.FULL_COMMAND }}
+        run: ${{ steps.eval_params.outputs.FULL_COMMAND }}

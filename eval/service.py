@@ -271,6 +271,7 @@ async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model
 # A service for evaluating the performance of the agent
 # ==============================================================================================================
 import argparse
+import http.client
 import json
 import os
 import subprocess
@@ -286,7 +287,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic.types import SecretStr
 
-from browser_use import Agent, BrowserProfile, BrowserSession
+from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Controller
+from browser_use.agent.memory import MemoryConfig
 from browser_use.agent.views import AgentHistoryList
 
 SUPPORTED_MODELS = {
@@ -409,6 +411,57 @@ SUPPORTED_MODELS = {
 		'api_key_env': 'GROQ_API_KEY',
 	},
 }
+
+# Check for SERPER API key
+SERPER_API_KEY = os.getenv('SERPER_API_KEY')
+if not SERPER_API_KEY:
+	logger.warning('SERPER_API_KEY is not set. Search functionality will not be available.')
+
+
+def create_controller_with_serp_search():
+	"""Create a controller with SERP search instead of Google search"""
+	controller = Controller(exclude_actions=['search_google'])
+
+	@controller.registry.action('Search the web for a specific query')
+	async def search_web(query: str):
+		"""Search the web using Serper API"""
+		if not SERPER_API_KEY:
+			return ActionResult(extracted_content='Search unavailable: SERPER_API_KEY not configured', include_in_memory=False)
+
+		try:
+			# Make request to Serper API
+			conn = http.client.HTTPSConnection('google.serper.dev')
+			payload = json.dumps({'q': query})
+			headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+			conn.request('POST', '/search', payload, headers)
+			res = conn.getresponse()
+			data = res.read()
+			serp_data = json.loads(data.decode('utf-8'))
+
+			# Exclude searchParameters and credits to reduce noise
+			serp_data = {k: v for k, v in serp_data.items() if k not in ['searchParameters', 'credits']}
+
+			# Log the search data for debugging
+			logger.debug(f"SERP search for '{query}': {json.dumps(serp_data, indent=2)}")
+
+			# Convert to string for the agent
+			serp_data_str = json.dumps(serp_data)
+
+			return ActionResult(extracted_content=serp_data_str, include_in_memory=False)
+
+		except Exception as e:
+			logger.error(f'Error in SERP search: {type(e).__name__}: {e}')
+			return ActionResult(extracted_content=f'Search error: {str(e)}', include_in_memory=False)
+
+	return controller
+
+
+def create_controller(use_serp: bool = False):
+	"""Create a controller, optionally with SERP search"""
+	if use_serp:
+		return create_controller_with_serp_search()
+	else:
+		return Controller()
 
 
 def get_llm(model_name: str):
@@ -980,14 +1033,40 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 
 
 async def run_agent_with_browser(
-	browser_session: BrowserSession, task: Task, llm: BaseChatModel, max_steps: int, use_vision: bool
+	browser_session: BrowserSession,
+	task: Task,
+	llm: BaseChatModel,
+	max_steps: int,
+	use_vision: bool,
+	use_serp: bool = False,
+	enable_memory: bool = False,
+	memory_interval: int = 10,
+	max_actions_per_step: int = 10,
+	validate_output: bool = False,
+	planner_llm: BaseChatModel | None = None,
+	planner_interval: int = 1,
 ) -> AgentHistoryList:
 	"""Run agent with the browser session"""
+	# Create controller, optionally with SERP search
+	controller = create_controller(use_serp=use_serp)
+
+	# Configure memory if enabled
+	memory_config = None
+	if enable_memory:
+		memory_config = MemoryConfig(agent_id=f'eval_agent_{task.task_id}', memory_interval=memory_interval, llm_instance=llm)
+
 	agent = Agent(
 		task=task.confirmed_task,
 		llm=llm,
+		controller=controller,
 		browser_session=browser_session,
 		use_vision=use_vision,
+		enable_memory=enable_memory,
+		memory_config=memory_config,
+		max_actions_per_step=max_actions_per_step,
+		validate_output=validate_output,
+		planner_llm=planner_llm,
+		planner_interval=planner_interval,
 		source='eval_platform',
 	)
 
@@ -1043,6 +1122,13 @@ async def run_task_with_semaphore(
 	use_vision: bool,
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
 	fresh_start: bool = True,
+	use_serp: bool = False,
+	enable_memory: bool = False,
+	memory_interval: int = 10,
+	max_actions_per_step: int = 10,
+	validate_output: bool = False,
+	planner_llm: BaseChatModel | None = None,
+	planner_interval: int = 1,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	async with semaphore_runs:
@@ -1083,7 +1169,20 @@ async def run_task_with_semaphore(
 				try:
 					agent_history = await run_stage(
 						Stage.RUN_AGENT,
-						lambda: run_agent_with_browser(browser_session, task, llm, max_steps_per_task, use_vision),
+						lambda: run_agent_with_browser(
+							browser_session,
+							task,
+							llm,
+							max_steps_per_task,
+							use_vision,
+							use_serp,
+							enable_memory,
+							memory_interval,
+							max_actions_per_step,
+							validate_output,
+							planner_llm,
+							planner_interval,
+						),
 						timeout=600,
 					)
 					task_result.stage_completed(Stage.RUN_AGENT)
@@ -1172,6 +1271,13 @@ async def run_multiple_tasks(
 	headless: bool = False,
 	use_vision: bool = True,
 	fresh_start: bool = True,
+	use_serp: bool = False,
+	enable_memory: bool = False,
+	memory_interval: int = 10,
+	max_actions_per_step: int = 10,
+	validate_output: bool = False,
+	planner_llm: BaseChatModel | None = None,
+	planner_interval: int = 1,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1194,6 +1300,13 @@ async def run_multiple_tasks(
 				use_vision=use_vision,
 				semaphore_runs=semaphore_runs,  # Pass the semaphore
 				fresh_start=fresh_start,
+				use_serp=use_serp,
+				enable_memory=enable_memory,
+				memory_interval=memory_interval,
+				max_actions_per_step=max_actions_per_step,
+				validate_output=validate_output,
+				planner_llm=planner_llm,
+				planner_interval=planner_interval,
 			)
 			for task in tasks_to_run
 		),
@@ -1418,6 +1531,19 @@ if __name__ == '__main__':
 	parser.add_argument('--user-message', type=str, default='', help='User message to include in the run')
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
 	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
+	parser.add_argument('--use-serp', action='store_true', help='Use SERP search instead of Google search')
+	parser.add_argument('--enable-memory', action='store_true', help='Enable mem0 memory system for agents')
+	parser.add_argument('--memory-interval', type=int, default=10, help='Memory creation interval (default: 10 steps)')
+	parser.add_argument('--max-actions-per-step', type=int, default=10, help='Maximum number of actions per step (default: 10)')
+	parser.add_argument('--validate-output', action='store_true', help='Enable output validation using LLM')
+	parser.add_argument(
+		'--planner-model',
+		type=str,
+		default=None,
+		choices=list(SUPPORTED_MODELS.keys()),
+		help='Model to use for planning (separate from main agent model)',
+	)
+	parser.add_argument('--planner-interval', type=int, default=1, help='Run planner every N steps (default: 1)')
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1532,6 +1658,34 @@ if __name__ == '__main__':
 			exit(1)
 
 		logger.info(f'Successfully obtained run ID: {run_id}. Proceeding with tasks...')
+
+		# Log search mode being used
+		if args.use_serp:
+			if SERPER_API_KEY:
+				logger.info('🔍 Using SERP search (Serper API) instead of Google search')
+			else:
+				logger.warning('⚠️ --use-serp flag provided but SERPER_API_KEY not set. Search will fail!')
+		else:
+			logger.info('🔍 Using default Google search')
+
+		# Log memory configuration
+		if args.enable_memory:
+			logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
+		else:
+			logger.info('🧠 Memory disabled')
+
+		# Log other agent configuration
+		logger.info(f'🎯 Max actions per step: {args.max_actions_per_step}')
+
+		if args.validate_output:
+			logger.info('✅ Output validation enabled')
+		else:
+			logger.info('✅ Output validation disabled')
+
+		if args.planner_model:
+			logger.info(f'🗺️ Planner enabled: {args.planner_model} (interval={args.planner_interval} steps)')
+		else:
+			logger.info('🗺️ Planner disabled')
 		# -------------------------
 
 		# --- Get LLMs ---
@@ -1554,6 +1708,20 @@ if __name__ == '__main__':
 				exc_info=True,
 			)
 			exit(1)
+
+		# Get planner LLM if specified
+		planner_llm = None
+		if args.planner_model:
+			logger.info(f'Instantiating planner LLM: {args.planner_model}')
+			try:
+				planner_llm = get_llm(args.planner_model)
+				logger.info(f'Planner LLM ({args.planner_model}) instantiated successfully.')
+			except Exception as e:
+				logger.error(
+					f'Failed to instantiate planner LLM ({args.planner_model}): {type(e).__name__}: {e}. Make sure required API keys are set.',
+					exc_info=True,
+				)
+				exit(1)
 		# -----------------
 
 		results = asyncio.run(
@@ -1571,6 +1739,13 @@ if __name__ == '__main__':
 				headless=args.headless,
 				use_vision=not args.no_vision,
 				fresh_start=args.fresh_start,
+				use_serp=args.use_serp,
+				enable_memory=args.enable_memory,
+				memory_interval=args.memory_interval,
+				max_actions_per_step=args.max_actions_per_step,
+				validate_output=args.validate_output,
+				planner_llm=planner_llm,
+				planner_interval=args.planner_interval,
 			)
 		)
 
