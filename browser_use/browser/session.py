@@ -1932,10 +1932,10 @@ class BrowserSession(BaseModel):
 		- Check if it's a label pointing to a file input
 		- Recursively search children for file inputs
 		- Check siblings for file inputs
-		
+
 		Args:
 			index: The index of the candidate element (could be a file input, label, or parent element)
-			
+
 		Returns:
 			The DOM element for the file input if found, None otherwise
 		"""
@@ -1943,12 +1943,12 @@ class BrowserSession(BaseModel):
 			selector_map = await self.get_selector_map()
 			if index not in selector_map:
 				return None
-				
+
 			candidate_element = selector_map[index]
-			
+
 			def is_file_input(node: DOMElementNode) -> bool:
 				return isinstance(node, DOMElementNode) and node.tag_name == 'input' and node.attributes.get('type') == 'file'
-			
+
 			def find_element_by_id(node: DOMElementNode, element_id: str) -> DOMElementNode | None:
 				if isinstance(node, DOMElementNode):
 					if node.attributes.get('id') == element_id:
@@ -1958,22 +1958,24 @@ class BrowserSession(BaseModel):
 						if result:
 							return result
 				return None
-			
+
 			def get_root(node: DOMElementNode) -> DOMElementNode:
 				root = node
 				while root.parent:
 					root = root.parent
 				return root
-			
+
 			# Recursively search for file input in node and its children
-			def find_file_input_recursive(node: DOMElementNode, max_depth: int = 3, current_depth: int = 0) -> DOMElementNode | None:
+			def find_file_input_recursive(
+				node: DOMElementNode, max_depth: int = 3, current_depth: int = 0
+			) -> DOMElementNode | None:
 				if current_depth > max_depth or not isinstance(node, DOMElementNode):
 					return None
-				
+
 				# Check current element
 				if is_file_input(node):
 					return node
-				
+
 				# Recursively check children
 				if node.children and current_depth < max_depth:
 					for child in node.children:
@@ -1982,25 +1984,25 @@ class BrowserSession(BaseModel):
 							if result:
 								return result
 				return None
-			
+
 			# Check if current element is a file input
 			if is_file_input(candidate_element):
 				return candidate_element
-				
+
 			# Check if it's a label pointing to a file input
 			if candidate_element.tag_name == 'label' and candidate_element.attributes.get('for'):
 				input_id = candidate_element.attributes.get('for')
 				root_element = get_root(candidate_element)
-				
+
 				target_input = find_element_by_id(root_element, input_id)
 				if target_input and is_file_input(target_input):
 					return target_input
-					
+
 			# Recursively check children
 			child_result = find_file_input_recursive(candidate_element)
 			if child_result:
 				return child_result
-				
+
 			# Check siblings
 			if candidate_element.parent:
 				for sibling in candidate_element.parent.children:
@@ -2008,9 +2010,9 @@ class BrowserSession(BaseModel):
 						if is_file_input(sibling):
 							return sibling
 			return None
-			
+
 		except Exception as e:
-			logger.debug(f"Error in find_file_upload_element_by_index: {e}")
+			logger.debug(f'Error in find_file_upload_element_by_index: {e}')
 			return None
 
 	@require_initialization
