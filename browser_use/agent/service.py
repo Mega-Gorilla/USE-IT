@@ -85,33 +85,6 @@ def log_response(response: AgentOutput, registry=None) -> None:
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
-	# for i, action in enumerate(response.action):
-	# Extract action name and parameters from the action model
-	# action_data = action.model_dump(exclude_unset=True)
-	# action_name = next(iter(action_data.keys())) if action_data else 'unknown'
-
-	# Get the parameters for this action
-	# action_params = action_data.get(action_name, {}) if action_data else {}
-
-	# Get actual function module if registry is available
-	# module_path = 'browser_use.controller.service'
-	# if registry and action_name in registry.actions:
-	# 	action_function = registry.actions[action_name].function
-	# 	if hasattr(action_function, '__module__'):
-	# 		module_path = action_function.__module__
-
-	# Format parameters as function call arguments
-	# if action_params:
-	# 	param_strings = []
-	# 	for key, value in action_params.items():
-	# 		if isinstance(value, str):
-	# 			param_strings.append(f'{key}="{value}"')
-	# 		else:
-	# 			param_strings.append(f'{key}={value}')
-	# 	params_str = ', '.join(param_strings)
-	# 	logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {action_name}({params_str})')
-	# else:
-	# 	logger.info(f'🛠️ Next Action {i + 1}/{len(response.action)}: {action_name}()')  # {module_path}.{action_name}
 
 
 Context = TypeVar('Context')
