@@ -76,7 +76,7 @@ class ActionRegistry(BaseModel):
 		Match a list of domain glob patterns against a URL.
 
 		Args:
-			domain_patterns: A list of domain patterns that can include glob patterns (* wildcard)
+			domains: A list of domain patterns that can include glob patterns (* wildcard)
 			url: The URL to match against
 
 		Returns:
@@ -86,26 +86,13 @@ class ActionRegistry(BaseModel):
 		if domains is None or not url:
 			return True
 
-		import fnmatch
-		from urllib.parse import urlparse
+		# Use the centralized URL matching logic from utils
+		from browser_use.utils import match_url_with_domain_pattern
 
-		# Parse the URL to get the domain
-		try:
-			parsed_url = urlparse(url)
-			if not parsed_url.netloc:
-				return False
-
-			domain = parsed_url.netloc
-			# Remove port if present
-			if ':' in domain:
-				domain = domain.split(':')[0]
-
-			for domain_pattern in domains:
-				if fnmatch.fnmatch(domain, domain_pattern):  # Perform glob *.matching.*
-					return True
-			return False
-		except Exception:
-			return False
+		for domain_pattern in domains:
+			if match_url_with_domain_pattern(url, domain_pattern):
+				return True
+		return False
 
 	@staticmethod
 	def _match_page_filter(page_filter: Callable[[Page], bool] | None, page: Page) -> bool:

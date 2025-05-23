@@ -13,7 +13,8 @@ async def analyze_page_structure(url: str):
 	browser = Browser(
 		config=BrowserConfig(
 			headless=False,  # Set to True if you don't need to see the browser
-		)
+		),
+		user_data_dir=None,
 	)
 
 	context = BrowserContext(browser=browser)

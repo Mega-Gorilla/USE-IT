@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from browser_use.browser.browser import Browser, BrowserConfig, ProxySettings
-from browser_use.browser.context import BrowserContext, BrowserContextConfig
+from browser_use.browser.profile import BrowserProfile, ProxySettings
+from browser_use.browser.session import BrowserSession
 
 
 @pytest.mark.asyncio
@@ -12,9 +12,7 @@ async def test_proxy_settings_pydantic_model():
 	Test that ProxySettings as a Pydantic model is correctly converted to a dictionary when used.
 	"""
 	# Create ProxySettings with Pydantic model
-	proxy_settings = ProxySettings(
-		server='http://example.proxy:8080', bypass='localhost', username='testuser', password='testpass'
-	)
+	proxy_settings = dict(server='http://example.proxy:8080', bypass='localhost', username='testuser', password='testpass')
 
 	# Verify the model has correct dict-like access
 	assert proxy_settings['server'] == 'http://example.proxy:8080'
@@ -22,7 +20,7 @@ async def test_proxy_settings_pydantic_model():
 	assert proxy_settings.get('nonexistent', 'default') == 'default'
 
 	# Verify model_dump works correctly
-	proxy_dict = proxy_settings.model_dump()
+	proxy_dict = dict(proxy_settings)
 	assert isinstance(proxy_dict, dict)
 	assert proxy_dict['server'] == 'http://example.proxy:8080'
 	assert proxy_dict['bypass'] == 'localhost'
@@ -35,25 +33,25 @@ async def test_proxy_settings_pydantic_model():
 @pytest.mark.asyncio
 async def test_window_size_config():
 	"""
-	Test that BrowserContextConfig correctly handles window_width and window_height properties.
+	Test that BrowserProfile correctly handles window_size property.
 	"""
-	# Create config with specific window dimensions
-	config = BrowserContextConfig(window_width=1280, window_height=1100)
+	# Create profile with specific window dimensions
+	profile = BrowserProfile(window_size={'width': 1280, 'height': 1100})
 
 	# Verify the properties are set correctly
-	assert config.window_width == 1280
-	assert config.window_height == 1100
+	assert profile.window_size['width'] == 1280
+	assert profile.window_size['height'] == 1100
 
 	# Verify model_dump works correctly
-	config_dict = config.model_dump()
-	assert isinstance(config_dict, dict)
-	assert config_dict['window_width'] == 1280
-	assert config_dict['window_height'] == 1100
+	profile_dict = profile.model_dump()
+	assert isinstance(profile_dict, dict)
+	assert profile_dict['window_size']['width'] == 1280
+	assert profile_dict['window_size']['height'] == 1100
 
 	# Create with different values
-	config2 = BrowserContextConfig(window_width=1920, window_height=1080)
-	assert config2.window_width == 1920
-	assert config2.window_height == 1080
+	profile2 = BrowserProfile(window_size={'width': 1920, 'height': 1080})
+	assert profile2.window_size['width'] == 1920
+	assert profile2.window_size['height'] == 1080
 
 
 @pytest.mark.asyncio
@@ -64,39 +62,25 @@ async def test_window_size_with_real_browser():
 	passed to Playwright and the actual browser window is configured with these settings.
 	This test is skipped in CI environments.
 	"""
-	# Create browser config with headless mode
-	browser_config = BrowserConfig(
+	# Create browser profile with headless mode and specific dimensions
+	browser_profile = BrowserProfile(
 		headless=True,  # Use headless for faster test
-	)
-
-	# Create context config with specific dimensions we can check
-	context_config = BrowserContextConfig(
-		window_width=1024,
-		window_height=768,
+		window_size={'width': 1024, 'height': 768},
 		maximum_wait_page_load_time=2.0,  # Faster timeouts for test
 		minimum_wait_page_load_time=0.2,
 		no_viewport=True,  # Use actual window size instead of viewport
 	)
 
-	# Create browser and context
-	browser = Browser(config=browser_config)
+	# Create browser session
+	browser_session = BrowserSession(browser_profile=browser_profile)
 	try:
-		# Initialize browser
-		playwright_browser = await browser.get_playwright_browser()
-		assert playwright_browser is not None, 'Browser initialization failed'
+		await browser_session.start()
+		# Get the current page
+		page = await browser_session.get_current_page()
+		assert page is not None, 'Failed to get current page'
 
-		# Create context
-		browser_context = BrowserContext(browser=browser, config=context_config)
-		try:
-			# Initialize session
-			await browser_context._initialize_session()
-
-			# Get the current page
-			page = await browser_context.get_current_page()
-			assert page is not None, 'Failed to get current page'
-
-			# Get the context configuration used for browser window size
-			video_size = await page.evaluate("""
+		# Get the context configuration used for browser window size
+		video_size = await page.evaluate("""
                 () => {
                     // This returns information about the context recording settings
                     // which should match our configured video size (browser_window_size)
@@ -116,8 +100,8 @@ async def test_window_size_with_real_browser():
                 }
             """)
 
-			# Let's also check the viewport size
-			viewport_size = await page.evaluate("""
+		# Let's also check the viewport size
+		viewport_size = await page.evaluate("""
                 () => {
                     return {
                         width: window.innerWidth,
@@ -126,23 +110,19 @@ async def test_window_size_with_real_browser():
                 }
             """)
 
-			print(f'Window size config: width={context_config.window_width}, height={context_config.window_height}')
-			print(f'Browser viewport size: {viewport_size}')
+		print(f'Window size config: width={browser_profile.window_size["width"]}, height={browser_profile.window_size["height"]}')
+		print(f'Browser viewport size: {viewport_size}')
 
-			# This is a lightweight test to verify that the page has a size (details may vary by browser)
-			assert viewport_size['width'] > 0, 'Expected viewport width to be positive'
-			assert viewport_size['height'] > 0, 'Expected viewport height to be positive'
+		# This is a lightweight test to verify that the page has a size (details may vary by browser)
+		assert viewport_size['width'] > 0, 'Expected viewport width to be positive'
+		assert viewport_size['height'] > 0, 'Expected viewport height to be positive'
 
-			# For browser context creation in record_video_size, this is what truly matters
-			# Verify that our window size was properly serialized to a dictionary
-			print(f'Content of context session: {browser_context.session.context}')
-			print('✅ Browser window size used in the test')
-		finally:
-			# Clean up context
-			await browser_context.close()
+		# For browser context creation in record_video_size, this is what truly matters
+		# Verify that our window size was properly serialized to a dictionary
+		print(f'Content of context session: {browser_session.browser_context}')
+		print('✅ Browser window size used in the test')
 	finally:
-		# Clean up browser
-		await browser.close()
+		await browser_session.stop()
 
 
 @pytest.mark.asyncio
@@ -153,7 +133,7 @@ async def test_proxy_with_real_browser():
 
 	This test:
 	1. Creates a ProxySettings Pydantic model
-	2. Passes it to BrowserConfig
+	2. Passes it to BrowserProfile
 	3. Verifies browser initialization works (proving the model was correctly serialized)
 	4. We don't actually verify proxy functionality (would require a working proxy)
 	"""
@@ -167,35 +147,18 @@ async def test_proxy_with_real_browser():
 	assert isinstance(proxy_dict, dict)
 	assert proxy_dict['server'] == 'http://non.existent.proxy:9999'
 
-	# Create browser config with proxy
-	browser_config = BrowserConfig(
+	# Create browser profile with proxy
+	browser_profile = BrowserProfile(
 		headless=True,
 		proxy=proxy_settings,
 	)
 
-	# Create browser
-	browser = Browser(config=browser_config)
+	# Create browser session
+	browser_session = BrowserSession(browser_profile=browser_profile)
 	try:
-		# Initialize browser - this should succeed even with invalid proxy
-		# because we're just checking configuration, not actual proxy functionality
-		try:
-			playwright_browser = await browser.get_playwright_browser()
-			assert playwright_browser is not None, 'Browser initialization failed'
-
-			# Success - the browser was initialized with our proxy settings
-			# We won't try to make requests (which would fail with non-existent proxy)
-			print('✅ Browser initialized with proxy settings successfully')
-
-			# We can inspect browser settings here to verify proxy was passed
-			# but the specific API to access these settings depends on the browser
-
-		except Exception as e:
-			# Make sure any exception isn't related to the proxy configuration format
-			# (Network errors due to non-existent proxy are acceptable, invalid type conversion isn't)
-			error_text = str(e).lower()
-			assert 'proxy' not in error_text or any(
-				term in error_text for term in ['connect', 'connection', 'network', 'timeout', 'unreachable']
-			), f'Proxy configuration error (not network error): {e}'
+		await browser_session.start()
+		# Success - the browser was initialized with our proxy settings
+		# We won't try to make requests (which would fail with non-existent proxy)
+		print('✅ Browser initialized with proxy settings successfully')
 	finally:
-		# Clean up browser
-		await browser.close()
+		await browser_session.stop()

@@ -1,4 +1,6 @@
 name: test
+permissions:
+  contents: read
 
 on:
   push:
@@ -12,38 +14,30 @@ on:
   workflow_dispatch:
     
 jobs:
-  tests:
-    name: ${{matrix.test}} 
+  find_tests:
     runs-on: ubuntu-latest
+    outputs:
+      filename_list: ${{ steps.list_test_files.outputs.filename_list }}   # ./tests/ci/test_controller.py, ./tests/ci/test_browser.py, etc.
+    steps:
+      - uses: actions/checkout@v4
+      - id: list_test_files
+        run: echo "::set-output name=filename_list::$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')"
+        # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
+
+  tests:
+    name: ${{matrix.test_filename}} 
+    runs-on: ubuntu-latest
+    env:
+      IN_DOCKER: 'True'
     strategy:
       matrix:
-        test:
-        # TODO:
-        # - browser/patchright
-        # - browser/playwright
-        # - browser/user_binary
-        # - browser/remote_cdp
-        # - models/openai
-        # - models/google
-        # - models/anthropic
-        # - models/azure
-        # - models/deepseek
-        # - models/grok
-        # - functionality/click
-        # - functionality/tabs
-        # - functionality/input
-        # - functionality/scroll
-        # - functionality/upload
-        # - functionality/download
-        # - functionality/save
-        # - functionality/vision
-        # - functionality/memory
-        # - functionality/planner
-        # - functionality/hooks
-        - test_controller
-        - test_tab_management
-        - test_sensitive_data
-        - test_url_allowlist_security
+        test_filename: ${{ fromJson(needs.find_tests.outputs.filename_list) }}
+        # autodiscovers all the files in tests/ci/test_*.py
+        # - test_browser
+        # - test_controller
+        # - test_browser_session
+        # - test_tab_management
+        # ... and more
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -53,7 +47,7 @@ jobs:
 
       - run: uv sync
 
-      - name: Detect installed Playwright or Patchright version
+      - name: Detect installed Playwright version
         run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_ENV
 
       - name: Cache playwright binaries
@@ -63,6 +57,7 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}
 
-      - run: playwright install --no-shell chromium
+      - run: playwright install chrome
+      - run: playwright install chromium
 
-      - run: pytest tests/${{ matrix.test }}.py
+      - run: pytest tests/ci/${{ matrix.test_filename }}.py
