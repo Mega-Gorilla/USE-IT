@@ -325,9 +325,10 @@ def time_execution_async(
 			start_time = time.time()
 			result = await func(*args, **kwargs)
 			execution_time = time.time() - start_time
-			# Only log if execution takes more than 0.25 seconds
+			# Only log if execution takes more than 0.25 seconds to avoid spamming the logs
+			# you can lower this threshold locally when you're doing dev work to performance optimize stuff
 			if execution_time > 0.25:
-				logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+				logger.debug(f'⏳ {additional_text} Execution time: {execution_time:.2f} seconds')
 			return result
 
 		return wrapper
