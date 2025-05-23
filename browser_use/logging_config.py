@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import warnings
 
 from dotenv import load_dotenv
 
@@ -59,6 +60,12 @@ def addLoggingLevel(levelName, levelNum, methodName=None):
 
 
 def setup_logging():
+	# Suppress specific deprecation warnings from FAISS
+	warnings.filterwarnings('ignore', category=DeprecationWarning, module='faiss.loader')
+	warnings.filterwarnings('ignore', message='builtin type SwigPyPacked has no __module__ attribute')
+	warnings.filterwarnings('ignore', message='builtin type SwigPyObject has no __module__ attribute')
+	warnings.filterwarnings('ignore', message='builtin type swigvarlink has no __module__ attribute')
+
 	# Try to add RESULT level, but ignore if it already exists
 	try:
 		addLoggingLevel('RESULT', 35)  # This allows ERROR, FATAL and CRITICAL
@@ -110,8 +117,8 @@ def setup_logging():
 
 	logger = logging.getLogger('browser_use')
 	# logger.info('BrowserUse logging setup complete with level %s', log_type)
-	# Silence third-party loggers
-	for logger in [
+	# Silence or adjust third-party loggers
+	third_party_loggers = [
 		'WDM',
 		'httpx',
 		'selenium',
@@ -119,6 +126,8 @@ def setup_logging():
 		'urllib3',
 		'asyncio',
 		'langchain',
+		'langsmith',
+		'langsmith.client',
 		'openai',
 		'httpcore',
 		'charset_normalizer',
@@ -126,7 +135,12 @@ def setup_logging():
 		'PIL.PngImagePlugin',
 		'trafilatura.htmlprocessing',
 		'trafilatura',
-	]:
-		third_party = logging.getLogger(logger)
+		'mem0',
+		'mem0.vector_stores.faiss',
+		'mem0.vector_stores',
+		'mem0.memory',
+	]
+	for logger_name in third_party_loggers:
+		third_party = logging.getLogger(logger_name)
 		third_party.setLevel(logging.ERROR)
 		third_party.propagate = False

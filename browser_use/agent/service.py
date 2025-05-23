@@ -13,6 +13,8 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
+from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
+
 load_dotenv()
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -70,21 +72,19 @@ logger = logging.getLogger(__name__)
 SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
-def log_response(response: AgentOutput) -> None:
+def log_response(response: AgentOutput, registry=None) -> None:
 	"""Utility function to log the model's response."""
 
 	if 'Success' in response.current_state.evaluation_previous_goal:
 		emoji = '👍'
 	elif 'Failed' in response.current_state.evaluation_previous_goal:
-		emoji = '⚠'
+		emoji = '⚠️'
 	else:
-		emoji = '🤷'
+		emoji = '❓'
 
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
-	for i, action in enumerate(response.action):
-		logger.info(f'🛠️  Action {i + 1}/{len(response.action)}: {action.model_dump_json(exclude_unset=True)}')
 
 
 Context = TypeVar('Context')
@@ -105,7 +105,7 @@ class Agent(Generic[Context]):
 		browser_session: BrowserSession | None = None,
 		controller: Controller[Context] = Controller(),
 		# Initial agent run parameters
-		sensitive_data: dict[str, str] | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
@@ -227,15 +227,15 @@ class Agent(Generic[Context]):
 			self.settings.use_vision_for_planner = False
 
 		logger.info(
-			f'🧠 Starting a v{self.version} agent with main_model={self.model_name}'
+			f'🧠 Starting a browser-use agent {self.version} with base_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
-			f'{" +memory" if self.enable_memory else ""}, '
-			f'planner_model={self.planner_model_name}'
+			f'{" +memory" if self.enable_memory else ""}'
+			f' extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}'
+			f'{f" planner_model={self.planner_model_name}" if self.planner_model_name else ""}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
-			f'{" +vision" if self.settings.use_vision_for_planner else ""}, '
-			f'extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)} '
+			f'{" +vision" if self.settings.use_vision_for_planner else ""} '
 		)
 
 		# Verify we can connect to the LLM
@@ -291,29 +291,71 @@ class Agent(Generic[Context]):
 		assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
 		assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
 		assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
-
+		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 		self.browser_session = browser_session or BrowserSession(
 			profile=browser_profile, browser=browser, browser_context=browser_context
 		)
 
-		if self.sensitive_data and not self.browser_profile.allowed_domains:
-			logger.error(
-				'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
-				'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
-				'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
-				'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
-			)
-			if sys.stdin.isatty():
-				try:
-					time.sleep(10)
-				except KeyboardInterrupt:
-					print(
-						'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
-					)
-					sys.exit(0)
-			else:
-				pass  # no point waiting if we're not in an interactive shell
-			logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
+		if self.sensitive_data:
+			# Check if sensitive_data has domain-specific credentials
+			has_domain_specific_credentials = any(isinstance(v, dict) for v in self.sensitive_data.values())
+
+			# If no allowed_domains are configured, show a security warning
+			if not self.browser_profile.allowed_domains:
+				logger.error(
+					'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
+					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
+					'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
+					'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
+				)
+				if sys.stdin.isatty():
+					try:
+						time.sleep(10)
+					except KeyboardInterrupt:
+						print(
+							'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
+						)
+						sys.exit(0)
+				else:
+					pass  # no point waiting if we're not in an interactive shell
+				logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
+
+			# If we're using domain-specific credentials, validate domain patterns
+			elif has_domain_specific_credentials:
+				# For domain-specific format, ensure all domain patterns are included in allowed_domains
+				domain_patterns = [k for k, v in self.sensitive_data.items() if isinstance(v, dict)]
+
+				# Validate each domain pattern against allowed_domains
+				for domain_pattern in domain_patterns:
+					is_allowed = False
+					for allowed_domain in self.browser_profile.allowed_domains:
+						# Special cases that don't require URL matching
+						if domain_pattern == allowed_domain or allowed_domain == '*':
+							is_allowed = True
+							break
+
+						# Need to create example URLs to compare the patterns
+						# Extract the domain parts, ignoring scheme
+						pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
+						allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
+
+						# Check if pattern is covered by an allowed domain
+						# Example: "google.com" is covered by "*.google.com"
+						if pattern_domain == allowed_domain_part or (
+							allowed_domain_part.startswith('*.')
+							and (
+								pattern_domain == allowed_domain_part[2:]
+								or pattern_domain.endswith('.' + allowed_domain_part[2:])
+							)
+						):
+							is_allowed = True
+							break
+
+					if not is_allowed:
+						logger.warning(
+							f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
+							f'   This may be a security risk as credentials could be used on unintended domains.'
+						)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
@@ -427,7 +469,7 @@ class Agent(Generic[Context]):
 				# Azure OpenAI API requires 'tools' parameter for GPT-4
 				# The error 'content must be either a string or an array' occurs when
 				# the API expects a tools array but gets something else
-				if 'gpt-4' in self.model_name.lower():
+				if 'gpt-4-' in self.model_name.lower():
 					return 'tools'
 				else:
 					return 'function_calling'
@@ -454,8 +496,7 @@ class Agent(Generic[Context]):
 	@time_execution_async('--step (agent)')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
-		logger.info(f'📍 Step {self.state.n_steps}')
-		state = None
+		browser_state_summary = None
 		model_output = None
 		result: list[ActionResult] = []
 		step_start_time = time.time()
@@ -464,6 +505,8 @@ class Agent(Generic[Context]):
 		try:
 			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
+
+			self._log_step_context(current_page, browser_state_summary)
 
 			# generate procedural memory if needed
 			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
@@ -615,7 +658,7 @@ class Agent(Generic[Context]):
 			if not result:
 				return
 
-			if state:
+			if browser_state_summary:
 				metadata = StepMetadata(
 					step_number=self.state.n_steps,
 					step_start_time=step_start_time,
@@ -623,6 +666,9 @@ class Agent(Generic[Context]):
 					input_tokens=tokens,
 				)
 				self._make_history_item(model_output, browser_state_summary, result, metadata)
+
+			# Log step completion summary
+			self._log_step_completion_summary(step_start_time, result)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -719,7 +765,7 @@ class Agent(Generic[Context]):
 		input_messages = self._convert_input_messages(input_messages)
 
 		if self.tool_calling_method == 'raw':
-			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			try:
 				output = self.llm.invoke(input_messages)
 				response = {'raw': output, 'parsed': None}
@@ -747,7 +793,7 @@ class Agent(Generic[Context]):
 				raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			logger.debug(f'Using {self.tool_calling_method} for {self.chat_model_library}')
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
 			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 
@@ -792,8 +838,9 @@ class Agent(Generic[Context]):
 			parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
 		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
-			log_response(parsed)
+			log_response(parsed, self.controller.registry.registry)
 
+		self._log_next_action_summary(parsed)
 		return parsed
 
 	def _log_agent_run(self) -> None:
@@ -801,6 +848,97 @@ class Agent(Generic[Context]):
 		logger.info(f'🚀 Starting task: {self.task}')
 
 		logger.debug(f'Version: {self.version}, Source: {self.source}')
+
+	def _log_step_context(self, current_page, browser_state_summary) -> None:
+		"""Log step context information"""
+		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
+		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
+		logger.info(
+			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
+		)
+
+	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
+		"""Log a comprehensive summary of the next action(s)"""
+		if not (logger.isEnabledFor(logging.DEBUG) and parsed.action):
+			return
+
+		action_count = len(parsed.action)
+
+		# Collect action details
+		action_details = []
+		for i, action in enumerate(parsed.action):
+			action_data = action.model_dump(exclude_unset=True)
+			action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+			action_params = action_data.get(action_name, {}) if action_data else {}
+
+			# Format key parameters concisely
+			param_summary = []
+			if isinstance(action_params, dict):
+				for key, value in action_params.items():
+					if key == 'index':
+						param_summary.append(f'#{value}')
+					elif key == 'text' and isinstance(value, str):
+						text_preview = value[:30] + '...' if len(value) > 30 else value
+						param_summary.append(f'text="{text_preview}"')
+					elif key == 'url':
+						param_summary.append(f'url="{value}"')
+					elif key == 'success':
+						param_summary.append(f'success={value}')
+					elif isinstance(value, (str, int, bool)) and len(str(value)) < 20:
+						param_summary.append(f'{key}={value}')
+
+			param_str = f'({", ".join(param_summary)})' if param_summary else ''
+			action_details.append(f'{action_name}{param_str}')
+
+		# Create summary based on single vs multi-action
+		if action_count == 1:
+			logger.info(f'⚡️ Decided next action: {action_details[0]}')
+		else:
+			summary_lines = [f'⚡️ Decided next {action_count} multi-actions:']
+			for i, detail in enumerate(action_details):
+				summary_lines.append(f'          {i + 1}. {detail}')
+			logger.info('\n'.join(summary_lines))
+
+	def _log_step_completion_summary(self, step_start_time: float, result: list[ActionResult]) -> None:
+		"""Log step completion summary with action count, timing, and success/failure stats"""
+		if not result:
+			return
+
+		step_duration = time.time() - step_start_time
+		action_count = len(result)
+
+		# Count success and failures
+		success_count = sum(1 for r in result if not r.error)
+		failure_count = action_count - success_count
+
+		# Format success/failure indicators
+		success_indicator = f'✅ {success_count}' if success_count > 0 else ''
+		failure_indicator = f'❌ {failure_count}' if failure_count > 0 else ''
+		status_parts = [part for part in [success_indicator, failure_indicator] if part]
+		status_str = ' | '.join(status_parts) if status_parts else '✅ 0'
+
+		logger.info(f'📍 Step {self.state.n_steps}: Ran {action_count} actions in {step_duration:.2f}s: {status_str}')
+
+	def _log_llm_call_info(self, input_messages: list[BaseMessage], method: str) -> None:
+		"""Log comprehensive information about the LLM call being made"""
+		# Count messages and check for images
+		message_count = len(input_messages)
+		total_chars = sum(len(str(msg.content)) for msg in input_messages)
+		has_images = any(
+			hasattr(msg, 'content')
+			and isinstance(msg.content, list)
+			and any(isinstance(item, dict) and item.get('type') == 'image_url' for item in msg.content)
+			for msg in input_messages
+		)
+		current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
+
+		# Determine output type
+		output_type = 'raw text output' if method == 'raw' else 'structured output + tools'
+		image_status = '📷 images' if has_images else 'no images'
+
+		logger.info(
+			f'🧠 LLM call: {self.chat_model_library} ({method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {image_status} | {output_type}'
+		)
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
 		"""Sent the agent event for this run to telemetry"""
@@ -923,7 +1061,7 @@ class Agent(Generic[Context]):
 
 				# Check control flags before each step
 				if self.state.stopped:
-					logger.info('Agent stopped')
+					logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
 					break
 
@@ -989,7 +1127,6 @@ class Agent(Generic[Context]):
 			if not self._force_exit_telemetry_logged:  # MODIFIED: Check the flag
 				try:
 					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-					logger.info('Agent run telemetry logged.')
 				except Exception as log_e:  # Catch potential errors during logging itself
 					logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
@@ -1075,7 +1212,10 @@ class Agent(Generic[Context]):
 
 				results.append(result)
 
-				logger.debug(f'Executed action {i + 1} / {len(actions)}')
+				# Get action name from the action model
+				action_data = action.model_dump(exclude_unset=True)
+				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+				logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
@@ -1140,14 +1280,13 @@ class Agent(Generic[Context]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
-		logger.info('✅ Task completed')
 		if self.state.history.is_successful():
-			logger.info('✅ Successfully')
+			logger.info('✅ Task completed successfully')
 		else:
-			logger.info('❌ Unfinished')
+			logger.info('❌ Task completed without success')
 
 		total_tokens = self.state.history.total_input_tokens()
-		logger.info(f'📝 Total input tokens used (approximate): {total_tokens}')
+		logger.debug(f'📝 Total input tokens used (approximate): {total_tokens}')
 
 		if self.register_done_callback:
 			if inspect.iscoroutinefunction(self.register_done_callback):

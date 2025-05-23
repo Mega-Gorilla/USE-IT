@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import textwrap
 
 from langchain_core.messages import (
 	AIMessage,
@@ -26,7 +28,8 @@ class MessageManagerSettings(BaseModel):
 	image_tokens: int = 800
 	include_attributes: list[str] = []
 	message_context: str | None = None
-	sensitive_data: dict[str, str] | None = None
+	# Support both old format {key: value} and new format {domain: {key: value}}
+	sensitive_data: dict[str, str | dict[str, str]] | None = None
 	available_file_paths: list[str] | None = None
 
 
@@ -180,18 +183,134 @@ class MessageManager:
 			msg = AIMessage(content=plan)
 			self._add_message_with_tokens(msg, position)
 
+	def _get_message_emoji(self, message_type: str) -> str:
+		"""Get emoji for a message type"""
+		emoji_map = {
+			'HumanMessage': '💬',
+			'AIMessage': '🧠',
+			'ToolMessage': '🔨',
+		}
+		return emoji_map.get(message_type, '🎮')
+
+	def _clean_whitespace(self, text: str) -> str:
+		"""Replace all repeated whitespace with single space and strip"""
+		return re.sub(r'\s+', ' ', text).strip()
+
+	def _truncate_text(self, text: str, max_length: int) -> str:
+		"""Truncate text to max_length and add ellipsis if needed"""
+		if len(text) <= max_length:
+			return text
+		return text[:max_length] + '...'
+
+	def _extract_text_from_list_content(self, content: list) -> str:
+		"""Extract text from list content structure"""
+		text_content = ''
+		for item in content:
+			if isinstance(item, dict) and 'text' in item:
+				text_content += item['text']
+		return text_content
+
+	def _format_agent_output_content(self, tool_call: dict) -> str:
+		"""Format AgentOutput tool call into readable content"""
+		args = tool_call.get('args', {})
+		action_info = ''
+
+		# Get action name
+		if 'action' in args and args['action']:
+			first_action = args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
+			if isinstance(first_action, dict):
+				action_name = next(iter(first_action.keys())) if first_action else 'unknown'
+				action_info = f'{action_name}()'
+
+		# Get goal
+		goal_info = ''
+		if 'current_state' in args and isinstance(args['current_state'], dict):
+			next_goal = args['current_state'].get('next_goal', '').strip()
+			if next_goal:
+				goal_info = f': {self._truncate_text(next_goal, 40)}'
+
+		# Combine action and goal info
+		if action_info and goal_info:
+			return f'{action_info}{goal_info}'
+		elif action_info:
+			return action_info
+		elif goal_info:
+			return goal_info[2:]  # Remove ': ' prefix for goal-only
+		else:
+			return 'AgentOutput'
+
+	def _generate_history_log(self) -> str:
+		"""Generate a formatted log string of message history for debugging / printing to terminal"""
+		total_input_tokens = 0
+		message_lines = []
+
+		for i, m in enumerate(self.state.history.messages):
+			total_input_tokens += m.metadata.tokens
+			is_last_message = i == len(self.state.history.messages) - 1
+
+			# Get emoji based on message type
+			message_type = m.message.__class__.__name__
+			emoji = self._get_message_emoji(message_type)
+
+			# Extract content based on message structure
+			if is_last_message and message_type == 'HumanMessage' and isinstance(m.message.content, list):
+				# Special handling for last message with list content
+				text_content = self._extract_text_from_list_content(m.message.content)
+				text_content = self._clean_whitespace(text_content)
+
+				# Look for current state section
+				if '[Current state starts here]' in text_content:
+					start_idx = text_content.find('[Current state starts here]')
+					content = self._truncate_text(text_content[start_idx:], 150)
+				else:
+					content = self._truncate_text(text_content, 150)
+			else:
+				# Standard content extraction
+				content = self._clean_whitespace(str(m.message.content)[:80])
+
+				# Shorten "Action result:" to "Result:" for display
+				if content.startswith('Action result:'):
+					content = 'Result:' + content[14:]
+
+				# Handle AIMessages with tool calls
+				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content:
+					tool_call = m.message.tool_calls[0]
+					tool_name = tool_call.get('name', 'unknown')
+
+					if tool_name == 'AgentOutput':
+						content = self._format_agent_output_content(tool_call)
+					else:
+						content = f'[TOOL: {tool_name}]'
+				elif len(str(m.message.content)) > 80:
+					content += '...'
+
+			# Format the message line
+			left_part = f'          {emoji}[{m.metadata.tokens}]'
+
+			# For last message, allow multiple lines if needed
+			if is_last_message and '\n' not in content:
+				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 20)
+				if len(wrapped) > 2:
+					wrapped = wrapped[:2]
+					wrapped[-1] = self._truncate_text(wrapped[-1], 77)
+				message_lines.append(f'{left_part.ljust(16)}: {wrapped[0]}')
+				message_lines.extend(wrapped[1:])
+			else:
+				message_lines.append(f'{left_part.ljust(16)}: {content}')
+
+		# Build final log message
+		return (
+			f'📜 LLM Message history ({len(self.state.history.messages)} messages, {total_input_tokens} tokens):\n'
+			+ '\n'.join(message_lines)
+		)
+
 	@time_execution_sync('--get_messages')
 	def get_messages(self) -> list[BaseMessage]:
 		"""Get current message list, potentially trimmed to max tokens"""
-
 		msg = [m.message for m in self.state.history.messages]
-		# debug which messages are in history with token count # log
-		total_input_tokens = 0
-		logger.debug(f'Messages in history: {len(self.state.history.messages)}:')
-		for m in self.state.history.messages:
-			total_input_tokens += m.metadata.tokens
-			logger.debug(f'{m.message.__class__.__name__} - Token count: {m.metadata.tokens}')
-		logger.debug(f'Total input tokens: {total_input_tokens}')
+
+		# Log message history for debugging
+		logger.debug(self._generate_history_log())
 
 		return msg
 
@@ -218,16 +337,27 @@ class MessageManager:
 			if not self.settings.sensitive_data:
 				return value
 
-			# Create a dictionary with all key-value pairs from sensitive_data where value is not None or empty
-			valid_sensitive_data = {k: v for k, v in self.settings.sensitive_data.items() if v}
+			# Collect all sensitive values, immediately converting old format to new format
+			sensitive_values: dict[str, str] = {}
+
+			# Process all sensitive data entries
+			for key_or_domain, content in self.settings.sensitive_data.items():
+				if isinstance(content, dict):
+					# Already in new format: {domain: {key: value}}
+					for key, val in content.items():
+						if val:  # Skip empty values
+							sensitive_values[key] = val
+				elif content:  # Old format: {key: value} - convert to new format internally
+					# We treat this as if it was {'http*://*': {key_or_domain: content}}
+					sensitive_values[key_or_domain] = content
 
 			# If there are no valid sensitive data entries, just return the original value
-			if not valid_sensitive_data:
+			if not sensitive_values:
 				logger.warning('No valid entries found in sensitive_data dictionary')
 				return value
 
 			# Replace all valid sensitive data values with their placeholder tags
-			for key, val in valid_sensitive_data.items():
+			for key, val in sensitive_values.items():
 				value = value.replace(val, f'<secret>{key}</secret>')
 
 			return value
