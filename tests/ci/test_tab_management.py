@@ -203,24 +203,28 @@ class TestTabManagement:
 		"""Test that agent_current_page changes and human_current_page remains the same when a new tab is opened."""
 
 		initial_tab = await self._reset_tab_state(browser_session, base_url)
-		assert initial_tab.url == 'about:blank'
+		await initial_tab.goto(f'{base_url}/page1')
+		await self._simulate_human_tab_change(initial_tab, browser_session)
+		assert initial_tab.url == f'{base_url}/page1'
 		initial_tab_count = len(browser_session.tabs)
 		assert initial_tab_count == 1
 
 		# test opening a new tab
 		new_tab = await browser_session.create_new_tab(f'{base_url}/page2')
 		new_tab_count = len(browser_session.browser_context.pages)
-		assert new_tab_count == len(browser_session.tabs) == 2
+		assert (
+			new_tab_count == len(browser_session.tabs) == 2
+		)  # get_current_page/create_new_tab should have auto-closed unused about:blank pages
 
 		# test agent open new tab updates agent focus + doesn't steal human focus
 		assert browser_session.agent_current_page.url == new_tab.url == f'{base_url}/page2'
-		assert browser_session.human_current_page.url == initial_tab.url == 'about:blank'
+		assert browser_session.human_current_page.url == initial_tab.url == f'{base_url}/page1'
 
 		# test agent navigation updates agent focus +doesn't steal human focus
 		await browser_session.navigate(f'{base_url}/page3')
 		assert browser_session.agent_current_page.url == f'{base_url}/page3'  # agent should now be on the new tab
 		assert (
-			browser_session.human_current_page.url == initial_tab.url == 'about:blank'
+			browser_session.human_current_page.url == initial_tab.url == f'{base_url}/page1'
 		)  # human should still be on the very first tab
 
 	@pytest.mark.asyncio
