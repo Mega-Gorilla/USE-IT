@@ -233,11 +233,11 @@ class Agent(Generic[Context]):
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
 			f'{" +vision" if self.settings.use_vision else ""}'
-			f'{" +memory" if self.enable_memory else ""}, '
-			f'{" +vision" if self.settings.use_vision_for_planner else ""}'
-			f'{" planner_model={self.planner_model_name}" if self.planner_model_name else ""}'
-			f'{" +planner_reasoning" if self.settings.is_planner_reasoning else ""}'
-			f' extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}, '
+			f'{" +memory" if self.enable_memory else ""}'
+			f' extraction_model={getattr(self.settings.page_extraction_llm, "model_name", None)}'
+			f'{f" planner_model={self.planner_model_name}" if self.planner_model_name else ""}'
+			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
+			f'{" +vision" if self.settings.use_vision_for_planner else ""} '
 		)
 
 		# Verify we can connect to the LLM
@@ -1033,7 +1033,6 @@ class Agent(Generic[Context]):
 			if not self._force_exit_telemetry_logged:  # MODIFIED: Check the flag
 				try:
 					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-					logger.info('Agent run telemetry logged.')
 				except Exception as log_e:  # Catch potential errors during logging itself
 					logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
@@ -1191,7 +1190,7 @@ class Agent(Generic[Context]):
 			logger.info('❌ Unfinished')
 
 		total_tokens = self.state.history.total_input_tokens()
-		logger.info(f'📝 Total input tokens used (approximate): {total_tokens}')
+		logger.debug(f'📝 Total input tokens used (approximate): {total_tokens}')
 
 		if self.register_done_callback:
 			if inspect.iscoroutinefunction(self.register_done_callback):
