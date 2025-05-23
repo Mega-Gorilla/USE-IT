@@ -88,6 +88,12 @@ await browser.close()
 
 ### Reuse Existing Browser Context
 
+You can pass any of the following Playwright objects to the Agent: `page`, `browser_context`, `browser`, `browser_session`, or `browser_profile`. These all get passed down to create a `BrowserSession`:
+
+```python
+browser_session = browser_session or BrowserSession(page, browser_context, browser_profile)
+```
+
 `browser_context`: A Playwright browser context. Useful for maintaining persistent sessions. See <a href="/customize/persistent-browser">Persistent Browser</a> for more details.
 
 ```python

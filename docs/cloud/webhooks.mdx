@@ -1,0 +1,111 @@
+---
+title: "Webhooks"
+description: "Learn how to integrate webhooks with Browser Use Cloud API"
+icon: "code"
+---
+
+Webhooks allow you to receive real-time notifications about events in your Browser Use tasks. This guide will show you how to set up and verify webhook endpoints.
+
+## Prerequisites
+
+<Note>
+  You need an active subscription to create webhooks. See your billing page
+  [cloud.browser-use.com/billing](https://cloud.browser-use.com/billing)
+</Note>
+
+## Setting Up Webhooks
+
+To receive webhook notifications, you need to:
+
+1. Create an endpoint that can receive HTTPS POST requests
+2. Configure your webhook URL in the Browser Use dashboard
+3. Implement signature verification to ensure webhook authenticity
+
+<Note>
+  When adding a webhook URL in the dashboard, it must be a valid HTTPS URL that can receive POST requests. 
+  On creation, we will send a test payload `{"test": "ok"}` to verify the endpoint is working correctly before creating the actual webhook!
+</Note>
+
+## Webhook Events
+
+Browser Use currently only sends status updates for your running tasks:
+
+| Status         | Description                            |
+| -------------- | -------------------------------------- |
+| `initializing` | A task is initializing                 |
+| `started`      | A Task has started (browser available) |
+| `paused`       | A task has been paused mid execution   |
+| `stopped`      | A task has been stopped mid execution  |
+| `finished`     | A task has finished                    |
+
+## Webhook Payload
+
+Each webhook call includes:
+
+- A JSON payload with event details
+- `X-Browser-Use-Timestamp` header with the current timestamp
+- `X-Browser-Use-Signature` header for verification
+
+Example payload:
+
+```json
+{
+  "session_id": "602c8809-61ee-461d-acfd-3e8783f23326",
+  "task_id": "b9792a06-0411-4838-96de-c720f34206a2",
+  "status": "initializing"
+}
+```
+
+## Implementing Webhook Verification
+
+To ensure webhook authenticity, you must verify the signature. Here's an example implementation in Python using FastAPI:
+
+```python
+import uvicorn
+import hmac
+import hashlib
+import json
+import os
+
+from fastapi import FastAPI, Request, HTTPException
+
+app = FastAPI()
+
+SECRET_KEY = os.environ['SECRET_KEY']
+
+def verify_signature(payload: dict, timestamp: str, received_signature: str) -> bool:
+    message = f'{timestamp}.{json.dumps(payload, separators=(",", ":"), sort_keys=True)}'
+    expected_signature = hmac.new(SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected_signature, received_signature)
+
+@app.post('/webhook')
+async def webhook(request: Request):
+    body = await request.json()
+
+    timestamp = request.headers.get('X-Browser-Use-Timestamp')
+    signature = request.headers.get('X-Browser-Use-Signature')
+    if not timestamp or not signature:
+        raise HTTPException(status_code=400, detail='Missing timestamp or signature')
+
+    if not verify_signature(body, timestamp, signature):
+        raise HTTPException(status_code=403, detail='Invalid signature')
+
+    print('Valid webhook call received:', body)
+    return {'status': 'success', 'message': 'Webhook received'}
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=8080)
+```
+
+## Best Practices
+
+1. **Always verify signatures**: Never process webhook payloads without verifying the signature
+2. **Handle retries**: Browser Use will retry failed webhook deliveries up to 5 times
+3. **Respond quickly**: Return a 200 response as soon as you've verified the signature
+4. **Process asynchronously**: Handle the webhook payload processing in a background task
+5. **Monitor failures**: Set up monitoring for webhook delivery failures
+
+<Note>
+  Need help? Contact our support team at support@browser-use.com or join our
+  [Discord community](https://link.browser-use.com/discord)
+</Note>

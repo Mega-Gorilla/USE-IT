@@ -57,7 +57,7 @@ async def search_web(query: str):
 	# to string
 	serp_data_str = json.dumps(serp_data)
 
-	return ActionResult(extracted_content=serp_data_str, include_in_memory=True)
+	return ActionResult(extracted_content=serp_data_str, include_in_memory=False)
 
 
 names = [
@@ -85,7 +85,7 @@ names = [
 
 
 async def main():
-	task = 'use search_web with "find email address of the following ETH professor:" for each of the following persons in a list of actions. Finally return the list with name and email if provided'
+	task = 'use search_web with "find email address of the following ETH professor:" for each of the following persons in a list of actions. Finally return the list with name and email if provided - do always 5 at once'
 	task += '\n' + '\n'.join(names)
 	model = ChatOpenAI(model='gpt-4o')
 	browser_profile = BrowserProfile()
