@@ -536,6 +536,13 @@ class Agent(Generic[Context]):
 			logger.debug(f"🛠️ Tool calling method '{method}' test failed: {type(e).__name__}: {str(e)}")
 			return False
 
+	async def _test_tool_calling_method_async(self, method: str) -> tuple[str, bool]:
+		"""Test if a specific tool calling method works with the current LLM (async version)."""
+		# Run the synchronous test in a thread pool to avoid blocking
+		loop = asyncio.get_event_loop()
+		result = await loop.run_in_executor(None, self._test_tool_calling_method, method)
+		return (method, result)
+
 	def _detect_best_tool_calling_method(self) -> str | None:
 		"""Detect the best supported tool calling method by testing each one."""
 		start_time = time.time()
@@ -548,16 +555,72 @@ class Agent(Generic[Context]):
 			'raw',  # Fallback - no tool calling support
 		]
 
-		for method in methods_to_try:
-			if self._test_tool_calling_method(method):
-				# if we found the method which means api is verified.
-				self.llm._verified_api_keys = True
-				elapsed = time.time() - start_time
-				logger.debug(f'🛠️ Tested LLM and chose tool calling method: [{method}] in {elapsed:.2f}s')
-				return method
+		# Try parallel testing for faster detection
+		try:
+			# Run async parallel tests
+			async def test_all_methods():
+				tasks = [self._test_tool_calling_method_async(method) for method in methods_to_try]
+				results = await asyncio.gather(*tasks, return_exceptions=True)
+				return results
+
+			# Execute async tests
+			results = asyncio.run(test_all_methods())
+
+			# Process results in order of preference
+			for i, method in enumerate(methods_to_try):
+				if isinstance(results[i], tuple) and results[i][1]:  # (method, success)
+					self.llm._verified_api_keys = True
+					self.llm._verified_tool_calling_method = method  # Cache on LLM instance
+					elapsed = time.time() - start_time
+					logger.debug(f'🛠️ Tested LLM in parallel and chose tool calling method: [{method}] in {elapsed:.2f}s')
+					return method
+
+		except Exception as e:
+			logger.debug(f'Parallel testing failed: {e}, falling back to sequential')
+			# Fall back to sequential testing
+			for method in methods_to_try:
+				if self._test_tool_calling_method(method):
+					# if we found the method which means api is verified.
+					self.llm._verified_api_keys = True
+					self.llm._verified_tool_calling_method = method  # Cache on LLM instance
+					elapsed = time.time() - start_time
+					logger.debug(f'🛠️ Tested LLM and chose tool calling method: [{method}] in {elapsed:.2f}s')
+					return method
 
 		# If we get here, no methods worked
 		raise ConnectionError('Failed to connect to LLM. Please check your API key and network connection.')
+
+	def _get_known_tool_calling_method(self) -> str | None:
+		"""Get known tool calling method for common model/library combinations."""
+		# Fast path for known combinations
+		model_lower = self.model_name.lower()
+
+		# OpenAI models
+		if self.chat_model_library == 'ChatOpenAI':
+			if any(m in model_lower for m in ['gpt-4', 'gpt-3.5']):
+				return 'function_calling'
+
+		# Azure OpenAI models
+		elif self.chat_model_library == 'AzureChatOpenAI':
+			if 'gpt-4-' in model_lower:
+				return 'tools'
+			else:
+				return 'function_calling'
+
+		# Google models
+		elif self.chat_model_library == 'ChatGoogleGenerativeAI':
+			return None  # Google uses native tool support
+
+		# Anthropic models
+		elif self.chat_model_library in ['ChatAnthropic', 'AnthropicChat']:
+			if any(m in model_lower for m in ['claude-3', 'claude-2']):
+				return 'tools'
+
+		# Models known to not support tools
+		elif is_model_without_tool_support(self.model_name):
+			return 'raw'
+
+		return None  # Unknown combination, needs testing
 
 	def _set_tool_calling_method(self) -> ToolCallingMethod | None:
 		"""Determine the best tool calling method to use with the current LLM."""
@@ -580,6 +643,12 @@ class Agent(Generic[Context]):
 
 		# If a specific method is set, use it
 		if self.settings.tool_calling_method != 'auto':
+			# Skip test if already verified
+			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+				self.llm._verified_api_keys = True
+				self.llm._verified_tool_calling_method = self.settings.tool_calling_method
+				return self.settings.tool_calling_method
+
 			if not self._test_tool_calling_method(self.settings.tool_calling_method):
 				if self.settings.tool_calling_method == 'raw':
 					# if raw failed means error in API key or network connection
@@ -589,16 +658,42 @@ class Agent(Generic[Context]):
 						f"Configured tool calling method '{self.settings.tool_calling_method}' "
 						'is not supported by the current LLM.'
 					)
+			self.llm._verified_tool_calling_method = self.settings.tool_calling_method
 			return self.settings.tool_calling_method
 
-		# For models known to not support tool calling, use raw mode
-		if is_model_without_tool_support(self.model_name):
-			fallback_method = 'raw'
-			if not self._test_tool_calling_method(fallback_method):
-				# if raw failed means error in API key or network connection
-				raise ConnectionError('Failed to connect to LLM. Please check your API key and network connection.')
-			logger.debug('Model is known to not support tool calling, using raw mode')
-			return fallback_method
+		# Check if we already have a cached method on this LLM instance
+		if hasattr(self.llm, '_verified_tool_calling_method'):
+			logger.debug(
+				f'🛠️ Using cached tool calling method for {self.chat_model_library}/{self.model_name}: [{self.llm._verified_tool_calling_method}]'
+			)
+			return self.llm._verified_tool_calling_method
+
+		# Try fast path for known model/library combinations
+		known_method = self._get_known_tool_calling_method()
+		if known_method is not None:
+			# Trust known combinations without testing if verification is already done or skipped
+			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+				self.llm._verified_api_keys = True
+				self.llm._verified_tool_calling_method = known_method  # Cache on LLM instance
+				logger.debug(
+					f'🛠️ Using known tool calling method for {self.chat_model_library}/{self.model_name}: [{known_method}] (skipped test)'
+				)
+				return known_method
+
+			start_time = time.time()
+			# Verify the known method works
+			if self._test_tool_calling_method(known_method):
+				self.llm._verified_api_keys = True
+				self.llm._verified_tool_calling_method = known_method  # Cache on LLM instance
+				elapsed = time.time() - start_time
+				logger.debug(
+					f'🛠️ Using known tool calling method for {self.chat_model_library}/{self.model_name}: [{known_method}] in {elapsed:.2f}s'
+				)
+				return known_method
+			# If known method fails, fall back to detection
+			logger.debug(
+				f'Known method {known_method} failed for {self.chat_model_library}/{self.model_name}, falling back to detection'
+			)
 
 		# Auto-detect the best method
 		return self._detect_best_tool_calling_method()
@@ -1017,7 +1112,7 @@ class Agent(Generic[Context]):
 
 		# Create summary based on single vs multi-action
 		if action_count == 1:
-			logger.info(f'⚡️ Decided next action: {action_details[0]}')
+			logger.info(f'⚡️ Decided next action: {action_name}{param_str}')
 		else:
 			summary_lines = [f'⚡️ Decided next {action_count} multi-actions:']
 			for i, detail in enumerate(action_details):
