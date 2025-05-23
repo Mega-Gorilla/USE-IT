@@ -12,48 +12,61 @@ You can connect the agent to your real Chrome browser instance, allowing it to a
 
 Browser-use attempts connections in the following order:
 
-### Method A: Accept Playwright/Patchright Client
+### Method A: Launch a New Local Browser
 
-Pass a Playwright or Patchright client object:
+Launch a local browser using a provided `executable_path` or builtin default (playwright chromium):
 
 ```python
 from browser_use import Agent, BrowserSession
-from playwright.async_api import async_playwright
-# or from patchright.async_api import async_patchright
 
-async with async_playwright() as playwright:
-    session = BrowserSession(playwright=playwright)
-    await session.start()
+# If no executable_path provided, uses Playwright/Patchright's built-in Chromium
+browser_session = BrowserSession(
+    # Path to a specific Chromium-based executable (optional)
+    executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
+    # For Windows: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    # For Linux: '/usr/bin/google-chrome'
     
-    agent = Agent(
-        task="Your task here",
-        llm=llm,
-        browser=session,
-    )
+    # Use a specific data directory on disk (optional)
+    user_data_dir='~/.config/browseruse/profiles/default',
+    # ... any other BrowserProfile or playwright launch_persistnet_context config...
+    headless=False,
+)
+
+agent = Agent(
+    task="Your task here",
+    llm=llm,
+    browser_session=browser_session,
+)
 ```
 
-### Method B: Accept Playwright Objects
+### Method B: Connect Using Existing Playwright Objects
 
-Pass existing page, browser_context, and/or browser Playwright objects:
+Pass existing page, browser_context, and/or browser Playwright objects to `Agent(...)` or to `BrowserSession(...)`:
 
 ```python
 from browser_use import Agent
 from playwright.async_api import async_playwright
+# or from patchright.async_api import async_patchright
 
-async with async_playwright() as p:
-    browser = await p.chromium.launch()
+async with async_playwright() as playwright:
+    browser = await playwright.chromium.launch()
     context = await browser.new_context()
     page = await context.new_page()
     
-    # Can pass any of: page, browser_context, browser
+    browser_session = BrowserSession(
+        page=page,  # or browser_context=context, or browser=browser, or playwright=playwright
+    )
+
+    # Can pass any of: page, browser_context, browser, playwright
     agent = Agent(
         task="Your task here",
         llm=llm,
-        page=page,  # or browser_context=context, or browser=browser
+        page=page,
+        # or browser_session=browser_session, or browser_context=context, or browser=browser
     )
 ```
 
-### Method C: Connect by Browser PID
+### Method C: Connect to Local Browser Using Browser PID
 
 Connect to a browser with open `--remote-debugging-port`:
 
@@ -73,7 +86,7 @@ agent = Agent(
 )
 ```
 
-### Method D: Connect via WebSocket URL
+### Method D: Connect to remote Playwright Node.js Browser Server via WSS URL
 
 Connect to Playwright Node.js server providers:
 
@@ -90,7 +103,7 @@ agent = Agent(
 )
 ```
 
-### Method E: Connect via CDP URL
+### Method E: Connect to Remote Browser via CDP URL
 
 Connect to any remote Chromium-based browser:
 
@@ -107,36 +120,7 @@ agent = Agent(
 )
 ```
 
-### Method F: Launch Local Browser
 
-Launch a local browser using provided executable_path or builtin default:
-
-```python
-from browser_use import Agent, BrowserSession, BrowserProfile
-
-# Configure to use your Chrome installation
-profile = BrowserProfile(
-    # Path to a specific Chromium-based executable (optional)
-    executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
-    # For Windows: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    # For Linux: '/usr/bin/google-chrome'
-    
-    # Use a specific data directory on disk (optional)
-    user_data_dir='~/.config/browseruse/profiles/default',
-    
-    # set any other browser-use or playwright launch_persistnet_context config...
-    headless=False
-)
-
-# If no executable_path provided, uses Playwright/Patchright's built-in Chromium
-session = BrowserSession(browser_profile=profile)
-
-agent = Agent(
-    task="Your task here",
-    llm=llm,
-    browser=session,
-)
-```
 
 ## Security Considerations
 
