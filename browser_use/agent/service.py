@@ -23,7 +23,7 @@ from langchain_core.messages import (
 	HumanMessage,
 	SystemMessage,
 )
-from playwright.async_api import Browser, BrowserContext
+from playwright.async_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.gif import create_history_gif
@@ -98,6 +98,7 @@ class Agent(Generic[Context]):
 		task: str,
 		llm: BaseChatModel,
 		# Optional parameters
+		page: Page | None = None,
 		browser: Browser | None = None,
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
@@ -282,16 +283,19 @@ class Agent(Generic[Context]):
 		else:
 			self.memory = None
 
-		# Browser setup
-		assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
-		assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
-		assert not (browser_profile and browser), 'Cannot provide both browser_profile and browser'
-		assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
-		assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
-		assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
+		browser_context = page.context if page else browser_context
+		# assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
+		# assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
+		# assert not (browser_profile and browser), 'Cannot provide both browser_profile and browser'
+		# assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
+		# assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
+		# assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 		self.browser_session = browser_session or BrowserSession(
-			profile=browser_profile, browser=browser, browser_context=browser_context
+			profile=browser_profile,
+			browser=browser,
+			browser_context=browser_context,
+			page=page,
 		)
 
 		if self.sensitive_data:
