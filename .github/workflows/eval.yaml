@@ -3,47 +3,6 @@ name: Run Evaluation Script
 on:
   repository_dispatch:
     types: [run-eval]
-  workflow_dispatch:
-    inputs:
-      model:
-        description: "Agent model"
-        required: false
-        default: "llama-4-maverick"
-        type: choice
-        options:
-          [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "claude-3.5-sonnet",
-            "llama-4-maverick",
-            "gemini-1.5-flash",
-          ]
-      eval_model:
-        description: "Evaluation model"
-        required: false
-        default: "gpt-4o"
-        type: choice
-        options: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"]
-      enable_memory:
-        description: "Enable memory system"
-        required: false
-        default: false
-        type: boolean
-      validate_output:
-        description: "Enable output validation"
-        required: false
-        default: false
-        type: boolean
-      use_serp:
-        description: "Use SERP search instead of Google search"
-        required: false
-        default: false
-        type: boolean
-      max_steps:
-        description: "Maximum steps per task"
-        required: false
-        default: "25"
-        type: string
 
 jobs:
   run_evaluation:
@@ -90,71 +49,72 @@ jobs:
         run: playwright install --no-shell chromium
 
       - name: Install Xvfb for headed mode
-        if: steps.eval_params.outputs.NEEDS_XVFB == 'true'
+        if: github.event.client_payload.script_args.headless == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
 
-      - name: Setup evaluation parameters
-        id: eval_params
+      - name: Construct eval command
+        id: eval_command
         run: |
-          # Define default configuration
-          cat > /tmp/defaults.json << 'EOF'
-          {
-            "model": "llama-4-maverick",
-            "eval_model": "gpt-4o",
-            "parallel_runs": 2,
-            "max_steps": 25,
-            "start_index": 0,
-            "end_index": 100,
-            "headless": true,
-            "no_vision": false,
-            "fresh_start": true,
-            "eval_group": "PRTests",
-            "memory_interval": 10,
-            "max_actions_per_step": 10,
-            "planner_interval": 1,
-            "use_serp": false,
-            "enable_memory": false,
-            "validate_output": false
-          }
-          EOF
+          # Centralized defaults
+          DEFAULT_MODEL="llama-4-maverick"
+          DEFAULT_EVAL_MODEL="gpt-4o"
+          DEFAULT_PARALLEL_RUNS="2"
+          DEFAULT_MAX_STEPS="25"
+          DEFAULT_START_INDEX="0"
+          DEFAULT_END_INDEX="100"
+          DEFAULT_EVAL_GROUP="PRTests"
+          DEFAULT_HEADLESS="true"
+          DEFAULT_FRESH_START="true"
+          DEFAULT_MEMORY_INTERVAL="10"
+          DEFAULT_MAX_ACTIONS_PER_STEP="10"
+          DEFAULT_PLANNER_INTERVAL="1"
 
-          # Get input source (repository_dispatch or workflow_dispatch)
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            # Repository dispatch - extract from client_payload
-            echo '${{ toJson(github.event.client_payload.script_args) }}' > /tmp/input.json
-          else
-            # Workflow dispatch - extract from inputs
-            echo '${{ toJson(github.event.inputs) }}' > /tmp/input.json
-          fi
+          # Extract and apply defaults using parameter expansion
+          MODEL="${{ github.event.client_payload.script_args.model }}"
+          MODEL="${MODEL:-$DEFAULT_MODEL}"
 
-          # Merge defaults with input, giving priority to input
-          jq -s '.[0] * (.[1] // {})' /tmp/defaults.json /tmp/input.json > /tmp/config.json
+          EVAL_MODEL="${{ github.event.client_payload.script_args.eval_model }}"
+          EVAL_MODEL="${EVAL_MODEL:-$DEFAULT_EVAL_MODEL}"
 
-          # Extract individual values using jq
-          MODEL=$(jq -r '.model' /tmp/config.json)
-          EVAL_MODEL=$(jq -r '.eval_model' /tmp/config.json)
-          PARALLEL_RUNS=$(jq -r '.parallel_runs' /tmp/config.json)
-          MAX_STEPS=$(jq -r '.max_steps' /tmp/config.json)
-          START_INDEX=$(jq -r '.start_index' /tmp/config.json)
-          END_INDEX=$(jq -r '.end_index' /tmp/config.json)
-          HEADLESS=$(jq -r '.headless' /tmp/config.json)
-          NO_VISION=$(jq -r '.no_vision' /tmp/config.json)
-          FRESH_START=$(jq -r '.fresh_start' /tmp/config.json)
-          EVAL_GROUP=$(jq -r '.eval_group' /tmp/config.json)
-          MEMORY_INTERVAL=$(jq -r '.memory_interval' /tmp/config.json)
-          MAX_ACTIONS_PER_STEP=$(jq -r '.max_actions_per_step' /tmp/config.json)
-          PLANNER_INTERVAL=$(jq -r '.planner_interval' /tmp/config.json)
-          USE_SERP=$(jq -r '.use_serp' /tmp/config.json)
-          ENABLE_MEMORY=$(jq -r '.enable_memory' /tmp/config.json)
-          VALIDATE_OUTPUT=$(jq -r '.validate_output' /tmp/config.json)
-          USER_MESSAGE=$(jq -r '.user_message // empty' /tmp/config.json)
-          DEVELOPER_ID=$(jq -r '.developer_id // empty' /tmp/config.json)
-          PLANNER_MODEL=$(jq -r '.planner_model // empty' /tmp/config.json)
+          PARALLEL_RUNS="${{ github.event.client_payload.script_args.parallel_runs }}"
+          PARALLEL_RUNS="${PARALLEL_RUNS:-$DEFAULT_PARALLEL_RUNS}"
 
-          # Build command array for cleaner construction
-          ARGS=(
+          MAX_STEPS="${{ github.event.client_payload.script_args.max_steps }}"
+          MAX_STEPS="${MAX_STEPS:-$DEFAULT_MAX_STEPS}"
+
+          START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
+          START_INDEX="${START_INDEX:-$DEFAULT_START_INDEX}"
+
+          END_INDEX="${{ github.event.client_payload.script_args.end_index }}"
+          END_INDEX="${END_INDEX:-$DEFAULT_END_INDEX}"
+
+          EVAL_GROUP="${{ github.event.client_payload.script_args.eval_group }}"
+          EVAL_GROUP="${EVAL_GROUP:-$DEFAULT_EVAL_GROUP}"
+
+          HEADLESS="${{ github.event.client_payload.script_args.headless }}"
+          HEADLESS="${HEADLESS:-$DEFAULT_HEADLESS}"
+
+          FRESH_START="${{ github.event.client_payload.script_args.fresh_start }}"
+          FRESH_START="${FRESH_START:-$DEFAULT_FRESH_START}"
+
+          MEMORY_INTERVAL="${{ github.event.client_payload.script_args.memory_interval }}"
+          MEMORY_INTERVAL="${MEMORY_INTERVAL:-$DEFAULT_MEMORY_INTERVAL}"
+
+          MAX_ACTIONS_PER_STEP="${{ github.event.client_payload.script_args.max_actions_per_step }}"
+          MAX_ACTIONS_PER_STEP="${MAX_ACTIONS_PER_STEP:-$DEFAULT_MAX_ACTIONS_PER_STEP}"
+
+          PLANNER_INTERVAL="${{ github.event.client_payload.script_args.planner_interval }}"
+          PLANNER_INTERVAL="${PLANNER_INTERVAL:-$DEFAULT_PLANNER_INTERVAL}"
+
+          # Optional parameters (no defaults)
+          USER_MESSAGE="${{ github.event.client_payload.script_args.user_message }}"
+          DEVELOPER_ID="${{ github.event.client_payload.script_args.developer_id }}"
+          PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
+
+          # Build command using array for cleaner construction
+          CMD_ARGS=(
             "python" "eval/service.py"
             "--model" "$MODEL"
             "--eval-model" "$EVAL_MODEL"
@@ -170,19 +130,19 @@ jobs:
           )
 
           # Add boolean flags conditionally
-          [[ "$NO_VISION" == "true" ]] && ARGS+=("--no-vision")
-          [[ "$HEADLESS" == "true" ]] && ARGS+=("--headless")
-          [[ "$USE_SERP" == "true" ]] && ARGS+=("--use-serp")
-          [[ "$ENABLE_MEMORY" == "true" ]] && ARGS+=("--enable-memory")
-          [[ "$VALIDATE_OUTPUT" == "true" ]] && ARGS+=("--validate-output")
+          [[ "${{ github.event.client_payload.script_args.no_vision }}" == "true" ]] && CMD_ARGS+=("--no-vision")
+          [[ "$HEADLESS" == "true" ]] && CMD_ARGS+=("--headless")
+          [[ "${{ github.event.client_payload.script_args.use_serp }}" == "true" ]] && CMD_ARGS+=("--use-serp")
+          [[ "${{ github.event.client_payload.script_args.enable_memory }}" == "true" ]] && CMD_ARGS+=("--enable-memory")
+          [[ "${{ github.event.client_payload.script_args.validate_output }}" == "true" ]] && CMD_ARGS+=("--validate-output")
 
           # Add optional string parameters
-          [[ -n "$USER_MESSAGE" ]] && ARGS+=("--user-message" "$USER_MESSAGE")
-          [[ -n "$DEVELOPER_ID" ]] && ARGS+=("--developer-id" "$DEVELOPER_ID")
-          [[ -n "$PLANNER_MODEL" ]] && ARGS+=("--planner-model" "$PLANNER_MODEL")
+          [[ -n "$USER_MESSAGE" ]] && CMD_ARGS+=("--user-message" "$USER_MESSAGE")
+          [[ -n "$DEVELOPER_ID" ]] && CMD_ARGS+=("--developer-id" "$DEVELOPER_ID")
+          [[ -n "$PLANNER_MODEL" ]] && CMD_ARGS+=("--planner-model" "$PLANNER_MODEL")
 
-          # Convert array to command string
-          printf -v CMD_STRING '%q ' "${ARGS[@]}"
+          # Convert array to command string with proper escaping
+          printf -v CMD_STRING '%q ' "${CMD_ARGS[@]}"
 
           # Add xvfb wrapper if needed
           if [[ "$HEADLESS" == "false" ]]; then
@@ -190,11 +150,7 @@ jobs:
           fi
 
           echo "FULL_COMMAND=$CMD_STRING" >> $GITHUB_OUTPUT
-          echo "NEEDS_XVFB=$([[ "$HEADLESS" == "false" ]] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
-
-          # Log configuration for debugging
-          echo "::notice title=Configuration::$(cat /tmp/config.json)"
-          echo "::notice title=Command::$CMD_STRING"
+          echo "::notice title=Eval Command::$CMD_STRING"
 
       - name: Run evaluation script
-        run: ${{ steps.eval_params.outputs.FULL_COMMAND }}
+        run: ${{ steps.eval_command.outputs.FULL_COMMAND }}
