@@ -10,16 +10,55 @@ You can connect the agent to your real Chrome browser instance, allowing it to a
 
 ## Connection Methods
 
-There are several ways to connect to your existing browser:
+Browser-use attempts connections in the following order:
 
-### Method 1: Connect to Running Browser by PID
+### Method A: Accept Playwright/Patchright Client
 
-If you have Chrome running with remote debugging enabled, you can connect directly using its process ID:
+Pass a Playwright or Patchright client object:
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
-import asyncio
+from playwright.async_api import async_playwright
+# or from patchright.async_api import async_patchright
+
+async with async_playwright() as playwright:
+    session = BrowserSession(playwright=playwright)
+    await session.start()
+    
+    agent = Agent(
+        task="Your task here",
+        llm=llm,
+        browser=session,
+    )
+```
+
+### Method B: Accept Playwright Objects
+
+Pass existing page, browser_context, and/or browser Playwright objects:
+
+```python
+from browser_use import Agent
+from playwright.async_api import async_playwright
+
+async with async_playwright() as p:
+    browser = await p.chromium.launch()
+    context = await browser.new_context()
+    page = await context.new_page()
+    
+    # Can pass any of: page, browser_context, browser
+    agent = Agent(
+        task="Your task here",
+        llm=llm,
+        page=page,  # or browser_context=context, or browser=browser
+    )
+```
+
+### Method C: Connect by Browser PID
+
+Connect to a browser with open `--remote-debugging-port`:
+
+```python
+from browser_use import Agent, BrowserSession
 
 # First, start Chrome with remote debugging:
 # /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9242
@@ -30,70 +69,35 @@ await session.start()
 
 agent = Agent(
     task="Your task here",
-    llm=ChatOpenAI(model='gpt-4o'),
+    llm=llm,
     browser=session,
 )
-
-async def main():
-    await agent.run()
-    # Browser stays open since we connected to existing instance
-
-if __name__ == '__main__':
-    asyncio.run(main())
 ```
 
-### Method 2: Launch with Custom Chrome Executable
+### Method D: Connect via WebSocket URL
 
-To launch a new Chrome instance using your default profile:
+Connect to Playwright Node.js server providers:
 
 ```python
-from browser_use import Agent, BrowserSession, BrowserProfile
-from langchain_openai import ChatOpenAI
-import asyncio
+from browser_use import Agent, BrowserSession
 
-# Configure to use your Chrome installation
-profile = BrowserProfile(
-    # Path to your Chrome executable
-    executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
-    # For Windows: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-    # For Linux: '/usr/bin/google-chrome'
-    
-    # Use your default Chrome profile
-    user_data_dir='~/Library/Application Support/Google/Chrome',  # macOS
-    # For Windows: '~/AppData/Local/Google/Chrome/User Data'
-    # For Linux: '~/.config/google-chrome'
-    
-    profile_directory='Default',  # or 'Profile 1', 'Profile 2', etc.
-    headless=False
-)
-
-session = BrowserSession(browser_profile=profile)
+# Connect to a playwright server
+session = BrowserSession(wss_url="wss://your-playwright-server.com/ws")
 await session.start()
 
 agent = Agent(
     task="Your task here",
-    llm=ChatOpenAI(model='gpt-4o'),
+    llm=llm,
     browser=session,
 )
-
-async def main():
-    await agent.run()
-    
-    input('Press Enter to close the browser...')
-    await session.stop()
-
-if __name__ == '__main__':
-    asyncio.run(main())
 ```
 
-### Method 3: Connect via Chrome DevTools Protocol
+### Method E: Connect via CDP URL
 
-If Chrome is already running with remote debugging enabled:
+Connect to any remote Chromium-based browser:
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
-import asyncio
 
 # Connect to Chrome via CDP
 session = BrowserSession(cdp_url="http://localhost:9222")
@@ -101,29 +105,46 @@ await session.start()
 
 agent = Agent(
     task="Your task here",
-    llm=ChatOpenAI(model='gpt-4o'),
+    llm=llm,
     browser=session,
 )
 ```
 
-## Finding Chrome Profile Paths
+### Method F: Launch Local Browser
 
-### Default Profile Locations
+Launch a local browser using provided executable_path or builtin default:
 
-- **macOS**: `~/Library/Application Support/Google/Chrome`
-- **Windows**: `%LOCALAPPDATA%\Google\Chrome\User Data`
-- **Linux**: `~/.config/google-chrome`
+```python
+from browser_use import Agent, BrowserSession, BrowserProfile
 
-### Finding Your Profile Directory
+# Configure to use your Chrome installation
+profile = BrowserProfile(
+    # Path to your Chrome executable (optional)
+    executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
+    # For Windows: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    # For Linux: '/usr/bin/google-chrome'
+    
+    # Use a custom profile directory
+    user_data_dir='~/.config/browseruse/profiles/default',
+    profile_directory='Default',
+    headless=False
+)
 
-1. Open Chrome and navigate to `chrome://version`
-2. Look for "Profile Path" - this shows your current profile location
-3. The profile directory name is usually "Default" or "Profile 1", "Profile 2", etc.
+# If no executable_path provided, uses Playwright/Patchright's built-in Chromium
+session = BrowserSession(browser_profile=profile)
+await session.start()
+
+agent = Agent(
+    task="Your task here",
+    llm=llm,
+    browser=session,
+)
+```
 
 ## Security Considerations
 
 <Warning>
-  When using your real browser profile, the agent will have access to:
+  When using any browser profile, the agent will have access to:
   - All your logged-in sessions and cookies
   - Saved passwords (if autofill is enabled)
   - Browser history and bookmarks
@@ -137,7 +158,7 @@ agent = Agent(
 1. **Use a dedicated profile**: Consider creating a separate Chrome profile specifically for agent use:
    ```python
    profile = BrowserProfile(
-       user_data_dir='~/.browseruse/profiles/agent-profile',
+       user_data_dir='~/.config/browseruse/profiles/default',
        profile_directory='Default'
    )
    ```
