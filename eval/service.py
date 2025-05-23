@@ -1063,25 +1063,46 @@ async def run_task_with_semaphore(
 				logger.info(f'Task {task.task_id}: No existing result found. Starting execution pipeline.')
 
 				# Stage 2: Setup browser
-				browser_session = await run_stage(Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120)
-				task_result.stage_completed(Stage.SETUP_BROWSER)
-				logger.info(f'Task {task.task_id}: Browser session started.')
+				try:
+					browser_session = await run_stage(
+						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
+					)
+					task_result.stage_completed(Stage.SETUP_BROWSER)
+					logger.info(f'Task {task.task_id}: Browser session started.')
+				except Exception as e:
+					error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
+					task_result.stage_failed(Stage.SETUP_BROWSER, error)
+					logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+					return task_result.get_local_status()  # Early return on browser setup failure
 
 				# Stage 3: Run agent
-				agent_history = await run_stage(
-					Stage.RUN_AGENT,
-					lambda: run_agent_with_browser(browser_session, task, llm, max_steps_per_task, use_vision),
-					timeout=600,
-				)
-				task_result.stage_completed(Stage.RUN_AGENT)
-				logger.info(f'Task {task.task_id}: Agent run completed.')
+				try:
+					agent_history = await run_stage(
+						Stage.RUN_AGENT,
+						lambda: run_agent_with_browser(browser_session, task, llm, max_steps_per_task, use_vision),
+						timeout=600,
+					)
+					task_result.stage_completed(Stage.RUN_AGENT)
+					logger.info(f'Task {task.task_id}: Agent run completed.')
+				except Exception as e:
+					error = StageError(Stage.RUN_AGENT, 'exception', str(e))
+					task_result.stage_failed(Stage.RUN_AGENT, error)
+					logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
+					return task_result.get_local_status()  # Early return on agent failure
 
 				# Stage 4: Format history
-				formatted_data = await run_stage(
-					Stage.FORMAT_HISTORY, lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task)
-				)
-				task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-				logger.info(f'Task {task.task_id}: Agent history formatted.')
+				try:
+					formatted_data = await run_stage(
+						Stage.FORMAT_HISTORY,
+						lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task),
+					)
+					task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
+					logger.info(f'Task {task.task_id}: Agent history formatted.')
+				except Exception as e:
+					error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
+					task_result.stage_failed(Stage.FORMAT_HISTORY, error)
+					logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
+					return task_result.get_local_status()  # Early return on formatting failure
 
 			# Stage 5: Evaluate (if we have execution data and no existing evaluation)
 			if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
