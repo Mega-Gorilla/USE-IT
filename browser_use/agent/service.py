@@ -393,30 +393,43 @@ class Agent(Generic[Context]):
 		return self.settings.message_context
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
-		"""Get the version and source of the browser-use package (git or pip in a nutshell)"""
+		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
 		try:
-			# First check for repository-specific files
-			repo_files = ['.git', 'README.md', 'docs', 'examples']
 			package_root = Path(__file__).parent.parent.parent
+			pyproject_path = package_root / 'pyproject.toml'
 
-			# If all of these files/dirs exist, it's likely from git
+			# Try to read version from pyproject.toml
+			if pyproject_path.exists():
+				import re
+
+				with open(pyproject_path) as f:
+					content = f.read()
+					match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+					if match:
+						version = f'v{match.group(1)}'
+					else:
+						# Fallback to importlib if regex doesn't find version
+						from importlib.metadata import version as get_version
+
+						version = f'v{get_version("browser-use")}'
+			else:
+				# If pyproject.toml doesn't exist, try getting version from pip
+				from importlib.metadata import version as get_version
+
+				version = f'v{get_version("browser-use")}'
+
+			# Determine source
+			repo_files = ['.git', 'README.md', 'docs', 'examples']
 			if all(Path(package_root / file).exists() for file in repo_files):
-				try:
-					import subprocess
-
-					version = subprocess.check_output(['git', 'describe', '--tags']).decode('utf-8').strip()
-				except Exception:
-					version = 'unknown'
 				source = 'git'
 			else:
-				# If no repo files found, try getting version from pip
-				from importlib.metadata import version
-
-				version = version('browser-use')
 				source = 'pip'
-		except Exception:
-			version = 'unknown'
+
+		except Exception as e:
+			logger.debug(f'Error getting version: {e}')
+			version = 'vunknown'
 			source = 'unknown'
+
 		if source_override is not None:
 			source = source_override
 		logger.debug(f'Version: {version}, Source: {source}')
