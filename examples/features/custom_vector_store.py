@@ -6,10 +6,11 @@ You'll need a Qdrant server running locally and the qdrant python client install
 
 import asyncio
 import os
+
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 
 from browser_use import Agent, MemoryConfig
-from langchain_openai import ChatOpenAI
 
 # Load environment variables (e.g., OPENAI_API_KEY)
 load_dotenv()
@@ -53,17 +54,6 @@ async def run_agent_with_memory_config(
 	print(f'Final result/summary: {history.final_result()}')
 	print(f'Number of steps taken: {len(history.history)}')
 
-	# Show procedural memories created if any
-	procedural_memories = [
-		msg.message.content
-		for hist_item in history.history
-		if hist_item.model_output
-		for action_model in hist_item.model_output.action  # model_output.action is a list of ActionModel
-		if hasattr(action_model, 'current_state')
-		and action_model.current_state  # current_state is part of AgentOutput (which action is)
-		for msg in hist_item.model_output.current_state.memory.split('\n')  # assuming memory is a string in current_state
-		if 'procedural memory' in msg.lower()  # A bit of a guess, actual summary might not have this exact phrase
-	]
 	# Let's refine how to access summaries. The summary is added as a 'memory' type message.
 
 	summaries_created = []
@@ -109,6 +99,7 @@ async def run_agent_with_memory_config(
 
 
 async def main():
+	"""Main function to run the agent with different memory configurations."""
 	common_task = 'Find the current CEO of OpenAI and then search for news about their latest projects. Summarize your findings.'
 	shared_agent_id = 'persistent_browser_agent_001'  # Use the same ID to test persistence with Qdrant
 
