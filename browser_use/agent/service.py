@@ -471,7 +471,7 @@ class Agent(Generic[Context]):
 				Cleans and validates a raw JSON response string against an expected answer.
 				"""
 				content = getattr(response, 'content', '').strip()
-				logger.debug(f'Raw response content: {content}')
+				# logger.debug(f'Raw response content: {content}')
 
 				# Remove surrounding markdown code blocks if present
 				if content.startswith('```json') and content.endswith('```'):
@@ -485,13 +485,13 @@ class Agent(Generic[Context]):
 					answer = str(result.get('answer', '')).strip().lower().strip(' .')
 
 					if expected_answer.lower() not in answer:
-						logger.debug(f"Validation failed: expected '{expected_answer}', got '{answer}'")
+						logger.debug(f"🛠️ Tool calling method {method} failed: expected '{expected_answer}', got '{answer}'")
 						return False
 
 					return True
 
 				except (json.JSONDecodeError, AttributeError, TypeError) as e:
-					logger.debug(f'Failed to parse JSON content: {e}')
+					logger.debug(f'🛠️ Tool calling method {method} failed: Failed to parse JSON content: {e}')
 					return False
 
 			if method == 'raw':
@@ -513,7 +513,7 @@ class Agent(Generic[Context]):
 				response = structured_llm.invoke([HumanMessage(content=CAPITAL_QUESTION)])
 
 				if not response:
-					logger.debug(f'Method {method} failed validation: empty response')
+					logger.debug(f'🛠️ Tool calling method {method} failed: empty response')
 					return False
 
 				def extract_parsed(response: Any) -> CapitalResponse | None:
@@ -524,20 +524,22 @@ class Agent(Generic[Context]):
 				parsed = extract_parsed(response)
 
 				if not isinstance(parsed, CapitalResponse):
-					logger.debug(f'Method {method} failed validation: parsed is not CapitalResponse')
+					logger.debug(f'🛠️ Tool calling method {method} failed: LLM responded with invalid JSON')
 					return False
 
 				if EXPECTED_ANSWER not in parsed.answer.lower():
-					logger.debug(f'Method {method} failed validation: expected answer not in response')
+					logger.debug(f'🛠️ Tool calling method {method} failed: LLM failed to answer test question correctly')
 					return False
 				return True
 
 		except Exception as e:
-			logger.debug(f"Tool calling method '{method}' test failed: {str(e)}")
+			logger.debug(f"🛠️ Tool calling method '{method}' test failed: {type(e).__name__}: {str(e)}")
 			return False
 
 	def _detect_best_tool_calling_method(self) -> str | None:
 		"""Detect the best supported tool calling method by testing each one."""
+		start_time = time.time()
+
 		# Order of preference for tool calling methods
 		methods_to_try = [
 			'function_calling',  # Most capable and efficient
@@ -547,11 +549,11 @@ class Agent(Generic[Context]):
 		]
 
 		for method in methods_to_try:
-			logger.debug(f'Testing tool calling method: {method}')
 			if self._test_tool_calling_method(method):
 				# if we found the method which means api is verified.
 				self.llm._verified_api_keys = True
-				logger.info(f'Selected tool calling method: {method}')
+				elapsed = time.time() - start_time
+				logger.debug(f'🛠️ Tested LLM and chose tool calling method: [{method}] in {elapsed:.2f}s')
 				return method
 
 		# If we get here, no methods worked
@@ -560,23 +562,23 @@ class Agent(Generic[Context]):
 	def _set_tool_calling_method(self) -> ToolCallingMethod | None:
 		"""Determine the best tool calling method to use with the current LLM."""
 
-    # old hardcoded logic
-    # 			if is_model_without_tool_support(self.model_name):
-    # 				return 'raw'
-    # 			elif self.chat_model_library == 'ChatGoogleGenerativeAI':
-    # 				return None
-    # 			elif self.chat_model_library == 'ChatOpenAI':
-    # 				return 'function_calling'
-    # 			elif self.chat_model_library == 'AzureChatOpenAI':
-    # 				# Azure OpenAI API requires 'tools' parameter for GPT-4
-    # 				# The error 'content must be either a string or an array' occurs when
-    # 				# the API expects a tools array but gets something else
-    # 				if 'gpt-4-' in self.model_name.lower():
-    # 					return 'tools'
-    # 				else:
-    # 					return 'function_calling'
-    
-    # If a specific method is set, use it
+		# old hardcoded logic
+		# 			if is_model_without_tool_support(self.model_name):
+		# 				return 'raw'
+		# 			elif self.chat_model_library == 'ChatGoogleGenerativeAI':
+		# 				return None
+		# 			elif self.chat_model_library == 'ChatOpenAI':
+		# 				return 'function_calling'
+		# 			elif self.chat_model_library == 'AzureChatOpenAI':
+		# 				# Azure OpenAI API requires 'tools' parameter for GPT-4
+		# 				# The error 'content must be either a string or an array' occurs when
+		# 				# the API expects a tools array but gets something else
+		# 				if 'gpt-4-' in self.model_name.lower():
+		# 					return 'tools'
+		# 				else:
+		# 					return 'function_calling'
+
+		# If a specific method is set, use it
 		if self.settings.tool_calling_method != 'auto':
 			if not self._test_tool_calling_method(self.settings.tool_calling_method):
 				if self.settings.tool_calling_method == 'raw':
@@ -1283,7 +1285,7 @@ class Agent(Generic[Context]):
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
 	# @observe(name='controller.multi_act')
-	@time_execution_async('--multi-act (agent)')
+	@time_execution_async('--multi_act')
 	async def multi_act(
 		self,
 		actions: list[ActionModel],
@@ -1610,7 +1612,6 @@ class Agent(Generic[Context]):
 		Also handles tool calling method detection if in auto mode.
 		"""
 		self.tool_calling_method = self._set_tool_calling_method()
-		logger.info(f'Using tool calling method: {self.tool_calling_method or "None"}')
 
 		# Skip verification if already done
 		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
