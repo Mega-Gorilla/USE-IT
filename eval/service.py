@@ -969,7 +969,13 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 		),
 	)
 
+	# Start browser session
 	await browser_session.start()
+
+	# Navigate to task starting url if provided
+	if task.website:
+		await browser_session.navigate(task.website)
+
 	return browser_session
 
 
@@ -977,12 +983,10 @@ async def run_agent_with_browser(
 	browser_session: BrowserSession, task: Task, llm: BaseChatModel, max_steps: int, use_vision: bool
 ) -> AgentHistoryList:
 	"""Run agent with the browser session"""
-	initial_actions = [{'go_to_url': {'url': task.website}}]
 	agent = Agent(
 		task=task.confirmed_task,
 		llm=llm,
 		browser_session=browser_session,
-		initial_actions=initial_actions,
 		use_vision=use_vision,
 		source='eval_platform',
 	)
@@ -1413,7 +1417,7 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('--user-message', type=str, default='', help='User message to include in the run')
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
-	parser.add_argument('--developer-id', type=str, default='unknown', help='Name of the developer starting the run')
+	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
