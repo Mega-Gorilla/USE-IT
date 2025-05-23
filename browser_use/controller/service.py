@@ -204,9 +204,7 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action(
-			'Open url in new tab, (for Google search use search_google action instead)', param_model=OpenTabAction
-		)
+		@self.registry.action('Open a specific url in new tab', param_model=OpenTabAction)
 		async def open_tab(params: OpenTabAction, browser_session: BrowserSession):
 			await browser_session.create_new_tab(params.url)
 			msg = f'🔗  Opened new tab with {params.url}'
