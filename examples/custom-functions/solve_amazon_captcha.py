@@ -43,6 +43,8 @@ async def solve_amazon_captcha(browser_session: BrowserSession):
 
 	captcha = AmazonCaptcha.fromlink(link)
 	solution = captcha.solve()
+	if solution == 'Not solved':
+		raise ValueError("Captcha could not be solved")
 
 	await page.locator('#captchacharacters').fill(solution)
 	await page.locator('button[type="submit"]').click()
