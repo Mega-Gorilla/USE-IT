@@ -404,9 +404,9 @@ page = await browser_session.get_current_page()
 await page.goto('https://example.com/first/page')
 
 async def run_search():
-	  agent = Agent(
-		    task='Your task',
-		    llm=llm,
+    agent = Agent(
+        task='Your task',
+        llm=llm,
         page=page,                        # optional: pass a specific playwright page to start on
         browser_session=browser_session,  # optional: pass an existing browser session to an agent
     )
