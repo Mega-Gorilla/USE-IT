@@ -1136,6 +1136,7 @@ async def run_task_with_semaphore(
 		browser_session = None
 		task_folder = Path(f'saved_trajectories/{task.task_id}')
 
+		logger.info(f'Task {task.task_id}: Starting execution pipeline.')
 		try:
 			# Stage 1: Try to load existing result
 			try:
@@ -1154,6 +1155,7 @@ async def run_task_with_semaphore(
 
 				# Stage 2: Setup browser
 				try:
+					logger.info(f'Task {task.task_id}: Browser setup starting.')
 					browser_session = await run_stage(
 						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
 					)
@@ -1167,6 +1169,7 @@ async def run_task_with_semaphore(
 
 				# Stage 3: Run agent
 				try:
+					logger.info(f'Task {task.task_id}: Agent run starting.')
 					agent_history = await run_stage(
 						Stage.RUN_AGENT,
 						lambda: run_agent_with_browser(
@@ -1195,6 +1198,7 @@ async def run_task_with_semaphore(
 
 				# Stage 4: Format history
 				try:
+					logger.info(f'Task {task.task_id}: History formatting starting.')
 					formatted_data = await run_stage(
 						Stage.FORMAT_HISTORY,
 						lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task),
@@ -1210,6 +1214,7 @@ async def run_task_with_semaphore(
 			# Stage 5: Evaluate (if we have execution data and no existing evaluation)
 			if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
 				try:
+					logger.info(f'Task {task.task_id}: Evaluation starting.')
 					evaluation = await run_stage(
 						Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
 					)
@@ -1222,6 +1227,7 @@ async def run_task_with_semaphore(
 
 			# Stage 6: Save to server (always attempt)
 			try:
+				logger.info(f'Task {task.task_id}: Saving result to server.')
 				await run_stage(
 					Stage.SAVE_SERVER,
 					lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
