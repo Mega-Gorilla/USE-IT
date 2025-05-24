@@ -694,6 +694,9 @@ class BrowserSession(BaseModel):
 	async def get_current_page(self) -> Page:
 		"""Get the current page + ensure it's not None / closed"""
 
+		if not self.initialized:
+			await self.start()
+
 		# get-or-create the browser_context if it's not already set up
 		if not self.browser_context:
 			await self.start()
