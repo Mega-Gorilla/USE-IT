@@ -146,7 +146,7 @@ class ActionRegistry(BaseModel):
 class SpecialActionParameters(BaseModel):
 	"""Model defining all special parameters that can be injected into actions"""
 
-	model_config = {'arbitrary_types_allowed': True}
+	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	# optional user-provided context object passed down from Agent(context=...)
 	# e.g. can contain anything, external db connections, file handles, queues, runtime config objects, etc.
@@ -154,7 +154,7 @@ class SpecialActionParameters(BaseModel):
 	# browser-use code doesn't use this at all, we just pass it down to your actions for convenience
 	context: 'Context | None' = None
 
-	# browser-use session object
+	# browser-use session object, can be used to create new tabs, navigate, access playwright objects, etc.
 	browser_session: BrowserSession | None = None
 
 	# legacy support for actions that ask for the old model names
@@ -165,7 +165,7 @@ class SpecialActionParameters(BaseModel):
 		# should be deprecated then removed after v0.3.0 to avoid ambiguity
 	)  # we can't change it too fast because many people's custom actions out in the wild expect this argument
 
-	# playwright object, shortcut for page = await browser_session.get_current_page()
+	# actions can get the playwright Page, shortcut for page = await browser_session.get_current_page()
 	page: Page | None = None
 
 	# extra injected config if the action asks for these arg names
