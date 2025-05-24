@@ -2,15 +2,14 @@ import asyncio
 import os
 import sys
 
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from playwright.async_api import async_playwright
 from langchain_google_genai import ChatGoogleGenerativeAI
+from playwright.async_api import async_playwright
 from pydantic import SecretStr
 
 from browser_use import Agent
