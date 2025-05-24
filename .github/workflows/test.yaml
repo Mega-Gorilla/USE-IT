@@ -26,6 +26,12 @@ jobs:
           echo "FILENAME_LIST=$FILENAME_LIST" >> $GITHUB_OUTPUT
           echo "$FILENAME_LIST"
         # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
+      - name: Check that at least one test file is found
+        run: |
+          if [ -z "${{ steps.list_test_files.outputs.FILENAME_LIST }}" ]; then
+            echo "No test files found" > /dev/stderr
+            exit 1
+          fi
 
   tests:
     name: ${{matrix.test_filename}} 
