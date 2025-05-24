@@ -651,6 +651,40 @@ class BrowserSession(BaseModel):
 			if page.url == 'about:blank':
 				await self._show_dvd_screensaver_loading_animation(page)
 
+		if (not viewport) and (self.browser_profile.window_size is not None) and not self.browser_profile.headless:
+			# attempt to resize the actual browser window
+
+			# cdp api: https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setWindowBounds
+			try:
+				cdp_session = await page.context.new_cdp_session(page)
+				window_id_result = await cdp_session.send('Browser.getWindowForTarget')
+				await cdp_session.send(
+					'Browser.setWindowBounds',
+					{
+						'windowId': window_id_result['windowId'],
+						'bounds': {
+							**self.browser_profile.window_size,
+							'windowState': 'normal',  # Ensure window is not minimized/maximized
+						},
+					},
+				)
+				await cdp_session.detach()
+			except Exception as e:
+				_log_size = lambda size: f'{size["width"]}x{size["height"]}px'
+				try:
+					# fallback to javascript resize if cdp setWindowBounds fails
+					await page.evaluate(
+						"""(width, height) => {window.resizeTo(width, height)}""",
+						**self.browser_profile.window_size,
+					)
+					return
+				except Exception as e:
+					pass
+
+				logger.warning(
+					f'⚠️ Failed to resize browser window to {_log_size(self.browser_profile.window_size)} using CDP setWindowBounds: {type(e).__name__}: {e}'
+				)
+
 	def _set_browser_keep_alive(self, keep_alive: bool | None) -> None:
 		"""set the keep_alive flag on the browser_profile, defaulting to True if keep_alive is None"""
 		if self.browser_profile.keep_alive is None:
