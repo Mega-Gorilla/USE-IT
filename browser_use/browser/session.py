@@ -254,35 +254,22 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.keep_alive:
 			return  # nothing to do if keep_alive=True, leave the browser running
 
-		if self.browser_context:
+		if self.browser_context or self.browser:
 			try:
-				await self.browser_context.close()
+				await (self.browser_context or self.browser).close()
 				logger.info(
-					'🛑 Shut down the BrowserSession '
-					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
+					f'🛑 Stopped the Browser '
+					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"})'
 				)
 				self.browser_context = None
 			except Exception as e:
 				logger.debug(f'❌ Error closing playwright BrowserContext {self.browser_context}: {type(e).__name__}: {e}')
 
-		if self.browser:
-			try:
-				await self.browser.close()
-				logger.info(
-					'🛑 Shut down the BrowserSession '
-					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
-				)
-				self.browser = None
-			except Exception as e:
-				logger.debug(f'❌ Error closing playwright Browser {self.browser}: {type(e).__name__}: {e}')
-
 		# kill the chrome subprocess if we were the ones that started it
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
-				logger.info(
-					f'🛑 Shut down the BrowserSession and subprocess with browser_pid={self.browser_pid} (keep_alive=False)'
-				)
+				logger.info(f'⏹ Shut down the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
 				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
@@ -409,7 +396,7 @@ class BrowserSession(BaseModel):
 			logger.info(
 				f'🌎 Launching local browser '
 				f'driver={str(type(self.playwright).__module__).split(".")[0]} channel={self.browser_profile.channel.name.lower()} '
-				f'user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) if self.browser_profile.user_data_dir else "None (incognito)"}'
+				f'user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) if self.browser_profile.user_data_dir else "<incognito>"}'
 			)
 			if not self.browser_profile.user_data_dir:
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
@@ -655,6 +642,8 @@ class BrowserSession(BaseModel):
 		#   TODO: implement applying self.stroage_state to an existing browser_context, currently only works on browser.new_context() I think
 		# 	await self.browser_context.set_storage_state(self.storage_state)
 
+		page = None
+
 		for page in self.browser_context.pages:
 			# apply viewport size settings to any existing pages
 			if viewport:
@@ -663,6 +652,8 @@ class BrowserSession(BaseModel):
 			# show browser-use dvd screensaver-style bouncing loading animation on any about:blank pages
 			if page.url == 'about:blank':
 				await self._show_dvd_screensaver_loading_animation(page)
+
+		page = page or (await self.browser_context.new_page())
 
 		if (not viewport) and (self.browser_profile.window_size is not None) and not self.browser_profile.headless:
 			# attempt to resize the actual browser window

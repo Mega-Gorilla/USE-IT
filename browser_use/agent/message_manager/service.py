@@ -70,6 +70,8 @@ def _log_format_agent_output_content(tool_call: dict) -> str:
 		if 'current_state' in args and isinstance(args['current_state'], dict):
 			next_goal = args['current_state'].get('next_goal', '').strip()
 			if next_goal:
+				# Clean whitespace from goal text to prevent newlines
+				next_goal = _log_clean_whitespace(next_goal)
 				goal_info = f': {next_goal}'
 
 		# Combine action and goal info
