@@ -2,8 +2,6 @@ name: 🎯 AI Agent ✚ Page Interaction Issue
 description: Agent fails to detect, click, scroll, input, or otherwise interact with some type of element on some page(s)
 labels: ["bug", "element-detection"]
 title: "Interaction Issue: ..."
-assignees:
-  - pirate
 body:
   - type: markdown
     attributes:
