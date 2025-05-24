@@ -258,7 +258,7 @@ class BrowserSession(BaseModel):
 			try:
 				await self.browser_context.close()
 				logger.info(
-					'🛑 Stopped the BrowserSession.browser_context '
+					'🛑 Shut down the BrowserSession '
 					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
 				)
 				self.browser_context = None
@@ -269,7 +269,7 @@ class BrowserSession(BaseModel):
 			try:
 				await self.browser.close()
 				logger.info(
-					'🛑 Stopped the BrowserSession.browser '
+					'🛑 Shut down the BrowserSession '
 					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
 				)
 				self.browser = None
@@ -280,7 +280,9 @@ class BrowserSession(BaseModel):
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
-				logger.info(f'🛑 Stopped the BrowserSession.browser_pid={self.browser_pid} subprocess (keep_alive=False)')
+				logger.info(
+					f'🛑 Shut down the BrowserSession and subprocess with browser_pid={self.browser_pid} (keep_alive=False)'
+				)
 				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
