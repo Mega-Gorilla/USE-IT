@@ -566,6 +566,60 @@ class BrowserSession(BaseModel):
 		"""
 		await self.browser_context.add_init_script(update_tab_focus_script)
 
+		event_listeners_init_script = """
+			// check to make sure we're not inside the PDF viewer
+			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
+			if (!window.isPdfViewer) {
+
+				// Permissions
+				const originalQuery = window.navigator.permissions.query;
+				window.navigator.permissions.query = (parameters) => (
+					parameters.name === 'notifications' ?
+						Promise.resolve({ state: Notification.permission }) :
+						originalQuery(parameters)
+				);
+				(() => {
+					if (window._eventListenerTrackerInitialized) return;
+					window._eventListenerTrackerInitialized = true;
+
+					const originalAddEventListener = EventTarget.prototype.addEventListener;
+					const eventListenersMap = new WeakMap();
+
+					EventTarget.prototype.addEventListener = function(type, listener, options) {
+						if (typeof listener === "function") {
+							let listeners = eventListenersMap.get(this);
+							if (!listeners) {
+								listeners = [];
+								eventListenersMap.set(this, listeners);
+							}
+
+							listeners.push({
+								type,
+								listener,
+								listenerPreview: listener.toString().slice(0, 100),
+								options
+							});
+						}
+
+						return originalAddEventListener.call(this, type, listener, options);
+					};
+
+					window.getEventListenersForNode = (node) => {
+						console.log(eventListenersMap)
+						const listeners = eventListenersMap.get(node) || [];
+						return listeners.map(({ type, listenerPreview, options }) => ({
+							type,
+							listenerPreview,
+							options
+						}));
+					};
+				})();
+			}
+			"""
+
+		# Expose anti-detection scripts
+		await self.browser_context.add_init_script(event_listeners_init_script)
+
 		# Set up visibility listeners for all existing tabs
 		for page in self.browser_context.pages:
 			try:
