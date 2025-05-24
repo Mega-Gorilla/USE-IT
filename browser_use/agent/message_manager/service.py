@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-import textwrap
+import shutil
 
 from langchain_core.messages import (
 	AIMessage,
@@ -20,6 +20,162 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
+
+
+# ========== Logging Helper Functions ==========
+# These functions are used ONLY for formatting debug log output.
+# They do NOT affect the actual message content sent to the LLM.
+# All logging functions start with _log_ for easy identification.
+
+
+def _log_get_message_emoji(message_type: str) -> str:
+	"""Get emoji for a message type - used only for logging display"""
+	emoji_map = {
+		'HumanMessage': '💬',
+		'AIMessage': '🧠',
+		'ToolMessage': '🔨',
+	}
+	return emoji_map.get(message_type, '🎮')
+
+
+def _log_clean_whitespace(text: str) -> str:
+	"""Replace all repeated whitespace with single space and strip - used only for logging display"""
+	return re.sub(r'\s+', ' ', text).strip()
+
+
+def _log_extract_text_from_list_content(content: list) -> str:
+	"""Extract text from list content structure - used only for logging display"""
+	text_content = ''
+	for item in content:
+		if isinstance(item, dict) and 'text' in item:
+			text_content += item['text']
+	return text_content
+
+
+def _log_format_agent_output_content(tool_call: dict) -> str:
+	"""Format AgentOutput tool call into readable content - used only for logging display"""
+	try:
+		args = tool_call.get('args', {})
+		action_info = ''
+
+		# Get action name
+		if 'action' in args and args['action']:
+			first_action = args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
+			if isinstance(first_action, dict):
+				action_name = next(iter(first_action.keys())) if first_action else 'unknown'
+				action_info = f'{action_name}()'
+
+		# Get goal
+		goal_info = ''
+		if 'current_state' in args and isinstance(args['current_state'], dict):
+			next_goal = args['current_state'].get('next_goal', '').strip()
+			if next_goal:
+				goal_info = f': {next_goal}'
+
+		# Combine action and goal info
+		if action_info and goal_info:
+			return f'{action_info}{goal_info}'
+		elif action_info:
+			return action_info
+		elif goal_info:
+			return goal_info[2:]  # Remove ': ' prefix for goal-only
+		else:
+			return 'AgentOutput'
+	except Exception as e:
+		logger.warning(f'Failed to format agent output content for logging: {e}')
+		return 'AgentOutput'
+
+
+def _log_extract_message_content(message: BaseMessage, is_last_message: bool) -> str:
+	"""Extract content from a message for logging display only"""
+	try:
+		message_type = message.__class__.__name__
+
+		if is_last_message and message_type == 'HumanMessage' and isinstance(message.content, list):
+			# Special handling for last message with list content
+			text_content = _log_extract_text_from_list_content(message.content)
+			text_content = _log_clean_whitespace(text_content)
+
+			# Look for current state section
+			if '[Current state starts here]' in text_content:
+				start_idx = text_content.find('[Current state starts here]')
+				return text_content[start_idx:]
+			return text_content
+
+		# Standard content extraction
+		cleaned_content = _log_clean_whitespace(str(message.content))
+
+		# Handle AIMessages with tool calls
+		if hasattr(message, 'tool_calls') and message.tool_calls and not cleaned_content:
+			tool_call = message.tool_calls[0]
+			tool_name = tool_call.get('name', 'unknown')
+
+			if tool_name == 'AgentOutput':
+				content = _log_format_agent_output_content(tool_call)
+			else:
+				content = f'[TOOL: {tool_name}]'
+		else:
+			content = cleaned_content
+
+		# Shorten "Action result:" to "Result:" for display
+		if content.startswith('Action result:'):
+			content = 'Result:' + content[14:]
+
+		return content
+	except Exception as e:
+		logger.warning(f'Failed to extract message content for logging: {e}')
+		return '[Error extracting content]'
+
+
+def _log_format_message_line(
+	message_with_metadata: object, content: str, is_last_message: bool, terminal_width: int
+) -> list[str]:
+	"""Format a single message for logging display"""
+	try:
+		lines = []
+
+		# Get emoji and token info
+		message_type = message_with_metadata.message.__class__.__name__
+		emoji = _log_get_message_emoji(message_type)
+		token_str = str(message_with_metadata.metadata.tokens).rjust(4)
+		prefix = f'{emoji}[{token_str}]: '
+
+		# Calculate available width (emoji=2 visual cols + [token]: =8 chars)
+		content_width = terminal_width - 10
+
+		# Handle last message wrapping
+		if is_last_message and len(content) > content_width:
+			# Find a good break point
+			break_point = content.rfind(' ', 0, content_width)
+			if break_point > content_width * 0.7:  # Keep at least 70% of line
+				first_line = content[:break_point]
+				rest = content[break_point + 1 :]
+			else:
+				# No good break point, just truncate
+				first_line = content[:content_width]
+				rest = content[content_width:]
+
+			lines.append(prefix + first_line)
+
+			# Second line with 10-space indent
+			if rest:
+				if len(rest) > terminal_width - 10:
+					rest = rest[: terminal_width - 10]
+				lines.append(' ' * 10 + rest)
+		else:
+			# Single line - truncate if needed
+			if len(content) > content_width:
+				content = content[:content_width]
+			lines.append(prefix + content)
+
+		return lines
+	except Exception as e:
+		logger.warning(f'Failed to format message line for logging: {e}')
+		# Return a simple fallback line
+		return ['❓[   ?]: [Error formatting message]']
+
+
+# ========== End of Logging Helper Functions ==========
 
 
 class MessageManagerSettings(BaseModel):
@@ -183,126 +339,38 @@ class MessageManager:
 			msg = AIMessage(content=plan)
 			self._add_message_with_tokens(msg, position)
 
-	def _get_message_emoji(self, message_type: str) -> str:
-		"""Get emoji for a message type"""
-		emoji_map = {
-			'HumanMessage': '💬',
-			'AIMessage': '🧠',
-			'ToolMessage': '🔨',
-		}
-		return emoji_map.get(message_type, '🎮')
-
-	def _clean_whitespace(self, text: str) -> str:
-		"""Replace all repeated whitespace with single space and strip"""
-		return re.sub(r'\s+', ' ', text).strip()
-
-	def _truncate_text(self, text: str, max_length: int) -> str:
-		"""Truncate text to max_length and add ellipsis if needed"""
-		if len(text) <= max_length:
-			return text
-		return text[:max_length] + '...'
-
-	def _extract_text_from_list_content(self, content: list) -> str:
-		"""Extract text from list content structure"""
-		text_content = ''
-		for item in content:
-			if isinstance(item, dict) and 'text' in item:
-				text_content += item['text']
-		return text_content
-
-	def _format_agent_output_content(self, tool_call: dict) -> str:
-		"""Format AgentOutput tool call into readable content"""
-		args = tool_call.get('args', {})
-		action_info = ''
-
-		# Get action name
-		if 'action' in args and args['action']:
-			first_action = args['action'][0] if isinstance(args['action'], list) and args['action'] else args['action']
-			if isinstance(first_action, dict):
-				action_name = next(iter(first_action.keys())) if first_action else 'unknown'
-				action_info = f'{action_name}()'
-
-		# Get goal
-		goal_info = ''
-		if 'current_state' in args and isinstance(args['current_state'], dict):
-			next_goal = args['current_state'].get('next_goal', '').strip()
-			if next_goal:
-				goal_info = f': {self._truncate_text(next_goal, 40)}'
-
-		# Combine action and goal info
-		if action_info and goal_info:
-			return f'{action_info}{goal_info}'
-		elif action_info:
-			return action_info
-		elif goal_info:
-			return goal_info[2:]  # Remove ': ' prefix for goal-only
-		else:
-			return 'AgentOutput'
-
-	def _generate_history_log(self) -> str:
+	def _log_history_lines(self) -> str:
 		"""Generate a formatted log string of message history for debugging / printing to terminal"""
-		total_input_tokens = 0
-		message_lines = []
+		try:
+			total_input_tokens = 0
+			message_lines = []
+			terminal_width = shutil.get_terminal_size((80, 20)).columns
 
-		for i, m in enumerate(self.state.history.messages):
-			total_input_tokens += m.metadata.tokens
-			is_last_message = i == len(self.state.history.messages) - 1
+			for i, m in enumerate(self.state.history.messages):
+				try:
+					total_input_tokens += m.metadata.tokens
+					is_last_message = i == len(self.state.history.messages) - 1
 
-			# Get emoji based on message type
-			message_type = m.message.__class__.__name__
-			emoji = self._get_message_emoji(message_type)
+					# Extract content for logging
+					content = _log_extract_message_content(m.message, is_last_message)
 
-			# Extract content based on message structure
-			if is_last_message and message_type == 'HumanMessage' and isinstance(m.message.content, list):
-				# Special handling for last message with list content
-				text_content = self._extract_text_from_list_content(m.message.content)
-				text_content = self._clean_whitespace(text_content)
+					# Format the message line(s)
+					lines = _log_format_message_line(m, content, is_last_message, terminal_width)
+					message_lines.extend(lines)
+				except Exception as e:
+					logger.warning(f'Failed to format message {i} for logging: {e}')
+					# Add a fallback line for this message
+					message_lines.append('❓[   ?]: [Error formatting this message]')
 
-				# Look for current state section
-				if '[Current state starts here]' in text_content:
-					start_idx = text_content.find('[Current state starts here]')
-					content = self._truncate_text(text_content[start_idx:], 150)
-				else:
-					content = self._truncate_text(text_content, 150)
-			else:
-				# Standard content extraction
-				content = self._clean_whitespace(str(m.message.content)[:80])
-
-				# Shorten "Action result:" to "Result:" for display
-				if content.startswith('Action result:'):
-					content = 'Result:' + content[14:]
-
-				# Handle AIMessages with tool calls
-				if hasattr(m.message, 'tool_calls') and m.message.tool_calls and not content:
-					tool_call = m.message.tool_calls[0]
-					tool_name = tool_call.get('name', 'unknown')
-
-					if tool_name == 'AgentOutput':
-						content = self._format_agent_output_content(tool_call)
-					else:
-						content = f'[TOOL: {tool_name}]'
-				elif len(str(m.message.content)) > 80:
-					content += '...'
-
-			# Format the message line
-			left_part = f'          {emoji}[{m.metadata.tokens}]'
-
-			# For last message, allow multiple lines if needed
-			if is_last_message and '\n' not in content:
-				wrapped = textwrap.wrap(content, width=80, subsequent_indent=' ' * 20)
-				if len(wrapped) > 2:
-					wrapped = wrapped[:2]
-					wrapped[-1] = self._truncate_text(wrapped[-1], 77)
-				message_lines.append(f'{left_part.ljust(16)}: {wrapped[0]}')
-				message_lines.extend(wrapped[1:])
-			else:
-				message_lines.append(f'{left_part.ljust(16)}: {content}')
-
-		# Build final log message
-		return (
-			f'📜 LLM Message history ({len(self.state.history.messages)} messages, {total_input_tokens} tokens):\n'
-			+ '\n'.join(message_lines)
-		)
+			# Build final log message
+			return (
+				f'📜 LLM Message history ({len(self.state.history.messages)} messages, {total_input_tokens} tokens):\n'
+				+ '\n'.join(message_lines)
+			)
+		except Exception as e:
+			logger.warning(f'Failed to generate history log: {e}')
+			# Return a minimal fallback message
+			return f'📜 LLM Message history (error generating log: {e})'
 
 	@time_execution_sync('--get_messages')
 	def get_messages(self) -> list[BaseMessage]:
@@ -310,7 +378,7 @@ class MessageManager:
 		msg = [m.message for m in self.state.history.messages]
 
 		# Log message history for debugging
-		logger.debug(self._generate_history_log())
+		logger.debug(self._log_history_lines())
 
 		return msg
 

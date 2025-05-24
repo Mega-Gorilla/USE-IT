@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -1173,6 +1174,8 @@ class Agent(Generic[Context]):
 		output_type = 'raw text output' if method == 'raw' else 'structured output + tools'
 		image_status = '📷 images' if has_images else 'no images'
 
+		term_width = shutil.get_terminal_size((80, 20)).columns
+		print('=' * term_width)
 		logger.info(
 			f'🧠 LLM call: {self.chat_model_library} ({method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {image_status} | {output_type}'
 		)

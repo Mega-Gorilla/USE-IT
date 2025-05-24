@@ -165,7 +165,7 @@ class SignalHandler:
 
 		# these ^^ attempts dont work as far as we can tell
 		# we still dont know what causes the broken input, if you know how to fix it, please let us know
-		print('(tip: press [Enter] once if your terminal behaves strangely after exiting)', file=stderr)
+		print('(tip: press [Enter] once to fix escape codes appearing after chrome exit)', file=stderr)
 
 		os._exit(0)
 
