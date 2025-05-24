@@ -63,7 +63,7 @@ def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
 
 def _log_pretty_path(path: Path) -> str:
 	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
-	return str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+	return str(path or '').replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
 
 
 def require_initialization(func):
@@ -254,16 +254,25 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.keep_alive:
 			return  # nothing to do if keep_alive=True, leave the browser running
 
-		logger.info('🛑 Shutting down browser...')
 		if self.browser_context:
 			try:
 				await self.browser_context.close()
+				logger.info(
+					'🛑 Stopped the BrowserSession.browser_context '
+					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
+				)
+				self.browser_context = None
 			except Exception as e:
 				logger.debug(f'❌ Error closing playwright BrowserContext {self.browser_context}: {type(e).__name__}: {e}')
 
 		if self.browser:
 			try:
 				await self.browser.close()
+				logger.info(
+					'🛑 Stopped the BrowserSession.browser '
+					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<None (incognito)>"})'
+				)
+				self.browser = None
 			except Exception as e:
 				logger.debug(f'❌ Error closing playwright Browser {self.browser}: {type(e).__name__}: {e}')
 
@@ -271,6 +280,8 @@ class BrowserSession(BaseModel):
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
+				logger.info(f'🛑 Stopped the BrowserSession.browser_pid={self.browser_pid} subprocess (keep_alive=False)')
+				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
 					logger.debug(f'❌ Error terminating chrome subprocess pid={self.browser_pid}: {type(e).__name__}: {e}')
