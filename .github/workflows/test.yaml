@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     
 jobs:
-  find_tests:
+  find-tests:
     runs-on: ubuntu-latest
     outputs:
       FILENAME_LIST: ${{ steps.list_test_files.outputs.FILENAME_LIST }}   # ./tests/ci/test_controller.py, ./tests/ci/test_browser.py, etc.
@@ -34,19 +34,19 @@ jobs:
           fi
 
   tests:
-    name: ${{matrix.test_filename}} 
     runs-on: ubuntu-latest
     env:
       IN_DOCKER: 'True'
     strategy:
       matrix:
-        test_filename: ${{ fromJson(needs.find_tests.outputs.FILENAME_LIST) }}
+        test_filename: ${{ fromJson(needs.find-tests.outputs.FILENAME_LIST || '["FAILED_TO_DISCOVER_TESTS"]') }}
         # autodiscovers all the files in tests/ci/test_*.py
         # - test_browser
         # - test_controller
         # - test_browser_session
         # - test_tab_management
         # ... and more
+    name: ${{ matrix.test_filename }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
