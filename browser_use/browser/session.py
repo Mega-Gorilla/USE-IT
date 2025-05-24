@@ -493,7 +493,6 @@ class BrowserSession(BaseModel):
 							};
 
 							window.getEventListenersForNode = (node) => {
-								console.log(eventListenersMap)
 								const listeners = eventListenersMap.get(node) || [];
 								return listeners.map(({ type, listenerPreview, options }) => ({
 									type,
