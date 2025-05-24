@@ -13,6 +13,7 @@ on:
     types: [published]     # publish full release to PyPI when a release is created on Github
   schedule:
     - cron: "0 17 * * FRI" # tag a pre-release on Github every Friday at 5 PM UTC
+  workflow_dispatch:
 
 permissions:
   contents: write
