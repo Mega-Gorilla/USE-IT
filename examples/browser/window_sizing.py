@@ -53,13 +53,6 @@ async def example_custom_window_size():
 				'width': profile.window_size['width'],
 				'height': profile.window_size['height'] - 87,
 			}  # 87px is the height of the navbar, title, rim ish
-		elif profile.screen:
-			expected_page_size = {
-				'width': profile.screen['width'],
-				'height': profile.screen['height'] - 87,
-			}  # 87px is the height of the navbar, title, rim ish
-		else:
-			expected_page_size = {'width': '?', 'height': '?'}
 		_log_size = lambda size: f'{size["width"]}x{size["height"]}px'
 		print(f'Expected {_log_size(expected_page_size)} vs actual {_log_size(actual_content_size)}')
 
