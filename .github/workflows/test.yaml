@@ -14,33 +14,34 @@ on:
   workflow_dispatch:
     
 jobs:
-  find-tests:
+  find_tests:
     runs-on: ubuntu-latest
     outputs:
-      FILENAME_LIST: ${{ steps.list_test_files.outputs.FILENAME_LIST }}   # ./tests/ci/test_controller.py, ./tests/ci/test_browser.py, etc.
+      TEST_FILENAMES: ${{ steps.lsgrep.outputs.TEST_FILENAMES }}
+      # ["test_browser", "test_controller", "test_browser_session", "test_tab_management", ...]
     steps:
       - uses: actions/checkout@v4
-      - id: list_test_files
+      - id: lsgrep
         run: |
-          # ["test_browser", "test_controller", "test_browser_session", "test_tab_management", ...]
-          FILENAME_LIST="$(ls tests/ci/test_*.py | sed 's|^tests/ci/||' | sed 's|\.py$||' | jq -R -s -c 'split("\n")[:-1]')"
-          echo "FILENAME_LIST=$FILENAME_LIST" >> $GITHUB_OUTPUT
-          echo "$FILENAME_LIST"
+          TEST_FILENAMES="$(ls tests/ci/test_*.py | sed 's|^tests/ci/||' | sed 's|\.py$||' | jq -R -s -c 'split("\n")[:-1]')"
+          echo "TEST_FILENAMES=${TEST_FILENAMES}" >> "$GITHUB_OUTPUT"
+          echo "$TEST_FILENAMES"
         # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
       - name: Check that at least one test file is found
         run: |
-          if [ -z "${{ steps.list_test_files.outputs.FILENAME_LIST }}" ]; then
-            echo "No test files found" > /dev/stderr
+          if [ -z "${{ steps.lsgrep.outputs.TEST_FILENAMES }}" ]; then
+            echo "Failed to find any test_*.py files in tests/ci/ folder!" > /dev/stderr
             exit 1
           fi
 
   tests:
+    needs: find_tests
     runs-on: ubuntu-latest
     env:
       IN_DOCKER: 'True'
     strategy:
       matrix:
-        test_filename: ${{ fromJson(needs.find-tests.outputs.FILENAME_LIST || '["FAILED_TO_DISCOVER_TESTS"]') }}
+        test_filename: ${{ fromJson(needs.find_tests.outputs.TEST_FILENAMES || '["FAILED_TO_DISCOVER_TESTS"]') }}
         # autodiscovers all the files in tests/ci/test_*.py
         # - test_browser
         # - test_controller
@@ -49,11 +50,13 @@ jobs:
         # ... and more
     name: ${{ matrix.test_filename }}
     steps:
-      - run: |
+      - name: Check that the previous step managed to find some test files for us to run
+        run: |
           if [[ "${{ matrix.test_filename }}" == "FAILED_TO_DISCOVER_TESTS" ]]; then
-            echo "Failed to autodiscover test files in tests/ci/test_*.py" > /dev/stderr
+            echo "Failed get list of test files in tests/ci/test_*.py from find_tests job" > /dev/stderr
             exit 1
           fi
+
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
