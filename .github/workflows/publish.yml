@@ -27,12 +27,37 @@ jobs:
       - name: Create pre-release tag
         run: |
           git fetch --tags
-          latest_tag=$(git tag --list --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$' | head -n 1)
+          latest_tag=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$' | head -n 1)
           if [ -z "$latest_tag" ]; then
-            new_tag="v0.1.0rc1"
+            echo "Failed to find the latest git tag from list:" > /dev/stderr
+            git tag --list --sort=-v:refname
+            exit 1
           else
-            new_tag=$(echo $latest_tag | awk -F'rc' '{print $1 "rc" $2+1}')
+            # Bump the tag rc version
+            if [[ "$latest_tag" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(rc([0-9]+))?$ ]]; then
+              major="${BASH_REMATCH[1]}"
+              minor="${BASH_REMATCH[2]}"
+              patch="${BASH_REMATCH[3]}"
+              rc="${BASH_REMATCH[5]}"
+              echo "latest_tag: ${major}.${minor}.${patch}rc${rc:-0}"
+              if [ -z "$rc" ]; then
+                # No rc, so bump patch and set rc=1            # 0.2.1 -> 0.2.2rc1
+                patch=$((patch + 1))
+                new_tag="${major}.${minor}.${patch}rc1"
+              else
+                if [ "$rc" -ge 99 ]; then
+                  echo "Error: rc version is already at 99 for tag $latest_tag, refusing to increment further." > /dev/stderr
+                  exit 1
+                fi
+                rc=$((rc + 1))
+                new_tag="${major}.${minor}.${patch}rc${rc}"    # 0.2.1rc1 -> 0.2.1rc2
+              fi
+            else
+              echo "Error: latest_tag '$latest_tag' does not match expected version pattern." > /dev/stderr
+              exit 1
+            fi
           fi
+          echo "new_tag: $new_tag"
           git tag $new_tag
           git push origin $new_tag
 
@@ -41,26 +66,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
-      - run: uv run ruff check --no-fix --select PLE # check only for syntax errors
+      - run: uv run ruff check --no-fix --select PLE # quick check for syntax errors to avoid waiting time doing the rest of the build
       - run: uv build
-      - run: uv run --isolated --no-project --with pytest --with dist/*.whl tests/conftest.py
-      - run: uv run --isolated --no-project --with pytest --with dist/*.tar.gz tests/conftest.py
-      - run: uv run --with=dotenv pytest \
-          --ignore=tests/test_dropdown_error.py \
-          --ignore=tests/test_gif_path.py \
-          --ignore=tests/test_models.py \
-          --ignore=tests/test_react_dropdown.py \
-          --ignore=tests/test_save_conversation.py \
-          --ignore=tests/test_vision.py \
-          --ignore=tests/test_wait_for_element.py || true
+      - run: uv run pytest tests/ci                  # dont push the package to PyPI if the tests fail
       - run: uv publish --trusted-publishing always
       - name: Push to stable branch (if stable release)
-        if: startsWith(github.ref_name, 'v') && !contains(github.ref_name, 'rc')
+        if: github.event_name == 'release' && !contains(github.ref_name, 'rc')
         run: |
           git checkout -b stable
-          git push origin stable
+          git push origin -f stable

@@ -41,7 +41,7 @@ logger = logging.getLogger('browser_use.browser.session')
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
 
-def _show_glob_warning(domain: str, glob: str):
+def _log_glob_warning(domain: str, glob: str):
 	global _GLOB_WARNING_SHOWN
 	if not _GLOB_WARNING_SHOWN:
 		logger.warning(
@@ -53,7 +53,7 @@ def _show_glob_warning(domain: str, glob: str):
 		_GLOB_WARNING_SHOWN = True
 
 
-def truncate_url(s: str, max_len: int | None = 22) -> str:
+def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
 	"""Truncate/pretty-print a URL with a maximum length, removing the protocol and www. prefix"""
 	s = s.replace('https://', '').replace('http://', '').replace('www.', '')
 	if max_len is not None and len(s) > max_len:
@@ -61,9 +61,9 @@ def truncate_url(s: str, max_len: int | None = 22) -> str:
 	return s
 
 
-def pretty_path(path: Path) -> str:
-	"""Pretty-print a path, removing the drive letter on Windows"""
-	return str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+def _log_pretty_path(path: Path) -> str:
+	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
+	return str(path or '').replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
 
 
 def require_initialization(func):
@@ -249,26 +249,28 @@ class BrowserSession(BaseModel):
 	async def stop(self) -> None:
 		"""Shuts down the BrowserSession, killing the browser process if keep_alive=False"""
 
+		self.initialized = False
+
 		if self.browser_profile.keep_alive:
 			return  # nothing to do if keep_alive=True, leave the browser running
 
-		logger.info('🛑 Shutting down browser...')
-		if self.browser_context:
+		if self.browser_context or self.browser:
 			try:
-				await self.browser_context.close()
+				await (self.browser_context or self.browser).close()
+				logger.info(
+					f'🛑 Stopped the Browser '
+					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"})'
+				)
+				self.browser_context = None
 			except Exception as e:
 				logger.debug(f'❌ Error closing playwright BrowserContext {self.browser_context}: {type(e).__name__}: {e}')
-
-		if self.browser:
-			try:
-				await self.browser.close()
-			except Exception as e:
-				logger.debug(f'❌ Error closing playwright Browser {self.browser}: {type(e).__name__}: {e}')
 
 		# kill the chrome subprocess if we were the ones that started it
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
+				logger.info(f'⏹ Shut down the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
+				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
 					logger.debug(f'❌ Error terminating chrome subprocess pid={self.browser_pid}: {type(e).__name__}: {e}')
@@ -394,7 +396,7 @@ class BrowserSession(BaseModel):
 			logger.info(
 				f'🌎 Launching local browser '
 				f'driver={str(type(self.playwright).__module__).split(".")[0]} channel={self.browser_profile.channel.name.lower()} '
-				f'user_data_dir={pretty_path(self.browser_profile.user_data_dir) if self.browser_profile.user_data_dir else "None (incognito)"}'
+				f'user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) if self.browser_profile.user_data_dir else "<incognito>"}'
 			)
 			if not self.browser_profile.user_data_dir:
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
@@ -413,7 +415,7 @@ class BrowserSession(BaseModel):
 					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
 						logger.warning(
 							f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
-							f'already running with the same user_data_dir={pretty_path(self.browser_profile.user_data_dir)}'
+							f'already running with the same user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir)}'
 						)
 						# self._fork_locked_user_data_dir()
 						break
@@ -483,7 +485,7 @@ class BrowserSession(BaseModel):
 		# - window focus/blur events
 		# - pointermove events
 
-		# This multi-method approach provides more reliable detection across browsers.
+		# This annoying multi-method approach is needed for more reliable detection across browsers because playwright provides no API for this.
 
 		# TODO: pester the playwright team to add a new event that fires when a headful tab is focused.
 		# OR implement a browser-use chrome extension that acts as a bridge to the chrome.tabs API.
@@ -529,9 +531,9 @@ class BrowserSession(BaseModel):
 			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)
 			if old_url != new_url:
 				logger.info(
-					f'👁️ Foregound tab changed by human from [{old_tab_idx}]{truncate_url(old_url)} '
-					f'➡️ [{new_tab_idx}]{truncate_url(new_url)} '
-					f'(agent will stay on [{agent_tab_idx}]{truncate_url(agent_url)})'
+					f'👁️ Foregound tab changed by human from [{old_tab_idx}]{_log_pretty_url(old_url)} '
+					f'➡️ [{new_tab_idx}]{_log_pretty_url(new_url)} '
+					f'(agent will stay on [{agent_tab_idx}]{_log_pretty_url(agent_url)})'
 				)
 
 		await self.browser_context.expose_binding('_BrowserUseonTabVisibilityChange', _BrowserUseonTabVisibilityChange)
@@ -550,7 +552,7 @@ class BrowserSession(BaseModel):
 				console.log('BrowserUse Foreground tab change event fired', document.location.href);
 			});
 			
-			// --- Method 3: pointermove events (may be fired by agent if we implement AI hover movements) ---
+			// --- Method 3: pointermove events (may be fired by agent if we implement AI hover movements, also very noisy) ---
 			// Use a throttled handler to avoid excessive calls
 			// let lastMove = 0;
 			// window.addEventListener('pointermove', async () => {
@@ -564,12 +566,16 @@ class BrowserSession(BaseModel):
 		"""
 		await self.browser_context.add_init_script(update_tab_focus_script)
 
-		# set the user agent to the one we want
 		# Set up visibility listeners for all existing tabs
 		for page in self.browser_context.pages:
-			if not page.url.startswith('chrome-extension://') and not page.url.startswith('chrome://') and not page.is_closed():
-				await page.evaluate(update_tab_focus_script)
+			try:
 				# logger.debug(f'👁️ Added visibility listener to existing tab: {page.url}')
+				await page.evaluate(update_tab_focus_script)
+			except Exception as e:
+				page_idx = self.browser_context.pages.index(page)
+				logger.debug(
+					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
+				)
 
 	async def _setup_viewports(self) -> None:
 		"""Resize any existing page viewports to match the configured size"""
@@ -596,6 +602,7 @@ class BrowserSession(BaseModel):
 			+ (f'locale={self.browser_profile.locale} ' if self.browser_profile.locale else '')
 			+ (f'timezone_id={self.browser_profile.timezone_id} ' if self.browser_profile.timezone_id else '')
 			+ (f'geolocation={self.browser_profile.geolocation} ' if self.browser_profile.geolocation else '')
+			+ (f'permissions={",".join(self.browser_profile.permissions or ["<none>"])} ')
 		)
 
 		# if we have any viewport settings in the profile, make sure to apply them to the entire browser_context as defaults
@@ -614,14 +621,16 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			logger.warning(
 				f'⚠️ Failed to set playwright timeout settings '
-				f'calls={self.browser_profile.default_timeout} '
-				f'nav={self.browser_profile.default_navigation_timeout}: {type(e).__name__}: {e}'
+				f'cdp_api={self.browser_profile.default_timeout} '
+				f'navigation={self.browser_profile.default_navigation_timeout}: {type(e).__name__}: {e}'
 			)
 		try:
 			if self.browser_profile.extra_http_headers:
 				await self.browser_context.set_extra_http_headers(self.browser_profile.extra_http_headers)
 		except Exception as e:
-			logger.warning(f'⚠️ Failed to setup playwright extra_http_headers: {type(e).__name__}: {e}')
+			logger.warning(
+				f'⚠️ Failed to setup playwright extra_http_headers: {type(e).__name__}: {e}'
+			)  # dont print the secret header contents in the logs!
 
 		try:
 			if self.browser_profile.geolocation:
@@ -630,8 +639,10 @@ class BrowserSession(BaseModel):
 			logger.warning(f'⚠️ Failed to update browser geolocation {self.browser_profile.geolocation}: {type(e).__name__}: {e}')
 
 		# if self.storage_state:
-		#   TODO: implement applying self.stroage_state to an existing browser_context
+		#   TODO: implement applying self.stroage_state to an existing browser_context, currently only works on browser.new_context() I think
 		# 	await self.browser_context.set_storage_state(self.storage_state)
+
+		page = None
 
 		for page in self.browser_context.pages:
 			# apply viewport size settings to any existing pages
@@ -642,6 +653,42 @@ class BrowserSession(BaseModel):
 			if page.url == 'about:blank':
 				await self._show_dvd_screensaver_loading_animation(page)
 
+		page = page or (await self.browser_context.new_page())
+
+		if (not viewport) and (self.browser_profile.window_size is not None) and not self.browser_profile.headless:
+			# attempt to resize the actual browser window
+
+			# cdp api: https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setWindowBounds
+			try:
+				cdp_session = await page.context.new_cdp_session(page)
+				window_id_result = await cdp_session.send('Browser.getWindowForTarget')
+				await cdp_session.send(
+					'Browser.setWindowBounds',
+					{
+						'windowId': window_id_result['windowId'],
+						'bounds': {
+							**self.browser_profile.window_size,
+							'windowState': 'normal',  # Ensure window is not minimized/maximized
+						},
+					},
+				)
+				await cdp_session.detach()
+			except Exception as e:
+				_log_size = lambda size: f'{size["width"]}x{size["height"]}px'
+				try:
+					# fallback to javascript resize if cdp setWindowBounds fails
+					await page.evaluate(
+						"""(width, height) => {window.resizeTo(width, height)}""",
+						**self.browser_profile.window_size,
+					)
+					return
+				except Exception as e:
+					pass
+
+				logger.warning(
+					f'⚠️ Failed to resize browser window to {_log_size(self.browser_profile.window_size)} using CDP setWindowBounds: {type(e).__name__}: {e}'
+				)
+
 	def _set_browser_keep_alive(self, keep_alive: bool | None) -> None:
 		"""set the keep_alive flag on the browser_profile, defaulting to True if keep_alive is None"""
 		if self.browser_profile.keep_alive is None:
@@ -650,6 +697,9 @@ class BrowserSession(BaseModel):
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
 		"""Get the current page + ensure it's not None / closed"""
+
+		if not self.initialized:
+			await self.start()
 
 		# get-or-create the browser_context if it's not already set up
 		if not self.browser_context:
@@ -1117,11 +1167,11 @@ class BrowserSession(BaseModel):
 		tab_idx = self.tabs.index(page)
 		if bytes_used is not None:
 			logger.debug(
-				f'➡️ Page navigation [{tab_idx}]{truncate_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
+				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
 			)
 		else:
 			logger.debug(
-				f'➡️ Page navigation [{tab_idx}]{truncate_url(page.url, 40)} took {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
+				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} took {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
 			)
 
 		# Sleep remaining time if needed
@@ -1153,7 +1203,7 @@ class BrowserSession(BaseModel):
 					if '*' in allowed_domain:
 						parsed_url = urlparse(url)
 						domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
-						_show_glob_warning(domain, allowed_domain)
+						_log_glob_warning(domain, allowed_domain)
 					return True
 			except AssertionError:
 				# This would only happen if about:blank is passed to match_url_with_domain_pattern,
