@@ -4,7 +4,7 @@ description: "Configure browser behavior and context settings"
 icon: "globe"
 ---
 
-Browser Use uses playwright to manage the browser.
+Browser Use uses playwright (or patchright) to manage its connection with a real browser.
 
 ```python
 from browser_use import BrowserProfile, BrowserSession
@@ -26,7 +26,7 @@ from browser_use import Agent, BrowserSession, BrowserProfile
 browser_session = BrowserSession(
     # cdp_url='http://localhost:9222' | wss_url='ws://...', 
     # browser_pid=12445,
-    # page=playwright_page | browser_context | browser,
+    # page=playwright_page | browser_context | browser | playwright,
     # executable_path='...', user_data_dir='...', headless=True,
     # keep_alive=True,
     # browser_profile=BrowserProfile(..., color_scheme='dark'),
@@ -90,10 +90,11 @@ e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
 ### Runtime State / Parameters
 
 - **browser_profile** (BrowserProfile, default: `BrowserProfile()`)
-  BrowserProfile instance containing config for the BrowserSession
+  BrowserProfile instance containing config to use for the BrowserSession
 
 - **playwright** (Playwright | None, default: `None`)
-  Playwright library object (usually auto-created)
+  Optional playwright or patchright API client object to use
+  result of (await async_playwright().start()) or (await async_patchright().start())
 
 - **browser** (Browser | None, default: `None`)
   Playwright Browser object to use (optional)
@@ -102,10 +103,10 @@ e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
   Playwright BrowserContext object to use (optional)
 
 - **initialized** (bool, default: `False`)
-  Mark BrowserSession as already initialized (not recommended)
+  Mark BrowserSession as already initialized, skips launch/connection (not recommended)
 
-- **agent_current_page** (Page | None, default: `None`)
-  Foreground Page that the agent is focused on
+- **page** *aka* **agent_current_page** (Page | None, default: `None`)
+  Foreground Page that the agent is focused on, can also be passed as `page=...` as a shortcut.
 
 - **human_current_page** (Page | None, default: `None`)
   Foreground Page that the human is focused on
@@ -114,12 +115,6 @@ e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
 ## Browser-Use Parameters
 
 These parameters control browser-use specific features, and are outside the standard playwright parameter set.
-
-- **disable_security** (bool, default: `False`)
-  Completely disables all basic browser security features. Allows interacting across cross-site iFrames boundaries, but very INSECURE, don't visit untrusted URLs or use cookies.
-
-- **deterministic_rendering** (bool, default: `False`)
-  Enable deterministic rendering flags for consistent screenshots.
 
 - **keep_alive** (bool | None, default: `None`)
   Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
@@ -134,6 +129,12 @@ These parameters control browser-use specific features, and are outside the stan
     `['*://google.com', 'http*://www.google.com', 'https://myaccount.google.com', 'https://mail.google.com', 'https://docs.google.com']`
   - `['*.example.com']` ⚠️ **CAUTION** this will match `https://example.com` and *all* its subdomains.
     Make sure *all* the subdomains are safe for the agent! `abc.example.com`, `def.example.com`, ..., `useruploads.example.com`, `admin.example.com`
+
+- **disable_security** (bool, default: `False`)
+  Completely disables all basic browser security features. Allows interacting across cross-site iFrames boundaries, but very INSECURE, don't visit untrusted URLs or use cookies.
+
+- **deterministic_rendering** (bool, default: `False`)
+  Enable deterministic rendering flags for consistent screenshots.
 
 - **highlight_elements** (bool, default: `True`)
   Highlight interactive elements on the screen with colorful bounding boxes.
@@ -171,6 +172,8 @@ These parameters control browser-use specific features, and are outside the stan
 - **profile_directory** (str, default: `'Default'`)
   Chrome profile directory name (e.g., 'Profile 1', 'Profile 2').
 
+- **window_position** (dict | None, default: `{"width": 0, "height": 0}`)
+  Window position from top-left corner.
 
 ---
 
@@ -257,14 +260,17 @@ Configure browser window size, viewport, and display properties:
 - **geolocation** (dict | None, default: `None`)
   Geolocation coordinates. Example: `{"latitude": 59.95, "longitude": 30.31667}`
 
-- **viewport** (dict | None, default: `None`)
-  Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720}`
+- **locale** (str | None, default: `None`)
+  Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator.language value, Accept-Language request header value as well as number and date formatting rules.
+
+- **timezone_id** (str | None, default: `None`)
+  Timezone identifier (e.g., 'America/New_York').
 
 - **window_size** (dict | None, default: `None`)
   Browser window size for headful mode. Example: `{"width": 1920, "height": 1080}`
 
-- **window_position** (dict | None, default: `{"width": 0, "height": 0}`)
-  Window position from top-left corner.
+- **viewport** (dict | None, default: `None`)
+  Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720}`
 
 - **no_viewport** (bool | None, default: `None`)
   Disable fixed viewport. Content will resize with window.
@@ -274,12 +280,6 @@ Configure browser window size, viewport, and display properties:
 
 - **screen** (dict | None, default: `None`)
   Screen size available to browser. Auto-detected if not specified.
-
-- **locale** (str | None, default: `None`)
-  Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator.language value, Accept-Language request header value as well as number and date formatting rules.
-
-- **timezone_id** (str | None, default: `None`)
-  Timezone identifier (e.g., 'America/New_York').
 
 - **color_scheme** (ColorScheme, default: `'light'`)
   Preferred color scheme: `'light'`, `'dark'`, `'no-preference'`
