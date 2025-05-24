@@ -1,8 +1,6 @@
 name: 💡 New Feature or Enhancement Request
 description: Suggest an idea or improvement for the browser-use library or Agent capabilities
 title: "Feature Request: ..."
-assignees:
-  - pirate
 type: 'Enhancement'
 labels: ['enhancement']
 body:
