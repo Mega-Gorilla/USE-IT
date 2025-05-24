@@ -17,11 +17,11 @@ jobs:
   find_tests:
     runs-on: ubuntu-latest
     outputs:
-      filename_list: ${{ steps.list_test_files.outputs.filename_list }}   # ./tests/ci/test_controller.py, ./tests/ci/test_browser.py, etc.
+      FILENAME_LIST: ${{ steps.list_test_files.outputs.FILENAME_LIST }}   # ./tests/ci/test_controller.py, ./tests/ci/test_browser.py, etc.
     steps:
       - uses: actions/checkout@v4
       - id: list_test_files
-        run: echo "::set-output name=filename_list::$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')"
+        run: echo "FILENAME_LIST=$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
         # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
 
   tests:
@@ -31,7 +31,7 @@ jobs:
       IN_DOCKER: 'True'
     strategy:
       matrix:
-        test_filename: ${{ fromJson(needs.find_tests.outputs.filename_list) }}
+        test_filename: ${{ fromJson(needs.find_tests.outputs.FILENAME_LIST) }}
         # autodiscovers all the files in tests/ci/test_*.py
         # - test_browser
         # - test_controller
