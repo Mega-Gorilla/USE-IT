@@ -23,7 +23,7 @@ jobs:
       - id: list_test_files
         run: |
           # ["test_browser", "test_controller", "test_browser_session", "test_tab_management", ...]
-          FILENAME_LIST="$(ls tests/ci/*.py | sed 's|^tests/ci/||' | sed 's|\.py$||' | jq -R -s -c 'split("\n")[:-1]')"
+          FILENAME_LIST="$(ls tests/ci/test_*.py | sed 's|^tests/ci/||' | sed 's|\.py$||' | jq -R -s -c 'split("\n")[:-1]')"
           echo "FILENAME_LIST=$FILENAME_LIST" >> $GITHUB_OUTPUT
           echo "$FILENAME_LIST"
         # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
@@ -49,6 +49,11 @@ jobs:
         # ... and more
     name: ${{ matrix.test_filename }}
     steps:
+      - run: |
+          if [[ "${{ matrix.test_filename }}" == "FAILED_TO_DISCOVER_TESTS" ]]; then
+            echo "Failed to autodiscover test files in tests/ci/test_*.py" > /dev/stderr
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
