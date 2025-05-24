@@ -1132,135 +1132,210 @@ async def run_task_with_semaphore(
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	async with semaphore_runs:
-		task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task)
+		task_result = None
 		browser_session = None
-		task_folder = Path(f'saved_trajectories/{task.task_id}')
 
-		logger.info(f'Task {task.task_id}: Starting execution pipeline.')
 		try:
-			# Stage 1: Try to load existing result
+			# Initialize task result and basic setup
+			task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task)
+			task_folder = Path(f'saved_trajectories/{task.task_id}')
+
+			logger.info(f'Task {task.task_id}: Starting execution pipeline.')
 			try:
-				existing_data = await run_stage(Stage.LOAD_EXISTING, lambda: load_existing_result(task_folder))
-				task_result.stage_completed(Stage.LOAD_EXISTING, existing_data)
-
-				# If evaluation is also present, mark it as completed
-				if existing_data.get('has_evaluation'):
-					task_result.stage_completed(Stage.EVALUATE, existing_data['evaluation_data'])
-
-				logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
-
-			except Exception:
-				# No existing result, need to execute full pipeline
-				logger.info(f'Task {task.task_id}: No existing result found. Starting execution pipeline.')
-
-				# Stage 2: Setup browser
+				# Stage 1: Try to load existing result
 				try:
-					logger.info(f'Task {task.task_id}: Browser setup starting.')
-					browser_session = await run_stage(
-						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
-					)
-					task_result.stage_completed(Stage.SETUP_BROWSER)
-					logger.info(f'Task {task.task_id}: Browser session started.')
-				except Exception as e:
-					error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
-					task_result.stage_failed(Stage.SETUP_BROWSER, error)
-					logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
-					return task_result.get_local_status()  # Early return on browser setup failure
+					existing_data = await run_stage(Stage.LOAD_EXISTING, lambda: load_existing_result(task_folder))
+					task_result.stage_completed(Stage.LOAD_EXISTING, existing_data)
 
-				# Stage 3: Run agent
+					# If evaluation is also present, mark it as completed
+					if existing_data.get('has_evaluation'):
+						task_result.stage_completed(Stage.EVALUATE, existing_data['evaluation_data'])
+
+					logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
+
+				except Exception:
+					# No existing result, need to execute full pipeline
+					logger.info(f'Task {task.task_id}: No existing result found. Starting execution pipeline.')
+
+					agent_history = None  # Initialize to track agent execution
+
+					# Stage 2: Setup browser
+					try:
+						logger.info(f'Task {task.task_id}: Browser setup starting.')
+						browser_session = await run_stage(
+							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
+						)
+						task_result.stage_completed(Stage.SETUP_BROWSER)
+						logger.info(f'Task {task.task_id}: Browser session started.')
+					except Exception as e:
+						error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
+						task_result.stage_failed(Stage.SETUP_BROWSER, error)
+						logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+						# Continue to server save instead of early return
+
+					# Stage 3: Run agent
+					if browser_session:  # Only run agent if browser setup succeeded
+						try:
+							logger.info(f'Task {task.task_id}: Agent run starting.')
+							agent_history = await run_stage(
+								Stage.RUN_AGENT,
+								lambda: run_agent_with_browser(
+									browser_session,
+									task,
+									llm,
+									max_steps_per_task,
+									use_vision,
+									use_serp,
+									enable_memory,
+									memory_interval,
+									max_actions_per_step,
+									validate_output,
+									planner_llm,
+									planner_interval,
+								),
+								timeout=600,
+							)
+							task_result.stage_completed(Stage.RUN_AGENT)
+							logger.info(f'Task {task.task_id}: Agent run completed.')
+						except Exception as e:
+							error = StageError(Stage.RUN_AGENT, 'exception', str(e))
+							task_result.stage_failed(Stage.RUN_AGENT, error)
+							logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
+							# Continue to server save instead of early return
+
+					# Stage 4: Format history
+					if agent_history is not None:  # Only format if agent ran successfully
+						try:
+							logger.info(f'Task {task.task_id}: History formatting starting.')
+							formatted_data = await run_stage(
+								Stage.FORMAT_HISTORY,
+								lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task),
+							)
+							task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
+							logger.info(f'Task {task.task_id}: Agent history formatted.')
+						except Exception as e:
+							error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
+							task_result.stage_failed(Stage.FORMAT_HISTORY, error)
+							logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
+							# Continue to server save instead of early return
+
+				# Stage 5: Evaluate (if we have execution data and no existing evaluation)
+				if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
+					try:
+						logger.info(f'Task {task.task_id}: Evaluation starting.')
+						evaluation = await run_stage(
+							Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
+						)
+						task_result.stage_completed(Stage.EVALUATE, evaluation)
+						logger.info(f'Task {task.task_id}: Evaluation completed.')
+					except Exception as e:
+						error = StageError(Stage.EVALUATE, 'exception', str(e))
+						task_result.stage_failed(Stage.EVALUATE, error)
+						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+
+				# Stage 6: Save to server (always attempt)
 				try:
-					logger.info(f'Task {task.task_id}: Agent run starting.')
-					agent_history = await run_stage(
-						Stage.RUN_AGENT,
-						lambda: run_agent_with_browser(
-							browser_session,
-							task,
-							llm,
-							max_steps_per_task,
-							use_vision,
-							use_serp,
-							enable_memory,
-							memory_interval,
-							max_actions_per_step,
-							validate_output,
-							planner_llm,
-							planner_interval,
-						),
-						timeout=600,
+					logger.info(f'Task {task.task_id}: Saving result to server.')
+					await run_stage(
+						Stage.SAVE_SERVER,
+						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						timeout=60,
 					)
-					task_result.stage_completed(Stage.RUN_AGENT)
-					logger.info(f'Task {task.task_id}: Agent run completed.')
+					task_result.stage_completed(Stage.SAVE_SERVER)
+					logger.info(f'Task {task.task_id}: Successfully saved result to server.')
 				except Exception as e:
-					error = StageError(Stage.RUN_AGENT, 'exception', str(e))
-					task_result.stage_failed(Stage.RUN_AGENT, error)
-					logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
-					return task_result.get_local_status()  # Early return on agent failure
+					error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
+					task_result.stage_failed(Stage.SAVE_SERVER, error)
+					task_result.mark_server_save_failed(str(e))
+					logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
 
-				# Stage 4: Format history
+			except TimeoutError:
+				current_stage = determine_current_stage(task_result.completed_stages)
+				error = StageError(current_stage, 'timeout', 'Operation timed out')
+				task_result.stage_failed(current_stage, error)
+				logger.error(f'Task {task.task_id}: {current_stage.value} timed out')
+
+				# Attempt to save result even if timeout occurred
 				try:
-					logger.info(f'Task {task.task_id}: History formatting starting.')
-					formatted_data = await run_stage(
-						Stage.FORMAT_HISTORY,
-						lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task),
+					logger.info(f'Task {task.task_id}: Attempting server save after timeout.')
+					await run_stage(
+						Stage.SAVE_SERVER,
+						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						timeout=30,  # Shorter timeout for emergency save
 					)
-					task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-					logger.info(f'Task {task.task_id}: Agent history formatted.')
-				except Exception as e:
-					error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
-					task_result.stage_failed(Stage.FORMAT_HISTORY, error)
-					logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
-					return task_result.get_local_status()  # Early return on formatting failure
+					task_result.stage_completed(Stage.SAVE_SERVER)
+				except Exception as save_e:
+					task_result.mark_server_save_failed(str(save_e))
+					logger.error(f'Task {task.task_id}: Emergency server save after timeout failed: {str(save_e)}')
 
-			# Stage 5: Evaluate (if we have execution data and no existing evaluation)
-			if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
+			except asyncio.CancelledError:
+				task_result.mark_cancelled()
+				logger.warning(f'Task {task.task_id}: Task was cancelled')
+
+				# Attempt to save result even if cancelled
 				try:
-					logger.info(f'Task {task.task_id}: Evaluation starting.')
-					evaluation = await run_stage(
-						Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
+					logger.info(f'Task {task.task_id}: Attempting server save after cancellation.')
+					await run_stage(
+						Stage.SAVE_SERVER,
+						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						timeout=30,  # Shorter timeout for emergency save
 					)
-					task_result.stage_completed(Stage.EVALUATE, evaluation)
-					logger.info(f'Task {task.task_id}: Evaluation completed.')
-				except Exception as e:
-					error = StageError(Stage.EVALUATE, 'exception', str(e))
-					task_result.stage_failed(Stage.EVALUATE, error)
-					logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+					task_result.stage_completed(Stage.SAVE_SERVER)
+				except Exception as save_e:
+					task_result.mark_server_save_failed(str(save_e))
+					logger.error(f'Task {task.task_id}: Emergency server save after cancellation failed: {str(save_e)}')
 
-			# Stage 6: Save to server (always attempt)
-			try:
-				logger.info(f'Task {task.task_id}: Saving result to server.')
-				await run_stage(
-					Stage.SAVE_SERVER,
-					lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
-					timeout=60,
-				)
-				task_result.stage_completed(Stage.SAVE_SERVER)
-				logger.info(f'Task {task.task_id}: Successfully saved result to server.')
 			except Exception as e:
-				error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
-				task_result.stage_failed(Stage.SAVE_SERVER, error)
-				task_result.mark_server_save_failed(str(e))
-				logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
+				task_result.mark_critical_error(str(e))
+				logger.critical(f'Task {task.task_id}: Critical error: {str(e)}', exc_info=True)
 
-		except TimeoutError:
-			current_stage = determine_current_stage(task_result.completed_stages)
-			error = StageError(current_stage, 'timeout', 'Operation timed out')
-			task_result.stage_failed(current_stage, error)
-			logger.error(f'Task {task.task_id}: {current_stage.value} timed out')
+				# Attempt to save result even if critical error occurred
+				try:
+					logger.info(f'Task {task.task_id}: Attempting server save after critical error.')
+					await run_stage(
+						Stage.SAVE_SERVER,
+						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						timeout=30,  # Shorter timeout for emergency save
+					)
+					task_result.stage_completed(Stage.SAVE_SERVER)
+				except Exception as save_e:
+					task_result.mark_server_save_failed(str(save_e))
+					logger.error(f'Task {task.task_id}: Emergency server save after critical error failed: {str(save_e)}')
 
-		except asyncio.CancelledError:
-			task_result.mark_cancelled()
-			logger.warning(f'Task {task.task_id}: Task was cancelled')
+		except Exception as init_error:
+			# Handle catastrophic initialization errors
+			logger.critical(f'Task {task.task_id}: Catastrophic initialization error: {str(init_error)}', exc_info=True)
+			if task_result is None:
+				# Create minimal task result for server reporting
+				try:
+					task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task)
+					task_result.mark_critical_error(f'Initialization failed: {str(init_error)}')
+				except Exception as result_error:
+					logger.critical(f'Task {task.task_id}: Cannot create TaskResult: {str(result_error)}')
+					# Return minimal error status as last resort
+					return {
+						'task_id': task.task_id,
+						'success': False,
+						'error': f'Catastrophic initialization failure: {str(init_error)}',
+					}
 
-		except Exception as e:
-			task_result.mark_critical_error(str(e))
-			logger.critical(f'Task {task.task_id}: Critical error: {str(e)}', exc_info=True)
+			# Try emergency server save
+			try:
+				logger.info(f'Task {task.task_id}: Attempting emergency server save after initialization error.')
+				await asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload)
+			except Exception as save_e:
+				logger.error(f'Task {task.task_id}: Emergency server save after initialization error failed: {str(save_e)}')
 
 		finally:
 			# Always cleanup browser if it was created
 			if browser_session:
 				await cleanup_browser_safe(browser_session)
 
-		return task_result.get_local_status()
+		return (
+			task_result.get_local_status()
+			if task_result
+			else {'task_id': task.task_id, 'success': False, 'error': 'Task result not available'}
+		)
 
 
 async def run_multiple_tasks(
