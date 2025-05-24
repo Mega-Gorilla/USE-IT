@@ -24,31 +24,31 @@ llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash', api_key=SecretStr(api_key
 
 async def main():
 	async with async_playwright() as p:
+		browser = await p.chromium.launch(
+			headless=False,
+		)
+
+		context = await browser.new_context(
+			viewport={"width": 1502, "height": 853},
+			ignore_https_errors=True,
+		)
+
+		agent = Agent(
+			browser_session=BrowserSession(
+				browser_context=context,
+			),
+			task="Go to https://browser-use.com/",
+			llm=llm,
+		)
+
 		try:
-			browser = await p.chromium.launch(
-				headless=False,
-			)
-
-			context = await browser.new_context(
-				viewport={"width": 1502, "height": 853},
-				ignore_https_errors=True,
-			)
-
-			agent = Agent(
-				browser_session=BrowserSession(
-					browser_context=context,
-				),
-				task="Go to https://browser-use.com/",
-				llm=llm,
-			)
-
 			result = await agent.run()
 			print(f"First task was {'successful' if result.is_successful else 'not successful'}")
 
 			if not result.is_successful:
 				raise RuntimeError("Failed to navigate to the initial page.")
 
-			agent.add_new_task("Navigate to the documenation page")
+			agent.add_new_task("Navigate to the documentation page")
 
 			result = await agent.run()
 			print(f"Second task was {'successful' if result.is_successful else 'not successful'}")

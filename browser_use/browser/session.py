@@ -547,7 +547,7 @@ class BrowserSession(BaseModel):
 				)
 
 			else:
-				raise e
+				raise
 
 		update_tab_focus_script = """
 			// --- Method 1: visibilitychange event (unfortunately *all* tabs are always marked visible by playwright, usually does not fire) ---
