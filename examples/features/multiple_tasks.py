@@ -22,6 +22,7 @@ if not api_key:
 
 llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash', api_key=SecretStr(api_key))
 
+
 async def main():
 	async with async_playwright() as p:
 		browser = await p.chromium.launch(
@@ -29,7 +30,7 @@ async def main():
 		)
 
 		context = await browser.new_context(
-			viewport={"width": 1502, "height": 853},
+			viewport={'width': 1502, 'height': 853},
 			ignore_https_errors=True,
 		)
 
@@ -37,30 +38,30 @@ async def main():
 			browser_session=BrowserSession(
 				browser_context=context,
 			),
-			task="Go to https://browser-use.com/",
+			task='Go to https://browser-use.com/',
 			llm=llm,
 		)
 
 		try:
 			result = await agent.run()
-			print(f"First task was {'successful' if result.is_successful else 'not successful'}")
+			print(f'First task was {"successful" if result.is_successful else "not successful"}')
 
 			if not result.is_successful:
-				raise RuntimeError("Failed to navigate to the initial page.")
+				raise RuntimeError('Failed to navigate to the initial page.')
 
-			agent.add_new_task("Navigate to the documentation page")
+			agent.add_new_task('Navigate to the documentation page')
 
 			result = await agent.run()
-			print(f"Second task was {'successful' if result.is_successful else 'not successful'}")
+			print(f'Second task was {"successful" if result.is_successful else "not successful"}')
 
 			if not result.is_successful:
-				raise RuntimeError("Failed to navigate to the documentation page.")
+				raise RuntimeError('Failed to navigate to the documentation page.')
 
 			while True:
-				next_task = input("Write your next task or leave empty to exit\n> ")
+				next_task = input('Write your next task or leave empty to exit\n> ')
 
 				if not next_task.strip():
-					print("Exiting...")
+					print('Exiting...')
 					break
 
 				agent.add_new_task(next_task)
@@ -69,12 +70,13 @@ async def main():
 				print(f"Task '{next_task}' was {'successful' if result.is_successful else 'not successful'}")
 
 				if not result.is_successful:
-					print("Failed to complete the task. Please try again.")
+					print('Failed to complete the task. Please try again.')
 					continue
 
 		finally:
 			await context.close()
 			await browser.close()
+
 
 if __name__ == '__main__':
 	asyncio.run(main())
