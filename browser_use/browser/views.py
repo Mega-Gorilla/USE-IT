@@ -28,7 +28,7 @@ class BrowserStateSummary(DOMState):
 	url: str
 	title: str
 	tabs: list[TabInfo]
-	screenshot: str | None = None
+	screenshot: str | None = field(default=None, repr=False)
 	pixels_above: int = 0
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)

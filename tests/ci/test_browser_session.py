@@ -85,7 +85,8 @@ class TestBrowserContext:
 		assert context1._is_url_allowed('https://anotherdomain.org/path') is True
 
 		# Scenario 2: allowed_domains is provided.
-		allowed = ['example.com', '*.mysite.org']
+		# Note: match_url_with_domain_pattern defaults to https:// scheme when none is specified
+		allowed = ['https://example.com', 'http://example.com', 'http://*.mysite.org', 'https://*.mysite.org']
 		config2 = BrowserProfile(allowed_domains=allowed)
 		context2 = BrowserSession(browser_profile=config2)
 
@@ -93,7 +94,7 @@ class TestBrowserContext:
 		assert context2._is_url_allowed('http://example.com') is True
 		# URL with subdomain (should not be allowed)
 		assert context2._is_url_allowed('http://sub.example.com/path') is False
-		# URL with different domain (should not be allowed)
+		# URL with subdomain for wildcard pattern (should be allowed)
 		assert context2._is_url_allowed('http://sub.mysite.org') is True
 		# URL that matches second allowed domain
 		assert context2._is_url_allowed('https://mysite.org/page') is True

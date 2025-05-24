@@ -337,7 +337,7 @@ class BrowserContextArgs(BaseModel):
 	proxy: ProxySettings | None = None
 	permissions: list[str] = Field(
 		default_factory=lambda: ['clipboard-read', 'clipboard-write', 'notifications'],
-		description='Browser permissions to grant.',
+		description='Browser permissions to grant (see playwright docs for valid permissions).',
 		# clipboard is for google sheets and pyperclip automations
 		# notifications are to avoid browser fingerprinting
 	)
@@ -553,7 +553,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
 	deterministic_rendering: bool = Field(default=False, description='Enable deterministic rendering flags.')
-	allowed_domains: list[str] | None = Field(default=None, description='List of allowed domains for navigation.')
+	allowed_domains: list[str] | None = Field(
+		default=None,
+		description='List of allowed domains for navigation e.g. ["*.google.com", "https://example.com", "chrome-extension://*"]',
+	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -571,6 +574,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	)
 
 	# --- Page load/wait timings ---
+	default_navigation_timeout: float | None = Field(default=None, description='Default page navigation timeout.')
+	default_timeout: float | None = Field(default=None, description='Default playwright call timeout.')
 	minimum_wait_page_load_time: float = Field(default=0.25, description='Minimum time to wait before capturing page state.')
 	wait_for_network_idle_page_load_time: float = Field(default=0.5, description='Time to wait for network idle.')
 	maximum_wait_page_load_time: float = Field(default=5.0, description='Maximum time to wait for page load.')

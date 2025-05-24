@@ -38,23 +38,31 @@ class TestUrlAllowlistSecurity:
 		assert browser_session._is_url_allowed('https://example.org') is False
 
 		# Test more complex glob patterns
-		browser_profile = BrowserProfile(allowed_domains=['*google.com', 'wiki*'])
+		browser_profile = BrowserProfile(
+			allowed_domains=['*.google.com', 'https://wiki.org', 'https://good.com', 'chrome://version', 'brave://*']
+		)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 
 		# Should match domains ending with google.com
 		assert browser_session._is_url_allowed('https://google.com') is True
 		assert browser_session._is_url_allowed('https://www.google.com') is True
-		assert browser_session._is_url_allowed('https://anygoogle.com') is True
+		assert (
+			browser_session._is_url_allowed('https://evilgood.com') is False
+		)  # make sure we dont allow *good.com patterns, only *.good.com
 
 		# Should match domains starting with wiki
+		assert browser_session._is_url_allowed('http://wiki.org') is False
 		assert browser_session._is_url_allowed('https://wiki.org') is True
-		assert browser_session._is_url_allowed('https://wikipedia.org') is True
 
-		# Should not match other domains
-		assert browser_session._is_url_allowed('https://example.com') is False
+		# Should not match internal domains because scheme was not provided
+		assert browser_session._is_url_allowed('chrome://google.com') is False
+		assert browser_session._is_url_allowed('chrome://abc.google.com') is False
 
 		# Test browser internal URLs
-		assert browser_session._is_url_allowed('chrome://settings') is True
+		assert browser_session._is_url_allowed('chrome://settings') is False
+		assert browser_session._is_url_allowed('chrome://version') is True
+		assert browser_session._is_url_allowed('chrome-extension://version/') is False
+		assert browser_session._is_url_allowed('brave://anything/') is True
 		assert browser_session._is_url_allowed('about:blank') is True
 
 		# Test security for glob patterns (authentication credentials bypass attempts)
@@ -67,7 +75,7 @@ class TestUrlAllowlistSecurity:
 	def test_glob_pattern_edge_cases(self):
 		"""Test edge cases for glob pattern matching to ensure proper behavior."""
 		# Test with domains containing glob pattern in the middle
-		browser_profile = BrowserProfile(allowed_domains=['*google.com', 'wiki*'])
+		browser_profile = BrowserProfile(allowed_domains=['*.google.com', 'https://wiki.org'])
 		browser_session = BrowserSession(browser_profile=browser_profile)
 
 		# Verify that 'wiki*' pattern doesn't match domains that merely contain 'wiki' in the middle
@@ -79,13 +87,13 @@ class TestUrlAllowlistSecurity:
 		assert browser_session._is_url_allowed('https://mygoogle.company.com') is False
 
 		# Create context with potentially risky glob pattern that demonstrates security concerns
-		browser_profile = BrowserProfile(allowed_domains=['*.google.*'])
+		browser_profile = BrowserProfile(allowed_domains=['*.google.com', '*.google.co.uk'])
 		browser_session = BrowserSession(browser_profile=browser_profile)
 
 		# Should match legitimate Google domains
 		assert browser_session._is_url_allowed('https://www.google.com') is True
 		assert browser_session._is_url_allowed('https://mail.google.co.uk') is True
 
-		# But could also match potentially malicious domains with a subdomain structure
-		# This demonstrates why such wildcard patterns can be risky
-		assert browser_session._is_url_allowed('https://www.google.evil.com') is True
+		# Shouldn't match potentially malicious domains with a similar structure
+		# This demonstrates why the previous pattern was risky and why it's now rejected
+		assert browser_session._is_url_allowed('https://www.google.evil.com') is False

@@ -10,13 +10,15 @@ When working with sensitive information like passwords, you can use the `sensiti
 
 Make sure to always set [`allowed_domains`](https://docs.browser-use.com/customize/browser-settings#restrict-urls) to restrict the domains the Agent is allowed to visit when working with sensitive data or logins.
 
-Here's an example of how to use sensitive data:
+### Basic Usage
+
+Here's a basic example of how to use sensitive data:
 
 ```python
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from browser_use import Agent, Browser, BrowserConfig
-from browser_use.browser.context import BrowserContextConfig
+from browser_use import Agent
+from browser_use.browser.session import BrowserSession
 
 load_dotenv()
 
@@ -33,9 +35,9 @@ sensitive_data = {'x_name': 'magnus', 'x_password': '12345678'}
 # Use the placeholder names in your task description
 task = 'go to x.com and login with x_name and x_password then write a post about the meaning of life'
 
-# Configure allowed_domains that the agent should be restricted to in BrowserContextConfig
-context_config = BrowserContextConfig(
-    allowed_domains=['example.com'],
+# Configure browser session with allowed domains
+browser_session = BrowserSession(
+    allowed_domains=['example.com']
 )
 
 # Pass the sensitive data to the agent
@@ -43,11 +45,7 @@ agent = Agent(
     task=task,
     llm=llm,
     sensitive_data=sensitive_data,
-    browser=Browser(
-        config=BrowserConfig(
-            new_context_config=context_config
-        )
-    )
+    browser_session=browser_session
 )
 
 async def main():
@@ -62,6 +60,79 @@ In this example:
 2. When the model wants to use your password it outputs x_password - and we replace it with the actual value.
 3. When your password is visible on the current page, we replace it in the LLM input - so that the model never has it in its state.
 4. The agent will be prevented from going to any site not on `example.com` to protect from prompt injection attacks and jailbreaks
+
+### Domain-Specific Sensitive Data
+
+For enhanced security, you can associate sensitive data with specific domains. This ensures credentials are only used on the domains they're intended for:
+
+```python
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from browser_use import Agent
+from browser_use.browser.session import BrowserSession
+
+load_dotenv()
+
+# Initialize the model
+llm = ChatOpenAI(
+    model='gpt-4o',
+    temperature=0.0,
+)
+
+# Domain-specific sensitive data
+sensitive_data = {
+    'https://*.google.com': {'x_email': '...', 'x_pass': '...'},
+    'chrome-extension://abcd': {'x_api_key': '...'},
+    'http*://example.com': {'x_authcode': '123123'}
+}
+
+# Set browser session with allowed domains that match all domain patterns in sensitive_data
+browser_session = BrowserSession(
+    allowed_domains=[
+        'https://*.google.com',
+        'chrome-extension://abcd',
+        'http://example.com',   # Explicitly include http:// if needed
+        'https://example.com'   # By default, only https:// is matched
+    ]
+)
+
+# Pass the sensitive data to the agent
+agent = Agent(
+    task="Log into Google, then check my account information",
+    llm=llm,
+    sensitive_data=sensitive_data,
+    browser_session=browser_session
+)
+
+async def main():
+    await agent.run()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+With this approach:
+1. The Google credentials (`x_email` and `x_pass`) will only be used on Google domains (any subdomain)
+2. The API key (`x_api_key`) will only be used in the specific Chrome extension
+3. The auth code (`x_authcode`) will only be used on example.com via http or https
+
+### Domain Pattern Format
+
+Domain patterns in sensitive_data follow the same format as `allowed_domains`:
+
+- `example.com` - Matches only example.com
+- `*.example.com` - Matches any subdomain of example.com
+- `http*://example.com` - Matches both http and https protocols for example.com
+- `chrome-extension://*` - Matches any Chrome extension
+
+> **Security Warning**: For security reasons, certain patterns are explicitly rejected:
+> - Wildcards in TLD part (e.g., `example.*`) are not allowed as they could match any TLD
+> - Embedded wildcards (e.g., `g*e.com`) are rejected to prevent overly broad matches
+> - Multiple wildcards like `*.*.domain` are not supported to avoid security issues
+
+The default protocol when no scheme is specified is now `https` for enhanced security.
+
+The system will validate that all domain patterns used in `sensitive_data` are covered by the patterns in `allowed_domains`.
 
 ### Missing or Empty Values
 

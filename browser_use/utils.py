@@ -5,9 +5,11 @@ import platform
 import signal
 import time
 from collections.abc import Callable, Coroutine
+from fnmatch import fnmatch
 from functools import wraps
 from sys import stderr
 from typing import Any, ParamSpec, TypeVar
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +163,10 @@ class SignalHandler:
 		print('\r', end='', flush=True, file=stderr)
 		print('\r', end='', flush=True)
 
+		# these ^^ attempts dont work as far as we can tell
+		# we still dont know what causes the broken input, if you know how to fix it, please let us know
+		print('(tip: press [Enter] once to fix escape codes appearing after chrome exit)', file=stderr)
+
 		os._exit(0)
 
 	def sigint_handler(self) -> None:
@@ -304,7 +310,9 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 			start_time = time.time()
 			result = func(*args, **kwargs)
 			execution_time = time.time() - start_time
-			logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+			# Only log if execution takes more than 0.25 seconds
+			if execution_time > 0.25:
+				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
 		return wrapper
@@ -321,7 +329,10 @@ def time_execution_async(
 			start_time = time.time()
 			result = await func(*args, **kwargs)
 			execution_time = time.time() - start_time
-			logger.debug(f'{additional_text} Execution time: {execution_time:.2f} seconds')
+			# Only log if execution takes more than 0.25 seconds to avoid spamming the logs
+			# you can lower this threshold locally when you're doing dev work to performance optimize stuff
+			if execution_time > 0.25:
+				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
 		return wrapper
@@ -343,3 +354,126 @@ def singleton(cls):
 def check_env_variables(keys: list[str], any_or_all=all) -> bool:
 	"""Check if all required environment variables are set"""
 	return any_or_all(os.getenv(key, '').strip() for key in keys)
+
+
+def is_unsafe_pattern(pattern: str) -> bool:
+	"""
+	Check if a domain pattern has complex wildcards that could match too many domains.
+
+	Args:
+		pattern: The domain pattern to check
+
+	Returns:
+		bool: True if the pattern has unsafe wildcards, False otherwise
+	"""
+	# Extract domain part if there's a scheme
+	if '://' in pattern:
+		_, pattern = pattern.split('://', 1)
+
+	# Remove safe patterns (*.domain and domain.*)
+	bare_domain = pattern.replace('.*', '').replace('*.', '')
+
+	# If there are still wildcards, it's potentially unsafe
+	return '*' in bare_domain
+
+
+def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: bool = False) -> bool:
+	"""
+	Check if a URL matches a domain pattern. SECURITY CRITICAL.
+
+	Supports optional glob patterns and schemes:
+	- *.example.com will match sub.example.com and example.com
+	- *google.com will match google.com, agoogle.com, and www.google.com
+	- http*://example.com will match http://example.com, https://example.com
+	- chrome-extension://* will match chrome-extension://aaaaaaaaaaaa and chrome-extension://bbbbbbbbbbbbb
+
+	When no scheme is specified, https is used by default for security.
+	For example, 'example.com' will match 'https://example.com' but not 'http://example.com'.
+
+	Note: about:blank must be handled at the callsite, not inside this function.
+
+	Args:
+		url: The URL to check
+		domain_pattern: Domain pattern to match against
+		log_warnings: Whether to log warnings about unsafe patterns
+
+	Returns:
+		bool: True if the URL matches the pattern, False otherwise
+	"""
+	try:
+		# Note: about:blank should be handled at the callsite, not here
+		if url == 'about:blank':
+			return False
+
+		parsed_url = urlparse(url)
+
+		# Extract only the hostname and scheme components
+		scheme = parsed_url.scheme.lower() if parsed_url.scheme else ''
+		domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
+
+		if not scheme or not domain:
+			return False
+
+		# Normalize the domain pattern
+		domain_pattern = domain_pattern.lower()
+
+		# Handle pattern with scheme
+		if '://' in domain_pattern:
+			pattern_scheme, pattern_domain = domain_pattern.split('://', 1)
+		else:
+			pattern_scheme = 'https'  # Default to matching only https for security
+			pattern_domain = domain_pattern
+
+		# Handle port in pattern (we strip ports from patterns since we already
+		# extracted only the hostname from the URL)
+		if ':' in pattern_domain and not pattern_domain.startswith(':'):
+			pattern_domain = pattern_domain.split(':', 1)[0]
+
+		# If scheme doesn't match, return False
+		if not fnmatch(scheme, pattern_scheme):
+			return False
+
+		# Check for exact match
+		if pattern_domain == '*' or domain == pattern_domain:
+			return True
+
+		# Handle glob patterns
+		if '*' in pattern_domain:
+			# Check for unsafe glob patterns
+			# First, check for patterns like *.*.domain which are unsafe
+			if pattern_domain.count('*.') > 1 or pattern_domain.count('.*') > 1:
+				if log_warnings:
+					logger = logging.getLogger(__name__)
+					logger.error(f'⛔️ Multiple wildcards in pattern=[{domain_pattern}] are not supported')
+				return False  # Don't match unsafe patterns
+
+			# Check for wildcards in TLD part (example.*)
+			if pattern_domain.endswith('.*'):
+				if log_warnings:
+					logger = logging.getLogger(__name__)
+					logger.error(f'⛔️ Wildcard TLDs like in pattern=[{domain_pattern}] are not supported for security')
+				return False  # Don't match unsafe patterns
+
+			# Then check for embedded wildcards
+			bare_domain = pattern_domain.replace('*.', '')
+			if '*' in bare_domain:
+				if log_warnings:
+					logger = logging.getLogger(__name__)
+					logger.error(f'⛔️ Only *.domain style patterns are supported, ignoring pattern=[{domain_pattern}]')
+				return False  # Don't match unsafe patterns
+
+			# Special handling so that *.google.com also matches bare google.com
+			if pattern_domain.startswith('*.'):
+				parent_domain = pattern_domain[2:]
+				if domain == parent_domain or fnmatch(domain, parent_domain):
+					return True
+
+			# Normal case: match domain against pattern
+			if fnmatch(domain, pattern_domain):
+				return True
+
+		return False
+	except Exception as e:
+		logger = logging.getLogger(__name__)
+		logger.error(f'⛔️ Error matching URL {url} with pattern {domain_pattern}: {type(e).__name__}: {e}')
+		return False

@@ -824,30 +824,12 @@
 
     if (hasInteractiveRole) return true;
 
-    // check whether element has event listeners
-    try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
-        const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
-        for (const eventType of mouseEvents) {
-          for (const listener of listeners) {
-            if (listener.type === eventType) {
-               return true; // Found a mouse interaction listener
-            }
-          }
-        }
-      } else {
-        // Fallback: Check common event attributes if getEventListeners is not available
-        const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
-        for (const attr of commonMouseAttrs) {
-          if (element.hasAttribute(attr) || typeof element[attr] === 'function') {
-            return true;
-          }
-        }
+    // Check common event attributes (getEventListeners doesn't work in page.evaluate context)
+    const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
+    for (const attr of commonMouseAttrs) {
+      if (element.hasAttribute(attr) || typeof element[attr] === 'function') {
+        return true;
       }
-    } catch (e) {
-      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
-      // If checking listeners fails, rely on other checks
     }
 
     return false
@@ -1011,7 +993,7 @@
 
     // Fast-path for common interactive elements
     const interactiveElements = new Set([
-      "a", "button", "input", "select", "textarea", "details", "summary"
+      "a", "button", "input", "select", "textarea", "details", "summary", "label"
     ]);
 
     if (interactiveElements.has(tagName)) return true;
@@ -1116,29 +1098,11 @@
     if (element.hasAttribute('onclick') || typeof element.onclick === 'function') {
       return true;
     }
-    // Check for other common interaction event listeners
-    try {
-      const getEventListeners = window.getEventListenersForNode;
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
-        const interactionEvents = ['click', 'mousedown', 'mouseup', 'keydown', 'keyup', 'submit', 'change', 'input', 'focus', 'blur'];
-        for (const eventType of interactionEvents) {
-          for (const listener of listeners) {
-            if (listener.type === eventType) {
-               return true; // Found a common interaction listener
-            }
-          }
-        }
-      } else {
-        // Fallback: Check common event attributes if getEventListeners is not available
-        const commonEventAttrs = ['onmousedown', 'onmouseup', 'onkeydown', 'onkeyup', 'onsubmit', 'onchange', 'oninput', 'onfocus', 'onblur'];
-        if (commonEventAttrs.some(attr => element.hasAttribute(attr))) {
-          return true;
-        }
-      }
-    } catch (e) {
-      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
-      // If checking listeners fails, rely on other checks
+    
+    // Check common event attributes (getEventListenersForNode doesn't work in page.evaluate context)
+    const commonEventAttrs = ['onmousedown', 'onmouseup', 'onkeydown', 'onkeyup', 'onsubmit', 'onchange', 'oninput', 'onfocus', 'onblur'];
+    if (commonEventAttrs.some(attr => element.hasAttribute(attr))) {
+      return true;
     }
 
     // if the element is not strictly interactive but appears clickable based on heuristic signals
