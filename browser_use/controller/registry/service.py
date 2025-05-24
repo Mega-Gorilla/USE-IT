@@ -143,10 +143,9 @@ class Registry(Generic[Context]):
 					and hasattr(parameters[0], 'annotation')
 					and parameters[0].annotation != parameters[0].empty
 					and issubclass(parameters[0].annotation, BaseModel)
-					and
 					# Additional check: make sure the first parameter name suggests it's actually a pydantic model
-					parameters[0].name in ['params', 'param', 'model']
-					or parameters[0].name.endswith('_model')
+					# and parameters[0].name in ['params', 'param', 'model']
+					# or parameters[0].name.endswith('_model')
 				)
 			except (TypeError, AttributeError):
 				is_pydantic = False
