@@ -1009,11 +1009,13 @@ async def load_existing_result(task_folder: Path) -> dict:
 
 async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	"""Setup browser session for the task"""
+	logger.debug(f'Browser setup: Creating unique user data directory for task {task.task_id}')
 	# Create unique user data directory
 	base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
 	unique_user_data_dir = base_user_data_dir / f'task_{task.task_id}'
 	unique_user_data_dir.mkdir(parents=True, exist_ok=True)
 
+	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
 	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			user_data_dir=str(unique_user_data_dir),
@@ -1023,12 +1025,16 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	)
 
 	# Start browser session
+	logger.debug(f'Browser setup: Starting browser session for task {task.task_id}')
 	await browser_session.start()
+	logger.debug(f'Browser setup: Browser session started for task {task.task_id}')
 
 	# Navigate to task starting url if provided
 	if task.website:
+		logger.debug(f'Browser setup: Navigating to {task.website} for task {task.task_id}')
 		await browser_session.navigate(task.website)
 
+	logger.debug(f'Browser setup: Setup completed for task {task.task_id}')
 	return browser_session
 
 
@@ -1087,9 +1093,13 @@ def save_result_to_server(convex_url: str, secret_key: str, payload: dict) -> bo
 async def cleanup_browser_safe(browser_session: BrowserSession):
 	"""Safe browser cleanup with timeout"""
 	try:
+		logger.debug('Browser cleanup: Starting close operation for session')
 		await asyncio.wait_for(browser_session.close(), timeout=30)
+		logger.debug('Browser cleanup: Close operation completed successfully')
+	except TimeoutError:
+		logger.warning('Browser cleanup: Timed out after 30 seconds')
 	except Exception as e:
-		logger.warning(f'Browser cleanup failed: {e}')
+		logger.warning(f'Browser cleanup: Failed with error: {type(e).__name__}: {e}')
 
 
 def determine_current_stage(completed_stages: set) -> Stage:
@@ -1131,7 +1141,9 @@ async def run_task_with_semaphore(
 	planner_interval: int = 1,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
+	logger.info(f'Task {task.task_id}: Waiting to acquire semaphore (current value: ~{semaphore_runs._value})')
 	async with semaphore_runs:
+		logger.info(f'Task {task.task_id}: Semaphore acquired (remaining slots: ~{semaphore_runs._value})')
 		task_result = None
 		browser_session = None
 
@@ -1166,7 +1178,7 @@ async def run_task_with_semaphore(
 							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
 						)
 						task_result.stage_completed(Stage.SETUP_BROWSER)
-						logger.info(f'Task {task.task_id}: Browser session started.')
+						logger.info(f'Task {task.task_id}: Browser session started successfully.')
 					except Exception as e:
 						error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
 						task_result.stage_failed(Stage.SETUP_BROWSER, error)
@@ -1329,8 +1341,13 @@ async def run_task_with_semaphore(
 		finally:
 			# Always cleanup browser if it was created
 			if browser_session:
+				logger.info(f'Task {task.task_id}: Starting browser cleanup')
 				await cleanup_browser_safe(browser_session)
+				logger.info(f'Task {task.task_id}: Browser cleanup completed')
+			else:
+				logger.info(f'Task {task.task_id}: No browser to cleanup')
 
+		logger.info(f'Task {task.task_id}: About to release semaphore (remaining slots: ~{semaphore_runs._value})')
 		return (
 			task_result.get_local_status()
 			if task_result
@@ -1363,8 +1380,11 @@ async def run_multiple_tasks(
 	"""
 	Run multiple tasks in parallel and evaluate results.
 	"""
+	logger.info(f'Creating semaphore with max_parallel_runs={max_parallel_runs}')
 	semaphore_runs = asyncio.Semaphore(max_parallel_runs)
 	tasks_to_run = tasks[start_index:end_index] if end_index else tasks[start_index:]
+
+	logger.info(f'Starting {len(tasks_to_run)} tasks with parallel limit of {max_parallel_runs}')
 
 	# Run all tasks in parallel with additional parameters
 	task_results = await asyncio.gather(
@@ -1396,12 +1416,22 @@ async def run_multiple_tasks(
 
 	# Process task results and handle any exceptions returned by gather
 	processed_results = []
+	successful_tasks = 0
+	failed_tasks = 0
+
 	for i, result in enumerate(task_results):
 		if isinstance(result, Exception):
 			logger.error(f'Task {i} failed with exception: {type(result).__name__}: {result}')
 			processed_results.append({'task_id': f'task_{i}', 'success': False, 'error': str(result)})
+			failed_tasks += 1
 		else:
 			processed_results.append(result)
+			if result.get('success', False):
+				successful_tasks += 1
+			else:
+				failed_tasks += 1
+
+	logger.info(f'All {len(tasks_to_run)} tasks completed. Success: {successful_tasks}, Failed: {failed_tasks}')
 
 	# After all tasks are complete, calculate a local summary
 	logger.info('All tasks completed. Calculating result summary...')
