@@ -14,8 +14,7 @@ async def main():
 	"""Demonstrate setting a custom browser window size"""
 	# Create a browser profile with a specific window size
 	profile = BrowserProfile(
-		window_width=800,
-		window_height=400,  # Small size to clearly demonstrate the fix
+		window_size={'width': 800, 'height': 400},  # Small size to clearly demonstrate the fix
 		headless=False,  # Use non-headless mode to see the window
 	)
 
