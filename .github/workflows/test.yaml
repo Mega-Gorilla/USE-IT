@@ -21,7 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: list_test_files
-        run: echo "FILENAME_LIST=$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+        run: |
+          FILENAME_LIST="$(ls tests/ci/*.py | jq -R -s -c 'split("\n")[:-1]')"
+          echo "FILENAME_LIST=$FILENAME_LIST" >> $GITHUB_OUTPUT
+          echo "$FILENAME_LIST"
         # https://code.dblock.org/2021/09/03/generating-task-matrix-by-looping-over-repo-files-with-github-actions.html
 
   tests:
