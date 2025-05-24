@@ -65,6 +65,8 @@ jobs:
   publish_to_pypi:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    env:
+      IN_DOCKER: 'True'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
