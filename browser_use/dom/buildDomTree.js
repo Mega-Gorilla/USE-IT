@@ -835,7 +835,7 @@
           }
         }
       } else {
-        // Fallback: Check common event attributes if getEventListeners is not availabl (getEventListeners doesn't work in page.evaluate context)
+        // Fallback: Check common event attributes if getEventListeners is not available (getEventListeners doesn't work in page.evaluate context)
         const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
         for (const attr of commonMouseAttrs) {
           if (element.hasAttribute(attr) || typeof element[attr] === 'function') {
