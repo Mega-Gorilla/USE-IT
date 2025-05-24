@@ -73,13 +73,15 @@ async def main():
 
 	if Path('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser').is_file():
 		print('\n\nBRAVE + PATCHRIGHT STEALTH BROWSER:')
+		patchright = await async_patchright().start()
 		brave_patchright_browser_session = BrowserSession(
 			executable_path='/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-			playwright=await async_patchright().start(),
+			playwright=patchright,
 			headless=False,
 			disable_security=False,
 			user_data_dir=None,
 			deterministic_rendering=False,
+			**patchright.devices['iPhone 13'],  # emulate other devices: https://playwright.dev/python/docs/emulation
 		)
 		await brave_patchright_browser_session.start()
 		await brave_patchright_browser_session.create_new_tab('https://abrahamjuliot.github.io/creepjs/')
