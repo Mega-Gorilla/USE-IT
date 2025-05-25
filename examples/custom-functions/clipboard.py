@@ -10,6 +10,7 @@ load_dotenv()
 
 import pyperclip
 from langchain_openai import ChatOpenAI
+from playwright.async_api import Page
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import ActionResult
@@ -28,10 +29,9 @@ def copy_to_clipboard(text: str):
 
 
 @controller.registry.action('Paste text from clipboard')
-async def paste_from_clipboard(browser_session: BrowserSession):
+async def paste_from_clipboard(page: Page):
 	text = pyperclip.paste()
 	# send text to browser
-	page = await browser_session.get_current_page()
 	await page.keyboard.type(text)
 
 	return ActionResult(extracted_content=text)

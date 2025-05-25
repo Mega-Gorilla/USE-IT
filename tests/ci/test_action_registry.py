@@ -312,6 +312,49 @@ class TestActionRegistryParameterPatterns:
 		assert 'Legacy context: test2, URL:' in result2.extracted_content
 		assert '/test' in result2.extracted_content
 
+	@pytest.mark.asyncio
+	async def test_page_parameter_optimization(self, test_browser: BrowserSession, httpserver: HTTPServer):
+		"""Test that actions can use page: Page parameter directly instead of browser_session"""
+		registry = Registry()
+
+		httpserver.expect_request('/test').respond_with_data('<html><body>Test Page</body></html>')
+		page = await test_browser.get_current_page()
+		await page.goto(httpserver.url_for('/test'))
+
+		# Action that takes page directly (optimized pattern)
+		@registry.action('Action with direct page parameter')
+		async def direct_page_action(text: str, page: Page):
+			# This is the optimized pattern - no need to call get_current_page()
+			return ActionResult(extracted_content=f'Direct page: {text}, URL: {page.url}')
+
+		# Action that takes browser_session and calls get_current_page (old pattern)
+		@registry.action('Action with browser_session parameter')
+		async def browser_session_action(text: str, browser_session: BrowserSession):
+			page = await browser_session.get_current_page()
+			return ActionResult(extracted_content=f'Browser session: {text}, URL: {page.url}')
+
+		# Test direct page parameter
+		result1 = await registry.execute_action('direct_page_action', {'text': 'optimized'}, browser_session=test_browser)
+		assert 'Direct page: optimized, URL:' in result1.extracted_content
+		assert '/test' in result1.extracted_content
+
+		# Test browser_session parameter (should still work)
+		result2 = await registry.execute_action('browser_session_action', {'text': 'legacy'}, browser_session=test_browser)
+		assert 'Browser session: legacy, URL:' in result2.extracted_content
+		assert '/test' in result2.extracted_content
+
+		# Verify both patterns work with pydantic models too
+		class PageActionParams(BaseActionModel):
+			message: str = Field(..., description='Test message')
+
+		@registry.action('Pydantic action with page', param_model=PageActionParams)
+		async def pydantic_page_action(params: PageActionParams, page: Page):
+			return ActionResult(extracted_content=f'Pydantic page: {params.message}, URL: {page.url}')
+
+		result3 = await registry.execute_action('pydantic_page_action', {'message': 'pydantic'}, browser_session=test_browser)
+		assert 'Pydantic page: pydantic, URL:' in result3.extracted_content
+		assert '/test' in result3.extracted_content
+
 
 class TestActionToActionCalling:
 	"""Test scenarios where actions call other actions"""

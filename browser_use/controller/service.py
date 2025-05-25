@@ -780,7 +780,7 @@ class Controller(Generic[Context]):
 		async def read_cell_contents(cell_or_range: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			await page.keyboard.press('ControlOrMeta+C')
 			await asyncio.sleep(0.1)
@@ -793,7 +793,7 @@ class Controller(Generic[Context]):
 		async def update_cell_contents(cell_or_range: str, new_contents_tsv: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			# simulate paste event from clipboard with TSV content
 			await page.evaluate(f"""
@@ -808,7 +808,7 @@ class Controller(Generic[Context]):
 		async def clear_cell_contents(cell_or_range: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			await page.keyboard.press('Backspace')
 			return ActionResult(extracted_content=f'Cleared cells: {cell_or_range}', include_in_memory=False)
