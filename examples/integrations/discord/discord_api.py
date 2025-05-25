@@ -26,7 +26,7 @@ class DiscordBot(commands.Bot):
 	    llm (BaseChatModel): Language model instance to use for task processing
 	    prefix (str, optional): Command prefix for triggering browser tasks. Defaults to "$bu"
 	    ack (bool, optional): Whether to acknowledge task receipt with a message. Defaults to False
-	    browser_config (BrowserConfig, optional): Browser configuration settings.
+	    browser_profile (BrowserProfile, optional): Browser profile settings.
 	        Defaults to headless mode
 
 	Usage:
