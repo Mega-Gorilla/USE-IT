@@ -25,11 +25,11 @@ controller = Controller()
 
 
 @controller.action('Solve Amazon text based captcha', domains=[
-	'amazon.com', 'amazon.co.uk', 'amazon.ca', 'amazon.de', 'amazon.es', 
-	'amazon.fr', 'amazon.it', 'amazon.co.jp', 'amazon.in', 'amazon.cn', 
-	'amazon.com.sg', 'amazon.com.mx', 'amazon.ae', 'amazon.com.br', 
-	'amazon.nl', 'amazon.com.au', 'amazon.com.tr', 'amazon.sa', 
-	'amazon.se', 'amazon.pl'
+	'*.amazon.com', '*.amazon.co.uk', '*.amazon.ca', '*.amazon.de', '*.amazon.es', 
+	'*.amazon.fr', '*.amazon.it', '*.amazon.co.jp', '*.amazon.in', '*.amazon.cn', 
+	'*.amazon.com.sg', '*.amazon.com.mx', '*.amazon.ae', '*.amazon.com.br', 
+	'*.amazon.nl', '*.amazon.com.au', '*.amazon.com.tr', '*.amazon.sa', 
+	'*.amazon.se', '*.amazon.pl'
 ])
 async def solve_amazon_captcha(browser_session: BrowserSession):
 	page = await browser_session.get_current_page()
