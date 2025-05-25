@@ -562,12 +562,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=None,
 		description='Window size to use for the browser when headless=False.',
 	)
-	window_height: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["height"] instead', deprecated=True, exclude=True
-	)
-	window_width: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["width"] instead', deprecated=True, exclude=True
-	)
+	window_height: int | None = Field(default=None, description='DEPRECATED, use window_size["height"] instead', exclude=True)
+	window_width: int | None = Field(default=None, description='DEPRECATED, use window_size["width"] instead', exclude=True)
 	window_position: ViewportSize | None = Field(
 		default_factory=lambda: {'width': 0, 'height': 0},
 		description='Window position to use for the browser x,y from the top left when headless=False.',
