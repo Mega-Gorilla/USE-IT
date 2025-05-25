@@ -10,6 +10,10 @@ This example shows how to:
 import asyncio
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from browser_use.browser import BrowserProfile, BrowserSession
 
 
