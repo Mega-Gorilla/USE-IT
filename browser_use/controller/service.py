@@ -181,8 +181,7 @@ class Controller(Generic[Context]):
 
 		# Save PDF
 		@self.registry.action('Save the current page as a PDF file')
-		async def save_pdf(browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
+		async def save_pdf(page: Page):
 			short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
 			slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
 			sanitized_filename = f'{slug}.pdf'
@@ -229,11 +228,10 @@ class Controller(Generic[Context]):
 		)
 		async def extract_content(
 			goal: str,
-			browser_session: BrowserSession,
+			page: Page,
 			page_extraction_llm: BaseChatModel,
 			include_links: bool = False,
 		):
-			page = await browser_session.get_current_page()
 			import markdownify
 
 			strip = []
@@ -264,8 +262,7 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			'Get the accessibility tree of the page in the format "role name" with the number_of_elements to return',
 		)
-		async def get_ax_tree(number_of_elements: int, browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
+		async def get_ax_tree(number_of_elements: int, page: Page):
 			node = await page.accessibility.snapshot(interesting_only=True)
 
 			def flatten_ax_tree(node, lines):
@@ -331,9 +328,7 @@ class Controller(Generic[Context]):
 			'Send strings of special keys like Escape,Backspace, Insert, PageDown, Delete, Enter, Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard.press. ',
 			param_model=SendKeysAction,
 		)
-		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
-
+		async def send_keys(params: SendKeysAction, page: Page):
 			try:
 				await page.keyboard.press(params.keys)
 			except Exception as e:
@@ -354,8 +349,7 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			description='If you dont find something which you want to interact with, scroll to it',
 		)
-		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
-			page = await browser_session.get_current_page()
+		async def scroll_to_text(text: str, page: Page):  # type: ignore
 			try:
 				# Try different locator strategies
 				locators = [
@@ -563,7 +557,7 @@ class Controller(Generic[Context]):
 			'Drag and drop elements or between coordinates on the page - useful for canvas drawing, sortable lists, sliders, file uploads, and UI rearrangement',
 			param_model=DragDropAction,
 		)
-		async def drag_drop(params: DragDropAction, browser_session: BrowserSession) -> ActionResult:
+		async def drag_drop(params: DragDropAction, page: Page) -> ActionResult:
 			"""
 			Performs a precise drag and drop operation between elements or coordinates.
 			"""
@@ -687,8 +681,6 @@ class Controller(Generic[Context]):
 				except Exception as e:
 					return False, f'Error during drag operation: {str(e)}'
 
-			page = await browser_session.get_current_page()
-
 			try:
 				# Initialize variables
 				source_x: int | None = None
@@ -774,9 +766,7 @@ class Controller(Generic[Context]):
 				return ActionResult(error=error_msg, include_in_memory=True)
 
 		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
-		async def read_sheet_contents(browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
-
+		async def read_sheet_contents(page: Page):
 			# select all cells
 			await page.keyboard.press('Enter')
 			await page.keyboard.press('Escape')
@@ -787,10 +777,10 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=extracted_tsv, include_in_memory=True)
 
 		@self.registry.action('Google Sheets: Get the contents of a cell or range of cells', domains=['https://docs.google.com'])
-		async def read_cell_contents(browser_session: BrowserSession, cell_or_range: str):
+		async def read_cell_contents(cell_or_range: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session, cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			await page.keyboard.press('ControlOrMeta+C')
 			await asyncio.sleep(0.1)
@@ -800,10 +790,10 @@ class Controller(Generic[Context]):
 		@self.registry.action(
 			'Google Sheets: Update the content of a cell or range of cells', domains=['https://docs.google.com']
 		)
-		async def update_cell_contents(browser_session: BrowserSession, cell_or_range: str, new_contents_tsv: str):
+		async def update_cell_contents(cell_or_range: str, new_contents_tsv: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session, cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			# simulate paste event from clipboard with TSV content
 			await page.evaluate(f"""
@@ -815,18 +805,16 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=f'Updated cells: {cell_or_range} = {new_contents_tsv}', include_in_memory=False)
 
 		@self.registry.action('Google Sheets: Clear whatever cells are currently selected', domains=['https://docs.google.com'])
-		async def clear_cell_contents(browser_session: BrowserSession, cell_or_range: str):
+		async def clear_cell_contents(cell_or_range: str, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
 
-			await select_cell_or_range(browser_session, cell_or_range)
+			await select_cell_or_range(cell_or_range=cell_or_range, page=page)
 
 			await page.keyboard.press('Backspace')
 			return ActionResult(extracted_content=f'Cleared cells: {cell_or_range}', include_in_memory=False)
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
-		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
-			page = await browser_session.get_current_page()
-
+		async def select_cell_or_range(cell_or_range: str, page: Page):
 			await page.keyboard.press('Enter')  # make sure we dont delete current cell contents if we were last editing
 			await page.keyboard.press('Escape')  # to clear current focus (otherwise select range popup is additive)
 			await asyncio.sleep(0.1)
@@ -846,9 +834,7 @@ class Controller(Generic[Context]):
 			'Google Sheets: Fallback method to type text into (only one) currently selected cell',
 			domains=['https://docs.google.com'],
 		)
-		async def fallback_input_into_single_selected_cell(browser_session: BrowserSession, text: str):
-			page = await browser_session.get_current_page()
-
+		async def fallback_input_into_single_selected_cell(text: str, page: Page):
 			await page.keyboard.type(text, delay=0.1)
 			await page.keyboard.press('Enter')  # make sure to commit the input so it doesn't get overwritten by the next action
 			await page.keyboard.press('ArrowUp')

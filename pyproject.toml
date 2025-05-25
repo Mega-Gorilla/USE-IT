@@ -78,7 +78,7 @@ browseruse = "browser_use.cli:main"
 browser-use = "browser_use.cli:main"
 
 [tool.codespell]
-ignore-words-list = "bu"
+ignore-words-list = "bu,wit,dont,cant,wont"
 skip = "*.json"
 
 [tool.ruff]
