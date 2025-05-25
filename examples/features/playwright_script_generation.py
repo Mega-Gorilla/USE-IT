@@ -12,7 +12,8 @@ load_dotenv()
 
 from langchain_openai import ChatOpenAI
 
-from browser_use import Agent, Browser, BrowserConfig
+from browser_use import Agent
+from browser_use.browser import BrowserProfile, BrowserSession
 
 # Define the task for the agent
 TASK_DESCRIPTION = """
@@ -48,15 +49,15 @@ async def main():
 
 	# Configure the browser
 	# Use headless=False if you want to watch the agent visually
-	browser_config = BrowserConfig(headless=False)
-	browser = Browser(config=browser_config)
+	browser_profile = BrowserProfile(headless=False)
+	browser_session = BrowserSession(browser_profile=browser_profile)
 
 	# Configure the agent
 	# The 'save_playwright_script_path' argument tells the agent where to save the script
 	agent = Agent(
 		task=TASK_DESCRIPTION,
 		llm=llm,
-		browser=browser,
+		browser_session=browser_session,
 		save_playwright_script_path=str(SCRIPT_PATH),  # Pass the path as a string
 	)
 
@@ -78,8 +79,8 @@ async def main():
 	except Exception as e:
 		print(f'An error occurred during the agent run: {e}')
 		# Ensure browser is closed even if agent run fails
-		if browser:
-			await browser.close()
+		if browser_session:
+			await browser_session.close()
 		return  # Exit if agent failed
 
 	# --- Execute the Generated Playwright Script ---
@@ -121,8 +122,8 @@ async def main():
 
 	# Close the browser used by the agent (if not already closed by agent.run error handling)
 	# Note: The generated script manages its own browser instance.
-	if browser:
-		await browser.close()
+	if browser_session:
+		await browser_session.close()
 		print("Agent's browser closed.")
 
 
