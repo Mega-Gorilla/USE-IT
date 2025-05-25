@@ -30,7 +30,7 @@ def ask_human(question: str) -> ActionResult:
 agent = Agent(
     task=task,
     llm=llm,
-    controller=controller
+    controller=controller,
 )
 ```
 
@@ -141,17 +141,17 @@ def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
 
 ### Important Rules
 
-1. **No **kwargs allowed**: Actions functions must be defined to take positional parameters only with types, if you want defaults or optionals use a param_model
-2. **Return ActionResult**: All actions should return an `ActionResult` instance, string, or None
-3. **Type hints are required**: They are used to verify that action parameters don't conflict with the special arguments the context injects (e.g. `page`)
-4. When calling actions from other actions, you must **call using kwargs only** (for the same reasons [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks) [requires this](https://pluggy.readthedocs.io/en/stable/index.html#:~:text=Note%20that%20you,should%20not%20error%3A))
+1. **No kwargs allowed in action definitions**: Actions functions must be defined to take positional args only (with type hints), or a single `params` arg containing a pydantic model if you need defaults and optionals.
+2. **Return `ActionResult`**: All actions should return an `ActionResult | str | None`.
+3. **Type hints are required**: They are used to verify that action params don't conflict with special arguments injected by the controller (e.g. `page`)
+4. **Actions called directly must be passed kwargs***: When calling actions from other actions, you must **call using kwargs only**, even though the actions are defined using positional args only (for the same reasons as [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks)).
+    Action arguments are always matched by name and type, **not** positional order, so this helps prevent ambiguity / reordering issues while keeping action signatures short.
     ```python
     @controller.action('Fill in the country form field')
     def input_country_field(country: str, page: Page) -> ActionResult:
         await some_other_action(params=OtherAction(abc=123), page=page)
         await some_action(abc=123, page=page)
     ```
-    Action arguments are always matched by name and type, **not** positional order, so this helps prevent ambiguity / reordering issues.
 
 ---
 
