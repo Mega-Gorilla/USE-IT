@@ -136,6 +136,8 @@ class Registry(Generic[Context]):
 			# 1. There are parameters
 			# 2. First parameter has a BaseModel annotation
 			# 3. AND the function signature actually takes a BaseModel as first param (not auto-generated)
+			# 4. AND the first parameter is NOT a special parameter
+			special_param_names = set(SpecialActionParameters.model_fields.keys())
 			try:
 				is_pydantic = (
 					parameters
@@ -143,9 +145,8 @@ class Registry(Generic[Context]):
 					and hasattr(parameters[0], 'annotation')
 					and parameters[0].annotation != parameters[0].empty
 					and issubclass(parameters[0].annotation, BaseModel)
-					# Additional check: make sure the first parameter name suggests it's actually a pydantic model
-					# and parameters[0].name in ['params', 'param', 'model']
-					# or parameters[0].name.endswith('_model')
+					# IMPORTANT: Exclude special parameters from being considered as pydantic models
+					and parameters[0].name not in special_param_names
 				)
 			except (TypeError, AttributeError):
 				is_pydantic = False

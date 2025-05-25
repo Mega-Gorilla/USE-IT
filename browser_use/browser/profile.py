@@ -546,6 +546,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
 
+	# do something like this someday when we need to store these in a DB
 	# id: str = Field(default_factory=uuid7str)
 	# label: str = 'default'
 

@@ -4,14 +4,23 @@ description: "Configure browser behavior and context settings"
 icon: "globe"
 ---
 
-Browser Use uses playwright (or patchright) to manage its connection with a real browser.
+Browser Use uses [playwright](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) (or [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright)) + CDP to manage its connection with a real browser.
 
 ```python
 from browser_use import BrowserProfile, BrowserSession
 ````
 
-- `BrowserSession(**params)` is a connection to a running browser, it takes standard playwright kwargs in and connects to / launches a browser
-- `BrowserProfile(**params)` is a collection of static config kwargs that can be passed to playwright to set up a browser
+- `BrowserSession(**params)` is Browser Use's object that tracks a connection to a running browser. It holds:
+  - the live playwright, browser, browser_context, and page objects for the tabs the agent and human viewer are focues on
+  - the helper methods to launch and connect to remote and local browsers
+  - methods to interact with the browser window, apply config needed by the Agent, and run the DOMService for element detection
+- `BrowserProfile(**params)` is Browser Use's object that holds a collection of static config kwargs, to be used when starting a `BrowserSession`. It holds:
+  - all the standard playwright kwargs
+  - some extra browser configuration options we provide on top of playwright (e.g. `allowed_domains`, `window_position`, `profile_directory`, `deterministic_rendering`, etc.)
+  - some kwargs used to configure Browser Use-specific features related to the browser (e.g. `highlight_elements`, `disable_security`, `cookies_file`) 
+- [`Browser`](https://playwright.dev/python/docs/api/class-browser): standard [playwright `Browser`](https://playwright.dev/python/docs/api/class-browser) object, refers to a running browser process (remote or local)
+- [`BrowserContext`](https://playwright.dev/python/docs/api/class-browsercontext): standard [playwright `BrowserContext`](https://playwright.dev/python/docs/api/class-browsercontext) refers to a window in a live browser (incognito or with a profile)
+- [`Page`](https://playwright.dev/python/docs/api/class-page): standard [playwright `Page`](https://playwright.dev/python/docs/api/class-page), the handle for one tab in the browser
 
 <Note>
   The new `BrowserSession` and `BrowserProfile` classes now accept all the same arguments as standard Playwright [launch_persistent_context](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) API, giving you full control over browser settings.
@@ -426,3 +435,13 @@ async def run_search():
 - BrowserUse custom settings
 
 For more details on Playwright's browser context options, see the [official documentation](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context).
+
+---
+
+In the future we may add support for more browser driving methods:
+- Chrome Extension bridge w/ `chrome.debugger` permissions, via relaey server
+- Computer-Use x,y coordinate-type mouse & keyboard interaction driver
+- `adb` Android debugger for controlling remote a Android browser / apps
+- [Appium](https://github.com/appium/appium)-style accessibility UX drivers
+- WebDriver-BiDi to extend CDP
+- In-page JS as an AI assistant you can provide users on your site (like Intercom or analytics)
