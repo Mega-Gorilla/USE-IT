@@ -115,9 +115,7 @@ class BrowserSession(BaseModel):
 		revalidate_instances='always',
 		frozen=False,
 		arbitrary_types_allowed=True,
-		validate_by_name=True,
-		validate_by_alias=True,
-		from_attributes=True,
+		populate_by_name=True,
 	)
 	# this class accepts arbitrary extra **kwargs in init because of the extra='allow' pydantic option
 	# they are saved on the model, then applied to self.browser_profile via .apply_session_overrides_to_profile()
@@ -196,8 +194,10 @@ class BrowserSession(BaseModel):
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
 
-		# replace browser_profile with patched version
-		self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
+		# Only create a copy if there are actual overrides to apply
+		if profile_overrides:
+			# replace browser_profile with patched version
+			self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
 
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
@@ -433,10 +433,15 @@ class BrowserSession(BaseModel):
 		# playwright does not give us a browser object at all when we use launch_persistent_context()!
 
 		# Detect any new child chrome processes that we might have launched above
-		child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
-		new_child_pids = child_pids_after_launch - child_pids_before_launch
-		new_child_procs = [psutil.Process(pid) for pid in new_child_pids]
-		new_chrome_procs = [proc for proc in new_child_procs if 'Helper' not in proc.name() and proc.status() == 'running']
+		try:
+			child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
+			new_child_pids = child_pids_after_launch - child_pids_before_launch
+			new_child_procs = [psutil.Process(pid) for pid in new_child_pids]
+			new_chrome_procs = [proc for proc in new_child_procs if 'Helper' not in proc.name() and proc.status() == 'running']
+		except Exception as e:
+			logger.debug(f'❌ Error trying to find child chrome processes after launching new browser: {type(e).__name__}: {e}')
+			new_chrome_procs = []
+
 		if new_chrome_procs and not self.browser_pid:
 			self.browser_pid = new_chrome_procs[0].pid
 			logger.debug(
