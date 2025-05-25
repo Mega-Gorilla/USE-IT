@@ -11,7 +11,7 @@ from browser_use import BrowserProfile, BrowserSession
 ````
 
 - `BrowserSession(**params)` is Browser Use's object that tracks a connection to a running browser. It holds:
-  - the live playwright, browser, browser_context, and page objects for the tabs the agent and human viewer are focues on
+  - the `playwright`, `browser`, `browser_context`, and `page` objects and tracks which tabs the agent/human are focused on
   - the helper methods to launch and connect to remote and local browsers
   - methods to interact with the browser window, apply config needed by the Agent, and run the DOMService for element detection
 - `BrowserProfile(**params)` is Browser Use's object that holds a collection of static config kwargs, to be used when starting a `BrowserSession`. It holds:
