@@ -34,29 +34,32 @@ from browser_use import Agent, BrowserSession, BrowserProfile
 
 # It's easy to connect to or launch a new browser with a BrowserSession, many methods are supported:
 browser_session = BrowserSession(
-    # cdp_url='http://localhost:9222' | wss_url='ws://...', 
-    # browser_pid=12445,
-    # page=playwright_page | browser_context | browser | playwright,
-    # executable_path='...', user_data_dir='...', headless=True,
+    cdp_url='http://localhost:9222' | wss_url='ws://...', 
     # keep_alive=True,
-    # browser_profile=BrowserProfile(..., color_scheme='dark'),
+    # browser_pid=12445,
+    page=playwright_page | browser_context | browser | playwright,
+    # executable_path='...',
+    # user_data_dir='...',
+    # headless=True,
+    browser_profile=BrowserProfile(..., color_scheme='dark'),
     # color_scheme='light',  # <- will take precedence over ^
     # ... other config overrides can go here
 )
 
 # you can optionally start a session and use it outside an Agent, otherwise Agent will automatically start it
 await session.start()
+page = await session.browser_context.new_page()
+await page.goto('https://example.com/load-before-agent-starts')
 
 agent = Agent(
     task='your task here',
-    browser_session=browser_session,
-    # page=page                       # optional: provide a playwright page directly to the agent/session
+    browser_session=browser_session, # provide a browser_session to the agent
+    page=page,                       # or as a shortcut, provide a playwright page directly
 )
 ```
 
-
-`BrowserProfile` is a static, flat collection of all the config parameters used by a `BrowserSession`.
-You can optionally use it to pass around and store a collection of config for a `BrowserSession`.
+`BrowserProfile` is a static, flat collection of config.  
+It can be passed to a `BrowserSession` to start a session using that config.
 
 ```python
 browser_profile = BrowserProfile(
@@ -75,12 +78,14 @@ browser_session = BrowserSession(
 ```
 
 
-## `BrowserSession` Parameters
-
-`BrowserSession` and `BrowserProfile` both accept the same long list of possible config kwargs, most are standard playwright arguments that `playwright.BrowserType.launch_persistent_context()` takes.
+`BrowserSession` and `BrowserProfile` both accept the same long list of main config kwargs, most are standard playwright arguments that `playwright.BrowserType.launch_persistent_context()` takes.
 
 We also provide some extra utility options to control Browser-Use-specific features and make setup easier, 
 e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
+
+
+
+## `BrowserSession` Parameters
 
 
 ### Remote Browser Connection Parameters
@@ -853,11 +858,3 @@ async def run_search():
 For more details on Playwright's browser context options, see the [official documentation](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context).
 
 ---
-
-In the future we may add support for more browser driving methods:
-- Chrome Extension bridge w/ `chrome.debugger` permissions, via relaey server
-- Computer-Use x,y coordinate-type mouse & keyboard interaction driver
-- `adb` Android debugger for controlling remote a Android browser / apps
-- [Appium](https://github.com/appium/appium)-style accessibility UX drivers
-- WebDriver-BiDi to extend CDP
-- In-page JS as an AI assistant you can provide users on your site (like Intercom or analytics)
