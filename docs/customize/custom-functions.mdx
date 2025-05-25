@@ -141,10 +141,9 @@ def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
 
 ### Important Rules
 
-1. **No kwargs allowed in action definitions**: Actions functions must be defined to take positional args only (with type hints), or a single `params` arg containing a pydantic model if you need defaults and optionals.
-2. **Return `ActionResult`**: All actions should return an `ActionResult | str | None`.
-3. **Type hints are required**: They are used to verify that action params don't conflict with special arguments injected by the controller (e.g. `page`)
-4. **Actions called directly must be passed kwargs***: When calling actions from other actions, you must **call using kwargs only**, even though the actions are defined using positional args only (for the same reasons as [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks)).
+1. **Return `ActionResult`**: All actions should return an `ActionResult | str | None`.
+2. **Type hints on arguments are required**: They are used to verify that action params don't conflict with special arguments injected by the controller (e.g. `page`)
+3. **Actions called directly must be passed kwargs**: When calling actions from other actions, you must **call using kwargs only**, even though the actions are usually defined using positional args (for the same reasons as [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks)).
     Action arguments are always matched by name and type, **not** positional order, so this helps prevent ambiguity / reordering issues while keeping action signatures short.
     ```python
     @controller.action('Fill in the country form field')
@@ -152,6 +151,25 @@ def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
         await some_other_action(params=OtherAction(abc=123), page=page)
         await some_action(abc=123, page=page)
     ```
+
+```python3
+# Pattern 2: Simple actions without defaults
+async def input_pin_code(code: int, retries: int, page: Page): ... # ✅ all params required
+
+# Pattern 2: Actions with defaults CANNOT use special params
+async def wait(seconds: int = 3): ... # ✅ no special params needed
+
+# This is a Python SyntaxError - non-default after default
+async def input_pin_code(code: int, retries: int=3, page: Page): ... # ❌ Python SyntaxError!
+
+# Pattern 1: Use Pydantic model for defaults + special params
+class PinCodeParams(BaseModel):
+    code: int
+    retries: int = 3
+
+@controller.action('...', param_model=PinCodeParams)
+async def input_pin_code(params: PinCodeParams, page: Page): ... # ✅ best for defaults
+```
 
 ---
 
