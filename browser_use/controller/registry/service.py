@@ -1,11 +1,14 @@
 import asyncio
+import functools
+import inspect
 import logging
 import re
 from collections.abc import Callable
-from inspect import iscoroutinefunction, signature
-from typing import Any, Generic, Optional, TypeVar
+from inspect import Parameter, iscoroutinefunction, signature
+from typing import Any, Generic, Optional, TypeVar, Union, get_args, get_origin
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from playwright.async_api import Page
 from pydantic import BaseModel, Field, create_model
 
 from browser_use.browser import BrowserSession
@@ -34,6 +37,204 @@ class Registry(Generic[Context]):
 		self.registry = ActionRegistry()
 		self.telemetry = ProductTelemetry()
 		self.exclude_actions = exclude_actions if exclude_actions is not None else []
+
+	def _get_special_param_types(self) -> dict[str, type]:
+		"""Get the expected types for special parameters from SpecialActionParameters"""
+		# Manually define the expected types to avoid issues with Optional handling.
+		# we should try to reduce this list to 0 if possible, give as few standardized objects to all the actions
+		# but each driver should decide what is relevant to expose the action methods,
+		# e.g. playwright page, 2fa code getters, sensitive_data wrappers, other context, etc.
+		return {
+			'context': None,  # Context is a TypeVar, so we can't validate type
+			'browser_session': BrowserSession,
+			'browser': BrowserSession,  # legacy name
+			'browser_context': BrowserSession,  # legacy name
+			'page': Page,
+			'page_extraction_llm': BaseChatModel,
+			'available_file_paths': list,
+			'has_sensitive_data': bool,
+		}
+
+	def _normalize_action_function_signature(
+		self,
+		func: Callable,
+		description: str,
+		param_model: type[BaseModel] | None = None,
+	) -> tuple[Callable, type[BaseModel]]:
+		"""
+		Normalize action function to accept only kwargs.
+
+		Returns:
+			- Normalized function that accepts (*_, params: ParamModel, **special_params)
+			- The param model to use for registration
+		"""
+		sig = signature(func)
+		parameters = list(sig.parameters.values())
+		special_param_types = self._get_special_param_types()
+		special_param_names = set(special_param_types.keys())
+
+		# Step 1: Validate no **kwargs in original function signature
+		# if it needs default values it must use a dedicated param_model: BaseModel instead
+		for param in parameters:
+			if param.kind == Parameter.VAR_KEYWORD:
+				raise ValueError(
+					f"Action '{func.__name__}' has **{param.name} which is not allowed. "
+					f'Actions must have explicit positional parameters only.'
+				)
+
+		# Step 2: Separate special and action parameters
+		action_params = []
+		special_params = []
+		param_model_provided = param_model is not None
+
+		for i, param in enumerate(parameters):
+			# Check if this is a Type 1 pattern (first param is BaseModel)
+			if i == 0 and param_model_provided and param.name not in special_param_names:
+				# This is Type 1 pattern - skip the params argument
+				continue
+
+			if param.name in special_param_names:
+				# Validate special parameter type
+				expected_type = special_param_types.get(param.name)
+				if param.annotation != Parameter.empty and expected_type is not None:
+					# Handle Optional types - normalize both sides
+					param_type = param.annotation
+					origin = get_origin(param_type)
+					if origin is Union:
+						args = get_args(param_type)
+						# Find non-None type
+						param_type = next((arg for arg in args if arg is not type(None)), param_type)
+
+					# Check if types are compatible (exact match, subclass, or generic list)
+					types_compatible = (
+						param_type == expected_type
+						or (
+							inspect.isclass(param_type)
+							and inspect.isclass(expected_type)
+							and issubclass(param_type, expected_type)
+						)
+						or
+						# Handle list[T] vs list comparison
+						(expected_type is list and (param_type is list or get_origin(param_type) is list))
+					)
+
+					if not types_compatible:
+						expected_type_name = getattr(expected_type, '__name__', str(expected_type))
+						param_type_name = getattr(param_type, '__name__', str(param_type))
+						raise ValueError(
+							f"Action '{func.__name__}' parameter '{param.name}: {param_type_name}' "
+							f"conflicts with special argument injected by controller: '{param.name}: {expected_type_name}'"
+						)
+				special_params.append(param)
+			else:
+				action_params.append(param)
+
+		# Step 3: Create or validate param model
+		if not param_model_provided:
+			# Type 2: Generate param model from action params
+			if action_params:
+				params_dict = {}
+				for param in action_params:
+					annotation = param.annotation if param.annotation != Parameter.empty else str
+					default = ... if param.default == Parameter.empty else param.default
+					params_dict[param.name] = (annotation, default)
+
+				param_model = create_model(f'{func.__name__}_Params', __base__=ActionModel, **params_dict)
+			else:
+				# No action params, create empty model
+				param_model = create_model(
+					f'{func.__name__}_Params',
+					__base__=ActionModel,
+				)
+
+		# Step 4: Create normalized wrapper function
+		@functools.wraps(func)
+		async def normalized_wrapper(*args, params: BaseModel | None = None, **kwargs):
+			"""Normalized action that only accepts kwargs"""
+			# Validate no positional args
+			if args:
+				raise TypeError(f'{func.__name__}() does not accept positional arguments, only keyword arguments are allowed')
+
+			# Prepare arguments for original function
+			call_args = []
+			call_kwargs = {}
+
+			# Handle Type 1 pattern (first arg is the param model)
+			if param_model_provided and parameters and parameters[0].name not in special_param_names:
+				if params is None:
+					raise ValueError(f"{func.__name__}() missing required 'params' argument")
+				call_args.append(params)
+				start_idx = 1
+			else:
+				# Type 2 pattern - unpack params into positional args
+				start_idx = 0
+
+				# If params is None, try to create it from kwargs
+				if params is None and action_params:
+					# Extract action params from kwargs
+					action_kwargs = {}
+					for param in action_params:
+						if param.name in kwargs:
+							action_kwargs[param.name] = kwargs[param.name]
+					if action_kwargs:
+						# Use the param_model which has the correct types defined
+						params = param_model(**action_kwargs)
+
+				if params is not None:
+					params_dict = params.model_dump()
+					# Add action params in correct order
+					for param in action_params:
+						if param.name in params_dict:
+							call_args.append(params_dict[param.name])
+						elif param.default != Parameter.empty:
+							call_args.append(param.default)
+						else:
+							raise ValueError(f"{func.__name__}() missing required parameter '{param.name}'")
+
+			# Add special params in correct order
+			for param in parameters[start_idx:]:
+				if param.name in special_param_names:
+					if param.name in kwargs:
+						value = kwargs[param.name]
+						# Check if required special param is None
+						if value is None and param.default == Parameter.empty:
+							if param.name == 'browser_session':
+								raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
+							elif param.name == 'page_extraction_llm':
+								raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+							else:
+								raise ValueError(f"{func.__name__}() missing required special parameter '{param.name}'")
+						call_args.append(value)
+					elif param.default != Parameter.empty:
+						call_args.append(param.default)
+					else:
+						# Special param is required but not provided
+						if param.name == 'browser_session':
+							raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
+						elif param.name == 'page_extraction_llm':
+							raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+						else:
+							raise ValueError(f"{func.__name__}() missing required special parameter '{param.name}'")
+
+			# Call original function with positional args
+			if iscoroutinefunction(func):
+				return await func(*call_args)
+			else:
+				return await asyncio.to_thread(func, *call_args)
+
+		# Update wrapper signature to be kwargs-only
+		new_params = [Parameter('params', Parameter.KEYWORD_ONLY, default=None, annotation=Optional[param_model])]
+
+		# Add special params as keyword-only
+		for sp in special_params:
+			new_params.append(Parameter(sp.name, Parameter.KEYWORD_ONLY, default=sp.default, annotation=sp.annotation))
+
+		# Add **kwargs to accept and ignore extra params
+		new_params.append(Parameter('kwargs', Parameter.VAR_KEYWORD))
+
+		normalized_wrapper.__signature__ = sig.replace(parameters=new_params)
+
+		return normalized_wrapper, param_model
 
 	# @time_execution_sync('--create_param_model')
 	def _create_param_model(self, function: Callable) -> type[BaseModel]:
@@ -72,33 +273,21 @@ class Registry(Generic[Context]):
 			if func.__name__ in self.exclude_actions:
 				return func
 
-			# Create param model from function if not provided
-			actual_param_model = param_model or self._create_param_model(func)
-
-			# Wrap sync functions to make them async
-			if not iscoroutinefunction(func):
-
-				async def async_wrapper(*args, **kwargs):
-					return await asyncio.to_thread(func, *args, **kwargs)
-
-				# Copy the signature and other metadata from the original function
-				async_wrapper.__signature__ = signature(func)
-				async_wrapper.__name__ = func.__name__
-				async_wrapper.__annotations__ = func.__annotations__
-				wrapped_func = async_wrapper
-			else:
-				wrapped_func = func
+			# Normalize the function signature
+			normalized_func, actual_param_model = self._normalize_action_function_signature(func, description, param_model)
 
 			action = RegisteredAction(
 				name=func.__name__,
 				description=description,
-				function=wrapped_func,
+				function=normalized_func,
 				param_model=actual_param_model,
 				domains=final_domains,
 				page_filter=page_filter,
 			)
 			self.registry.actions[func.__name__] = action
-			return func
+
+			# Return the normalized function so it can be called with kwargs
+			return normalized_func
 
 		return decorator
 
@@ -114,7 +303,7 @@ class Registry(Generic[Context]):
 		#
 		context: Context | None = None,
 	) -> Any:
-		"""Execute a registered action with enhanced parameter handling for backward compatibility"""
+		"""Execute a registered action with simplified parameter handling"""
 		if action_name not in self.registry.actions:
 			raise ValueError(f'Action {action_name} not found')
 
@@ -126,51 +315,19 @@ class Registry(Generic[Context]):
 			except Exception as e:
 				raise ValueError(f'Invalid parameters {params} for action {action_name}: {type(e)}: {e}') from e
 
-			# Analyze function signature for smart parameter injection
-			sig = signature(action.function)
-			parameters = list(sig.parameters.values())
-			parameter_names = [param.name for param in parameters]
-
-			# Check if the first parameter is a Pydantic model (using original safe logic)
-			# Only consider it pydantic if:
-			# 1. There are parameters
-			# 2. First parameter has a BaseModel annotation
-			# 3. AND the function signature actually takes a BaseModel as first param (not auto-generated)
-			try:
-				is_pydantic = (
-					parameters
-					and len(parameters) > 0
-					and hasattr(parameters[0], 'annotation')
-					and parameters[0].annotation != parameters[0].empty
-					and issubclass(parameters[0].annotation, BaseModel)
-					and
-					# Additional check: make sure the first parameter name suggests it's actually a pydantic model
-					parameters[0].name in ['params', 'param', 'model']
-					or parameters[0].name.endswith('_model')
-				)
-			except (TypeError, AttributeError):
-				is_pydantic = False
-
 			if sensitive_data:
-				validated_params = self._replace_sensitive_data(validated_params, sensitive_data, browser_session)
+				# Get current URL if browser_session is provided
+				current_url = None
+				if browser_session:
+					if browser_session.agent_current_page:
+						current_url = browser_session.agent_current_page.url
+					else:
+						current_page = await browser_session.get_current_page()
+						current_url = current_page.url if current_page else None
+				validated_params = self._replace_sensitive_data(validated_params, sensitive_data, current_url)
 
-			# Check if the action requires special parameters and validate they're provided
-			if (
-				'browser_session' in parameter_names
-				or 'browser' in parameter_names
-				or 'browser_context' in parameter_names
-				or 'page' in parameter_names
-			) and not browser_session:
-				raise ValueError(f'Action {action_name} requires browser_session but none provided.')
-			if 'page_extraction_llm' in parameter_names and not page_extraction_llm:
-				raise ValueError(f'Action {action_name} requires page_extraction_llm but none provided.')
-			if 'available_file_paths' in parameter_names and not available_file_paths:
-				raise ValueError(f'Action {action_name} requires available_file_paths but none provided.')
-			if 'context' in parameter_names and not context:
-				raise ValueError(f'Action {action_name} requires context but none provided.')
-
-			# Create special parameters model with all available values
-			special_params_data = {
+			# Build special context dict
+			special_context = {
 				'context': context,
 				'browser_session': browser_session,
 				'browser': browser_session,  # legacy support
@@ -181,58 +338,24 @@ class Registry(Generic[Context]):
 			}
 
 			# Handle async page parameter if needed
-			if 'page' in parameter_names and browser_session:
-				special_params_data['page'] = await browser_session.get_current_page()
+			if browser_session:
+				# Check if function signature includes 'page' parameter
+				sig = signature(action.function)
+				if 'page' in sig.parameters:
+					special_context['page'] = await browser_session.get_current_page()
 
-			# Create special parameters object without validation to preserve BrowserSession state
-			# We bypass model_validate to avoid copying BrowserSession and losing private attributes
-			special_params = SpecialActionParameters.model_construct(**special_params_data)
+			# All functions are now normalized to accept kwargs only
+			# Call with params and unpacked special context
+			return await action.function(params=validated_params, **special_context)
 
-			# Log legacy usage
-			if 'browser' in parameter_names:
-				logger.debug(
-					f'You should update this action {action_name}(browser: BrowserContext) -> to take {action_name}(browser_session: BrowserSession) instead'
-				)
-			if 'browser_context' in parameter_names:
-				logger.debug(
-					f'You should update this action {action_name}(browser_context: BrowserContext) -> to take {action_name}(browser_session: BrowserSession) instead'
-				)
-
-			# Enhanced parameter injection logic using Pydantic
-			if is_pydantic:
-				# For pydantic functions: function(pydantic_model, **special_params)
-				# Extract special parameters needed by this function (keep objects, don't serialize)
-				needed_special_params = set(parameter_names[1:]) & set(SpecialActionParameters.model_fields.keys())
-				injection_params = {}
-				for param_name in needed_special_params:
-					value = getattr(special_params, param_name, None)
-					if value is not None:
-						injection_params[param_name] = value
-
-				return await action.function(validated_params, **injection_params)
+		except ValueError as e:
+			# Preserve ValueError messages from validation
+			if 'requires browser_session but none provided' in str(e) or 'requires page_extraction_llm but none provided' in str(
+				e
+			):
+				raise RuntimeError(str(e)) from e
 			else:
-				# For individual parameter functions: function(**all_params)
-				# Merge user params with needed special params, avoiding conflicts
-				param_dict = validated_params.model_dump()
-
-				# Extract special parameters needed by this function (keep objects, don't serialize)
-				needed_special_params = set(parameter_names) & set(SpecialActionParameters.model_fields.keys())
-				injection_params = {}
-				for param_name in needed_special_params:
-					value = getattr(special_params, param_name, None)
-					if value is not None:
-						injection_params[param_name] = value
-
-				# Remove any special params from user params to avoid conflicts (special params take precedence)
-				for param_name in injection_params:
-					if param_name in param_dict:
-						logger.debug(f'Removing {param_name} from param_dict to avoid conflict')
-						param_dict.pop(param_name)
-
-				# Combine all parameters
-				final_params = {**param_dict, **injection_params}
-				return await action.function(**final_params)
-
+				raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 		except Exception as e:
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 
@@ -242,9 +365,7 @@ class Registry(Generic[Context]):
 			url_info = f' on {current_url}' if current_url and current_url != 'about:blank' else ''
 			logger.info(f'🔒 Using sensitive data placeholders: {", ".join(sorted(placeholders_used))}{url_info}')
 
-	def _replace_sensitive_data(
-		self, params: BaseModel, sensitive_data: dict[str, Any], browser_session: BrowserSession = None
-	) -> BaseModel:
+	def _replace_sensitive_data(self, params: BaseModel, sensitive_data: dict[str, Any], current_url: str = None) -> BaseModel:
 		"""
 		Replaces sensitive data placeholders in params with actual values.
 
@@ -252,7 +373,7 @@ class Registry(Generic[Context]):
 			params: The parameter object containing <secret>placeholder</secret> tags
 			sensitive_data: Dictionary of sensitive data, either in old format {key: value}
 						   or new format {domain_pattern: {key: value}}
-			browser_session: Optional browser session to get the current URL for domain matching
+			current_url: Optional current URL for domain matching
 
 		Returns:
 			BaseModel: The parameter object with placeholders replaced by actual values
@@ -264,17 +385,6 @@ class Registry(Generic[Context]):
 		# Set to track successfully replaced placeholders
 		replaced_placeholders = set()
 
-		# Determine current URL if browser_session is provided
-		current_url = None
-		if browser_session:
-			try:
-				# Get current URL from browser session - do this synchronously to avoid complications
-				loop = asyncio.get_event_loop()
-				current_page = loop.run_until_complete(browser_session.get_current_page())
-				current_url = current_page.url if current_page else None
-			except Exception as e:
-				logger.debug(f'Failed to get current URL from browser session: {e}')
-
 		# Process sensitive data based on format and current URL
 		applicable_secrets = {}
 
@@ -282,21 +392,18 @@ class Registry(Generic[Context]):
 			if isinstance(content, dict):
 				# New format: {domain_pattern: {key: value}}
 				# Only include secrets for domains that match the current URL
-				if current_url is None:
-					# No URL available, include all secrets for all domains
-					applicable_secrets.update(content)
-				elif current_url != 'about:blank':
-					# Don't expose domain-specific secrets on about:blank
+				if current_url and current_url != 'about:blank':
+					# it's a real url, check it using our custom allowed_domains scheme://*.example.com glob matching
 					if match_url_with_domain_pattern(current_url, domain_or_key):
 						applicable_secrets.update(content)
 			else:
-				# Old format: {key: value}
+				# Old format: {key: value}, expose to all domains (only allowed for legacy reasons)
 				applicable_secrets[domain_or_key] = content
 
 		# Filter out empty values
 		applicable_secrets = {k: v for k, v in applicable_secrets.items() if v}
 
-		def replace_secrets(value):
+		def recursively_replace_secrets(value: str | dict | list) -> str | dict | list:
 			if isinstance(value, str):
 				matches = secret_pattern.findall(value)
 
@@ -311,13 +418,13 @@ class Registry(Generic[Context]):
 
 				return value
 			elif isinstance(value, dict):
-				return {k: replace_secrets(v) for k, v in value.items()}
+				return {k: recursively_replace_secrets(v) for k, v in value.items()}
 			elif isinstance(value, list):
-				return [replace_secrets(v) for v in value]
+				return [recursively_replace_secrets(v) for v in value]
 			return value
 
 		params_dump = params.model_dump()
-		processed_params = replace_secrets(params_dump)
+		processed_params = recursively_replace_secrets(params_dump)
 
 		# Log sensitive data usage
 		self._log_sensitive_data_usage(replaced_placeholders, current_url)

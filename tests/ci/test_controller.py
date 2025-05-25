@@ -292,6 +292,20 @@ class TestControllerIntegration:
 	@pytest.mark.asyncio
 	async def test_wait_action(self, controller, browser_session):
 		"""Test that the wait action correctly waits for the specified duration."""
+
+		# verify that it's in the default action set
+		wait_action = None
+		for action_name, action in controller.registry.registry.actions.items():
+			if 'wait' in action_name.lower() and 'seconds' in str(action.param_model.model_fields):
+				wait_action = action
+				break
+		assert wait_action is not None, 'Could not find wait action in controller'
+
+		# Check that it has seconds parameter with default
+		assert 'seconds' in wait_action.param_model.model_fields
+		schema = wait_action.param_model.model_json_schema()
+		assert schema['properties']['seconds']['default'] == 3
+
 		# Create wait action for 1 second - fix to use a dictionary
 		wait_action = {'wait': {'seconds': 1}}  # Corrected format
 
@@ -309,6 +323,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Waiting for' in result.extracted_content
 
 		# Verify that at least 1 second has passed
