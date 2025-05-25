@@ -40,7 +40,10 @@ class Registry(Generic[Context]):
 
 	def _get_special_param_types(self) -> dict[str, type]:
 		"""Get the expected types for special parameters from SpecialActionParameters"""
-		# Manually define the expected types to avoid issues with Optional handling
+		# Manually define the expected types to avoid issues with Optional handling.
+		# we should try to reduce this list to 0 if possible, give as few standardized objects to all the actions
+		# but each driver should decide what is relevant to expose the action methods,
+		# e.g. playwright page, 2fa code getters, sensitive_data wrappers, other context, etc.
 		return {
 			'context': None,  # Context is a TypeVar, so we can't validate type
 			'browser_session': BrowserSession,
@@ -62,7 +65,7 @@ class Registry(Generic[Context]):
 		Normalize action function to accept only kwargs.
 
 		Returns:
-			- Normalized function that accepts (*, params: ParamModel, **special_params)
+			- Normalized function that accepts (*_, params: ParamModel, **special_params)
 			- The param model to use for registration
 		"""
 		sig = signature(func)
@@ -70,7 +73,8 @@ class Registry(Generic[Context]):
 		special_param_types = self._get_special_param_types()
 		special_param_names = set(special_param_types.keys())
 
-		# Step 1: Validate no **kwargs in original function
+		# Step 1: Validate no **kwargs in original function signature
+		# if it needs default values it must use a dedicated param_model: BaseModel instead
 		for param in parameters:
 			if param.kind == Parameter.VAR_KEYWORD:
 				raise ValueError(
@@ -145,11 +149,11 @@ class Registry(Generic[Context]):
 
 		# Step 4: Create normalized wrapper function
 		@functools.wraps(func)
-		async def normalized_wrapper(*, params: BaseModel | None = None, **kwargs):
+		async def normalized_wrapper(*args, params: BaseModel | None = None, **kwargs):
 			"""Normalized action that only accepts kwargs"""
 			# Validate no positional args
-			if any(k.startswith('_') for k in kwargs.keys()):
-				raise TypeError(f'{func.__name__}() does not accept positional arguments')
+			if args:
+				raise TypeError(f'{func.__name__}() does not accept positional arguments, only keyword arguments are allowed')
 
 			# Prepare arguments for original function
 			call_args = []
@@ -164,6 +168,18 @@ class Registry(Generic[Context]):
 			else:
 				# Type 2 pattern - unpack params into positional args
 				start_idx = 0
+
+				# If params is None, try to create it from kwargs
+				if params is None and action_params:
+					# Extract action params from kwargs
+					action_kwargs = {}
+					for param in action_params:
+						if param.name in kwargs:
+							action_kwargs[param.name] = kwargs[param.name]
+					if action_kwargs:
+						# Use the param_model which has the correct types defined
+						params = param_model(**action_kwargs)
+
 				if params is not None:
 					params_dict = params.model_dump()
 					# Add action params in correct order

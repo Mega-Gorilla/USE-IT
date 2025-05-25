@@ -432,6 +432,26 @@ class TestRegistryEdgeCases:
 	"""Test edge cases and error conditions"""
 
 	@pytest.mark.asyncio
+	async def test_decorated_action_rejects_positional_args(self, registry, test_browser):
+		"""Test that decorated actions reject positional arguments"""
+
+		@registry.action('Action that should reject positional args')
+		async def test_action(cell_or_range: str, browser_session: BrowserSession):
+			page = await browser_session.get_current_page()
+			return ActionResult(extracted_content=f'Selected cell {cell_or_range} on {page.url}')
+
+		# Test that calling with positional arguments raises TypeError
+		with pytest.raises(
+			TypeError, match='test_action\\(\\) does not accept positional arguments, only keyword arguments are allowed'
+		):
+			await test_action(test_browser, 'A1:B2')
+
+		# Test that calling with keyword arguments works
+		result = await test_action(browser_session=test_browser, cell_or_range='A1:B2')
+		assert isinstance(result, ActionResult)
+		assert 'Selected cell A1:B2 on' in result.extracted_content
+
+	@pytest.mark.asyncio
 	async def test_missing_required_browser_session(self, registry):
 		"""Test that actions requiring browser_session fail appropriately when not provided"""
 
