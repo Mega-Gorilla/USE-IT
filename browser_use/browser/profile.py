@@ -738,6 +738,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
 
+			# Auto-inherit DISPLAY environment variable for headful mode
+			if 'DISPLAY' in os.environ and 'DISPLAY' not in self.env:
+				self.env['DISPLAY'] = os.environ['DISPLAY']
+
 		# automatically setup viewport if any config requires it
 		use_viewport = self.headless or self.viewport or self.device_scale_factor
 		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
