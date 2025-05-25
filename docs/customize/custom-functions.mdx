@@ -1,31 +1,32 @@
 ---
 title: "Custom Functions"
-description: "Extend default agent and write custom function calls"
+description: "Extend default agent and write custom action functions to do certain tasks"
 icon: "function"
 ---
 
 ## Basic Function Registration
 
-Functions can be either `sync` or `async`. Keep them focused and single-purpose.
+Custom action functions can be either `sync` or `async`. Keep them focused and single-purpose.
 
 ```python
+from pydantic import BaseModel
 from browser_use import Controller, ActionResult
-# Initialize the controller
+
 controller = Controller()
 
-@controller.action('Ask user for information', domains=['https://difficult.example.com'])   # pass domains= or page_filter= to limit actions to certain pages
+@controller.action('Ask human for help with a question', domains=['https://difficult.example.com'])   # pass allowed_domains= or page_filter= to limit actions to certain pages
 def ask_human(question: str) -> ActionResult:
     answer = input(f'\n{question}\nInput: ')
-    return ActionResult(extracted_content=answer)
+    return ActionResult(extracted_content=answer, include_in_memory=True)
 ```
 
 <Note>
   Basic `Controller` has all basic functionality you might need to interact with
-  the browser already implemented.
+  the browser already implemented. We provide a default set of common actions, e.g. `new_tab`, `input_text_into_element`, etc.
 </Note>
 
 ```python
-# ... then pass controller to the agent
+# pass controller to the agent to use it
 agent = Agent(
     task=task,
     llm=llm,
@@ -34,22 +35,24 @@ agent = Agent(
 ```
 
 <Note>
-  Keep the function name and description short and concise. The Agent use the
-  function solely based on the name and description. The stringified output of
-  the action is passed to the Agent.
+  Keep the function name and description short and concise. The LLM chooses between actions
+  to run solely based on the function name and description. The LLM decides the params to pass
+  to the action based on their names and type signatures. The stringified output of
+  the action is passed back to the LLM, and optionally persisted in the long-term memory when `ActionResult(..., include_in_memory=True)`.
 </Note>
 
 ## Browser-Aware Functions
 
-For actions that need browser access, add special parameters after your action parameters. The framework will automatically inject these:
+For actions that need browser access, add special parameters after your action parameters. The framework will automatically inject these if you request them:
 
 ### Available Special Parameters
-- `browser_session: BrowserSession` - The current browser session
+
 - `page: Page` - The current Playwright page (shortcut for `browser_session.get_current_page()`)
-- `context: AgentContext` - Full agent context including history
-- `page_extraction_llm: BaseChatModel` - LLM instance for page content extraction
-- `available_file_paths: list[str]` - List of available file paths
-- `has_sensitive_data: bool` - Whether the page contains sensitive data
+- `browser_session: BrowserSession` - The current browser session (and playwright context via `browser_session.browser_context`)
+- `context: AgentContext` - Any optional top-level context object passed to the Agent, e.g. Agent(context=user_provided_obj)
+- `page_extraction_llm: BaseChatModel` - LLM instance used for page content extraction
+- `available_file_paths: list[str]` - List of available file paths for upload / processing
+- `has_sensitive_data: bool` - Whether the action content contains sensitive data markers (check this to avoid logging sensitive data to terminal by accident)
 
 ```python
 from playwright.async_api import Page
@@ -57,9 +60,9 @@ from browser_use import Controller, ActionResult
 
 controller = Controller()
 
-@controller.action('Open website')
-async def open_website(url: str, page: Page) -> ActionResult:
-    await page.goto(url)
+@controller.action('Type keyboard input into a page')
+async def input_text_into_page(text: str, page: Page) -> ActionResult:
+    await page.keyboard.type(text)
     return ActionResult(extracted_content='Website opened')
 ```
 ```python
@@ -69,9 +72,13 @@ controller = Controller()
 
 @controller.action('Open website')
 async def open_website(url: str, browser_session: BrowserSession) -> ActionResult:
-    page = await browser_session.get_current_page()
+    all_tabs = await browser_session.browser_context.pages
+    for tab in all_tabs:
+        if tab.url == url:
+            await tab.bring_to_foreground()
+            return ActionResult(extracted_content=f'Switched to tab with url {url}')
     await page.goto(url)
-    return ActionResult(extracted_content='Website opened')
+    return ActionResult(extracted_content=f'Opened new tab with url {url}')
 ```
 
 ## Structured Parameters with Pydantic
@@ -89,17 +96,15 @@ class JobDetails(BaseModel):
     title: str
     company: str
     job_link: str
-    salary: Optional[str] = None
+    salary: str | None = None      # optional parameters are allowed
 
 @controller.action(
     'Save job details which you found on page',
     param_model=JobDetails
 )
-async def save_job(params: JobDetails, browser_session: BrowserSession) -> ActionResult:
+async def save_job(params: JobDetails, page: Page) -> ActionResult:
     print(f"Saving job: {params.title} at {params.company}")
 
-    # Access browser if needed
-    page = await browser_session.get_current_page()
     await page.goto(params.job_link)
     
     return ActionResult(extracted_content=f"Saved job: {params.title}")
@@ -136,10 +141,20 @@ def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
 
 ### Important Rules
 
-1. **No **kwargs allowed**: Actions must use explicit parameters only
-2. **Return ActionResult**: All actions should return an `ActionResult` instance
-3. **Special parameters come after action parameters**: Always define your action parameters first, then any special parameters you need
-4. **Type hints are recommended**: They help with validation and IDE support
+1. **No **kwargs allowed**: Actions functions must be defined to take positional parameters only with types, if you want defaults or optionals use a param_model
+2. **Return ActionResult**: All actions should return an `ActionResult` instance, string, or None
+3. **Type hints are required**: They are used to verify that action parameters don't conflict with the special arguments the context injects (e.g. `page`)
+4. When calling actions from other actions, you must **call using kwargs only** (for the same reasons [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks) [requires this](https://pluggy.readthedocs.io/en/stable/index.html#:~:text=Note%20that%20you,should%20not%20error%3A))
+    ```python
+    @controller.action('Fill in the country form field')
+    def input_country_field(country: str, page: Page) -> ActionResult:
+        await some_other_action(params=OtherAction(abc=123), page=page)
+        await some_action(abc=123, page=page)
+    ```
+    Action arguments are always matched by name and type, **not** positional order, so this helps prevent ambiguity / reordering issues.
+
+---
+
 
 ## Using Custom Actions with multiple agents
 
@@ -176,9 +191,33 @@ await agent2.run()
 
 
 ## Exclude functions
-If you want less actions to be used by the agent, you can exclude them from the controller.
+
+If you want to exclude some registered actions and make them unavailable to the agent, you can do:
 ```python
 controller = Controller(exclude_actions=['open_tab', 'search_google'])
+agent = Agent(controller=controller, ...)
 ```
 
 For more examples like file upload or notifications, visit [examples/custom-functions](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions).
+
+
+If you want actions to only be available on certain pages, and to not tell the LLM about them on other pages,
+ you can use the `allowed_domains` and `page_filter`:
+
+```python
+from pydantic import BaseModel
+from browser_use import Controller, ActionResult
+
+controller = Controller()
+
+async def is_login_page(page: Page):
+    if api.some_service.check_url(page.url):
+        await fillout_form(page)
+        return 'filled out form with secret details'
+    raise ActionResult(success=False, error='not allowed to fill out forms according to external service')
+
+@controller.action('Fill out secret_form', allowed_domains=['https://*.example.com'], page_filter=is_login_page)
+def fill_out_form(...) -> ActionResult:
+    ... will only be available to LLM on pages that match https://*.example.com *AND* where is_login_page(page) returns True
+
+```
