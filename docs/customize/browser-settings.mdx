@@ -10,6 +10,7 @@ Browser Use uses [playwright](https://playwright.dev/python/docs/api/class-brows
 from browser_use import BrowserProfile, BrowserSession
 ````
 
+
 - `BrowserSession(**params)` is Browser Use's object that tracks a connection to a running browser. It holds:
   - the `playwright`, `browser`, `browser_context`, and `page` objects and tracks which tabs the agent/human are focused on
   - the helper methods to launch and connect to remote and local browsers
@@ -53,6 +54,7 @@ agent = Agent(
 )
 ```
 
+
 `BrowserProfile` is a static, flat collection of all the config parameters used by a `BrowserSession`.
 You can optionally use it to pass around and store a collection of config for a `BrowserSession`.
 
@@ -70,6 +72,8 @@ browser_session = BrowserSession(
     browser_profile=browser_profile,
     headless=False, # <- extra kwargs passed to session will override values from profile
 )
+```
+
 
 ## `BrowserSession` Parameters
 
@@ -81,14 +85,29 @@ e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
 
 ### Remote Browser Connection Parameters
 
-- **wss_url** (str | None, default: `None`)
-  WSS URL of the node.js playwright browser server to connect to
+#### `wss_url`
 
-- **cdp_url** (str | None, default: `None`)
-  CDP URL of the browser to connect to (e.g., http://localhost:9222)
+```python
+wss_url: str | None = None
+```
 
-- **browser_pid** (int | None, default: `None`)
-  PID of a running chromium-based browser process to connect to on localhost
+WSS URL of the node.js playwright browser server to connect to
+
+#### `cdp_url`
+
+```python
+cdp_url: str | None = None
+```
+
+CDP URL of the browser to connect to (e.g., http://localhost:9222)
+
+#### `browser_pid`
+
+```python
+browser_pid: int | None = None
+```
+
+PID of a running chromium-based browser process to connect to on localhost
 
 <Note>
   For web scraping tasks on sites that restrict automated access, we recommend
@@ -98,91 +117,206 @@ e.g. `allowed_domains`, `keep_alive`, `highlight_elements`, and more.
 
 ### Runtime State / Parameters
 
-- **browser_profile** (BrowserProfile, default: `BrowserProfile()`)
-  BrowserProfile instance containing config to use for the BrowserSession
+#### `browser_profile`
 
-- **playwright** (Playwright | None, default: `None`)
-  Optional playwright or patchright API client object to use
-  result of (await async_playwright().start()) or (await async_patchright().start())
+```python
+browser_profile: BrowserProfile = BrowserProfile()
+```
 
-- **browser** (Browser | None, default: `None`)
-  Playwright Browser object to use (optional)
+BrowserProfile instance containing config to use for the BrowserSession
 
-- **browser_context** (BrowserContext | None, default: `None`)
-  Playwright BrowserContext object to use (optional)
+#### `playwright`
 
-- **initialized** (bool, default: `False`)
-  Mark BrowserSession as already initialized, skips launch/connection (not recommended)
+```python
+playwright: Playwright | None = None
+```
 
-- **page** *aka* **agent_current_page** (Page | None, default: `None`)
-  Foreground Page that the agent is focused on, can also be passed as `page=...` as a shortcut.
+Optional playwright or patchright API client object to use
+result of (await async_playwright().start()) or (await async_patchright().start())
 
-- **human_current_page** (Page | None, default: `None`)
-  Foreground Page that the human is focused on
+#### `browser`
+
+```python
+browser: Browser | None = None
+```
+
+Playwright Browser object to use (optional)
+
+#### `browser_context`
+
+```python
+browser_context: BrowserContext | None = None
+```
+
+Playwright BrowserContext object to use (optional)
+
+#### `initialized`
+
+```python
+initialized: bool = False
+```
+
+Mark BrowserSession as already initialized, skips launch/connection (not recommended)
+
+#### `page` *aka* `agent_current_page`
+
+```python
+page: Page | None = None
+```
+
+Foreground Page that the agent is focused on, can also be passed as `page=...` as a shortcut.
+
+#### `human_current_page`
+
+```python
+human_current_page: Page | None = None
+```
+
+Foreground Page that the human is focused on
 
 
 ## Browser-Use Parameters
 
 These parameters control browser-use specific features, and are outside the standard playwright parameter set.
 
-- **keep_alive** (bool | None, default: `None`)
-  Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
+#### `keep_alive`
 
-- **allowed_domains** (list[str] | None, default: `None`)
-  List of allowed domains for navigation. If None, all domains are allowed.
-  Example: `['google.com', '*.wikipedia.org']` - Here the agent will only be able to access `google.com` exactly and `wikipedia.org` + `*.wikipedia.org`.
+```python
+keep_alive: bool | None = None
+```
+
+Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
+
+#### `allowed_domains`
+
+```python
+allowed_domains: list[str] | None = None
+```
+
+List of allowed domains for navigation. If None, all domains are allowed.
+Example: `['google.com', '*.wikipedia.org']` - Here the agent will only be able to access `google.com` exactly and `wikipedia.org` + `*.wikipedia.org`.
   
-  Glob patterns are supported:
-  - `['example.com']` ✅ will match only `https://example.com/*` exactly, subdomains will not be allowed.
-    It's always the most secure to list all the domains you want to give the access to explicitly w/ schemes e.g.
-    `['*://google.com', 'http*://www.google.com', 'https://myaccount.google.com', 'https://mail.google.com', 'https://docs.google.com']`
-  - `['*.example.com']` ⚠️ **CAUTION** this will match `https://example.com` and *all* its subdomains.
-    Make sure *all* the subdomains are safe for the agent! `abc.example.com`, `def.example.com`, ..., `useruploads.example.com`, `admin.example.com`
+Glob patterns are supported:
+- `['example.com']` ✅ will match only `https://example.com/*` exactly, subdomains will not be allowed.
+  It's always the most secure to list all the domains you want to give the access to explicitly w/ schemes e.g.
+  `['*://google.com', 'http*://www.google.com', 'https://myaccount.google.com', 'https://mail.google.com', 'https://docs.google.com']`
+- `['*.example.com']` ⚠️ **CAUTION** this will match `https://example.com` and *all* its subdomains.
+  Make sure *all* the subdomains are safe for the agent! `abc.example.com`, `def.example.com`, ..., `useruploads.example.com`, `admin.example.com`
 
-- **disable_security** (bool, default: `False`)
-  Completely disables all basic browser security features. Allows interacting across cross-site iFrames boundaries, but very INSECURE, don't visit untrusted URLs or use cookies.
+#### `disable_security`
 
-- **deterministic_rendering** (bool, default: `False`)
-  Enable deterministic rendering flags for consistent screenshots.
+```python
+disable_security: bool = False
+```
 
-- **highlight_elements** (bool, default: `True`)
-  Highlight interactive elements on the screen with colorful bounding boxes.
+Completely disables all basic browser security features. Allows interacting across cross-site iFrames boundaries, but very INSECURE, don't visit untrusted URLs or use cookies.
 
-- **viewport_expansion** (int, default: `500`)
-  Viewport expansion in pixels. With this you can control how much of the page is included in the context of the LLM:
-  - `-1`: All elements from the entire page will be included, regardless of visibility (highest token usage but most complete).
-  - `0`: Only elements which are currently visible in the viewport will be included.
-  - `500` (default): Elements in the viewport plus an additional 500 pixels in each direction will be included, providing a balance between context and token usage.
+#### `deterministic_rendering`
 
-- **include_dynamic_attributes** (bool, default: `True`)
-  Include dynamic attributes in selectors for better element targeting.
+```python
+deterministic_rendering: bool = False
+```
 
-- **minimum_wait_page_load_time** (float, default: `0.25`)
-  Minimum time to wait before capturing page state for LLM input.
+Enable deterministic rendering flags for consistent screenshots.
 
-- **wait_for_network_idle_page_load_time** (float, default: `0.5`)
-  Time to wait for network activity to cease. Increase to 3-5s for slower websites. This tracks essential content loading, not dynamic elements like videos.
+#### `highlight_elements`
 
-- **maximum_wait_page_load_time** (float, default: `5.0`)
-  Maximum time to wait for page load before proceeding.
+```python
+highlight_elements: bool = True
+```
 
-- **wait_between_actions** (float, default: `0.5`)
-  Time to wait between agent actions.
+Highlight interactive elements on the screen with colorful bounding boxes.
 
-- **cookies_file** (str | None, default: `None`)
-  File to save cookies to.
+#### `viewport_expansion`
 
-- **downloads_dir** (Path | str, default: `'~/.config/browseruse/downloads'`)
-  Directory for downloads.
+```python
+viewport_expansion: int = 500
+```
 
-- **save_downloads_path** (str | None, default: `None`)
-  Directory for saving downloads (alternative to downloads_dir).
+Viewport expansion in pixels. With this you can control how much of the page is included in the context of the LLM:
+- `-1`: All elements from the entire page will be included, regardless of visibility (highest token usage but most complete).
+- `0`: Only elements which are currently visible in the viewport will be included.
+- `500` (default): Elements in the viewport plus an additional 500 pixels in each direction will be included, providing a balance between context and token usage.
 
-- **profile_directory** (str, default: `'Default'`)
-  Chrome profile directory name (e.g., 'Profile 1', 'Profile 2').
+#### `include_dynamic_attributes`
 
-- **window_position** (dict | None, default: `{"width": 0, "height": 0}`)
-  Window position from top-left corner.
+```python
+include_dynamic_attributes: bool = True
+```
+
+Include dynamic attributes in selectors for better element targeting.
+
+#### `minimum_wait_page_load_time`
+
+```python
+minimum_wait_page_load_time: float = 0.25
+```
+
+Minimum time to wait before capturing page state for LLM input.
+
+#### `wait_for_network_idle_page_load_time`
+
+```python
+wait_for_network_idle_page_load_time: float = 0.5
+```
+
+Time to wait for network activity to cease. Increase to 3-5s for slower websites. This tracks essential content loading, not dynamic elements like videos.
+
+#### `maximum_wait_page_load_time`
+
+```python
+maximum_wait_page_load_time: float = 5.0
+```
+
+Maximum time to wait for page load before proceeding.
+
+#### `wait_between_actions`
+
+```python
+wait_between_actions: float = 0.5
+```
+
+Time to wait between agent actions.
+
+#### `cookies_file`
+
+```python
+cookies_file: str | None = None
+```
+
+File to save cookies to.
+
+#### `downloads_dir`
+
+```python
+downloads_dir: Path | str = '~/.config/browseruse/downloads'
+```
+
+Directory for downloads.
+
+#### `save_downloads_path`
+
+```python
+save_downloads_path: str | None = None
+```
+
+Directory for saving downloads (alternative to downloads_dir).
+
+#### `profile_directory`
+
+```python
+profile_directory: str = 'Default'
+```
+
+Chrome profile directory name (e.g., 'Profile 1', 'Profile 2').
+
+#### `window_position`
+
+```python
+window_position: dict | None = {"width": 0, "height": 0}
+```
+
+Window position from top-left corner.
 
 ---
 
@@ -195,50 +329,126 @@ They are defined in `browser_use/browser/profile.py`.
 
 ### Launch Settings
 
-- **headless** (bool | None, default: `None`)
-  Runs the browser without a visible UI. If None, auto-detects based on display availability.
+#### `headless`
 
-- **channel** (BrowserChannel, default: `'chromium'`)
-  Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, `'msedge-beta'`, `'msedge-dev'`, `'msedge-canary'`
+```python
+headless: bool | None = None
+```
 
-- **executable_path** (str | Path | None, default: `None`)
-  Path to browser executable for custom installations.
+Runs the browser without a visible UI. If None, auto-detects based on display availability.
 
-- **user_data_dir** (str | Path | None, default: `'~/.config/browseruse/profiles/default'`)
-  Directory for browser profile data. Set to None to use an ephemeral profile aka incognito mode.
+#### `channel`
 
-- **args** (list[str], default: `[]`)
-  Additional command-line arguments to pass to the browser.
+```python
+channel: BrowserChannel = 'chromium'
+```
 
-- **ignore_default_args** (list[str] | bool, default: `['--enable-automation', '--disable-extensions']`)
-  List of default CLI args to stop playwright from applying.
+Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, `'msedge-beta'`, `'msedge-dev'`, `'msedge-canary'`
 
-- **env** (dict[str, str], default: `{}`)
-  Environment variables to set when launching browser.
+#### `executable_path`
 
-- **chromium_sandbox** (bool, default: `not IN_DOCKER`)
-  Whether to enable Chromium sandboxing (recommended unless inside Docker).
+```python
+executable_path: str | Path | None = None
+```
 
-- **devtools** (bool, default: `False`)
-  Whether to open DevTools panel automatically (only works when headless=False).
+Path to browser executable for custom installations.
 
-- **slow_mo** (float, default: `0`)
-  Slow down actions by this many milliseconds.
+#### `user_data_dir`
 
-- **timeout** (float, default: `30000`)
-  Default timeout in milliseconds for connecting to a remote browser.
+```python
+user_data_dir: str | Path | None = '~/.config/browseruse/profiles/default'
+```
 
-- **accept_downloads** (bool, default: `True`)
-  Whether to automatically accept all downloads.
+Directory for browser profile data. Set to None to use an ephemeral profile aka incognito mode.
 
-- **proxy** (dict | None, default: `None`)
-  Proxy settings. Example: `{"server": "http://proxy.com:8080", "username": "user", "password": "pass"}`
+#### `args`
 
-- **permissions** (list[str], default: `['clipboard-read', 'clipboard-write', 'notifications']`)
-  Browser permissions to grant.
+```python
+args: list[str] = []
+```
 
-- **storage_state** (str | Path | dict | None, default: `None`)
-  Browser storage state (cookies, localStorage). Can be file path or dict.
+Additional command-line arguments to pass to the browser.
+
+#### `ignore_default_args`
+
+```python
+ignore_default_args: list[str] | bool = ['--enable-automation', '--disable-extensions']
+```
+
+List of default CLI args to stop playwright from applying.
+
+#### `env`
+
+```python
+env: dict[str, str] = {}
+```
+
+Environment variables to set when launching browser.
+
+#### `chromium_sandbox`
+
+```python
+chromium_sandbox: bool = not IN_DOCKER
+```
+
+Whether to enable Chromium sandboxing (recommended unless inside Docker).
+
+#### `devtools`
+
+```python
+devtools: bool = False
+```
+
+
+Whether to open DevTools panel automatically (only works when headless=False).
+
+#### `slow_mo`
+
+```python
+slow_mo: float = 0
+```
+
+Slow down actions by this many milliseconds.
+
+#### `timeout`
+
+```python
+timeout: float = 30000
+```
+
+Default timeout in milliseconds for connecting to a remote browser.
+
+#### `accept_downloads`
+
+```python
+accept_downloads: bool = True
+```
+
+Whether to automatically accept all downloads.
+
+#### `proxy`
+
+```python
+proxy: dict | None = None
+```
+
+Proxy settings. Example: `{"server": "http://proxy.com:8080", "username": "user", "password": "pass"}`
+
+#### `permissions`
+
+```python
+permissions: list[str] = ['clipboard-read', 'clipboard-write', 'notifications']
+```
+
+Browser permissions to grant.
+
+#### `storage_state`
+
+```python
+storage_state: str | Path | dict | None = None
+```
+
+Browser storage state (cookies, localStorage). Can be file path or dict.
 
 
 
@@ -246,141 +456,346 @@ They are defined in `browser_use/browser/profile.py`.
 
 These control how the browser waits for CDP API calls to complete and pages to load.
 
-- **default_timeout** (float | None, default: `None`)
-  Default timeout for Playwright operations in milliseconds.
+#### `default_timeout`
 
-- **default_navigation_timeout** (float | None, default: `None`)
-  Default timeout for page navigation in milliseconds.
+```python
+default_timeout: float | None = None
+```
+
+Default timeout for Playwright operations in milliseconds.
+
+#### `default_navigation_timeout`
+
+```python
+default_navigation_timeout: float | None = None
+```
+
+Default timeout for page navigation in milliseconds.
 
 
 ### Display and Viewport Settings
 
 Configure browser window size, viewport, and display properties:
 
-- **user_agent** (str | None, default: `None`)
-  Specific user agent to use in this context.
+#### `user_agent`
 
-- **is_mobile** (bool, default: `False`)
-  Whether the meta viewport tag is taken into account and touch events are enabled.
+```python
+user_agent: str | None = None
+```
 
-- **has_touch** (bool, default: `False`)
-  Specifies if viewport supports touch events.
+Specific user agent to use in this context.
 
-- **geolocation** (dict | None, default: `None`)
-  Geolocation coordinates. Example: `{"latitude": 59.95, "longitude": 30.31667}`
+#### `is_mobile`
 
-- **locale** (str | None, default: `None`)
-  Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator.language value, Accept-Language request header value as well as number and date formatting rules.
+```python
+is_mobile: bool = False
+```
 
-- **timezone_id** (str | None, default: `None`)
-  Timezone identifier (e.g., 'America/New_York').
+Whether the meta viewport tag is taken into account and touch events are enabled.
 
-- **window_size** (dict | None, default: `None`)
-  Browser window size for headful mode. Example: `{"width": 1920, "height": 1080}`
+#### `has_touch`
 
-- **viewport** (dict | None, default: `None`)
-  Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720}`
+```python
+has_touch: bool = False
+```
 
-- **no_viewport** (bool | None, default: `None`)
-  Disable fixed viewport. Content will resize with window.
+Specifies if viewport supports touch events.
 
-- **device_scale_factor** (float | None, default: `None`)
-  Device scale factor (DPI). Useful for high-resolution screenshots.
+#### `geolocation`
 
-- **screen** (dict | None, default: `None`)
-  Screen size available to browser. Auto-detected if not specified.
+```python
+geolocation: dict | None = None
+```
 
-- **color_scheme** (ColorScheme, default: `'light'`)
-  Preferred color scheme: `'light'`, `'dark'`, `'no-preference'`
+Geolocation coordinates. Example: `{"latitude": 59.95, "longitude": 30.31667}`
 
-- **contrast** (Contrast, default: `'no-preference'`)
-  Contrast preference: `'no-preference'`, `'more'`, `'null'`
+#### `locale`
 
-- **reduced_motion** (ReducedMotion, default: `'no-preference'`)
-  Reduced motion preference: `'reduce'`, `'no-preference'`, `'null'`
+```python
+locale: str | None = None
+```
 
-- **forced_colors** (ForcedColors, default: `'none'`)
-  Forced colors mode: `'active'`, `'none'`, `'null'`
+Specify user locale, for example en-GB, de-DE, etc. Locale will affect the navigator.language value, Accept-Language request header value as well as number and date formatting rules.
+
+#### `timezone_id`
+
+```python
+timezone_id: str | None = None
+```
+
+Timezone identifier (e.g., 'America/New_York').
+
+#### `window_size`
+
+```python
+window_size: dict | None = None
+```
+
+Browser window size for headful mode. Example: `{"width": 1920, "height": 1080}`
+
+#### `viewport`
+
+```python
+viewport: dict | None = None
+```
+
+Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720}`
+
+#### `no_viewport`
+
+```python
+no_viewport: bool | None = None
+```
+
+Disable fixed viewport. Content will resize with window.
+
+#### `device_scale_factor`
+
+```python
+device_scale_factor: float | None = None
+```
+
+Device scale factor (DPI). Useful for high-resolution screenshots.
+
+#### `screen`
+
+```python
+screen: dict | None = None
+```
+
+Screen size available to browser. Auto-detected if not specified.
+
+#### `color_scheme`
+
+```python
+color_scheme: ColorScheme = 'light'
+```
+
+Preferred color scheme: `'light'`, `'dark'`, `'no-preference'`
+
+#### `contrast`
+
+```python
+contrast: Contrast = 'no-preference'
+```
+
+Contrast preference: `'no-preference'`, `'more'`, `'null'`
+
+#### `reduced_motion`
+
+```python
+reduced_motion: ReducedMotion = 'no-preference'
+```
+
+Reduced motion preference: `'reduce'`, `'no-preference'`, `'null'`
+
+#### `forced_colors`
+
+```python
+forced_colors: ForcedColors = 'none'
+```
+
+Forced colors mode: `'active'`, `'none'`, `'null'`
 
 
 ### Security and Network Settings
 
 > See `allowed_domains` above too!
 
-- **offline** (bool, default: `False`)
-  Emulate network being offline.
+#### `offline`
 
-- **http_credentials** (dict | None, default: `None`)
-  Credentials for HTTP authentication.
+```python
+offline: bool = False
+```
 
-- **extra_http_headers** (dict[str, str], default: `{}`)
-  Additional HTTP headers to be sent with every request.
+Emulate network being offline.
 
-- **ignore_https_errors** (bool, default: `False`)
-  Whether to ignore HTTPS errors when sending network requests.
+#### `http_credentials`
 
-- **bypass_csp** (bool, default: `False`)
-  Toggles bypassing Content-Security-Policy.
+```python
+http_credentials: dict | None = None
+```
 
-- **java_script_enabled** (bool, default: `True`)
-  Whether or not to enable JavaScript in the context.
+Credentials for HTTP authentication.
 
-- **service_workers** (ServiceWorkers, default: `'allow'`)
-  Whether to allow sites to register Service workers: `'allow'`, `'block'`
+#### `extra_http_headers`
 
-- **base_url** (str | None, default: `None`)
-  Base URL to be used in `page.goto()` and similar operations.
+```python
+extra_http_headers: dict[str, str] = {}
+```
 
-- **strict_selectors** (bool, default: `False`)
-  If true, selector passed to Playwright methods will throw if more than one element matches.
+Additional HTTP headers to be sent with every request.
 
-- **client_certificates** (list[ClientCertificate], default: `[]`)
-  Client certificates to be used with requests.
+#### `ignore_https_errors`
+
+```python
+ignore_https_errors: bool = False
+```
+
+Whether to ignore HTTPS errors when sending network requests.
+
+#### `bypass_csp`
+
+```python
+bypass_csp: bool = False
+```
+
+Toggles bypassing Content-Security-Policy.
+
+#### `java_script_enabled`
+
+```python
+java_script_enabled: bool = True
+```
+
+Whether or not to enable JavaScript in the context.
+
+#### `service_workers`
+
+```python
+service_workers: ServiceWorkers = 'allow'
+```
+
+Whether to allow sites to register Service workers: `'allow'`, `'block'`
+
+#### `base_url`
+
+```python
+base_url: str | None = None
+```
+
+Base URL to be used in `page.goto()` and similar operations.
+
+#### `strict_selectors`
+
+```python
+strict_selectors: bool = False
+```
+
+If true, selector passed to Playwright methods will throw if more than one element matches.
+
+#### `client_certificates`
+
+```python
+client_certificates: list[ClientCertificate] = []
+```
+
+Client certificates to be used with requests.
 
 
 ### Recording and Debugging
 
-- **save_recording_path** (str | None, default: `None`)
-  Directory path for saving video recordings.
+#### `save_recording_path`
 
-- **trace_path** (str | None, default: `None`)
-  Directory path for saving trace files. Files are automatically named as `{trace_path}/{context_id}.zip`.
+```python
+save_recording_path: str | None = None
+```
 
-- **record_video_dir** (str | Path | None, default: `None`)
-  Directory to save video recordings.
+Directory path for saving video recordings.
 
-- **record_video_size** (dict | None, default: `None`)
-  Video size. Example: `{"width": 1280, "height": 720}`
+#### `trace_path`
 
-- **record_har_path** (str | Path | None, default: `None`)
-  Path to save HAR file with network activity.
+```python
+trace_path: str | None = None
+```
 
-- **record_har_content** (RecordHarContent, default: `'embed'`)
-  How to persist HAR content: `'omit'`, `'embed'`, `'attach'`
+Directory path for saving trace files. Files are automatically named as `{trace_path}/{context_id}.zip`.
 
-- **record_har_mode** (RecordHarMode, default: `'full'`)
-  HAR recording mode: `'full'`, `'minimal'`
+#### `record_video_dir`
 
-- **record_har_omit_content** (bool, default: `False`)
-  Whether to omit request content from the HAR.
+```python
+record_video_dir: str | Path | None = None
+```
 
-- **record_har_url_filter** (str | Pattern | None, default: `None`)
-  URL filter for HAR recording.
+Directory to save video recordings.
 
-- **downloads_path** (str | Path | None, default: `None`)
-  Directory to save downloads to (used by launch args).
+#### `record_video_size`
 
-- **traces_dir** (str | Path | None, default: `None`)
-  Directory to save HAR trace files to.
+```python
+record_video_size: dict | None = None
+```
 
-- **handle_sighup** (bool, default: `True`)
-  Whether playwright should swallow SIGHUP signals and kill the browser.
+Video size. Example: `{"width": 1280, "height": 720}`
 
-- **handle_sigint** (bool, default: `False`)
-  Whether playwright should swallow SIGINT signals and kill the browser.
+#### `record_har_path`
 
-- **handle_sigterm** (bool, default: `False`)
-  Whether playwright should swallow SIGTERM signals and kill the browser.
+```python
+record_har_path: str | Path | None = None
+```
+
+Path to save HAR file with network activity.
+
+#### `record_har_content`
+
+```python
+record_har_content: RecordHarContent = 'embed'
+```
+
+How to persist HAR content: `'omit'`, `'embed'`, `'attach'`
+
+#### `record_har_mode`
+
+```python
+record_har_mode: RecordHarMode = 'full'
+```
+
+HAR recording mode: `'full'`, `'minimal'`
+
+#### `record_har_omit_content`
+
+```python
+record_har_omit_content: bool = False
+```
+
+Whether to omit request content from the HAR.
+
+#### `record_har_url_filter`
+
+```python
+record_har_url_filter: str | Pattern | None = None
+```
+
+URL filter for HAR recording.
+
+#### `downloads_path`
+
+```python
+downloads_path: str | Path | None = None
+```
+
+Directory to save downloads to (used by launch args).
+
+#### `traces_dir`
+
+```python
+traces_dir: str | Path | None = None
+```
+
+Directory to save HAR trace files to.
+
+#### `handle_sighup`
+
+```python
+handle_sighup: bool = True
+```
+
+Whether playwright should swallow SIGHUP signals and kill the browser.
+
+#### `handle_sigint`
+
+```python
+handle_sigint: bool = False
+```
+
+Whether playwright should swallow SIGINT signals and kill the browser.
+
+#### `handle_sigterm`
+
+```python
+handle_sigterm: bool = False
+```
+
+Whether playwright should swallow SIGTERM signals and kill the browser.
 
 
 ---
@@ -420,6 +835,7 @@ async def run_search():
         browser_session=browser_session,  # optional: pass an existing browser session to an agent
     )
 ```
+
 
 ## Summary
 
