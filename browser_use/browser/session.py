@@ -258,8 +258,8 @@ class BrowserSession(BaseModel):
 			try:
 				await (self.browser_context or self.browser).close()
 				logger.info(
-					f'🛑 Stopped the Browser '
-					f'(keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"})'
+					f'🛑 Stopped the Browser {self.browser_profile.channel.name.lower()} '
+					f'keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} cdp_url={self.cdp_url or self.wss_url} pid={self.browser_pid}'
 				)
 				self.browser_context = None
 			except Exception as e:
@@ -269,7 +269,7 @@ class BrowserSession(BaseModel):
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
-				logger.info(f'⏹ Shut down the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
+				logger.info(f'⏹ Killed the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
 				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
@@ -296,6 +296,7 @@ class BrowserSession(BaseModel):
 		Override to customize the set up of the playwright or patchright library object
 		"""
 		self.playwright = self.playwright or (await async_playwright().start())
+		# self.playwright = self.playwright or (await async_patchright().start())
 
 		# if isinstance(self.playwright, PatchrightPlaywright):
 		# 	# patchright handles all its own default args, dont mess with them

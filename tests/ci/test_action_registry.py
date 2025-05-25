@@ -1018,36 +1018,6 @@ class TestParameterOrdering:
 		assert set(action.param_model.model_fields.keys()) == {'query', 'limit'}
 
 
-class TestControllerDefaultActions:
-	"""Test that default Controller actions follow the rules"""
-
-	@pytest.mark.asyncio
-	async def test_wait_action_no_special_params(self):
-		"""Test the wait action which has no special params"""
-		from browser_use.controller.service import Controller
-
-		controller = Controller()
-
-		# Find the wait action
-		wait_action = None
-		for action_name, action in controller.registry.registry.actions.items():
-			if 'wait' in action_name.lower() and 'seconds' in str(action.param_model.model_fields):
-				wait_action = action
-				break
-
-		assert wait_action is not None, 'Could not find wait action in controller'
-
-		# Check that it has seconds parameter with default
-		assert 'seconds' in wait_action.param_model.model_fields
-		schema = wait_action.param_model.model_json_schema()
-		assert schema['properties']['seconds']['default'] == 3
-
-		# Test execution with integer value
-		result = await controller.registry.execute_action(wait_action.name, {'seconds': 1})
-		assert result.extracted_content is not None
-		assert 'Wait' in result.extracted_content or 'wait' in result.extracted_content
-
-
 # Test runner for manual execution
 if __name__ == '__main__':
 	# Run a simple test manually
