@@ -235,12 +235,14 @@ class TestActionRegistryParameterPatterns:
 	async def test_mixed_special_parameters(self, registry, browser_session, base_url, mock_llm):
 		"""Test action with multiple special injected parameters"""
 
+		from langchain_core.language_models.chat_models import BaseChatModel
+
 		@registry.action('Action with multiple special params')
 		async def multi_special_action(
 			text: str,
 			browser_session: BrowserSession,
-			page_extraction_llm: MockLLM,
-			available_file_paths: list[str] | None = None,
+			page_extraction_llm: BaseChatModel,
+			available_file_paths: list,
 		):
 			page = await browser_session.get_current_page()
 			llm_response = await page_extraction_llm.ainvoke('test')
@@ -354,20 +356,22 @@ class TestActionToActionCalling:
 			return ActionResult(extracted_content=f'Selected cell {cell_or_range} on {page.url}')
 
 		@registry.action('Select cell or range')
-		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):
-			# This is the PROBLEMATIC pattern that currently fails
-			# Passing browser_session by name causes "multiple values for argument" error
+		async def select_cell_or_range(cell_or_range: str, browser_session: BrowserSession):
+			# This pattern now works with kwargs
 			return await _select_cell_or_range(browser_session=browser_session, cell_or_range=cell_or_range)
 
 		@registry.action('Select cell or range (fixed)')
-		async def select_cell_or_range_fixed(browser_session: BrowserSession, cell_or_range: str):
-			# This is the WORKING pattern using positional args
+		async def select_cell_or_range_fixed(cell_or_range: str, browser_session: BrowserSession):
+			# This pattern also works
 			return await _select_cell_or_range(browser_session, cell_or_range)
 
 		@registry.action('Update range contents')
-		async def update_range_contents(browser_session: BrowserSession, range_name: str, new_contents: str):
+		async def update_range_contents(range_name: str, new_contents: str, browser_session: BrowserSession):
 			# This action calls select_cell_or_range, simulating the real Google Sheets pattern
-			await select_cell_or_range_fixed(browser_session, range_name)  # Should use positional args
+			# Get the action's param model to call it properly
+			action = registry.registry.actions['select_cell_or_range_fixed']
+			params = action.param_model(cell_or_range=range_name)
+			await select_cell_or_range_fixed(params=params, browser_session=browser_session)
 			return ActionResult(extracted_content=f'Updated range {range_name} with {new_contents}')
 
 		# Test the fixed version (should work)
@@ -383,18 +387,13 @@ class TestActionToActionCalling:
 		)
 		assert 'Updated range B2:D4 with test data' in result_chain.extracted_content
 
-		# Test the problematic version (may fail with current registry, should work with enhanced registry)
-		try:
-			result_problematic = await registry.execute_action(
-				'select_cell_or_range', {'cell_or_range': 'A1:F100'}, browser_session=test_browser
-			)
-			# If this succeeds, great! The enhanced registry is working
-			assert 'Selected cell A1:F100 on' in result_problematic.extracted_content
-			assert '/test' in result_problematic.extracted_content
-		except TypeError as e:
-			# This is the expected error with the current registry
-			assert 'multiple values for argument' in str(e) or 'got multiple values' in str(e)
-			logger.info(f'Expected error with current registry: {e}')
+		# Test the problematic version (should work with enhanced registry)
+		result_problematic = await registry.execute_action(
+			'select_cell_or_range', {'cell_or_range': 'A1:F100'}, browser_session=test_browser
+		)
+		# With the enhanced registry, this should succeed
+		assert 'Selected cell A1:F100 on' in result_problematic.extracted_content
+		assert '/test' in result_problematic.extracted_content
 
 	@pytest.mark.asyncio
 	async def test_complex_action_chain(self, registry, test_browser):
@@ -453,8 +452,10 @@ class TestRegistryEdgeCases:
 	async def test_missing_required_llm(self, registry, test_browser):
 		"""Test that actions requiring page_extraction_llm fail appropriately when not provided"""
 
+		from langchain_core.language_models.chat_models import BaseChatModel
+
 		@registry.action('Requires LLM')
-		async def requires_llm(text: str, browser_session: BrowserSession, page_extraction_llm: MockLLM):
+		async def requires_llm(text: str, browser_session: BrowserSession, page_extraction_llm: BaseChatModel):
 			page = await browser_session.get_current_page()
 			llm_response = await page_extraction_llm.ainvoke('test')
 			return ActionResult(extracted_content=f'Text: {text}, LLM: {llm_response.content}')

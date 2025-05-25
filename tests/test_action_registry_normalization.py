@@ -13,12 +13,14 @@ from browser_use.browser import BrowserSession
 from browser_use.controller.registry.service import Registry
 
 
-class MockBrowserSession(BrowserSession):
+class MockBrowserSession:
 	"""Mock BrowserSession for testing"""
 
 	def __init__(self):
-		# Don't call super().__init__() to avoid real browser
-		pass
+		self.agent_current_page = None
+
+	async def get_current_page(self):
+		return MockPage()
 
 
 class MockPage:
@@ -29,6 +31,10 @@ class MockPage:
 
 class MockLLM(BaseChatModel):
 	"""Mock LLM for testing"""
+
+	@property
+	def _llm_type(self) -> str:
+		return 'mock'
 
 	def _generate(self, *args, **kwargs):
 		pass
@@ -99,8 +105,8 @@ class TestType2Pattern:
 
 		# Should auto-generate param model
 		assert action.param_model is not None
-		assert hasattr(action.param_model, 'index')
-		assert hasattr(action.param_model, 'text')
+		assert 'index' in action.param_model.model_fields
+		assert 'text' in action.param_model.model_fields
 
 	def test_type2_with_defaults(self):
 		"""Type 2 with default values should preserve defaults"""
@@ -402,9 +408,7 @@ class TestInterActionCalls:
 			result = await inner_action(params=inner_model(text='Hello'), **special_context)
 			return result
 
-		result = await registry.execute_action(
-			action_name='outer_action', params={}, browser_session=MockBrowserSession(), page=MockPage()
-		)
+		result = await registry.execute_action(action_name='outer_action', params={}, browser_session=MockBrowserSession())
 
 		assert 'Inner: Hello, has page: True' in result.extracted_content
 

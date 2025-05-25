@@ -130,7 +130,7 @@ async def test_assumption_4_click_action_specific_issue(browser_session, control
 
 	# Create a test action that replicates click_element_by_index logic
 	@controller.registry.action('Test: Debug click logic')
-	async def test_debug_click_logic(browser_session: BrowserSession, index: int):
+	async def test_debug_click_logic(index: int, browser_session: BrowserSession):
 		from browser_use import ActionResult
 
 		# This is the exact logic from click_element_by_index

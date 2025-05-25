@@ -14,7 +14,7 @@ from browser_use import Controller, ActionResult
 controller = Controller()
 
 @controller.action('Ask user for information', domains=['https://difficult.example.com'])   # pass domains= or page_filter= to limit actions to certain pages
-def ask_human(question: str) -> str:
+def ask_human(question: str) -> ActionResult:
     answer = input(f'\n{question}\nInput: ')
     return ActionResult(extracted_content=answer)
 ```
@@ -41,7 +41,15 @@ agent = Agent(
 
 ## Browser-Aware Functions
 
-For actions that need page or browser access, simply add the `browser_session` or `page` parameter inside the function parameters:
+For actions that need browser access, add special parameters after your action parameters. The framework will automatically inject these:
+
+### Available Special Parameters
+- `browser_session: BrowserSession` - The current browser session
+- `page: Page` - The current Playwright page (shortcut for `browser_session.get_current_page()`)
+- `context: AgentContext` - Full agent context including history
+- `page_extraction_llm: BaseChatModel` - LLM instance for page content extraction
+- `available_file_paths: list[str]` - List of available file paths
+- `has_sensitive_data: bool` - Whether the page contains sensitive data
 
 ```python
 from playwright.async_api import Page
@@ -50,7 +58,7 @@ from browser_use import Controller, ActionResult
 controller = Controller()
 
 @controller.action('Open website')
-async def open_website(url: str, page: Page):
+async def open_website(url: str, page: Page) -> ActionResult:
     await page.goto(url)
     return ActionResult(extracted_content='Website opened')
 ```
@@ -60,7 +68,7 @@ from browser_use import BrowserSession, Controller, ActionResult
 controller = Controller()
 
 @controller.action('Open website')
-async def open_website(url: str, browser_session: BrowserSession):
+async def open_website(url: str, browser_session: BrowserSession) -> ActionResult:
     page = await browser_session.get_current_page()
     await page.goto(url)
     return ActionResult(extracted_content='Website opened')
@@ -68,12 +76,12 @@ async def open_website(url: str, browser_session: BrowserSession):
 
 ## Structured Parameters with Pydantic
 
-For complex actions, you can define parameter schemas using Pydantic models:
+For complex actions, define parameter schemas using Pydantic models. When using `param_model`, your function should accept the model as its first parameter:
 
 ```python
 from pydantic import BaseModel
 from typing import Optional
-from browser_use import Controller, ActionResult, Browser
+from browser_use import Controller, ActionResult, BrowserSession
 
 controller = Controller()
 
@@ -87,13 +95,51 @@ class JobDetails(BaseModel):
     'Save job details which you found on page',
     param_model=JobDetails
 )
-async def save_job(params: JobDetails, browser: Browser):
+async def save_job(params: JobDetails, browser_session: BrowserSession) -> ActionResult:
     print(f"Saving job: {params.title} at {params.company}")
 
     # Access browser if needed
-    page = browser.get_current_page()
+    page = await browser_session.get_current_page()
     await page.goto(params.job_link)
+    
+    return ActionResult(extracted_content=f"Saved job: {params.title}")
 ```
+
+## Action Definition Patterns
+
+Browser Use supports two patterns for defining actions:
+
+### Pattern 1: Pydantic Model First (Recommended for complex parameters)
+When using `param_model`, your function receives the model instance as the first parameter:
+
+```python
+class MyParams(BaseModel):
+    field1: str
+    field2: int
+
+@controller.action('My action', param_model=MyParams)
+def my_action(params: MyParams, page: Page) -> ActionResult:
+    # params contains all action parameters
+    return ActionResult(extracted_content=f"Processed {params.field1}")
+```
+
+### Pattern 2: Loose Parameters (Recommended for simple actions)
+Define parameters directly as function arguments:
+
+```python
+@controller.action('Click element')
+def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
+    # index is the action parameter
+    # browser_session is a special injected parameter
+    return ActionResult(extracted_content=f"Clicked element {index}")
+```
+
+### Important Rules
+
+1. **No **kwargs allowed**: Actions must use explicit parameters only
+2. **Return ActionResult**: All actions should return an `ActionResult` instance
+3. **Special parameters come after action parameters**: Always define your action parameters first, then any special parameters you need
+4. **Type hints are recommended**: They help with validation and IDE support
 
 ## Using Custom Actions with multiple agents
 
