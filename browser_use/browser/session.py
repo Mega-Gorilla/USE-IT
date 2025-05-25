@@ -115,7 +115,9 @@ class BrowserSession(BaseModel):
 		revalidate_instances='always',
 		frozen=False,
 		arbitrary_types_allowed=True,
-		populate_by_name=True,
+		validate_by_name=True,
+		validate_by_alias=True,
+		from_attributes=True,
 	)
 	# this class accepts arbitrary extra **kwargs in init because of the extra='allow' pydantic option
 	# they are saved on the model, then applied to self.browser_profile via .apply_session_overrides_to_profile()
