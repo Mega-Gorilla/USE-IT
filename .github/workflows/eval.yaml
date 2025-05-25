@@ -19,10 +19,19 @@ jobs:
       EVALUATION_TOOL_SECRET_KEY: ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}
 
     steps:
+      - name: Determine branch to checkout
+        id: determine_branch
+        run: |
+          # Use the branch from client_payload or default to main
+          BRANCH="${{ github.event.client_payload.branch }}"
+          BRANCH="${BRANCH:-main}"
+          echo "BRANCH=$BRANCH" >> $GITHUB_OUTPUT
+          echo "::notice title=Branch Selection::Will checkout and run evaluation on branch: $BRANCH"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: "new-eval"
+          ref: ${{ steps.determine_branch.outputs.BRANCH }}
 
       - name: Set up Python and uv
         uses: astral-sh/setup-uv@v6
