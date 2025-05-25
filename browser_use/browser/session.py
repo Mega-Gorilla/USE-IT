@@ -194,8 +194,10 @@ class BrowserSession(BaseModel):
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
 
-		# replace browser_profile with patched version
-		self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
+		# Only create a copy if there are actual overrides to apply
+		if profile_overrides:
+			# replace browser_profile with patched version
+			self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
 
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
@@ -258,7 +260,7 @@ class BrowserSession(BaseModel):
 			try:
 				await (self.browser_context or self.browser).close()
 				logger.info(
-					f'🛑 Stopped the Browser {self.browser_profile.channel.name.lower()} '
+					f'🛑 Stopped the {self.browser_profile.channel.name.lower()} browser '
 					f'keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} cdp_url={self.cdp_url or self.wss_url} pid={self.browser_pid}'
 				)
 				self.browser_context = None
@@ -269,11 +271,11 @@ class BrowserSession(BaseModel):
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
-				logger.info(f'⏹ Killed the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
+				logger.info(f' ↳ Killed browser subprocess with browser_pid={self.browser_pid} keep_alive=False')
 				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
-					logger.debug(f'❌ Error terminating chrome subprocess pid={self.browser_pid}: {type(e).__name__}: {e}')
+					logger.debug(f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}')
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""
@@ -431,10 +433,15 @@ class BrowserSession(BaseModel):
 		# playwright does not give us a browser object at all when we use launch_persistent_context()!
 
 		# Detect any new child chrome processes that we might have launched above
-		child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
-		new_child_pids = child_pids_after_launch - child_pids_before_launch
-		new_child_procs = [psutil.Process(pid) for pid in new_child_pids]
-		new_chrome_procs = [proc for proc in new_child_procs if 'Helper' not in proc.name() and proc.status() == 'running']
+		try:
+			child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
+			new_child_pids = child_pids_after_launch - child_pids_before_launch
+			new_child_procs = [psutil.Process(pid) for pid in new_child_pids]
+			new_chrome_procs = [proc for proc in new_child_procs if 'Helper' not in proc.name() and proc.status() == 'running']
+		except Exception as e:
+			logger.debug(f'❌ Error trying to find child chrome processes after launching new browser: {type(e).__name__}: {e}')
+			new_chrome_procs = []
+
 		if new_chrome_procs and not self.browser_pid:
 			self.browser_pid = new_chrome_procs[0].pid
 			logger.debug(
