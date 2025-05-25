@@ -286,7 +286,7 @@ async def test_assumption_9_pydantic_private_attrs(browser_session, controller):
 	print(f'2. Original browser_session ID: {id(browser_session)}')
 
 	# Import the SpecialActionParameters to test directly
-	from browser_use.controller.registry.service import SpecialActionParameters
+	from browser_use.controller.registry.views import SpecialActionParameters
 
 	# Test what happens when we put browser_session through model_validate
 	special_params_data = {

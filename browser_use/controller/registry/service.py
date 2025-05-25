@@ -6,7 +6,6 @@ from inspect import iscoroutinefunction, signature
 from typing import Any, Generic, Optional, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from playwright.async_api import Page
 from pydantic import BaseModel, Field, create_model
 
 from browser_use.browser import BrowserSession
@@ -14,6 +13,7 @@ from browser_use.controller.registry.views import (
 	ActionModel,
 	ActionRegistry,
 	RegisteredAction,
+	SpecialActionParameters,
 )
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
@@ -25,26 +25,6 @@ from browser_use.utils import match_url_with_domain_pattern, time_execution_asyn
 Context = TypeVar('Context')
 
 logger = logging.getLogger(__name__)
-
-
-class SpecialActionParameters(BaseModel):
-	"""Model defining all special parameters that can be injected into actions"""
-
-	model_config = {'arbitrary_types_allowed': True}
-
-	context: Context | None = None
-	browser_session: BrowserSession | None = None
-	browser: BrowserSession | None = None  # legacy support
-	browser_context: BrowserSession | None = None  # legacy support
-	page: Page | None = None
-	page_extraction_llm: BaseChatModel | None = None
-	available_file_paths: list[str] | None = None
-	has_sensitive_data: bool = False
-
-	@classmethod
-	def get_browser_requiring_params(cls) -> set[str]:
-		"""Get parameter names that require browser_session"""
-		return {'browser_session', 'browser', 'browser_context', 'page'}
 
 
 class Registry(Generic[Context]):

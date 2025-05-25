@@ -23,12 +23,24 @@ To receive webhook notifications, you need to:
 
 <Note>
   When adding a webhook URL in the dashboard, it must be a valid HTTPS URL that can receive POST requests. 
-  On creation, we will send a test payload `{"test": "ok"}` to verify the endpoint is working correctly before creating the actual webhook!
+  On creation, we will send a test payload `{"type": "test", "timestamp": "2024-03-21T12:00:00Z", "payload": {"test": "ok"}}` to verify the endpoint is working correctly before creating the actual webhook!
 </Note>
 
 ## Webhook Events
 
-Browser Use currently only sends status updates for your running tasks:
+Browser Use sends various types of events. Each event has a specific type and payload structure.
+
+### Event Types
+
+Currently supported events:
+
+| Event Type                 | Description                      |
+| -------------------------- | -------------------------------- |
+| `agent.task.status_update` | Status updates for running tasks |
+
+### Task Status Updates
+
+The `agent.task.status_update` event includes the following statuses:
 
 | Status         | Description                            |
 | -------------- | -------------------------------------- |
@@ -38,7 +50,7 @@ Browser Use currently only sends status updates for your running tasks:
 | `stopped`      | A task has been stopped mid execution  |
 | `finished`     | A task has finished                    |
 
-## Webhook Payload
+## Webhook Payload Structure
 
 Each webhook call includes:
 
@@ -46,13 +58,17 @@ Each webhook call includes:
 - `X-Browser-Use-Timestamp` header with the current timestamp
 - `X-Browser-Use-Signature` header for verification
 
-Example payload:
+The payload follows this structure:
 
 ```json
 {
-  "session_id": "602c8809-61ee-461d-acfd-3e8783f23326",
-  "task_id": "b9792a06-0411-4838-96de-c720f34206a2",
-  "status": "initializing"
+  "type": "agent.task.status_update",
+  "timestamp": "2025-05-25T09:22:22.269116+00:00",
+  "payload": {
+    "session_id": "cd9cc7bf-e3af-4181-80a2-73f083bc94b4",
+    "task_id": "5b73fb3f-a3cb-4912-be40-17ce9e9e1a45",
+    "status": "finished"
+  }
 }
 ```
 
@@ -90,7 +106,17 @@ async def webhook(request: Request):
     if not verify_signature(body, timestamp, signature):
         raise HTTPException(status_code=403, detail='Invalid signature')
 
-    print('Valid webhook call received:', body)
+    # Handle different event types
+    event_type = body.get('type')
+    if event_type == 'agent.task.status_update':
+        # Handle task status update
+        print('Task status update received:', body['payload'])
+    elif event_type == 'test':
+        # Handle test webhook
+        print('Test webhook received:', body['payload'])
+    else:
+        print('Unknown event type:', event_type)
+
     return {'status': 'success', 'message': 'Webhook received'}
 
 if __name__ == '__main__':
@@ -104,6 +130,7 @@ if __name__ == '__main__':
 3. **Respond quickly**: Return a 200 response as soon as you've verified the signature
 4. **Process asynchronously**: Handle the webhook payload processing in a background task
 5. **Monitor failures**: Set up monitoring for webhook delivery failures
+6. **Handle unknown events**: Implement graceful handling of new event types that may be added in the future
 
 <Note>
   Need help? Contact our support team at support@browser-use.com or join our

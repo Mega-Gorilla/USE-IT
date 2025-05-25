@@ -2,8 +2,6 @@ name: 👾 Library Bug Report
 description: Report a bug in the browser-use Python library
 labels: ["bug", "triage"]
 title: "Bug: ..."
-assignees:
-  - pirate
 body:
   # - type: markdown
   #   attributes:

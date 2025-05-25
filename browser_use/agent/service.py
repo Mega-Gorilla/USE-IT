@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -1169,12 +1170,23 @@ class Agent(Generic[Context]):
 		)
 		current_tokens = getattr(self._message_manager.state.history, 'current_tokens', 0)
 
-		# Determine output type
-		output_type = 'raw text output' if method == 'raw' else 'structured output + tools'
-		image_status = '📷 images' if has_images else 'no images'
+		# Count available tools/actions from the current ActionModel
+		# This gives us the actual number of tools exposed to the LLM for this specific call
+		tool_count = len(self.ActionModel.model_fields) if hasattr(self, 'ActionModel') else 0
 
+		# Format the log message parts
+		image_status = ', 📷 img' if has_images else ''
+		if method == 'raw':
+			output_format = '=> raw text'
+			tool_info = ''
+		else:
+			output_format = '=> JSON out'
+			tool_info = f' + 🔨 {tool_count} tools ({method})'
+
+		term_width = shutil.get_terminal_size((80, 20)).columns
+		print('=' * term_width)
 		logger.info(
-			f'🧠 LLM call: {self.chat_model_library} ({method}) | {message_count} msgs, ~{current_tokens} tokens, {total_chars} chars | {image_status} | {output_type}'
+			f'🧠 LLM call => {self.chat_model_library} [✉️ {message_count} msg, ~{current_tokens} tk, {total_chars} char{image_status}] {output_format}{tool_info}'
 		)
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
@@ -1593,7 +1605,7 @@ class Agent(Generic[Context]):
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
-		state = await self.browser_context.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
@@ -1737,7 +1749,7 @@ class Agent(Generic[Context]):
 			return None
 
 		# Get current state to filter actions by page
-		page = await self.browser_context.get_current_page()
+		page = await self.browser_session.get_current_page()
 
 		# Get all standard actions (no filter) and page-specific actions
 		standard_actions = self.controller.registry.get_prompt_description()  # No page = system prompt actions
