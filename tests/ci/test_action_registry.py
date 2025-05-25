@@ -1007,7 +1007,7 @@ class TestParameterOrdering:
 		assert model_fields['third'].default is True
 
 	@pytest.mark.asyncio
-	async def test_extract_content_pattern(self, test_browser):
+	async def test_extract_content_pattern(self, test_browser, event_loop):
 		"""Test the specific extract_content pattern with special args between positional and kwargs"""
 		registry = Registry()
 		from langchain_core.language_models.chat_models import BaseChatModel

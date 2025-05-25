@@ -260,7 +260,7 @@ class BrowserSession(BaseModel):
 			try:
 				await (self.browser_context or self.browser).close()
 				logger.info(
-					f'🛑 Stopped the Browser {self.browser_profile.channel.name.lower()} '
+					f'🛑 Stopped the {self.browser_profile.channel.name.lower()} browser '
 					f'keep_alive=False user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} cdp_url={self.cdp_url or self.wss_url} pid={self.browser_pid}'
 				)
 				self.browser_context = None
@@ -271,11 +271,11 @@ class BrowserSession(BaseModel):
 		if self.browser_pid:
 			try:
 				psutil.Process(pid=self.browser_pid).terminate()
-				logger.info(f'⏹ Killed the browser subprocess with browser_pid={self.browser_pid} (keep_alive=False)')
+				logger.info(f' ↳ Killed browser subprocess with browser_pid={self.browser_pid} keep_alive=False')
 				self.browser_pid = None
 			except Exception as e:
 				if 'NoSuchProcess' not in type(e).__name__:
-					logger.debug(f'❌ Error terminating chrome subprocess pid={self.browser_pid}: {type(e).__name__}: {e}')
+					logger.debug(f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}')
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""
