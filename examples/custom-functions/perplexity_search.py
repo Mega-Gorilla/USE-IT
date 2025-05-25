@@ -37,9 +37,7 @@ controller = Controller(exclude_actions=['search_google'], output_model=PersonLi
 
 @controller.registry.action('Search the web for a specific query with perplexity')
 async def search_web(query: str):
-	import json
-
-	import requests
+	import httpx
 
 	url = 'https://api.perplexity.ai/chat/completions'
 
@@ -52,14 +50,15 @@ async def search_web(query: str):
 	}
 	headers = {'Authorization': f'Bearer {PERPLEXITY_API_KEY}', 'Content-Type': 'application/json'}
 
-	response = requests.request('POST', url, json=payload, headers=headers)
-
-	response_json = json.loads(response.text)
-	content = response_json['choices'][0]['message']['content']
-	citations = response_json['citations']
-	output = f'{content}\n\nCitations:\n' + '\n'.join(citations)
-	logger.info(output)
-	return ActionResult(extracted_content=output, include_in_memory=True)
+	async with httpx.AsyncClient() as client:
+		response = await client.post(url, json=payload, headers=headers)
+		response.raise_for_status()
+		response_json = response.json()
+		content = response_json['choices'][0]['message']['content']
+		citations = response_json['citations']
+		output = f'{content}\n\nCitations:\n' + '\n'.join(citations)
+		logger.info(output)
+		return ActionResult(extracted_content=output, include_in_memory=True)
 
 
 names = [
