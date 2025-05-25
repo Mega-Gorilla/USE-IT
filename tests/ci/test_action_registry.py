@@ -1006,6 +1006,74 @@ class TestParameterOrdering:
 		assert set(model_fields.keys()) == {'first', 'second', 'third'}
 		assert model_fields['third'].default is True
 
+	@pytest.mark.asyncio
+	async def test_extract_content_pattern(self, test_browser):
+		"""Test the specific extract_content pattern with special args between positional and kwargs"""
+		registry = Registry()
+		from langchain_core.language_models.chat_models import BaseChatModel
+
+		# This is the problematic pattern: positional arg, then special args, then kwargs with defaults
+		@registry.action('Extract content from page')
+		async def extract_content(
+			goal: str,
+			page: Page,
+			page_extraction_llm: BaseChatModel,
+			include_links: bool = False,
+		):
+			title = await page.title()
+			url = page.url
+			llm_type = type(page_extraction_llm).__name__
+
+			result_text = f"Extracted content for goal: '{goal}' from page '{title}' at {url}"
+			result_text += f' using LLM: {llm_type}'
+			if include_links:
+				result_text += ' (including links)'
+
+			return ActionResult(extracted_content=result_text)
+
+		# Verify registration
+		assert 'extract_content' in registry.registry.actions
+		action = registry.registry.actions['extract_content']
+
+		# Check that the param model only includes user-facing params
+		model_fields = action.param_model.model_fields
+		assert 'goal' in model_fields
+		assert 'include_links' in model_fields
+		assert model_fields['include_links'].default is False
+
+		# Special params should NOT be in the model
+		assert 'page' not in model_fields
+		assert 'page_extraction_llm' not in model_fields
+
+		# Test execution with the pattern
+		mock_llm = MockLLM()
+
+		# Execute the action
+		result = await registry.execute_action(
+			'extract_content',
+			{'goal': 'Find product prices', 'include_links': True},
+			browser_session=test_browser,
+			page_extraction_llm=mock_llm,
+		)
+
+		# Verify result
+		assert isinstance(result, ActionResult)
+		assert "Extracted content for goal: 'Find product prices'" in result.extracted_content
+		assert 'Test Page' in result.extracted_content  # from page title
+		assert 'using LLM: MockLLM' in result.extracted_content
+		assert '(including links)' in result.extracted_content
+
+		# Test with default value for include_links
+		result2 = await registry.execute_action(
+			'extract_content',
+			{'goal': 'Find reviews'},  # include_links defaults to False
+			browser_session=test_browser,
+			page_extraction_llm=mock_llm,
+		)
+
+		assert "Extracted content for goal: 'Find reviews'" in result2.extracted_content
+		assert '(including links)' not in result2.extracted_content
+
 	def test_all_params_at_end(self):
 		"""Should work with all action params at the end"""
 		registry = Registry()
