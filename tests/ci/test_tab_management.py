@@ -76,7 +76,19 @@ class TestTabManagement:
 		assert f'{http_server.host}:{http_server.port}' in browser_session.agent_current_page.url
 
 		yield browser_session
+
+		# Ensure all pages are closed before stopping
+		try:
+			for page in browser_session.browser_context.pages:
+				if not page.is_closed():
+					await page.close()
+		except Exception:
+			pass
+
 		await browser_session.stop()
+
+		# Give playwright time to clean up
+		await asyncio.sleep(0.1)
 
 	@pytest.fixture
 	def controller(self):
