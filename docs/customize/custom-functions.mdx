@@ -37,8 +37,8 @@ agent = Agent(
 <Note>
   Keep the function name and description short and concise. The LLM chooses between actions
   to run solely based on the function name and description. The LLM decides the params to pass
-  to the action based on their names and type signatures. The stringified output of
-  the action is passed back to the LLM, and optionally persisted in the long-term memory when `ActionResult(..., include_in_memory=True)`.
+  to the action based on their names and type signatures. The stringified version of the [`ActionResult`](https://github.com/search?q=repo%3Abrowser-use%2Fbrowser-use+%22class+ActionResult%28BaseModel%29%22&type=code) returned 
+  is passed back to the LLM, and optionally persisted in the long-term memory when `ActionResult(..., include_in_memory=True)`.
 </Note>
 
 ## Browser-Aware Functions
@@ -77,7 +77,9 @@ async def open_website(url: str, browser_session: BrowserSession) -> ActionResul
         if tab.url == url:
             await tab.bring_to_foreground()
             return ActionResult(extracted_content=f'Switched to tab with url {url}')
-    await page.goto(url)
+    # Create a new tab if URL not found
+    new_tab = await browser_session.browser_context.new_page()
+    await new_tab.goto(url)
     return ActionResult(extracted_content=f'Opened new tab with url {url}')
 ```
 
@@ -88,6 +90,7 @@ For complex actions, define parameter schemas using Pydantic models. When using 
 ```python
 from pydantic import BaseModel
 from typing import Optional
+from playwright.async_api import Page
 from browser_use import Controller, ActionResult, BrowserSession
 
 controller = Controller()
@@ -141,15 +144,16 @@ def click_element(index: int, browser_session: BrowserSession) -> ActionResult:
 
 ### Important Rules
 
-1. **Return `ActionResult`**: All actions should return an `ActionResult | str | None`.
+1. **Return an [`ActionResult`](https://github.com/search?q=repo%3Abrowser-use%2Fbrowser-use+%22class+ActionResult%28BaseModel%29%22&type=code)**: All actions should return an `ActionResult | str | None`.
 2. **Type hints on arguments are required**: They are used to verify that action params don't conflict with special arguments injected by the controller (e.g. `page`)
 3. **Actions called directly must be passed kwargs**: When calling actions from other actions, you must **call using kwargs only**, even though the actions are usually defined using positional args (for the same reasons as [pluggy](https://pluggy.readthedocs.io/en/stable/index.html#calling-hooks)).
     Action arguments are always matched by name and type, **not** positional order, so this helps prevent ambiguity / reordering issues while keeping action signatures short.
     ```python
     @controller.action('Fill in the country form field')
     def input_country_field(country: str, page: Page) -> ActionResult:
-        await some_other_action(params=OtherAction(abc=123), page=page)
-        await some_action(abc=123, page=page)
+        await some_action(123, page=page)                                # ❌ not allowed: positional args, use kwarg syntax when calling
+        await some_action(abc=123, page=page)                            # ✅ allowed: action params & special kwargs
+        await some_other_action(params=OtherAction(abc=123), page=page)  # ✅ allowed: params=model & special kwargs
     ```
 
 ```python3
@@ -232,7 +236,7 @@ async def is_login_page(page: Page):
     if api.some_service.check_url(page.url):
         await fillout_form(page)
         return 'filled out form with secret details'
-    raise ActionResult(success=False, error='not allowed to fill out forms according to external service')
+    return ActionResult(success=False, error='not allowed to fill out forms according to external service')
 
 @controller.action('Fill out secret_form', allowed_domains=['https://*.example.com'], page_filter=is_login_page)
 def fill_out_form(...) -> ActionResult:
