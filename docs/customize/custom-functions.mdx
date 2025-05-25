@@ -232,14 +232,14 @@ from browser_use import Controller, ActionResult
 
 controller = Controller()
 
-async def is_login_page(page: Page):
+async def is_ai_allowed(page: Page):
     if api.some_service.check_url(page.url):
-        await fillout_form(page)
-        return 'filled out form with secret details'
-    return ActionResult(success=False, error='not allowed to fill out forms according to external service')
+        logger.warning('Allowing AI agent to visit url:', page.url)
+        return True
+    return False
 
-@controller.action('Fill out secret_form', allowed_domains=['https://*.example.com'], page_filter=is_login_page)
+@controller.action('Fill out secret_form', allowed_domains=['https://*.example.com'], page_filter=is_ai_allowed)
 def fill_out_form(...) -> ActionResult:
-    ... will only be available to LLM on pages that match https://*.example.com *AND* where is_login_page(page) returns True
+    ... will only be runnable by LLM on pages that match https://*.example.com *AND* where is_ai_allowed(page) returns True
 
 ```
