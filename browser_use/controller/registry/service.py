@@ -163,12 +163,10 @@ class Registry(Generic[Context]):
 			if param_model_provided and parameters and parameters[0].name not in special_param_names:
 				if params is None:
 					raise ValueError(f"{func.__name__}() missing required 'params' argument")
-				call_args.append(params)
-				start_idx = 1
+				# For Type 1, we'll use the params object as first argument
+				pass
 			else:
-				# Type 2 pattern - unpack params into positional args
-				start_idx = 0
-
+				# Type 2 pattern - need to unpack params
 				# If params is None, try to create it from kwargs
 				if params is None and action_params:
 					# Extract action params from kwargs
@@ -180,20 +178,15 @@ class Registry(Generic[Context]):
 						# Use the param_model which has the correct types defined
 						params = param_model(**action_kwargs)
 
-				if params is not None:
-					params_dict = params.model_dump()
-					# Add action params in correct order
-					for param in action_params:
-						if param.name in params_dict:
-							call_args.append(params_dict[param.name])
-						elif param.default != Parameter.empty:
-							call_args.append(param.default)
-						else:
-							raise ValueError(f"{func.__name__}() missing required parameter '{param.name}'")
+			# Build call_args by iterating through original function parameters in order
+			params_dict = params.model_dump() if params is not None else {}
 
-			# Add special params in correct order
-			for param in parameters[start_idx:]:
-				if param.name in special_param_names:
+			for i, param in enumerate(parameters):
+				# Skip first param for Type 1 pattern (it's the model itself)
+				if param_model_provided and i == 0 and param.name not in special_param_names:
+					call_args.append(params)
+				elif param.name in special_param_names:
+					# This is a special parameter
 					if param.name in kwargs:
 						value = kwargs[param.name]
 						# Check if required special param is None
@@ -215,6 +208,14 @@ class Registry(Generic[Context]):
 							raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
 						else:
 							raise ValueError(f"{func.__name__}() missing required special parameter '{param.name}'")
+				else:
+					# This is an action parameter
+					if param.name in params_dict:
+						call_args.append(params_dict[param.name])
+					elif param.default != Parameter.empty:
+						call_args.append(param.default)
+					else:
+						raise ValueError(f"{func.__name__}() missing required parameter '{param.name}'")
 
 			# Call original function with positional args
 			if iscoroutinefunction(func):
