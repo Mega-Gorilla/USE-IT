@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.2.2"
+version = "0.2.3"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -78,7 +78,7 @@ browseruse = "browser_use.cli:main"
 browser-use = "browser_use.cli:main"
 
 [tool.codespell]
-ignore-words-list = "bu"
+ignore-words-list = "bu,wit,dont,cant,wont"
 skip = "*.json"
 
 [tool.ruff]

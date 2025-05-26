@@ -547,6 +547,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
 
+	# do something like this someday when we need to store these in a DB
 	# id: str = Field(default_factory=uuid7str)
 	# label: str = 'default'
 
@@ -562,12 +563,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=None,
 		description='Window size to use for the browser when headless=False.',
 	)
-	window_height: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["height"] instead', deprecated=True, exclude=True
-	)
-	window_width: int | None = Field(
-		default=None, description='DEPRECATED, use window_size["width"] instead', deprecated=True, exclude=True
-	)
+	window_height: int | None = Field(default=None, description='DEPRECATED, use window_size["height"] instead', exclude=True)
+	window_width: int | None = Field(default=None, description='DEPRECATED, use window_size["width"] instead', exclude=True)
 	window_position: ViewportSize | None = Field(
 		default_factory=lambda: {'width': 0, 'height': 0},
 		description='Window position to use for the browser x,y from the top left when headless=False.',
@@ -737,6 +734,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.window_size = self.window_size or display_size or ViewportSize(width=1280, height=1100)
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
+
+			# Auto-inherit DISPLAY environment variable for headful mode
+			if 'DISPLAY' in os.environ and 'DISPLAY' not in self.env:
+				self.env['DISPLAY'] = os.environ['DISPLAY']
 
 		# automatically setup viewport if any config requires it
 		use_viewport = self.headless or self.viewport or self.device_scale_factor

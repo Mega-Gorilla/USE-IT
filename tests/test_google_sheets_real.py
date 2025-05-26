@@ -4,6 +4,7 @@ Tests the enhanced action registry system with Google Sheets keyboard automation
 Uses the existing Google Sheets actions from the main controller.
 """
 
+import asyncio
 import os
 
 import pytest
@@ -94,28 +95,40 @@ async def test_google_sheets_open(browser_session, controller):
 	"""Test opening a Google Sheet using the existing action."""
 	# First check what actions are available
 	available_actions = list(controller.registry.registry.actions.keys())
-	print(f'Available actions: {[a for a in available_actions if "Google" in a]}')
 
-	# Try to find the right action name
-	google_sheet_actions = [a for a in available_actions if 'google sheet' in a.lower()]
+	# Google Sheets actions are registered with specific names
+	sheet_actions = [
+		'read_sheet_contents',
+		'read_cell_contents',
+		'update_cell_contents',
+		'clear_cell_contents',
+		'select_cell_or_range',
+		'fallback_input_into_single_selected_cell',
+	]
 
-	if not google_sheet_actions:
+	# Check if sheet actions are available
+	found_sheet_actions = [action for action in sheet_actions if action in available_actions]
+
+	if not found_sheet_actions:
 		pytest.skip('No Google Sheets actions found in controller')
 
-	# Use the first Google Sheets action we find
-	open_action = google_sheet_actions[0]
-	print(f'Using action: {open_action}')
-
+	# First navigate to the Google Sheets URL
 	result = await controller.registry.execute_action(
-		open_action, {'google_sheet_url': TEST_GOOGLE_SHEET_URL}, browser_session=browser_session
+		'go_to_url', {'url': TEST_GOOGLE_SHEET_URL}, browser_session=browser_session
 	)
 
-	print(f'Open result: {result.extracted_content if result.extracted_content else "No content"}')
-	print(f'Open error: {result.error if result.error else "No error"}')
+	# Wait for the page to load
+	await asyncio.sleep(2)
 
 	# Verify we're on the Google Sheets page
 	page = await browser_session.get_current_page()
 	assert 'docs.google.com/spreadsheets' in page.url
+
+	# Try to read the sheet contents
+	if 'read_sheet_contents' in available_actions:
+		result = await controller.registry.execute_action('read_sheet_contents', {}, browser_session=browser_session)
+		print(f'Read result: {result.extracted_content if result.extracted_content else "No content"}')
+		print(f'Read error: {result.error if result.error else "No error"}')
 
 
 @pytest.mark.asyncio

@@ -292,6 +292,20 @@ class TestControllerIntegration:
 	@pytest.mark.asyncio
 	async def test_wait_action(self, controller, browser_session):
 		"""Test that the wait action correctly waits for the specified duration."""
+
+		# verify that it's in the default action set
+		wait_action = None
+		for action_name, action in controller.registry.registry.actions.items():
+			if 'wait' in action_name.lower() and 'seconds' in str(action.param_model.model_fields):
+				wait_action = action
+				break
+		assert wait_action is not None, 'Could not find wait action in controller'
+
+		# Check that it has seconds parameter with default
+		assert 'seconds' in wait_action.param_model.model_fields
+		schema = wait_action.param_model.model_json_schema()
+		assert schema['properties']['seconds']['default'] == 3
+
 		# Create wait action for 1 second - fix to use a dictionary
 		wait_action = {'wait': {'seconds': 1}}  # Corrected format
 
@@ -309,6 +323,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Waiting for' in result.extracted_content
 
 		# Verify that at least 1 second has passed
@@ -1143,6 +1158,104 @@ class TestControllerIntegration:
 		# Verify the actual dropdown selection was made by checking the DOM
 		selected_value = await page.evaluate("document.getElementById('test-dropdown').value")
 		assert selected_value == 'option2'  # Second Option has value "option2"
+
+	@pytest.mark.asyncio
+	async def test_extract_content_action(self, controller, browser_session, base_url, http_server):
+		"""Test the default extract_content action with mixed parameter ordering."""
+		# Set up a test page with specific content
+		http_server.expect_request('/extract-test').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Extract Content Test Page</title>
+			</head>
+			<body>
+				<h1>Product Details</h1>
+				<div class="product">
+					<h2>Awesome Widget</h2>
+					<p class="price">$19.99</p>
+					<p class="description">This is an amazing widget that does everything!</p>
+					<a href="/buy-now">Buy Now</a>
+					<a href="/reviews">Read Reviews</a>
+				</div>
+				<div class="features">
+					<h3>Features:</h3>
+					<ul>
+						<li>Feature 1: Super fast</li>
+						<li>Feature 2: Easy to use</li>
+						<li>Feature 3: Lifetime warranty</li>
+					</ul>
+				</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the test page
+		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/extract-test')}
+
+		class GoToUrlActionModel(ActionModel):
+			go_to_url: GoToUrlAction | None = None
+
+		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
+
+		# Verify extract_content is registered
+		assert 'extract_content' in controller.registry.registry.actions
+
+		# Create a mock LLM for testing
+		from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+		mock_llm = FakeListChatModel(
+			responses=['Product: Awesome Widget, Price: $19.99, Description: Amazing widget with 3 key features']
+		)
+
+		# Test extract_content with include_links=False (default)
+		extract_action = {'extract_content': {'goal': 'Extract product name and price'}}
+
+		class ExtractContentActionModel(ActionModel):
+			extract_content: dict | None = None
+
+		# This should fail if page_extraction_llm is not passed correctly
+		with pytest.raises(RuntimeError) as exc_info:
+			await controller.act(ExtractContentActionModel(**extract_action), browser_session)
+
+		# Should fail because page_extraction_llm is required but not provided
+		assert 'page_extraction_llm' in str(exc_info.value)
+
+		# Now test with the LLM provided through controller context
+		# Since controller doesn't have a way to pass page_extraction_llm directly,
+		# we'll test that the action is properly registered with correct parameters
+		action = controller.registry.registry.actions['extract_content']
+
+		# Verify the param model only includes user-facing parameters
+		model_fields = action.param_model.model_fields
+		assert 'goal' in model_fields
+		assert 'include_links' in model_fields
+		assert model_fields['include_links'].default is False
+
+		# Special params should NOT be in the model
+		assert 'page' not in model_fields
+		assert 'page_extraction_llm' not in model_fields
+
+		# Verify the function signature includes the expected parameters
+		import inspect
+
+		sig = inspect.signature(action.function)
+		# The normalized function should have params and kwargs
+		assert 'params' in sig.parameters
+		assert 'kwargs' in sig.parameters
+
+		# Test with include_links=True
+		extract_action_with_links = {
+			'extract_content': {'goal': 'Extract all product information including links', 'include_links': True}
+		}
+
+		# Verify the action model can be created with these parameters
+		action_model = ExtractContentActionModel(**extract_action_with_links)
+		assert action_model.extract_content['goal'] == 'Extract all product information including links'
+		assert action_model.extract_content['include_links'] is True
 
 	@pytest.mark.asyncio
 	async def test_click_element_by_index(self, controller, browser_session, base_url, http_server):

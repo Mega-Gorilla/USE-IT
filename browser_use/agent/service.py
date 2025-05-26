@@ -292,12 +292,22 @@ class Agent(Generic[Context]):
 		# assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
 		# assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
-		self.browser_session = browser_session or BrowserSession(
-			profile=browser_profile,
-			browser=browser,
-			browser_context=browser_context,
-			page=page,
-		)
+
+		if browser_session:
+			# always copy sessions that are passed in to avoid conflicting with other agents sharing the same session
+			self.browser_session = browser_session.model_copy(
+				update={
+					'agent_current_page': None,
+					'human_current_page': None,
+				},
+			)
+		else:
+			self.browser_session = BrowserSession(
+				browser_profile=browser_profile,
+				browser=browser,
+				browser_context=browser_context,
+				page=page,
+			)
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
