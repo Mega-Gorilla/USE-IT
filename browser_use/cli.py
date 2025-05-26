@@ -671,32 +671,41 @@ class BrowserUseApp(App):
 		browser_info = self.query_one('#browser-info')
 		browser_info.clear()
 
-		if self.browser_session:
+		# Try to use the agent's browser session if available
+		browser_session = self.browser_session
+		if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'browser_session'):
+			browser_session = self.agent.browser_session
+
+		if browser_session:
 			try:
-				# Check if browser session is initialized
-				if not self.browser_session.initialized:
-					browser_info.write('[yellow]Browser session created, waiting for start...[/]')
+				# Check if browser session has a browser context
+				if not hasattr(browser_session, 'browser_context') or browser_session.browser_context is None:
+					browser_info.write('[yellow]Browser session created, waiting for browser to launch...[/]')
 					return
+
+				# Update our reference if we're using the agent's session
+				if browser_session != self.browser_session:
+					self.browser_session = browser_session
 
 				# Get basic browser info from browser_profile
 				browser_type = 'Chromium'
-				headless = self.browser_session.browser_profile.headless
+				headless = browser_session.browser_profile.headless
 
 				# Determine connection type based on config
 				connection_type = 'playwright'  # Default
-				if self.browser_session.cdp_url:
+				if browser_session.cdp_url:
 					connection_type = 'CDP'
-				elif self.browser_session.wss_url:
+				elif browser_session.wss_url:
 					connection_type = 'WSS'
-				elif self.browser_session.browser_profile.executable_path:
+				elif browser_session.browser_profile.executable_path:
 					connection_type = 'user-provided'
 
 				# Get window size details from browser_profile
 				window_width = None
 				window_height = None
-				if self.browser_session.browser_profile.viewport:
-					window_width = self.browser_session.browser_profile.viewport.get('width')
-					window_height = self.browser_session.browser_profile.viewport.get('height')
+				if browser_session.browser_profile.viewport:
+					window_width = browser_session.browser_profile.viewport.get('width')
+					window_height = browser_session.browser_profile.viewport.get('height')
 
 				# Try to get browser PID
 				browser_pid = 'Unknown'
@@ -704,26 +713,16 @@ class BrowserUseApp(App):
 				browser_status = '[red]Disconnected[/]'
 
 				try:
-					# First check if Chrome subprocess is tracked
-					if hasattr(self.browser_session, 'chrome_process') and self.browser_session.chrome_process.pid:
-						browser_pid = str(self.browser_session.chrome_process.pid)
+					# Check if browser PID is available
+					if hasattr(browser_session, 'browser_pid') and browser_session.browser_pid:
+						browser_pid = str(browser_session.browser_pid)
 						connected = True
 						browser_status = '[green]Connected[/]'
-					# Then check if we have a browser connection
-					elif hasattr(self.browser_session, 'browser') and self.browser_session.browser.is_connected():
+					# Otherwise just check if we have a browser context
+					elif browser_session.browser_context is not None:
 						connected = True
 						browser_status = '[green]Connected[/]'
-
-						# Try to get PID from related processes by checking for Chrome processes
-						import psutil
-
-						for proc in psutil.process_iter(['pid', 'name']):
-							try:
-								if 'chrome' in proc.name().lower() or 'chromium' in proc.name().lower():
-									browser_pid = str(proc.pid)
-									break
-							except (psutil.NoSuchProcess, psutil.AccessDenied):
-								pass
+						browser_pid = 'N/A'
 				except Exception as e:
 					browser_pid = f'Error: {str(e)}'
 
@@ -733,7 +732,7 @@ class BrowserUseApp(App):
 					f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
 				)
 				browser_info.write(f'PID: [dim]{browser_pid}[/]')
-				browser_info.write(f'CDP Port: {self.browser_session.cdp_url}')
+				browser_info.write(f'CDP Port: {browser_session.cdp_url}')
 
 				if window_width and window_height:
 					browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
@@ -749,9 +748,9 @@ class BrowserUseApp(App):
 						pass
 
 					# Show the agent's current page URL if available
-					if self.browser_session.agent_current_page:
+					if browser_session.agent_current_page:
 						current_url = (
-							self.browser_session.agent_current_page.url.replace('https://', '')
+							browser_session.agent_current_page.url.replace('https://', '')
 							.replace('http://', '')
 							.replace('www.', '')[:36]
 							+ '…'
@@ -976,6 +975,9 @@ class BrowserUseApp(App):
 				browser_session=self.browser_session,
 				**agent_settings.model_dump(),
 			)
+			# Update our browser_session reference to point to the agent's
+			if hasattr(self.agent, 'browser_session'):
+				self.browser_session = self.agent.browser_session
 		else:
 			self.agent.add_new_task(task)
 
