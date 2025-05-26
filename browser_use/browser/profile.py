@@ -410,8 +410,9 @@ class BrowserLaunchArgs(BaseModel):
 		populate_by_name=True,
 	)
 
-	env: dict[str, str | float | bool] = Field(
-		default_factory=dict, description='Extra environment variables to set when launching the browser.'
+	env: dict[str, str | float | bool] | None = Field(
+		default=None,
+		description='Extra environment variables to set when launching the browser. If None, inherits from the current process.',
 	)
 	executable_path: str | Path | None = Field(
 		default=None,
@@ -630,29 +631,29 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		elif not self.ignore_default_args:
 			default_args = CHROME_DEFAULT_ARGS
 
-		return BrowserLaunchArgs.args_as_list(  # convert back to ['--arg=value', '--arg', '--arg=value', ...]
-			BrowserLaunchArgs.args_as_dict(  # uniquify via dict {'arg': 'value', 'arg2': 'value2', ...}
-				[
-					*default_args,
-					*self.args,
-					f'--profile-directory={self.profile_directory}',
-					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-					*(CHROME_HEADLESS_ARGS if self.headless else []),
-					*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
-					*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
-					*(
-						[f'--window-size={self.window_size["height"]},{self.window_size["width"]}']
-						if self.window_size
-						else (['--start-maximized'] if not self.headless else [])
-					),
-					*(
-						[f'--window-position={self.window_position["width"]},{self.window_position["height"]}']
-						if self.window_position
-						else []
-					),
-				]
-			)
-		)
+		# Capture args before conversion for logging
+		pre_conversion_args = [
+			*default_args,
+			*self.args,
+			f'--profile-directory={self.profile_directory}',
+			*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
+			*(CHROME_HEADLESS_ARGS if self.headless else []),
+			*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
+			*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
+			*(
+				[f'--window-size={self.window_size["width"]},{self.window_size["height"]}']
+				if self.window_size
+				else (['--start-maximized'] if not self.headless else [])
+			),
+			*(
+				[f'--window-position={self.window_position["width"]},{self.window_position["height"]}']
+				if self.window_position
+				else []
+			),
+		]
+
+		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
+		return final_args_list
 
 	def kwargs_for_launch_persistent_context(self) -> BrowserLaunchPersistentContextArgs:
 		"""Return the kwargs for BrowserType.launch()."""
@@ -742,6 +743,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		use_viewport = self.headless or self.viewport or self.device_scale_factor
 		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
 		use_viewport = not self.no_viewport
+
 		if use_viewport:
 			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
 			self.viewport = self.viewport or display_size or ViewportSize(width=1280, height=1100)
