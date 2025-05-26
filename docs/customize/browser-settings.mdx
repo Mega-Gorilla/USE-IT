@@ -350,6 +350,8 @@ channel: BrowserChannel = 'chromium'
 
 Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, `'msedge-beta'`, `'msedge-dev'`, `'msedge-canary'`
 
+Don't worry, other chromium-based browsers not in this list (e.g. `brave`) are still supported if you provide your own [`executable_path`](#executable_path).
+
 #### `executable_path`
 
 ```python
@@ -549,10 +551,13 @@ Viewport size with `width` and `height`. Example: `{"width": 1280, "height": 720
 #### `no_viewport`
 
 ```python
-no_viewport: bool | None = None
+no_viewport: bool | None = not headless
 ```
 
 Disable fixed viewport. Content will resize with window.
+
+*Tip:* don't use this parameter, it's a playwright standard parameter but it's redundant and only serves to override the `viewport` setting above.
+A viewport is *always* used in headless mode regardless of this setting, and is *never* used in headful mode unless you pass `viewport={width, height}` explicitly.
 
 #### `device_scale_factor`
 
@@ -560,7 +565,7 @@ Disable fixed viewport. Content will resize with window.
 device_scale_factor: float | None = None
 ```
 
-Device scale factor (DPI). Useful for high-resolution screenshots.
+Device scale factor (DPI). Useful for high-resolution screenshots (set it to 2).
 
 #### `screen`
 
@@ -801,6 +806,19 @@ handle_sigterm: bool = False
 ```
 
 Whether playwright should swallow SIGTERM signals and kill the browser.
+
+#### `**playwright.devices['iPhone 13']`
+
+```python
+BrowserProfile(
+    ...
+    **playwright.devices['iPhone 13'],    # playwright = await async_playwright().start()
+)
+```
+
+Playwright provides launch & context args to [emulate common device fingerprints](https://playwright.dev/python/docs/emulation).
+`BrowserSession` and `BrowserProfile` take all the standard playwright args so we are able to support these as well.
+
 
 
 ---
