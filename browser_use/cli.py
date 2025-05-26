@@ -1139,6 +1139,89 @@ class BrowserUseApp(App):
 		yield Footer()
 
 
+async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
+	"""Run browser-use in non-interactive mode with a single prompt."""
+	# Set up logging to only show results by default
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
+
+	# Try to add RESULT level if it doesn't exist
+	try:
+		addLoggingLevel('RESULT', 35)
+	except AttributeError:
+		pass  # Level already exists
+
+	# Configure logging
+	root_logger = logging.getLogger()
+	root_logger.handlers = []  # Clear existing handlers
+
+	console_handler = logging.StreamHandler(sys.stdout)
+	console_handler.setFormatter(logging.Formatter('%(message)s'))
+	console_handler.setLevel('RESULT')
+	root_logger.addHandler(console_handler)
+	root_logger.setLevel('RESULT')
+
+	# Silence third-party loggers
+	for logger_name in [
+		'WDM',
+		'httpx',
+		'selenium',
+		'playwright',
+		'urllib3',
+		'asyncio',
+		'langchain',
+		'openai',
+		'httpcore',
+		'charset_normalizer',
+		'anthropic._base_client',
+		'PIL.PngImagePlugin',
+		'trafilatura.htmlprocessing',
+		'trafilatura',
+	]:
+		third_party = logging.getLogger(logger_name)
+		third_party.setLevel(logging.ERROR)
+		third_party.propagate = False
+
+	try:
+		# Load config
+		config = load_user_config()
+		config = update_config_with_click_args(config, ctx)
+
+		# Get LLM
+		llm = get_llm(config)
+
+		# Get agent settings from config
+		agent_settings = AgentSettings.model_validate(config.get('agent', {}))
+
+		# Create browser session with headless=True and no user_data_dir
+		browser_session = BrowserSession(
+			headless=True,
+			user_data_dir=None,
+		)
+
+		# Create and run agent
+		agent = Agent(
+			task=prompt,
+			llm=llm,
+			browser_session=browser_session,
+			**agent_settings.model_dump(),
+		)
+
+		# Run the agent
+		await agent.run()
+
+		# Close browser session
+		await browser_session.close()
+
+	except Exception as e:
+		if debug:
+			import traceback
+
+			traceback.print_exc()
+		else:
+			print(f'Error: {str(e)}', file=sys.stderr)
+		sys.exit(1)
+
+
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
 	logger = logging.getLogger('browser_use.startup')
@@ -1248,15 +1331,22 @@ async def textual_interface(config: dict[str, Any]):
 @click.option('--headless', is_flag=True, help='Run browser in headless mode', default=None)
 @click.option('--window-width', type=int, help='Browser window width')
 @click.option('--window-height', type=int, help='Browser window height')
+@click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
-	"""Browser-Use Interactive TUI"""
+	"""Browser-Use Interactive TUI or Command Line Executor"""
 
 	if kwargs['version']:
 		from importlib.metadata import version
 
 		print(version('browser-use'))
 		sys.exit(0)
+
+	# Check if prompt mode is activated
+	if kwargs.get('prompt'):
+		# Run in non-interactive mode
+		asyncio.run(run_prompt_mode(kwargs['prompt'], ctx, debug))
+		return
 
 	# Configure console logging
 	console_handler = logging.StreamHandler(sys.stdout)
