@@ -528,24 +528,6 @@ class BrowserUseApp(App):
 			logger.error(f'Error focusing input field: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
-		# Step 4: Initialize panels with test content
-		logger.debug('Testing panel initialization...')
-		try:
-			browser_info = self.query_one('#browser-info')
-			browser_info.write('DEBUG: Panel initialized')
-			logger.debug('Browser panel initialized')
-
-			model_info = self.query_one('#model-info')
-			model_info.write('DEBUG: Panel initialized')
-			logger.debug('Model panel initialized')
-
-			tasks_info = self.query_one('#tasks-info')
-			tasks_info.write('DEBUG: Panel initialized')
-			logger.debug('Tasks panel initialized')
-		except Exception as e:
-			logger.error(f'Error initializing panels: {str(e)}', exc_info=True)
-			# Non-critical, continue
-
 		# Step 5: Start continuous info panel updates
 		logger.debug('Starting info panel updates...')
 		try:
@@ -658,16 +640,6 @@ class BrowserUseApp(App):
 				info_panels.display = True
 				tasks_panel.display = True
 
-				# Directly force content into panels for debugging
-				browser_info = self.query_one('#browser-info')
-				browser_info.write('Showing browser info...')
-
-				model_info = self.query_one('#model-info')
-				model_info.write('Showing model info...')
-
-				tasks_info = self.query_one('#tasks-info')
-				tasks_info.write('Showing tasks info...')
-
 				# Make results container take full height
 				results_container = self.query_one('#results-container')
 				results_container.styles.height = '1fr'
@@ -683,19 +655,6 @@ class BrowserUseApp(App):
 	def update_info_panels(self) -> None:
 		"""Update all information panels with current state."""
 		try:
-			# Force initial content into panels to ensure they're not empty
-			browser_info = self.query_one('#browser-info')
-			if not browser_info.lines:
-				browser_info.write('Initializing browser info...')
-
-			model_info = self.query_one('#model-info')
-			if not model_info.lines:
-				model_info.write('Initializing model info...')
-
-			tasks_info = self.query_one('#tasks-info')
-			if not tasks_info.lines:
-				tasks_info.write('Initializing tasks info...')
-
 			# Update actual content
 			self.update_browser_panel()
 			self.update_model_panel()
@@ -713,82 +672,93 @@ class BrowserUseApp(App):
 		browser_info.clear()
 
 		if self.browser_session:
-			# Get basic browser info
-			browser_type = self.browser_session.browser.__class__.__name__
-			headless = self.browser_session.headless
-
-			# Determine connection type based on config
-			connection_type = 'playwright'  # Default
-			if self.browser_session.cdp_url:
-				connection_type = 'CDP'
-			elif self.browser_session.wss_url:
-				connection_type = 'WSS'
-			elif self.browser_session.executable_path:
-				connection_type = 'user-provided'
-
-			# Get window size details
-			window_width = self.browser_session.viewport['width']
-			window_height = self.browser_session.viewport['height']
-
-			# Try to get browser PID
-			browser_pid = 'Unknown'
-			connected = False
-			browser_status = '[red]Disconnected[/]'
-
 			try:
-				# First check if Chrome subprocess is tracked
-				if hasattr(self.browser_session, 'chrome_process') and self.browser_session.chrome_process.pid:
-					browser_pid = str(self.browser_session.chrome_process.pid)
-					connected = True
-					browser_status = '[green]Connected[/]'
-				# Then check if we have a browser connection
-				elif hasattr(self.browser_session, 'browser') and self.browser_session.browser.is_connected():
-					connected = True
-					browser_status = '[green]Connected[/]'
+				# Check if browser session is initialized
+				if not self.browser_session.initialized:
+					browser_info.write('[yellow]Browser session created, waiting for start...[/]')
+					return
 
-					# Try to get PID from related processes by checking for Chrome processes
-					import psutil
+				# Get basic browser info from browser_profile
+				browser_type = 'Chromium'
+				headless = self.browser_session.browser_profile.headless
 
-					for proc in psutil.process_iter(['pid', 'name']):
-						try:
-							if 'chrome' in proc.name().lower() or 'chromium' in proc.name().lower():
-								browser_pid = str(proc.pid)
-								break
-						except (psutil.NoSuchProcess, psutil.AccessDenied):
-							pass
-			except Exception as e:
-				browser_pid = f'Error: {str(e)}'
+				# Determine connection type based on config
+				connection_type = 'playwright'  # Default
+				if self.browser_session.cdp_url:
+					connection_type = 'CDP'
+				elif self.browser_session.wss_url:
+					connection_type = 'WSS'
+				elif self.browser_session.browser_profile.executable_path:
+					connection_type = 'user-provided'
 
-			# Display browser information
-			browser_info.write(f'[bold cyan]Chromium[/] Browser ({browser_status})')
-			browser_info.write(
-				f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
-			)
-			browser_info.write(f'PID: [dim]{browser_pid}[/]')
-			browser_info.write(f'CDP Port: {self.browser_session.cdp_url}')
+				# Get window size details from browser_profile
+				window_width = None
+				window_height = None
+				if self.browser_session.browser_profile.viewport:
+					window_width = self.browser_session.browser_profile.viewport.get('width')
+					window_height = self.browser_session.browser_profile.viewport.get('height')
 
-			if window_width and window_height:
-				browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
+				# Try to get browser PID
+				browser_pid = 'Unknown'
+				connected = False
+				browser_status = '[red]Disconnected[/]'
 
-			# Include additional information about the browser if needed
-			if connected and hasattr(self, 'agent') and self.agent:
 				try:
-					# Show when the browser was connected
-					timestamp = int(time.time())
-					current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
-					browser_info.write(f'Last updated: [dim]{current_time}[/]')
-				except Exception as e:
-					pass
+					# First check if Chrome subprocess is tracked
+					if hasattr(self.browser_session, 'chrome_process') and self.browser_session.chrome_process.pid:
+						browser_pid = str(self.browser_session.chrome_process.pid)
+						connected = True
+						browser_status = '[green]Connected[/]'
+					# Then check if we have a browser connection
+					elif hasattr(self.browser_session, 'browser') and self.browser_session.browser.is_connected():
+						connected = True
+						browser_status = '[green]Connected[/]'
 
-				# Show the agent's current page URL if available
-				if self.browser_session.agent_current_page:
-					current_url = (
-						self.browser_session.agent_current_page.url.replace('https://', '')
-						.replace('http://', '')
-						.replace('www.', '')[:36]
-						+ '…'
-					)
-					browser_info.write(f'👁️  [green]{current_url}[/]')
+						# Try to get PID from related processes by checking for Chrome processes
+						import psutil
+
+						for proc in psutil.process_iter(['pid', 'name']):
+							try:
+								if 'chrome' in proc.name().lower() or 'chromium' in proc.name().lower():
+									browser_pid = str(proc.pid)
+									break
+							except (psutil.NoSuchProcess, psutil.AccessDenied):
+								pass
+				except Exception as e:
+					browser_pid = f'Error: {str(e)}'
+
+				# Display browser information
+				browser_info.write(f'[bold cyan]Chromium[/] Browser ({browser_status})')
+				browser_info.write(
+					f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
+				)
+				browser_info.write(f'PID: [dim]{browser_pid}[/]')
+				browser_info.write(f'CDP Port: {self.browser_session.cdp_url}')
+
+				if window_width and window_height:
+					browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
+
+				# Include additional information about the browser if needed
+				if connected and hasattr(self, 'agent') and self.agent:
+					try:
+						# Show when the browser was connected
+						timestamp = int(time.time())
+						current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
+						browser_info.write(f'Last updated: [dim]{current_time}[/]')
+					except Exception as e:
+						pass
+
+					# Show the agent's current page URL if available
+					if self.browser_session.agent_current_page:
+						current_url = (
+							self.browser_session.agent_current_page.url.replace('https://', '')
+							.replace('http://', '')
+							.replace('www.', '')[:36]
+							+ '…'
+						)
+						browser_info.write(f'👁️  [green]{current_url}[/]')
+			except Exception as e:
+				browser_info.write(f'[red]Error updating browser info: {str(e)}[/]')
 		else:
 			browser_info.write('[red]Browser not initialized[/]')
 
