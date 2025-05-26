@@ -26,6 +26,8 @@ import langchain_anthropic
 import langchain_google_genai
 import langchain_openai
 
+# from patchright.async_api import async_playwright
+
 try:
 	import readline
 
@@ -33,6 +35,9 @@ try:
 except ImportError:
 	# readline not available on Windows by default
 	READLINE_AVAILABLE = False
+
+
+os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import AgentSettings
@@ -432,7 +437,7 @@ class BrowserUseApp(App):
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
-		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
+		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'result').lower()
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
@@ -1141,45 +1146,17 @@ class BrowserUseApp(App):
 
 async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 	"""Run browser-use in non-interactive mode with a single prompt."""
+	# Import and call setup_logging to ensure proper initialization
+	from browser_use.logging_config import setup_logging
+
 	# Set up logging to only show results by default
 	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 
-	# Try to add RESULT level if it doesn't exist
-	try:
-		addLoggingLevel('RESULT', 35)
-	except AttributeError:
-		pass  # Level already exists
+	# Re-run setup_logging to apply the new log level
+	setup_logging()
 
-	# Configure logging
-	root_logger = logging.getLogger()
-	root_logger.handlers = []  # Clear existing handlers
-
-	console_handler = logging.StreamHandler(sys.stdout)
-	console_handler.setFormatter(logging.Formatter('%(message)s'))
-	console_handler.setLevel('RESULT')
-	root_logger.addHandler(console_handler)
-	root_logger.setLevel('RESULT')
-
-	# Silence third-party loggers
-	for logger_name in [
-		'WDM',
-		'httpx',
-		'selenium',
-		'playwright',
-		'urllib3',
-		'asyncio',
-		'langchain',
-		'openai',
-		'httpcore',
-		'charset_normalizer',
-		'anthropic._base_client',
-		'PIL.PngImagePlugin',
-		'trafilatura.htmlprocessing',
-		'trafilatura',
-	]:
-		third_party = logging.getLogger(logger_name)
-		third_party.setLevel(logging.ERROR)
-		third_party.propagate = False
+	# The logging is now properly configured by setup_logging()
+	# No need to manually configure handlers since setup_logging() handles it
 
 	try:
 		# Load config
@@ -1194,8 +1171,10 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 		# Create browser session with headless=True and no user_data_dir
 		browser_session = BrowserSession(
-			headless=True,
-			user_data_dir=None,
+			headless=False,
+			# user_data_dir=None,
+			# playwright=(await async_playwright().start()),
+			# channel=BrowserChannel.CHROME,
 		)
 
 		# Create and run agent
@@ -1204,9 +1183,9 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 			llm=llm,
 			browser_session=browser_session,
 			**agent_settings.model_dump(),
+			# Run the agent
 		)
 
-		# Run the agent
 		await agent.run()
 
 		# Close browser session
@@ -1255,7 +1234,11 @@ async def textual_interface(config: dict[str, Any]):
 			logger.info('Browser mode: visible')
 
 		# Create BrowserSession directly with config parameters
-		browser_session = BrowserSession(**browser_config)
+		browser_session = BrowserSession(
+			**browser_config,
+			# playwright=(await async_playwright().start()),
+			# channel=BrowserChannel.CHROME,
+		)
 		logger.debug('BrowserSession initialized successfully')
 
 		# Log browser version if available
@@ -1344,6 +1327,8 @@ def main(ctx: click.Context, debug: bool = False, **kwargs):
 
 	# Check if prompt mode is activated
 	if kwargs.get('prompt'):
+		# Set environment variable for prompt mode before running
+		os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 		# Run in non-interactive mode
 		asyncio.run(run_prompt_mode(kwargs['prompt'], ctx, debug))
 		return
