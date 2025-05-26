@@ -36,7 +36,7 @@ except ImportError:
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import AgentSettings
-from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser import BrowserSession
 from browser_use.logging_config import addLoggingLevel
 
 # Paths
@@ -97,8 +97,6 @@ def get_default_config() -> dict[str, Any]:
 		'agent': {},  # AgentSettings will use defaults
 		'browser': {
 			'headless': True,
-		},
-		'browser_context': {
 			'keep_alive': True,
 			'ignore_https_errors': False,
 		},
@@ -147,27 +145,16 @@ def update_config_with_click_args(config: dict[str, Any], ctx: click.Context) ->
 		config['model'] = {}
 	if 'browser' not in config:
 		config['browser'] = {}
-	if 'browser_context' not in config:
-		config['browser_context'] = {}
-
-	# Create a merged browser profile config for all browser settings
-	browser_profile = config.get('browser', {}) | config.get('browser_context', {})
 
 	# Update configuration with command-line args if provided
 	if ctx.params.get('model'):
 		config['model']['name'] = ctx.params['model']
 	if ctx.params.get('headless') is not None:
-		browser_profile['headless'] = ctx.params['headless']
+		config['browser']['headless'] = ctx.params['headless']
 	if ctx.params.get('window_width'):
-		browser_profile['window_width'] = ctx.params['window_width']
+		config['browser']['window_width'] = ctx.params['window_width']
 	if ctx.params.get('window_height'):
-		browser_profile['window_height'] = ctx.params['window_height']
-
-	# Update config with the merged profile
-	config['browser'] = browser_profile
-	# Remove the old split config
-	if 'browser_context' in config:
-		del config['browser_context']
+		config['browser']['window_height'] = ctx.params['window_height']
 
 	return config
 
@@ -1016,7 +1003,7 @@ class BrowserUseApp(App):
 				task=task,
 				llm=self.llm,
 				controller=self.controller,
-				browser=self.browser,
+				browser_session=self.browser_session,
 				**agent_settings.model_dump(),
 			)
 		else:
@@ -1093,13 +1080,13 @@ class BrowserUseApp(App):
 
 	async def action_quit(self) -> None:
 		"""Quit the application and clean up resources."""
-		# Close the browser if it exists
-		if self.browser:
+		# Close the browser session if it exists
+		if self.browser_session:
 			try:
-				await self.browser.close()
-				logging.debug('Browser closed successfully')
+				await self.browser_session.close()
+				logging.debug('Browser session closed successfully')
 			except Exception as e:
-				logging.error(f'Error closing browser: {str(e)}')
+				logging.error(f'Error closing browser session: {str(e)}')
 
 		# Exit the application
 		self.exit()
@@ -1198,40 +1185,36 @@ async def textual_interface(config: dict[str, Any]):
 
 	logger.debug('Setting up Browser, Controller, and LLM...')
 
-	# Step 1: Configure BrowserUse components
-	logger.debug('Validating browser configs...')
+	# Step 1: Initialize BrowserSession with config
+	logger.debug('Initializing BrowserSession...')
 	try:
-		browser_profile = BrowserProfile.model_validate(config.get('browser', {}) | config.get('browser_context', {}))
-		logger.info('Browser type: chromium')  # BrowserProfile only supports chromium
-		if browser_profile.executable_path:
-			logger.info(f'Browser binary: {browser_profile.executable_path}')
-		if browser_profile.headless:
+		# Get browser config from the config dict
+		browser_config = config.get('browser', {})
+
+		logger.info('Browser type: chromium')  # BrowserSession only supports chromium
+		if browser_config.get('executable_path'):
+			logger.info(f'Browser binary: {browser_config["executable_path"]}')
+		if browser_config.get('headless'):
 			logger.info('Browser mode: headless')
 		else:
 			logger.info('Browser mode: visible')
-		logger.debug('Browser configs validated successfully')
-	except Exception as e:
-		logger.error(f'Error validating browser configs: {str(e)}', exc_info=True)
-		raise RuntimeError(f'Failed to validate browser configuration: {str(e)}')
 
-	# Step 2: Initialize Browser
-	logger.debug('Initializing Browser...')
-	try:
-		browser = BrowserSession(profile=browser_profile)
-		logger.debug('Browser initialized successfully')
+		# Create BrowserSession directly with config parameters
+		browser_session = BrowserSession(**browser_config)
+		logger.debug('BrowserSession initialized successfully')
 
 		# Log browser version if available
 		try:
-			if hasattr(browser, 'version') and browser.version:
-				logger.info(f'Browser version: {browser.version}')
-			elif hasattr(browser, 'playwright_browser') and browser.playwright_browser:
-				version = browser.playwright_browser.version
+			if hasattr(browser_session, 'version') and browser_session.version:
+				logger.info(f'Browser version: {browser_session.version}')
+			elif hasattr(browser_session, 'playwright_browser') and browser_session.playwright_browser:
+				version = browser_session.playwright_browser.version
 				logger.info(f'Browser version: {version}')
 		except Exception as e:
 			logger.debug(f'Could not determine browser version: {e}')
 	except Exception as e:
-		logger.error(f'Error initializing Browser: {str(e)}', exc_info=True)
-		raise RuntimeError(f'Failed to initialize Browser: {str(e)}')
+		logger.error(f'Error initializing BrowserSession: {str(e)}', exc_info=True)
+		raise RuntimeError(f'Failed to initialize BrowserSession: {str(e)}')
 
 	# Step 3: Initialize Controller
 	logger.debug('Initializing Controller...')
@@ -1260,7 +1243,7 @@ async def textual_interface(config: dict[str, Any]):
 	try:
 		app = BrowserUseApp(config)
 		# Pass the initialized components to the app
-		app.browser = browser
+		app.browser_session = browser_session
 		app.controller = controller
 		app.llm = llm
 
@@ -1268,7 +1251,7 @@ async def textual_interface(config: dict[str, Any]):
 		setup_textual_logging()
 
 		# Log browser and model configuration that will be used
-		browser_type = 'Chromium'  # BrowserProfile only supports Chromium
+		browser_type = 'Chromium'  # BrowserSession only supports Chromium
 		model_name = config.get('model', {}).get('name', 'auto-detected')
 		headless = config.get('browser', {}).get('headless', True)
 		headless_str = 'headless' if headless else 'visible'
@@ -1280,9 +1263,9 @@ async def textual_interface(config: dict[str, Any]):
 		await app.run_async()
 	except Exception as e:
 		logger.error(f'Error in textual_interface: {str(e)}', exc_info=True)
-		# Make sure to close browser if app initialization fails
-		if 'browser' in locals():
-			await browser.close()
+		# Make sure to close browser session if app initialization fails
+		if 'browser_session' in locals():
+			await browser_session.close()
 		raise
 
 
@@ -1355,7 +1338,7 @@ def main(ctx: click.Context, debug: bool = False, **kwargs):
 	logger.debug('Setting up handlers for Textual UI...')
 
 	# Log browser and model configuration that will be used
-	browser_type = 'Chromium'  # BrowserProfile only supports Chromium
+	browser_type = 'Chromium'  # BrowserSession only supports Chromium
 	model_name = config.get('model', {}).get('name', 'auto-detected')
 	headless = config.get('browser', {}).get('headless', True)
 	headless_str = 'headless' if headless else 'visible'
