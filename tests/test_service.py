@@ -152,7 +152,6 @@ class TestRegistry:
 		# Assert that the included action was added to the registry
 		assert 'included_action' in registry_with_excludes.registry.actions
 
-	@pytest.mark.asyncio
 	async def test_execute_action_with_and_without_browser_context(self):
 		"""
 		Test that the execute_action method correctly handles actions with and without a browser context.
