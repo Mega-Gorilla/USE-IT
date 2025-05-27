@@ -7,8 +7,7 @@ from pydantic import BaseModel
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import ActionResult
-from browser_use.browser.browser import Browser
-from browser_use.browser.context import BrowserContext
+from browser_use.browser import BrowserSession
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.registry.views import ActionModel
@@ -34,14 +33,10 @@ class TestAgent:
 		return Mock(spec=BaseChatModel)
 
 	@pytest.fixture
-	def mock_browser(self):
-		return Mock(spec=Browser)
+	def mock_browser_session(self):
+		return Mock(spec=BrowserSession)
 
-	@pytest.fixture
-	def mock_browser_context(self):
-		return Mock(spec=BrowserContext)
-
-	def test_convert_initial_actions(self, mock_controller, mock_llm, mock_browser, mock_browser_context):  # type: ignore
+	def test_convert_initial_actions(self, mock_controller, mock_llm, mock_browser_session):  # type: ignore
 		"""
 		Test that the _convert_initial_actions method correctly converts
 		dictionary-based actions to ActionModel instances.
@@ -53,9 +48,7 @@ class TestAgent:
 		4. The method returns a list of ActionModel instances.
 		"""
 		# Arrange
-		agent = Agent(
-			task='Test task', llm=mock_llm, controller=mock_controller, browser=mock_browser, browser_context=mock_browser_context
-		)
+		agent = Agent(task='Test task', llm=mock_llm, controller=mock_controller, browser_session=mock_browser_session)
 		initial_actions = [{'test_action': {'param1': 'value1', 'param2': 'value2'}}]
 
 		# Mock the ActionModel
@@ -99,9 +92,9 @@ class TestAgent:
 			# Mock the get_next_action method to raise an exception
 			agent.get_next_action = AsyncMock(side_effect=ValueError('Test error'))
 
-			# Mock the browser_context
-			agent.browser_context = AsyncMock()
-			agent.browser_context.get_state_summary = AsyncMock(
+			# Mock the browser_session
+			agent.browser_session = AsyncMock()
+			agent.browser_session.get_state_summary = AsyncMock(
 				return_value=BrowserStateSummary(
 					url='https://example.com',
 					title='Example',
@@ -235,9 +228,9 @@ class TestAgentRetry:
 		return controller
 
 	@pytest.fixture
-	def mock_browser_context(self):
-		browser_context = Mock()
-		browser_context.get_state_summary = AsyncMock(
+	def mock_browser_session(self):
+		browser_session = Mock()
+		browser_session.get_state_summary = AsyncMock(
 			return_value=BrowserStateSummary(
 				url='https://parabank.parasoft.com/parabank/index.htm',
 				title='ParaBank',
@@ -247,7 +240,7 @@ class TestAgentRetry:
 				screenshot='',
 			)
 		)
-		return browser_context
+		return browser_session
 
 	@pytest.fixture
 	def mock_action_model(self):
