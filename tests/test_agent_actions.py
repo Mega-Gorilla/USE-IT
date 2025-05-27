@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 import pytest
@@ -7,7 +6,7 @@ from pydantic import BaseModel, SecretStr
 
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser import BrowserProfile, BrowserSession
 
 
 @pytest.fixture
@@ -25,29 +24,21 @@ def llm():
 
 
 @pytest.fixture(scope='session')
-def event_loop():
-	"""Create an instance of the default event loop for each test case."""
-	loop = asyncio.get_event_loop_policy().new_event_loop()
-	yield loop
-	loop.close()
-
-
-@pytest.fixture(scope='session')
-async def browser(event_loop):
-	browser_instance = Browser(
-		config=BrowserConfig(
+async def browser_session():
+	browser_session = BrowserSession(
+		browser_profile=BrowserProfile(
 			headless=True,
 		)
 	)
-	yield browser_instance
-	await browser_instance.close()
+	await browser_session.start()
+	yield browser_session
+	await browser_session.stop()
 
 
 @pytest.fixture
-async def context(browser):
-	async with await browser.new_context() as context:
-		yield context
-		# Clean up automatically happens with __aexit__
+async def context(browser_session):
+	# BrowserSession manages its own context
+	yield browser_session
 
 
 # pytest tests/test_agent_actions.py -v -k "test_ecommerce_interaction" --capture=no
