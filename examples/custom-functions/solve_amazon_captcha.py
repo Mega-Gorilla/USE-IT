@@ -8,48 +8,65 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from amazoncaptcha import AmazonCaptcha
 from langchain_openai import ChatOpenAI
 
 from browser_use import ActionResult
 from browser_use.agent.service import Agent
-from browser_use.controller.service import Controller
 from browser_use.browser import BrowserConfig, BrowserSession
-from amazoncaptcha import AmazonCaptcha
+from browser_use.controller.service import Controller
 
-browser_profile = BrowserConfig(
-	headless=False
-)
+browser_profile = BrowserConfig(headless=False)
 
 # Initialize controller first
 controller = Controller()
 
 
-@controller.action('Solve Amazon text based captcha', domains=[
-	'*.amazon.com', '*.amazon.co.uk', '*.amazon.ca', '*.amazon.de', '*.amazon.es', 
-	'*.amazon.fr', '*.amazon.it', '*.amazon.co.jp', '*.amazon.in', '*.amazon.cn', 
-	'*.amazon.com.sg', '*.amazon.com.mx', '*.amazon.ae', '*.amazon.com.br', 
-	'*.amazon.nl', '*.amazon.com.au', '*.amazon.com.tr', '*.amazon.sa', 
-	'*.amazon.se', '*.amazon.pl'
-])
+@controller.action(
+	'Solve Amazon text based captcha',
+	domains=[
+		'*.amazon.com',
+		'*.amazon.co.uk',
+		'*.amazon.ca',
+		'*.amazon.de',
+		'*.amazon.es',
+		'*.amazon.fr',
+		'*.amazon.it',
+		'*.amazon.co.jp',
+		'*.amazon.in',
+		'*.amazon.cn',
+		'*.amazon.com.sg',
+		'*.amazon.com.mx',
+		'*.amazon.ae',
+		'*.amazon.com.br',
+		'*.amazon.nl',
+		'*.amazon.com.au',
+		'*.amazon.com.tr',
+		'*.amazon.sa',
+		'*.amazon.se',
+		'*.amazon.pl',
+	],
+)
 async def solve_amazon_captcha(browser_session: BrowserSession):
 	page = await browser_session.get_current_page()
-	
+
 	# Find the captcha image and extract its src
 	captcha_img = page.locator('img[src*="amazon.com/captcha"]')
 	link = await captcha_img.get_attribute('src')
-	
+
 	if not link:
-		raise ValueError("Could not find captcha image on the page")
+		raise ValueError('Could not find captcha image on the page')
 
 	captcha = AmazonCaptcha.fromlink(link)
 	solution = captcha.solve()
 	if not solution or solution == 'Not solved':
-		raise ValueError("Captcha could not be solved")
+		raise ValueError('Captcha could not be solved')
 
 	await page.locator('#captchacharacters').fill(solution)
 	await page.locator('button[type="submit"]').click()
 
 	return ActionResult(extracted_content=solution)
+
 
 async def main():
 	task = 'Go to https://www.amazon.com/errors/validateCaptcha and solve the captcha using the solve_amazon_captcha tool'

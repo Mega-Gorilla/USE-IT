@@ -114,6 +114,9 @@ include = [
     "browser_use/dom/buildDomTree.js",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.uv]
 dev-dependencies = [
     "ruff>=0.11.2",
