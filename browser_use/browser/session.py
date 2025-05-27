@@ -69,21 +69,26 @@ def _log_pretty_path(path: Path) -> str:
 def require_initialization(func):
 	"""decorator for BrowserSession methods to require the BrowserSession be already active"""
 
+	assert asyncio.iscoroutinefunction(func), '@require_initialization only supports decorating async methods on BrowserSession'
+
 	@wraps(func)
-	def wrapper(self, *args, **kwargs):
+	async def wrapper(self, *args, **kwargs):
 		if not self.initialized:
-			raise RuntimeError('BrowserSession(...).start() must be called first to launch or connect to the browser')
+			# raise RuntimeError('BrowserSession(...).start() must be called first to launch or connect to the browser')
+			await self.start()  # just start it automatically if not already started
+
 		if not self.agent_current_page or self.agent_current_page.is_closed():
 			self.agent_current_page = self.browser_context.pages[0] if self.browser_context.pages else None
 
 		if not self.agent_current_page or self.agent_current_page.is_closed():
-			self.create_new_tab()
-			assert self.agent_current_page and not self.agent_current_page.is_closed()
+			await self.create_new_tab()
+
+		assert self.agent_current_page and not self.agent_current_page.is_closed()
 
 		if not hasattr(self, '_cached_browser_state_summary'):
 			raise RuntimeError('BrowserSession(...).start() must be called first to initialize the browser session')
 
-		return func(self, *args, **kwargs)
+		return await func(self, *args, **kwargs)
 
 	return wrapper
 
