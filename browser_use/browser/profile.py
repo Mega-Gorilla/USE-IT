@@ -410,12 +410,13 @@ class BrowserLaunchArgs(BaseModel):
 		populate_by_name=True,
 	)
 
-	env: dict[str, str | float | bool] = Field(
-		default_factory=dict, description='Extra environment variables to set when launching the browser.'
+	env: dict[str, str | float | bool] | None = Field(
+		default=None,
+		description='Extra environment variables to set when launching the browser. If None, inherits from the current process.',
 	)
 	executable_path: str | Path | None = Field(
 		default=None,
-		validation_alias=AliasChoices('chrome_binary_path', 'browser_binary_path'),
+		validation_alias=AliasChoices('browser_binary_path', 'chrome_binary_path'),
 		description='Path to the chromium-based browser executable to use.',
 	)
 	headless: bool | None = Field(default=None, description='Whether to run the browser in headless or windowed mode.')
@@ -630,29 +631,29 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		elif not self.ignore_default_args:
 			default_args = CHROME_DEFAULT_ARGS
 
-		return BrowserLaunchArgs.args_as_list(  # convert back to ['--arg=value', '--arg', '--arg=value', ...]
-			BrowserLaunchArgs.args_as_dict(  # uniquify via dict {'arg': 'value', 'arg2': 'value2', ...}
-				[
-					*default_args,
-					*self.args,
-					f'--profile-directory={self.profile_directory}',
-					*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
-					*(CHROME_HEADLESS_ARGS if self.headless else []),
-					*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
-					*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
-					*(
-						[f'--window-size={self.window_size["height"]},{self.window_size["width"]}']
-						if self.window_size
-						else (['--start-maximized'] if not self.headless else [])
-					),
-					*(
-						[f'--window-position={self.window_position["width"]},{self.window_position["height"]}']
-						if self.window_position
-						else []
-					),
-				]
-			)
-		)
+		# Capture args before conversion for logging
+		pre_conversion_args = [
+			*default_args,
+			*self.args,
+			f'--profile-directory={self.profile_directory}',
+			*(CHROME_DOCKER_ARGS if IN_DOCKER else []),
+			*(CHROME_HEADLESS_ARGS if self.headless else []),
+			*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
+			*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
+			*(
+				[f'--window-size={self.window_size["width"]},{self.window_size["height"]}']
+				if self.window_size
+				else (['--start-maximized'] if not self.headless else [])
+			),
+			*(
+				[f'--window-position={self.window_position["width"]},{self.window_position["height"]}']
+				if self.window_position
+				else []
+			),
+		]
+
+		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
+		return final_args_list
 
 	def kwargs_for_launch_persistent_context(self) -> BrowserLaunchPersistentContextArgs:
 		"""Return the kwargs for BrowserType.launch()."""
@@ -714,23 +715,23 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		display_size = get_display_size()
-		if display_size:
-			self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+		has_screen_available = bool(display_size)
+		self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
 
 		# if no headless preference specified, prefer headful if there is a display available
 		if self.headless is None:
-			self.headless = not bool(display_size)
+			self.headless = not has_screen_available
 
 		# set up window size and position if headful
 		if self.headless:
 			# headless mode: no window available, use viewport instead to constrain content size
+			self.viewport = self.viewport or self.window_size or self.screen
+			self.window_position = None  # no windows to position in headless mode
 			self.window_size = None
-			self.window_position = None
-			self.no_viewport = False
-			self.viewport = self.viewport or display_size or ViewportSize(width=1280, height=1100)
+			self.no_viewport = False  # viewport is always enabled in headless mode
 		else:
-			# headful mode: use window, disable viewport, content fits to size of window
-			self.window_size = self.window_size or display_size or ViewportSize(width=1280, height=1100)
+			# headful mode: use window, disable viewport by default, content fits to size of window
+			self.window_size = self.window_size or self.screen
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
 
@@ -742,13 +743,19 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		use_viewport = self.headless or self.viewport or self.device_scale_factor
 		self.no_viewport = not use_viewport if self.no_viewport is None else self.no_viewport
 		use_viewport = not self.no_viewport
+
 		if use_viewport:
 			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
-			self.viewport = self.viewport or display_size or ViewportSize(width=1280, height=1100)
+			self.viewport = self.viewport or self.screen
 			self.device_scale_factor = self.device_scale_factor or 1.0
-			self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+			assert self.viewport is not None
+			assert self.no_viewport is False
 		else:
 			# device_scale_factor and screen are not supported non-viewport mode, the system monitor determines these
 			self.viewport = None
-			self.device_scale_factor = None
-			self.screen = None
+			self.device_scale_factor = None  # only supported in viewport mode
+			self.screen = None  # only supported in viewport mode
+			assert self.viewport is None
+			assert self.no_viewport is True
+
+		assert not (self.headless and self.no_viewport), 'headless=True and no_viewport=True cannot both be set at the same time'
