@@ -40,8 +40,7 @@ registry = controller.registry
 
 # Action will only be available to Agent on Google domains because of the domain filter
 @registry.action(description='Trigger disco mode', domains=['google.com', '*.google.com'])
-async def disco_mode(browser_session: BrowserSession):
-	page = await browser_session.get_current_page()
+async def disco_mode(page: Page):
 	await page.evaluate("""() => { 
         // define the wiggle animation
         document.styleSheets[0].insertRule('@keyframes wiggle { 0% { transform: rotate(0deg); } 50% { transform: rotate(10deg); } 100% { transform: rotate(0deg); } }');
@@ -59,9 +58,8 @@ def is_login_page(page: Page) -> bool:
 
 # then use it in the action decorator to limit the action to only be available on pages where the filter returns True
 @registry.action(description='Use the force, luke', page_filter=is_login_page)
-async def use_the_force(browser_session: BrowserSession):
+async def use_the_force(page: Page):
 	# this will only ever run on pages that matched the filter
-	page = await browser_session.get_current_page()
 	assert is_login_page(page)
 
 	await page.evaluate("""() => { document.querySelector('body').innerHTML = 'These are not the droids you are looking for';}""")

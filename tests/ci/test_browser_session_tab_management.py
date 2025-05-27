@@ -21,13 +21,6 @@ class TestTabManagement:
 	"""Tests for the tab management system with separate agent_current_page and human_current_page references."""
 
 	@pytest.fixture(scope='module')
-	def event_loop(self):
-		"""Create and provide an event loop for async tests."""
-		loop = asyncio.get_event_loop_policy().new_event_loop()
-		yield loop
-		loop.close()
-
-	@pytest.fixture(scope='module')
 	def http_server(self):
 		"""Create and provide a test HTTP server that serves static content."""
 		server = HTTPServer()
@@ -51,7 +44,7 @@ class TestTabManagement:
 		server.stop()
 
 	@pytest.fixture(scope='module')
-	async def browser_profile(self, event_loop):
+	async def browser_profile(self):
 		"""Create and provide a BrowserProfile with security disabled."""
 		profile = BrowserProfile(headless=True)
 		yield profile
@@ -76,7 +69,19 @@ class TestTabManagement:
 		assert f'{http_server.host}:{http_server.port}' in browser_session.agent_current_page.url
 
 		yield browser_session
+
+		# Ensure all pages are closed before stopping
+		try:
+			for page in browser_session.browser_context.pages:
+				if not page.is_closed():
+					await page.close()
+		except Exception:
+			pass
+
 		await browser_session.stop()
+
+		# Give playwright time to clean up
+		await asyncio.sleep(0.1)
 
 	@pytest.fixture
 	def controller(self):
@@ -179,7 +184,6 @@ class TestTabManagement:
 
 	# Tab management tests
 
-	@pytest.mark.asyncio
 	async def test_initial_values(self, browser_session, base_url):
 		"""Test that open_tab correctly updates both tab references."""
 
@@ -198,7 +202,6 @@ class TestTabManagement:
 		assert current_tab is not None
 		assert current_tab.url == 'about:blank'
 
-	@pytest.mark.asyncio
 	async def test_agent_changes_tab(self, browser_session, base_url):
 		"""Test that agent_current_page changes and human_current_page remains the same when a new tab is opened."""
 
@@ -227,7 +230,6 @@ class TestTabManagement:
 			browser_session.human_current_page.url == initial_tab.url == f'{base_url}/page1'
 		)  # human should still be on the very first tab
 
-	@pytest.mark.asyncio
 	async def test_human_changes_tab(self, browser_session, base_url):
 		"""Test that human_current_page changes and agent_current_page remains the same when a new tab is opened."""
 
@@ -249,7 +251,6 @@ class TestTabManagement:
 		assert current_agent_page.url == initial_tab.url == 'about:blank'
 		assert browser_session.human_current_page.url == new_human_tab.url == f'{base_url}/page3'
 
-	@pytest.mark.asyncio
 	async def test_switch_tab(self, browser_session, base_url):
 		"""Test that switch_tab updates both tab references."""
 
@@ -285,7 +286,6 @@ class TestTabManagement:
 		assert current_tab.url == second_tab.url == f'{base_url}/page2' == browser_session.agent_current_page.url
 		assert browser_session.human_current_page.url == first_tab.url == f'{base_url}/page1'
 
-	@pytest.mark.asyncio
 	async def test_close_tab(self, browser_session, base_url):
 		"""Test that closing a tab updates references correctly."""
 

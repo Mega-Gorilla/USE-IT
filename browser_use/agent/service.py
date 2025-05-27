@@ -10,6 +10,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from threading import Thread
 from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
@@ -292,12 +293,22 @@ class Agent(Generic[Context]):
 		# assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
 		# assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
-		self.browser_session = browser_session or BrowserSession(
-			profile=browser_profile,
-			browser=browser,
-			browser_context=browser_context,
-			page=page,
-		)
+
+		if browser_session:
+			# always copy sessions that are passed in to avoid conflicting with other agents sharing the same session
+			self.browser_session = browser_session.model_copy(
+				update={
+					'agent_current_page': None,
+					'human_current_page': None,
+				},
+			)
+		else:
+			self.browser_session = BrowserSession(
+				browser_profile=browser_profile,
+				browser=browser,
+				browser_context=browser_context,
+				page=page,
+			)
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
@@ -582,7 +593,33 @@ class Agent(Generic[Context]):
 				return results
 
 			# Execute async tests
-			results = asyncio.run(test_all_methods())
+			try:
+				loop = asyncio.get_running_loop()
+				# Running loop: create a new loop in a separate thread
+				result = {}
+
+				def run_in_thread():
+					new_loop = asyncio.new_event_loop()
+					asyncio.set_event_loop(new_loop)
+					try:
+						result['value'] = new_loop.run_until_complete(test_all_methods())
+					except Exception as e:
+						result['error'] = e
+					finally:
+						new_loop.close()
+
+				t = Thread(target=run_in_thread)
+				t.start()
+				t.join()
+				if 'error' in result:
+					raise result['error']
+				results = result['value']
+
+			except RuntimeError as e:
+				if 'no running event loop' in str(e):
+					results = asyncio.run(test_all_methods())
+				else:
+					raise
 
 			# Process results in order of preference
 			for i, method in enumerate(methods_to_try):

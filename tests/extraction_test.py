@@ -56,7 +56,7 @@ async def test_focus_vs_all_elements():
 
 	browser = Browser(
 		config=BrowserConfig(
-			# browser_binary_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+			# executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 		)
 	)
 	context = BrowserContext(browser=browser, config=config)
