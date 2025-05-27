@@ -1,4 +1,3 @@
-import asyncio
 import os
 import random
 import string
@@ -9,32 +8,20 @@ from langchain_openai import AzureChatOpenAI
 from pydantic import SecretStr
 
 from browser_use.agent.service import Agent
-from browser_use.browser.browser import Browser, BrowserConfig
+from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.controller.service import Controller
 
 
-@pytest.fixture(scope='session')
-def event_loop():
-	loop = asyncio.get_event_loop_policy().new_event_loop()
-	yield loop
-	loop.close()
-
-
-@pytest.fixture(scope='session')
-async def browser(event_loop):
-	browser_instance = Browser(
-		config=BrowserConfig(
+@pytest.fixture
+async def browser_session():
+	browser_session = BrowserSession(
+		browser_profile=BrowserProfile(
 			headless=True,
 		)
 	)
-	yield browser_instance
-	await browser_instance.close()
-
-
-@pytest.fixture
-async def context(browser):
-	async with await browser.new_context() as context:
-		yield context
+	await browser_session.start()
+	yield browser_session
+	await browser_session.stop()
 
 
 @pytest.fixture
@@ -67,14 +54,13 @@ async def controller():
 	yield controller
 
 
-@pytest.mark.asyncio
-async def test_token_limit_with_multiple_extractions(llm, controller, context):
+async def test_token_limit_with_multiple_extractions(llm, controller, browser_session):
 	"""Test handling of multiple smaller extractions accumulating tokens"""
 	agent = Agent(
 		task='Call the magical function to get very special text 5 times',
 		llm=llm,
 		controller=controller,
-		browser_context=context,
+		browser_session=browser_session,
 		max_input_tokens=2000,
 		save_conversation_path='tmp/stress_test/test_token_limit_with_multiple_extractions.json',
 	)
