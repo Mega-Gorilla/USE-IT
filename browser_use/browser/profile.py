@@ -416,7 +416,7 @@ class BrowserLaunchArgs(BaseModel):
 	)
 	executable_path: str | Path | None = Field(
 		default=None,
-		validation_alias=AliasChoices('chrome_binary_path', 'browser_binary_path'),
+		validation_alias=AliasChoices('chrome_binary_path', 'executable_path'),
 		description='Path to the chromium-based browser executable to use.',
 	)
 	headless: bool | None = Field(default=None, description='Whether to run the browser in headless or windowed mode.')
