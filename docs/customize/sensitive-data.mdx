@@ -16,28 +16,33 @@ Here's a basic example of how to use sensitive data:
 
 ```python
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from browser_use import Agent
-from browser_use.browser.session import BrowserSession
-
 load_dotenv()
 
+from langchain_openai import ChatOpenAI
+from browser_use import Agent, BrowserSession
+
 # Initialize the model
-llm = ChatOpenAI(
-    model='gpt-4o',
-    temperature=0.0,
-)
+llm = ChatOpenAI(model='gpt-4o', temperature=0.0)
 
 # Define sensitive data
-# The model will only see the keys (x_name, x_password) but never the actual values
-sensitive_data = {'x_name': 'magnus', 'x_password': '12345678'}
+# The LLM will only see placeholder names (x_member_number, x_passphrase), never the actual values
+sensitive_data = {
+    'https://*.example.com': {
+        'x_member_number': '123235325',
+        'x_passphrase': 'abcwe234',
+    },
+}
 
 # Use the placeholder names in your task description
-task = 'go to x.com and login with x_name and x_password then write a post about the meaning of life'
+task = """
+1. go to https://travel.example.com
+2. sign in with your member number x_member_number and private access code x_passphrase
+3. extract today's list of travel deals as JSON
+"""
 
-# Configure browser session with allowed domains
+# Recommended: Limit the domains available for the entire browser so the Agent can't be tricked into visiting untrusted URLs
 browser_session = BrowserSession(
-    allowed_domains=['example.com']
+    allowed_domains=['https://*.example.com']
 )
 
 # Pass the sensitive data to the agent
@@ -45,7 +50,8 @@ agent = Agent(
     task=task,
     llm=llm,
     sensitive_data=sensitive_data,
-    browser_session=browser_session
+    browser_session=browser_session,
+    use_vision=False,                      # recommended: disable vision or the LLM might see entered values in screenshots
 )
 
 async def main():
@@ -56,28 +62,38 @@ if __name__ == '__main__':
 ```
 
 In this example:
-1. The model only sees `x_name` and `x_password` as placeholders.
-2. When the model wants to use your password it outputs x_password - and we replace it with the actual value.
-3. When your password is visible on the current page, we replace it in the LLM input - so that the model never has it in its state.
-4. The agent will be prevented from going to any site not on `example.com` to protect from prompt injection attacks and jailbreaks
 
-### Domain-Specific Sensitive Data
+1. The model only sees `x_member_number` and `x_passphrase` as placeholders.
+2. When the model wants to use your password it outputs x_passphrase - and we replace it with the actual value in the DOM
+3. When sensitive data appear in the content of the current page, we replace it in the page summary fed to the LLM - so that the model never has it in its state.
+4. The browser will be entirely prevented from going to any site not under `https://*.example.com` to protect from prompt injection attacks, jailbreaks, and Agent distraction
 
-For enhanced security, you can associate sensitive data with specific domains. This ensures credentials are only used on the domains they're intended for:
+This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
+
+
+
+<Warning>
+
+Warning: Vision models still see the screenshot of the page by default - where the sensitive data might be visible.
+
+It's recommended to set `Agent(use_vision=False)` when working with `sensitive_data`.
+
+</Warning>
+
+
+### Full Example
+
+Here's a more complex example demonstrating multiple domains and sensitive data values.
 
 ```python
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from browser_use import Agent
-from browser_use.browser.session import BrowserSession
-
 load_dotenv()
 
-# Initialize the model
-llm = ChatOpenAI(
-    model='gpt-4o',
-    temperature=0.0,
-)
+from langchain_openai import ChatOpenAI
+from browser_use import Agent, BrowserSession
+
+
+llm = ChatOpenAI(model='gpt-4o', temperature=0.0)
 
 # Domain-specific sensitive data
 sensitive_data = {
@@ -112,27 +128,43 @@ if __name__ == '__main__':
 ```
 
 With this approach:
+
 1. The Google credentials (`x_email` and `x_pass`) will only be used on Google domains (any subdomain)
 2. The API key (`x_api_key`) will only be used in the specific Chrome extension
 3. The auth code (`x_authcode`) will only be used on example.com via http or https
+
+<Warning>
+
+Warning: Vision models still see the image of the page - where the sensitive data might be visible.
+
+It's recommended to set `Agent(use_vision=False)` when working with sensitive_data and forms.
+
+</Warning>
+
+This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
+
+
+
+<a name="allowed_domains"></a>
+
 
 ### Domain Pattern Format
 
 Domain patterns in sensitive_data follow the same format as `allowed_domains`:
 
-- `example.com` - Matches only example.com
-- `*.example.com` - Matches any subdomain of example.com
-- `http*://example.com` - Matches both http and https protocols for example.com
-- `chrome-extension://*` - Matches any Chrome extension
+- `example.com` - Matches only `https://example.com/*`
+- `*.example.com` - Matches `https://example.com/*` and any subdomain `https://*.example.com/*`
+- `http*://example.com` - Matches both `http://` and `https://` protocols for `example.com/*`
+- `chrome-extension://*` - Matches any Chrome extension URL e.g. `chrome-extension://anyextensionid/options.html`
 
 > **Security Warning**: For security reasons, certain patterns are explicitly rejected:
-> - Wildcards in TLD part (e.g., `example.*`) are not allowed as they could match any TLD
+> - Wildcards in TLD part (e.g., `example.*`) are **not allowed** (`google.*` would match `google.ninja`, `google.pizza`, etc. which is a bad idea)
 > - Embedded wildcards (e.g., `g*e.com`) are rejected to prevent overly broad matches
-> - Multiple wildcards like `*.*.domain` are not supported to avoid security issues
+> - Multiple wildcards like `*.*.domain` are not supported currently, open an issue if you need this feature
 
-The default protocol when no scheme is specified is now `https` for enhanced security.
+The default protocol when no scheme is specified is now `https://` for enhanced security.
 
-The system will validate that all domain patterns used in `sensitive_data` are covered by the patterns in `allowed_domains`.
+For convenience the system will validate that all domain patterns used in `Agent(sensitive_data)` are also included in `BrowserSession(allowed_domains)`.
 
 ### Missing or Empty Values
 
@@ -141,7 +173,3 @@ When working with sensitive data, keep these details in mind:
 - If a key referenced by the model (`<secret>key_name</secret>`) is missing from your `sensitive_data` dictionary, a warning will be logged but the substitution tag will be preserved.
 - If you provide an empty value for a key in the `sensitive_data` dictionary, it will be treated the same as a missing key.
 - The system will always attempt to process all valid substitutions, even if some keys are missing or empty.
-
-Warning: Vision models still see the image of the page - where the sensitive data might be visible.
-
-This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
