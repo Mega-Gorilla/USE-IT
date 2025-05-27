@@ -184,7 +184,7 @@ These parameters control browser-use specific features, and are outside the stan
 keep_alive: bool | None = None
 ```
 
-Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance.
+Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance. If this is left as `None` and the Agent launched its own browser, the default is to close the browser after the agent completes. If the agent connected to an existing browser then it will leave it open.
 
 #### `allowed_domains`
 
@@ -198,7 +198,7 @@ Example: `['google.com', '*.wikipedia.org']` - Here the agent will only be able 
 Glob patterns are supported:
 - `['example.com']` ✅ will match only `https://example.com/*` exactly, subdomains will not be allowed.
   It's always the most secure to list all the domains you want to give the access to explicitly w/ schemes e.g.
-  `['*://google.com', 'http*://www.google.com', 'https://myaccount.google.com', 'https://mail.google.com', 'https://docs.google.com']`
+  `['https://google.com', 'http*://www.google.com', 'https://myaccount.google.com', 'https://mail.google.com', 'https://docs.google.com']`
 - `['*.example.com']` ⚠️ **CAUTION** this will match `https://example.com` and *all* its subdomains.
   Make sure *all* the subdomains are safe for the agent! `abc.example.com`, `def.example.com`, ..., `useruploads.example.com`, `admin.example.com`
 
