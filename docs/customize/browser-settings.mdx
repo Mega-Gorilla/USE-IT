@@ -6,41 +6,25 @@ icon: "globe"
 
 Browser Use uses [playwright](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) (or [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright)) to manage its connection with a real browser.
 
-```python
-from browser_use import BrowserSession, BrowserProfile, Agent
-```
+---
 
 **To launch a new browser**, pass any playwright args you want to use to `BrowserSession(...)`:
 
 ```python
-new_browser = BrowserSession(user_data_dir='~/Desktop/test-profile', headless=False, ...)
-agent = Agent('fill out the form on this page', browser_session=new_browser)
+from browser_use import BrowserSession, Agent
+
+browser_session = BrowserSession(
+    user_data_dir='~/.config/browseruse/profiles/default',
+    headless=False,
+    #... other config here ...
+)
+agent = Agent('fill out the form on this page', browser_session=browser_session)
 ```
+
 <Note>
   The new `BrowserSession` & `BrowserProfile` accept all the same arguments that Playwright's [`launch_persistent_context(...)`](https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-persistent-context) takes, giving you full control over browser settings at launch. (see below for the full list)
 </Note>
 
-**To connect to an existing remote browser**, initialize a `BrowserSession` with a `cdp_url`, `wss_url`, or `browser_pid`:
-
-```python
-remote_browser = BrowserSession(cdp_url='http://localhost:9222', keep_alive=True)
-agent = Agent(task='Do some task with a remote browser...', browser_session=remote_browser)
-agent = Agent(task='Other task reusing the same browser...', browser_session=remote_browser)
-```
-
-**To use Browser Use from an existing playwright script** you can also pass an existing `page`, `browser_context`, or `browser` playwright objects to `BrowserSession(...)`.
-
-```python
-browser = await playwright.chromium.launch(...)
-
-page1 = await browser.new_page()
-agent1 = Agent('Find the price for product abc', browser_session=BrowserSession(page=page1, keep_alive=True))
-
-page2 = await browser.new_page()
-agent2 = Agent('Find the price for product xyz', browser_session=BrowserSession(page=page2, keep_alive=True))
-
-# the agents will share the existing browser and each work on different tabs ^
-```
 
 ---
 
@@ -861,6 +845,8 @@ async def run_search():
         browser_session=browser_session,  # optional: pass an existing browser session to an agent
     )
 ```
+
+---
 
 ## Summary
 
