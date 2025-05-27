@@ -624,6 +624,19 @@ forced_colors: ForcedColors = 'none'
 
 Forced colors mode: `'active'`, `'none'`, `'null'`
 
+#### `**playwright.devices[...]`
+
+Playwright provides launch & context arg presets to [emulate common device fingerprints](https://playwright.dev/python/docs/emulation).
+
+```python
+BrowserProfile(
+    ...
+    **playwright.devices['iPhone 13'],    # playwright = await async_playwright().start()
+)
+```
+
+Because `BrowserSession` and `BrowserProfile` take all the standard playwright args, we are able to support these device presets as well.
+
 ### Playwright Security Options
 
 > See `allowed_domains` above too!
@@ -809,18 +822,6 @@ handle_sigterm: bool = False
 ```
 
 Whether playwright should swallow SIGTERM signals and kill the browser.
-
-#### `**playwright.devices['iPhone 13']`
-
-```python
-BrowserProfile(
-    ...
-    **playwright.devices['iPhone 13'],    # playwright = await async_playwright().start()
-)
-```
-
-Playwright provides launch & context args to [emulate common device fingerprints](https://playwright.dev/python/docs/emulation).
-`BrowserSession` and `BrowserProfile` take all the standard playwright args so we are able to support these as well.
 
 ---
 

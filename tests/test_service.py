@@ -74,7 +74,6 @@ class TestAgent:
 		assert 'test_action' in call_args
 		assert call_args['test_action'] == mock_controller.registry.registry.actions['test_action'].param_model.return_value  # type: ignore
 
-	@pytest.mark.asyncio
 	async def test_step_error_handling(self):
 		"""
 		Test the error handling in the step method of the Agent class.
@@ -248,7 +247,7 @@ class TestAgentRetry:
 		return action_model
 
 	@pytest.mark.asyncio
-	async def test_step_empty_action_retry(self, mock_llm, mock_controller, mock_browser_context, mock_action_model):
+	async def test_step_empty_action_retry(self, mock_llm, mock_controller, mock_browser_session, mock_action_model):
 		"""
 		Test that the step method retries and handles empty actions correctly.
 		"""
@@ -257,8 +256,7 @@ class TestAgentRetry:
 			task='Test task',
 			llm=mock_llm,
 			controller=mock_controller,
-			browser=Mock(),
-			browser_context=mock_browser_context,
+			browser_session=mock_browser_session,
 		)
 		agent.ActionModel = mock_action_model  # Inject the mock ActionModel
 
@@ -292,7 +290,7 @@ class TestAgentRetry:
 		assert agent._last_result[0].action == valid_action
 
 	@pytest.mark.asyncio
-	async def test_step_empty_action_retry_and_fail(self, mock_llm, mock_controller, mock_browser_context, mock_action_model):
+	async def test_step_empty_action_retry_and_fail(self, mock_llm, mock_controller, mock_browser_session, mock_action_model):
 		"""
 		Test that the step method handles the case where get_next_action returns
 		empty actions twice, and inserts a safe noop action.
@@ -302,8 +300,7 @@ class TestAgentRetry:
 			task='Test task',
 			llm=mock_llm,
 			controller=mock_controller,
-			browser=Mock(),
-			browser_context=mock_browser_context,
+			browser_session=mock_browser_session,
 		)
 		agent.ActionModel = mock_action_model  # Inject the mock ActionModel
 
