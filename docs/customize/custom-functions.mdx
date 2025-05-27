@@ -4,17 +4,18 @@ description: "Extend default agent and write custom action functions to do certa
 icon: "function"
 ---
 
-## Action Function Registration
-
 Custom actions are functions *you* provide, that are added to our [default tools](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py) the agent can use to accomplish tasks.
 Action functions can request arbitrary parameters that the LLM has to come up with + a fixed set of framework-provided arguments for browser APIs/`Agent(context)`/etc.
 
 By default, the Browser Use Agent gets the built-in set of actions (`open_tab`, `scroll_down`, `extract_content`, [and more](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py)), 
 but you can extend them to implement custom or optimized behavior. 
 
-To register your own custom functions (which can be `sync` or `async`), they are decorated them with the `@controller.action(...)` decorator which saves them into the `Controller.registry`.
-
 For examples of custom actions (e.g. uploading files, asking a human-in-the-loop for help, drawing a polygon with the mouse, etc.), see [examples/custom-functions](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions).
+
+
+## Action Function Registration
+
+To register your own custom functions (which can be `sync` or `async`), decorate them with the `@controller.action(...)` decorator. This saves them into the `Controller.registry`.
 
 ```python
 from pydantic import BaseModel
