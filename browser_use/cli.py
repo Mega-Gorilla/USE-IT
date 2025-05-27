@@ -26,6 +26,8 @@ import langchain_anthropic
 import langchain_google_genai
 import langchain_openai
 
+# from patchright.async_api import async_playwright
+
 try:
 	import readline
 
@@ -33,6 +35,9 @@ try:
 except ImportError:
 	# readline not available on Windows by default
 	READLINE_AVAILABLE = False
+
+
+os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import AgentSettings
@@ -432,7 +437,7 @@ class BrowserUseApp(App):
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
-		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
+		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'result').lower()
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
@@ -1139,6 +1144,63 @@ class BrowserUseApp(App):
 		yield Footer()
 
 
+async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
+	"""Run browser-use in non-interactive mode with a single prompt."""
+	# Import and call setup_logging to ensure proper initialization
+	from browser_use.logging_config import setup_logging
+
+	# Set up logging to only show results by default
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
+
+	# Re-run setup_logging to apply the new log level
+	setup_logging()
+
+	# The logging is now properly configured by setup_logging()
+	# No need to manually configure handlers since setup_logging() handles it
+
+	try:
+		# Load config
+		config = load_user_config()
+		config = update_config_with_click_args(config, ctx)
+
+		# Get LLM
+		llm = get_llm(config)
+
+		# Get agent settings from config
+		agent_settings = AgentSettings.model_validate(config.get('agent', {}))
+
+		# Create browser session with headless=True and no user_data_dir
+		browser_session = BrowserSession(
+			headless=False,
+			# user_data_dir=None,
+			# playwright=(await async_playwright().start()),
+			# channel=BrowserChannel.CHROME,
+		)
+
+		# Create and run agent
+		agent = Agent(
+			task=prompt,
+			llm=llm,
+			browser_session=browser_session,
+			**agent_settings.model_dump(),
+			# Run the agent
+		)
+
+		await agent.run()
+
+		# Close browser session
+		await browser_session.close()
+
+	except Exception as e:
+		if debug:
+			import traceback
+
+			traceback.print_exc()
+		else:
+			print(f'Error: {str(e)}', file=sys.stderr)
+		sys.exit(1)
+
+
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
 	logger = logging.getLogger('browser_use.startup')
@@ -1172,7 +1234,11 @@ async def textual_interface(config: dict[str, Any]):
 			logger.info('Browser mode: visible')
 
 		# Create BrowserSession directly with config parameters
-		browser_session = BrowserSession(**browser_config)
+		browser_session = BrowserSession(
+			**browser_config,
+			# playwright=(await async_playwright().start()),
+			# channel=BrowserChannel.CHROME,
+		)
 		logger.debug('BrowserSession initialized successfully')
 
 		# Log browser version if available
@@ -1248,15 +1314,24 @@ async def textual_interface(config: dict[str, Any]):
 @click.option('--headless', is_flag=True, help='Run browser in headless mode', default=None)
 @click.option('--window-width', type=int, help='Browser window width')
 @click.option('--window-height', type=int, help='Browser window height')
+@click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
-	"""Browser-Use Interactive TUI"""
+	"""Browser-Use Interactive TUI or Command Line Executor"""
 
 	if kwargs['version']:
 		from importlib.metadata import version
 
 		print(version('browser-use'))
 		sys.exit(0)
+
+	# Check if prompt mode is activated
+	if kwargs.get('prompt'):
+		# Set environment variable for prompt mode before running
+		os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
+		# Run in non-interactive mode
+		asyncio.run(run_prompt_mode(kwargs['prompt'], ctx, debug))
+		return
 
 	# Configure console logging
 	console_handler = logging.StreamHandler(sys.stdout)

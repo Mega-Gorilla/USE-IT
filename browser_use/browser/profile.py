@@ -715,23 +715,23 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		display_size = get_display_size()
-		if display_size:
-			self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+		has_screen_available = bool(display_size)
+		self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
 
 		# if no headless preference specified, prefer headful if there is a display available
 		if self.headless is None:
-			self.headless = not bool(display_size)
+			self.headless = not has_screen_available
 
 		# set up window size and position if headful
 		if self.headless:
 			# headless mode: no window available, use viewport instead to constrain content size
+			self.viewport = self.viewport or self.window_size or self.screen
+			self.window_position = None  # no windows to position in headless mode
 			self.window_size = None
-			self.window_position = None
-			self.no_viewport = False
-			self.viewport = self.viewport or display_size or ViewportSize(width=1280, height=1100)
+			self.no_viewport = False  # viewport is always enabled in headless mode
 		else:
-			# headful mode: use window, disable viewport, content fits to size of window
-			self.window_size = self.window_size or display_size or ViewportSize(width=1280, height=1100)
+			# headful mode: use window, disable viewport by default, content fits to size of window
+			self.window_size = self.window_size or self.screen
 			self.no_viewport = True if self.no_viewport is None else self.no_viewport
 			self.viewport = None if self.no_viewport else self.viewport
 
@@ -746,11 +746,16 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 		if use_viewport:
 			# if we are using viewport, make device_scale_factor and screen are set to real values to avoid easy fingerprinting
-			self.viewport = self.viewport or display_size or ViewportSize(width=1280, height=1100)
+			self.viewport = self.viewport or self.screen
 			self.device_scale_factor = self.device_scale_factor or 1.0
-			self.screen = self.screen or display_size or ViewportSize(width=1280, height=1100)
+			assert self.viewport is not None
+			assert self.no_viewport is False
 		else:
 			# device_scale_factor and screen are not supported non-viewport mode, the system monitor determines these
 			self.viewport = None
-			self.device_scale_factor = None
-			self.screen = None
+			self.device_scale_factor = None  # only supported in viewport mode
+			self.screen = None  # only supported in viewport mode
+			assert self.viewport is None
+			assert self.no_viewport is True
+
+		assert not (self.headless and self.no_viewport), 'headless=True and no_viewport=True cannot both be set at the same time'

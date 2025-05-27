@@ -237,7 +237,6 @@ async def main(browser_session):
 import pytest
 
 
-@pytest.mark.asyncio
 async def test_browser_session_parameter_issue(browser_session):
 	"""Test that the browser_session parameter issue is fixed."""
 	# Run the main test logic
