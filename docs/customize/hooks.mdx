@@ -5,10 +5,9 @@ icon: "Wrench"
 author: "Carlos A. Planchón"
 ---
 
-Browser-Use provides lifecycle hooks that allow you to execute custom code at specific points during the agent's execution. These hooks enable you to capture detailed information about the agent's actions, modify behavior, or integrate with external systems.
+Browser-Use provides lifecycle hooks that allow you to execute custom code at specific points during the agent's execution.
+Hook functions can be used to read and modify agent state while running, implement custom logic, change configuration, integrate the Agent with external applications.
 
-Hook functions are passed as parameters to `agent.run(on_step_start=..., on_step_end=...)`.  
-Each hook should be an `async` callable function that accepts the `agent` instance as its only parameter.
 
 ## Available Hooks
 
@@ -18,6 +17,12 @@ Currently, Browser-Use provides the following hooks:
 | ---- | ----------- | ---------------- |
 | `on_step_start` | Executed at the beginning of each agent step | Before the agent processes the current state and decides on the next action |
 | `on_step_end` | Executed at the end of each agent step | After the agent has executed all the actions for the current step, before it starts the next step |
+
+```python
+await agent.run(on_step_start=..., on_step_end=...)
+```
+
+Each hook should be an `async` callable function that accepts the `agent` instance as its only parameter.
 
 
 ### Basic Example
@@ -80,11 +85,11 @@ await agent.run(
 
 When working with agent hooks, you have access to the entire `Agent` instance. Here are some useful data points you can access:
 
-- `agent.task` lets you see what the main task is, `agent.add_new_task(...)` lets you add a new one
-- `agent.controller` give access to the `Controller()` object and `Registry()` of available actions
+- `agent.task` lets you see what the main task is, `agent.add_new_task(...)` lets you queue up a new one
+- `agent.controller` give access to the `Controller()` object and `Registry()` containing the available actions
     - `agent.controller.registry.execute_action('click_element_by_index', {'index': 123}, browser_session=agent.browser_session)`
 - `agent.context` lets you access any user-provided context object passed in to `Agent(context=...)`
-- `agent.sensitive_data` contains the sensitive data dict, which can be updated in place to add/remove items
+- `agent.sensitive_data` contains the sensitive data dict, which can be updated in-place to add/remove/modify items
 - `agent.settings` contains all the configuration options passed to the `Agent(...)` at init time
 - `agent.llm` gives direct access to the main LLM object (e.g. `ChatOpenAI`)
 - `agent.state` gives access to lots of internal state, including agent thoughts, outputs, actions, etc.
@@ -93,8 +98,8 @@ When working with agent hooks, you have access to the entire `Agent` instance. H
     - `agent.state.history.model_actions()`: Actions taken by the agent
     - `agent.state.history.extracted_content()`: Content extracted from web pages
     - `agent.state.history.urls()`: URLs visited by the agent
-- `agent.browser_session` gives direct access to the `BrowserSession()`, allowing use of all the browser APIs
-    - `agent.browser_session.get_current_page()`: Get the current playwright `Page` object
+- `agent.browser_session` gives direct access to the `BrowserSession()` and playwright objects
+    - `agent.browser_session.get_current_page()`: Get the current playwright `Page` object the agent is focused on
     - `agent.browser_session.browser_context`: Get the current playwright `BrowserContext` object
     - `agent.browser_session.browser_context.pages`: Get all the tabs currently open in the context
     - `agent.browser_session.get_page_html()`: Current page HTML
