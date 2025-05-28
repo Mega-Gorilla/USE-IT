@@ -139,6 +139,9 @@ filterwarnings = [
 log_level = "INFO"
 
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.uv]
 dev-dependencies = [
     "ruff>=0.11.2",
