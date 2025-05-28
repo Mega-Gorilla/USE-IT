@@ -40,14 +40,16 @@ async def done(text: str) -> str:
 
 @pytest.mark.skip(reason='this is for local testing only')
 async def test_vision():
-	agent = Agent(
-		task='call explain_screen all the time the user asks you questions e.g. about the page like bbox which you see are labels  - your task is to explain it and get the next question',
-		llm=llm,
-		controller=controller,
-		browser_session=BrowserSession(headless=False, user_data_dir=None),
-	)
+	browser_session = BrowserSession(headless=True, user_data_dir=None)
+	await browser_session.start()
 	try:
+		agent = Agent(
+			task='call explain_screen all the time the user asks you questions e.g. about the page like bbox which you see are labels  - your task is to explain it and get the next question',
+			llm=llm,
+			controller=controller,
+			browser_session=browser_session,
+		)
 		history: AgentHistoryList = await agent.run(20)
 	finally:
 		# Make sure to close the browser
-		await agent.browser.close()
+		await browser_session.stop()
