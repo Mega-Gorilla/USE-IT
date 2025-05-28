@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
+os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
+
 import psutil
 from patchright.async_api import Playwright as PatchrightPlaywright
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -1690,8 +1692,8 @@ class BrowserSession(BaseModel):
 				scale='css',
 				timeout=30000,
 				clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
-				animations='disabled',
-				caret='initial',
+				# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
+				# caret='initial',
 			)
 			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
 
