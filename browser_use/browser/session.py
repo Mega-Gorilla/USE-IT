@@ -1067,7 +1067,7 @@ class BrowserSession(BaseModel):
 		)
 
 		cookies_path = Path(self.browser_profile.cookies_file)
-		if (not cookies_path.is_absolute()) and not str(cookies_path).startswith('.'):
+		if not cookies_path.is_absolute():
 			cookies_path = Path(self.browser_profile.downloads_dir or '.') / cookies_path
 
 		if cookies_path.exists():
