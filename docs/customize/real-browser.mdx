@@ -6,9 +6,17 @@ icon: "computer"
 
 ## Overview
 
-[As of Chrome v136](https://github.com/browser-use/browser-use/issues/1520), driving chrome via CDP is [no longer supported with the default profile](https://developer.chrome.com/blog/remote-debugging-port).  
-Browser-Use has transitioned to creating a new dedicated profile for agents in: `~/.config/browseruse/profiles/default`.  
-You can [open this profile](https://superuser.com/questions/377186/how-do-i-start-chrome-using-a-specified-user-profile) and log into everything you need your agent to have access to, and it will persist over time.
+Browser Use supports a wide variety of ways to launch or connect to a browser:
+
+- Launch a new local browser using playwright/patchright chromium (the default)
+- Connect to a remote browser using CDP or WSS
+- Use an existing playwright `Page`, `Browser`, or `BrowserContext` object
+- Connect to a local browser already running using `browser_pid`
+
+<Tip>
+    Don't want to manage your own browsers? Try [☁️ Browser Use Cloud](https://browser-use.com)!  
+    We provide residential proxies, automatic CAPTCHA solving, human-in-the-loop automation, and more!
+</Tip>
 
 ## Connection Methods
 
@@ -38,6 +46,10 @@ agent = Agent(
     browser_session=browser_session,
 )
 ```
+
+<Warning>
+    [As of Chrome v136](https://github.com/browser-use/browser-use/issues/1520), driving browsers with the default profile is [no longer supported](https://developer.chrome.com/blog/remote-debugging-port) for security reasons. Browser-Use has transitioned to creating a new dedicated profile for agents in: `~/.config/browseruse/profiles/default`. You can [open this profile](https://superuser.com/questions/377186/how-do-i-start-chrome-using-a-specified-user-profile) and log into everything you need your agent to have access to, and it will persist over time.
+</Warning>
 
 ### Method B: Connect Using Existing Playwright Objects
 
