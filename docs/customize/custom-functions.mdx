@@ -77,14 +77,19 @@ Using a pydantic model is helpful because it allows more flexibility and power t
 
 
 ```python
+from typing import Annotated
+from pydantic import BaseModel, AfterValidator
+from browser_use import ActionResult
+
 class MyParams(BaseModel):
     field1: int
     field2: str = 'default value'
+    field3: Annotated[str, AfterValidator(lambda s: s.lower())]  # example: enforce always lowercase
 
 @controller.action('My action', param_model=MyParams)
-def my_action(params: MyParams, browser_session: BrowserSession) -> ActionResult:
-    await (await browser_session.get_current_page()).keyboard.type(params.field2)
-    return ActionResult(extracted_content=f"Processed #{params.field1}")
+def my_action(params: MyParams, page: Page) -> ActionResult:
+    await page.keyboard.type(params.field2)
+    return ActionResult(extracted_content=f"Inputted {params} on {page.url}")
 ```
 
 Any special framework-provided arguments (e.g. `page`) will be passed as separate positional arguments after `params`.
