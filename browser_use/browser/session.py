@@ -1641,26 +1641,72 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
-		# We no longer force tabs to the foreground as it disrupts user focus
-		# await self.agent_current_page.bring_to_front()
 		page = await self.get_current_page()
 		await page.wait_for_load_state(
 			timeout=5000,
 		)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
 
-		screenshot = await self.agent_current_page.screenshot(
-			full_page=full_page,
-			animations='disabled',
-			caret='initial',
-		)
+		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
+		try:
+			screenshot = await page.screenshot(
+				full_page=True,
+				scale='css',
+				timeout=15000,
+				animations='disabled',
+				caret='initial',
+			)
 
-		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+			return screenshot_b64
+		except Exception as e:
+			logger.error(f'❌  Failed to take full-page screenshot: {e} falling back to viewport-only screenshot')
 
-		# await self.remove_highlights()
+		# Fallback method: manually expand the viewport and take a screenshot of the entire viewport
 
-		return screenshot_b64
+		# 1. Get current page dimensions
+		dimensions = await page.evaluate("""() => {
+			return {
+				width: window.innerWidth,
+				height: window.innerHeight,
+				devicePixelRatio: window.devicePixelRatio || 1
+			};
+		}""")
 
-	# endregion
+		# 2. Save current viewport state and calculate expanded dimensions
+		original_viewport = page.viewport_size
+		viewport_expansion = self.browser_profile.viewport_expansion if self.browser_profile.viewport_expansion else 0
+
+		expanded_width = dimensions['width']  # Keep width unchanged
+		expanded_height = dimensions['height'] + viewport_expansion
+
+		# 3. Expand the viewport if we are using one
+		if original_viewport:
+			await page.set_viewport_size({'width': expanded_width, 'height': expanded_height})
+
+		try:
+			# 4. Take full-viewport screenshot
+			screenshot = await page.screenshot(
+				full_page=False,
+				scale='css',
+				timeout=30000,
+				clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
+				animations='disabled',
+				caret='initial',
+			)
+			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
+
+			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+			return screenshot_b64
+
+		finally:
+			# 5. Restore original viewport state if we expanded it
+			if original_viewport:
+				# Viewport was originally enabled, restore to original dimensions
+				await page.set_viewport_size(original_viewport)
+			else:
+				# Viewport was originally disabled, no need to restore it
+				# await page.set_viewport_size(None)  # unfortunately this is not supported by playwright
+				pass
 
 	# region - User Actions
 
