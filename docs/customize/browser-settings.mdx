@@ -172,17 +172,19 @@ It allows you do do things like start multiple browser processes with *some* sha
 ```python
 from browser_use.browser import BrowserProfile
 
-browser_profile = BrowserProfile(
-    headless=False,
-    allowed_domains=['https://*.google.com', 'https://*.example.com'],
+base_config = BrowserProfile(
     storage_state='/tmp/auth.json',
+    allowed_domains=['https://*.google.com', 'https://*.example.com'],
+    headless=True,
+    viewport={'width': 920, 'height': 674},
+    device_scale_factor=1,
     # ... playwright args / browser-use config args ...
 )
 
-# start 3 separate browser instances with the same default config options + a session-specific arg:
-browser1 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile1')
-browser2 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
-browser3 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
+# start 3 browser instances with common config + session-specific override:
+low_res = BrowserSession(browser_profile=base_config, device_scale_factor=1)
+hi_res = BrowserSession(browser_profile=base_config, device_scale_factor=2)
+retina = BrowserSession(browser_profile=base_config, device_scale_factor=3)
 ```
 
 ### Browser-Use Parameters
