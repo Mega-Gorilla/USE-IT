@@ -170,6 +170,8 @@ keep_alive: bool | None = None
 
 Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance. If this is left as `None` and the Agent launched its own browser, the default is to close the browser after the agent completes. If the agent connected to an existing browser then it will leave it open.
 
+<a name="restrict-urls"></a>
+
 #### `allowed_domains`
 
 ```python

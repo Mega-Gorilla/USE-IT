@@ -8,7 +8,7 @@ icon: "shield"
 
 When working with sensitive information like passwords, you can use the `sensitive_data` parameter to prevent the model from seeing the actual values while still allowing it to reference them in its actions.
 
-Make sure to always set [`allowed_domains`](https://docs.browser-use.com/customize/browser-settings#restrict-urls) to restrict the domains the Agent is allowed to visit when working with sensitive data or logins.
+Make sure to always set [`allowed_domains`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to restrict the domains the Agent is allowed to visit when working with sensitive data or logins.
 
 ### Basic Usage
 
@@ -66,11 +66,24 @@ In this example:
 1. The model only sees `x_member_number` and `x_passphrase` as placeholders.
 2. When the model wants to use your password it outputs x_passphrase - and we replace it with the actual value in the DOM
 3. When sensitive data appear in the content of the current page, we replace it in the page summary fed to the LLM - so that the model never has it in its state.
-4. The browser will be entirely prevented from going to any site not under `https://*.example.com` to protect from prompt injection attacks, jailbreaks, and Agent distraction
+4. The browser will be entirely prevented from going to any site not under `https://*.example.com`
 
 This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
 
+---
 
+### Best Practices
+
+- Always restrict your sensitive data to only the exact domains that need it, `https://travel.example.com` is better than `*.example.com`
+- Always restrict `BrowserSession(allowed_domains=[...])` to only the domains the agent needs to visit to accomplish its task. This helps guard against prompt injection attacks, jailbreaks, and LLM mistakes.
+- Don't use `sensitive_data` for login credentials, it's better to log into the sites the agent needs in advance and reuse the cookies when the Agent runs:
+    ```bash
+    $ playwright open https://accounts.google.com --save-storage google_cookies.json
+    ```
+    Then use those cookies when the agent runs:
+    ```python
+    agent = Agent(..., browser_session=BrowserSession(storage_state='./google_cookies.json'))
+    ```
 
 <Warning>
 
@@ -98,7 +111,7 @@ llm = ChatOpenAI(model='gpt-4o', temperature=0.0)
 # Domain-specific sensitive data
 sensitive_data = {
     'https://*.google.com': {'x_email': '...', 'x_pass': '...'},
-    'chrome-extension://abcd': {'x_api_key': '...'},
+    'chrome-extension://abcd1243': {'x_api_key': '...'},
     'http*://example.com': {'x_authcode': '123123'}
 }
 
@@ -129,28 +142,19 @@ if __name__ == '__main__':
 
 With this approach:
 
-1. The Google credentials (`x_email` and `x_pass`) will only be used on Google domains (any subdomain)
-2. The API key (`x_api_key`) will only be used in the specific Chrome extension
-3. The auth code (`x_authcode`) will only be used on example.com via http or https
-
-<Warning>
-
-Warning: Vision models still see the image of the page - where the sensitive data might be visible.
-
-It's recommended to set `Agent(use_vision=False)` when working with sensitive_data and forms.
-
-</Warning>
-
-This approach ensures that sensitive information remains secure while still allowing the agent to perform tasks that require authentication.
+1. The Google credentials (`x_email` and `x_pass`) will only be used on Google domains (any subdomain, https only)
+2. The API key (`x_api_key`) will only be used whtin the specific Chrome extension with id `abcd1243`
+3. The auth code (`x_authcode`) will only be used on `http://example.com/*` or `https://example.com/*`
 
 
-
+<!-- old section titles to avoid breaking anchor links: -->
 <a name="allowed_domains"></a>
+<a name="domain-pattern-format"></a>
 
 
-### Domain Pattern Format
+### Allowed Domains
 
-Domain patterns in sensitive_data follow the same format as `allowed_domains`:
+Domain patterns in `sensitive_data` follow the same format as [`allowed_domains`](https://docs.browser-use.com/customize/browser-settings#allowed-domains):
 
 - `example.com` - Matches only `https://example.com/*`
 - `*.example.com` - Matches `https://example.com/*` and any subdomain `https://*.example.com/*`
