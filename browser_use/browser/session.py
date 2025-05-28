@@ -1633,6 +1633,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
+	@require_initialization
 	@time_execution_async('--take_screenshot')
 	async def take_screenshot(self, full_page: bool = False) -> str:
 		"""
@@ -1643,7 +1644,9 @@ class BrowserSession(BaseModel):
 		# We no longer force tabs to the foreground as it disrupts user focus
 		# await self.agent_current_page.bring_to_front()
 		page = await self.get_current_page()
-		await page.wait_for_load_state()
+		await page.wait_for_load_state(
+			timeout=5000,
+		)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
 
 		screenshot = await self.agent_current_page.screenshot(
 			full_page=full_page,
