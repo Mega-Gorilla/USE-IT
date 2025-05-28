@@ -21,7 +21,6 @@ load_dotenv()
 from langchain_openai import ChatOpenAI
 from browser_use import Agent, BrowserSession
 
-# Initialize the model
 llm = ChatOpenAI(model='gpt-4o', temperature=0.0)
 
 # Define sensitive data
@@ -41,17 +40,14 @@ task = """
 """
 
 # Recommended: Limit the domains available for the entire browser so the Agent can't be tricked into visiting untrusted URLs
-browser_session = BrowserSession(
-    allowed_domains=['https://*.example.com']
-)
+browser_session = BrowserSession(allowed_domains=['https://*.example.com'])
 
-# Pass the sensitive data to the agent
 agent = Agent(
     task=task,
     llm=llm,
-    sensitive_data=sensitive_data,
-    browser_session=browser_session,
-    use_vision=False,                      # recommended: disable vision or the LLM might see entered values in screenshots
+    sensitive_data=sensitive_data,   # Pass the sensitive data to the agent
+    browser_session=browser_session, # Pass the restricted browser_session to limit URLs Agent can visit
+    use_vision=False,                # Disable vision or else the LLM might see entered values in screenshots
 )
 
 async def main():
@@ -63,7 +59,7 @@ if __name__ == '__main__':
 
 In this example:
 
-1. The model only sees `x_member_number` and `x_passphrase` as placeholders.
+1. The LLM only ever sees the `x_member_number` and `x_passphrase` placeholders in prompts
 2. When the model wants to use your password it outputs x_passphrase - and we replace it with the actual value in the DOM
 3. When sensitive data appear in the content of the current page, we replace it in the page summary fed to the LLM - so that the model never has it in its state.
 4. The browser will be entirely prevented from going to any site not under `https://*.example.com`
