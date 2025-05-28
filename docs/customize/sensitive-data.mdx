@@ -92,14 +92,14 @@ This approach ensures that sensitive information remains secure while still allo
 - Don't use `sensitive_data` for login credentials, it's better to use [`storage_state`](docs.browser-use.com/customize/browser-settings#storage-state) or a [`user_data_dir`](/customize/browser-settings#user-data-dir) to log into the sites the agent needs in advance & reuse the cookies:  
 
 ```bash
-# open a browser to log into the sites you need your agent to be able to access
-$ playwright open https://accounts.google.com --save-storage google_cookies.json
+# open a browser to log into the sites you need & save the cookies
+$ playwright open https://accounts.google.com --save-storage auth.json
 ```
 
 Then use those cookies when the agent runs:
 
 ```python
-agent = Agent(..., browser_session=BrowserSession(storage_state='./google_cookies.json'))
+agent = Agent(..., browser_session=BrowserSession(storage_state='./auth.json'))
 ```
 
 <Warning>
@@ -181,7 +181,8 @@ agent = Agent(
     task="Log into Google, then check my account information",
     llm=llm,
     sensitive_data=sensitive_data,
-    browser_session=browser_session
+    browser_session=browser_session,
+    use_vision=False,
 )
 
 async def main():
@@ -194,5 +195,5 @@ if __name__ == '__main__':
 With this approach:
 
 1. The Google credentials (`x_email` and `x_pass`) will only be used on Google domains (any subdomain, https only)
-2. The API key (`x_api_key`) will only be used whtin the specific Chrome extension with id `abcd1243`
+2. The API key (`x_api_key`) will only be used on pages served by the specific Chrome extension `abcd1243`
 3. The auth code (`x_authcode`) will only be used on `http://example.com/*` or `https://example.com/*`
