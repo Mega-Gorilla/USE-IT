@@ -590,7 +590,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	save_har_path: str | None = Field(default=None, description='Directory for saving HAR files.')
 	trace_path: str | None = Field(default=None, description='Directory for saving trace files.')
 
-	cookies_file: str | None = Field(default=None, description='File to save cookies to.')
+	cookies_file: str | None = Field(
+		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
+	)
 
 	# extension_ids_to_preinstall: list[str] = Field(
 	# 	default_factory=list, description='List of Chrome extension IDs to preinstall.'
@@ -621,6 +623,23 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.window_size = self.window_size or {}
 			self.window_size['width'] = (self.window_size or {}).get('width') or self.window_width or 1280
 			self.window_size['height'] = (self.window_size or {}).get('height') or self.window_height or 1100
+		return self
+
+	@model_validator(mode='after')
+	def warn_storage_state_user_data_dir_conflict(self) -> Self:
+		"""Warn when both storage_state and user_data_dir are set, as this can cause conflicts."""
+		has_storage_state = self.storage_state is not None
+		has_user_data_dir = self.user_data_dir is not None
+		has_cookies_file = self.cookies_file is not None
+		static_source = 'cookies_file' if has_cookies_file else 'storage_state' if has_storage_state else None
+
+		if static_source and has_user_data_dir:
+			logger.warning(
+				f'⚠️ BrowserSession(...) was passed both {static_source} AND user_data_dir. {static_source}={self.storage_state or self.cookies_file} will forcibly overwrite '
+				f'cookies/localStorage/sessionStorage in user_data_dir={self.user_data_dir}. '
+				f'For multiple browsers in parallel, use only storage_state with user_data_dir=None, '
+				f'or use separate user_data_dirs for each browser and set storage_state=None.'
+			)
 		return self
 
 	def get_args(self) -> list[str]:
