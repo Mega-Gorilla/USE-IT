@@ -456,9 +456,13 @@ storage_state: str | Path | dict | None = None
 ```
 
 Browser storage state (cookies, localStorage). Can be file path or dict. See here for the [Playwright `storage_state` documentation](https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state) on how to use it.
-This option is only applied when launching a new browser using the default builtin playwright chromium.
+This option is only applied when launching a new browser using the default builtin playwright chromium and `user_data_dir=None` is set.
 
-
+```bash
+# to create a storage state file, run the following and log into the sites you need once the browser opens:
+playwright open https://example.com/ --save-storage=./storage_state.json
+# then setup a BrowserSession with storage_state='./storage_state.json' and user_data_dir=None to use it
+```
 
 ### Playwright Timing Settings
 
