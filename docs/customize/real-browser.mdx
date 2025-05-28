@@ -14,15 +14,16 @@ Browser Use supports a wide variety of ways to launch or connect to a browser:
 - Connect to a local browser already running using `browser_pid`
 
 <Tip>
-    Don't want to manage your own browsers? Try [☁️ Browser Use Cloud](https://browser-use.com)!  
-    We provide residential proxies, automatic CAPTCHA solving, human-in-the-loop automation, and more!
+Don't want to manage your own browser infrastructure? Try [☁️ Browser Use Cloud](https://browser-use.com) ➡️  
+
+We provide automatic CAPTCHA solving, proxies, human-in-the-loop automation, and more!
 </Tip>
 
 ## Connection Methods
 
 ### Method A: Launch a New Local Browser (Default)
 
-Launch a local browser using builtin default (playwright chromium) or a provided `executable_path`:
+Launch a local browser using built-in default (playwright `chromium`) or a provided `executable_path`:
 
 ```python
 from browser_use import Agent, BrowserSession
@@ -47,18 +48,20 @@ agent = Agent(
 )
 ```
 
+We support most `chromium`-based browsers in `executable_path`, including [Brave](https://github.com/browser-use/browser-use/tree/main/examples/browser/stealth.py), [patchright chromium](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright), [rebrowser](https://rebrowser.net/), Edge, and more. See [`examples/browser/stealth.py`](https://github.com/browser-use/browser-use/tree/main/examples/browser) for more. We do not support Firefox or Safari at the moment.
+
 <Warning>
     [As of Chrome v136](https://github.com/browser-use/browser-use/issues/1520), driving browsers with the default profile is [no longer supported](https://developer.chrome.com/blog/remote-debugging-port) for security reasons. Browser-Use has transitioned to creating a new dedicated profile for agents in: `~/.config/browseruse/profiles/default`. You can [open this profile](https://superuser.com/questions/377186/how-do-i-start-chrome-using-a-specified-user-profile) and log into everything you need your agent to have access to, and it will persist over time.
 </Warning>
 
 ### Method B: Connect Using Existing Playwright Objects
 
-Pass existing Playwright `Page`, `BrowserContext`, and/or `Browser` objects to `Agent(...)` and/or `BrowserSession(...)`:
+Pass existing Playwright `Page`, `BrowserContext`, `Browser`, and/or `playwright` API object to `BrowserSession(...)`:
 
 ```python
-from browser_use import Agent
+from browser_use import Agent, BrowserSession
 from playwright.async_api import async_playwright
-# or from patchright.async_api import async_patchright
+# from patchright.async_api import async_playwright   # stealth alternative
 
 async with async_playwright() as playwright:
     browser = await playwright.chromium.launch()
@@ -66,16 +69,27 @@ async with async_playwright() as playwright:
     page = await context.new_page()
     
     browser_session = BrowserSession(
-        page=page,  # or browser_context=context, or browser=browser, or playwright=playwright
+        page=page,
+        # browser_context=context,  # all these are supported
+        # browser=browser,
+        # playwright=playwright,
     )
 
-    # Can pass any of: page, browser_context, browser, playwright
     agent = Agent(
         task="Your task here",
         llm=llm,
-        page=page,
-        # or browser_session=browser_session, or browser_context=context, or browser=browser
+        browser_session=browser_session,
     )
+```
+
+You can also pass `page` directly to `Agent(...)` as a shortcut.
+
+```python
+agent = Agent(
+    task="Your task here",
+    llm=llm,
+    page=page,
+)
 ```
 
 ### Method C: Connect to Local Browser Using Browser PID
@@ -198,7 +212,7 @@ If you get a "profile is already in use" error:
   For more configuration options, see the [Browser Settings](/customize/browser-settings) documentation.
 </Note>
 
-### Profile Migration Issues
+### Profile Version Issues
 
 The browser version you run must always be equal to or greater than the version used to create the `user_data_dir`.
 If you see errors like `Failed to parse Extensions` when launching, you're likely attempting to run an older browser with an incompatible `user_data_dir` that's already been migrated to a newer Chrome version.
