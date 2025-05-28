@@ -516,6 +516,9 @@ class BrowserSession(BaseModel):
 			f'Failed to create a playwright BrowserContext {self.browser_context} for browser={self.browser}'
 		)
 
+		# Load cookies from file if specified
+		await self.load_cookies_from_file()
+
 	# async def _fork_locked_user_data_dir(self) -> None:
 	# 	"""Fork an in-use user_data_dir by cloning it to a new location to allow a second browser to use it"""
 	# 	# TODO: implement copy-on-write using overlayfs or zfs or something
@@ -1048,6 +1051,33 @@ class BrowserSession(BaseModel):
 					out_path = Path(self.browser_profile.downloads_dir) / out_path
 				out_path.parent.mkdir(parents=True, exist_ok=True)
 				out_path.write_text(json.dumps(cookies, indent=4))  # TODO: replace with anyio asyncio or anyio write
+
+	async def load_cookies_from_file(self) -> None:
+		"""
+		Load cookies from the cookies_file if it exists and apply them to the browser context.
+		"""
+		if not self.browser_profile.cookies_file or not self.browser_context:
+			return
+
+		# Show deprecation warning
+		logger.warning(
+			'⚠️ cookies_file is deprecated and will be removed in a future version. '
+			'Please use storage_state instead for loading cookies and other browser state. '
+			'See: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state'
+		)
+
+		cookies_path = Path(self.browser_profile.cookies_file)
+		if (not cookies_path.is_absolute()) and not str(cookies_path).startswith('.'):
+			cookies_path = Path(self.browser_profile.downloads_dir or '.') / cookies_path
+
+		if cookies_path.exists():
+			try:
+				cookies_data = json.loads(cookies_path.read_text())
+				if cookies_data:
+					await self.browser_context.add_cookies(cookies_data)
+					logger.info(f'🍪 Loaded {len(cookies_data)} cookies from {_log_pretty_path(cookies_path)}')
+			except Exception as e:
+				logger.warning(f'❌ Failed to load cookies from {_log_pretty_path(cookies_path)}: {type(e).__name__}: {e}')
 
 	# @property
 	# def browser_extension_pages(self) -> list[Page]:

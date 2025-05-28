@@ -590,7 +590,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	save_har_path: str | None = Field(default=None, description='Directory for saving HAR files.')
 	trace_path: str | None = Field(default=None, description='Directory for saving trace files.')
 
-	cookies_file: str | None = Field(default=None, description='File to save cookies to.')
+	cookies_file: str | None = Field(
+		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
+	)
 
 	# extension_ids_to_preinstall: list[str] = Field(
 	# 	default_factory=list, description='List of Chrome extension IDs to preinstall.'
