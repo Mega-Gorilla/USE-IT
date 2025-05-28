@@ -886,9 +886,9 @@ async def run_search():
 ## Summary
 
 - **BrowserSession** (defined in `browser_use/browser/session.py`) handles the live browser connection and runtime state
-- **BrowserProfile** (defined in `browser_use/browser/profile.py`) can be used to store a collection of static configuration
+- **BrowserProfile** (defined in `browser_use/browser/profile.py`) is a template that can store default config parameters for a `BrowserSession(...)`
 
-Configuration parameters defined on either are consumed by these calls depending on whether we're connecting/launching:
+Configuration parameters defined in both scope consumeds by these calls depending on whether we're connecting/launching:
 
 - `BrowserConnectArgs` - args for `playwright.BrowserType.connect_over_cdp(...)`
 - `BrowserLaunchArgs` - args for `playwright.BrowserType.launch(...)`
