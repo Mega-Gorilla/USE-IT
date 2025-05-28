@@ -625,6 +625,23 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			self.window_size['height'] = (self.window_size or {}).get('height') or self.window_height or 1100
 		return self
 
+	@model_validator(mode='after')
+	def warn_storage_state_user_data_dir_conflict(self) -> Self:
+		"""Warn when both storage_state and user_data_dir are set, as this can cause conflicts."""
+		has_storage_state = self.storage_state is not None
+		has_user_data_dir = self.user_data_dir is not None
+		has_cookies_file = self.cookies_file is not None
+		static_source = 'cookies_file' if has_cookies_file else 'storage_state' if has_storage_state else None
+
+		if static_source and has_user_data_dir:
+			logger.warning(
+				f'⚠️ BrowserSession(...) was passed both {static_source} AND user_data_dir. {static_source}={self.storage_state or self.cookies_file} will forcibly overwrite '
+				f'cookies/localStorage/sessionStorage in user_data_dir={self.user_data_dir}. '
+				f'For multiple browsers in parallel, use only storage_state with user_data_dir=None, '
+				f'or use separate user_data_dirs for each browser and set storage_state=None.'
+			)
+		return self
+
 	def get_args(self) -> list[str]:
 		if isinstance(self.ignore_default_args, list):
 			default_args = set(CHROME_DEFAULT_ARGS) - set(self.ignore_default_args)
