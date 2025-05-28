@@ -139,8 +139,8 @@ agent = Agent(
 
 1. **Use isolated profiles**: Create separate Chrome profiles for different agents to limit scope of risk:
    ```python
-   profile = BrowserProfile(
-       user_data_dir='~/.config/browseruse/profiles/default',
+   browser_session = BrowserSession(
+       user_data_dir='~/.config/browseruse/profiles/banking',
        # profile_directory='Default'
    )
    ```
@@ -149,7 +149,6 @@ agent = Agent(
    ```python
    browser_session = BrowserSession(
        allowed_domains=['example.com', 'http*://*.github.com'],
-       # ... other settings
    )
    ```
 
@@ -157,7 +156,7 @@ agent = Agent(
    ```python
    browser_session = BrowserSession(
        keep_alive=True,
-       # ... other settings
+       ...
    )
    ```
 
@@ -186,3 +185,12 @@ If you get a "profile is already in use" error:
 <Note>
   For more configuration options, see the [Browser Settings](/customize/browser-settings) documentation.
 </Note>
+
+### Profile Migration Issues
+
+The browser version you run must always be equal to or greater than the version used to create the `user_data_dir`.
+If you see errors like `Failed to parse Extensions` when launching, you're likely attempting to run an older browser with an incompatible `user_data_dir` that's already been migrated to a newer Chrome version.
+
+Playwright ships a version of chromium that's newer than the default stable Google Chrome release channel, so this can happen if you try to use
+a profile created by the default playwright chromium (e.g. `user_data_dir='~/.config/browseruse/profiles/default'`) with an older
+local browser like `executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`.
