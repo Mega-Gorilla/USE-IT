@@ -8,15 +8,15 @@ Browser Use uses [playwright](https://playwright.dev/python/docs/api/class-brows
 
 ---
 
-**To launch a new browser**, pass any playwright args you want to use to `BrowserSession(...)`:
+**To launch or connect to a browser**, pass any playwright / browser-use configuration arguments you want to `BrowserSession(...)`:
 
 ```python
 from browser_use import BrowserSession, Agent
 
 browser_session = BrowserSession(
+    headless=True,
+    viewport={'width': 964, 'height': 647},
     user_data_dir='~/.config/browseruse/profiles/default',
-    headless=False,
-    #... other config here ...
 )
 agent = Agent('fill out the form on this page', browser_session=browser_session)
 ```
@@ -33,11 +33,11 @@ agent = Agent('fill out the form on this page', browser_session=browser_session)
 - `BrowserSession(**params)` is Browser Use's object that tracks a connection to a running browser. It sets up:
   - the `playwright`, `browser`, `browser_context`, and `page` objects and tracks which tabs the agent/human are focused on
   - methods to interact with the browser window, apply config needed by the Agent, and run the `DOMService` for element detection
-  - it can take extra `**kwargs` to pass to playwright or a `browser_profile=BrowserProfile(...)` containing some config
+  - it can take a `browser_profile=BrowserProfile(...)` template containing some config defaults, and `**kwargs` session-specific config overrides
 
 ### Browser Connection Parameters
 
-Provide any one of these options to connect to an existing browser. These options are session-specific and cannot be stored in a `BrowserProfile(...)`.
+Provide any one of these options to connect to an existing browser. These options are session-specific and cannot be stored in a `BrowserProfile(...)` template.
 
 #### `wss_url`
 
@@ -77,7 +77,7 @@ PID of a running chromium-based browser process to connect to on localhost. See 
 browser_profile: BrowserProfile = BrowserProfile()
 ```
 
-Optional BrowserProfile instance containing config to use for the BrowserSession. (see below for more info)
+Optional `BrowserProfile` template containing default config to use for the `BrowserSession`. (see below for more info)
 
 #### `playwright`
 
@@ -134,33 +134,62 @@ Mark BrowserSession as already initialized, skips launch/connection (not recomme
 #### `**kwargs`
 
 `BrowserSession` can also accept *all* of the parameters [below](#browserprofile).
-(the parameters *above* this point are specific to `BrowserSession` and cannot be stored in a `BrowserProfile`)
+(the parameters *above* this point are specific to `BrowserSession` and cannot be stored in a `BrowserProfile` template)
+
+Extra `**kwargs` passed to `BrowserSession(...)` act as session-specific overrides to the `BrowserProfile(...)` template.
+
+```python
+base_iphone13 = BrowserProfile(
+    storage_state='/tmp/auth.json',     # share cookies between parallel browsers
+    **playwright.devices['iPhone 13'],
+    timezone_id='UTC',
+)
+usa_phone = BrowserSession(
+    browser_profile=base_iphone13,
+    timezone_id='America/New_York',     # kwargs override values in base_iphone13
+)
+eu_phone = BrowserSession(
+    browser_profile=base_iphone13,
+    timezone_id='Europe/Paris',
+)
+
+usa_agent = Agent(task='show me todays schedule...', browser_session=usa_phone)
+eu_agent = Agent(task='show me todays schedule...', browser_session=eu_phone)
+await asyncio.gather(agent1.run(), agent2.run())
+```
 
 ---
 
 
 ## `BrowserProfile`
 
-A `BrowserProfile` is an optional static collection of configuration that can be passed around and validated before it's used to start a `BrowserSession(browser_profile=BrowserProfile(...))`.
+A `BrowserProfile` is a static config template for a `BrowserSession()`.
 
-It can take all the same standard [playwright arguments](#playwright) that `BrowserSession(...)` takes, and some extras as well.
+It can validate and hold all the standard [playwright arguments](#playwright) and the extra config arguments Browser Use provides.
 
-It allows you do do things like start multiple browsers with the same config easily:
+It allows you do do things like start multiple browser processes with *some* shared config:
 
 ```python
 from browser_use.browser import BrowserProfile
 
-browser_profile = BrowserProfile(headless=False, user_data_dir=None, allowed_domains=['https://*.example.com'], ...)
+base_config = BrowserProfile(
+    storage_state='/tmp/auth.json',
+    allowed_domains=['https://*.google.com', 'https://*.example.com'],
+    headless=True,
+    viewport={'width': 920, 'height': 674},
+    device_scale_factor=1,
+    # ... playwright args / browser-use config args ...
+)
 
-# start 3 separate browser instances with the same config options:
-browser1 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile1')
-browser2 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
-browser3 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
+# start 3 browser instances with common config + session-specific override:
+low_res = BrowserSession(browser_profile=base_config, device_scale_factor=1)
+hi_res = BrowserSession(browser_profile=base_config, device_scale_factor=2)
+retina = BrowserSession(browser_profile=base_config, device_scale_factor=3)
 ```
 
 ### Browser-Use Parameters
 
-These parameters control browser-use specific features, and are outside the standard playwright parameter set but are supported by both `BrowserSession` and `BrowserProfile`.
+These parameters control Browser Use-specific features, and are outside the standard playwright set. They can be passed to `BrowserSession(...)` and/or stored in a `BrowserProfile` template.
 
 #### `keep_alive`
 
@@ -169,6 +198,8 @@ keep_alive: bool | None = None
 ```
 
 Keeps the browser alive after the agent has finished running. Useful for running multiple tasks with the same browser instance. If this is left as `None` and the Agent launched its own browser, the default is to close the browser after the agent completes. If the agent connected to an existing browser then it will leave it open.
+
+<a name="restrict-urls"></a>
 
 #### `allowed_domains`
 
@@ -373,8 +404,9 @@ If you see errors like `Failed to parse Extensions` or similar and failures when
 ```python
 args: list[str] = []
 ```
-
 Additional command-line arguments to pass to the browser. See here for the [full list of available chrome launch options](https://peter.sh/experiments/chromium-command-line-switches/).
+
+
 
 #### `ignore_default_args`
 
@@ -456,9 +488,13 @@ storage_state: str | Path | dict | None = None
 ```
 
 Browser storage state (cookies, localStorage). Can be file path or dict. See here for the [Playwright `storage_state` documentation](https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state) on how to use it.
-This option is only applied when launching a new browser using the default builtin playwright chromium.
+This option is only applied when launching a new browser using the default builtin playwright chromium and `user_data_dir=None` is set.
 
-
+```bash
+# to create a storage state file, run the following and log into the sites you need once the browser opens:
+playwright open https://example.com/ --save-storage=./storage_state.json
+# then setup a BrowserSession with storage_state='./storage_state.json' and user_data_dir=None to use it
+```
 
 ### Playwright Timing Settings
 
@@ -851,9 +887,9 @@ async def run_search():
 ## Summary
 
 - **BrowserSession** (defined in `browser_use/browser/session.py`) handles the live browser connection and runtime state
-- **BrowserProfile** (defined in `browser_use/browser/profile.py`) can be used to store a collection of static configuration
+- **BrowserProfile** (defined in `browser_use/browser/profile.py`) is a template that can store default config parameters for a `BrowserSession(...)`
 
-Configuration parameters defined on either are consumed by these calls depending on whether we're connecting/launching:
+Configuration parameters defined in both scopes consumed by these calls depending on whether we're connecting/launching:
 
 - `BrowserConnectArgs` - args for `playwright.BrowserType.connect_over_cdp(...)`
 - `BrowserLaunchArgs` - args for `playwright.BrowserType.launch(...)`

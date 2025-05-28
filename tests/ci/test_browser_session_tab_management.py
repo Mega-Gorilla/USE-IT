@@ -14,7 +14,7 @@ from browser_use.controller.service import Controller
 
 # Set up test logging
 logger = logging.getLogger('tab_tests')
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 
 class TestTabManagement:
@@ -139,11 +139,11 @@ class TestTabManagement:
 	async def _simulate_human_tab_change(self, page, browser_session: BrowserSession):
 		"""Simulate a user changing tabs by properly triggering events with Playwright."""
 
-		logger.debug(
-			f'BEFORE: agent_tab={browser_session.agent_current_page.url if browser_session.agent_current_page else "None"}, '
-			f'human_current_page={browser_session.human_current_page.url if browser_session.human_current_page else "None"}'
-		)
-		logger.debug(f'Simulating user changing to -> {page.url}')
+		# logger.debug(
+		# f'BEFORE: agent_tab={browser_session.agent_current_page.url if browser_session.agent_current_page else "None"}, '
+		# f'human_current_page={browser_session.human_current_page.url if browser_session.human_current_page else "None"}'
+		# )
+		# logger.debug(f'Simulating user changing to -> {page.url}')
 
 		# First bring the page to front - this is the physical action a user would take
 		await page.bring_to_front()
@@ -177,10 +177,10 @@ class TestTabManagement:
 		# Give the event handlers time to process
 		await asyncio.sleep(0.5)
 
-		logger.debug(
-			f'AFTER: agent_tab URL={browser_session.agent_current_page.url if browser_session.agent_current_page else "None"}, '
-			f'human_current_page URL={browser_session.human_current_page.url if browser_session.human_current_page else "None"}'
-		)
+		# logger.debug(
+		# 	f'AFTER: agent_tab URL={browser_session.agent_current_page.url if browser_session.agent_current_page else "None"}, '
+		# 	f'human_current_page URL={browser_session.human_current_page.url if browser_session.human_current_page else "None"}'
+		# )
 
 	# Tab management tests
 
