@@ -136,6 +136,28 @@ Mark BrowserSession as already initialized, skips launch/connection (not recomme
 `BrowserSession` can also accept *all* of the parameters [below](#browserprofile).
 (the parameters *above* this point are specific to `BrowserSession` and cannot be stored in a `BrowserProfile`)
 
+Extra `**kwargs` passed to `BrowserSession` act as session-specific overrides, so you can pass anything `BrowserProfile(...)` takes (see below).
+
+```python
+base_iphone13 = BrowserProfile(
+    storage_state='/tmp/auth.json',     # share cookies between parallel browsers
+    **playwright.devices['iPhone 13'],
+    timezone_id='UTC',
+)
+usa_phone = BrowserSession(
+    browser_profile=base_iphone13,
+    timezone_id='America/New_York',     # kwargs override values in base_iphone13
+)
+eu_phone = BrowserSession(
+    browser_profile=base_iphone13,
+    timezone_id='Europe/Paris',
+)
+
+usa_agent = Agent(task='show me todays schedule...', browser_session=usa_phone)
+eu_agent = Agent(task='show me todays schedule...', browser_session=eu_phone)
+await asyncio.gather(agent1.run(), agent2.run())
+```
+
 ---
 
 
@@ -150,9 +172,14 @@ It allows you do do things like start multiple browsers with the same config eas
 ```python
 from browser_use.browser import BrowserProfile
 
-browser_profile = BrowserProfile(headless=False, user_data_dir=None, allowed_domains=['https://*.example.com'], ...)
+browser_profile = BrowserProfile(
+    headless=False,
+    allowed_domains=['https://*.google.com', 'https://*.example.com'],
+    storage_state='/tmp/auth.json',
+    # ... playwright args / browser-use config args ...
+)
 
-# start 3 separate browser instances with the same config options:
+# start 3 separate browser instances with the same default config options + a session-specific arg:
 browser1 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile1')
 browser2 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
 browser3 = BrowserSession(browser_profile=browser_profile, user_data_dir='/tmp/profile2')
@@ -375,8 +402,8 @@ If you see errors like `Failed to parse Extensions` or similar and failures when
 ```python
 args: list[str] = []
 ```
-
 Additional command-line arguments to pass to the browser. See here for the [full list of available chrome launch options](https://peter.sh/experiments/chromium-command-line-switches/).
+
 
 #### `ignore_default_args`
 
