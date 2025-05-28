@@ -1042,15 +1042,21 @@ class BrowserSession(BaseModel):
 		Save cookies to the specified path or the default cookies_file in the downloads_dir.
 		"""
 		if self.browser_context:
+			# old deprecated cookies_file method:
 			cookies = await self.browser_context.cookies()
 			out_path = path or self.browser_profile.cookies_file
 			if out_path:
 				# If out_path is not absolute, resolve relative to downloads_dir
 				out_path = Path(out_path)
 				if not out_path.is_absolute():
-					out_path = Path(self.browser_profile.downloads_dir) / out_path
+					out_path = Path(self.browser_profile.downloads_dir or '.') / out_path
 				out_path.parent.mkdir(parents=True, exist_ok=True)
 				out_path.write_text(json.dumps(cookies, indent=4))  # TODO: replace with anyio asyncio or anyio write
+
+			# new recommended storage_state method:
+			storage_state = await self.browser_context.storage_state()
+			storage_state_path = Path(self.browser_profile.downloads_dir or '.') / 'storage_state.json'
+			storage_state_path.write_text(json.dumps(storage_state, indent=4))
 
 	async def load_cookies_from_file(self) -> None:
 		"""
