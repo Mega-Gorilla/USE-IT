@@ -76,14 +76,13 @@ async def test_token_limit_with_multiple_extractions(llm, controller, browser_se
 
 @pytest.mark.slow
 @pytest.mark.parametrize('max_tokens', [4000])  # 8000 20000
-@pytest.mark.asyncio
-async def test_open_3_tabs_and_extract_content(llm, controller, context, max_tokens):
+async def test_open_3_tabs_and_extract_content(llm, controller, browser_session, max_tokens):
 	"""Stress test: Open 3 tabs with urls and extract content"""
 	agent = Agent(
 		task='Open 3 tabs with https://en.wikipedia.org/wiki/Internet and extract the content from each.',
 		llm=llm,
 		controller=controller,
-		browser_context=context,
+		browser_session=browser_session,
 		max_input_tokens=max_tokens,
 		save_conversation_path='tmp/stress_test/test_open_3_tabs_and_extract_content.json',
 	)
@@ -98,4 +97,5 @@ async def test_open_3_tabs_and_extract_content(llm, controller, context, max_tok
 	errors = history.errors()
 	assert len(errors) == 0, 'Errors occurred during the test'
 	# check if 3 tabs were opened
-	assert len(context.current_state.tabs) >= 3, '3 tabs were not opened'
+	current_state = await browser_session.get_state_summary()
+	assert len(current_state.tabs) >= 3, '3 tabs were not opened'
