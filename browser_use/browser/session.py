@@ -1651,7 +1651,7 @@ class BrowserSession(BaseModel):
 		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
 		try:
 			screenshot = await page.screenshot(
-				full_page=True,
+				full_page=full_page,
 				scale='css',
 				timeout=15000,
 				animations='disabled',
