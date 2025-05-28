@@ -54,7 +54,8 @@ Browser Use supports two patterns for defining action parameters: normal functio
 
 ### Function Arguments
 
-For simple actions that don't need default values, you can define the action parameters directly as arguments to the function.
+For simple actions that don't need default values, you can define the action parameters directly as arguments to the function. This one takes a single string argument, `css_selector`.
+When the LLM calls an action, it sees its argument names & types, and will provide values that fit.
 
 ```python
 @controller.action('Click element')

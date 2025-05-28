@@ -88,7 +88,7 @@ This approach ensures that sensitive information remains secure while still allo
 
 - Always restrict your sensitive data to only the exact domains that need it, `https://travel.example.com` is better than `*.example.com`
 - Always restrict [`BrowserSession(allowed_domains=[...])`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to only the domains the agent needs to visit to accomplish its task. This helps guard against prompt injection attacks, jailbreaks, and LLM mistakes.
-- Only use `sensitive_data` for strings that can be inputted verbatim as text. The LLM never sees the actual values, so it can't "understand" them, adapt them, or split them up for multiple input fields. For example, you can't ask the Agent to click through a datepicker UI to input the sensitive value `1990-12-31`. For these situations you can implement a [custom function](/customize/custom-functions) the LLM can call that mutates the DOM in python.
+- Only use `sensitive_data` for strings that can be inputted verbatim as text. The LLM never sees the actual values, so it can't "understand" them, adapt them, or split them up for multiple input fields. For example, you can't ask the Agent to click through a datepicker UI to input the sensitive value `1990-12-31`. For these situations you can implement a [custom function](/customize/custom-functions) the LLM can call that updates the DOM using Python / JS.
 - Don't use `sensitive_data` for login credentials, it's better to use [`storage_state`](docs.browser-use.com/customize/browser-settings#storage-state) or a [`user_data_dir`](/customize/browser-settings#user-data-dir) to log into the sites the agent needs in advance & reuse the cookies:  
 
 ```bash

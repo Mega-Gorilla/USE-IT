@@ -186,6 +186,180 @@ agent = Agent(
    )
    ```
 
+## Re-Using a Browser
+
+A `BrowserSession` starts when the browser is launched/connected, and ends when the browser process exits/disconnects. A session internally manages a single live playwright browser context, and is normally auto-closed by the agent when its task is complete (*if* the agent started the session itself). If you pass an existing `BrowserSession` into an Agent, or if you set `BrowserSession(keep_alive=True)`, the session will not be closed and can be re-used between agents.
+
+Browser Use provides a number of ways to re-use profiles, sessions, and other configuration across multiple agents.
+
+- ✅ sequential agents can re-use a single `user_data_dir` in new `BrowserSession`s
+- ✅ sequential agents can re-use a single `BrowserSession` without closing it
+- ❌ parallel agents cannot run separate `BrowserSession`s using the same `user_data_dir`
+- ✅ parallel agents can run separate `BrowserSession`s using the same `storage_state`
+- ✅ parallel agents can share a single `BrowserSession`, working in different tabs
+- ⚠️ parallel agents can share a single `BrowserSession`, working in the same tab
+
+<Important>
+Multiple `BrowserSession`s (aka chrome processes) cannot share the same `user_data_dir` at the same time, but they can share a `storage_state` file or `BrowserProfile` config.
+</Important>
+
+### Sequential Agents, Same Profile, Different Browser
+
+If you are only running one agent & browser at a time, they can re-use the same `user_data_dir` sequentially.
+
+```python
+from browser_use import Agent, BrowserSession
+from langchain_openai import ChatOpenAI
+
+reused_profile = BrowserProfile(user_data_dir='~/.config/browseruse/profiles/default')
+
+agent1 = Agent(
+    task="The first task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_profile=reused_profile,    # pass the profile in, it will auto-create a session
+)
+await agent1.run()
+
+agent2 = Agent(
+    task="The second task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_profile=reused_profile,    # agent will auto-create its own new session
+)
+await agent2.run()
+```
+
+> Make sure to never mix different browser versions or `executable_path`s with the same `user_data_dir`. Once run with a newer browser version, some migrations are applied to the dir and older browsers wont be able to read it.
+
+### Sequential Agents, Same Profile, Same Browser
+
+If you are only running one agent at a time, they can re-use the same active `BrowserSession` and avoid having to relaunch chrome.
+
+```python
+from browser_use import Agent, BrowserSession
+from langchain_openai import ChatOpenAI
+
+reused_session = BrowserSession(
+    user_data_dir='~/.config/browseruse/profiles/default',
+    keep_alive=True,
+)
+
+agent1 = Agent(
+    task="The first task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_session=reused_session,              # pass the session in
+)
+await agent1.run()
+
+agent2 = Agent(
+    task="The second task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_session=reused_session,              # re-use the same session
+)
+await agent2.run()
+
+await reused_session.close()
+```
+
+### Parallel Agents, Same Browser, Multiple Tabs
+
+```python
+from browser_use import Agent, BrowserSession
+from langchain_openai import ChatOpenAI
+
+shared_browser = BrowserSession(
+    storage_state='/tmp/cookies.json',
+    user_data_dir=None,
+    keep_alive=True,
+    headless=True,
+)
+
+agent1 = Agent(
+    task="The first task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_session=shared_browser,              # pass the session in
+)
+agent2 = Agent(
+    task="The second task...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    browser_session=shared_browser,              # re-use the same session
+)
+await asyncio.gather(agent1.run(), agent2.run()) # run in parallel
+
+await reused_session.close()
+```
+
+### Parallel Agents, Same Browser, Same Tab
+
+<Warning>
+⚠️ This mode is not recommended. Agents are not yet optimized to share the same tab in the same browser, they may interfere with each other or cause errors.
+</Warning>
+
+
+```python
+from browser_use import Agent, BrowserSession
+from langchain_openai import ChatOpenAI
+from playwright.async_api import async_playwright
+
+playwright = await async_playwright().start()
+browser = await playwright.chromium.launch(headless=True)
+context = await browser.new_context()
+shared_page = await context.new_page()
+await shared_page.goto('https://example.com', wait_until='domcontentloaded')
+
+agent1 = Agent(
+    task="Fill out the form in section A...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    page=shared_page,                              # pass the Page in
+    # ^ shortcut for: browser_session=BrowserSession(page=page)
+)
+agent2 = Agent(
+    task="Fill out the form in section B...",
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    page=shared_page,                           # re-use the same Page
+)
+await asyncio.gather(agent1.run(), agent2.run()) # run in parallel
+
+await browser.close()
+```
+
+### Parallel Agents, Same Profile, Different Browsers
+
+<Tip>
+This mode is the recommended default.
+</Tip>
+
+To share a single set of configuration or cookies, but still have agents working in their own browser sessions (potentially in parallel), use our provided `BrowserProfile` object.
+
+The recommended way to re-use cookies and localStorage state between separate parallel sessions is to use the [`storage_state`](https://docs.browser-use.com/customize/browser-settings#storage-state) option.
+
+```bash
+# open a browser to log into sites you want the Agent to have access to
+playwright open https://example.com/ --save-storage=/tmp/auth.json
+playwright open https://example.com/ --load-storage=/tmp/auth.json
+```
+
+```python
+from browser_use.browser import BrowserProfile, BrowserSession
+
+shared_profile = BrowserProfile(
+    headless=True,
+    user_data_dir=None,               # use dedicated tmp user_data_dir per session
+    storage_state='/tmp/auth.json',   # load/save cookies to/from json file
+)
+
+window1 = BrowserSession(browser_profile=profile_a)
+agent1 = Agent(browser_session=window1)
+
+window2 = BrowserSession(browser_profile=profile_a)
+agent2 = Agent(browser_session=window2)
+
+await asyncio.gather(agent1.run(), agent2.run())  # run in parallel
+await window1.save_cookies()  # write cookie updates to auth.json
+await window2.save_cookies()  # you must decide when to save manually
+```
+
+---
+
 ## Troubleshooting
 
 ### Chrome Won't Connect
