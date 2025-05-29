@@ -91,7 +91,7 @@ def pixels_to_algebraic(x_px: float, y_px: float, square_size: float) -> str:
 	raise ValueError(f'Pixel coordinates out of bounds: ({x_px}, {y_px})')
 
 
-async def calculate_square_size(page) -> float:
+async def calculate_square_size(page) -> float | None:
 	"""Dynamically calculates the size of a chess square in pixels."""
 	try:
 		board_html = await page.locator('cg-board').inner_html(timeout=3000)
@@ -114,6 +114,7 @@ async def calculate_square_size(page) -> float:
 		return square_size
 	except Exception as e:
 		logger.error(f'Error calculating square size: {e}')
+		return None
 
 
 def get_piece_symbol(class_list: list[str]) -> str:
@@ -147,7 +148,6 @@ def create_fen_board(board_state: dict) -> str:
 async def get_current_board_info(page) -> tuple[str | None, float]:
 	"""Reads the current board HTML and returns FEN string and square size."""
 	board_state = {}
-	moves_str = ''
 	board_html = ''
 	square_size = None
 
@@ -158,10 +158,10 @@ async def get_current_board_info(page) -> tuple[str | None, float]:
 		square_size = await calculate_square_size(page)
 	except Exception as e:
 		logger.error(f'Error (get_info): Could not read cg-board: {e}')
-		return None, square_size
+		return None, None
 
-	if not board_html:
-		return None, square_size
+	if not board_html or not square_size:
+		return None, None
 
 	soup = BeautifulSoup(board_html, 'html.parser')
 	pieces = soup.find_all('piece')
@@ -179,12 +179,11 @@ async def get_current_board_info(page) -> tuple[str | None, float]:
 				except ValueError as ve:
 					logger.error(f'Error: {ve}')
 
-	if not board_state:
-		return None, square_size
+	if not board_state or not square_size:
+		return None, None
 
 	fen_board = create_fen_board(board_state)
-	active_player = 'w' if len(moves_str.split()) % 2 == 0 else 'b'
-	full_fen = f'{fen_board} {active_player} KQkq - 0 1'
+	full_fen = f'{fen_board} w KQkq - 0 1'
 	return full_fen, square_size
 
 
@@ -252,8 +251,8 @@ async def play_move(params: PlayMoveParams, browser: BrowserContext):
 
 	try:
 		current_fen, square_size = await get_current_board_info(page)
-		if not current_fen:
-			return ActionResult(extracted_content='Failed to get current FEN to play move.')
+		if not current_fen or not square_size:
+			return ActionResult(extracted_content='Failed to get current FEN or square size to play move.')
 
 		board = chess.Board(current_fen)
 		san_to_parse = san_move.replace('#', '').replace('+', '')
