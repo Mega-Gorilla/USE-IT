@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.2.4"
+version = "0.2.5"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -138,6 +138,9 @@ filterwarnings = [
 ]
 log_level = "INFO"
 
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.uv]
 dev-dependencies = [
