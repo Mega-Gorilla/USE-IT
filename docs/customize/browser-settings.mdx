@@ -312,15 +312,9 @@ File to save cookies to.
 downloads_dir: Path | str = '~/.config/browseruse/downloads'
 ```
 
-Directory for downloads.
+Directory to save browser downloads in.
 
-#### `save_downloads_path`
-
-```python
-save_downloads_path: str | None = None
-```
-
-Directory for saving downloads (alternative to downloads_dir).
+(previously called `save_downloads_path` in some places)
 
 #### `profile_directory`
 
@@ -328,7 +322,7 @@ Directory for saving downloads (alternative to downloads_dir).
 profile_directory: str = 'Default'
 ```
 
-Chrome profile directory name (e.g., 'Profile 1', 'Profile 2').
+Chrome profile subdirectory name inside of your `user_data_dir` (e.g. `Default`, `Profile 1`, `Work`, etc.).
 
 #### `window_position`
 
