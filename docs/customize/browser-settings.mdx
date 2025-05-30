@@ -298,13 +298,20 @@ Time to wait between agent actions.
 cookies_file: str | None = None
 ```
 
+JSON file path to save cookies to.
+
 <Warning>
 This option is DEPRECATED. Use [`storage_state`](#storage-state) instead, it's the standard playwright format and also supports `localStorage`!
 
-You must transfer any cookies from your existing `cookies_file` to the new format manually, or run `playwright open https://example.com/ --save-storage=auth.json` to create a new file in the new format.
+Transfer any cookies from your existing `cookies_file` to the new JSON format:
+
+`cookies_file.json`: `[{cookie}, {cookie}, {cookie}]`  
+⬇️
+`storage_state.json`: `{"cookies": [{cookie}, {cookie}, {cookie}], "origins": {... optional localstorage state ...}}`
+
+Or run `playwright open https://example.com/ --save-storage=storage_state.json` and log into any sites you need.
 </Warning>
 
-File to save cookies to.
 
 #### `downloads_dir`
 
