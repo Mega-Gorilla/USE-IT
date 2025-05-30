@@ -602,7 +602,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# )
 
 	# # --- File paths ---
-	downloads_dir: Path | str = Field(
+	downloads_dir: Path | str | None = Field(
 		default=Path('~/.config/browseruse/downloads').expanduser(),
 		description='Directory for downloads.',
 		validation_alias=AliasChoices('save_downloads_path'),

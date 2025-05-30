@@ -1000,7 +1000,7 @@ class BrowserSession(BaseModel):
 						await download.save_as(download_path)
 						logger.debug(f'⬇️  Download triggered. Saved file to: {download_path}')
 						return download_path
-					except TimeoutError:
+					except Exception:
 						# If no download is triggered, treat as normal click
 						logger.debug('No download triggered within timeout. Checking navigation...')
 						await page.wait_for_load_state()
