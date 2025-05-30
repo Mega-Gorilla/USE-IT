@@ -770,7 +770,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			logger.warning(f'⚠️ Failed to update browser geolocation {self.browser_profile.geolocation}: {type(e).__name__}: {e}')
 
-		if self.storage_state:
+		if self.browser_profile.storage_state:
 			await self.load_storage_state()
 
 		page = None
