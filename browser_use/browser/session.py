@@ -64,9 +64,18 @@ def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
 	return s
 
 
-def _log_pretty_path(path: Path) -> str:
+def _log_pretty_path(path: Path | None) -> str:
 	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
-	return str(path or '').replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+
+	if not path:
+		return ''  # always falsy in -> falsy out so it can be used in ternaries
+
+	if not isinstance(path, (str, Path)):
+		# no other types are safe to just str(path) and log to terminal unless we know what they are
+		# e.g. what if we get storage_date=dict | Path and the dict version could contain real cookies
+		return f'<{type(path).__name__}>'
+
+	return str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
 
 
 def require_initialization(func):
