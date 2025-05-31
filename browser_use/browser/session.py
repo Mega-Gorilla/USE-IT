@@ -1161,7 +1161,7 @@ class BrowserSession(BaseModel):
 			else:
 				# No existing file, write the new storage state
 				await anyio.Path(storage_state_path).write_text(json.dumps(storage_state, indent=4))
-			
+
 			logger.info(
 				f'🍪 Saved {len(storage_state["cookies"])} cookies to storage_state={_log_pretty_path(storage_state_path)}'
 			)
