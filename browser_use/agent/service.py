@@ -705,8 +705,8 @@ class Agent(Generic[Context]):
 		if self.chat_model_library == 'ChatOpenAI':
 			if any(m in model_lower for m in ['gpt-4', 'gpt-3.5']):
 				return 'function_calling'
-			if any(m in model_lower for m in ['llama']):
-				return 'json_mode'
+			if any(m in model_lower for m in ['llama-4', 'llama-3']):
+				return 'function_calling'
 
 		# Azure OpenAI models
 		elif self.chat_model_library == 'AzureChatOpenAI':
