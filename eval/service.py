@@ -1042,7 +1042,7 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	"""Setup browser session for the task"""
 
 	# Check for Anchor Browser API key
-	anchor_api_key = os.getenv('ANCHOR_API_KEY')
+	anchor_api_key = os.getenv('ANCHOR_BROWSER_API_KEY')
 	cdp_url = None
 
 	if anchor_api_key:
