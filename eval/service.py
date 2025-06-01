@@ -48,12 +48,16 @@ import shutil
 
 import anyio
 import requests
+from dotenv import load_dotenv
 from PIL import Image
 
 MAX_IMAGE = 5
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Load dotenv
+load_dotenv()
 
 # Check for Anchor Browser API key
 ANCHOR_BROWSER_API_KEY = os.getenv('ANCHOR_BROWSER_API_KEY')
