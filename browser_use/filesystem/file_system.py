@@ -26,9 +26,6 @@ class FileSystem:
 		self.results_file.touch(exist_ok=True)
 		self.todo_file.touch(exist_ok=True)
 
-		# Create a thread pool executor for file operations
-		self._executor = ThreadPoolExecutor()
-
 	def _is_valid_filename(self, file_name: str) -> bool:
 		"""Check if filename matches the required pattern: name.extension"""
 		pattern = r'^[a-zA-Z0-9_\-]+\.(txt|md)$'
@@ -43,8 +40,10 @@ class FileSystem:
 			return f"File '{file_name}' not found."
 
 		try:
-			# Run file read in a thread to avoid blocking
-			content = await asyncio.get_event_loop().run_in_executor(self._executor, lambda: path.read_text())
+			# Create a new executor for this operation
+			with ThreadPoolExecutor() as executor:
+				# Run file read in a thread to avoid blocking
+				content = await asyncio.get_event_loop().run_in_executor(executor, lambda: path.read_text())
 			return f'Read from file {file_name}:\n{content}'
 		except Exception:
 			return f"Error: Could not read file '{file_name}'."
@@ -55,8 +54,10 @@ class FileSystem:
 
 		try:
 			path = self.dir / file_name
-			# Run file write in a thread to avoid blocking
-			await asyncio.get_event_loop().run_in_executor(self._executor, lambda: path.write_text(content))
+			# Create a new executor for this operation
+			with ThreadPoolExecutor() as executor:
+				# Run file write in a thread to avoid blocking
+				await asyncio.get_event_loop().run_in_executor(executor, lambda: path.write_text(content))
 			return f'Data written to {file_name} successfully.'
 		except Exception:
 			return f"Error: Could not write to file '{file_name}'."
@@ -68,10 +69,11 @@ class FileSystem:
 		path = self.dir / file_name
 		if not path.exists():
 			return f"File '{file_name}' not found."
-
 		try:
-			# Run file append in a thread to avoid blocking
-			await asyncio.get_event_loop().run_in_executor(self._executor, lambda p=path, c=content: p.open('a').write(c + '\n'))
+			# Create a new executor for this operation
+			with ThreadPoolExecutor() as executor:
+				# Run file append in a thread to avoid blocking
+				await asyncio.get_event_loop().run_in_executor(executor, lambda p=path, c=content: p.write_text(c, append=True))
 			return f'Data appended to {file_name} successfully.'
 		except Exception:
 			return f"Error: Could not append to file '{file_name}'."
