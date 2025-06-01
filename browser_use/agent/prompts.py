@@ -71,6 +71,7 @@ class AgentMessagePrompt:
 		include_attributes: list[str] | None = None,
 		step_info: Optional['AgentStepInfo'] = None,
 		page_filtered_actions: str | None = None,
+		max_clickable_elements_length: int = 10000,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem' | None = file_system
@@ -80,10 +81,17 @@ class AgentMessagePrompt:
 		self.include_attributes = include_attributes or []
 		self.step_info = step_info
 		self.page_filtered_actions: str | None = page_filtered_actions
+		self.max_clickable_elements_length: int = max_clickable_elements_length
 		assert self.browser_state
 
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
+
+		if len(elements_text) > self.max_clickable_elements_length:
+			elements_text = elements_text[: self.max_clickable_elements_length]
+			truncated_text = f' (truncated to {self.max_clickable_elements_length} characters)'
+		else:
+			truncated_text = ''
 
 		has_content_above = (self.browser_state.pixels_above or 0) > 0
 		has_content_below = (self.browser_state.pixels_below or 0) > 0
@@ -108,7 +116,7 @@ class AgentMessagePrompt:
 Current URL: {self.browser_state.url}
 Available tabs:
 {tabs_text}
-Interactive elements from top layer of the current page inside the viewport:
+Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
 		return browser_state
