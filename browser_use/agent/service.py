@@ -1524,7 +1524,7 @@ class Agent(Generic[Context]):
 				if orig_target_hash != new_target_hash:
 					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, memory=msg))
 					break
 
 				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
@@ -1532,7 +1532,7 @@ class Agent(Generic[Context]):
 					# next action requires index but there are new elements on the page
 					msg = f'Something new appeared after action {i} / {len(actions)}'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, memory=msg))
 					break
 
 			try:
@@ -1611,7 +1611,7 @@ class Agent(Generic[Context]):
 		if not is_valid:
 			logger.info(f'❌ Validator decision: {parsed.reason}')
 			msg = f'The output is not yet correct. {parsed.reason}.'
-			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True)]
+			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)]
 		else:
 			logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
