@@ -57,7 +57,9 @@ logger = logging.getLogger(__name__)
 
 # Check for Anchor Browser API key
 ANCHOR_BROWSER_API_KEY = os.getenv('ANCHOR_BROWSER_API_KEY')
-if not ANCHOR_BROWSER_API_KEY:
+if ANCHOR_BROWSER_API_KEY:
+	logger.info('ANCHOR_BROWSER_API_KEY is set. Tasks will use Anchor Browser.')
+else:
 	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Tasks will use local browser.')
 
 def create_anchor_browser_session(headless: bool = False) -> str:
