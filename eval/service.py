@@ -55,8 +55,12 @@ MAX_IMAGE = 5
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Check for Anchor Browser API key
+ANCHOR_BROWSER_API_KEY = os.getenv('ANCHOR_BROWSER_API_KEY')
+if not ANCHOR_BROWSER_API_KEY:
+	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Tasks will use local browser.')
 
-def create_anchor_browser_session(api_key: str, headless: bool = False) -> str:
+def create_anchor_browser_session(headless: bool = False) -> str:
 	"""Create an Anchor Browser session and return CDP URL"""
 	browser_configuration = {
 		'session': {'proxy': {'type': 'anchor_residential', 'active': True}},
@@ -67,7 +71,7 @@ def create_anchor_browser_session(api_key: str, headless: bool = False) -> str:
 		response = requests.post(
 			'https://api.anchorbrowser.io/v1/sessions',
 			headers={
-				'anchor-api-key': api_key,
+				'anchor-api-key': ANCHOR_BROWSER_API_KEY,
 				'Content-Type': 'application/json',
 			},
 			json=browser_configuration,
@@ -77,7 +81,7 @@ def create_anchor_browser_session(api_key: str, headless: bool = False) -> str:
 		session_id = session_data['id']
 
 		# Return only the CDP URL
-		return f'wss://connect.anchorbrowser.io?apiKey={api_key}&sessionId={session_id}'
+		return f'wss://connect.anchorbrowser.io?apiKey={ANCHOR_BROWSER_API_KEY}&sessionId={session_id}'
 
 	except requests.RequestException as e:
 		logger.error(f'Failed to create Anchor Browser session: {type(e).__name__}: {e}')
@@ -1042,13 +1046,12 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	"""Setup browser session for the task"""
 
 	# Check for Anchor Browser API key
-	anchor_api_key = os.getenv('ANCHOR_BROWSER_API_KEY')
 	cdp_url = None
 
-	if anchor_api_key:
+	if ANCHOR_BROWSER_API_KEY:
 		try:
 			logger.debug(f'Browser setup: Creating Anchor Browser session for task {task.task_id}')
-			cdp_url = await asyncio.to_thread(create_anchor_browser_session, anchor_api_key, headless)
+			cdp_url = await asyncio.to_thread(create_anchor_browser_session, headless)
 		except Exception as e:
 			logger.error(
 				f'Browser setup: Failed to create Anchor Browser session for task {task.task_id}: {type(e).__name__}: {e}'
