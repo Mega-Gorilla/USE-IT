@@ -229,7 +229,9 @@ class MessageManager:
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message, message_type='init')
 
-		placeholder_message = HumanMessage(content='Example tool call 1:')
+		placeholder_message = HumanMessage(
+			content='Here is an example thinking and tool call. You can use it as a reference but do not copy it exactly.'
+		)
 		self._add_message_with_tokens(placeholder_message, message_type='init')
 
 		example_tool_call_1 = AIMessage(
@@ -240,27 +242,24 @@ class MessageManager:
 					'args': {
 						'current_state': {
 							'thinking': """
-**Understanding the Current State:**
-I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories and trending projects. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop and ray-project/kuberay that appear to be featured or trending. The user's request seems to involve exploring GitHub repositories, likely to collect information about them such as descriptions, stars, or other metadata.
+**Understanding the Current State and History:**
+- I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
 
 **Evaluating the Previous Action:**
-My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content - a curated list of repositories that GitHub is featuring. This gives me a good starting point to begin the repository exploration task. The DOM shows interactive elements that I can work with, and the page structure is as expected for GitHub's explore section.
-
-**Tracking and Planning with todo.md:**
-Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md. This will help me track which repositories I've visited, what information I've collected, and ensure I don't miss any important repositories. The todo.md should include all visible repositories and a systematic approach to processing them.
-
-**Writing Intermediate Results:**
-I should prepare to use results.md to store the collected repository information as I gather it. Each repository's details should be appended in a consistent format for easy review.
+- My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
 
 **Preparing what goes into my memory:**
-I need to capture the key repositories I've identified so far and establish that I'm at the planning stage of this multi-step task.
+- I need to capture the key repositories I've identified so far.
 
-**Planning my next action:**
-My next action should be to create a comprehensive todo.md file that outlines the entire task. This will include identifying all visible repositories, creating checkboxes for each one to visit, and establishing a clear workflow. I need to be thorough in identifying repositories since the user likely wants comprehensive coverage of what's available on the explore page.
+**Planning my Next Action:**
+- Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md. This will help me track which repositories I've visited, what information I've collected, and ensure I don't miss any important repositories. The todo.md should include all visible repositories and a systematic approach to processing them. 
+- {INSERT REASONING ON WRITING TODO.MD HERE}
+- After writing todo.md, I can also create a github.md file to accumulate the information I've collected. Let me put only a title as I haven't collected any information yet.
+- These writing actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information.
 """,
 							'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
 							'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-							'next_goal': 'Create todo.md checklist to track progress.',
+							'next_goal': 'Create todo.md checklist to track progress and github.md file for collecting information and click on bytedance/UI-TARS-desktop.',
 						},
 						'action': [
 							{
@@ -280,7 +279,20 @@ My next action should be to create a comprehensive todo.md file that outlines th
 - [ ] Report final results to user
 """.strip('\n'),
 								}
-							}
+							},
+							{
+								'write_file': {
+									'path': 'github.md',
+									'content': """
+# Github Repositories in Explore Section and Their Information
+""",
+								}
+							},
+							{
+								'click_element_by_index': {
+									'index': 4,
+								}
+							},
 						],
 					},
 					'id': str(self.state.tool_id),
@@ -291,8 +303,8 @@ My next action should be to create a comprehensive todo.md file that outlines th
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
 		self.add_tool_message(content='Data written to todo.md successfully.', message_type='init')
 
-		placeholder_message = HumanMessage(content='Example tool call 2:')
-		self._add_message_with_tokens(placeholder_message, message_type='init')
+		placeholder_message = HumanMessage(content='Example thinking and tool call 2:')
+		# self._add_message_with_tokens(placeholder_message, message_type='init')
 
 		example_tool_call_2 = AIMessage(
 			content='',
@@ -331,8 +343,8 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 				},
 			],
 		)
-		self._add_message_with_tokens(example_tool_call_2, message_type='init')
-		self.add_tool_message(content='Clicked on index [4].', message_type='init')
+		# self._add_message_with_tokens(example_tool_call_2, message_type='init')
+		# self.add_tool_message(content='Clicked on index [4].', message_type='init')
 
 		if self.settings.available_file_paths:
 			filepaths_msg = HumanMessage(content=f'Here are file paths you can use: {self.settings.available_file_paths}')
@@ -367,8 +379,13 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 				action_results += f'Action {idx + 1} Result: {action_result.memory}\n'
 			elif action_result.error:
 				action_results += f'Action {idx + 1} Error: {action_result.error}\n'
+			elif action_result.extracted_content:
+				action_results += f'Action {idx + 1} Result: {action_result.extracted_content}\n'
+				logger.warning(
+					'⚠️ ActionResult does not have memory but has extracted_content. This is not recommended as extracted_content can be too long.'
+				)
 			else:
-				raise ValueError(f'Action {idx + 1} has no memory or error')
+				raise ValueError(f'Action {idx + 1} has no memory or error:\n{action_result}')
 
 		self.agent_history_description += f"""## Step {step_number}
 Evaluation: {model_output.current_state.evaluation_previous_goal}
