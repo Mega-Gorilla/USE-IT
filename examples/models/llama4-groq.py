@@ -18,19 +18,21 @@ llm = ChatOpenAI(
 	api_key=os.environ.get('GROQ_API_KEY'),
 	temperature=0.0,
 )
-from langchain_groq import ChatGroq
 
-llm = ChatGroq(
-	model='meta-llama/llama-4-maverick-17b-128e-instruct',
-	api_key=os.environ.get('GROQ_API_KEY'),
-	temperature=0.0,
-)
+# llm = ChatGroq(
+# 	model='meta-llama/llama-4-maverick-17b-128e-instruct',
+# 	api_key=os.environ.get('GROQ_API_KEY'),
+# 	temperature=0.0,
+# )
 
 task = 'Open the page with an overview of the submission of releases on Discogs. Website: https://www.discogs.com/ '
 
 
 async def main():
-	agent = Agent(task=task, llm=llm, tool_calling_method='function_calling')
+	agent = Agent(
+		task=task,
+		llm=llm,
+	)
 	await agent.run()
 
 
