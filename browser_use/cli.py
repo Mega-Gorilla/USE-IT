@@ -1317,20 +1317,22 @@ async def textual_interface(config: dict[str, Any]):
 @click.option('--headless', is_flag=True, help='Run browser in headless mode', default=None)
 @click.option('--window-width', type=int, help='Browser window width')
 @click.option('--window-height', type=int, help='Browser window height')
-@click.option('--user-data-dir', type=str, help='Path to Chrome user data directory (e.g., ~/Library/Application Support/Google/Chrome)')
+@click.option(
+	'--user-data-dir', type=str, help='Path to Chrome user data directory (e.g., ~/Library/Application Support/Google/Chrome)'
+)
 @click.option('--profile-directory', type=str, help='Chrome profile directory name (e.g., "Default", "Profile 1")')
 @click.option('--cdp-url', type=str, help='Connect to existing Chrome via CDP URL (e.g., http://localhost:9222)')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
 	"""Browser-Use Interactive TUI or Command Line Executor
-	
+
 	Use --user-data-dir to specify a local Chrome profile directory.
 	Common Chrome profile locations:
 	  macOS: ~/Library/Application Support/Google/Chrome
 	  Linux: ~/.config/google-chrome
 	  Windows: %LOCALAPPDATA%\\Google\\Chrome\\User Data
-	
+
 	Use --profile-directory to specify which profile within the user data directory.
 	Examples: "Default", "Profile 1", "Profile 2", etc.
 	"""
