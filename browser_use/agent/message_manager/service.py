@@ -378,7 +378,7 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 			if action_result.memory:
 				action_results += f'Action {idx + 1} Result: {action_result.memory}\n'
 			elif action_result.error:
-				action_results += f'Action {idx + 1} Error: {action_result.error}\n'
+				action_results += f'Action {idx + 1} Error: {action_result.error[:400]}\n'
 			elif action_result.extracted_content:
 				action_results += f'Action {idx + 1} Result: {action_result.extracted_content}\n'
 				logger.warning(
