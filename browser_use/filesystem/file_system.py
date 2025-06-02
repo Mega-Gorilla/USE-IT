@@ -73,7 +73,11 @@ class FileSystem:
 			# Create a new executor for this operation
 			with ThreadPoolExecutor() as executor:
 				# Run file append in a thread to avoid blocking
-				await asyncio.get_event_loop().run_in_executor(executor, lambda p=path, c=content: p.write_text(c, append=True))
+				def append_to_file(file_path, data):
+					with file_path.open('a') as f:
+						f.write(data)
+
+				await asyncio.get_event_loop().run_in_executor(executor, append_to_file, path, content)
 			return f'Data appended to {file_name} successfully.'
 		except Exception:
 			return f"Error: Could not append to file '{file_name}'."
