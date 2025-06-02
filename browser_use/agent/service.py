@@ -20,7 +20,6 @@ from dotenv import load_dotenv
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 
 load_dotenv()
-
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
@@ -69,7 +68,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import handle_llm_error, time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -1121,15 +1120,7 @@ class Agent(Generic[Context]):
 				parsed: AgentOutput | None = response['parsed']
 
 			except Exception as e:
-				logger.error(f'Failed to invoke model: {str(e)}')
-				# groq parser sometimes fails to parse the response, so we try to parse the raw response
-				if hasattr(e, 'body') and e.body and 'error' in e.body and 'failed_generation' in e.body['error']:
-					raw = e.body['error']['failed_generation']  # type: ignore
-					response = {'raw': raw, 'parsed': None}
-					parsed = None
-					logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
-				else:
-					raise LLMException(401, 'LLM API call failed') from e
+				response, raw = handle_llm_error(e)
 
 		else:
 			try:
@@ -1139,14 +1130,7 @@ class Agent(Generic[Context]):
 				)
 				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
 			except Exception as e:
-				if hasattr(e, 'body') and e.body and 'error' in e.body and 'failed_generation' in e.body['error']:
-					raw = e.body['error']['failed_generation']  # type: ignore
-					response = {'raw': raw, 'parsed': None}
-					parsed = None
-					logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
-				else:
-					logger.error(f'Failed to invoke model: {str(e)}')
-					raise LLMException(401, 'LLM API call failed') from e
+				response, raw = handle_llm_error(e)
 
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
