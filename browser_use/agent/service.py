@@ -708,6 +708,10 @@ class Agent(Generic[Context]):
 			if any(m in model_lower for m in ['llama-4', 'llama-3']):
 				return 'function_calling'
 
+		elif self.chat_model_library == 'ChatGroq':
+			if any(m in model_lower for m in ['llama-4', 'llama-3']):
+				return 'function_calling'
+
 		# Azure OpenAI models
 		elif self.chat_model_library == 'AzureChatOpenAI':
 			if 'gpt-4-' in model_lower:
