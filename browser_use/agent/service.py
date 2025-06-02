@@ -84,7 +84,7 @@ def log_response(response: AgentOutput, registry=None) -> None:
 	elif 'Failed' in response.current_state.evaluation_previous_goal:
 		emoji = '⚠️'
 	else:
-		emoji = '❓'
+		emoji = '❔'
 
 	logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
@@ -1017,9 +1017,11 @@ class Agent(Generic[Context]):
 					f'Cutting tokens from history - new max input tokens: {self._message_manager.settings.max_input_tokens}'
 				)
 				self._message_manager.cut_messages()
-			elif 'Could not parse response' in error_msg:
-				# give model a hint how output should look like
-				error_msg += '\n\nReturn a valid JSON object with the required fields.'
+		elif 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
+			# give model a hint how output should look like
+			logger.debug(f'Tool calling method: {self.tool_calling_method} with model: {self.model_name} failed')
+			error_msg += '\n\nReturn a valid JSON object with the required fields.'
+			logger.error(f'{prefix}{error_msg}')
 
 		else:
 			from anthropic import RateLimitError as AnthropicRateLimitError
@@ -1033,7 +1035,7 @@ class Agent(Generic[Context]):
 				AnthropicRateLimitError,  # Anthropic
 			)
 
-			if isinstance(error, RATE_LIMIT_ERRORS):
+			if isinstance(error, RATE_LIMIT_ERRORS) or 'on tokens per minute (TPM): Limit' in error_msg:
 				logger.warning(f'{prefix}{error_msg}')
 				await asyncio.sleep(self.settings.retry_delay)
 			else:
@@ -1116,12 +1118,31 @@ class Agent(Generic[Context]):
 
 			except Exception as e:
 				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'LLM API call failed') from e
+				# groq parser sometimes fails to parse the response, so we try to parse the raw response
+				if hasattr(e, 'body') and e.body and 'error' in e.body and 'failed_generation' in e.body['error']:
+					raw = e.body['error']['failed_generation']  # type: ignore
+					response = {'raw': raw, 'parsed': None}
+					parsed = None
+					logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
+				else:
+					raise LLMException(401, 'LLM API call failed') from e
 
 		else:
-			self._log_llm_call_info(input_messages, self.tool_calling_method)
-			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			try:
+				self._log_llm_call_info(input_messages, self.tool_calling_method)
+				structured_llm = self.llm.with_structured_output(
+					self.AgentOutput, include_raw=True, method=self.tool_calling_method
+				)
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			except Exception as e:
+				if hasattr(e, 'body') and e.body and 'error' in e.body and 'failed_generation' in e.body['error']:
+					raw = e.body['error']['failed_generation']  # type: ignore
+					response = {'raw': raw, 'parsed': None}
+					parsed = None
+					logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
+				else:
+					logger.error(f'Failed to invoke model: {str(e)}')
+					raise LLMException(401, 'LLM API call failed') from e
 
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
@@ -1153,10 +1174,10 @@ class Agent(Generic[Context]):
 
 		if not parsed:
 			try:
-				parsed_json = extract_json_from_model_output(response['raw'].content)
+				parsed_json = extract_json_from_model_output(response['raw'])
 				parsed = self.AgentOutput(**parsed_json)
 			except Exception as e:
-				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
+				logger.warning(f'Failed to parse model output: {response["raw"]} {str(e)}')
 				raise ValueError('Could not parse response.')
 
 		# cut the number of actions to max_actions_per_step if needed
