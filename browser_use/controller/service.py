@@ -251,10 +251,10 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information. Be extremely specific about the information you would like to extract in your "goal" field. Use include_links true if the goal requires links.',
+			'Extract specific information from the current webpage. Provide a clear, detailed description of what you want to extract in the "content_to_extract" field. Be extremely specific about the data you need. Set include_links=True if you need to preserve links.',
 		)
 		async def extract_content(
-			goal: str,
+			content_to_extract: str,
 			page: Page,
 			page_extraction_llm: BaseChatModel,
 			include_links: bool = False,
@@ -273,16 +273,16 @@ class Controller(Generic[Context]):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					content += markdownify.markdownify(await iframe.content())
 
-			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal:\n{goal}\nPage:\n{page}'
-			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
+			prompt = 'Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\nPage content: {page}'
+			template = PromptTemplate(input_variables=['content_to_extract', 'page'], template=prompt)
 			try:
-				output = await page_extraction_llm.ainvoke(template.format(goal=goal, page=content))
+				output = await page_extraction_llm.ainvoke(template.format(content_to_extract=content_to_extract, page=content))
 				msg = f'📄  Extracted from page\n: {output.content}\n'
 				logger.info(msg)
 				return ActionResult(
 					extracted_content=msg,
 					include_in_memory=True,
-					memory=f'Extracted content for goal: {goal}',
+					memory=f"Extracted '{content_to_extract}' from page",
 					update_read_state=True,
 				)
 			except Exception as e:
