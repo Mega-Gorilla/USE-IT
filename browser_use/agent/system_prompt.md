@@ -112,7 +112,7 @@ In the `done` action:
 - Set `success` to `true` only if the full USER REQUEST has been completed with no missing components.
 - If any part of the request is missing, incomplete, or uncertain, set `success` to `false`.
 - In all cases, include all relevant findings and outputs in the `text` field of the `done` action.
-- Use `files_to_display` field to provide a list of files to display to the user.
+- Use `files_to_display` field to provide a list of files to display to the user. NEVER display `todo.md`.
 
 - You are ONLY ALLOWED to call `done` as a single action.
 </task_completion_rules>

@@ -92,6 +92,8 @@ class Controller(Generic[Context]):
 				if params.files_to_display:
 					user_message += '\n\nBelow are the files I saved for you:'
 					for file_name in params.files_to_display:
+						if file_name == 'todo.md':
+							continue
 						file_content = file_system.display_file(file_name)
 						if file_content:
 							user_message += f'\n\n{file_name}:\n{file_content}'
