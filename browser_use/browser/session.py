@@ -352,7 +352,7 @@ class BrowserSession(BaseModel):
 		)
 
 	async def stop(self) -> None:
-		"""Shuts down the BrowserSession, killing the browser process if keep_alive=False"""
+		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
@@ -415,14 +415,20 @@ class BrowserSession(BaseModel):
 				self._reset_connection_state()
 
 	async def close(self) -> None:
-		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""
-		self.logger.debug(
-			f'⏹️ Stopping gracefully browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
-		)
+		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
+		await self.stop()
+
+	async def kill(self) -> None:
+		"""Stop the BrowserSession even if keep_alive=True"""
+		self.keep_alive = False
+		# self.logger.debug(
+		# 	f'⏹️ Browser browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
+		# )
 		await self.stop()
 
 	async def new_context(self, **kwargs):
-		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()"""
+		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()."""
+		# TODO: remove this after >=0.3.0
 		return self
 
 	async def __aenter__(self) -> BrowserSession:

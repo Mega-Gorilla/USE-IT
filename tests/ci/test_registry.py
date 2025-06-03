@@ -95,7 +95,6 @@ async def browser_session():
 	browser_session = BrowserSession(
 		headless=True,
 		user_data_dir=None,
-		keep_alive=True,
 	)
 	await browser_session.start()
 	yield browser_session
@@ -120,7 +119,6 @@ async def test_browser(base_url):
 	browser_session = BrowserSession(
 		headless=True,
 		user_data_dir=None,
-		keep_alive=True,
 	)
 	await browser_session.start()
 	# Create tab and navigate to test page
