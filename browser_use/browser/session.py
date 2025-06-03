@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
+import anyio
 import psutil
 from patchright.async_api import Playwright as PatchrightPlaywright
 from playwright.async_api import Browser as PlaywrightBrowser
@@ -63,9 +64,18 @@ def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
 	return s
 
 
-def _log_pretty_path(path: Path) -> str:
+def _log_pretty_path(path: Path | None) -> str:
 	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
-	return str(path or '').replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+
+	if not path:
+		return ''  # always falsy in -> falsy out so it can be used in ternaries
+
+	if not isinstance(path, (str, Path)):
+		# no other types are safe to just str(path) and log to terminal unless we know what they are
+		# e.g. what if we get storage_date=dict | Path and the dict version could contain real cookies
+		return f'<{type(path).__name__}>'
+
+	return str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
 
 
 def require_initialization(func):
@@ -282,7 +292,7 @@ class BrowserSession(BaseModel):
 			return self
 
 	async def stop(self) -> None:
-		"""Shuts down the BrowserSession, killing the browser process if keep_alive=False"""
+		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
 		self.initialized = False
 
@@ -311,11 +321,17 @@ class BrowserSession(BaseModel):
 					logger.debug(f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}')
 
 	async def close(self) -> None:
-		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""
+		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
+		await self.stop()
+
+	async def kill(self) -> None:
+		"""Stop the BrowserSession even if keep_alive=True"""
+		self.browser_profile.keep_alive = False
 		await self.stop()
 
 	async def new_context(self, **kwargs):
-		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()"""
+		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()."""
+		# TODO: remove this after >=0.3.0
 		return self
 
 	async def __aenter__(self) -> BrowserSession:
@@ -1116,8 +1132,9 @@ class BrowserSession(BaseModel):
 			try:
 				cookies_file_path = Path(path or self.browser_profile.cookies_file).expanduser().resolve()
 				cookies_file_path.parent.mkdir(parents=True, exist_ok=True)
-				cookies_file_path.write_text(json.dumps(cookies, indent=4))  # TODO: convert to async
+				await anyio.Path(cookies_file_path).write_text(json.dumps(cookies, indent=4))
 				logger.info(f'🍪 Saved {len(cookies)} cookies to cookies_file={_log_pretty_path(cookies_file_path)}')
+				return
 			except Exception as e:
 				logger.warning(
 					f'❌ Failed to save cookies to cookies_file={_log_pretty_path(cookies_file_path)}: {type(e).__name__}: {e}'
@@ -1145,18 +1162,21 @@ class BrowserSession(BaseModel):
 			# always merge storage states, never overwrite (so two browsers can share the same storage_state.json)
 			if storage_state_path.exists():
 				try:
-					existing_storage_state = json.loads(storage_state_path.read_text())  # TODO: convert to async
+					existing_storage_state_text = await anyio.Path(storage_state_path).read_text()
+					existing_storage_state = json.loads(existing_storage_state_text)
 					merged_storage_state = merge_dicts(existing_storage_state, storage_state)
 					# in case another process races us and updates the file here, we will overwrite their changes
 					# if we really want to support real concurrency we need a sqlite database or something
-					storage_state_path.write_text(json.dumps(merged_storage_state, indent=4))  # TODO: convert to async
+					await anyio.Path(storage_state_path).write_text(json.dumps(merged_storage_state, indent=4))
 				except Exception as e:
 					logger.warning(
 						f'❌ Failed to merge storage state with existing storage_state={_log_pretty_path(storage_state_path)}: {type(e).__name__}: {e}'
 					)
 					return
+			else:
+				# No existing file, write the new storage state
+				await anyio.Path(storage_state_path).write_text(json.dumps(storage_state, indent=4))
 
-			storage_state_path.write_text(json.dumps(storage_state, indent=4))  # TODO: convert to async
 			logger.info(
 				f'🍪 Saved {len(storage_state["cookies"])} cookies to storage_state={_log_pretty_path(storage_state_path)}'
 			)
@@ -1184,7 +1204,8 @@ class BrowserSession(BaseModel):
 				cookies_path = Path(self.browser_profile.downloads_dir or '.') / cookies_path
 
 			try:
-				cookies_data = json.loads(cookies_path.read_text())
+				cookies_data_text = await anyio.Path(cookies_path).read_text()
+				cookies_data = json.loads(cookies_data_text)
 				if cookies_data:
 					await self.browser_context.add_cookies(cookies_data)
 					logger.info(f'🍪 Loaded {len(cookies_data)} cookies from cookies_file={_log_pretty_path(cookies_path)}')
@@ -1197,7 +1218,8 @@ class BrowserSession(BaseModel):
 			storage_state = self.browser_profile.storage_state
 			if isinstance(storage_state, (str, Path)):
 				try:
-					storage_state = json.loads(Path(storage_state).read_text())
+					storage_state_text = await anyio.Path(storage_state).read_text()
+					storage_state = json.loads(storage_state_text)
 				except Exception as e:
 					logger.warning(
 						f'❌ Failed to load cookies from storage_state={_log_pretty_path(self.browser_profile.storage_state)}: {type(e).__name__}: {e}'
