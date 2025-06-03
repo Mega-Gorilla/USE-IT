@@ -251,7 +251,7 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract page content to retrieve specific information from the page, e.g. all company names, a specific description, all information about xyc, 4 links with companies in structured format. Use include_links true if the goal requires links',
+			'Extract page content to retrieve specific information. Be extremely specific about the information you would like to extract in your "goal" field. Use include_links true if the goal requires links.',
 		)
 		async def extract_content(
 			goal: str,
@@ -273,7 +273,7 @@ class Controller(Generic[Context]):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					content += markdownify.markdownify(await iframe.content())
 
-			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
+			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal:\n{goal}\nPage:\n{page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
 			try:
 				output = await page_extraction_llm.ainvoke(template.format(goal=goal, page=content))
