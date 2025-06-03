@@ -77,16 +77,26 @@ class Controller(Generic[Context]):
 		else:
 
 			@self.registry.action(
-				'Complete task - with return text and if the task is finished (success=True) or not yet completely finished (success=False), because last step is reached',
+				'Complete task - provide a summary of results for the user. Set success=True if task completed successfully, false otherwise. Text should be your response to the user summarizing results. Include files you would like to display to the user in files_to_display.',
 				param_model=DoneAction,
 			)
-			async def done(params: DoneAction):
+			async def done(params: DoneAction, file_system: FileSystem):
+				user_message = params.text
+
 				len_text = len(params.text)
 				len_max_memory = 100
 				memory = f'Task completed: {params.success} - {params.text[:len_max_memory]}'
 				if len_text > len_max_memory:
 					memory += f' - {len_text - len_max_memory} more characters'
-				return ActionResult(is_done=True, success=params.success, extracted_content=params.text, memory=memory)
+
+				if params.files_to_display:
+					user_message += '\n\nBelow are the files I saved for you:'
+					for file_name in params.files_to_display:
+						file_content = file_system.display_file(file_name)
+						if file_content:
+							user_message += f'\n\n{file_name}:\n{file_content}'
+
+				return ActionResult(is_done=True, success=params.success, extracted_content=user_message, memory=memory)
 
 		# Basic Navigation Actions
 		@self.registry.action(

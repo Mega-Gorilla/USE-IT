@@ -31,6 +31,18 @@ class FileSystem:
 		pattern = r'^[a-zA-Z0-9_\-]+\.(txt|md)$'
 		return bool(re.match(pattern, file_name))
 
+	def display_file(self, file_name: str) -> str | None:
+		if not self._is_valid_filename(file_name):
+			return None
+
+		path = self.dir / file_name
+		if not path.exists():
+			return None
+		try:
+			return path.read_text()
+		except Exception:
+			return None
+
 	async def read_file(self, file_name: str) -> str:
 		if not self._is_valid_filename(file_name):
 			return INVALID_FILENAME_ERROR_MESSAGE
@@ -73,11 +85,7 @@ class FileSystem:
 			# Create a new executor for this operation
 			with ThreadPoolExecutor() as executor:
 				# Run file append in a thread to avoid blocking
-				def append_to_file(file_path, data):
-					with file_path.open('a') as f:
-						f.write(data)
-
-				await asyncio.get_event_loop().run_in_executor(executor, append_to_file, path, content)
+				await asyncio.get_event_loop().run_in_executor(executor, lambda p=path, c=content: p.write_text(c, append=True))
 			return f'Data appended to {file_name} successfully.'
 		except Exception:
 			return f"Error: Could not append to file '{file_name}'."
