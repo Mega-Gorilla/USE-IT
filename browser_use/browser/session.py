@@ -326,7 +326,7 @@ class BrowserSession(BaseModel):
 
 	async def kill(self) -> None:
 		"""Stop the BrowserSession even if keep_alive=True"""
-		self.keep_alive = False
+		self.browser_profile.keep_alive = False
 		await self.stop()
 
 	async def new_context(self, **kwargs):
