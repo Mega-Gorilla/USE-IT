@@ -1111,7 +1111,7 @@ class Agent(Generic[Context]):
 				response['parsed'] = parsed
 			except (ValueError, ValidationError) as e:
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
-				raise ValueError('Could not parse response.')
+				raise ValueError('Could not parse response.' + str(e))
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
