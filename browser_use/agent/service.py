@@ -1521,6 +1521,13 @@ class Agent(Generic[Context]):
 		await self.browser_session.remove_highlights()
 
 		for i, action in enumerate(actions):
+			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
+			if i > 0 and action.model_dump(exclude_unset=True).get('done') is not None:
+				msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
+				logger.info(msg)
+				results.append(ActionResult(extracted_content=msg, include_in_memory=True, memory=msg))
+				break
+
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 				new_selector_map = new_browser_state_summary.selector_map

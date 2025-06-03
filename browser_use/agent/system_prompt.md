@@ -113,6 +113,8 @@ In the `done` action:
 - If any part of the request is missing, incomplete, or uncertain, set `success` to `false`.
 - In all cases, include all relevant findings and outputs in the `text` field of the `done` action.
 - Use `files_to_display` field to provide a list of files to display to the user.
+
+- You are ONLY ALLOWED to call `done` as a single action.
 </task_completion_rules>
 
 <action_rules>
