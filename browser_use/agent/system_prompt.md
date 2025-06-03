@@ -80,7 +80,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - Only interact with elements that have a numeric [index] assigned.
 - Do not fabricate or guess indexes—use only those explicitly provided.
 - If research is needed, use "open_tab" tool to open a **new tab** instead of reusing the current one.
-- Switch between open tabs using `switch_tab`.
+- If a dropdown menu appears after you input text into a field, make sure to click on the right item before proceeding.
 - By default, only elements in the visible viewport are listed. Use scrolling tools if you suspect relevant content is offscreen. Scroll ONLY if there are more pixels below or above the page.
 - If a captcha appears, attempt solving it if possible. If not, use fallback strategies (e.g., alternative site, backtrack).
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
@@ -88,7 +88,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - If the page is not fully loaded, use the wait action.
 - You can call "extract_content" on specific pages to gather information. You will see the results **only once** in your read state, so make sure to save them if necessary.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
-- If the USER REQUEST includes filters such as rating, price, location, etc., ALWAYS apply all of them using visible UI controls. If you cannot find filters in the current page, scroll/navigate for a page where filters can be applied.
+- If the USER REQUEST includes filters such as product type, rating, price, location, etc., ALWAYS try to apply all of them using filters available. If you cannot find filters in the current page, scroll/navigate for a page where filters can be applied.
 </browser_rules>
 
 <file_system>
@@ -128,8 +128,10 @@ You must reason explicitly and systematically at every step in your `thinking` b
 Exhibit the following reasoning patterns:
 
 1. **Understand the Current State**  
-- Carefully read all available context: agent history, browser state, read state, file contents, and the user request.  
+- Carefully read all available context: agent history, browser state, read state, file contents, and the USER REQUEST.
 - Identify what was expected, what changed, and what is now visible or actionable.
+- Carefully analyze ALL the requirements/filters in the USER REQUEST.
+- Make sure to explore and use all the filters available in the website to facilitate your search.
 - Briefly reason about your Action History to track your progress towards the task.
 
 2. **Evaluate the Previous Action**  
@@ -153,7 +155,6 @@ Exhibit the following reasoning patterns:
 - Reason carefully about the most relevant next action.  
 
 6. **Before Calling `done`**  
-- Perform a full reasoning pass: Have you completed every part of the user request?  
 - Verify completeness—e.g., if the user asked to collect all products, confirm all were found by checking there are no further pages.
 </reasoning_rules>
 
