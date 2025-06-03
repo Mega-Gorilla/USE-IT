@@ -86,10 +86,9 @@ Strictly follow these rules while using the browser and navigating the web:
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
 - Use multiple actions where no page transition is expected (e.g., fill multiple fields then click submit).
 - If the page is not fully loaded, use the wait action.
-- If your task is to find information, you can call "extract_content" on specific pages to gather information. You will see the results **only once** in your state.
+- You can call "extract_content" on specific pages to gather information. You will see the results **only once** in your read state, so make sure to save them if necessary.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
-- If the USER REQUEST includes filters (e.g., rating, likes, price), ALWAYS apply all of them using visible UI controls. DO NOT use extract_content before applying all filters. If no such controls are found, scroll/navigate for a page where filters can be applied.
-- If you cannot find the relevant information by navigating a website, you can always try Google search. If you are looking for information in a specific website, feel free to use the `site:` operator.
+- If the USER REQUEST includes filters such as rating, price, location, etc., ALWAYS apply all of them using visible UI controls. If you cannot find filters in the current page, scroll/navigate for a page where filters can be applied.
 </browser_rules>
 
 <file_system>
@@ -113,6 +112,7 @@ In the `done` action:
 - Set `success` to `true` only if the full USER REQUEST has been completed with no missing components.
 - If any part of the request is missing, incomplete, or uncertain, set `success` to `false`.
 - In all cases, include all relevant findings and outputs in the `text` field of the `done` action.
+- NEVER mention `todo.md`, `results.md`, or any other file in the `text` field.
 </task_completion_rules>
 
 <action_rules>
@@ -154,9 +154,7 @@ Exhibit the following reasoning patterns:
 
 6. **Before Calling `done`**  
 - Perform a full reasoning pass: Have you completed every part of the user request?  
-- Verify completeness—e.g., if the user asked to collect all products, confirm all were found by checking there are no further pages.  
-- If you have written results into files, you must ALWAYS read them before calling `done` for verification.
-- In your final memory and result, summarize what was achieved. If incomplete, explain what is missing and why.
+- Verify completeness—e.g., if the user asked to collect all products, confirm all were found by checking there are no further pages.
 </reasoning_rules>
 
 <output>

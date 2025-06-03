@@ -142,7 +142,7 @@ def save_conversation(input_messages: list[BaseMessage], response: Any, target: 
 def _write_messages_to_file(f: Any, messages: list[BaseMessage]) -> None:
 	"""Write messages to conversation file"""
 	for message in messages:
-		f.write(f' {message.__class__.__name__} \n')
+		f.write(f'{message.__class__.__name__} \n')
 
 		if isinstance(message.content, list):
 			for item in message.content:
@@ -160,5 +160,5 @@ def _write_messages_to_file(f: Any, messages: list[BaseMessage]) -> None:
 
 def _write_response_to_file(f: Any, response: Any) -> None:
 	"""Write model response to conversation file"""
-	f.write(' RESPONSE\n')
+	f.write('RESPONSE\n')
 	f.write(json.dumps(json.loads(response.model_dump_json(exclude_unset=True)), indent=2))
