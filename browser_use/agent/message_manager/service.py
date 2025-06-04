@@ -225,7 +225,19 @@ class MessageManager:
 		self._add_message_with_tokens(task_message, message_type='init')
 
 		if self.settings.sensitive_data:
-			info = f'Here are placeholders for sensitive data: {list(self.settings.sensitive_data.keys())}'
+			sensitive_data = self.settings.sensitive_data
+			# Check if any value is a dict (domain-based sensitive data)
+			if any(isinstance(v, dict) for v in sensitive_data.values()):
+				# Domain-based: collect all keys from all value dicts
+				placeholders = set()
+				for v in sensitive_data.values():
+					if isinstance(v, dict):
+						placeholders.update(v.keys())
+				print('placeholders ', placeholders)
+				info = f'Here are placeholders for sensitive data: {list(placeholders)}'
+			else:
+				# Old format: just use the top-level keys
+				info = f'Here are placeholders for sensitive data: {list(sensitive_data.keys())}'
 			info += '\nTo use them, write <secret>the placeholder name</secret>'
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message, message_type='init')
