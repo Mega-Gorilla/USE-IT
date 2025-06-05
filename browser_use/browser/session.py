@@ -485,11 +485,10 @@ class BrowserSession(BaseModel):
 				# search for potentially conflicting local processes running on the same user_data_dir
 				for proc in psutil.process_iter(['pid', 'cmdline']):
 					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-						logger.warning(
+						logger.error(
 							f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
 							f'already running with the same user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir)}'
 						)
-						# self._fork_locked_user_data_dir()
 						break
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
@@ -1001,9 +1000,12 @@ class BrowserSession(BaseModel):
 				raise Exception(f'Element: {repr(element_node)} not found')
 
 			async def perform_click(click_func):
-				"""Performs the actual click, handling both download
-				and navigation scenarios."""
-				if self.browser_profile.downloads_dir:
+				"""Performs the actual click, handling both download and navigation scenarios."""
+
+				# only wait the 5s extra for potential downloads if they are enabled
+				# TODO: instead of blocking for 5s, we should register a non-block page.on('download') event
+				# and then check if the download has been triggered within the event handler
+				if self.browser_profile.downloads_path:
 					try:
 						# Try short-timeout expect_download to detect a file download has been been triggered
 						async with page.expect_download(timeout=5000) as download_info:
@@ -1011,8 +1013,8 @@ class BrowserSession(BaseModel):
 						download = await download_info.value
 						# Determine file path
 						suggested_filename = download.suggested_filename
-						unique_filename = await self._get_unique_filename(self.browser_profile.downloads_dir, suggested_filename)
-						download_path = os.path.join(self.browser_profile.downloads_dir, unique_filename)
+						unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
+						download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
 						await download.save_as(download_path)
 						logger.debug(f'⬇️  Download triggered. Saved file to: {download_path}')
 						return download_path
@@ -1022,7 +1024,7 @@ class BrowserSession(BaseModel):
 						await page.wait_for_load_state()
 						await self._check_and_handle_navigation(page)
 				else:
-					# Standard click logic if no download is expected
+					# If downloads are disabled, just perform the click
 					await click_func()
 					await page.wait_for_load_state()
 					await self._check_and_handle_navigation(page)
@@ -1201,11 +1203,10 @@ class BrowserSession(BaseModel):
 
 			cookies_path = Path(self.browser_profile.cookies_file)
 			if not cookies_path.is_absolute():
-				cookies_path = Path(self.browser_profile.downloads_dir or '.') / cookies_path
+				cookies_path = Path(self.browser_profile.downloads_path or '.') / cookies_path
 
 			try:
-				cookies_data_text = await anyio.Path(cookies_path).read_text()
-				cookies_data = json.loads(cookies_data_text)
+				cookies_data = json.loads(cookies_path.read_text())
 				if cookies_data:
 					await self.browser_context.add_cookies(cookies_data)
 					logger.info(f'🍪 Loaded {len(cookies_data)} cookies from cookies_file={_log_pretty_path(cookies_path)}')
@@ -1257,9 +1258,9 @@ class BrowserSession(BaseModel):
 	# @property
 	# def saved_downloads(self) -> list[Path]:
 	# 	"""
-	# 	Return a list of files in the downloads_dir.
+	# 	Return a list of files in the downloads_path.
 	# 	"""
-	# 	return list(Path(self.browser_profile.downloads_dir).glob('*'))
+	# 	return list(Path(self.browser_profile.downloads_path).glob('*'))
 
 	async def _wait_for_stable_network(self):
 		pending_requests = set()
