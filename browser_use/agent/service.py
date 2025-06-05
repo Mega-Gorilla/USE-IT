@@ -159,7 +159,6 @@ class Agent(Generic[Context]):
 		extend_planner_system_message: str | None = None,
 		injected_agent_state: AgentState | None = None,
 		context: Context | None = None,
-		save_playwright_script_path: str | None = None,
 		enable_memory: bool = True,
 		memory_config: MemoryConfig | None = None,
 		source: str | None = None,
@@ -194,7 +193,6 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
-			save_playwright_script_path=save_playwright_script_path,
 			extend_planner_system_message=extend_planner_system_message,
 		)
 
@@ -1426,23 +1424,6 @@ class Agent(Generic[Context]):
 			else:
 				# ADDED: Info message when custom telemetry for SIGINT was already logged
 				logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
-
-			if self.settings.save_playwright_script_path:
-				logger.info(
-					f'Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}'
-				)
-				try:
-					# Extract sensitive data keys if sensitive_data is provided
-					keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
-					# Pass browser and context config to the saving method
-					self.state.history.save_as_playwright_script(
-						self.settings.save_playwright_script_path,
-						sensitive_data_keys=keys,
-						browser_profile=self.browser_session.browser_profile,
-					)
-				except Exception as script_gen_err:
-					# Log any error during script generation/saving
-					logger.error(f'Failed to save Playwright script: {script_gen_err}', exc_info=True)
 
 			await self.close()
 
