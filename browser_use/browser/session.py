@@ -2414,8 +2414,11 @@ class BrowserSession(BaseModel):
 			await new_page.set_viewport_size(self.browser_profile.viewport)
 
 		if url:
-			await new_page.goto(url, wait_until='domcontentloaded', timeout=10000)
-			await self._wait_for_page_and_frames_load(timeout_overwrite=1)
+			try:
+				await new_page.goto(url, wait_until='domcontentloaded')
+				await self._wait_for_page_and_frames_load(timeout_overwrite=1)
+			except Exception as e:
+				logger.error(f'Error navigating to {url}: {e}')
 
 		assert self.human_current_page is not None
 		assert self.agent_current_page is not None
