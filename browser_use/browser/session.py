@@ -404,7 +404,7 @@ class BrowserSession(BaseModel):
 				)
 			if not self.brows_profile.user_data_dir:
 				logger.info('  🪄 For maximum stealth, BrowserSession(...) should be passed a persistent user_data_dir=...')
-			if self.browser_pfile.headless or not self.browser_profile.no_viewport:
+			if self.browser_profile.headless or not self.browser_profile.no_viewport:
 				logger.info('  🪄 For maximum stealth, BrowserSession(...) should be passed headless=False & viewport=None')
 		else:
 			# default is standard playwright chromium (headful, or headless=new)
