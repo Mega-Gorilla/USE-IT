@@ -17,6 +17,7 @@ import pytest
 from playwright.async_api import Page
 from pydantic import Field
 from pytest_httpserver import HTTPServer
+from pytest_httpserver.httpserver import HandlerType
 
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
@@ -72,8 +73,8 @@ def http_server():
 	server = HTTPServer()
 	server.start()
 
-	# Add a simple test page
-	server.expect_request('/test').respond_with_data(
+	# Add a simple test page that can handle multiple requests
+	server.expect_request('/test', handler_type=HandlerType.PERMANENT).respond_with_data(
 		'<html><head><title>Test Page</title></head><body><h1>Test Page</h1><p>Hello from test page</p></body></html>',
 		content_type='text/html',
 	)
