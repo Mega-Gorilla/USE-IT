@@ -293,7 +293,6 @@ class MessageManager:
 				# Old format: {key: value}
 				placeholders.add(key)
 		if placeholders:
-			print('placeholders ', placeholders)
 			info = f'Here are placeholders for sensitive data: {list(placeholders)}'
 			info += '\nTo use them, write <secret>the placeholder name</secret>'
 			info_message = HumanMessage(content=info)
