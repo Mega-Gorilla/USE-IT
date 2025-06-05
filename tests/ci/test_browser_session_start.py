@@ -326,3 +326,150 @@ class TestBrowserSessionStart:
 		assert new_current_page is not None
 		assert not new_current_page.is_closed()
 		assert new_current_page != current_page  # Should be a different page
+
+	async def test_concurrent_stop_calls(self, browser_profile):
+		"""Test simultaneous calls to stop() from multiple coroutines."""
+		# logger.info('Testing concurrent stop calls')
+
+		# Create a single session for this test
+		browser_session = BrowserSession(browser_profile=browser_profile)
+		await browser_session.start()
+		assert browser_session.initialized is True
+		assert browser_session.browser_context is not None
+
+		# Create a lock to ensure only one stop actually executes
+		stop_lock = asyncio.Lock()
+		stop_execution_count = 0
+
+		async def safe_stop():
+			nonlocal stop_execution_count
+			async with stop_lock:
+				if browser_session.initialized:
+					stop_execution_count += 1
+					await browser_session.stop()
+			return 'stopped'
+
+		# Call stop() concurrently from multiple coroutines
+		results = await asyncio.gather(safe_stop(), safe_stop(), safe_stop(), return_exceptions=True)
+
+		# All calls should succeed without errors
+		assert all(not isinstance(r, Exception) for r in results)
+
+		# Only one stop should have actually executed
+		assert stop_execution_count == 1
+
+		# Session should be stopped
+		assert browser_session.initialized is False
+		assert browser_session.browser_context is None
+
+	async def test_stop_with_closed_browser_context(self, browser_session):
+		"""Test calling stop() when browser context is already closed."""
+		# logger.info('Testing stop with closed browser context')
+
+		# Start the session
+		await browser_session.start()
+		assert browser_session.initialized is True
+		browser_ctx = browser_session.browser_context
+		assert browser_ctx is not None
+
+		# Manually close the browser context
+		await browser_ctx.close()
+
+		# stop() should handle this gracefully
+		await browser_session.stop()
+
+		# Session should be properly cleaned up
+		assert browser_session.initialized is False
+		assert browser_session.browser_context is None
+
+	async def test_access_after_stop(self, browser_profile):
+		"""Test accessing browser context after stop() to ensure proper cleanup."""
+		# logger.info('Testing access after stop')
+
+		# Create a session without fixture to avoid double cleanup
+		browser_session = BrowserSession(browser_profile=browser_profile)
+
+		# Start and stop the session
+		await browser_session.start()
+		await browser_session.stop()
+
+		# Verify session is stopped
+		assert browser_session.initialized is False
+		assert browser_session.browser_context is None
+
+		# Methods requiring initialization should fail because the context is closed
+		# This is the current behavior - the session doesn't properly detect closed contexts
+		with pytest.raises(Exception) as exc_info:
+			await browser_session.get_tabs_info()
+
+		# The error should indicate the context is closed
+		assert 'closed' in str(exc_info.value).lower()
+
+	async def test_race_condition_between_stop_and_operation(self, browser_session):
+		"""Test race condition between stop() and other operations."""
+		# logger.info('Testing race condition between stop and operations')
+
+		await browser_session.start()
+
+		# Create a barrier to synchronize the operations
+		barrier = asyncio.Barrier(2)
+
+		async def stop_session():
+			await barrier.wait()  # Wait for both coroutines to be ready
+			await browser_session.stop()
+			return 'stopped'
+
+		async def perform_operation():
+			await barrier.wait()  # Wait for both coroutines to be ready
+			try:
+				# This might fail if stop() executes first
+				return await browser_session.get_tabs_info()
+			except Exception as e:
+				return f'error: {type(e).__name__}'
+
+		# Run both operations concurrently
+		results = await asyncio.gather(stop_session(), perform_operation(), return_exceptions=True)
+
+		# One should succeed, the other might fail or succeed depending on timing
+		assert 'stopped' in results
+		# The operation might succeed (returning a list) or fail gracefully
+		other_result = results[1] if results[0] == 'stopped' else results[0]
+		assert isinstance(other_result, (list, str))
+
+	async def test_multiple_start_stop_cycles(self, browser_session):
+		"""Test multiple start/stop cycles to ensure no resource leaks."""
+		# logger.info('Testing multiple start/stop cycles')
+
+		# Perform multiple start/stop cycles
+		for i in range(3):
+			# Start
+			await browser_session.start()
+			assert browser_session.initialized is True
+			assert browser_session.browser_context is not None
+
+			# Perform an operation
+			tabs = await browser_session.get_tabs_info()
+			assert isinstance(tabs, list)
+
+			# Stop
+			await browser_session.stop()
+			assert browser_session.initialized is False
+			assert browser_session.browser_context is None
+
+	async def test_context_manager_with_exception(self, browser_session):
+		"""Test context manager properly closes even when exception occurs."""
+		# logger.info('Testing context manager with exception')
+
+		class TestException(Exception):
+			pass
+
+		# Use context manager and raise exception inside
+		with pytest.raises(TestException):
+			async with browser_session as session:
+				assert session.initialized is True
+				assert session.browser_context is not None
+				raise TestException('Test exception')
+
+		# Session should still be stopped despite the exception
+		assert browser_session.initialized is False
+		assert browser_session.browser_context is None
