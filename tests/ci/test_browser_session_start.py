@@ -25,13 +25,13 @@ logger = logging.getLogger('browser_session_start_tests')
 class TestBrowserSessionStart:
 	"""Tests for BrowserSession.start() method initialization and concurrency."""
 
-	@pytest.fixture
+	@pytest.fixture(scope='module')
 	async def browser_profile(self):
 		"""Create and provide a BrowserProfile with headless mode."""
 		profile = BrowserProfile(headless=True, user_data_dir=None)
 		yield profile
 
-	@pytest.fixture
+	@pytest.fixture(scope='function')
 	async def browser_session(self, browser_profile):
 		"""Create a BrowserSession instance without starting it."""
 		session = BrowserSession(browser_profile=browser_profile)

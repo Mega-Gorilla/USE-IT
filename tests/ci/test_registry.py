@@ -83,7 +83,7 @@ def http_server():
 	server.stop()
 
 
-@pytest.fixture
+@pytest.fixture(scope='module')
 def base_url(http_server):
 	"""Return the base URL for the test HTTP server."""
 	return f'http://{http_server.host}:{http_server.port}'
@@ -101,19 +101,19 @@ async def browser_session():
 	await browser_session.stop()
 
 
-@pytest.fixture
+@pytest.fixture(scope='module')
 def mock_llm():
 	"""Create a mock LLM"""
 	return MockLLM()
 
 
-@pytest.fixture
+@pytest.fixture(scope='function')
 def registry():
 	"""Create a fresh registry for each test"""
 	return Registry[TestContext]()
 
 
-@pytest.fixture
+@pytest.fixture(scope='module')
 async def test_browser(base_url):
 	"""Create a real BrowserSession for testing"""
 	browser_session = BrowserSession(
@@ -121,7 +121,7 @@ async def test_browser(base_url):
 		user_data_dir=None,
 	)
 	await browser_session.start()
-	# Navigate to test page
+	# Create tab and navigate to test page
 	await browser_session.create_new_tab(f'{base_url}/test')
 	yield browser_session
 	await browser_session.stop()
