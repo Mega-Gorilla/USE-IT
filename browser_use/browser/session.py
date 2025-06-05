@@ -15,15 +15,23 @@ from urllib.parse import urlparse
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
-import anyio
 import psutil
-from patchright.async_api import Playwright as PatchrightPlaywright
+from patchright.async_api import Browser as PatchrightBrowser
+from patchright.async_api import BrowserContext as PatchrightBrowserContext
+from patchright.async_api import ElementHandle as PatchrightElementHandle
+from patchright.async_api import FrameLocator as PatchrightFrameLocator
+from patchright.async_api import Page as PatchrightPage
+from patchright.async_api import Playwright as Patchright
+from patchright.async_api import async_playwright as async_patchright
 from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import BrowserContext as PlaywrightBrowserContext
-from playwright.async_api import ElementHandle, FrameLocator, Page, Playwright, async_playwright
+from playwright.async_api import ElementHandle as PlaywrightElementHandle
+from playwright.async_api import FrameLocator as PlaywrightFrameLocator
+from playwright.async_api import Page as PlaywrightPage
+from playwright.async_api import Playwright, async_playwright
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
 
-from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.profile import BrowserChannel, BrowserProfile
 from browser_use.browser.views import (
 	BrowserError,
 	BrowserStateSummary,
@@ -34,6 +42,14 @@ from browser_use.dom.clickable_element_processor.service import ClickableElement
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_execution_async, time_execution_sync
+
+# Define types to be Union[Patchright, Playwright]
+Browser = PatchrightBrowser | PlaywrightBrowser
+BrowserContext = PatchrightBrowserContext | PlaywrightBrowserContext
+Page = PatchrightPage | PlaywrightPage
+ElementHandle = PatchrightElementHandle | PlaywrightElementHandle
+FrameLocator = PatchrightFrameLocator | PlaywrightFrameLocator
+
 
 # Check if running in Docker
 IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
@@ -174,18 +190,18 @@ class BrowserSession(BaseModel):
 		description='pid of a running chromium-based browser process to connect to on localhost',
 		validation_alias=AliasChoices('chrome_pid'),  # old deprecated name = chrome_pid
 	)
-	playwright: Playwright | PatchrightPlaywright | Playwright | None = Field(
+	playwright: Playwright | Patchright | None = Field(
 		default=None,
 		description='Playwright library object returned by: await (playwright or patchright).async_playwright().start()',
 		exclude=True,
 	)
-	browser: InstanceOf[PlaywrightBrowser] | None = Field(
+	browser: InstanceOf[Browser] | None = Field(
 		default=None,
 		description='playwright Browser object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser'),
 		exclude=True,
 	)
-	browser_context: InstanceOf[PlaywrightBrowserContext] | None = Field(
+	browser_context: InstanceOf[BrowserContext] | None = Field(
 		default=None,
 		description='playwright BrowserContext object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser_context', 'context'),
@@ -346,12 +362,25 @@ class BrowserSession(BaseModel):
 		Set up playwright library client object: usually the result of (await async_playwright().start())
 		Override to customize the set up of the playwright or patchright library object
 		"""
-		self.playwright = self.playwright or (await async_playwright().start())
-		# self.playwright = self.playwright or (await async_patchright().start())
+		if self.browser_profile.stealth:
+			# use patchright instead of playwright
+			self.playwright = self.playwright or (await async_patchright().start())
+			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROME
+			logger.info(f'🕶️ Activated stealth mode using patchright {self.browser_profile.channel.name.lower()} browser...')
 
-		# if isinstance(self.playwright, PatchrightPlaywright):
-		# 	# patchright handles all its own default args, dont mess with them
-		# 	self.browser_profile.ignore_default_args = True
+			# check for stealth best-practices
+			if self.browser_profile.channel and self.browser_profile.channel != BrowserChannel.CHROME:
+				logger.info(
+					'  🪄 For maximum stealth, BrowserSession(...) should be passed channel=None or BrowserChannel.CHROME'
+				)
+			if not self.brows_profile.user_data_dir:
+				logger.info('  🪄 For maximum stealth, BrowserSession(...) should be passed a persistent user_data_dir=...')
+			if self.browser_pfile.headless or not self.browser_profile.no_viewport:
+				logger.info('  🪄 For maximum stealth, BrowserSession(...) should be passed headless=False & viewport=None')
+		else:
+			# default is standard playwright chromium (headful, or headless=new)
+			self.playwright = self.playwright or (await async_playwright().start())
+			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
 		# return self.playwright
 
@@ -588,6 +617,9 @@ class BrowserSession(BaseModel):
 
 		# Load cookies from file if specified
 		await self.load_cookies_from_file()
+
+		if self.browser_profile.stealth and not isinstance(self.playwright, Patchright):
+			logger.warning('⚠️ Failed to set up stealth mode. BrowserSession(...) got normal playwright objects as input.')
 
 	# async def _fork_locked_user_data_dir(self) -> None:
 	# 	"""Fork an in-use user_data_dir by cloning it to a new location to allow a second browser to use it"""

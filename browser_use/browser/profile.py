@@ -427,7 +427,7 @@ class BrowserLaunchArgs(BaseModel):
 		default_factory=lambda: ['--enable-automation', '--disable-extensions'],
 		description='List of default CLI args to stop playwright from applying (see https://github.com/microsoft/playwright/blob/41008eeddd020e2dee1c540f7c0cdfa337e99637/packages/playwright-core/src/server/chromium/chromiumSwitches.ts)',
 	)
-	channel: BrowserChannel = BrowserChannel.CHROMIUM  # https://playwright.dev/docs/browsers#chromium-headless-shell
+	channel: BrowserChannel | None = None  # https://playwright.dev/docs/browsers#chromium-headless-shell
 	chromium_sandbox: bool = Field(
 		default=not IN_DOCKER, description='Whether to enable Chromium sandboxing (recommended unless inside Docker).'
 	)
@@ -556,6 +556,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
+	stealth: bool = Field(default=False, description='Use stealth mode to avoid detection by anti-bot systems.')
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
 	deterministic_rendering: bool = Field(default=False, description='Enable deterministic rendering flags.')
 	allowed_domains: list[str] | None = Field(
