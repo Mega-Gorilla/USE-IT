@@ -1188,7 +1188,7 @@ class BrowserSession(BaseModel):
 		"""
 		await self.save_storage_state(*args, **kwargs)
 
-	async def _save_cookies_to_file(self, cookies: list[dict[str, Any]], path: Path) -> None:
+	async def _save_cookies_to_file(self, path: Path, cookies: list[dict[str, Any]] | None) -> None:
 		try:
 			cookies_file_path = Path(path or self.browser_profile.cookies_file).expanduser().resolve()
 			cookies_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1210,11 +1210,11 @@ class BrowserSession(BaseModel):
 				f'❌ Failed to save cookies to cookies_file={_log_pretty_path(cookies_file_path)}: {type(e).__name__}: {e}'
 			)
 
-	async def _save_storage_state_to_file(self, storage_state: dict[str, Any], path: Path) -> None:
+	async def _save_storage_state_to_file(self, path: Path, storage_state: dict[str, Any] | None) -> None:
 		try:
 			json_path = Path(path).expanduser().resolve()
 			json_path.parent.mkdir(parents=True, exist_ok=True)
-			storage_state = await self.browser_context.storage_state()
+			storage_state = storage_state or await self.browser_context.storage_state()
 
 			# always atomic merge storage states, never overwrite (so two browsers can share the same storage_state.json)
 			merged_storage_state = storage_state
@@ -1252,13 +1252,13 @@ class BrowserSession(BaseModel):
 		# they passed an explicit path, only save to that path and return
 		if path:
 			if path.name == 'storage_state.json':
-				await self._save_storage_state_to_file(storage_state, path)
+				await self._save_storage_state_to_file(path, storage_state)
 				return
 			else:
 				# assume they're using the old API when path meant a cookies_file path,
 				# also save new format next to it for convenience to help them migrate
-				await self._save_cookies_to_file(cookies, path)
-				await self._save_storage_state_to_file(storage_state, path.parent / 'storage_state.json')
+				await self._save_cookies_to_file(path, cookies)
+				await self._save_storage_state_to_file(path.parent / 'storage_state.json', storage_state)
 				logger.warning(
 					'⚠️ cookies_file is deprecated and will be removed in a future version. '
 					'Please use storage_state="path/to/storage_state.json" instead for persisting cookies and other browser state. '
@@ -1274,8 +1274,8 @@ class BrowserSession(BaseModel):
 				'Please use storage_state="path/to/storage_state.json" instead for persisting cookies and other browser state. '
 				'See: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state'
 			)
-			await self._save_cookies_to_file(cookies, path or self.browser_profile.cookies_file)
-			await self._save_storage_state_to_file(storage_state, path.parent / 'storage_state.json')
+			await self._save_cookies_to_file(path or self.browser_profile.cookies_file, cookies)
+			await self._save_storage_state_to_file(path.parent / 'storage_state.json', storage_state)
 
 		if self.browser_profile.storage_state is None:
 			return
@@ -1292,7 +1292,7 @@ class BrowserSession(BaseModel):
 			return
 
 		if isinstance(self.browser_profile.storage_state, (str, Path)):
-			await self._save_storage_state_to_file(storage_state, self.browser_profile.storage_state)
+			await self._save_storage_state_to_file(self.browser_profile.storage_state, storage_state)
 
 		raise Exception(f'Got unexpected type for storage_state: {type(self.browser_profile.storage_state)}')
 
