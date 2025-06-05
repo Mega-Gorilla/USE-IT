@@ -1258,7 +1258,7 @@ class BrowserSession(BaseModel):
 				# assume they're using the old API when path meant a cookies_file path,
 				# also save new format next to it for convenience to help them migrate
 				await self._save_cookies_to_file(cookies, path)
-			await self._save_storage_state_to_file(storage_state, (Path(path or self.browser_profile.cookies_file).parent) / 'storage_state.json')
+				await self._save_storage_state_to_file(storage_state, path.parent / 'storage_state.json')
 				logger.warning(
 					'⚠️ cookies_file is deprecated and will be removed in a future version. '
 					'Please use storage_state="path/to/storage_state.json" instead for persisting cookies and other browser state. '
