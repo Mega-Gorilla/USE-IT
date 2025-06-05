@@ -505,7 +505,7 @@ def get_browser_use_version() -> str:
 		if pyproject_path.exists():
 			import re
 
-			with open(pyproject_path) as f:
+			with open(pyproject_path, encoding="utf-8") as f:
 				content = f.read()
 				match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
 				if match:
