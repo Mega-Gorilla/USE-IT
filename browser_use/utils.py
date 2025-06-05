@@ -6,7 +6,8 @@ import signal
 import time
 from collections.abc import Callable, Coroutine
 from fnmatch import fnmatch
-from functools import wraps
+from functools import cache, wraps
+from pathlib import Path
 from sys import stderr
 from typing import Any, ParamSpec, TypeVar
 from urllib.parse import urlparse
@@ -491,3 +492,35 @@ def merge_dicts(a: dict, b: dict, path: tuple[str, ...] = ()):
 		else:
 			a[key] = b[key]
 	return a
+
+
+@cache
+def get_browser_use_version() -> str:
+	"""Get the browser-use package version using the same logic as Agent._set_browser_use_version_and_source"""
+	try:
+		package_root = Path(__file__).parent.parent
+		pyproject_path = package_root / 'pyproject.toml'
+
+		# Try to read version from pyproject.toml
+		if pyproject_path.exists():
+			import re
+
+			with open(pyproject_path) as f:
+				content = f.read()
+				match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+				if match:
+					return f'v{match.group(1)}'
+				else:
+					# Fallback to importlib if regex doesn't find version
+					from importlib.metadata import version as get_version
+
+					return f'v{get_version("browser-use")}'
+		else:
+			# If pyproject.toml doesn't exist, try getting version from pip
+			from importlib.metadata import version as get_version
+
+			return f'v{get_version("browser-use")}'
+
+	except Exception as e:
+		logger.debug(f'Error getting version: {e}')
+		return 'vunknown'
