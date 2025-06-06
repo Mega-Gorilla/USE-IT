@@ -1,8 +1,9 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
+from uuid import UUID
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import AfterValidator, BaseModel, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
 from browser_use.utils import get_browser_use_version
@@ -13,6 +14,8 @@ MAX_URL_LENGTH = 2000
 MAX_TASK_LENGTH = 5000
 MAX_COMMENT_LENGTH = 2000
 MAX_FILE_CONTENT_SIZE = 50 * 1024 * 1024  # 50MB
+
+UUIDStr = Annotated[str, AfterValidator(lambda s: str(UUID(s)))]
 
 
 class BaseEvent(BaseModel):

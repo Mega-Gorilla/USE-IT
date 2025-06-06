@@ -9,8 +9,9 @@ from typing import Any, Union
 
 import anyio
 from pydantic import BaseModel
+from uuid_extensions import uuid7str
 
-from browser_use.eventbus.models import BaseEvent
+from browser_use.eventbus.models import BaseEvent, UUIDStr
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,23 @@ class EventBus:
 
 	name: str
 	event_queue: asyncio.Queue[BaseEvent]
-	event_history: list[BaseEvent]
+	event_history: dict[UUIDStr, BaseEvent]
 	handlers: dict[str, list[EventHandler]]
 	wal_path: Path | None = None
 	parallel_handlers: bool = True
 
+	id: UUIDStr
 	_is_running: bool = False
 	_runloop_task: asyncio.Task | None = None
 	_runloop_lock: asyncio.Lock
 	_on_idle: asyncio.Event
 
 	def __init__(self, name: str | None = None, wal_path: Path | str | None = None, parallel_handlers: bool = True):
-		self.name = name or f'EventBus_{hex(id(self))[-6:]}'
+		self.id = uuid7str()
+		self.name = name or f'EventBus{self.id[-8:]}'
+		assert self.name.isidentifier(), f'EventBus name must be a unique identifier string, got: {self.name}'
 		self.event_queue = asyncio.Queue()
-		self.event_history = []
+		self.event_history = {}
 		self.handlers = defaultdict(list)
 		self.parallel_handlers = parallel_handlers
 		self._runloop_lock = asyncio.Lock()
@@ -71,26 +75,29 @@ class EventBus:
 	@property
 	def events_queued(self) -> list[BaseEvent]:
 		"""Get events that haven't started processing yet"""
-		return [event for event in self.event_history if event.started_at is None]
+		return [event for event in self.event_history.values() if event.started_at is None]
 
 	@property
 	def events_started(self) -> list[BaseEvent]:
 		"""Get events currently being processed"""
-		return [event for event in self.event_history if event.started_at and not event.completed_at]
+		return [event for event in self.event_history.values() if event.started_at and not event.completed_at]
 
 	@property
 	def events_completed(self) -> list[BaseEvent]:
 		"""Get events that have completed processing"""
-		return [event for event in self.event_history if event.completed_at is not None]
+		return [event for event in self.event_history.values() if event.completed_at is not None]
 
 	def on(self, event_pattern: str | type[BaseModel], handler: EventHandler) -> None:
 		"""Subscribe to events matching a pattern, event type name, or event model class.
-		Use '*' for all events. Similar to JS EventListener.addEventListener()
+		Use event_pattern='*' to subscribe to all events. (can be used to forward all events to another EventBus)
+
+		Similar to EventListener.addEventListener() or eventbus.subscribe() in other languages.
 
 		Examples:
-			eventbus.on('*', handler)  # All events
 			eventbus.on('TaskStartedEvent', handler)  # Specific event type
 			eventbus.on(TaskStartedEvent, handler)  # Event model class
+			eventbus.on('*', handler)  # Subscribe to all events
+			eventbus.on('*', other_eventbus.emit)  # Forward all events to another EventBus
 		"""
 		# Allow both sync and async handlers
 		if event_pattern == '*':
@@ -105,36 +112,50 @@ class EventBus:
 
 	def emit(self, event: BaseEvent) -> BaseEvent:
 		"""
-		Enqueue an event for processing. Returns awaitable event object.
-		Auto-starts the EventBus if not already running. similar to JS EventListener.dispatchEvent()
+		Enqueue an event for processing by the handlers. Returns awaitable event object.
+		(Auto-starts the EventBus's async _run_loop() if not already running)
+
+		Similar to JS EventListener.dispatchEvent() or eventbus.dispatch() in other languages.
 		"""
-		# Auto-start if not running
+		assert event.event_id, 'Missing event.event_id: UUIDStr = uuid7str()'
+		assert event.queued_at, 'Missing event.queued_at: datetime = datetime.now(UTC)'
+		assert event.event_type and event.event_type.isidentifier(), 'Missing event.event_type: str'
+		assert event.event_schema and '@' in event.event_schema, 'Missing event.event_schema: str (with @version)'
+
+		# Add this EventBus to the event_path if not already there
+		if self.name not in event.event_path:
+			# preserve identity of the original object instead of creating a new one, so that the original object remains awaitable to get the result
+			# NOT: event = event.model_copy(update={'event_path': event.event_path + [self.name]})
+			event.event_path.append(self.name)
+
+		assert event.event_path, 'Missing event.event_path: list[str] (with at least the origin function name recorded in it)'
+		assert all(entry.isidentifier() for entry in event.event_path), (
+			f'Event.event_path must be a list of valid EventBus or function names, got: {event.event_path}'
+		)
+
+		# Add event to history
+		self.event_history[event.event_id] = event
+
+		self._start()
+
+		# Put event in queue synchronously using put_nowait
+		try:
+			self.event_queue.put_nowait(event)
+		except asyncio.QueueFull:
+			logger.error(f'⚠️ Event queue is full! Dropping event {event.event_type}:\n{event.model_dump_json()}')
+
+		logger.debug(f'Emitting event {event.event_type} to queue')
+		return event
+
+	def _start(self) -> None:
+		"""Start the event bus if not already running"""
 		if not self._is_running:
 			try:
 				loop = asyncio.get_running_loop()
 				self._is_running = True
 				self._runloop_task = loop.create_task(self._run_loop())
 			except RuntimeError:
-				# No event loop - will start when one becomes available
-				pass
-
-		# All events must inherit from BaseEvent
-		actual_event = event
-
-		# Add this EventBus to the event_path if not already there
-		if self.name not in actual_event.event_path:
-			actual_event = actual_event.model_copy(update={'event_path': actual_event.event_path + [self.name]})
-
-		self.event_history.append(actual_event)
-
-		# Put event in queue synchronously using put_nowait
-		try:
-			self.event_queue.put_nowait(actual_event)
-		except asyncio.QueueFull:
-			logger.error(f'Event queue is full, dropping event {actual_event.event_type}')
-
-		logger.debug(f'Emitting event {actual_event.event_type} to queue')
-		return actual_event
+				pass  # No event loop - will start when one becomes available
 
 	async def stop(self, timeout: float | None = None) -> None:
 		"""Stop the event bus, optionally waiting for events to complete"""
@@ -167,6 +188,8 @@ class EventBus:
 
 	async def wait_until_idle(self, timeout: float | None = None) -> None:
 		"""Wait until the event bus is idle (no events being processed)"""
+
+		self._start()
 
 		# First wait for the queue to be empty
 		await self.event_queue.join()
@@ -302,7 +325,13 @@ class EventBus:
 	@staticmethod
 	async def _default_log_handler(event: BaseEvent) -> str:
 		"""Default handler that logs all events"""
-		logger.debug(f'Event processed: {event.event_type} [{event.event_id}] - {event.model_dump_json()}')
+		try:
+			# Try to serialize the event
+			event_json = event.model_dump_json()
+			logger.debug(f'Event processed: {event.event_type} [{event.event_id}] - {event_json}')
+		except Exception as e:
+			# If serialization fails (e.g., circular reference), log without the full JSON
+			logger.debug(f'Event processed: {event.event_type} [{event.event_id}] - (serialization failed: {e})')
 		return 'logged'
 
 	async def _default_wal_handler(self, event: BaseEvent) -> str:

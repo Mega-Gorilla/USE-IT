@@ -335,7 +335,7 @@ class TestWriteAheadLog:
 		# Check write-ahead log
 		log = eventbus.event_history.copy()
 		assert len(log) == 5
-		for i, event in enumerate(log):
+		for i, event in enumerate(log.values()):
 			assert event.action == f'action_{i}'
 
 		# Check event state properties
@@ -615,6 +615,181 @@ class TestWALPersistence:
 
 		finally:
 			await bus.stop()
+
+
+class TestEventBusHierarchy:
+	"""Test hierarchical EventBus subscription patterns"""
+
+	async def test_three_level_hierarchy_bubbling(self):
+		"""Test that events bubble up through a 3-level hierarchy and event_path is correct"""
+		# Create three EventBus instances in a hierarchy
+		parent_bus = EventBus(name='ParentBus')
+		child_bus = EventBus(name='ChildBus')
+		subchild_bus = EventBus(name='SubchildBus')
+
+		# Track events received at each level
+		events_at_parent = []
+		events_at_child = []
+		events_at_subchild = []
+
+		async def parent_handler(event: BaseEvent) -> str:
+			events_at_parent.append(event)
+			return 'parent_received'
+
+		async def child_handler(event: BaseEvent) -> str:
+			events_at_child.append(event)
+			return 'child_received'
+
+		async def subchild_handler(event: BaseEvent) -> str:
+			events_at_subchild.append(event)
+			return 'subchild_received'
+
+		# Register handlers
+		parent_bus.on('*', parent_handler)
+		child_bus.on('*', child_handler)
+		subchild_bus.on('*', subchild_handler)
+
+		# Subscribe buses to each other: parent <- child <- subchild
+		# Child forwards events to parent
+		child_bus.on('*', parent_bus.emit)
+		# Subchild forwards events to child
+		subchild_bus.on('*', child_bus.emit)
+
+		try:
+			# Emit event from the bottom of hierarchy
+			event = UserActionEvent(action='bubble_test', user_id='test_user')
+			emitted = subchild_bus.emit(event)
+
+			# Wait for event to bubble up
+			await subchild_bus.wait_until_idle()
+			await child_bus.wait_until_idle()
+			await parent_bus.wait_until_idle()
+
+			# Verify event was received at all levels
+			assert len(events_at_subchild) == 1
+			assert len(events_at_child) == 1
+			assert len(events_at_parent) == 1
+
+			# Verify event_path shows the complete journey
+			final_event = events_at_parent[0]
+			assert final_event.event_path == ['SubchildBus', 'ChildBus', 'ParentBus']
+
+			# Verify it's the same event content
+			assert final_event.action == 'bubble_test'
+			assert final_event.user_id == 'test_user'
+			assert final_event.event_id == emitted.event_id
+
+			# Test event emitted at middle level
+			events_at_parent.clear()
+			events_at_child.clear()
+			events_at_subchild.clear()
+
+			middle_event = SystemEventModel(event_name='middle_test')
+			child_bus.emit(middle_event)
+
+			await child_bus.wait_until_idle()
+			await parent_bus.wait_until_idle()
+
+			# Should only reach child and parent, not subchild
+			assert len(events_at_subchild) == 0
+			assert len(events_at_child) == 1
+			assert len(events_at_parent) == 1
+			assert events_at_parent[0].event_path == ['ChildBus', 'ParentBus']
+
+		finally:
+			await parent_bus.stop()
+			await child_bus.stop()
+			await subchild_bus.stop()
+
+	async def test_circular_subscription_prevention(self):
+		"""Test that circular EventBus subscriptions don't create infinite loops"""
+		# Create three peer EventBus instances
+		peer1 = EventBus(name='Peer1')
+		peer2 = EventBus(name='Peer2')
+		peer3 = EventBus(name='Peer3')
+
+		# Track events at each peer
+		events_at_peer1 = []
+		events_at_peer2 = []
+		events_at_peer3 = []
+
+		async def peer1_handler(event: BaseEvent) -> str:
+			events_at_peer1.append(event)
+			return 'peer1_received'
+
+		async def peer2_handler(event: BaseEvent) -> str:
+			events_at_peer2.append(event)
+			return 'peer2_received'
+
+		async def peer3_handler(event: BaseEvent) -> str:
+			events_at_peer3.append(event)
+			return 'peer3_received'
+
+		# Register handlers
+		peer1.on('*', peer1_handler)
+		peer2.on('*', peer2_handler)
+		peer3.on('*', peer3_handler)
+
+		# Create circular subscription: peer1 -> peer2 -> peer3 -> peer1
+		peer1.on('*', peer2.emit)
+		peer2.on('*', peer3.emit)
+		peer3.on('*', peer1.emit)  # This completes the circle
+
+		try:
+			# Emit event from peer1
+			event = UserActionEvent(action='circular_test', user_id='test_user')
+			emitted = peer1.emit(event)
+
+			# Wait for all processing to complete
+			await asyncio.sleep(0.2)  # Give time for any potential loops
+			await peer1.wait_until_idle()
+			await peer2.wait_until_idle()
+			await peer3.wait_until_idle()
+
+			# Each peer should receive the event exactly once
+			assert len(events_at_peer1) == 1
+			assert len(events_at_peer2) == 1
+			assert len(events_at_peer3) == 1
+
+			# Check event paths show the propagation but no loops
+			# Since event_path is mutated in place, all handlers see the final path
+			assert events_at_peer1[0].event_path == ['Peer1', 'Peer2', 'Peer3']
+			assert events_at_peer2[0].event_path == ['Peer1', 'Peer2', 'Peer3']
+			assert events_at_peer3[0].event_path == ['Peer1', 'Peer2', 'Peer3']
+
+			# The event should NOT come back to peer1 from peer3
+			# because peer3's emit handler will detect peer1 is already in the path
+
+			# Verify all events have the same ID (same event, not duplicates)
+			assert all(e.event_id == emitted.event_id for e in [events_at_peer1[0], events_at_peer2[0], events_at_peer3[0]])
+
+			# Test starting from a different peer
+			events_at_peer1.clear()
+			events_at_peer2.clear()
+			events_at_peer3.clear()
+
+			event2 = SystemEventModel(event_name='circular_test_2')
+			peer2.emit(event2)
+
+			await asyncio.sleep(0.2)
+			await peer1.wait_until_idle()
+			await peer2.wait_until_idle()
+			await peer3.wait_until_idle()
+
+			# Should visit peer2 -> peer3 -> peer1, then stop
+			assert len(events_at_peer1) == 1
+			assert len(events_at_peer2) == 1
+			assert len(events_at_peer3) == 1
+
+			# Since event_path is mutated in place, all see final path
+			assert events_at_peer2[0].event_path == ['Peer2', 'Peer3', 'Peer1']
+			assert events_at_peer3[0].event_path == ['Peer2', 'Peer3', 'Peer1']
+			assert events_at_peer1[0].event_path == ['Peer2', 'Peer3', 'Peer1']
+
+		finally:
+			await peer1.stop()
+			await peer2.stop()
+			await peer3.stop()
 
 
 if __name__ == '__main__':
