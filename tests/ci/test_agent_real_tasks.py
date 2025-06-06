@@ -37,7 +37,7 @@ async def test_agent_real_task(task_file):
 	with tempfile.TemporaryDirectory() as tmp_profile:
 		session = BrowserSession(
 			headless=True,
-			user_data_dir=tmp_profile,
+			user_data_dir=None,
 			channel='chromium',
 		)
 		await session.start()
