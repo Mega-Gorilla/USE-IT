@@ -66,7 +66,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentTelemetryEvent,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
+from browser_use.utils import get_browser_use_version, time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -411,40 +411,19 @@ class Agent(Generic[Context]):
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
+		# Use the helper function for version detection
+		version = get_browser_use_version()
+
+		# Determine source
 		try:
 			package_root = Path(__file__).parent.parent.parent
-			pyproject_path = package_root / 'pyproject.toml'
-
-			# Try to read version from pyproject.toml
-			if pyproject_path.exists():
-				import re
-
-				with open(pyproject_path) as f:
-					content = f.read()
-					match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
-					if match:
-						version = f'v{match.group(1)}'
-					else:
-						# Fallback to importlib if regex doesn't find version
-						from importlib.metadata import version as get_version
-
-						version = f'v{get_version("browser-use")}'
-			else:
-				# If pyproject.toml doesn't exist, try getting version from pip
-				from importlib.metadata import version as get_version
-
-				version = f'v{get_version("browser-use")}'
-
-			# Determine source
 			repo_files = ['.git', 'README.md', 'docs', 'examples']
 			if all(Path(package_root / file).exists() for file in repo_files):
 				source = 'git'
 			else:
 				source = 'pip'
-
 		except Exception as e:
-			logger.debug(f'Error getting version: {e}')
-			version = 'vunknown'
+			logger.debug(f'Error determining source: {e}')
 			source = 'unknown'
 
 		if source_override is not None:
@@ -524,10 +503,10 @@ class Agent(Generic[Context]):
 					logger.debug(f'🛠️ Tool calling method {method} failed: Failed to parse JSON content: {e}')
 					return False
 
-			if method == 'raw':
+			if method == 'raw' or method == 'json_mode':
 				# For raw mode, test JSON response format
 				test_prompt = f"""{CAPITAL_QUESTION}
-					Respond with a JSON object like: {{"answer": "city_name_in_lowercase"}}"""
+					Respond with a json object like: {{"answer": "city_name_in_lowercase"}}"""
 
 				response = self.llm.invoke([test_prompt])
 				# Basic validation of response
@@ -655,8 +634,8 @@ class Agent(Generic[Context]):
 		if self.chat_model_library == 'ChatOpenAI':
 			if any(m in model_lower for m in ['gpt-4', 'gpt-3.5']):
 				return 'function_calling'
-			if any(m in model_lower for m in ['llama-4', 'llama-3']):
-				return 'function_calling'
+			if any(m in model_lower for m in ['llama']):
+				return 'json_mode'
 
 		# Azure OpenAI models
 		elif self.chat_model_library == 'AzureChatOpenAI':
