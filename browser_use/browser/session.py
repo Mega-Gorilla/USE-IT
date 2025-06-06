@@ -830,7 +830,7 @@ class BrowserSession(BaseModel):
 		# self.logger.info('About to call expose_binding')
 		try:
 			await self.browser_context.expose_binding('_BrowserUseonTabVisibilityChange', _BrowserUseonTabVisibilityChange)
-			self.logger.debug('expose_binding completed successfully')
+			# self.logger.debug('window._BrowserUseonTabVisibilityChange binding attached via browser_context')
 		except Exception as e:
 			if 'Function "_BrowserUseonTabVisibilityChange" has been already registered' in str(e):
 				self.logger.debug(
