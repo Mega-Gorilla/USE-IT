@@ -405,7 +405,7 @@ class BrowserSession(BaseModel):
 						try:
 							async with asyncio.timeout(5):  # 5 second timeout
 								proc.terminate()
-								# Wait for process to actually terminate
+								self._kill_child_processes()
 								await asyncio.to_thread(proc.wait, timeout=4)
 						except (TimeoutError, psutil.TimeoutExpired):
 							self.logger.warning(
@@ -479,32 +479,35 @@ class BrowserSession(BaseModel):
 				f'🛑 Stopping (garbage collected) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
 			)
 
-			# Clean up playwright if it exists
-			playwright = getattr(self, 'playwright', None)
-			if playwright:
-				try:
-					# Schedule playwright cleanup in the event loop if one exists
-					loop = asyncio.get_event_loop()
-					if loop and not loop.is_closed():
-						# Create a task to stop playwright
-						asyncio.create_task(self._cleanup_playwright())
-					else:
-						# If no event loop, we can't properly clean up async resources
-						self.logger.debug('No active event loop to stop playwright during __del__')
-				except Exception as e:
-					self.logger.debug(f'Error scheduling playwright cleanup in __del__: {type(e).__name__}: {e}')
+			self._kill_child_processes()
+
 		except BaseException:
 			# Never let __del__ raise exceptions
 			pass
 
-	async def _cleanup_playwright(self) -> None:
-		"""Helper method to clean up playwright instance"""
-		if self.playwright:
+	def _kill_child_processes(self) -> None:
+		"""Kill any child processes that might be related to the browser"""
+
+		if not self.browser_profile.keep_alive and self.browser_pid:
 			try:
-				await self.playwright.stop()
-				self.playwright = None
+				browser_proc = psutil.Process(self.browser_pid)
+
+				# Kill all child processes first (recursive)
+				for child in browser_proc.children(recursive=True):
+					try:
+						# self.logger.debug(f'Force killing child process: {child.pid} ({child.name()})')
+						child.kill()
+					except (psutil.NoSuchProcess, psutil.AccessDenied):
+						pass
+
+				# Kill the main browser process
+				try:
+					# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
+					browser_proc.kill()
+				except (psutil.NoSuchProcess, psutil.AccessDenied):
+					pass
 			except Exception as e:
-				self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
 
 	async def setup_playwright(self) -> None:
 		"""
