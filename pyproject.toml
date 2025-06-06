@@ -116,8 +116,8 @@ include = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "module"
-asyncio_default_test_loop_scope = "module"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 markers = [
     "slow: marks tests as slow (deselect with `-m 'not slow'`)",
     "integration: marks tests as integration tests",
@@ -147,7 +147,7 @@ dev-dependencies = [
     "tokencost>=0.1.16",
     "build>=1.2.2",
     "pytest>=8.3.5",
-    "pytest-asyncio>=0.24.0",
+    "pytest-asyncio>=0.26.0",
     "pytest-httpserver>=1.0.8",
     "fastapi>=0.115.8",
     "inngest>=0.4.19",
@@ -158,4 +158,6 @@ dev-dependencies = [
     "codespell>=2.4.1",
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
+    "pytest-playwright-asyncio>=0.7.0",
+    "pytest-xdist>=3.7.0",
 ]

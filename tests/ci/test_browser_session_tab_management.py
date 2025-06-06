@@ -425,6 +425,7 @@ class TestTabManagement:
 		assert 'closed' in results
 
 		await browser_session.stop()
+		await asyncio.sleep(0.5)
 
 	async def test_browser_context_state_after_error(self):
 		"""Test browser context state remains consistent after errors"""
@@ -453,4 +454,5 @@ class TestTabManagement:
 		assert browser_session.browser_context != original_context
 		assert browser_session.initialized is True
 
-		await browser_session.kill()
+		await browser_session.stop()
+		await asyncio.sleep(0.5)

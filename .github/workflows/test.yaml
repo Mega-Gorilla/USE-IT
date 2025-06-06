@@ -63,7 +63,7 @@ jobs:
           enable-cache: true
           activate-environment: true
 
-      - run: uv sync
+      - run: uv sync --dev
 
       - name: Detect installed Playwright version
         run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_ENV
@@ -78,4 +78,4 @@ jobs:
       - run: playwright install chrome
       - run: playwright install chromium
 
-      - run: pytest tests/ci/${{ matrix.test_filename }}.py
+      - run: pytest --numprocesses auto -x tests/ci/${{ matrix.test_filename }}.py
