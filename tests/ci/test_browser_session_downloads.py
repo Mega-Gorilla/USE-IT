@@ -122,12 +122,12 @@ async def test_download_detection_timing(test_server, tmp_path):
 async def test_actual_download_detection(test_server, tmp_path):
 	"""Test that actual downloads are detected correctly."""
 
-	downloads_dir = tmp_path / 'downloads'
-	downloads_dir.mkdir()
+	downloads_path = tmp_path / 'downloads'
+	downloads_path.mkdir()
 
 	browser_session = BrowserSession(
 		headless=True,
-		downloads_dir=str(downloads_dir),
+		downloads_path=str(downloads_path),
 		user_data_dir=None,
 	)
 
