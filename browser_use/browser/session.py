@@ -422,10 +422,16 @@ class BrowserSession(BaseModel):
 					# Close playwright if we own it
 					if self.playwright:
 						try:
-							await self.playwright.stop()
+							# Add timeout to prevent hanging
+							async with asyncio.timeout(5):
+								await self.playwright.stop()
+							self.playwright = None
+						except TimeoutError:
+							self.logger.warning('⏱️ Timeout while stopping playwright')
 							self.playwright = None
 						except Exception as e:
 							self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+							self.playwright = None
 
 				self._reset_connection_state()
 
@@ -472,9 +478,33 @@ class BrowserSession(BaseModel):
 			self.logger.debug(
 				f'🛑 Stopping (garbage collected) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
 			)
+
+			# Clean up playwright if it exists
+			playwright = getattr(self, 'playwright', None)
+			if playwright:
+				try:
+					# Schedule playwright cleanup in the event loop if one exists
+					loop = asyncio.get_event_loop()
+					if loop and not loop.is_closed():
+						# Create a task to stop playwright
+						asyncio.create_task(self._cleanup_playwright())
+					else:
+						# If no event loop, we can't properly clean up async resources
+						self.logger.debug('No active event loop to stop playwright during __del__')
+				except Exception as e:
+					self.logger.debug(f'Error scheduling playwright cleanup in __del__: {type(e).__name__}: {e}')
 		except BaseException:
 			# Never let __del__ raise exceptions
-			raise
+			pass
+
+	async def _cleanup_playwright(self) -> None:
+		"""Helper method to clean up playwright instance"""
+		if self.playwright:
+			try:
+				await self.playwright.stop()
+				self.playwright = None
+			except Exception as e:
+				self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
 
 	async def setup_playwright(self) -> None:
 		"""
@@ -1082,6 +1112,7 @@ class BrowserSession(BaseModel):
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
 		self._cached_browser_state_summary = None
+		# Don't set playwright to None here - it should be explicitly stopped with playwright.stop()
 
 		# Cancel any background tasks to prevent hanging
 		if hasattr(self, '_background_tasks'):
