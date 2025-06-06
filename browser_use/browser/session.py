@@ -395,8 +395,8 @@ class BrowserSession(BaseModel):
 					try:
 						proc = psutil.Process(pid=self.browser_pid)
 						executable_path = proc.cmdline()[0]
+						self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
 						proc.terminate()
-						self.logger.info(f' ↳ Killed browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
 						self.browser_pid = None
 					except Exception as e:
 						if 'NoSuchProcess' not in type(e).__name__:
