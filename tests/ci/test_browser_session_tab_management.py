@@ -55,6 +55,7 @@ class TestTabManagement:
 		browser_session = BrowserSession(
 			browser_profile=browser_profile,
 			user_data_dir=None,
+			headless=True,
 		)
 		await browser_session.start()
 
