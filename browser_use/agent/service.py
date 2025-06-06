@@ -176,7 +176,7 @@ class Agent(Generic[Context]):
 		self.task_id: str = uuid7str()
 
 		# Create instance-specific logger
-		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-3:]}]')
+		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-4:]}]')
 
 		# Core components
 		self.task = task

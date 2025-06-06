@@ -244,14 +244,14 @@ class BrowserSession(BaseModel):
 		"""Get instance-specific logger with session ID in the name"""
 		if self._logger is None:
 			# Create a child logger with the session ID
-			self._logger = logging.getLogger(f'browser_use.BrowserSession[{self.id[-3:]}]')
+			self._logger = logging.getLogger(f'browser_use.BrowserSession[{self.id[-4:]}]')
 		return self._logger
 
 	def __repr__(self) -> str:
-		return f'BrowserSession[{self.id[-3:]}](profile={self.browser_profile}, {self._connection_str})'
+		return f'BrowserSession[{self.id[-4:]}](profile={self.browser_profile}, {self._connection_str})'
 
 	def __str__(self) -> str:
-		return f'BrowserSession[{self.id[-3:]}]'
+		return f'BrowserSession[{self.id[-4:]}]'
 
 	# def __getattr__(self, key: str) -> Any:
 	# 	"""
