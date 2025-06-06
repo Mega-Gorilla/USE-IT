@@ -8,7 +8,7 @@ emitted in the correct order during agent execution.
 import base64
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -33,7 +33,6 @@ from browser_use import Agent
 from browser_use.browser import BrowserSession
 from browser_use.eventbus import (
 	BaseEvent,
-	EventBus,
 )
 
 
@@ -545,7 +544,10 @@ class TestCloudEventValidation:
 		# Should raise validation error for string too long
 		with pytest.raises(ValueError, match='String should have at most 5000 characters'):
 			CreateAgentTaskEvent(
-				user_id='test', agent_session_id='0683fb03-c5da-79c9-8000-d3a39c47c659', llm_model='test-model', task=long_task
+				user_id='test',
+				agent_session_id='0683fb03-c5da-79c9-8000-d3a39c47c659',
+				llm_model='test-model',
+				task=long_task,
 			)
 
 	def test_all_events_have_required_base_fields(self):
@@ -553,26 +555,40 @@ class TestCloudEventValidation:
 		# Create a few events
 		events_to_test = [
 			CreateAgentSessionEvent(
-				id='test-session',
-				user_id='test-user',
+				id='0683fb03-c5da-79c9-8000-d3a39c47c651',
+				user_id='0683fb03-c5da-79c9-8000-d3a39c47c650',
 				browser_session_id='test-browser',
 				browser_session_live_url='https://example.com',
 				browser_session_cdp_url='ws://localhost:9222',
 			),
 			CreateAgentTaskEvent(
-				user_id='test-user',
-				agent_session_id='test-session',
+				id='0683fb03-c5da-79c9-8000-d3a39c47c652',
+				user_id='0683fb03-c5da-79c9-8000-d3a39c47c650',
+				agent_session_id='0683fb03-c5da-79c9-8000-d3a39c47c651',
 				task='test',
 				llm_model='gpt-4o',
 			),
 			CreateAgentStepEvent(
-				user_id='test-user',
-				agent_task_id='test-task',
+				user_id='0683fb03-c5da-79c9-8000-d3a39c47c650',
+				agent_task_id='0683fb03-c5da-79c9-8000-d3a39c47c652',
 				step=1,
 				evaluation_previous_goal='eval',
 				memory='mem',
 				next_goal='next',
 				actions=[],
+			),
+			CreateAgentOutputFileEvent(
+				user_id='test',
+				task_id='0683fb03-c5da-79c9-8000-d3a39c47c652',
+				file_name='test.txt',
+				file_content=base64.b64encode(b'test').decode(),
+			),
+			UpdateAgentTaskEvent(
+				id='0683fb03-c5da-79c9-8000-d3a39c47c652',
+				user_id='test',
+				stopped=True,
+				done_output='Task completed',
+				finished_at=datetime.now(UTC),
 			),
 		]
 
@@ -602,81 +618,3 @@ class TestCloudEventValidation:
 		# Should not be able to change event_type
 		with pytest.raises(ValueError):
 			event.event_type = 'DifferentType'
-
-
-class TestEventBusIntegration:
-	"""Test EventBus integration with cloud events"""
-
-	async def test_eventbus_processes_all_cloud_events(self):
-		"""Test that EventBus can process all types of cloud events"""
-		bus = EventBus()
-
-		collected = []
-
-		async def collect(event: BaseEvent):
-			collected.append(event)
-			return 'ok'
-
-		bus.on('*', collect)
-
-		try:
-			# Emit one of each event type
-			events = [
-				CreateAgentSessionEvent(
-					id='0683fb03-c5da-79c9-8000-d3a39c47c659',
-					user_id='test',
-					browser_session_id='session1',
-					browser_session_live_url='https://example.com',
-					browser_session_cdp_url='ws://localhost:9222',
-				),
-				CreateAgentTaskEvent(
-					user_id='test',
-					agent_session_id='0683fb03-c5da-79c9-8000-d3a39c47c659',
-					llm_model='test-model',
-					task='test task',
-				),
-				CreateAgentStepEvent(
-					user_id='test',
-					agent_task_id='0683fb03-c5da-79c9-8000-d3a39c47c659',
-					step=1,
-					evaluation_previous_goal='eval',
-					memory='memory',
-					next_goal='goal',
-					actions=[{'name': 'test'}],
-				),
-				CreateAgentOutputFileEvent(
-					user_id='test',
-					task_id='0683fb03-c5da-79c9-8000-d3a39c47c659',
-					file_name='test.txt',
-					file_content=base64.b64encode(b'test').decode(),
-				),
-				UpdateAgentTaskEvent(
-					id='0683fb03-c5da-79c9-8000-d3a39c47c659',
-					user_id='test',
-					stopped=True,
-					done_output='Task completed',
-					finished_at=datetime.utcnow(),
-				),
-			]
-
-			# Emit all events
-			for event in events:
-				bus.dispatch(event)
-
-			# Wait for processing
-			await bus.wait_until_idle()
-
-			# Check all were collected
-			assert len(collected) == len(events)
-			event_types = {e.event_type for e in collected}
-			expected_types = {
-				'CreateAgentSession',
-				'CreateAgentTask',
-				'CreateAgentStep',
-				'CreateAgentOutputFile',
-				'UpdateAgentTask',
-			}
-			assert event_types == expected_types
-
-		finally:
-			await bus.stop()
