@@ -161,7 +161,3 @@ async def test_actual_download_detection(test_server, tmp_path):
 	assert duration < 2.0, f'Download detection took {duration:.2f}s, expected <2s'
 
 	await browser_session.close()
-
-
-if __name__ == '__main__':
-	pytest.main([__file__, '-v', '-s'])

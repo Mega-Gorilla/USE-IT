@@ -453,4 +453,4 @@ class TestTabManagement:
 		assert browser_session.browser_context != original_context
 		assert browser_session.initialized is True
 
-		await browser_session.stop()
+		await browser_session.kill()

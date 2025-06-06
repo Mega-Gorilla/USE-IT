@@ -420,12 +420,12 @@ class BrowserSession(BaseModel):
 							)
 
 					# Close playwright if we own it
-					# if self.playwright:
-					# 	try:
-					# 		await self.playwright.stop()
-					# 		self.playwright = None
-					# 	except Exception as e:
-					# 		self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+					if self.playwright:
+						try:
+							await self.playwright.stop()
+							self.playwright = None
+						except Exception as e:
+							self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
 
 				self._reset_connection_state()
 
