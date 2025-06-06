@@ -2666,12 +2666,12 @@ class BrowserSession(BaseModel):
 		self, index: int, max_height: int = 3, max_descendant_depth: int = 3
 	) -> DOMElementNode | None:
 		"""
-		Robustly find a file upload element related to the element at the given index:
-		- Check if the element itself is a file input
-		- For up to max_height ancestor levels, check each ancestor and all their children (siblings of the path) for a file input (including up to max_descendant_depth deep in siblings' descendants)
-		- Check all direct children of the candidate element
-		- Retain label/for logic if present
-		Returns the first file input found by this heuristic, or None if not found.
+		Find the closest file input to the selected element by traversing the DOM bottom-up.
+		At each level (up to max_height ancestors):
+		- Check the current node itself
+		- Check all its children/descendants up to max_descendant_depth
+		- Check all siblings (and their descendants up to max_descendant_depth)
+		Returns the first file input found, or None if not found.
 		"""
 		try:
 			selector_map = await self.get_selector_map()
@@ -2687,22 +2687,6 @@ class BrowserSession(BaseModel):
 					and node.attributes.get('type', '').lower() == 'file'
 				)
 
-			def find_element_by_id(node: DOMElementNode, element_id: str) -> DOMElementNode | None:
-				if isinstance(node, DOMElementNode):
-					if node.attributes.get('id') == element_id:
-						return node
-					for child in node.children:
-						result = find_element_by_id(child, element_id)
-						if result:
-							return result
-				return None
-
-			def get_root(node: DOMElementNode) -> DOMElementNode:
-				root = node
-				while root.parent:
-					root = root.parent
-				return root
-
 			def find_file_input_in_descendants(node: DOMElementNode, depth: int) -> DOMElementNode | None:
 				if depth < 0 or not isinstance(node, DOMElementNode):
 					return None
@@ -2714,53 +2698,30 @@ class BrowserSession(BaseModel):
 						return result
 				return None
 
-			# 1. Check if current element is a file input
-			if is_file_input(candidate_element):
-				return candidate_element
-
-			# 2. Check if it's a label pointing to a file input (for attribute)
-			if getattr(candidate_element, 'tag_name', '').lower() == 'label' and candidate_element.attributes.get('for'):
-				input_id = candidate_element.attributes.get('for')
-				root_element = get_root(candidate_element)
-				target_input = find_element_by_id(root_element, input_id)
-				if target_input and is_file_input(target_input):
-					return target_input
-
-			# 3. Check up to max_height ancestor levels for file input siblings/descendants
 			current = candidate_element
-			for _ in range(max_height):
+			for _ in range(max_height + 1):  # include the candidate itself
+				# 1. Check the current node itself
+				if is_file_input(current):
+					return current
+				# 2. Check all descendants of the current node
+				result = find_file_input_in_descendants(current, max_descendant_depth)
+				if result:
+					return result
+				# 3. Check all siblings and their descendants
 				parent = getattr(current, 'parent', None)
-				if not parent:
-					break
-				# Check parent itself
-				if is_file_input(parent):
-					return parent
-				# Check parent's children (siblings of current)
-				for sibling in getattr(parent, 'children', []):
-					if sibling is current:
-						continue
-					if is_file_input(sibling):
-						return sibling
-					# Recursively check up to max_descendant_depth in siblings' descendants
-					result = find_file_input_in_descendants(sibling, max_descendant_depth - 1)
-					if result:
-						return result
-				# If parent is a label with 'for', use it
-				if getattr(parent, 'tag_name', '').lower() == 'label' and parent.attributes.get('for'):
-					input_id = parent.attributes.get('for')
-					root_element = get_root(parent)
-					target_input = find_element_by_id(root_element, input_id)
-					if target_input and is_file_input(target_input):
-						return target_input
+				if parent:
+					for sibling in getattr(parent, 'children', []):
+						if sibling is current:
+							continue
+						if is_file_input(sibling):
+							return sibling
+						result = find_file_input_in_descendants(sibling, max_descendant_depth)
+						if result:
+							return result
 				current = parent
-
-			# 4. Check all direct children of the candidate element
-			for child in getattr(candidate_element, 'children', []):
-				if is_file_input(child):
-					return child
-
+				if not current:
+					break
 			return None
-
 		except Exception as e:
 			page = await self.get_current_page()
 			self.logger.debug(
