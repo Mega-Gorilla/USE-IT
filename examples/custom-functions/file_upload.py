@@ -78,8 +78,8 @@ def create_file(file_type: str = 'txt'):
 
 
 async def main():
-	task = 'Go to https://www.freepdfconvert.com/,  upload the file tmp.pdf into the field choose a file - dont click the fileupload button'
 	task = 'Go to https://kzmpmkh2zfk1ojnpxfn1.lite.vusercontent.net/ and - read the file content and upload them to fields'
+	task = 'Go to https://www.freepdfconvert.com/,  upload the file tmp.pdf into the field choose a file - dont click the fileupload button'
 
 	available_file_paths = [create_file('txt'), create_file('pdf'), create_file('csv')]
 
