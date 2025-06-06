@@ -301,6 +301,9 @@ class Agent(Generic[Context]):
 		else:
 			self.memory = None
 
+		if isinstance(browser, BrowserSession):
+			browser_session = browser_session or browser
+
 		browser_context = page.context if page else browser_context
 		# assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
 		# assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
