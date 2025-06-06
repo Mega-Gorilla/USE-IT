@@ -166,7 +166,7 @@ We love contributions! Feel free to open issues for bugs or feature requests. To
 
 We offer to run your tasks in our CI—automatically, on every update!
 
-- **Add your task:** Add a YAML file in `tests/agent_tasks/` (see the [`README there`](tests/agent_tasks/README.md) there for details).
+- **Add your task:** Add a YAML file in `tests/agent_tasks/` (see the [`README there`](tests/agent_tasks/README.md) for details).
 - **Automatic validation:** Every time we push updates, your task will be run by the agent and evaluated using your criteria.
 
 ## Local Setup
