@@ -12,9 +12,17 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from threading import Thread
 from typing import Any, Generic, TypeVar
+from uuid import UUID
 
 from dotenv import load_dotenv
 
+from browser_use.agent.cloud_events import (
+	CreateAgentOutputFileEvent,
+	CreateAgentSessionEvent,
+	CreateAgentStepEvent,
+	CreateAgentTaskEvent,
+	UpdateAgentTaskEvent,
+)
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 
 load_dotenv()
@@ -27,6 +35,7 @@ from langchain_core.messages import (
 )
 from playwright.async_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ValidationError
+from uuid_extensions import uuid7str
 
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
@@ -57,15 +66,11 @@ from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.history_tree_processor.service import (
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
+from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
+from browser_use.eventbus import EventBus
 from browser_use.exceptions import LLMException
 from browser_use.telemetry.service import ProductTelemetry
-from browser_use.telemetry.views import (
-	AgentTelemetryEvent,
-)
+from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import get_browser_use_version, time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -101,13 +106,13 @@ class Agent(Generic[Context]):
 		llm: BaseChatModel,
 		# Optional parameters
 		page: Page | None = None,
-		browser: Browser | None = None,
+		browser: Browser | BrowserSession | None = None,
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
 		controller: Controller[Context] = Controller(),
 		# Initial agent run parameters
-		sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		sensitive_data: dict[str, str] | dict[str, dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
@@ -286,6 +291,9 @@ class Agent(Generic[Context]):
 		else:
 			self.memory = None
 
+		if isinstance(browser, BrowserSession):
+			browser_session = browser_session or browser
+
 		browser_context = page.context if page else browser_context
 		# assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
 		# assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
@@ -382,6 +390,15 @@ class Agent(Generic[Context]):
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
+
+		# Generate unique IDs for this agent session and task
+		self.session_id: UUID = UUID(uuid7str())
+		self.task_id: UUID = UUID(uuid7str())
+
+		# Event bus with WAL persistence
+		# Default to ~/.config/browseruse/events/{agent_task_id}.jsonl
+		wal_path = Path.home() / '.config' / 'browseruse' / 'events' / f'{self.task_id}.jsonl'
+		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		if self.settings.save_conversation_path:
 			logger.info(f'Saving conversation to {self.settings.save_conversation_path}')
@@ -736,6 +753,10 @@ class Agent(Generic[Context]):
 		return self._detect_best_tool_calling_method()
 
 	def add_new_task(self, new_task: str) -> None:
+		"""Add a new task to the agent, keeping the same task_id as tasks are continuous"""
+		# Simply delegate to message manager - no need for new task_id or events
+		# The task continues with new instructions, it doesn't end and start a new one
+		self.task = new_task
 		self._message_manager.add_new_task(new_task)
 
 	async def _raise_if_stopped_or_paused(self) -> None:
@@ -926,6 +947,19 @@ class Agent(Generic[Context]):
 
 			# Log step completion summary
 			self._log_step_completion_summary(step_start_time, result)
+
+			# Emit both step created and executed events
+			if browser_state_summary and model_output:
+				# Extract key step data for the event
+				actions_data = []
+				if model_output.action:
+					for action in model_output.action:
+						action_dict = action.model_dump() if hasattr(action, 'model_dump') else {}
+						actions_data.append(action_dict)
+
+				# Emit CreateAgentStepEvent
+				step_event = CreateAgentStepEvent.from_agent_step(self, model_output, result, actions_data, browser_state_summary)
+				self.eventbus.emit(step_event)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -1310,6 +1344,16 @@ class Agent(Generic[Context]):
 		try:
 			self._log_agent_run()
 
+			# Initialize timing for session and task
+			self._session_start_time = time.time()
+			self._task_start_time = self._session_start_time  # Initialize task start time
+
+			# Emit CreateAgentSessionEvent at the START of run()
+			self.eventbus.emit(CreateAgentSessionEvent.from_agent(self))
+
+			# Emit CreateAgentTaskEvent at the START of run()
+			self.eventbus.emit(CreateAgentTaskEvent.from_agent(self))
+
 			# Execute initial actions if provided
 			if self.initial_actions:
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
@@ -1354,6 +1398,8 @@ class Agent(Generic[Context]):
 							continue
 
 					await self.log_completion()
+
+					# Task completed
 					break
 			else:
 				agent_run_error = 'Failed to complete task in maximum steps'
@@ -1401,14 +1447,29 @@ class Agent(Generic[Context]):
 				# ADDED: Info message when custom telemetry for SIGINT was already logged
 				logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
-			await self.close()
+			# NOTE: CreateAgentSessionEvent and CreateAgentTaskEvent are now emitted at the START of run()
+			# to match backend requirements for CREATE events to be fired when entities are created,
+			# not when they are completed
 
+			# Emit UpdateAgentTaskEvent at the END of run() with final task state
+			self.eventbus.emit(UpdateAgentTaskEvent.from_agent(self))
+
+			# Generate GIF if needed before stopping event bus
 			if self.settings.generate_gif:
 				output_path: str = 'agent_history.gif'
 				if isinstance(self.settings.generate_gif, str):
 					output_path = self.settings.generate_gif
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
+
+				# Emit output file generated event for GIF
+				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
+				self.eventbus.emit(output_event)
+
+			# Stop the event bus gracefully, waiting for all events to be processed
+			await self.eventbus.stop(timeout=5.0)
+
+			await self.close()
 
 	# @observe(name='controller.multi_act')
 	@time_execution_async('--multi_act')
@@ -1684,6 +1745,8 @@ class Agent(Generic[Context]):
 		self.state.paused = True
 		self._external_pause_event.clear()
 
+		# Task paused
+
 		# The signal handler will handle the asyncio pause logic for us
 		# No need to duplicate the code here
 
@@ -1693,6 +1756,8 @@ class Agent(Generic[Context]):
 		print('▶️  Got Enter, resuming agent execution where it left off...\n')
 		self.state.paused = False
 		self._external_pause_event.set()
+
+		# Task resumed
 
 		# The signal handler should have already reset the flags
 		# through its reset() method when called from run()
@@ -1709,6 +1774,8 @@ class Agent(Generic[Context]):
 		"""Stop the agent"""
 		logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
+
+		# Task stopped
 
 	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[ActionModel]:
 		"""Convert dictionary-based actions to ActionModel instances"""
