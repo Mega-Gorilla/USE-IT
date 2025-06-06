@@ -432,6 +432,20 @@ class BrowserSession(BaseModel):
 						except Exception as e:
 							self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
 							self.playwright = None
+						finally:
+							# Ensure playwright tasks are cancelled
+							try:
+								loop = asyncio.get_event_loop()
+								if loop and not loop.is_closed():
+									all_tasks = asyncio.all_tasks(loop)
+									for task in all_tasks:
+										if task.done():
+											continue
+										coro_str = str(task)
+										if 'Connection.run' in coro_str and 'playwright' in coro_str:
+											task.cancel()
+							except Exception:
+								pass
 
 				self._reset_connection_state()
 
