@@ -95,10 +95,11 @@ async def browser_session():
 	browser_session = BrowserSession(
 		headless=True,
 		user_data_dir=None,
+		keep_alive=True,
 	)
 	await browser_session.start()
 	yield browser_session
-	await browser_session.stop()
+	await browser_session.kill()
 
 
 @pytest.fixture(scope='module')
@@ -119,12 +120,13 @@ async def test_browser(base_url):
 	browser_session = BrowserSession(
 		headless=True,
 		user_data_dir=None,
+		keep_alive=True,
 	)
 	await browser_session.start()
 	# Create tab and navigate to test page
 	await browser_session.create_new_tab(f'{base_url}/test')
 	yield browser_session
-	await browser_session.stop()
+	await browser_session.kill()
 
 
 class TestActionRegistryParameterPatterns:
@@ -996,14 +998,13 @@ class TestExtractContentPattern:
 	def test_extract_content_pattern_registration(self):
 		"""Test that the extract_content pattern with mixed params registers correctly"""
 		registry = Registry()
-		from langchain_core.language_models.chat_models import BaseChatModel
 
 		# This is the problematic pattern: positional arg, then special args, then kwargs with defaults
 		@registry.action('Extract content from page')
 		async def extract_content(
 			goal: str,
 			page: Page,
-			page_extraction_llm: BaseChatModel,
+			page_extraction_llm,
 			include_links: bool = False,
 		):
 			return ActionResult(extracted_content=f'Goal: {goal}, include_links: {include_links}')
@@ -1025,32 +1026,3 @@ class TestExtractContentPattern:
 		# Verify the action was properly registered
 		assert action.name == 'extract_content'
 		assert action.description == 'Extract content from page'
-
-
-# Test runner for manual execution
-if __name__ == '__main__':
-	# Run a simple test manually
-	import asyncio
-
-	async def manual_test():
-		"""Manual test runner for debugging"""
-		print('Running manual test...')
-
-		registry = Registry[TestContext]()
-		browser_session = BrowserSession(headless=True)
-		await browser_session.start()
-		await browser_session.create_new_tab('https://example.com')
-
-		@registry.action('Manual test action')
-		async def manual_action(text: str, browser_session: BrowserSession):
-			page = await browser_session.get_current_page()
-			return ActionResult(extracted_content=f'Manual: {text} on {page.url}')
-
-		result = await registry.execute_action('manual_action', {'text': 'test'}, browser_session=browser_session)
-
-		print(f'Result: {result.extracted_content}')
-		await browser_session.stop()
-		print('Manual test passed!')
-
-	if __name__ == '__main__':
-		asyncio.run(manual_test())
