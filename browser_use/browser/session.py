@@ -281,12 +281,12 @@ class BrowserSession(BaseModel):
 				if self.is_connected():
 					return self
 				else:
-					connection_str = (
-						f'by re-connecting to {self._connection_str}'
+					next_step = (
+						'attempting to re-connect'
 						if self.cdp_url or self.wss_url or self.browser_pid
-						else 'by launching a new browser (previous one was closed)'
+						else 'launching a new browser'
 					)
-					self.logger.info(f'♻️ Re-starting stale session {connection_str}')
+					self.logger.warning(f'♻️ Browser {self._connection_str} has gone away, {next_step}...')
 					# only reset connection state if we expected to be already connected but we're not
 					# avoid calling this on *first* start() as it just immediately clears many
 					# of the params passed in to BrowserSession(...) init, which the .setup_...() methods below expect
@@ -375,7 +375,7 @@ class BrowserSession(BaseModel):
 						f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
 						f'storage_state= {_log_pretty_path(self.browser_profile.storage_state_path or self.browser_profile.cookies_file) or "<none>"}'
 					)
-					await (self.browser_context or self.browser).close()
+					await (self.browser or self.browser_context.browser).close()
 				except Exception as e:
 					self.logger.debug(
 						f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
@@ -411,9 +411,9 @@ class BrowserSession(BaseModel):
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""
-		# self.logger.debug(
-		# 	f'⏹️ Stopping gracefully browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
-		# )
+		self.logger.debug(
+			f'⏹️ Stopping gracefully browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
+		)
 		await self.stop()
 
 	async def new_context(self, **kwargs):
@@ -433,17 +433,15 @@ class BrowserSession(BaseModel):
 	def __del__(self):
 		# Avoid keeping references in __del__ that might prevent garbage collection
 		try:
-			browser_pid = getattr(self, 'browser_pid', None)
 			profile = getattr(self, 'browser_profile', None)
-			if profile and (getattr(self, 'initialized', None) or getattr(self, 'browser_context', None) or browser_pid):
-				keep_alive = getattr(profile, 'keep_alive', None)
-				user_data_dir = getattr(profile, 'user_data_dir', None)
-				self.logger.info(
-					f'🛑 Stopping (went out of scope) {self._connection_str} keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
-				)
+			keep_alive = getattr(profile, 'keep_alive', None)
+			user_data_dir = getattr(profile, 'user_data_dir', None)
+			self.logger.debug(
+				f'🛑 Stopping (garbage collected) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
+			)
 		except BaseException:
 			# Never let __del__ raise exceptions
-			pass
+			raise
 
 	async def setup_playwright(self) -> None:
 		"""
@@ -1019,25 +1017,15 @@ class BrowserSession(BaseModel):
 		- Browser_context's browser exists but is disconnected
 		- Browser_context itself is closed/unusable
 		"""
-		# Check if browser_context is missing
 		if not self.browser_context:
 			return False
 
-		# Check if browser exists but is disconnected
-		if self.browser and not self.browser.is_connected():
-			return False
-
-		# Check if browser_context's browser exists but is disconnected
 		if self.browser_context.browser and not self.browser_context.browser.is_connected():
 			return False
 
 		# Check if the browser_context itself is closed/unusable
 		try:
-			# Try to access a property that would fail if the context is closed
 			_ = self.browser_context.pages
-			# Additional check: try to access the browser property which might fail if context is closed
-			if self.browser_context.browser and not self.browser_context.browser.is_connected():
-				return False
 			return True
 		except Exception:
 			return False
@@ -1061,9 +1049,7 @@ class BrowserSession(BaseModel):
 				proc_is_alive = proc.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
 				assert proc_is_alive and '--remote-debugging-port' in ' '.join(proc.cmdline())
 			except Exception:
-				self.logger.info(
-					f'👋 Browser process browser_pid={self.browser_pid} has gone away or crashed, will be re-launched'
-				)
+				self.logger.info(f'⚰️ Browser browser_pid={self.browser_pid} has gone away or crashed')
 				# process has gone away or crashed, pid is no longer valid so we clear it
 				self.browser_pid = None
 
@@ -2525,6 +2511,10 @@ class BrowserSession(BaseModel):
 
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
+
+		if not self.initialized or not self.is_connected():
+			await self.start()
+			assert self.browser_context, 'Browser context is not set'
 
 		new_page = await self.browser_context.new_page()
 
