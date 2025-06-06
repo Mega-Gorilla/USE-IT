@@ -333,7 +333,7 @@ class TestErrorHandling:
 		"""Test that handler errors are captured in event"""
 
 		async def failing_handler(event: BaseEvent) -> str:
-			raise ValueError('Handler failed!')
+			raise ValueError('Expected to fail')
 
 		eventbus.on('UserActionEvent', failing_handler)
 
@@ -343,14 +343,14 @@ class TestErrorHandling:
 		# Check error was captured
 		assert 'failing_handler' in event.errors
 		assert isinstance(event.errors['failing_handler'], str)
-		assert 'Handler failed!' in event.errors['failing_handler']
+		assert 'Expected to fail' in event.errors['failing_handler']
 
 	async def test_one_handler_failure_doesnt_stop_others(self, eventbus):
 		"""Test that one handler failing doesn't prevent others from running"""
 		results = []
 
 		async def failing_handler(event: BaseEvent) -> str:
-			raise RuntimeError('I fail!')
+			raise RuntimeError('Expected to fail')
 
 		async def working_handler(event: BaseEvent) -> str:
 			results.append('I work!')
@@ -441,7 +441,7 @@ class TestSerialization:
 class TestEventCompletion:
 	"""Test event completion tracking"""
 
-	async def test_wait_for_completion(self, eventbus):
+	async def test_wait_for_result(self, eventbus):
 		"""Test waiting for event completion"""
 		completion_order = []
 
@@ -457,7 +457,7 @@ class TestEventCompletion:
 		completion_order.append('enqueue_done')
 
 		# Wait for completion
-		await event.wait_for_completion()
+		await event.result()
 		completion_order.append('wait_done')
 
 		# Check order
@@ -533,7 +533,7 @@ class TestEdgeCases:
 			event = UserActionEvent(action=f'concurrent_{i}', user_id='u1')
 			# Emit returns the event synchronously, but we need to wait for completion
 			emitted_event = eventbus.emit(event)
-			tasks.append(emitted_event.wait_for_completion())
+			tasks.append(emitted_event.result())
 
 		# Wait for all events to complete
 		await asyncio.gather(*tasks)
@@ -680,7 +680,7 @@ class TestEdgeCases:
 
 		# Wait for each event to complete and track order
 		async def wait_and_track(event, order):
-			await event.wait_for_completion()
+			await event.result()
 			completion_order.append(order)
 
 		# Wait for all completions in parallel
@@ -875,7 +875,7 @@ class TestWALPersistence:
 			assert not wal_path.exists()
 
 			# Wait for completion
-			await event.wait_for_completion()
+			await event.result()
 			await bus.wait_until_idle()
 
 			# Now file should exist with completed event

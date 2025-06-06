@@ -37,7 +37,8 @@ class BaseEvent(BaseModel):
 
 	async def result(self):
 		"""Wait for completion and return self with results"""
-		await self.wait_for_completion()
+		if self._completion_event:
+			await self._completion_event.wait()
 		return self
 
 	@property
@@ -45,16 +46,9 @@ class BaseEvent(BaseModel):
 		"""Return current event state: 'queued' | 'started' | 'completed'"""
 		if self.completed_at:
 			return 'completed'
-		elif self.started_at:
+		if self.started_at:
 			return 'started'
 		return 'queued'
-
-	@property
-	def duration(self) -> float | None:
-		"""Return processing duration in seconds, or None if not completed"""
-		if self.started_at:
-			return ((self.completed_at or datetime.now(UTC)) - self.started_at).total_seconds()
-		return None
 
 	def model_post_init(self, __context: Any) -> None:
 		"""Initialize completion event and set event schema after model creation"""
@@ -72,11 +66,6 @@ class BaseEvent(BaseModel):
 		except RuntimeError:
 			# Not in async context, skip
 			self._completion_event = None
-
-	async def wait_for_completion(self) -> None:
-		"""Wait for this event to be fully processed"""
-		if self._completion_event:
-			await self._completion_event.wait()
 
 	def mark_completed(self) -> None:
 		"""Mark this event as completed"""
