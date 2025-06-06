@@ -16,7 +16,6 @@ from typing import Any, Generic, TypeVar
 from dotenv import load_dotenv
 
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
-from browser_use.eventbus.models import UUIDStr
 
 load_dotenv()
 
@@ -173,8 +172,8 @@ class Agent(Generic[Context]):
 			page_extraction_llm = llm
 
 		# Generate unique IDs for this agent session and task early
-		self.session_id: UUIDStr = uuid7str()
-		self.task_id: UUIDStr = uuid7str()
+		self.session_id: str = uuid7str()
+		self.task_id: str = uuid7str()
 
 		# Create instance-specific logger
 		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-3:]}]')
