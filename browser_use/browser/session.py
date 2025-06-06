@@ -2662,11 +2662,13 @@ class BrowserSession(BaseModel):
 		return element_handle
 
 	@require_initialization
-	async def find_file_upload_element_by_index(self, index: int, max_height: int = 3) -> DOMElementNode | None:
+	async def find_file_upload_element_by_index(
+		self, index: int, max_height: int = 3, max_descendant_depth: int = 3
+	) -> DOMElementNode | None:
 		"""
 		Robustly find a file upload element related to the element at the given index:
 		- Check if the element itself is a file input
-		- For up to max_height ancestor levels, check each ancestor and all their children (siblings of the path) for a file input (including one level deeper in siblings)
+		- For up to max_height ancestor levels, check each ancestor and all their children (siblings of the path) for a file input (including up to max_descendant_depth deep in siblings' descendants)
 		- Check all direct children of the candidate element
 		- Retain label/for logic if present
 		Returns the first file input found by this heuristic, or None if not found.
@@ -2701,6 +2703,17 @@ class BrowserSession(BaseModel):
 					root = root.parent
 				return root
 
+			def find_file_input_in_descendants(node: DOMElementNode, depth: int) -> DOMElementNode | None:
+				if depth < 0 or not isinstance(node, DOMElementNode):
+					return None
+				if is_file_input(node):
+					return node
+				for child in getattr(node, 'children', []):
+					result = find_file_input_in_descendants(child, depth - 1)
+					if result:
+						return result
+				return None
+
 			# 1. Check if current element is a file input
 			if is_file_input(candidate_element):
 				return candidate_element
@@ -2728,10 +2741,10 @@ class BrowserSession(BaseModel):
 						continue
 					if is_file_input(sibling):
 						return sibling
-					# Optionally, check one level deeper in siblings
-					for child in getattr(sibling, 'children', []):
-						if is_file_input(child):
-							return child
+					# Recursively check up to max_descendant_depth in siblings' descendants
+					result = find_file_input_in_descendants(sibling, max_descendant_depth - 1)
+					if result:
+						return result
 				# If parent is a label with 'for', use it
 				if getattr(parent, 'tag_name', '').lower() == 'label' and parent.attributes.get('for'):
 					input_id = parent.attributes.get('for')
