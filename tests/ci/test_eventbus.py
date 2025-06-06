@@ -89,7 +89,7 @@ class TestEventBusBasics:
 		assert bus._runloop_task is None
 
 		# Auto-start by emitting an event
-		bus.emit(UserActionEvent(action='test', user_id='user123'))
+		bus.dispatch(UserActionEvent(action='test', user_id='user123'))
 		await bus.wait_until_idle()
 
 		# Should be running after auto-start
@@ -112,7 +112,7 @@ class TestEventEnqueueing:
 		"""Test event emission in async and sync contexts, and result() pattern"""
 		# Test async emission
 		event = UserActionEvent(action='login', user_id='user123')
-		result = eventbus.emit(event)
+		result = eventbus.dispatch(event)
 
 		# Check immediate result
 		assert isinstance(result, UserActionEvent)
@@ -120,15 +120,15 @@ class TestEventEnqueueing:
 		assert result.action == 'login'
 		assert result.user_id == 'user123'
 		assert result.event_id is not None
-		assert result.queued_at is not None
-		assert result.started_at is None  # Not started yet
-		assert result.completed_at is None  # Not completed yet
+		assert result.event_created_at is not None
+		assert result.event_started_at is None  # Not started yet
+		assert result.event_completed_at is None  # Not completed yet
 
 		# Test result() pattern
 		processed = await result.result()
-		assert processed.started_at is not None
-		assert processed.completed_at is not None
-		assert processed.results['_default_log_handler'] == 'logged'
+		assert processed.event_started_at is not None
+		assert processed.event_completed_at is not None
+		assert processed.event_results['_default_log_handler'] == 'logged'
 
 		# Check event history
 		assert len(eventbus.event_history) == 1
@@ -137,7 +137,7 @@ class TestEventEnqueueing:
 		"""Test sync event emission"""
 		bus = EventBus()
 		event = SystemEventModel(event_name='startup', severity='info')
-		result = bus.emit(event)
+		result = bus.dispatch(event)
 
 		# Check result and write-ahead log
 		assert isinstance(result, SystemEventModel)
@@ -173,8 +173,8 @@ class TestHandlerRegistration:
 		eventbus.on('*', universal_handler)
 
 		# Emit events
-		eventbus.emit(UserActionEvent(action='login', user_id='u1'))
-		eventbus.emit(SystemEventModel(event_name='startup'))
+		eventbus.dispatch(UserActionEvent(action='login', user_id='u1'))
+		eventbus.dispatch(SystemEventModel(event_name='startup'))
 		await eventbus.wait_until_idle()
 
 		# Verify all handlers were called correctly
@@ -205,7 +205,7 @@ class TestHandlerRegistration:
 
 		# Emit event and wait
 		start = time.time()
-		event = await eventbus.emit(UserActionEvent(action='test', user_id='u1')).result()
+		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
 		duration = time.time() - start
 
 		# Check handlers ran in parallel (should take ~0.1s, not 0.2s)
@@ -214,8 +214,8 @@ class TestHandlerRegistration:
 		assert len(end_times) == 2
 
 		# Check results
-		assert event.results['slow_handler_1'] == 'handler1'
-		assert event.results['slow_handler_2'] == 'handler2'
+		assert event.event_results['slow_handler_1'] == 'handler1'
+		assert event.event_results['slow_handler_2'] == 'handler2'
 
 	def test_handler_can_be_sync_or_async(self, mock_agent):
 		"""Test that both sync and async handlers are accepted"""
@@ -258,7 +258,7 @@ class TestFIFOOrdering:
 
 		# Emit 20 events rapidly
 		for i in range(20):
-			eventbus.emit(UserActionEvent(action=f'test_{i}', user_id='u1', metadata={'order': i}))
+			eventbus.dispatch(UserActionEvent(action=f'test_{i}', user_id='u1', metadata={'order': i}))
 
 		await eventbus.wait_until_idle()
 
@@ -288,12 +288,12 @@ class TestErrorHandling:
 		eventbus.on('UserActionEvent', working_handler)
 
 		# Emit and wait for result
-		event = await eventbus.emit(UserActionEvent(action='test', user_id='u1')).result()
+		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
 
 		# Verify error capture and isolation
-		assert 'failing_handler' in event.errors
-		assert 'Expected to fail' in event.errors['failing_handler']
-		assert event.results['working_handler'] == 'worked'
+		assert 'failing_handler' in event.event_errors
+		assert 'Expected to fail' in event.event_errors['failing_handler']
+		assert event.event_results['working_handler'] == 'worked'
 		assert results == ['success']
 
 
@@ -309,14 +309,14 @@ class TestBatchOperations:
 		]
 
 		# Enqueue batch
-		emitted_events = [eventbus.emit(event) for event in events]
+		emitted_events = [eventbus.dispatch(event) for event in events]
 		results = await asyncio.gather(*[event.result() for event in emitted_events])
 
 		# Check all processed
 		assert len(results) == 3
 		for result in results:
-			assert result.completed_at is not None
-			assert '_default_log_handler' in result.results
+			assert result.event_completed_at is not None
+			assert '_default_log_handler' in result.event_results
 
 
 class TestWriteAheadLog:
@@ -328,7 +328,7 @@ class TestWriteAheadLog:
 		events = []
 		for i in range(5):
 			event = UserActionEvent(action=f'action_{i}', user_id='u1')
-			events.append(eventbus.emit(event))
+			events.append(eventbus.dispatch(event))
 
 		await eventbus.wait_until_idle()
 
@@ -363,7 +363,7 @@ class TestEventCompletion:
 		eventbus.on('UserActionEvent', slow_handler)
 
 		# Enqueue without waiting
-		event = eventbus.emit(UserActionEvent(action='test', user_id='u1'))
+		event = eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
 		completion_order.append('enqueue_done')
 
 		# Wait for completion
@@ -372,7 +372,7 @@ class TestEventCompletion:
 
 		# Check order
 		assert completion_order == ['enqueue_done', 'handler_done', 'wait_done']
-		assert event.completed_at is not None
+		assert event.event_completed_at is not None
 
 
 class TestEdgeCases:
@@ -391,7 +391,7 @@ class TestEdgeCases:
 
 		# Enqueue events but don't wait
 		for i in range(5):
-			bus.emit(UserActionEvent(action=f'action_{i}', user_id='u1'))
+			bus.dispatch(UserActionEvent(action=f'action_{i}', user_id='u1'))
 
 		# Stop immediately
 		await bus.stop()
@@ -411,7 +411,7 @@ class TestEdgeCases:
 
 		event = SystemEventModel(event_name='complex', details=complex_data)
 
-		result = await eventbus.emit(event).result()
+		result = await eventbus.dispatch(event).result()
 
 		# Check data preserved
 		assert result.details['nested']['list'][2]['inner'] == 'value'
@@ -423,7 +423,7 @@ class TestEdgeCases:
 		for i in range(100):
 			event = UserActionEvent(action=f'concurrent_{i}', user_id='u1')
 			# Emit returns the event synchronously, but we need to wait for completion
-			emitted_event = eventbus.emit(event)
+			emitted_event = eventbus.dispatch(event)
 			tasks.append(emitted_event.result())
 
 		# Wait for all events to complete
@@ -458,7 +458,7 @@ class TestEdgeCases:
 		num_events = 20
 		for i in range(num_events):
 			event = UserActionEvent(action=f'mixed_{i}', user_id='u1', metadata={'order': i})
-			eventbus.emit(event)
+			eventbus.dispatch(event)
 
 		# Wait for all events to process
 		await eventbus.wait_until_idle()
@@ -486,7 +486,7 @@ class TestEventTypeOverride:
 		)
 
 		# Enqueue it
-		result = eventbus.emit(event)
+		result = eventbus.dispatch(event)
 
 		# Check type is preserved - should be class name
 		assert result.event_type == 'CreateAgentTask'
@@ -511,7 +511,7 @@ class TestEventTypeOverride:
 		assert user_event.event_schema == f'test_eventbus.UserActionEvent@{version}'
 
 		# Check schema is preserved after emit
-		result = eventbus.emit(task_event)
+		result = eventbus.dispatch(task_event)
 		assert result.event_schema == task_event.event_schema
 
 
@@ -529,7 +529,7 @@ class TestWALPersistence:
 			events = []
 			for i in range(3):
 				event = UserActionEvent(action=f'action_{i}', user_id=f'user_{i}')
-				emitted_event = bus.emit(event)
+				emitted_event = bus.dispatch(event)
 				result = await emitted_event.result()
 				events.append(result)
 
@@ -546,15 +546,13 @@ class TestWALPersistence:
 			# Parse each line as JSON
 			for i, line in enumerate(lines):
 				data = json.loads(line)
-				assert data['event_type'] == 'UserActionEvent'
 				assert data['action'] == f'action_{i}'
 				assert data['user_id'] == f'user_{i}'
-				# Check that datetime fields are properly serialized
-				assert isinstance(data['queued_at'], str)
-				assert isinstance(data['completed_at'], str)
-				# Should be parseable as ISO format
-				datetime.fromisoformat(data['queued_at'])
-				datetime.fromisoformat(data['completed_at'])
+				assert data['event_type'] == 'UserActionEvent'
+				assert isinstance(data['event_created_at'], str)
+				assert isinstance(data['event_completed_at'], str)
+				datetime.fromisoformat(data['event_created_at'])
+				datetime.fromisoformat(data['event_completed_at'])
 
 		finally:
 			await bus.stop()
@@ -572,7 +570,7 @@ class TestWALPersistence:
 		assert wal_path.parent.exists()
 		try:
 			# Emit an event
-			await bus.emit(UserActionEvent(action='test', user_id='u1')).result()
+			await bus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
 
 			# Wait for WAL persistence to complete
 			await bus.wait_until_idle()
@@ -596,7 +594,7 @@ class TestWALPersistence:
 			bus.on('UserActionEvent', slow_handler)
 
 			# Emit event without waiting
-			event = bus.emit(UserActionEvent(action='test', user_id='u1'))
+			event = bus.dispatch(UserActionEvent(action='test', user_id='u1'))
 
 			# Check file doesn't exist yet (event not completed)
 			assert not wal_path.exists()
@@ -611,7 +609,7 @@ class TestWALPersistence:
 			assert len(lines) == 1
 			data = json.loads(lines[0])
 			assert data['event_type'] == 'UserActionEvent'
-			assert 'completed_at' in data
+			assert 'event_completed_at' in data
 
 		finally:
 			await bus.stop()
@@ -651,14 +649,14 @@ class TestEventBusHierarchy:
 
 		# Subscribe buses to each other: parent <- child <- subchild
 		# Child forwards events to parent
-		child_bus.on('*', parent_bus.emit)
+		child_bus.on('*', parent_bus.dispatch)
 		# Subchild forwards events to child
-		subchild_bus.on('*', child_bus.emit)
+		subchild_bus.on('*', child_bus.dispatch)
 
 		try:
 			# Emit event from the bottom of hierarchy
 			event = UserActionEvent(action='bubble_test', user_id='test_user')
-			emitted = subchild_bus.emit(event)
+			emitted = subchild_bus.dispatch(event)
 
 			# Wait for event to bubble up
 			await subchild_bus.wait_until_idle()
@@ -685,7 +683,7 @@ class TestEventBusHierarchy:
 			events_at_subchild.clear()
 
 			middle_event = SystemEventModel(event_name='middle_test')
-			child_bus.emit(middle_event)
+			child_bus.dispatch(middle_event)
 
 			await child_bus.wait_until_idle()
 			await parent_bus.wait_until_idle()
@@ -731,14 +729,14 @@ class TestEventBusHierarchy:
 		peer3.on('*', peer3_handler)
 
 		# Create circular subscription: peer1 -> peer2 -> peer3 -> peer1
-		peer1.on('*', peer2.emit)
-		peer2.on('*', peer3.emit)
-		peer3.on('*', peer1.emit)  # This completes the circle
+		peer1.on('*', peer2.dispatch)
+		peer2.on('*', peer3.dispatch)
+		peer3.on('*', peer1.dispatch)  # This completes the circle
 
 		try:
 			# Emit event from peer1
 			event = UserActionEvent(action='circular_test', user_id='test_user')
-			emitted = peer1.emit(event)
+			emitted = peer1.dispatch(event)
 
 			# Wait for all processing to complete
 			await asyncio.sleep(0.2)  # Give time for any potential loops
@@ -752,7 +750,6 @@ class TestEventBusHierarchy:
 			assert len(events_at_peer3) == 1
 
 			# Check event paths show the propagation but no loops
-			# Since event_path is mutated in place, all handlers see the final path
 			assert events_at_peer1[0].event_path == ['Peer1', 'Peer2', 'Peer3']
 			assert events_at_peer2[0].event_path == ['Peer1', 'Peer2', 'Peer3']
 			assert events_at_peer3[0].event_path == ['Peer1', 'Peer2', 'Peer3']
@@ -769,7 +766,7 @@ class TestEventBusHierarchy:
 			events_at_peer3.clear()
 
 			event2 = SystemEventModel(event_name='circular_test_2')
-			peer2.emit(event2)
+			peer2.dispatch(event2)
 
 			await asyncio.sleep(0.2)
 			await peer1.wait_until_idle()
@@ -781,7 +778,6 @@ class TestEventBusHierarchy:
 			assert len(events_at_peer2) == 1
 			assert len(events_at_peer3) == 1
 
-			# Since event_path is mutated in place, all see final path
 			assert events_at_peer2[0].event_path == ['Peer2', 'Peer3', 'Peer1']
 			assert events_at_peer3[0].event_path == ['Peer2', 'Peer3', 'Peer1']
 			assert events_at_peer1[0].event_path == ['Peer2', 'Peer3', 'Peer1']

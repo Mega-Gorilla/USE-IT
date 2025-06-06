@@ -111,7 +111,7 @@ def event_collector():
 			collection_time = time.time()
 			self.events.append(event)
 			self.event_order.append(event.event_type)
-			self.event_timestamps.append((event.event_type, event.queued_at, collection_time))
+			self.event_timestamps.append((event.event_type, event.event_created_at, collection_time))
 			return 'collected'
 
 		def get_events_by_type(self, event_type: str) -> list[BaseEvent]:
@@ -188,13 +188,15 @@ class TestAgentCloudEvents:
 		update_event = next(e for e in event_collector.events if e.event_type == 'UpdateAgentTask')
 
 		# Session should be created before Task (foreign key constraint)
-		assert session_event.queued_at <= task_event.queued_at, (
+		assert session_event.event_created_at <= task_event.event_created_at, (
 			'Session event should be emitted before or at same time as Task event'
 		)
 		# Task should be created before Step (foreign key constraint)
-		assert task_event.queued_at <= step_event.queued_at, 'Task event should be emitted before or at same time as Step event'
+		assert task_event.event_created_at <= step_event.event_created_at, (
+			'Task event should be emitted before or at same time as Step event'
+		)
 		# All create events should happen before update
-		assert step_event.queued_at <= update_event.queued_at, (
+		assert step_event.event_created_at <= update_event.event_created_at, (
 			'Step event should be emitted before or at same time as UpdateTask event'
 		)
 
@@ -209,7 +211,7 @@ class TestAgentCloudEvents:
 		assert task_event.id  # Should have task ID
 		assert task_event.agent_session_id == session_event.id
 		assert task_event.task == 'Test task'
-		assert task_event.started_at is not None
+		assert task_event.event_started_at is not None
 		assert task_event.stopped is False
 		assert task_event.paused is False
 		assert task_event.done_output is None  # Not done yet at creation
@@ -580,7 +582,7 @@ class TestCloudEventValidation:
 			assert isinstance(event, BaseEvent)
 			assert event.event_type is not None
 			assert event.event_id is not None
-			assert event.queued_at is not None
+			assert event.event_created_at is not None
 			assert isinstance(event.event_path, list)
 
 			# Check event_id is a valid UUID string
@@ -659,7 +661,7 @@ class TestEventBusIntegration:
 
 			# Emit all events
 			for event in events:
-				bus.emit(event)
+				bus.dispatch(event)
 
 			# Wait for processing
 			await bus.wait_until_idle()

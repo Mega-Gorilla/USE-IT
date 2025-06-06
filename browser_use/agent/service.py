@@ -959,7 +959,7 @@ class Agent(Generic[Context]):
 
 				# Emit CreateAgentStepEvent
 				step_event = CreateAgentStepEvent.from_agent_step(self, model_output, result, actions_data, browser_state_summary)
-				self.eventbus.emit(step_event)
+				self.eventbus.dispatch(step_event)
 
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
@@ -1349,10 +1349,10 @@ class Agent(Generic[Context]):
 			self._task_start_time = self._session_start_time  # Initialize task start time
 
 			# Emit CreateAgentSessionEvent at the START of run()
-			self.eventbus.emit(CreateAgentSessionEvent.from_agent(self))
+			self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
 
 			# Emit CreateAgentTaskEvent at the START of run()
-			self.eventbus.emit(CreateAgentTaskEvent.from_agent(self))
+			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
 			# Execute initial actions if provided
 			if self.initial_actions:
@@ -1452,7 +1452,7 @@ class Agent(Generic[Context]):
 			# not when they are completed
 
 			# Emit UpdateAgentTaskEvent at the END of run() with final task state
-			self.eventbus.emit(UpdateAgentTaskEvent.from_agent(self))
+			self.eventbus.dispatch(UpdateAgentTaskEvent.from_agent(self))
 
 			# Generate GIF if needed before stopping event bus
 			if self.settings.generate_gif:
@@ -1464,7 +1464,7 @@ class Agent(Generic[Context]):
 
 				# Emit output file generated event for GIF
 				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-				self.eventbus.emit(output_event)
+				self.eventbus.dispatch(output_event)
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			await self.eventbus.stop(timeout=5.0)

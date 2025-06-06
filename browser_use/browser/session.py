@@ -379,9 +379,9 @@ class BrowserSession(BaseModel):
 			if self.browser_pid:
 				try:
 					proc = psutil.Process(pid=self.browser_pid)
-					cmd = proc.cmdline()[0]
+					executable_path = proc.cmdline()[0]
 					proc.terminate()
-					logger.info(f' ↳ {self} Killed browser subprocess with browser_pid={self.browser_pid} {cmd}')
+					logger.info(f' ↳ {self} Killed browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
 					self.browser_pid = None
 				except Exception as e:
 					if 'NoSuchProcess' not in type(e).__name__:
@@ -663,9 +663,7 @@ class BrowserSession(BaseModel):
 
 		if new_chrome_procs and not self.browser_pid:
 			self.browser_pid = new_chrome_procs[0].pid
-			logger.info(
-				f' ↳ {self} Spawned browser subprocess with browser_pid={self.browser_pid} {_log_pretty_path(new_chrome_procs[0].cmdline()[0])}'
-			)
+			logger.info(f' ↳ {self} Spawned browser_pid={self.browser_pid} {_log_pretty_path(new_chrome_procs[0].cmdline()[0])}')
 			logger.debug(' '.join(new_chrome_procs[0].cmdline()))  # print the entire launch command for debugging
 			self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
 
