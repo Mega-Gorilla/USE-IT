@@ -380,7 +380,12 @@ class BrowserSession(BaseModel):
 							f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
 							f'storage_state= {_log_pretty_path(self.browser_profile.storage_state_path or self.browser_profile.cookies_file) or "<none>"}'
 						)
-						await (self.browser or self.browser_context.browser).close()
+						# Add timeout to prevent hanging on close if context is already closed
+						try:
+							async with asyncio.timeout(5):  # 5 second timeout for close operation
+								await (self.browser or self.browser_context.browser).close()
+						except TimeoutError:
+							self.logger.warning('⏱️ Timeout while closing browser/context - it may already be closed')
 					except Exception as e:
 						self.logger.debug(
 							f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
@@ -396,7 +401,17 @@ class BrowserSession(BaseModel):
 						proc = psutil.Process(pid=self.browser_pid)
 						executable_path = proc.cmdline()[0]
 						self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
-						proc.terminate()
+						# Add timeout for process termination
+						try:
+							async with asyncio.timeout(5):  # 5 second timeout
+								proc.terminate()
+								# Wait for process to actually terminate
+								await asyncio.to_thread(proc.wait, timeout=4)
+						except (TimeoutError, psutil.TimeoutExpired):
+							self.logger.warning(
+								f'⏱️ Process did not terminate gracefully, force killing browser_pid={self.browser_pid}'
+							)
+							proc.kill()  # Force kill if terminate didn't work
 						self.browser_pid = None
 					except Exception as e:
 						if 'NoSuchProcess' not in type(e).__name__:
@@ -413,6 +428,13 @@ class BrowserSession(BaseModel):
 					# 		self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
 
 				self._reset_connection_state()
+
+				# Cancel any remaining background tasks to prevent hanging on exit
+				if hasattr(self, '_background_tasks'):
+					for task in list(self._background_tasks):
+						if not task.done():
+							task.cancel()
+					self._background_tasks.clear()
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
@@ -1060,6 +1082,13 @@ class BrowserSession(BaseModel):
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
 		self._cached_browser_state_summary = None
+
+		# Cancel any background tasks to prevent hanging
+		if hasattr(self, '_background_tasks'):
+			for task in list(self._background_tasks):
+				if not task.done():
+					task.cancel()
+			self._background_tasks.clear()
 		if self.browser_pid:
 			try:
 				# browser_pid is different from all the other state objects, it's closer to cdp_url or wss_url
@@ -1957,7 +1986,11 @@ class BrowserSession(BaseModel):
 
 		# Save cookies if a file is specified
 		if self.browser_profile.cookies_file:
-			asyncio.create_task(self.save_cookies())
+			# Use create_task but store reference to allow cleanup
+			task = asyncio.create_task(self.save_cookies())
+			# Set task name for debugging
+			task.set_name(f'save_cookies_{self.id[-4:]}')
+			# Fire and forget, but the task will complete quickly
 
 		return self._cached_browser_state_summary
 
@@ -2534,6 +2567,10 @@ class BrowserSession(BaseModel):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
 
 		if not self.initialized or not self.is_connected():
+			# If we were initialized but lost connection, reset state first to avoid infinite loops
+			if self.initialized and not self.is_connected():
+				self.logger.warning('Browser was initialized but lost connection, resetting state before restart')
+				self._reset_connection_state()
 			await self.start()
 			assert self.browser_context, 'Browser context is not set'
 
