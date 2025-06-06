@@ -276,48 +276,51 @@ class BrowserSession(BaseModel):
 
 		# if we're already initialized and the connection is still valid, return the existing session state and start from scratch
 
-		async with self._start_lock:
-			if self.initialized:
-				if self.is_connected():
-					return self
-				else:
-					next_step = (
-						'attempting to re-connect'
-						if self.cdp_url or self.wss_url or self.browser_pid
-						else 'launching a new browser'
-					)
-					self.logger.warning(f'♻️ Browser {self._connection_str} has gone away, {next_step}...')
-					# only reset connection state if we expected to be already connected but we're not
-					# avoid calling this on *first* start() as it just immediately clears many
-					# of the params passed in to BrowserSession(...) init, which the .setup_...() methods below expect
-					self._reset_connection_state()
+		# Use timeout to prevent indefinite waiting on lock acquisition
 
-			self.initialized = True  # set this first to ensure two parallel calls to start() don't clash with each other
+		async with asyncio.timeout(30):  # 30 second timeout for launching
+			async with self._start_lock:
+				if self.initialized:
+					if self.is_connected():
+						return self
+					else:
+						next_step = (
+							'attempting to re-connect'
+							if self.cdp_url or self.wss_url or self.browser_pid
+							else 'launching a new browser'
+						)
+						self.logger.warning(f'♻️ Browser {self._connection_str} has gone away, {next_step}...')
+						# only reset connection state if we expected to be already connected but we're not
+						# avoid calling this on *first* start() as it just immediately clears many
+						# of the params passed in to BrowserSession(...) init, which the .setup_...() methods below expect
+						self._reset_connection_state()
 
-			try:
-				# apply last-minute runtime-computed options to the the browser_profile, validate profile, set up folders on disk
-				assert isinstance(self.browser_profile, BrowserProfile)
-				self.browser_profile.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
-				self.browser_profile.detect_display_configuration()  # adjusts config values, must come before launch/connect
+				self.initialized = True  # set this first to ensure two parallel calls to start() don't clash with each other
 
-				# launch/connect to the browser:
-				# setup playwright library client, Browser, and BrowserContext objects
-				await self.setup_playwright()
-				await self.setup_browser_via_passed_objects()
-				await self.setup_browser_via_browser_pid()
-				await self.setup_browser_via_wss_url()
-				await self.setup_browser_via_cdp_url()
-				await (
-					self.setup_new_browser_context()
-				)  # creates a new context in existing browser or launches a new persistent context
-				assert self.browser_context, f'Failed to connect to or create a new BrowserContext for browser={self.browser}'
+				try:
+					# apply last-minute runtime-computed options to the the browser_profile, validate profile, set up folders on disk
+					assert isinstance(self.browser_profile, BrowserProfile)
+					self.browser_profile.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
+					self.browser_profile.detect_display_configuration()  # adjusts config values, must come before launch/connect
 
-				# resize the existing pages and set up foreground tab detection
-				await self._setup_viewports()
-				await self._setup_current_page_change_listeners()
-			except BaseException:
-				self.initialized = False
-				raise
+					# launch/connect to the browser:
+					# setup playwright library client, Browser, and BrowserContext objects
+					await self.setup_playwright()
+					await self.setup_browser_via_passed_objects()
+					await self.setup_browser_via_browser_pid()
+					await self.setup_browser_via_wss_url()
+					await self.setup_browser_via_cdp_url()
+					await (
+						self.setup_new_browser_context()
+					)  # creates a new context in existing browser or launches a new persistent context
+					assert self.browser_context, f'Failed to connect to or create a new BrowserContext for browser={self.browser}'
+
+					# resize the existing pages and set up foreground tab detection
+					await self._setup_viewports()
+					await self._setup_current_page_change_listeners()
+				except BaseException:
+					self.initialized = False
+					raise
 
 		# self.logger.debug(f'🎭 started successfully')
 
@@ -353,61 +356,63 @@ class BrowserSession(BaseModel):
 
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
-		async with self._start_lock:
-			# save cookies to disk if cookies_file or storage_state is configured
-			# but only if the browser context is still connected
-			if self.is_connected():
-				try:
-					await self.save_storage_state()
-				except Exception as e:
-					self.logger.debug(f'Failed to save storage state before stopping: {type(e).__name__}: {e}')
+		# Use timeout to prevent indefinite waiting on lock acquisition
+		async with asyncio.timeout(15):  # 15 second timeout for stop operations
+			async with self._start_lock:
+				# save cookies to disk if cookies_file or storage_state is configured
+				# but only if the browser context is still connected
+				if self.is_connected():
+					try:
+						await self.save_storage_state()
+					except Exception as e:
+						self.logger.debug(f'Failed to save storage state before stopping: {type(e).__name__}: {e}')
 
-			if self.browser_profile.keep_alive:
-				self.logger.info(
-					f'🕊️ {self}.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
-				)
-				return  # nothing to do if keep_alive=True, leave the browser running
-
-			if self.browser_context or self.browser:
-				try:
+				if self.browser_profile.keep_alive:
 					self.logger.info(
-						f'🛑 Closing {self._connection_str} {self.browser_profile.channel.name.lower()} context with '
-						f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
-						f'storage_state= {_log_pretty_path(self.browser_profile.storage_state_path or self.browser_profile.cookies_file) or "<none>"}'
+						f'🕊️ {self}.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
 					)
-					await (self.browser or self.browser_context.browser).close()
-				except Exception as e:
-					self.logger.debug(
-						f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
-					)
-				finally:
-					# Always clear references to ensure a fresh start next time
-					self.browser_context = None
-					self.browser = None
+					return  # nothing to do if keep_alive=True, leave the browser running
 
-			# kill the chrome subprocess if we were the ones that started it
-			if self.browser_pid:
-				try:
-					proc = psutil.Process(pid=self.browser_pid)
-					executable_path = proc.cmdline()[0]
-					proc.terminate()
-					self.logger.info(f' ↳ Killed browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
-					self.browser_pid = None
-				except Exception as e:
-					if 'NoSuchProcess' not in type(e).__name__:
-						self.logger.debug(
-							f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}'
+				if self.browser_context or self.browser:
+					try:
+						self.logger.info(
+							f'🛑 Closing {self._connection_str} {self.browser_profile.channel.name.lower()} context with '
+							f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
+							f'storage_state= {_log_pretty_path(self.browser_profile.storage_state_path or self.browser_profile.cookies_file) or "<none>"}'
 						)
+						await (self.browser or self.browser_context.browser).close()
+					except Exception as e:
+						self.logger.debug(
+							f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
+						)
+					finally:
+						# Always clear references to ensure a fresh start next time
+						self.browser_context = None
+						self.browser = None
 
-				# Close playwright if we own it
-				# if self.playwright:
-				# 	try:
-				# 		await self.playwright.stop()
-				# 		self.playwright = None
-				# 	except Exception as e:
-				# 		self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+				# kill the chrome subprocess if we were the ones that started it
+				if self.browser_pid:
+					try:
+						proc = psutil.Process(pid=self.browser_pid)
+						executable_path = proc.cmdline()[0]
+						proc.terminate()
+						self.logger.info(f' ↳ Killed browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
+						self.browser_pid = None
+					except Exception as e:
+						if 'NoSuchProcess' not in type(e).__name__:
+							self.logger.debug(
+								f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}'
+							)
 
-			self._reset_connection_state()
+					# Close playwright if we own it
+					# if self.playwright:
+					# 	try:
+					# 		await self.playwright.stop()
+					# 		self.playwright = None
+					# 	except Exception as e:
+					# 		self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+
+				self._reset_connection_state()
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().close()"""

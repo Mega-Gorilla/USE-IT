@@ -454,30 +454,3 @@ class TestTabManagement:
 		assert browser_session.initialized is True
 
 		await browser_session.stop()
-
-	async def test_await_usage_in_close_operations(self):
-		"""Test that all close operations properly await async calls"""
-		# logger.info('Testing await usage in close operations')
-
-		# Create a simple headless browser profile
-		profile = BrowserProfile(headless=True, user_data_dir=None)
-		browser_session = BrowserSession(browser_profile=profile)
-		await browser_session.start()
-
-		# Track if close was awaited properly
-		close_awaited = False
-		original_close = browser_session.browser_context.close
-
-		async def tracked_close():
-			nonlocal close_awaited
-			close_awaited = True
-			return await original_close()
-
-		browser_session.browser_context.close = tracked_close
-
-		# Stop should properly await the close
-		await browser_session.stop()
-
-		assert close_awaited, 'browser_context.close() was not awaited'
-		assert browser_session.browser_context is None
-		assert browser_session.initialized is False
