@@ -23,32 +23,37 @@ class EventBus:
 	Async event bus with write-ahead logging and guaranteed FIFO processing.
 
 	Features:
-	- Sync and async event enqueueing
-	- Blocking and non-blocking dispatch
-	- Write-ahead logging with UUIDs and timestamps
-	- FIFO event processing
-	- Parallel handler execution per event
-	- Serial event processing
+	- Enqueue events synchronously, await their results using await event.result()
+	- FIFP Write-ahead logging with UUIDs and timestamps,
+	- Serial event processing, parallel handler execution per event
 	"""
 
-	def __init__(self, name: str | None = None, wal_path: Path | str | None = None):
+	name: str
+	event_queue: asyncio.Queue[BaseEvent]
+	event_history: list[BaseEvent]
+	handlers: dict[str, list[EventHandler]]
+	wal_path: Path | None = None
+	parallel_handlers: bool = True
+
+	_is_running: bool = False
+	_runloop_task: asyncio.Task | None = None
+	_runloop_lock: asyncio.Lock
+	_on_idle: asyncio.Event
+
+	def __init__(self, name: str | None = None, wal_path: Path | str | None = None, parallel_handlers: bool = True):
 		self.name = name or f'EventBus_{hex(id(self))[-6:]}'
-		self.event_queue: asyncio.Queue[BaseEvent] = asyncio.Queue()
-		self.event_history: list[BaseEvent] = []
-		self.handlers: dict[str, list[EventHandler]] = defaultdict(list)
-		self._is_running = False
-		self._runloop_task: asyncio.Task | None = None
+		self.event_queue = asyncio.Queue()
+		self.event_history = []
+		self.handlers = defaultdict(list)
+		self.parallel_handlers = parallel_handlers
 		self._runloop_lock = asyncio.Lock()
+		self._on_idle = asyncio.Event()
+		self._on_idle.set()  # Start in idle state
 
 		# Set up WAL path and create parent directory if needed
-		self.wal_path = None
 		if wal_path:
 			self.wal_path = Path(wal_path)
 			self.wal_path.parent.mkdir(parents=True, exist_ok=True)
-
-		# Signal that fires when the event bus is idle (no events being processed)
-		self._on_idle = asyncio.Event()
-		self._on_idle.set()  # Start in idle state
 
 		# Register default logger handler
 		self.on('*', self._default_log_handler)
@@ -80,7 +85,7 @@ class EventBus:
 
 	def on(self, event_pattern: str | type[BaseModel], handler: EventHandler) -> None:
 		"""Subscribe to events matching a pattern, event type name, or event model class.
-		Use '*' for all events.
+		Use '*' for all events. Similar to JS EventListener.addEventListener()
 
 		Examples:
 			eventbus.on('*', handler)  # All events
@@ -101,7 +106,7 @@ class EventBus:
 	def emit(self, event: BaseEvent) -> BaseEvent:
 		"""
 		Enqueue an event for processing. Returns awaitable event object.
-		Auto-starts the EventBus if not already running.
+		Auto-starts the EventBus if not already running. similar to JS EventListener.dispatchEvent()
 		"""
 		# Auto-start if not running
 		if not self._is_running:
@@ -137,7 +142,9 @@ class EventBus:
 			return
 
 		# Log current state
-		logger.debug(f'EventBus stopping - Queue size: {self.event_queue.qsize()}, Processing events: {len(self.events_started)}')
+		logger.debug(
+			f'EventBus stopping: Queued {self.event_queue.qsize()} | Pending {len(self.events_queued)} | Processing {len(self.events_started)} | Completed {len(self.events_completed)}'
+		)
 
 		# Wait for completion if timeout specified
 		if timeout is not None:
@@ -160,9 +167,10 @@ class EventBus:
 
 	async def wait_until_idle(self, timeout: float | None = None) -> None:
 		"""Wait until the event bus is idle (no events being processed)"""
+
 		# First wait for the queue to be empty
 		await self.event_queue.join()
-		logger.debug(f'Queue joined, processing events: {len(self.events_started)}')
+		# logger.debug(f'Queue joined, processing events: {len(self.events_started)}')
 
 		# Then wait for idle state with timeout
 		try:
@@ -170,11 +178,62 @@ class EventBus:
 		except TimeoutError:
 			logger.warning(f'Timeout waiting for event bus to be idle after {timeout}s (processing: {len(self.events_started)})')
 
+	async def _run_loop(self) -> None:
+		"""Main event processing loop"""
+		while self._is_running:
+			try:
+				# Check if we're idle
+				if self.event_queue.empty() and len(self.events_started) == 0:
+					self._on_idle.set()
+				else:
+					self._on_idle.clear()
+
+				try:
+					await self._run_loop_step()
+				except TimeoutError:
+					continue  # No events in queue, continue to idle
+			except asyncio.CancelledError:
+				break
+			except Exception as e:
+				logger.exception(f'{self.name} Error in event loop: {type(e).__name__} {e}')
+				# Continue running even if there's an error
+
+	async def _run_loop_step(self, event: BaseEvent | None = None) -> BaseEvent:
+		"""Process a single event from the queue"""
+
+		# Wait for next event with timeout to periodically check idle state
+		event = event or await asyncio.wait_for(self.event_queue.get(), timeout=0.1)
+
+		# Clear idle state when we get an event
+		self._on_idle.clear()
+
+		# Process the event
+		async with self._runloop_lock:
+			# Record start time
+			event.started_at = datetime.now(UTC)
+
+			# Execute all handlers for this event
+			applicable_handlers = self._get_applicable_handlers(event)
+
+			await self._execute_handlers(event, handlers=applicable_handlers)
+
+			# Mark event as completed with empty results dict
+			event.record_results(complete=True)
+
+			# Persist to WAL if configured
+			if self.wal_path:
+				wal_result = await self._default_wal_handler(event)
+				# logger.debug(f'WAL persistence result: {wal_result}')
+
+			# Mark task as done
+			self.event_queue.task_done()
+		return event
+
 	def _get_applicable_handlers(self, event: BaseEvent) -> dict[str, EventHandler]:
 		"""Get all handlers that should process the given event, filtering out those that would create loops"""
 		applicable_handlers = []
 
-		# Add type-specific handlers
+		# Add event-type-specific handlers
 		applicable_handlers.extend(self.handlers.get(event.event_type, []))
 
 		# Add wildcard handlers (handlers registered for '*')
@@ -183,36 +242,42 @@ class EventBus:
 		# Filter out handlers that would create loops and build name->handler mapping
 		filtered_handlers = {}
 		for handler in applicable_handlers:
-			if self._would_create_loop(handler, event):
-				logger.debug(f'Skipping {handler.__name__} to prevent loop for {event.event_type}')
+			if self._would_create_loop(event, handler):
+				# logger.debug(f'Skipping {handler.__name__} to prevent loop for {event.event_type}')
+				continue
 			else:
 				filtered_handlers[handler.__name__] = handler
 
 		return filtered_handlers
 
-	async def _execute_handlers(self, event: BaseEvent) -> None:
+	async def _execute_handlers(self, event: BaseEvent, handlers: dict[str, EventHandler] | None = None) -> None:
 		"""Execute all handlers for an event in parallel"""
-		applicable_handlers = self._get_applicable_handlers(event)
-
+		applicable_handlers = handlers if handlers is not None else self._get_applicable_handlers(event)
 		if not applicable_handlers:
 			return
 
 		# Execute all handlers in parallel
-		handler_tasks = {}
-		for handler_name, handler in applicable_handlers.items():
-			task = asyncio.create_task(self._safe_execute_handler(handler, event))
-			handler_tasks[handler_name] = task
+		if self.parallel_handlers:
+			handler_tasks = {}
+			for handler_name, handler in applicable_handlers.items():
+				task = asyncio.create_task(self._execute_sync_or_async_handler(event, handler))
+				handler_tasks[handler_name] = task
 
-		# Wait for all handlers to complete and build results
-		for handler_name, task in handler_tasks.items():
-			try:
-				result = await task
-				event.results[handler_name] = result
-			except Exception as e:
-				event.errors[handler_name] = str(e)
-				logger.error(f'Handler {handler_name} failed for event {event.event_id}: {e}')
+			# Wait for all handlers to complete and record results incrementally
+			for handler_name, task in handler_tasks.items():
+				try:
+					result = await task
+					event.record_results({handler_name: result}, complete=False)
+				except Exception as e:
+					event.errors[handler_name] = str(e)
+					logger.error(f'Handler {handler_name} failed for event {event.event_id}: {e}')
+		else:
+			# otherwise, execute handlers serially, wait until each one completes before moving on to the next
+			for handler_name, handler in applicable_handlers.items():
+				result = await self._execute_sync_or_async_handler(event, handler)
+				event.record_results({handler_name: result}, complete=False)
 
-	async def _safe_execute_handler(self, handler: EventHandler, event: BaseEvent) -> Any:
+	async def _execute_sync_or_async_handler(self, event: BaseEvent, handler: EventHandler) -> Any:
 		"""Safely execute a single handler"""
 		try:
 			if inspect.iscoroutinefunction(handler):
@@ -225,54 +290,9 @@ class EventBus:
 			logger.exception(f'Error in handler {handler.__name__} for event {event.event_id}')
 			raise
 
-	async def _run_loop(self) -> None:
-		"""Main event processing loop"""
-		while self._is_running:
-			try:
-				# Check if we're idle
-				if self.event_queue.empty() and len(self.events_started) == 0:
-					self._on_idle.set()
-				else:
-					self._on_idle.clear()
-
-				# Wait for next event with timeout to periodically check idle state
-				try:
-					event = await asyncio.wait_for(self.event_queue.get(), timeout=0.1)
-
-					# Clear idle state when we get an event
-					self._on_idle.clear()
-
-					# Process the event
-					async with self._runloop_lock:
-						# Record start time
-						event.started_at = datetime.now(UTC)
-
-						# Execute all handlers for this event
-						await self._execute_handlers(event)
-
-						# Mark event as completed
-						event.mark_completed()
-
-						# Persist to WAL if configured
-						if self.wal_path:
-							wal_result = await self._default_wal_handler(event)
-							# logger.debug(f'WAL persistence result: {wal_result}')
-
-						# Mark task as done
-						self.event_queue.task_done()
-
-				except TimeoutError:
-					# No events in queue, continue to check idle state
-					continue
-			except asyncio.CancelledError:
-				break
-			except Exception as e:
-				logger.exception(f'{self.name} Error in event loop: {e}')
-				# Continue running even if there's an error
-
 	@staticmethod
-	def _would_create_loop(handler: EventHandler, event: BaseEvent) -> bool:
-		"""Check if calling this handler would create a loop"""
+	def _would_create_loop(event: BaseEvent, handler: EventHandler) -> bool:
+		"""Check if calling this handler would create a loop (i.e. re-process an event that has already been processed by this EventBus)"""
 		# If handler is another EventBus.emit method
 		if hasattr(handler, '__self__') and isinstance(handler.__self__, EventBus):
 			target_bus = handler.__self__

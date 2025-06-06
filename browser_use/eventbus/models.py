@@ -23,17 +23,19 @@ class BaseEvent(BaseModel):
 	event_schema: str | None = Field(default=None, description='Event schema version in format ClassName@version', max_length=100)
 	event_type: str
 	event_id: str = Field(default_factory=uuid7str)
-	queued_at: datetime = Field(default_factory=datetime.utcnow)
 	event_path: list[str] = Field(default_factory=list, description='Path tracking for event routing')
+	queued_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 	# Completion tracking fields
 	started_at: datetime | None = Field(default=None)
 	completed_at: datetime | None = Field(default=None)
-	results: dict[str, Any] = Field(default_factory=dict)
-	errors: dict[str, str] = Field(default_factory=dict)  # Store error messages as strings
-
-	# Private field for completion tracking
+	results: dict[str, Any] = Field(default_factory=dict)  # {handler_name: result}
+	errors: dict[str, str] = Field(default_factory=dict)  # {handler_name: error_str}
 	_completion_event: asyncio.Event | None = PrivateAttr(default=None)
+
+	@property
+	def state(self) -> str:
+		return 'completed' if self.completed_at else 'started' if self.started_at else 'queued'
 
 	async def result(self):
 		"""Wait for completion and return self with results"""
@@ -41,34 +43,26 @@ class BaseEvent(BaseModel):
 			await self._completion_event.wait()
 		return self
 
-	@property
-	def state(self) -> str:
-		"""Return current event state: 'queued' | 'started' | 'completed'"""
-		if self.completed_at:
-			return 'completed'
-		if self.started_at:
-			return 'started'
-		return 'queued'
+	def record_results(self, results: dict[str, Any] | None = None, complete: bool = True) -> None:
+		"""Update the event results and optionally mark it as completed"""
+		self.results = {
+			**(self.results or {}),
+			**(results or {}),
+		}
+		if complete:
+			self.completed_at = datetime.now(UTC)
+			if self._completion_event:
+				self._completion_event.set()
 
 	def model_post_init(self, __context: Any) -> None:
 		"""Initialize completion event and set event schema after model creation"""
-		# Set event_schema if not already set
+
 		if self.event_schema is None:
 			version = get_browser_use_version()
-			class_module = self.__class__.__module__
-			class_qualname = self.__class__.__qualname__
-			self.event_schema = f'{class_module}.{class_qualname}@{version}'
+			self.event_schema = f'{self.__class__.__module__}.{self.__class__.__qualname__}@{version}'
 
 		try:
-			# Only create event if we're in an async context
-			asyncio.get_running_loop()
+			asyncio.get_running_loop()  # Only create event if we're in an async context
 			self._completion_event = asyncio.Event()
 		except RuntimeError:
-			# Not in async context, skip
-			self._completion_event = None
-
-	def mark_completed(self) -> None:
-		"""Mark this event as completed"""
-		self.completed_at = datetime.now(UTC)
-		if self._completion_event:
-			self._completion_event.set()
+			self._completion_event = None  # Not in async context, skip

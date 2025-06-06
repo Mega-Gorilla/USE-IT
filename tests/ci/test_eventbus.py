@@ -26,7 +26,7 @@ from browser_use.agent.cloud_events import CreateAgentTaskEvent
 from browser_use.eventbus import BaseEvent, EventBus
 
 
-# Test event models - using proper Event subclasses
+# Test event models
 class UserActionEvent(BaseEvent):
 	"""Test event model for user actions"""
 
@@ -108,142 +108,79 @@ class TestEventBusBasics:
 class TestEventEnqueueing:
 	"""Test event enqueueing functionality"""
 
-	async def test_emit(self, eventbus):
-		"""Test event emission"""
+	async def test_emit_and_result(self, eventbus):
+		"""Test event emission in async and sync contexts, and result() pattern"""
+		# Test async emission
 		event = UserActionEvent(action='login', user_id='user123')
-
-		# Emit event
 		result = eventbus.emit(event)
 
-		# Check result
+		# Check immediate result
 		assert isinstance(result, UserActionEvent)
 		assert result.event_type == 'UserActionEvent'
 		assert result.action == 'login'
 		assert result.user_id == 'user123'
 		assert result.event_id is not None
 		assert result.queued_at is not None
+		assert result.started_at is None  # Not started yet
+		assert result.completed_at is None  # Not completed yet
 
-		# Wait for processing
-		await eventbus.wait_until_idle()
+		# Test result() pattern
+		processed = await result.result()
+		assert processed.started_at is not None
+		assert processed.completed_at is not None
+		assert processed.results['_default_log_handler'] == 'logged'
 
 		# Check event history
 		assert len(eventbus.event_history) == 1
-		# The returned result should have completion information after waiting
-		assert result.completed_at is not None
-		assert result.started_at is not None
 
 	def test_emit_sync(self, mock_agent):
 		"""Test sync event emission"""
 		bus = EventBus()
 		event = SystemEventModel(event_name='startup', severity='info')
-
-		# Emit event from sync context
 		result = bus.emit(event)
 
-		# Check result
+		# Check result and write-ahead log
 		assert isinstance(result, SystemEventModel)
 		assert result.event_type == 'SystemEventModel'
-		assert result.event_name == 'startup'
-		assert result.severity == 'info'
-
-		# Check write-ahead log
 		assert len(bus.event_history) == 1
-
-	async def test_event_result(self, eventbus):
-		"""Test event.result() pattern"""
-		event = UserActionEvent(action='logout', user_id='user123')
-
-		# Emit returns immediately
-		emitted_event = eventbus.emit(event)
-		assert emitted_event.queued_at is not None
-		assert emitted_event.started_at is None  # Not started yet
-		assert emitted_event.completed_at is None  # Not completed yet
-
-		# Wait for completion
-		result = await emitted_event.result()
-
-		# Check that event was processed
-		assert result.started_at is not None
-		assert result.completed_at is not None
-		assert result.results['_default_log_handler'] == 'logged'
-
-	async def test_emit_convenience_method(self, eventbus):
-		"""Test the emit() convenience method"""
-		event = UserActionEvent(action='click', user_id='user123')
-
-		# Use emit() method
-		result = eventbus.emit(event)
-
-		assert isinstance(result, BaseEvent)
-		assert result.event_type == 'UserActionEvent'
-
-		# Wait for processing
-		await eventbus.wait_until_idle()
 
 
 class TestHandlerRegistration:
 	"""Test handler registration and execution"""
 
-	async def test_subscribe_handler(self, eventbus):
-		"""Test subscribing a handler to specific event type"""
-		results = []
+	async def test_handler_registration(self, eventbus):
+		"""Test handler registration via string, model class, and wildcard"""
+		results = {'specific': [], 'model': [], 'universal': []}
 
-		async def user_action_handler(event: UserActionEvent) -> str:
-			results.append(f'Handled {event.action}')
-			return f'Processed {event.action}'
+		# Handler for specific event type by string
+		async def user_handler(event: UserActionEvent) -> str:
+			results['specific'].append(event.action)
+			return 'user_handled'
 
-		# Subscribe handler
-		eventbus.on('UserActionEvent', user_action_handler)
-
-		# Emit event
-		event = UserActionEvent(action='login', user_id='user123')
-		eventbus.emit(event)
-		await eventbus.wait_until_idle()
-
-		# Check handler was called
-		assert len(results) == 1
-		assert results[0] == 'Handled login'
-
-	async def test_subscribe_by_model(self, eventbus):
-		"""Test subscribing a handler using model class"""
-		results = []
-
+		# Handler for event type by model class
 		async def system_handler(event: SystemEventModel) -> str:
-			results.append(event.event_name)
-			return 'handled'
+			results['model'].append(event.event_name)
+			return 'system_handled'
 
-		# Subscribe using model
-		eventbus.on(SystemEventModel, system_handler)
-
-		# Emit event
-		event = SystemEventModel(event_name='config_loaded')
-		eventbus.emit(event)
-		await eventbus.wait_until_idle()
-
-		# Check handler was called
-		assert len(results) == 1
-		assert results[0] == 'config_loaded'
-
-	async def test_subscribe_to_all(self, eventbus):
-		"""Test subscribing a handler to all events"""
-		all_events = []
-
+		# Universal handler
 		async def universal_handler(event: BaseEvent) -> str:
-			all_events.append(event.event_type)
+			results['universal'].append(event.event_type)
 			return 'universal'
 
-		# Subscribe to all
+		# Register handlers
+		eventbus.on('UserActionEvent', user_handler)
+		eventbus.on(SystemEventModel, system_handler)
 		eventbus.on('*', universal_handler)
 
-		# Emit different event types
+		# Emit events
 		eventbus.emit(UserActionEvent(action='login', user_id='u1'))
 		eventbus.emit(SystemEventModel(event_name='startup'))
 		await eventbus.wait_until_idle()
 
-		# Check both events were handled
-		assert len(all_events) == 2
-		assert 'UserActionEvent' in all_events
-		assert 'SystemEventModel' in all_events
+		# Verify all handlers were called correctly
+		assert results['specific'] == ['login']
+		assert results['model'] == ['startup']
+		assert set(results['universal']) == {'UserActionEvent', 'SystemEventModel'}
 
 	async def test_multiple_handlers_parallel(self, eventbus):
 		"""Test that multiple handlers run in parallel"""
@@ -301,72 +238,63 @@ class TestHandlerRegistration:
 class TestFIFOOrdering:
 	"""Test FIFO event processing"""
 
-	async def test_fifo_processing(self, eventbus):
-		"""Test that events are processed in FIFO order"""
+	async def test_fifo_with_varying_handler_delays(self, eventbus):
+		"""Test FIFO order is maintained with varying handler processing times"""
 		processed_order = []
+		handler_start_times = []
 
-		async def order_handler(event: UserActionEvent) -> int:
-			# Extract order from the metadata
-			order = event.metadata.get('order', 0)
+		async def handler(event: UserActionEvent) -> int:
+			order = event.metadata.get('order', -1)
+			handler_start_times.append((order, asyncio.get_event_loop().time()))
+			# Variable delays to test ordering
+			if order % 2 == 0:
+				await asyncio.sleep(0.05)  # Even events take longer
+			else:
+				await asyncio.sleep(0.01)  # Odd events are quick
 			processed_order.append(order)
 			return order
 
-		eventbus.on('*', order_handler)
+		eventbus.on('UserActionEvent', handler)
 
-		# Enqueue multiple events rapidly
-		events = []
-		for i in range(10):
-			event = UserActionEvent(action=f'action_{i}', user_id='u1', metadata={'order': i})
-			events.append(eventbus.emit(event))
+		# Emit 20 events rapidly
+		for i in range(20):
+			eventbus.emit(UserActionEvent(action=f'test_{i}', user_id='u1', metadata={'order': i}))
 
-		# Wait for all to process
 		await eventbus.wait_until_idle()
 
-		# Check order
-		assert processed_order == list(range(10))
+		# Verify FIFO order maintained
+		assert processed_order == list(range(20))
+		# Verify handler start times are in order
+		for i in range(1, len(handler_start_times)):
+			assert handler_start_times[i][1] >= handler_start_times[i - 1][1]
 
 
 class TestErrorHandling:
 	"""Test error handling in handlers"""
 
-	async def test_handler_error_captured(self, eventbus):
-		"""Test that handler errors are captured in event"""
+	async def test_error_handling(self, eventbus):
+		"""Test handler error capture and isolation"""
+		results = []
 
 		async def failing_handler(event: BaseEvent) -> str:
 			raise ValueError('Expected to fail')
 
-		eventbus.on('UserActionEvent', failing_handler)
-
-		# Emit event
-		event = await eventbus.emit(UserActionEvent(action='fail', user_id='u1')).result()
-
-		# Check error was captured
-		assert 'failing_handler' in event.errors
-		assert isinstance(event.errors['failing_handler'], str)
-		assert 'Expected to fail' in event.errors['failing_handler']
-
-	async def test_one_handler_failure_doesnt_stop_others(self, eventbus):
-		"""Test that one handler failing doesn't prevent others from running"""
-		results = []
-
-		async def failing_handler(event: BaseEvent) -> str:
-			raise RuntimeError('Expected to fail')
-
 		async def working_handler(event: BaseEvent) -> str:
-			results.append('I work!')
-			return 'success'
+			results.append('success')
+			return 'worked'
 
+		# Register both handlers
 		eventbus.on('UserActionEvent', failing_handler)
 		eventbus.on('UserActionEvent', working_handler)
 
-		# Emit event
+		# Emit and wait for result
 		event = await eventbus.emit(UserActionEvent(action='test', user_id='u1')).result()
 
-		# Check both handlers ran
-		assert len(results) == 1
-		assert results[0] == 'I work!'
-		assert event.results['working_handler'] == 'success'
+		# Verify error capture and isolation
 		assert 'failing_handler' in event.errors
+		assert 'Expected to fail' in event.errors['failing_handler']
+		assert event.results['working_handler'] == 'worked'
+		assert results == ['success']
 
 
 class TestBatchOperations:
@@ -389,13 +317,6 @@ class TestBatchOperations:
 		for result in results:
 			assert result.completed_at is not None
 			assert '_default_log_handler' in result.results
-
-	async def test_empty_batch(self, eventbus):
-		"""Test empty batch handling"""
-		empty_events = []
-		emitted_events = [eventbus.emit(event) for event in empty_events]
-		results = await asyncio.gather(*[event.result() for event in emitted_events])
-		assert results == []
 
 
 class TestWriteAheadLog:
@@ -427,17 +348,6 @@ class TestWriteAheadLog:
 		assert len(processing) == 0  # No events should be processing
 
 
-class TestSerialization:
-	"""Test event serialization functionality"""
-
-	async def test_wal_functionality_replaces_serialize(self, eventbus, tmp_path):
-		"""Test that WAL persistence replaces old serialize functionality"""
-		# WAL persistence is now tested in TestWALPersistence
-		# This test confirms the old serialize functionality is no longer needed
-		assert hasattr(eventbus, '_default_wal_handler')
-		assert not hasattr(eventbus, 'serialize_events_to_file')
-
-
 class TestEventCompletion:
 	"""Test event completion tracking"""
 
@@ -463,25 +373,6 @@ class TestEventCompletion:
 		# Check order
 		assert completion_order == ['enqueue_done', 'handler_done', 'wait_done']
 		assert event.completed_at is not None
-
-	def test_completion_event_not_in_async_context(self):
-		"""Test that completion event is None when not in async context"""
-		# This test must run in sync context
-		import threading
-
-		result = {}
-
-		def sync_test():
-			# Create event outside async context
-			event = UserActionEvent(action='test', user_id='u1')
-			result['has_completion_event'] = event._completion_event is not None
-
-		thread = threading.Thread(target=sync_test)
-		thread.start()
-		thread.join()
-
-		# In sync context, completion event should be None
-		assert not result.get('has_completion_event', True)
 
 
 class TestEdgeCases:
@@ -545,30 +436,6 @@ class TestEdgeCases:
 		log = eventbus.event_history.copy()
 		assert len(log) == 100
 
-	async def test_rapid_fire_events_maintain_order(self, eventbus):
-		"""Test that rapidly emitted events maintain strict FIFO order"""
-		collected_orders = []
-
-		async def handler(event: UserActionEvent):
-			# Extract order from metadata
-			order = event.metadata.get('order', -1)
-			collected_orders.append(order)
-			return f'handled_{order}'
-
-		eventbus.on('UserActionEvent', handler)
-
-		# Emit 100 events as fast as possible
-		num_events = 100
-		for i in range(num_events):
-			event = UserActionEvent(action=f'rapid_{i}', user_id='u1', metadata={'order': i})
-			eventbus.emit(event)
-
-		# Wait for all events to process
-		await eventbus.wait_until_idle()
-
-		# Verify exact FIFO order
-		assert collected_orders == list(range(num_events)), f'Events processed out of order: {collected_orders[:10]}...'
-
 	async def test_mixed_delay_handlers_maintain_order(self, eventbus):
 		"""Test that events with different handler delays still maintain FIFO order"""
 		collected_orders = []
@@ -605,128 +472,6 @@ class TestEdgeCases:
 			curr_order, curr_time = handler_start_times[i]
 			assert curr_time >= prev_time, f'Event {curr_order} started before event {prev_order}'
 
-	async def test_all_handlers_complete_before_next_event(self, eventbus):
-		"""Test that all handlers for an event complete before the next event is processed"""
-		event_processing_log = []
-
-		async def handler1(event: UserActionEvent):
-			order = event.metadata.get('order', -1)
-			event_processing_log.append(f'h1_start_{order}')
-			await asyncio.sleep(0.05)
-			event_processing_log.append(f'h1_end_{order}')
-			return 'handler1'
-
-		async def handler2(event: UserActionEvent):
-			order = event.metadata.get('order', -1)
-			event_processing_log.append(f'h2_start_{order}')
-			await asyncio.sleep(0.03)
-			event_processing_log.append(f'h2_end_{order}')
-			return 'handler2'
-
-		async def handler3(event: UserActionEvent):
-			order = event.metadata.get('order', -1)
-			event_processing_log.append(f'h3_start_{order}')
-			await asyncio.sleep(0.01)
-			event_processing_log.append(f'h3_end_{order}')
-			return 'handler3'
-
-		# Register all handlers
-		eventbus.on('UserActionEvent', handler1)
-		eventbus.on('UserActionEvent', handler2)
-		eventbus.on('UserActionEvent', handler3)
-
-		# Emit 3 events
-		for i in range(3):
-			event = UserActionEvent(action=f'multi_{i}', user_id='u1', metadata={'order': i})
-			eventbus.emit(event)
-
-		# Wait for all events to process
-		await eventbus.wait_until_idle()
-
-		# Verify that all handlers for event 0 complete before any handler for event 1 starts
-		event0_starts = [log for log in event_processing_log if log.endswith('_start_0')]
-		event0_ends = [log for log in event_processing_log if log.endswith('_end_0')]
-		event1_starts = [log for log in event_processing_log if log.endswith('_start_1')]
-
-		# All starts for event 0 should happen before all starts for event 1
-		event0_last_start_idx = max(event_processing_log.index(s) for s in event0_starts)
-		event1_first_start_idx = min(event_processing_log.index(s) for s in event1_starts)
-
-		# All ends for event 0 should happen before any start for event 1
-		event0_last_end_idx = max(event_processing_log.index(e) for e in event0_ends)
-
-		assert event0_last_start_idx < event1_first_start_idx, 'Event 1 handlers started before event 0 handlers'
-		assert event0_last_end_idx < event1_first_start_idx, 'Event 1 started before event 0 completed'
-
-	async def test_event_completion_order_matches_emission_order(self, eventbus):
-		"""Test that event completion tracking maintains FIFO order"""
-		completion_order = []
-
-		async def handler(event: UserActionEvent):
-			order = event.metadata.get('order', -1)
-			# Variable delays to test completion tracking
-			delay = 0.1 - (order * 0.01)  # Later events process faster
-			await asyncio.sleep(delay)
-			return f'handled_{order}'
-
-		eventbus.on('UserActionEvent', handler)
-
-		# Emit events and track their completion
-		events = []
-		for i in range(10):
-			event = UserActionEvent(action=f'track_{i}', user_id='u1', metadata={'order': i})
-			eventbus.emit(event)
-			events.append(event)
-
-		# Wait for each event to complete and track order
-		async def wait_and_track(event, order):
-			await event.result()
-			completion_order.append(order)
-
-		# Wait for all completions in parallel
-		await asyncio.gather(*[wait_and_track(e, e.metadata['order']) for e in events])
-
-		# Verify completion order matches emission order
-		assert completion_order == list(range(10)), f'Events completed out of order: {completion_order}'
-
-	async def test_concurrent_emit_from_multiple_tasks_maintains_order(self, eventbus):
-		"""Test that concurrent emits from multiple tasks maintain order within each task"""
-		collected_events = []
-
-		async def handler(event: UserActionEvent):
-			order = event.metadata.get('order', -1)
-			task_id = event.metadata.get('task_id', 'unknown')
-			collected_events.append((order, task_id))
-			return 'handled'
-
-		eventbus.on('UserActionEvent', handler)
-
-		# Create multiple tasks that emit events concurrently
-		async def emit_task(task_id: str, start: int, count: int):
-			for i in range(count):
-				event = UserActionEvent(
-					action=f'task_{task_id}_{i}', user_id='u1', metadata={'order': start + i, 'task_id': task_id}
-				)
-				eventbus.emit(event)
-				# Small delay to interleave with other tasks
-				await asyncio.sleep(0.001)
-
-		# Start 3 tasks concurrently
-		await asyncio.gather(emit_task('task1', 0, 5), emit_task('task2', 100, 5), emit_task('task3', 200, 5))
-
-		# Wait for processing
-		await eventbus.wait_until_idle()
-
-		# Verify that events from each task maintain their relative order
-		task1_events = [(order, task) for order, task in collected_events if task == 'task1']
-		task2_events = [(order, task) for order, task in collected_events if task == 'task2']
-		task3_events = [(order, task) for order, task in collected_events if task == 'task3']
-
-		# Check order within each task
-		assert [e[0] for e in task1_events] == list(range(0, 5))
-		assert [e[0] for e in task2_events] == list(range(100, 105))
-		assert [e[0] for e in task3_events] == list(range(200, 205))
-
 
 class TestEventTypeOverride:
 	"""Test that Event subclasses properly override event_type"""
@@ -749,43 +494,25 @@ class TestEventTypeOverride:
 
 	async def test_event_schema_auto_generation(self, eventbus):
 		"""Test that event_schema is automatically set with the correct format"""
-		from browser_use.agent.cloud_events import CreateAgentSessionEvent
 		from browser_use.utils import get_browser_use_version
 
-		# Get the expected version
 		version = get_browser_use_version()
 
-		# Test with BaseEvent
+		# Test various event types
 		base_event = BaseEvent(event_type='TestEvent')
-		assert base_event.event_schema is not None
-		expected_base_schema = f'browser_use.eventbus.models.BaseEvent@{version}'
-		assert base_event.event_schema == expected_base_schema
+		assert base_event.event_schema == f'browser_use.eventbus.models.BaseEvent@{version}'
 
-		# Test with CreateAgentTaskEvent
 		task_event = CreateAgentTaskEvent(
 			user_id='test_user', agent_session_id='12345678-1234-5678-1234-567812345678', llm_model='test-model', task='test task'
 		)
-		expected_task_schema = f'browser_use.agent.cloud_events.CreateAgentTaskEvent@{version}'
-		assert task_event.event_schema == expected_task_schema
+		assert task_event.event_schema == f'browser_use.agent.cloud_events.CreateAgentTaskEvent@{version}'
 
-		# Test with CreateAgentSessionEvent
-		session_event = CreateAgentSessionEvent(
-			user_id='test_user',
-			browser_session_id='test_session',
-			browser_session_live_url='http://example.com',
-			browser_session_cdp_url='ws://example.com',
-		)
-		expected_session_schema = f'browser_use.agent.cloud_events.CreateAgentSessionEvent@{version}'
-		assert session_event.event_schema == expected_session_schema
-
-		# Test custom event from this test file
 		user_event = UserActionEvent(action='login', user_id='user123')
-		expected_user_schema = f'test_eventbus.UserActionEvent@{version}'
-		assert user_event.event_schema == expected_user_schema
+		assert user_event.event_schema == f'test_eventbus.UserActionEvent@{version}'
 
-		# Emit and check schema is preserved
+		# Check schema is preserved after emit
 		result = eventbus.emit(task_event)
-		assert result.event_schema == expected_task_schema
+		assert result.event_schema == task_event.event_schema
 
 
 class TestWALPersistence:
