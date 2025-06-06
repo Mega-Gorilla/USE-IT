@@ -1,0 +1,6 @@
+name: Find pip install command for browser-use
+task: Find the pip installation command for the browser-use repo
+judge_context:
+  - The agent must find the correct pip install command for browser-use
+  - The output must include the full command (e.g., 'pip install browser-use') 
+max_steps: 10
