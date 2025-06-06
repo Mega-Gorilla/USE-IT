@@ -1430,10 +1430,10 @@ class Agent(Generic[Context]):
 				try:
 					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
 				except Exception as log_e:  # Catch potential errors during logging itself
-					logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
+					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
 				# ADDED: Info message when custom telemetry for SIGINT was already logged
-				logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
+				self.logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
 			await self.close()
 

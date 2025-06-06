@@ -2522,6 +2522,10 @@ class BrowserSession(BaseModel):
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
 
+		if not self.initialized or not self.is_connected():
+			await self.start()
+			assert self.browser_context, 'Browser context is not set'
+
 		new_page = await self.browser_context.new_page()
 
 		# Update agent tab reference
