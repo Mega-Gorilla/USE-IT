@@ -11,10 +11,16 @@ Tests cover:
 
 import asyncio
 import logging
+from pathlib import Path
 
 import pytest
 
-from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.profile import (
+	BROWSERUSE_DEFAULT_CHANNEL,
+	BROWSERUSE_DEFAULT_PROFILE_DIR,
+	BrowserChannel,
+	BrowserProfile,
+)
 from browser_use.browser.session import BrowserSession
 
 # Set up test logging
@@ -28,7 +34,7 @@ class TestBrowserSessionStart:
 	@pytest.fixture(scope='module')
 	async def browser_profile(self):
 		"""Create and provide a BrowserProfile with headless mode."""
-		profile = BrowserProfile(headless=True, user_data_dir=None)
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
 		yield profile
 
 	@pytest.fixture(scope='function')
@@ -38,8 +44,12 @@ class TestBrowserSessionStart:
 		yield session
 		# Cleanup: ensure session is stopped
 		try:
+			# logger.info(f'Fixture cleanup: keep_alive={session.browser_profile.keep_alive}, setting to False')
+			session.browser_profile.keep_alive = False
 			await session.stop()
-		except Exception:
+			# logger.info('Fixture cleanup completed')
+		except Exception as e:
+			# logger.error(f'Fixture cleanup failed: {e}')
 			pass
 
 	async def test_start_already_started_session(self, browser_session):
@@ -218,27 +228,6 @@ class TestBrowserSessionStart:
 		assert len(results) == 3
 		assert all(not isinstance(r, Exception) for r in results)
 
-	async def test_start_with_keep_alive_profile(self):
-		"""Test start/stop behavior with keep_alive=True profile."""
-		# logger.info('Testing start with keep_alive profile')
-
-		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=True)
-		session = BrowserSession(browser_profile=profile)
-
-		try:
-			await session.start()
-			assert session.initialized is True
-
-			# Stop should not actually close the browser with keep_alive=True
-			await session.stop()
-			# initialized flag should still be False after stop()
-			assert session.initialized is False
-
-		finally:
-			# Force cleanup for test
-			session.browser_profile.keep_alive = False
-			await session.stop()
-
 	async def test_require_initialization_decorator_already_started(self, browser_session):
 		"""Test @require_initialization decorator when session is already started."""
 		# logger.info('Testing @require_initialization decorator with already started session')
@@ -397,13 +386,9 @@ class TestBrowserSessionStart:
 		assert browser_session.initialized is False
 		assert browser_session.browser_context is None
 
-		# Methods requiring initialization should fail because the context is closed
-		# This is the current behavior - the session doesn't properly detect closed contexts
-		with pytest.raises(Exception) as exc_info:
-			await browser_session.get_tabs_info()
-
-		# The error should indicate the context is closed
-		assert 'closed' in str(exc_info.value).lower()
+		# calling a method wrapped in @require_initialization should auto-restart the session
+		await browser_session.get_tabs_info()
+		assert browser_session.initialized is True
 
 	async def test_race_condition_between_stop_and_operation(self, browser_session):
 		"""Test race condition between stop() and other operations."""
@@ -473,3 +458,113 @@ class TestBrowserSessionStart:
 		# Session should still be stopped despite the exception
 		assert browser_session.initialized is False
 		assert browser_session.browser_context is None
+
+	async def test_session_without_fixture(self):
+		"""Test creating a session without using fixture."""
+		# Create a new profile and session for this test
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
+		session = BrowserSession(browser_profile=profile)
+
+		try:
+			await session.start()
+			assert session.initialized is True
+			await session.stop()
+			assert session.initialized is False
+		finally:
+			pass
+
+	async def test_start_with_keep_alive_profile(self):
+		"""Test start/stop behavior with keep_alive=True profile."""
+		# Create a completely fresh profile and session to avoid module-scoped fixture issues
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
+		session = BrowserSession(browser_profile=profile)
+
+		try:
+			# Start the session
+			await session.start()
+			assert session.initialized is True
+
+			# Now test keep_alive behavior
+			session.browser_profile.keep_alive = True
+
+			# Stop should not actually close the browser with keep_alive=True
+			await session.stop()
+			# Browser should still be connected
+			assert session.initialized is True
+			assert session.browser is not None
+			assert session.browser.is_connected()
+
+		finally:
+			# Force complete cleanup
+			session.browser_profile.keep_alive = False
+			await session.stop()
+
+			# Ensure playwright is stopped
+			if hasattr(session, 'playwright') and session.playwright:
+				await session.playwright.stop()
+				session.playwright = None
+
+	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self, caplog):
+		"""Test user_data_dir handling for different browser channels and version mismatches."""
+
+		# Test 1: Chromium with default user_data_dir and default channel should work fine
+		session = BrowserSession(
+			headless=True,
+			user_data_dir=BROWSERUSE_DEFAULT_PROFILE_DIR,
+			channel=BROWSERUSE_DEFAULT_CHANNEL,  # chromium
+			keep_alive=False,
+		)
+
+		try:
+			await session.start()
+			assert session.initialized is True
+			assert session.browser_context is not None
+			# Verify the user_data_dir wasn't changed
+			assert session.browser_profile.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR
+		finally:
+			session.browser_profile.keep_alive = False
+			await session.stop()
+
+		# Test 2: Chrome with default user_data_dir should show warning and change dir
+		profile2 = BrowserProfile(
+			headless=True,
+			user_data_dir=BROWSERUSE_DEFAULT_PROFILE_DIR,
+			channel=BrowserChannel.CHROME,
+			keep_alive=False,
+		)
+
+		# The validator should have changed the user_data_dir
+		assert profile2.user_data_dir != BROWSERUSE_DEFAULT_PROFILE_DIR
+		assert profile2.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR.parent / 'default-chrome'
+
+		# Check warning was logged
+		warning_found = any(
+			'Changing user_data_dir=' in record.message and 'CHROME' in record.message for record in caplog.records
+		)
+		assert warning_found, 'Expected warning about changing user_data_dir was not found'
+
+	# only run if `/Applications/Brave Browser.app` is installed
+	@pytest.mark.skipif(
+		not Path('~/.config/browseruse/profiles/stealth').expanduser().exists(), reason='Brave Browser not installed'
+	)
+	async def test_corrupted_user_data_dir_triggers_warning(self, caplog):
+		# # create profile dir with brave
+		# brave_profile_dir = Path(tempfile.mkdtemp()) / 'brave'
+
+		# brave_session = BrowserSession(
+		# 	executable_path='/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+		# 	headless=True,
+		# 	user_data_dir=brave_profile_dir,  # profile created by Brave
+		# )
+		# await brave_session.start()
+		# await brave_session.stop()
+
+		chromium_session = BrowserSession(
+			headless=True,
+			user_data_dir='~/.config/browseruse/profiles/stealth',
+			channel=BrowserChannel.CHROMIUM,  # should crash when opened with chromium
+		)
+
+		# open chrome with corrupted user_data_dir
+		with pytest.raises(Exception, match='Failed parsing extensions'):
+			await chromium_session.start()

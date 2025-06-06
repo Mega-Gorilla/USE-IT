@@ -524,3 +524,33 @@ def get_browser_use_version() -> str:
 	except Exception as e:
 		logger.debug(f'Error getting version: {e}')
 		return 'vunknown'
+
+
+def _log_pretty_path(path: Path | None) -> str:
+	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
+
+	if not path or not str(path).strip():
+		return ''  # always falsy in -> falsy out so it can be used in ternaries
+
+	# dont print anything thats not a path
+	if not isinstance(path, (str, Path)):
+		# no other types are safe to just str(path) and log to terminal unless we know what they are
+		# e.g. what if we get storage_date=dict | Path and the dict version could contain real cookies
+		return f'<{type(path).__name__}>'
+
+	# replace home dir and cwd with ~ and .
+	pretty_path = str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+
+	# wrap in quotes if it contains spaces
+	if pretty_path.strip() and ' ' in pretty_path:
+		pretty_path = f'"{pretty_path}"'
+
+	return pretty_path
+
+
+def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
+	"""Truncate/pretty-print a URL with a maximum length, removing the protocol and www. prefix"""
+	s = s.replace('https://', '').replace('http://', '').replace('www.', '')
+	if max_len is not None and len(s) > max_len:
+		return s[:max_len] + '…'
+	return s

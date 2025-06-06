@@ -1241,6 +1241,7 @@ async def textual_interface(config: dict[str, Any]):
 			**browser_config,
 			playwright=(await async_playwright().start()),
 			channel=BrowserChannel.CHROME,
+			user_data_dir='~/.browseruse/profiles/default/cli',
 		)
 		logger.debug('BrowserSession initialized successfully')
 
