@@ -287,6 +287,17 @@ async def main():
 	print(f'\n{"*" * 10}  {passed}/{total} PASSED  {"*" * 10}\n')
 	print('=' * 60 + '\n')
 
+	# Output results for GitHub Actions
+	print(f'PASSED={passed}')
+	print(f'TOTAL={total}')
+
+	# Output detailed results as JSON for GitHub Actions
+	detailed_results = []
+	for r in results:
+		detailed_results.append({'task': r['file'].replace('.yaml', ''), 'success': r['success'], 'reason': r['explanation']})
+
+	print('DETAILED_RESULTS=' + json.dumps(detailed_results))
+
 	return passed, total
 
 
@@ -312,5 +323,4 @@ if __name__ == '__main__':
 	else:
 		# Parent process mode: run all tasks in parallel subprocesses
 		passed, total = asyncio.run(main())
-		print(f'PASSED={passed}')
-		print(f'TOTAL={total}')
+		# Results already printed by main() function
