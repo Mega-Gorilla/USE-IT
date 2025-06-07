@@ -109,4 +109,6 @@ async def main():
 
 
 if __name__ == '__main__':
-	asyncio.run(main())
+	passed, total = asyncio.run(main())
+	print(f'PASSED={passed}')
+	print(f'TOTAL={total}')
