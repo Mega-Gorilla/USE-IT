@@ -29,7 +29,7 @@ class JudgeResponse(BaseModel):
 	explanation: str
 
 
-async def run_task(task_file, semaphore):
+async def run_task(task_file, semaphore, shared_profile):
 	async with semaphore:
 		async with aiofiles.open(task_file, 'r') as f:
 			content = await f.read()
@@ -40,10 +40,7 @@ async def run_task(task_file, semaphore):
 		agent_llm = ChatOpenAI(model='gpt-4.1-mini')
 		judge_llm = ChatOpenAI(model='gpt-4.1-mini')
 
-		shared_profile = BrowserProfile(
-			headless=True,
-			user_data_dir=None,  # use dedicated tmp user_data_dir per session
-		)
+		# Use the shared profile for all sessions
 		session = BrowserSession(browser_profile=shared_profile)
 		agent = Agent(task=task, llm=agent_llm, browser_session=session)
 		history: AgentHistoryList = await agent.run(max_steps=max_steps)
@@ -69,8 +66,13 @@ Reply in JSON with keys: success (true/false), explanation (string).
 
 async def main():
 	semaphore = asyncio.Semaphore(MAX_PARALLEL)
+	# Create a single shared profile with keep_alive=True
+	shared_profile = BrowserProfile(
+		headless=True,
+		user_data_dir=None,
+	)
 	print(TASK_FILES)
-	tasks = [run_task(task_file, semaphore) for task_file in TASK_FILES]
+	tasks = [run_task(task_file, semaphore, shared_profile) for task_file in TASK_FILES]
 	results = await asyncio.gather(*tasks)
 
 	passed = sum(1 for r in results if r['success'])
