@@ -67,18 +67,35 @@ async def run_single_task(task_file):
 		history: AgentHistoryList = await agent.run(max_steps=max_steps)
 		agent_output = history.final_result() or ''
 
+		# Debug: capture more details about the agent execution
+		total_steps = len(history.history) if hasattr(history, 'history') else 0
+		last_action = history.history[-1] if hasattr(history, 'history') and history.history else None
+		debug_info = f'Steps: {total_steps}, Final result length: {len(agent_output)}'
+		if last_action:
+			debug_info += f', Last action: {type(last_action).__name__}'
+
+		# Log to stderr so it shows up in GitHub Actions (won't interfere with JSON output to stdout)
+		print(f'[DEBUG] Task {os.path.basename(task_file)}: {debug_info}', file=sys.stderr)
+		if agent_output:
+			print(f'[DEBUG] Agent output preview: {agent_output[:200]}...', file=sys.stderr)
+		else:
+			print('[DEBUG] Agent produced no output!', file=sys.stderr)
+
 		criteria = '\n- '.join(judge_context)
 		judge_prompt = f"""
 You are a evaluator of a browser agent task inside a ci/cd pipeline. Here was the agent's task:
 {task}
 
 Here is the agent's output:
-{agent_output}
+{agent_output if agent_output else '[No output provided]'}
+
+Debug info: {debug_info}
 
 Criteria for success:
 - {criteria}
 
 Reply in JSON with keys: success (true/false), explanation (string).
+If the agent provided no output, explain what might have gone wrong.
 """
 		structured_llm = judge_llm.with_structured_output(JudgeResponse)
 		judge_response = await structured_llm.ainvoke(judge_prompt)
@@ -138,6 +155,7 @@ async def run_task_subprocess(task_file, semaphore):
 
 					if json_line:
 						result = json.loads(json_line)
+						print(f'[PARENT] Task {os.path.basename(task_file)} completed: {result["success"]}')
 					else:
 						raise ValueError(f'No JSON found in output: {stdout_text}')
 
@@ -147,6 +165,7 @@ async def run_task_subprocess(task_file, semaphore):
 						'success': False,
 						'explanation': f'Failed to parse subprocess result: {str(e)[:100]}',
 					}
+					print(f'[PARENT] Task {os.path.basename(task_file)} failed to parse: {str(e)}')
 			else:
 				stderr_text = stderr.decode().strip()
 				result = {
@@ -154,12 +173,16 @@ async def run_task_subprocess(task_file, semaphore):
 					'success': False,
 					'explanation': f'Subprocess failed (code {proc.returncode}): {stderr_text[:200]}',
 				}
+				print(f'[PARENT] Task {os.path.basename(task_file)} subprocess failed with code {proc.returncode}')
+				if stderr_text:
+					print(f'[PARENT] stderr: {stderr_text[:500]}')
 		except Exception as e:
 			result = {
 				'file': os.path.basename(task_file),
 				'success': False,
 				'explanation': f'Failed to start subprocess: {str(e)}',
 			}
+			print(f'[PARENT] Failed to start subprocess for {os.path.basename(task_file)}: {str(e)}')
 
 		return result
 
