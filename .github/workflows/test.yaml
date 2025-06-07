@@ -84,3 +84,6 @@ jobs:
       - run: playwright install chromium
 
       - run: pytest --numprocesses auto -x tests/ci/${{ matrix.test_filename }}.py
+
+      - name: Run agent tasks evaluation
+        run: python tests/ci/evaluate_tasks.py
