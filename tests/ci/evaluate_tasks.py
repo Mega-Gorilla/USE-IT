@@ -16,7 +16,6 @@ from pydantic import BaseModel
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.profile import BrowserProfile
-from browser_use.browser.session import BrowserSession
 
 # --- CONFIG ---
 MAX_PARALLEL = 10
@@ -29,7 +28,7 @@ class JudgeResponse(BaseModel):
 	explanation: str
 
 
-async def run_task(task_file, semaphore, shared_profile):
+async def run_task(task_file, semaphore):
 	async with semaphore:
 		async with aiofiles.open(task_file, 'r') as f:
 			content = await f.read()
@@ -39,10 +38,13 @@ async def run_task(task_file, semaphore, shared_profile):
 		max_steps = task_data.get('max_steps', 15)
 		agent_llm = ChatOpenAI(model='gpt-4.1-mini')
 		judge_llm = ChatOpenAI(model='gpt-4.1-mini')
+		profile = BrowserProfile(
+			headless=False,
+			user_data_dir=None,
+			keep_alive=True,
+		)
 
-		# Use the shared profile for all sessions
-		session = BrowserSession(browser_profile=shared_profile)
-		agent = Agent(task=task, llm=agent_llm, browser_session=session)
+		agent = Agent(task=task, llm=agent_llm, browser_profile=profile)
 		history: AgentHistoryList = await agent.run(max_steps=max_steps)
 		agent_output = history.final_result() or ''
 		criteria = chr(10) + '- '.join(judge_context)
@@ -67,12 +69,9 @@ Reply in JSON with keys: success (true/false), explanation (string).
 async def main():
 	semaphore = asyncio.Semaphore(MAX_PARALLEL)
 	# Create a single shared profile with keep_alive=True
-	shared_profile = BrowserProfile(
-		headless=True,
-		user_data_dir=None,
-	)
+
 	print(TASK_FILES)
-	tasks = [run_task(task_file, semaphore, shared_profile) for task_file in TASK_FILES]
+	tasks = [run_task(task_file, semaphore) for task_file in TASK_FILES]
 	results = await asyncio.gather(*tasks)
 
 	passed = sum(1 for r in results if r['success'])
