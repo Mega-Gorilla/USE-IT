@@ -27,7 +27,7 @@ from browser_use.controller.views import (
 class TestControllerIntegration:
 	"""Integration tests for Controller using actual browser instances."""
 
-	@pytest.fixture(scope='module')
+	@pytest.fixture(scope='session')
 	def http_server(self):
 		"""Create and provide a test HTTP server that serves static content."""
 		server = HTTPServer()
@@ -69,12 +69,12 @@ class TestControllerIntegration:
 		yield server
 		server.stop()
 
-	@pytest.fixture
+	@pytest.fixture(scope='session')
 	def base_url(self, http_server):
 		"""Return the base URL for the test HTTP server."""
 		return f'http://{http_server.host}:{http_server.port}'
 
-	@pytest.fixture
+	@pytest.fixture(scope='session')
 	async def browser_session(self):
 		"""Create and provide a Browser instance with security disabled."""
 		browser_session = BrowserSession(

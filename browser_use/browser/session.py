@@ -106,7 +106,9 @@ def require_initialization(func):
 		except Exception as e:
 			# Check if this is a TargetClosedError or similar connection error
 			if 'TargetClosedError' in str(type(e)) or 'context or browser has been closed' in str(e):
-				self.logger.debug(f'Detected closed browser connection in {func.__name__}, resetting connection state')
+				self.logger.warning(
+					f'✂️ Browser {self._connection_str} disconnected before BrowserSession.{func.__name__} could run...'
+				)
 				self._reset_connection_state()
 				# Re-raise the error so the caller can handle it appropriately
 				raise
@@ -289,7 +291,7 @@ class BrowserSession(BaseModel):
 							if self.cdp_url or self.wss_url or self.browser_pid
 							else 'launching a new browser'
 						)
-						self.logger.warning(f'♻️ Browser {self._connection_str} has gone away, {next_step}...')
+						self.logger.warning(f'💔 Browser {self._connection_str} has gone away, {next_step}...')
 						# only reset connection state if we expected to be already connected but we're not
 						# avoid calling this on *first* start() as it just immediately clears many
 						# of the params passed in to BrowserSession(...) init, which the .setup_...() methods below expect
@@ -363,31 +365,27 @@ class BrowserSession(BaseModel):
 				# but only if the browser context is still connected
 				if self.is_connected():
 					try:
-						await self.save_storage_state()
+						await asyncio.wait_for(self.save_storage_state(), timeout=5)
 					except Exception as e:
-						self.logger.debug(f'Failed to save storage state before stopping: {type(e).__name__}: {e}')
+						self.logger.warning(f'⚠️ Failed to save auth storage state before stopping: {type(e).__name__}: {e}')
 
 				if self.browser_profile.keep_alive:
 					self.logger.info(
-						f'🕊️ {self}.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
+						'🕊️ BrowserSession.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
 					)
 					return  # nothing to do if keep_alive=True, leave the browser running
 
 				if self.browser_context or self.browser:
+					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser_context or self.browser}')
 					try:
-						self.logger.info(
-							f'🛑 Closing {self._connection_str} {self.browser_profile.channel.name.lower()} context with '
-							f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
-							f'storage_state= {_log_pretty_path(self.browser_profile.storage_state_path or self.browser_profile.cookies_file) or "<none>"}'
-						)
 						# Add timeout to prevent hanging on close if context is already closed
 						try:
 							async with asyncio.timeout(5):  # 5 second timeout for close operation
-								await (self.browser or self.browser_context.browser).close()
+								await (self.browser or self.browser_context.browser or self.browser_context).close()
 						except TimeoutError:
-							self.logger.warning('⏱️ Timeout while closing browser/context - it may already be closed')
+							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
 					except Exception as e:
-						self.logger.debug(
+						self.logger.warning(
 							f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
 						)
 					finally:
@@ -419,42 +417,36 @@ class BrowserSession(BaseModel):
 								f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}'
 							)
 
-					# Close playwright if we own it
-					if self.playwright:
+				# Close playwright if we own it
+				if self.playwright:
+					try:
+						# Add timeout to prevent hanging
+						async with asyncio.timeout(5):
+							await self.playwright.stop()
+						self.playwright = None
+					except TimeoutError:
+						self.logger.warning('⏱️ Timeout while stopping playwright API thread')
+						self.playwright = None
+					except Exception as e:
+						self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
+						self.playwright = None
+					finally:
+						# Ensure playwright tasks are cancelled
 						try:
-							# Add timeout to prevent hanging
-							async with asyncio.timeout(5):
-								await self.playwright.stop()
-							self.playwright = None
-						except TimeoutError:
-							self.logger.warning('⏱️ Timeout while stopping playwright')
-							self.playwright = None
-						except Exception as e:
-							self.logger.debug(f'Error stopping playwright: {type(e).__name__}: {e}')
-							self.playwright = None
-						finally:
-							# Ensure playwright tasks are cancelled
-							try:
-								loop = asyncio.get_event_loop()
-								if loop and not loop.is_closed():
-									all_tasks = asyncio.all_tasks(loop)
-									for task in all_tasks:
-										if task.done():
-											continue
-										coro_str = str(task)
-										if 'Connection.run' in coro_str and 'playwright' in coro_str:
-											task.cancel()
-							except Exception:
-								pass
+							loop = asyncio.get_event_loop()
+							if loop and not loop.is_closed():
+								all_tasks = asyncio.all_tasks(loop)
+								for task in all_tasks:
+									if task.done():
+										continue
+									coro_str = str(task)
+									if 'Connection.run' in coro_str and 'playwright' in coro_str:
+										task.cancel()
+						except Exception:
+							pass
 
 				self._reset_connection_state()
-
-				# Cancel any remaining background tasks to prevent hanging on exit
-				if hasattr(self, '_background_tasks'):
-					for task in list(self._background_tasks):
-						if not task.done():
-							task.cancel()
-					self._background_tasks.clear()
+				# self.logger.debug('🛑 Shutdown complete.')
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
@@ -462,10 +454,10 @@ class BrowserSession(BaseModel):
 
 	async def kill(self) -> None:
 		"""Stop the BrowserSession even if keep_alive=True"""
-		self.keep_alive = False
 		# self.logger.debug(
 		# 	f'⏹️ Browser browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
 		# )
+		self.browser_profile.keep_alive = False
 		await self.stop()
 
 	async def new_context(self, **kwargs):
@@ -757,7 +749,7 @@ class BrowserSession(BaseModel):
 			assert self.browser.is_connected(), (
 				f'Browser is not connected, did the browser process crash or get killed? (connection method: {self._connection_str})'
 			)
-			self.logger.debug(f'🌎 browser connected: v{self.browser.version} {self._connection_str}')
+		self.logger.debug(f'🪢 Browser {self._connection_str} connected {self.browser or self.browser_context}')
 
 		assert self.browser_context, (
 			f'{self} Failed to create a playwright BrowserContext {self.browser_context} for browser={self.browser}'
@@ -869,7 +861,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'📜 Found {len(pages)} existing tabs in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
@@ -951,7 +943,7 @@ class BrowserSession(BaseModel):
 		try:
 			await self.browser_context.add_init_script(update_tab_focus_script)
 		except Exception as e:
-			self.logger.debug(f'⚠️ Failed to register init script for tab focus detection: {e}')
+			self.logger.warning(f'⚠️ Failed to register init script for tab focus detection: {e}')
 
 		# Set up visibility listeners for all existing tabs
 		# self.logger.info(f'Setting up visibility listeners for {len(self.browser_context.pages)} pages')
@@ -1113,15 +1105,25 @@ class BrowserSession(BaseModel):
 		try:
 			# Try to access a property that would fail if the context is closed
 			_ = self.browser_context.pages
-			# Additional check: try to access the browser property which might fail if context is closed
-			if self.browser_context.browser and not self.browser_context.browser.is_connected():
-				return False
 			return True
 		except Exception:
 			return False
 
 	def _reset_connection_state(self) -> None:
 		"""Reset the browser connection state when disconnection is detected"""
+
+		already_disconnected = not any(
+			(
+				self.initialized,
+				self.browser,
+				self.browser_context,
+				self.agent_current_page,
+				self.human_current_page,
+				self._cached_clickable_element_hashes,
+				self._cached_browser_state_summary,
+			)
+		)
+
 		self.initialized = False
 		self.browser = None
 		self.browser_context = None
@@ -1131,12 +1133,6 @@ class BrowserSession(BaseModel):
 		self._cached_browser_state_summary = None
 		# Don't set playwright to None here - it should be explicitly stopped with playwright.stop()
 
-		# Cancel any background tasks to prevent hanging
-		if hasattr(self, '_background_tasks'):
-			for task in list(self._background_tasks):
-				if not task.done():
-					task.cancel()
-			self._background_tasks.clear()
 		if self.browser_pid:
 			try:
 				# browser_pid is different from all the other state objects, it's closer to cdp_url or wss_url
@@ -1147,9 +1143,12 @@ class BrowserSession(BaseModel):
 				proc_is_alive = proc.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
 				assert proc_is_alive and '--remote-debugging-port' in ' '.join(proc.cmdline())
 			except Exception:
-				self.logger.info(f'⚰️ Browser browser_pid={self.browser_pid} has gone away or crashed')
+				self.logger.info(f' ↳ Browser browser_pid={self.browser_pid} process is no longer running')
 				# process has gone away or crashed, pid is no longer valid so we clear it
 				self.browser_pid = None
+
+		if not already_disconnected:
+			self.logger.debug(f'🪢 Browser {self._connection_str} disconnected')
 
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
@@ -1437,7 +1436,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.warning(f'❌ Failed to save cookies to storage_state= {_log_pretty_path(path)}: {type(e).__name__}: {e}')
 
-	@require_initialization
 	async def save_storage_state(self, path: Path | None = None) -> None:
 		"""
 		Save cookies to the specified path or the configured cookies_file and/or storage_state.
@@ -2032,14 +2030,6 @@ class BrowserSession(BaseModel):
 		assert updated_state
 		self._cached_browser_state_summary = updated_state
 
-		# Save cookies if a file is specified
-		if self.browser_profile.cookies_file:
-			# Use create_task but store reference to allow cleanup
-			task = asyncio.create_task(self.save_cookies())
-			# Set task name for debugging
-			task.set_name(f'save_cookies_{self.id[-4:]}')
-			# Fire and forget, but the task will complete quickly
-
 		return self._cached_browser_state_summary
 
 	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
@@ -2617,7 +2607,9 @@ class BrowserSession(BaseModel):
 		if not self.initialized or not self.is_connected():
 			# If we were initialized but lost connection, reset state first to avoid infinite loops
 			if self.initialized and not self.is_connected():
-				self.logger.warning('Browser was initialized but lost connection, resetting state before restart')
+				self.logger.warning(
+					f'💔 Browser {self._connection_str} disconnected while trying to create a new tab, reconnecting...'
+				)
 				self._reset_connection_state()
 			await self.start()
 			assert self.browser_context, 'Browser context is not set'

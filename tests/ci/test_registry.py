@@ -67,7 +67,7 @@ class ComplexParams(BaseActionModel):
 
 
 # Test fixtures
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='session')
 def http_server():
 	"""Create and provide a test HTTP server that serves static content."""
 	server = HTTPServer()
@@ -83,7 +83,7 @@ def http_server():
 	server.stop()
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='session')
 def base_url(http_server):
 	"""Return the base URL for the test HTTP server."""
 	return f'http://{http_server.host}:{http_server.port}'
