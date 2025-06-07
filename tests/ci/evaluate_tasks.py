@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.session import BrowserSession
 
 # --- CONFIG ---
 MAX_PARALLEL = 10
@@ -38,13 +39,16 @@ async def run_task(task_file, semaphore):
 		max_steps = task_data.get('max_steps', 15)
 		agent_llm = ChatOpenAI(model='gpt-4.1-mini')
 		judge_llm = ChatOpenAI(model='gpt-4.1-mini')
-		profile = BrowserProfile(
-			headless=False,
-			user_data_dir=None,
-			keep_alive=True,
-		)
 
-		agent = Agent(task=task, llm=agent_llm, browser_profile=profile)
+		# Each agent gets its own profile and session, with --no-sandbox
+		profile = BrowserProfile(
+			headless=True,
+			user_data_dir=None,
+			args=['--no-sandbox'],
+			keep_alive=False,  # or just omit this line
+		)
+		session = BrowserSession(browser_profile=profile)
+		agent = Agent(task=task, llm=agent_llm, browser_session=session)
 		history: AgentHistoryList = await agent.run(max_steps=max_steps)
 		agent_output = history.final_result() or ''
 		criteria = chr(10) + '- '.join(judge_context)
@@ -60,7 +64,6 @@ Criteria for success:
 
 Reply in JSON with keys: success (true/false), explanation (string).
 """
-
 		structured_llm = judge_llm.with_structured_output(JudgeResponse)
 		judge_response = await structured_llm.ainvoke(judge_prompt)
 		return {'file': os.path.basename(task_file), 'success': judge_response.success, 'explanation': judge_response.explanation}
