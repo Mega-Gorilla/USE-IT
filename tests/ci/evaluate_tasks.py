@@ -73,11 +73,40 @@ async def run_single_task(task_file):
 		session = BrowserSession(browser_profile=profile)
 		print('[DEBUG] Browser session created', file=sys.stderr)
 
+		# Test if browser is working
+		try:
+			await session.start()
+			page = await session.create_page()
+			print('[DEBUG] Browser test: page created successfully', file=sys.stderr)
+			await page.goto('https://httpbin.org/get', timeout=10000)
+			print('[DEBUG] Browser test: navigation successful', file=sys.stderr)
+			title = await page.title()
+			print(f"[DEBUG] Browser test: got title '{title}'", file=sys.stderr)
+		except Exception as browser_error:
+			print(f'[DEBUG] Browser test failed: {str(browser_error)}', file=sys.stderr)
+			print(f'[DEBUG] Browser error type: {type(browser_error).__name__}', file=sys.stderr)
+
 		print('[DEBUG] Starting agent execution...', file=sys.stderr)
 		agent = Agent(task=task, llm=agent_llm, browser_session=session)
-		history: AgentHistoryList = await agent.run(max_steps=max_steps)
+
+		try:
+			history: AgentHistoryList = await agent.run(max_steps=max_steps)
+			print('[DEBUG] Agent.run() returned successfully', file=sys.stderr)
+		except Exception as agent_error:
+			print(f'[DEBUG] Agent.run() failed with error: {str(agent_error)}', file=sys.stderr)
+			print(f'[DEBUG] Error type: {type(agent_error).__name__}', file=sys.stderr)
+			# Re-raise to be caught by outer try-catch
+			raise agent_error
+
 		agent_output = history.final_result() or ''
 		print('[DEBUG] Agent execution completed', file=sys.stderr)
+
+		# Test if LLM is working by making a simple call
+		try:
+			test_response = await agent_llm.ainvoke("Say 'test'")
+			print(f'[DEBUG] LLM test call successful: {test_response.content[:50]}', file=sys.stderr)
+		except Exception as llm_error:
+			print(f'[DEBUG] LLM test call failed: {str(llm_error)}', file=sys.stderr)
 
 		# Debug: capture more details about the agent execution
 		total_steps = len(history.history) if hasattr(history, 'history') else 0
