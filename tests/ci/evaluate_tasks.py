@@ -41,31 +41,43 @@ class JudgeResponse(BaseModel):
 async def run_single_task(task_file):
 	"""Run a single task in the current process (called by subprocess)"""
 	try:
+		print(f'[DEBUG] Starting task: {os.path.basename(task_file)}', file=sys.stderr)
+
 		# Suppress all logging in subprocess to avoid interfering with JSON output
 		logging.getLogger().setLevel(logging.CRITICAL)
 		for logger_name in ['browser_use', 'telemetry', 'message_manager']:
 			logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 		warnings.filterwarnings('ignore')
 
+		print('[DEBUG] Loading task file...', file=sys.stderr)
 		async with aiofiles.open(task_file, 'r') as f:
 			content = await f.read()
 		task_data = yaml.safe_load(content)
 		task = task_data['task']
 		judge_context = task_data.get('judge_context', ['The agent must solve the task'])
 		max_steps = task_data.get('max_steps', 15)
+
+		print(f'[DEBUG] Task: {task[:100]}...', file=sys.stderr)
+		print(f'[DEBUG] Max steps: {max_steps}', file=sys.stderr)
+
 		agent_llm = ChatOpenAI(model='gpt-4.1-mini')
 		judge_llm = ChatOpenAI(model='gpt-4.1-mini')
+		print('[DEBUG] LLMs initialized', file=sys.stderr)
 
 		# Each subprocess gets its own profile and session
+		print('[DEBUG] Creating browser session...', file=sys.stderr)
 		profile = BrowserProfile(
 			headless=True,
 			user_data_dir=None,
 		)
 		session = BrowserSession(browser_profile=profile)
+		print('[DEBUG] Browser session created', file=sys.stderr)
 
+		print('[DEBUG] Starting agent execution...', file=sys.stderr)
 		agent = Agent(task=task, llm=agent_llm, browser_session=session)
 		history: AgentHistoryList = await agent.run(max_steps=max_steps)
 		agent_output = history.final_result() or ''
+		print('[DEBUG] Agent execution completed', file=sys.stderr)
 
 		# Debug: capture more details about the agent execution
 		total_steps = len(history.history) if hasattr(history, 'history') else 0
@@ -144,6 +156,15 @@ async def run_task_subprocess(task_file, semaphore):
 				try:
 					# Parse JSON result from subprocess
 					stdout_text = stdout.decode().strip()
+					stderr_text = stderr.decode().strip()
+
+					# Display subprocess debug logs
+					if stderr_text:
+						print(f'[SUBPROCESS {os.path.basename(task_file)}] Debug output:')
+						for line in stderr_text.split('\n'):
+							if line.strip():
+								print(f'  {line}')
+
 					# Find the JSON line (should be the last line that starts with {)
 					lines = stdout_text.split('\n')
 					json_line = None
@@ -166,6 +187,7 @@ async def run_task_subprocess(task_file, semaphore):
 						'explanation': f'Failed to parse subprocess result: {str(e)[:100]}',
 					}
 					print(f'[PARENT] Task {os.path.basename(task_file)} failed to parse: {str(e)}')
+					print(f'[PARENT] Full stdout was: {stdout.decode()[:500]}')
 			else:
 				stderr_text = stderr.decode().strip()
 				result = {
@@ -175,7 +197,10 @@ async def run_task_subprocess(task_file, semaphore):
 				}
 				print(f'[PARENT] Task {os.path.basename(task_file)} subprocess failed with code {proc.returncode}')
 				if stderr_text:
-					print(f'[PARENT] stderr: {stderr_text[:500]}')
+					print(f'[PARENT] stderr: {stderr_text[:1000]}')
+				stdout_text = stdout.decode().strip()
+				if stdout_text:
+					print(f'[PARENT] stdout: {stdout_text[:1000]}')
 		except Exception as e:
 			result = {
 				'file': os.path.basename(task_file),
