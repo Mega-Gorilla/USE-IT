@@ -125,3 +125,12 @@ jobs:
       - name: Print agent evaluation summary
         run: |
           echo "Agent tasks passed: $PASSED / $TOTAL"
+
+      - name: Write agent evaluation summary to workflow overview
+        run: |
+          if [ "$PASSED" = "$TOTAL" ]; then
+            COLOR="green"
+          else
+            COLOR="yellow"
+          fi
+          echo "<h2>Agent Tasks Score: <span style='color:$COLOR;'>$PASSED/$TOTAL</span></h2>" >> $GITHUB_STEP_SUMMARY
