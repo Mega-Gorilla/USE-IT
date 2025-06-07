@@ -25,8 +25,7 @@ except ImportError:
 import langchain_anthropic
 import langchain_google_genai
 import langchain_openai
-
-# from patchright.async_api import async_playwright
+from patchright.async_api import async_playwright
 
 try:
 	import readline
@@ -42,6 +41,7 @@ os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 from browser_use import Agent, Controller
 from browser_use.agent.views import AgentSettings
 from browser_use.browser import BrowserSession
+from browser_use.browser.profile import BrowserChannel
 from browser_use.logging_config import addLoggingLevel
 
 # Paths
@@ -447,8 +447,8 @@ class BrowserUseApp(App):
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
-				if isinstance(record.name, str) and record.name.startswith('browser_use.'):
-					record.name = record.name.split('.')[-2]
+				# if isinstance(record.name, str) and record.name.startswith('browser_use.'):
+				# 	record.name = record.name.split('.')[-2]
 				return super().format(record)
 
 		# Set up the formatter based on log type
@@ -755,7 +755,7 @@ class BrowserUseApp(App):
 						timestamp = int(time.time())
 						current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
 						browser_info.write(f'Last updated: [dim]{current_time}[/]')
-					except Exception as e:
+					except Exception:
 						pass
 
 					# Show the agent's current page URL if available
@@ -1178,7 +1178,7 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 		# Create browser session with config parameters
 		browser_config = config.get('browser', {})
-		browser_session = BrowserSession(**browser_config)
+		browser_session = BrowserSession(stealth=True, **browser_config)
 
 		# Create and run agent
 		agent = Agent(
@@ -1239,8 +1239,9 @@ async def textual_interface(config: dict[str, Any]):
 		# Create BrowserSession directly with config parameters
 		browser_session = BrowserSession(
 			**browser_config,
-			# playwright=(await async_playwright().start()),
-			# channel=BrowserChannel.CHROME,
+			playwright=(await async_playwright().start()),
+			channel=BrowserChannel.CHROME,
+			user_data_dir='~/.browseruse/profiles/default/cli',
 		)
 		logger.debug('BrowserSession initialized successfully')
 

@@ -1514,7 +1514,7 @@ def fetch_tasks_from_server(convex_url: str, secret_key: str, test_case_name: st
 
 # Helper function to get git information
 def get_git_info():
-	"""Retrieves git branch, commit hash, and commit timestamp using subprocess."""
+	"""Retrieves git branch, commit hash, commit timestamp, and repository URL using subprocess."""
 	try:
 		branch = subprocess.run(
 			['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True, check=True
@@ -1525,13 +1525,18 @@ def get_git_info():
 			['git', 'log', '-1', '--format=%ct'], capture_output=True, text=True, check=True
 		).stdout.strip()
 		commit_timestamp = int(commit_timestamp_str)
-		return {'branch': branch, 'hash': commit_hash, 'timestamp': commit_timestamp}
+		# Get repository URL
+		repo_url = subprocess.run(
+			['git', 'config', '--get', 'remote.origin.url'], capture_output=True, text=True, check=True
+		).stdout.strip()
+		return {'branch': branch, 'hash': commit_hash, 'timestamp': commit_timestamp, 'repo': repo_url}
 	except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
 		logger.warning(f'Could not retrieve git info: {type(e).__name__}: {e}. Using defaults.')
 		return {
 			'branch': 'unknown',
 			'hash': 'unknown',
 			'timestamp': int(time.time()),  # Fallback to current time
+			'repo': 'unknown',
 		}
 
 
@@ -1772,6 +1777,7 @@ if __name__ == '__main__':
 			'gitBranch': git_info['branch'],
 			'gitCommitHash': git_info['hash'],
 			'gitCommitTimestamp': git_info['timestamp'],
+			'gitRepo': git_info['repo'],
 			'userMessage': args.user_message,
 			'evalGroup': args.eval_group,
 			'developerId': args.developer_id,
