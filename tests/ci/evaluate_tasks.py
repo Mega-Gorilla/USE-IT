@@ -43,6 +43,7 @@ async def run_task(task_file, semaphore):
 		shared_profile = BrowserProfile(
 			headless=True,
 			user_data_dir=None,  # use dedicated tmp user_data_dir per session
+			args=['--no-sandbox'],
 		)
 		session = BrowserSession(browser_profile=shared_profile)
 		agent = Agent(task=task, llm=agent_llm, browser_session=session)
