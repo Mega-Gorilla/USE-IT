@@ -357,7 +357,7 @@ window2 = BrowserSession(browser_profile=profile_a)
 agent2 = Agent(browser_session=window2)
 
 await asyncio.gather(agent1.run(), agent2.run())  # run in parallel
-await window1.save_storage_state()  # write cookie updates to auth.json
+await window1.save_storage_state()  # write storage state (cookies, localStorage, etc.) to auth.json
 await window2.save_storage_state()  # you must decide when to save manually
 
 # can also reload the cookies from the file into the active session if they change
