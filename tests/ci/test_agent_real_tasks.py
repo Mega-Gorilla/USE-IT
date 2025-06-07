@@ -35,7 +35,7 @@ async def test_agent_real_task(task_file):
 	judge_llm = ChatOpenAI(model='gpt-4o-mini')
 
 	shared_profile = BrowserProfile(
-		headless=False,
+		headless=True,
 		user_data_dir=None,  # use dedicated tmp user_data_dir per session
 		keep_alive=True,  # don't close the browser after the agent finishes (only needed to save the session's updated cookies to disk after the run, see below)
 	)
