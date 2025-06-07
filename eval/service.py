@@ -410,6 +410,19 @@ SUPPORTED_MODELS = {
 		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
 	},
+	# SambaNova
+	'deepseek-r1-sambanova': {
+		'provider': 'openai_compatible',
+		'model_name': 'DeepSeek-R1',
+		'base_url': 'https://api.sambanova.ai/v1',
+		'api_key_env': 'SAMBANOVA_API_KEY',
+	},
+	'llama-4-maverick-sambanova': {
+		'provider': 'openai_compatible',
+		'model_name': 'Llama-4-Maverick-17B-128E-Instruct',
+		'base_url': 'https://api.sambanova.ai/v1',
+		'api_key_env': 'SAMBANOVA_API_KEY',
+	},
 }
 
 # Check for SERPER API key
