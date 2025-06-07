@@ -86,7 +86,6 @@ jobs:
       - run: pytest --numprocesses auto -x tests/ci/${{ matrix.test_filename }}.py
 
   evaluate-tasks:
-    needs: tests
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
