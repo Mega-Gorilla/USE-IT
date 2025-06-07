@@ -1,6 +1,8 @@
 name: test
 permissions:
   contents: read
+  pull-requests: write  # Allow writing comments on PRs
+  issues: write         # Allow writing comments on issues
 
 on:
   push:
