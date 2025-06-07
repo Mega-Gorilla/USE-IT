@@ -134,3 +134,67 @@ jobs:
             COLOR="yellow"
           fi
           echo "<h2>Agent Tasks Score: <span style='color:$COLOR;'>$PASSED/$TOTAL</span></h2>" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment PR with agent evaluation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passed = process.env.PASSED;
+            const total = process.env.TOTAL;
+            const score = `${passed}/${total}`;
+            const percentage = Math.round((passed / total) * 100);
+            
+            let emoji, status;
+            if (passed == total) {
+              emoji = '✅';
+              status = 'All tasks passed!';
+            } else if (passed > total * 0.1) {
+              emoji = '⚠️';
+              status = 'Some tasks failed (Some might be very hard)';
+            } else {
+              emoji = '❌';
+              status = 'Most tasks failed';
+            }
+            
+            const comment = `## ${emoji} Agent Task Evaluation Results
+            
+            **Score: ${score} (${percentage}%)**
+            
+            ${status}
+            
+            <details>
+            <summary>View detailed results in the Actions tab</summary>
+            
+            Check the [evaluate-tasks job](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed task execution logs and failure reasons.
+            </details>`;
+            
+            // Find existing comment to update or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Agent Task Evaluation Results')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
