@@ -1541,7 +1541,7 @@ def get_git_info():
 
 
 # Helper function to start a new run on the server
-def start_new_run(convex_url: str, secret_key: str, run_details: dict):
+def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_run_id: str = None):
 	"""Sends a request to start a new evaluation run and returns the run ID."""
 	if not convex_url or not secret_key:
 		logger.error('Error: Convex URL or Secret Key not provided for starting run.')
@@ -1553,13 +1553,18 @@ def start_new_run(convex_url: str, secret_key: str, run_details: dict):
 		'Content-Type': 'application/json',
 	}
 
+	# Add existing_run_id to the payload if provided
+	payload = run_details.copy()
+	if existing_run_id:
+		payload['runId'] = existing_run_id
+
 	logger.info(f'Sending request to start run at {endpoint_url}...')
 	# Avoid logging secret key in run_details if it were ever passed
-	loggable_details = {k: v for k, v in run_details.items() if k != 'secret_key'}
+	loggable_details = {k: v for k, v in payload.items() if k != 'secret_key'}
 	logger.info(f'Run details: {json.dumps(loggable_details, indent=2)}')
 
 	try:
-		response = requests.post(endpoint_url, headers=headers, json=run_details)
+		response = requests.post(endpoint_url, headers=headers, json=payload)
 		logger.info(f'Start Run Status Code: {response.status_code}')
 
 		if response.status_code == 200:
@@ -1678,6 +1683,12 @@ if __name__ == '__main__':
 	parser.add_argument(
 		'--test-case', type=str, default='OnlineMind2Web', help='Name of the test case to fetch (default: OnlineMind2Web)'
 	)
+	parser.add_argument(
+		'--run-id',
+		type=str,
+		default=None,
+		help='Existing run ID to continue adding results to (if not provided, a new run will be started)',
+	)
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1756,8 +1767,12 @@ if __name__ == '__main__':
 			exit(1)
 		# -----------------------------
 
-		# --- Start Run on Server ---
-		logger.info('Attempting to start a new run on the server...')
+		# --- Start Run on Server (with optional existing Run ID) ---
+		if args.run_id:
+			logger.info(f'Initializing existing run ID: {args.run_id} with git info...')
+		else:
+			logger.info('Attempting to start a new run on the server...')
+
 		git_info = get_git_info()
 
 		# Collect additional data from args to store with the run
@@ -1786,10 +1801,10 @@ if __name__ == '__main__':
 			'additionalData': additional_run_data,
 		}
 
-		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data)
+		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
 
 		if not run_id:
-			logger.error('Failed to start a new run on the server. Exiting.')
+			logger.error('Failed to start/initialize run on the server. Exiting.')
 			exit(1)
 
 		logger.info(f'Successfully obtained run ID: {run_id}. Proceeding with tasks...')
