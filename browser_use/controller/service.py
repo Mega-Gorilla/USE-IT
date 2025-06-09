@@ -279,7 +279,7 @@ class Controller(Generic[Context]):
 			template = PromptTemplate(input_variables=['content_to_extract', 'page'], template=prompt)
 			try:
 				output = await page_extraction_llm.ainvoke(template.format(content_to_extract=content_to_extract, page=content))
-				msg = f'📄  Extracted from page\n: {output.content}\n'
+				msg = f'📄  Extracted from page for query "{content_to_extract}"\n: {output.content}\n'
 				logger.info(msg)
 				return ActionResult(
 					extracted_content=msg,
