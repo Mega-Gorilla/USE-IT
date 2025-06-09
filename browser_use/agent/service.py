@@ -1232,8 +1232,9 @@ class Agent(Generic[Context]):
 						param_summary.append(f'url="{value}"')
 					elif key == 'success':
 						param_summary.append(f'success={value}')
-					elif isinstance(value, (str, int, bool)) and len(str(value)) < 20:
-						param_summary.append(f'{key}={value}')
+					elif isinstance(value, (str, int, bool)):
+						val_str = str(value)[:30] + '...' if len(str(value)) > 30 else str(value)
+						param_summary.append(f'{key}={val_str}')
 
 			param_str = f'({", ".join(param_summary)})' if param_summary else ''
 			action_details.append(f'{action_name}{param_str}')
