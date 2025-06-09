@@ -91,10 +91,11 @@ def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 			result_dict = result_dict[0]
 
 		assert isinstance(result_dict, dict), f'Expected JSON dictionary in response, got JSON {type(result_dict)} instead'
+		logger.debug(f'Successfully parsed model output: {result_dict}')
 		return result_dict
 	except json.JSONDecodeError as e:
 		logger.warning(f'Failed to parse model output: {content} {str(e)}')
-		raise ValueError('Could not parse response.')
+		raise ValueError(f'Could not parse response. {str(e)}')
 
 
 def convert_input_messages(input_messages: list[BaseMessage], model_name: str | None) -> list[BaseMessage]:

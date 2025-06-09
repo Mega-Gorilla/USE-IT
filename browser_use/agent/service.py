@@ -1179,7 +1179,7 @@ class Agent(Generic[Context]):
 				parsed = self.AgentOutput(**parsed_json)
 			except Exception as e:
 				logger.warning(f'Failed to parse model output: {response["raw"]} {str(e)}')
-				raise ValueError('Could not parse response.')
+				raise ValueError(f'Could not parse response. {str(e)}')
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
