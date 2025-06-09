@@ -90,13 +90,18 @@ class Controller(Generic[Context]):
 					memory += f' - {len_text - len_max_memory} more characters'
 
 				if params.files_to_display:
-					user_message += '\n\nBelow are the files I saved for you:'
+					file_msg = ''
 					for file_name in params.files_to_display:
 						if file_name == 'todo.md':
 							continue
 						file_content = file_system.display_file(file_name)
 						if file_content:
-							user_message += f'\n\n{file_name}:\n{file_content}'
+							file_msg += f'\n\n{file_name}:\n{file_content}'
+					if file_msg:
+						user_message += '\n\nBelow are the files I saved for you:'
+						user_message += file_msg
+					else:
+						logger.warning('Agent wanted to display files but none were found')
 
 				return ActionResult(is_done=True, success=params.success, extracted_content=user_message, memory=memory)
 
