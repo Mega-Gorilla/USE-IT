@@ -275,7 +275,7 @@ class Controller(Generic[Context]):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					content += markdownify.markdownify(await iframe.content())
 
-			prompt = 'Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\nPage content:\n{page}'
+			prompt = 'Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\n answer:\n{page}'
 			template = PromptTemplate(input_variables=['content_to_extract', 'page'], template=prompt)
 			try:
 				output = await page_extraction_llm.ainvoke(template.format(content_to_extract=content_to_extract, page=content))
