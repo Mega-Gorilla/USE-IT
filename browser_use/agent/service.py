@@ -1115,7 +1115,7 @@ class Agent(Generic[Context]):
 				response = {'raw': output, 'parsed': None}
 			except Exception as e:
 				self.logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'LLM API call failed') from e
+				raise LLMException(401, 'LLM API call failed' + str(e)) from e
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -1901,7 +1901,7 @@ class Agent(Generic[Context]):
 			response = await self.settings.planner_llm.ainvoke(planner_messages)
 		except Exception as e:
 			self.logger.error(f'Failed to invoke planner: {str(e)}')
-			raise LLMException(401, 'LLM API call failed') from e
+			raise LLMException(401, 'LLM API call failed' + str(e)) from e
 
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags

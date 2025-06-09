@@ -560,7 +560,7 @@ def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
 
 	# If it's not a recognized error type, log and raise
 	logger.error(f'Failed to invoke model: {str(e)}')
-	raise LLMException(401, 'LLM API call failed') from e
+	raise LLMException(401, 'LLM API call failed' + str(e)) from e
 
 
 @cache
