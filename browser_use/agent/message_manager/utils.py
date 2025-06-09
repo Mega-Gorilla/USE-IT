@@ -79,6 +79,13 @@ def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 		# Parse the cleaned content
 		result_dict = json.loads(content)
 
+		# if the key "function" and parameter key like "params"/"args"/"kwargs"/"parameters" are present, the final result is the value of the parameter key
+		if 'function' in result_dict:
+			params = result_dict.get(
+				'params', result_dict.get('args', result_dict.get('kwargs', result_dict.get('parameters', {})))
+			)
+			if params:
+				result_dict = params
 		# some models occasionally respond with a list containing one dict: https://github.com/browser-use/browser-use/issues/1458
 		if isinstance(result_dict, list) and len(result_dict) == 1 and isinstance(result_dict[0], dict):
 			result_dict = result_dict[0]
