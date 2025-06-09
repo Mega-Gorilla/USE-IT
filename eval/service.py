@@ -435,36 +435,33 @@ def create_controller_with_serp_search():
 	"""Create a controller with SERP search instead of Google search"""
 	controller = Controller(exclude_actions=['search_google'])
 
-	@controller.registry.action('Search the web for a specific query')
+	@controller.registry.action('Search the web for a specific query. Returns a short description and links of the results.')
 	async def search_web(query: str):
-		"""Search the web using Serper API"""
-		if not SERPER_API_KEY:
-			return ActionResult(extracted_content='Search unavailable: SERPER_API_KEY not configured', include_in_memory=False)
+		# do a serp search for the query
+		conn = http.client.HTTPSConnection('google.serper.dev')
+		payload = json.dumps({'q': query})
+		headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+		conn.request('POST', '/search', payload, headers)
+		res = conn.getresponse()
+		data = res.read()
+		serp_data = json.loads(data.decode('utf-8'))
 
-		try:
-			# Make request to Serper API
-			conn = http.client.HTTPSConnection('google.serper.dev')
-			payload = json.dumps({'q': query})
-			headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
-			conn.request('POST', '/search', payload, headers)
-			res = conn.getresponse()
-			data = res.read()
-			serp_data = json.loads(data.decode('utf-8'))
+		# exclude searchParameters and credits
+		serp_data = {k: v for k, v in serp_data.items() if k not in ['searchParameters', 'credits']}
 
-			# Exclude searchParameters and credits to reduce noise
-			serp_data = {k: v for k, v in serp_data.items() if k not in ['searchParameters', 'credits']}
+		# keep the value of the key "organic"
 
-			# Log the search data for debugging
-			logger.debug(f"SERP search for '{query}': {json.dumps(serp_data, indent=2)}")
+		organic = serp_data.get('organic', [])
+		# remove the key "position"
+		organic = [{k: v for k, v in d.items() if k != 'position'} for d in organic]
 
-			# Convert to string for the agent
-			serp_data_str = json.dumps(serp_data)
+		# print the original data
+		logger.debug(json.dumps(organic, indent=2))
 
-			return ActionResult(extracted_content=serp_data_str, include_in_memory=False)
+		# to string
+		organic_str = json.dumps(organic)
 
-		except Exception as e:
-			logger.error(f'Error in SERP search: {type(e).__name__}: {e}')
-			return ActionResult(extracted_content=f'Search error: {str(e)}', include_in_memory=False)
+		return ActionResult(extracted_content=organic_str, include_in_memory=False)
 
 	return controller
 
