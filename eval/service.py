@@ -531,7 +531,12 @@ def clean_action_dict(action_dict: dict) -> dict:
 
 
 async def reformat_agent_history(
-	agent_history: AgentHistoryList, task_id: str, run_id: str, task: str, base_path: str = 'saved_trajectories'
+	agent_history: AgentHistoryList,
+	task_id: str,
+	run_id: str,
+	task: str,
+	base_path: str = 'saved_trajectories',
+	include_result: bool = False,
 ) -> dict:
 	# Update directory name
 	task_dir = Path(base_path) / task_id
@@ -619,6 +624,10 @@ async def reformat_agent_history(
 					task_duration = end_time_float - start_time_float
 				except (ValueError, TypeError) as e:
 					logger.warning(f'Could not calculate task duration due to invalid timestamp format: {e}')
+
+	# Conditionally include the final result in action history
+	if include_result and final_result and final_result.strip():
+		action_history = action_history + [final_result]
 
 	# Create results structure with new fields
 	results = {
@@ -1154,6 +1163,7 @@ async def run_task_with_semaphore(
 	validate_output: bool = False,
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
+	include_result: bool = False,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	logger.info(f'Task {task.task_id}: Waiting to acquire semaphore (current value: ~{semaphore_runs._value})')
@@ -1236,7 +1246,9 @@ async def run_task_with_semaphore(
 							logger.info(f'Task {task.task_id}: History formatting starting.')
 							formatted_data = await run_stage(
 								Stage.FORMAT_HISTORY,
-								lambda: reformat_agent_history(agent_history, task.task_id, run_id, task.confirmed_task),
+								lambda: reformat_agent_history(
+									agent_history, task.task_id, run_id, task.confirmed_task, include_result=include_result
+								),
 							)
 							task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
 							logger.info(f'Task {task.task_id}: Agent history formatted.')
@@ -1391,6 +1403,7 @@ async def run_multiple_tasks(
 	validate_output: bool = False,
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
+	include_result: bool = False,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1423,6 +1436,7 @@ async def run_multiple_tasks(
 				validate_output=validate_output,
 				planner_llm=planner_llm,
 				planner_interval=planner_interval,
+				include_result=include_result,
 			)
 			for task in tasks_to_run
 		),
@@ -1689,6 +1703,11 @@ if __name__ == '__main__':
 		default=None,
 		help='Existing run ID to continue adding results to (if not provided, a new run will be started)',
 	)
+	parser.add_argument(
+		'--include-result',
+		action='store_true',
+		help='Include result flag (functionality to be implemented)',
+	)
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -1785,6 +1804,15 @@ if __name__ == '__main__':
 			'use_vision': not args.no_vision,
 			'task_source': args.test_case,
 			'llm_judge': args.eval_model,
+			'fresh_start': args.fresh_start,
+			'use_serp': args.use_serp,
+			'enable_memory': args.enable_memory,
+			'memory_interval': args.memory_interval,
+			'max_actions_per_step': args.max_actions_per_step,
+			'validate_output': args.validate_output,
+			'planner_model': args.planner_model,
+			'planner_interval': args.planner_interval,
+			'include_result': args.include_result,
 		}
 
 		run_data = {
@@ -1896,6 +1924,7 @@ if __name__ == '__main__':
 				validate_output=args.validate_output,
 				planner_llm=planner_llm,
 				planner_interval=args.planner_interval,
+				include_result=args.include_result,
 			)
 		)
 
