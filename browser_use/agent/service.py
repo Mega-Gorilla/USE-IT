@@ -83,9 +83,9 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	if logger is None:
 		logger = logging.getLogger(__name__)
 
-	if 'Success' in response.current_state.evaluation_previous_goal:
+	if 'success' in response.current_state.evaluation_previous_goal.lower():
 		emoji = '👍'
-	elif 'Failed' in response.current_state.evaluation_previous_goal:
+	elif 'failure' in response.current_state.evaluation_previous_goal.lower():
 		emoji = '⚠️'
 	else:
 		emoji = '❔'
