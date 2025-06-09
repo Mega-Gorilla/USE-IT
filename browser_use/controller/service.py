@@ -280,16 +280,21 @@ class Controller(Generic[Context]):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					content += markdownify.markdownify(await iframe.content())
 
-			prompt = 'Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\n answer:\n{page}'
+			# limit to 60000 characters - remove text in the middle this is approx 20000 tokens
+			if len(content) > 60000:
+				content = content[:30000] + '... left out the middle because it was too long ...' + content[-30000:]
+
+			prompt = 'You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\n answer:\n{page}'
 			template = PromptTemplate(input_variables=['content_to_extract', 'page'], template=prompt)
 			try:
 				output = await page_extraction_llm.ainvoke(template.format(content_to_extract=content_to_extract, page=content))
-				msg = f'📄  Extracted from page for query "{content_to_extract}"\n: {output.content}\n'
-				logger.info(msg)
+				output_text = output.content
+				msg = f'📄  Extracted from page\n: {output_text}\n'
+				logger.info(msg + f' for query "{content_to_extract}"')
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
-					memory=f"Extracted '{content_to_extract}' from page",
+					include_in_memory=False,
+					memory=f"Extracted '{content_to_extract}'",
 					update_read_state=True,
 				)
 			except Exception as e:
