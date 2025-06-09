@@ -52,6 +52,30 @@ def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 		content = re.sub(r'\}(\s*<[^>]*>.*?$)', '}', content, flags=re.DOTALL)
 		content = re.sub(r'\}(\s*<\|[^|]*\|>.*?$)', '}', content, flags=re.DOTALL)
 
+		# Handle extra characters after the JSON, including stray braces
+		# Find the position of the last } that would close the main JSON object
+		content = content.strip()
+		if content.endswith('}'):
+			# Try to parse and see if we get valid JSON
+			try:
+				json.loads(content)
+			except json.JSONDecodeError:
+				# If parsing fails, try to find the correct end of the JSON
+				# by counting braces and removing anything after the balanced JSON
+				brace_count = 0
+				last_valid_pos = -1
+				for i, char in enumerate(content):
+					if char == '{':
+						brace_count += 1
+					elif char == '}':
+						brace_count -= 1
+						if brace_count == 0:
+							last_valid_pos = i + 1
+							break
+
+				if last_valid_pos > 0:
+					content = content[:last_valid_pos]
+
 		# Parse the cleaned content
 		result_dict = json.loads(content)
 
