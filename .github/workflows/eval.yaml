@@ -18,6 +18,7 @@ jobs:
       EVALUATION_TOOL_URL: ${{ secrets.EVALUATION_TOOL_URL }}
       EVALUATION_TOOL_SECRET_KEY: ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}
       ANCHOR_BROWSER_API_KEY: ${{ secrets.ANCHOR_BROWSER_API_KEY }}
+      SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
 
     steps:
       - name: Determine ref to checkout
