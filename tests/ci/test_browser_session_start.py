@@ -487,14 +487,7 @@ class TestBrowserSessionStart:
 			assert session.browser.is_connected()
 
 		finally:
-			# Force complete cleanup
-			session.browser_profile.keep_alive = False
-			await session.stop()
-
-			# Ensure playwright is stopped
-			if hasattr(session, 'playwright') and session.playwright:
-				await session.playwright.stop()
-				session.playwright = None
+			await session.kill()
 
 	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self, caplog):
 		"""Test user_data_dir handling for different browser channels and version mismatches."""
@@ -514,8 +507,7 @@ class TestBrowserSessionStart:
 			# Verify the user_data_dir wasn't changed
 			assert session.browser_profile.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR
 		finally:
-			session.browser_profile.keep_alive = False
-			await session.stop()
+			await session.kill()
 
 		# Test 2: Chrome with default user_data_dir should show warning and change dir
 		profile2 = BrowserProfile(
@@ -876,6 +868,7 @@ class TestBrowserSessionReusePatterns:
 		shared_browser = BrowserSession(
 			user_data_dir=None,
 			headless=True,
+			keep_alive=True,  # Keep the browser alive for reuse
 		)
 
 		try:

@@ -281,7 +281,7 @@ class BrowserSession(BaseModel):
 
 		# Use timeout to prevent indefinite waiting on lock acquisition
 
-		async with asyncio.timeout(30):  # 30 second timeout for launching
+		async with asyncio.timeout(60):  # 30 second timeout for launching
 			async with self._start_lock:
 				if self.initialized:
 					if self.is_connected():
@@ -360,7 +360,7 @@ class BrowserSession(BaseModel):
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
-		async with asyncio.timeout(15):  # 15 second timeout for stop operations
+		async with asyncio.timeout(30):  # 15 second timeout for stop operations
 			async with self._start_lock:
 				# save cookies to disk if cookies_file or storage_state is configured
 				# but only if the browser context is still connected
@@ -443,20 +443,14 @@ class BrowserSession(BaseModel):
 		return self
 
 	def __eq__(self, other: object) -> bool:
-		"""Check if two BrowserSession instances are using the same browser and have the same Agent state."""
+		"""Check if two BrowserSession instances are using the same browser."""
 
 		if not isinstance(other, BrowserSession):
 			return False
 
-		# Two sessions are considered equal if they're connected to the same remote browser and are looking at the same page
-		# the .browser, .browser_context, .playwright object identities don't have to match
-		return (
-			self.browser_pid == other.browser_pid
-			and self.cdp_url == other.cdp_url
-			and self.wss_url == other.wss_url
-			and self.agent_current_page == other.agent_current_page
-			and self.human_current_page == other.human_current_page
-		)
+		# Two sessions are considered equal if they're connected to the same browser
+		# All three connection identifiers must match
+		return self.browser_pid == other.browser_pid and self.cdp_url == other.cdp_url and self.wss_url == other.wss_url
 
 	async def __aexit__(self, exc_type, exc_val, exc_tb):
 		# self.logger.debug(
@@ -662,12 +656,12 @@ class BrowserSession(BaseModel):
 			if not self.browser_profile.user_data_dir:
 				# self.logger.debug('🌎 Launching local browser in incognito mode')
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
-				async with asyncio.timeout(15):
+				async with asyncio.timeout(30):
 					self.browser = self.browser or await self.playwright.chromium.launch(
 						**self.browser_profile.kwargs_for_launch().model_dump()
 					)
 				# self.logger.debug('🌎 Launching new incognito context in browser')
-				async with asyncio.timeout(15):
+				async with asyncio.timeout(30):
 					self.browser_context = await self.browser.new_context(
 						**self.browser_profile.kwargs_for_new_context().model_dump()
 					)
@@ -686,7 +680,7 @@ class BrowserSession(BaseModel):
 						break
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
-				async with asyncio.timeout(15):
+				async with asyncio.timeout(30):
 					try:
 						self.browser_context = await self.playwright.chromium.launch_persistent_context(
 							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
