@@ -99,6 +99,9 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 
 
 class Agent(Generic[Context]):
+	browser_session: BrowserSession | None = None
+	_logger: logging.Logger | None = None
+
 	@time_execution_sync('--init')
 	def __init__(
 		self,
@@ -167,16 +170,14 @@ class Agent(Generic[Context]):
 		enable_memory: bool = True,
 		memory_config: MemoryConfig | None = None,
 		source: str | None = None,
+		task_id: str | None = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 
-		# Generate unique IDs for this agent session and task early
+		self.id = task_id or uuid7str()
+		self.task_id: str = self.id
 		self.session_id: str = uuid7str()
-		self.task_id: str = uuid7str()
-
-		# Create instance-specific logger
-		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-4:]}]')
 
 		# Core components
 		self.task = task
@@ -338,6 +339,7 @@ class Agent(Generic[Context]):
 				browser=browser,
 				browser_context=browser_context,
 				page=page,
+				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
 
 		if self.sensitive_data:
@@ -422,7 +424,10 @@ class Agent(Generic[Context]):
 	@property
 	def logger(self) -> logging.Logger:
 		"""Get instance-specific logger with task ID in the name"""
-		return self._logger
+
+		_browser_session_id = self.browser_session.id if self.browser_session else self.id
+		_current_page_id = str(id(self.browser_session and self.browser_session.agent_current_page))[-2:]
+		return logging.getLogger(f'browser_use.Agent✻{self.task_id[-4:]} on ⛶{_browser_session_id[-4:]}.{_current_page_id}')
 
 	@property
 	def browser(self) -> Browser:
@@ -1147,7 +1152,7 @@ class Agent(Generic[Context]):
 		"""Log the agent run"""
 		self.logger.info(f'🚀 Starting task: {self.task}')
 
-		self.logger.debug(f'🤖 Browser-Use Version: v{self.version} ({self.source})')
+		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
 	def _log_step_context(self, current_page, browser_state_summary) -> None:
 		"""Log step context information"""

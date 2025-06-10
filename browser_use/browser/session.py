@@ -249,14 +249,14 @@ class BrowserSession(BaseModel):
 		"""Get instance-specific logger with session ID in the name"""
 		if self._logger is None:
 			# Create a child logger with the session ID
-			self._logger = logging.getLogger(f'browser_use.BrowserSession[{self.id[-4:]}]')
+			self._logger = logging.getLogger(f'browser_use.BrowserSession⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}')
 		return self._logger
 
 	def __repr__(self) -> str:
-		return f'BrowserSession[{self.id[-4:]}](profile={self.browser_profile}, {self._connection_str})'
+		return f'BrowserSession#{self.id[-4:]}(profile={self.browser_profile}, {self._connection_str})'
 
 	def __str__(self) -> str:
-		return f'BrowserSession[{self.id[-4:]}]'
+		return f'BrowserSession#{self.id[-4:]}'
 
 	# def __getattr__(self, key: str) -> Any:
 	# 	"""
@@ -466,12 +466,12 @@ class BrowserSession(BaseModel):
 			profile = getattr(self, 'browser_profile', None)
 			keep_alive = getattr(profile, 'keep_alive', None)
 			user_data_dir = getattr(profile, 'user_data_dir', None)
-			self.logger.debug(
-				f'🛑 Stopping (garbage collected) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
-			)
+			if self.initialized:
+				self.logger.debug(
+					f'🛑 Stopping (garbage collected BrowserSession ⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]}) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
+				)
 
 			self._kill_child_processes()
-
 		except BaseException:
 			# Never let __del__ raise exceptions
 			pass
@@ -870,7 +870,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
@@ -1454,7 +1454,7 @@ class BrowserSession(BaseModel):
 
 		if not (path or self.browser_profile.storage_state or self.browser_profile.cookies_file):
 			return
-		
+
 		storage_state = await self.browser_context.storage_state()
 		cookies = storage_state['cookies']
 
@@ -2612,14 +2612,17 @@ class BrowserSession(BaseModel):
 		self.agent_current_page = page
 
 		# in order for a human watching to be able to follow along with what the agent is doing
-		# bring the agent's active tab to the foreground
+		# update the human's active tab to match the agent's
 		if self.human_current_page != page:
 			# TODO: figure out how to do this without bringing the entire window to the foreground and stealing foreground app focus
 			await page.bring_to_front()
 
 		self.human_current_page = page
 
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ New page failed to fully load: {type(e).__name__}: {e}')
 
 		# Set the viewport size for the tab
 		if self.browser_profile.viewport:
