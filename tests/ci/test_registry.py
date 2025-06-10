@@ -111,7 +111,7 @@ async def browser_session(base_url):
 	await browser_session.start()
 	await browser_session.create_new_tab(f'{base_url}/test')
 	yield browser_session
-	# await browser_session.kill()
+	await browser_session.kill()
 
 
 class TestActionRegistryParameterPatterns:
