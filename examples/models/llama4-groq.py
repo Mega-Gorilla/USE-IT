@@ -25,7 +25,7 @@ llm = ChatOpenAI(
 # 	temperature=0.0,
 # )
 
-task = 'Open the page with an overview of the submission of releases on Discogs. Website: https://www.discogs.com/ '
+task = 'Find the founders of browser-use'
 
 
 async def main():
@@ -37,6 +37,4 @@ async def main():
 
 
 if __name__ == '__main__':
-	for i in range(10):
-		print(f'Running {i + 1} of 10')
-		asyncio.run(main())
+	asyncio.run(main())
