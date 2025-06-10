@@ -1490,6 +1490,7 @@ class BrowserSession(BaseModel):
 
 		if isinstance(self.browser_profile.storage_state, (str, Path)):
 			await self._save_storage_state_to_file(self.browser_profile.storage_state, storage_state)
+			return
 
 		raise Exception(f'Got unexpected type for storage_state: {type(self.browser_profile.storage_state)}')
 
