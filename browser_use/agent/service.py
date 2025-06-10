@@ -1067,7 +1067,7 @@ class Agent(Generic[Context]):
 		if self.tool_calling_method == 'raw':
 			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			try:
-				output = self.llm.invoke(input_messages)
+				output = await self.llm.ainvoke(input_messages)
 				response = {'raw': output, 'parsed': None}
 			except Exception as e:
 				self.logger.error(f'Failed to invoke model: {str(e)}')
