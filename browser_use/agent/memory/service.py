@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
@@ -137,8 +138,17 @@ class Memory:
 		if len(messages_to_process) <= 1:
 			self.logger.debug('📜 Not enough non-memory messages to summarize')
 			return
-		# Create a procedural memory
-		memory_content = self._create([m.message for m in messages_to_process], current_step)
+		# Create a procedural memory with timeout
+		try:
+			with ThreadPoolExecutor(max_workers=1) as executor:
+				future = executor.submit(self._create, [m.message for m in messages_to_process], current_step)
+				memory_content = future.result(timeout=5)
+		except TimeoutError:
+			self.logger.warning('📜 Procedural memory creation timed out after 30 seconds')
+			return
+		except Exception as e:
+			self.logger.error(f'📜 Error during procedural memory creation: {e}')
+			return
 
 		if not memory_content:
 			self.logger.warning('📜 Failed to create procedural memory')
