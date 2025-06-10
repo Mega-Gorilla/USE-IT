@@ -524,7 +524,7 @@ class BrowserSession(BaseModel):
 				if GLOBAL_PATCHRIGHT_API_OBJECT:
 					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
 				else:
-					GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
+					GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
 					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
 
 			# check for stealth best-practices
@@ -543,7 +543,7 @@ class BrowserSession(BaseModel):
 				if GLOBAL_PLAYWRIGHT_API_OBJECT:
 					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 				else:
-					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
+					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
 					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_browser_via_passed_objects(self) -> None:

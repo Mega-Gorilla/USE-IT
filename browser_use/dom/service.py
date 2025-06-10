@@ -120,7 +120,7 @@ class DomService:
 			# Create concise summary
 			url_short = self.page.url[:50] + '...' if len(self.page.url) > 50 else self.page.url
 			logger.debug(
-				'🔎 Ran buildDOMTree.js interactive element detection on: %s interactive=%d/%d',
+				'🔎 Ran buildDOMTree.js interactive element detection on: %s interactive=%d/%d\n',
 				url_short,
 				interactive_count,
 				total_nodes,
