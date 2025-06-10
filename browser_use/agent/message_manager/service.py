@@ -245,7 +245,7 @@ class MessageManager:
 			tool_calls=[
 				{
 					'name': 'AgentOutput',
-					'args': {
+					'arguments': {
 						'current_state': {
 							'thinking': """
 **Understanding the Current State and History:**
@@ -290,7 +290,9 @@ class MessageManager:
 								'write_file': {
 									'path': 'github.md',
 									'content': """
-# Github Repositories in Explore Section and Their Information
+# Github Repositories:
+- bytedance/UI-TARS-desktop
+- ray-project/kuberay
 """,
 								}
 							},
@@ -307,7 +309,7 @@ class MessageManager:
 			],
 		)
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
-		self.add_tool_message(content='Data written to todo.md successfully. </example_1>', message_type='init')
+		self.add_tool_message(content='Data written to todo.md and github.md successfully. </example_1>', message_type='init')
 
 		placeholder_message = HumanMessage(content='<example_2>Example thinking and tool call 2:')
 		# self._add_message_with_tokens(placeholder_message, message_type='init')
