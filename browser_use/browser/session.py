@@ -1160,7 +1160,7 @@ class BrowserSession(BaseModel):
 		# if we have any viewport settings in the profile, make sure to apply them to the entire browser_context as defaults
 		if self.browser_profile.permissions:
 			try:
-				self.browser_context.grant_permissions(self.browser_profile.permissions)
+				await self.browser_context.grant_permissions(self.browser_profile.permissions)
 			except Exception as e:
 				self.logger.warning(
 					f'⚠️ Failed to grant browser permissions {self.browser_profile.permissions}: {type(e).__name__}: {e}'
