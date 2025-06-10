@@ -256,8 +256,12 @@ class Controller(Generic[Context]):
 				if iframe.url != page.url and not iframe.url.startswith('data:'):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					# Run markdownify in a thread pool for iframe content as well
-					iframe_html = await iframe.content()
-					iframe_markdown = await loop.run_in_executor(None, markdownify_func, iframe_html)
+					try:
+						iframe_html = await iframe.content()
+						iframe_markdown = await loop.run_in_executor(None, markdownify_func, iframe_html)
+					except Exception as e:
+						logger.debug(f'Error extracting iframe content from within page {page.url}: {type(e).__name__}: {e}')
+						iframe_markdown = ''
 					content += iframe_markdown
 
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
