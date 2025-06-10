@@ -3020,6 +3020,10 @@ class BrowserSession(BaseModel):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
+		if os.environ.get('IS_IN_EVALS', 'false').lower()[0] == 'ty1':
+			# dont bother wasting CPU showing animations during evals
+			return
+
 		await page.evaluate("""() => {
 			document.title = 'Setting up...';
 
