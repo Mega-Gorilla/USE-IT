@@ -67,6 +67,8 @@ _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the
 
 GLOBAL_PLAYWRIGHT_API_OBJECT = None  # never instantiate the playwright API object more than once per thread
 GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API object more than once per thread
+GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
+GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
@@ -513,16 +515,35 @@ class BrowserSession(BaseModel):
 		"""
 		global GLOBAL_PLAYWRIGHT_API_OBJECT
 		global GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		global GLOBAL_PATCHRIGHT_EVENT_LOOP
+
+		# Get current event loop
+		try:
+			current_loop = asyncio.get_running_loop()
+		except RuntimeError:
+			current_loop = None
 
 		if self.browser_profile.stealth:
 			# use patchright + chrome when stealth=True
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROME
 			self.logger.info(f'🕶️ Activated stealth mode using patchright {self.browser_profile.channel.name.lower()} browser...')
 			if not self.playwright:
+				# Check if we're in a different event loop than the one that created the global object
+				if GLOBAL_PATCHRIGHT_API_OBJECT and GLOBAL_PATCHRIGHT_EVENT_LOOP != current_loop:
+					self.logger.debug(
+						'⚠️ Detected event loop change. Previous patchright instance was created in a different event loop. '
+						'Creating new instance to avoid asyncio conflicts.'
+					)
+					# Reset the global object since we're in a different event loop
+					GLOBAL_PATCHRIGHT_API_OBJECT = None
+					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
+
 				if GLOBAL_PATCHRIGHT_API_OBJECT:
 					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
 				else:
 					GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
+					GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
 					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
 
 			# check for stealth best-practices
@@ -538,10 +559,21 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 			if not self.playwright:
+				# Check if we're in a different event loop than the one that created the global object
+				if GLOBAL_PLAYWRIGHT_API_OBJECT and GLOBAL_PLAYWRIGHT_EVENT_LOOP != current_loop:
+					self.logger.debug(
+						'⚠️ Detected event loop change. Previous playwright instance was created in a different event loop. '
+						'Creating new instance to avoid asyncio conflicts.'
+					)
+					# Reset the global object since we're in a different event loop
+					GLOBAL_PLAYWRIGHT_API_OBJECT = None
+					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
+
 				if GLOBAL_PLAYWRIGHT_API_OBJECT:
 					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 				else:
 					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
+					GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_browser_via_passed_objects(self) -> None:
