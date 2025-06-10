@@ -734,8 +734,7 @@ class TestBrowserSessionReusePatterns:
 			assert reused_session.initialized
 
 		finally:
-			# Clean up
-			await reused_session.close()
+			await reused_session.kill()
 
 	async def test_parallel_agents_same_browser_multiple_tabs(self):
 		"""Test Parallel Agents, Same Browser, Multiple Tabs pattern"""
@@ -856,8 +855,7 @@ class TestBrowserSessionReusePatterns:
 			assert len(tabs_info) >= 3
 
 		finally:
-			# Clean up
-			await shared_browser.close()
+			await shared_browser.kill()
 			storage_state_path.unlink(missing_ok=True)
 
 	async def test_parallel_agents_same_browser_same_tab(self, mock_llm):
@@ -904,7 +902,7 @@ class TestBrowserSessionReusePatterns:
 
 		finally:
 			# Clean up
-			await shared_browser.close()
+			await shared_browser.kill()
 
 	async def test_parallel_agents_same_profile_different_browsers(self, mock_llm):
 		"""Test Parallel Agents, Same Profile, Different Browsers pattern (recommended)"""
@@ -964,7 +962,6 @@ class TestBrowserSessionReusePatterns:
 			assert Path(auth_json_path).exists()
 
 		finally:
-			# Clean up
-			await window1.close()
-			await window2.close()
+			await window1.kill()
+			await window2.kill()
 			auth_json_path.unlink(missing_ok=True)

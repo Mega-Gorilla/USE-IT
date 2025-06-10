@@ -281,7 +281,7 @@ class BrowserSession(BaseModel):
 
 		# Use timeout to prevent indefinite waiting on lock acquisition
 
-		async with asyncio.timeout(60):  # 30 second timeout for launching
+		async with asyncio.timeout(60):  # 60 overall second timeout for entire launching process
 			async with self._start_lock:
 				if self.initialized:
 					if self.is_connected():
@@ -360,7 +360,7 @@ class BrowserSession(BaseModel):
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
-		async with asyncio.timeout(30):  # 15 second timeout for stop operations
+		async with asyncio.timeout(30):  # 30 second timeout for stop operations
 			async with self._start_lock:
 				# save cookies to disk if cookies_file or storage_state is configured
 				# but only if the browser context is still connected
@@ -1508,7 +1508,7 @@ class BrowserSession(BaseModel):
 				'See: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state'
 			)
 
-			cookies_path = Path(self.browser_profile.cookies_file).expanduser().resolve()
+			cookies_path = Path(self.browser_profile.cookies_file).expanduser()
 			if not cookies_path.is_absolute():
 				cookies_path = Path(self.browser_profile.downloads_path or '.').expanduser().resolve() / cookies_path.name
 
