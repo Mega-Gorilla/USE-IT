@@ -1514,9 +1514,9 @@ class BrowserSession(BaseModel):
 				'See: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state'
 			)
 
-			cookies_path = Path(self.browser_profile.cookies_file)
+			cookies_path = Path(self.browser_profile.cookies_file).expanduser().resolve()
 			if not cookies_path.is_absolute():
-				cookies_path = Path(self.browser_profile.downloads_path or '.') / cookies_path
+				cookies_path = Path(self.browser_profile.downloads_path or '.').expanduser().resolve() / cookies_path.name
 
 			try:
 				cookies_data = json.loads(cookies_path.read_text())
