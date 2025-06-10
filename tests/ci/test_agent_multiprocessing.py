@@ -14,6 +14,7 @@ Tests cover:
 import asyncio
 import logging
 import multiprocessing
+from asyncio import base_subprocess
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock
 
@@ -27,6 +28,29 @@ from browser_use.browser import BrowserProfile, BrowserSession
 # Set up test logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+# Monkeypatch BaseSubprocessTransport.__del__ to handle closed event loops gracefully
+original_del = base_subprocess.BaseSubprocessTransport.__del__
+
+
+def patched_del(self):
+	"""Patched __del__ that handles closed event loops gracefully"""
+	try:
+		# Check if the event loop is closed before calling the original
+		if hasattr(self, '_loop') and self._loop and self._loop.is_closed():
+			# Event loop is closed, skip cleanup that requires the loop
+			return
+		original_del(self)
+	except RuntimeError as e:
+		if 'Event loop is closed' in str(e):
+			# Silently ignore this specific error
+			pass
+		else:
+			raise
+
+
+base_subprocess.BaseSubprocessTransport.__del__ = patched_del
 
 
 def create_mock_llm():
