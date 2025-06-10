@@ -90,7 +90,9 @@ class Memory:
 					import tempfile
 					import uuid
 
-					logger.warning('⚠️ Mem0 SQLite migration error detected. Using a temporary database to avoid conflicts.')
+					logger.warning(
+						f'⚠️ Mem0 SQLite migration error detected in {self.config.full_config_dict}. Using a temporary database to avoid conflicts.\n{type(e).__name__}: {e}'
+					)
 					# Create a unique temporary database path
 					temp_dir = tempfile.gettempdir()
 					unique_id = str(uuid.uuid4())[:8]
