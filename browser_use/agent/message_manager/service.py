@@ -245,7 +245,7 @@ class MessageManager:
 			tool_calls=[
 				{
 					'name': 'AgentOutput',
-					'arguments': {
+					'args': {
 						'current_state': {
 							'thinking': """
 **Understanding the Current State and History:**
@@ -309,7 +309,10 @@ class MessageManager:
 			],
 		)
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
-		self.add_tool_message(content='Data written to todo.md and github.md successfully. </example_1>', message_type='init')
+		self.add_tool_message(
+			content='Data written to todo.md. \nData written to github.md. \n Clicked element with index 4. </example_1>',
+			message_type='init',
+		)
 
 		placeholder_message = HumanMessage(content='<example_2>Example thinking and tool call 2:')
 		# self._add_message_with_tokens(placeholder_message, message_type='init')
