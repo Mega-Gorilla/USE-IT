@@ -555,7 +555,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		from_attributes=True,
 		validate_by_name=True,
 		validate_by_alias=True,
-		populate_by_name=True,
 	)
 
 	# ... extends options defined in:
