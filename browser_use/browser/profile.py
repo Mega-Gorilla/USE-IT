@@ -309,7 +309,7 @@ class BrowserChannel(str, Enum):
 
 BROWSERUSE_CONFIG_DIR = Path('~/.config/browseruse').expanduser().resolve()
 BROWSERUSE_PROFILES_DIR = BROWSERUSE_CONFIG_DIR / 'profiles'
-BROWSERUSE_DEFAULT_PROFILE_DIR = BROWSERUSE_PROFILES_DIR / 'default'
+BROWSERUSE_CHROMIUM_USER_DATA_DIR = BROWSERUSE_PROFILES_DIR / 'default'
 BROWSERUSE_DEFAULT_CHANNEL = BrowserChannel.CHROMIUM
 
 
@@ -534,7 +534,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
 
 	# Required parameter specific to launch_persistent_context, but can be None to use incognito temp dir
-	user_data_dir: str | Path | None = None
+	user_data_dir: str | Path | None = BROWSERUSE_CHROMIUM_USER_DATA_DIR
 
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
@@ -603,7 +603,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	save_har_path: str | None = Field(default=None, description='Directory for saving HAR files.')
 	trace_path: str | None = Field(default=None, description='Directory for saving trace files.')
 
-	cookies_file: str | None = Field(
+	cookies_file: Path | None = Field(
 		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
 	)
 
@@ -652,8 +652,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	def warn_user_data_dir_non_default_version(self) -> Self:
 		"""If user is using default profile dir with a non-default channel, force-change it to avoid corrupting the default data dir."""
 
-		is_using_non_default_chrome = self.executable_path or self.channel not in (BROWSERUSE_DEFAULT_CHANNEL, None)
-		if self.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR and is_using_non_default_chrome:
+		is_not_using_default_chromium = self.executable_path or self.channel not in (BROWSERUSE_DEFAULT_CHANNEL, None)
+		if self.user_data_dir == BROWSERUSE_CHROMIUM_USER_DATA_DIR and is_not_using_default_chromium:
 			alternate_name = (
 				self.executable_path.name.lower().replace(' ', '-') if self.executable_path else self.channel.name.lower()
 			)

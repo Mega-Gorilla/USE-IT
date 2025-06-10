@@ -1154,7 +1154,7 @@ class BrowserSession(BaseModel):
 				self.browser_pid = None
 
 		if not already_disconnected:
-			self.logger.debug(f'🪢 Browser {self._connection_str} disconnected')
+			self.logger.debug(f'⚰️ Browser {self._connection_str} disconnected')
 
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
@@ -1292,7 +1292,7 @@ class BrowserSession(BaseModel):
 						unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
 						download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
 						await download.save_as(download_path)
-						self.logger.debug(f'⬇️ Download triggered. Saved file to: {download_path}')
+						self.logger.info(f'⬇️ Download triggered. Saved file to: {download_path}')
 						return download_path
 					except Exception:
 						# If no download is triggered, treat as normal click
@@ -1799,11 +1799,11 @@ class BrowserSession(BaseModel):
 
 		tab_idx = self.tabs.index(page)
 		if bytes_used is not None:
-			self.logger.debug(
+			self.logger.info(
 				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
 			)
 		else:
-			self.logger.debug(
+			self.logger.info(
 				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} took {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
 			)
 

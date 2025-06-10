@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 from browser_use.browser.profile import (
+	BROWSERUSE_CHROMIUM_USER_DATA_DIR,
 	BROWSERUSE_DEFAULT_CHANNEL,
-	BROWSERUSE_DEFAULT_PROFILE_DIR,
 	BrowserChannel,
 	BrowserProfile,
 )
@@ -495,7 +495,7 @@ class TestBrowserSessionStart:
 		# Test 1: Chromium with default user_data_dir and default channel should work fine
 		session = BrowserSession(
 			headless=True,
-			user_data_dir=BROWSERUSE_DEFAULT_PROFILE_DIR,
+			user_data_dir=BROWSERUSE_CHROMIUM_USER_DATA_DIR,
 			channel=BROWSERUSE_DEFAULT_CHANNEL,  # chromium
 			keep_alive=False,
 		)
@@ -505,21 +505,21 @@ class TestBrowserSessionStart:
 			assert session.initialized is True
 			assert session.browser_context is not None
 			# Verify the user_data_dir wasn't changed
-			assert session.browser_profile.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR
+			assert session.browser_profile.user_data_dir == BROWSERUSE_CHROMIUM_USER_DATA_DIR
 		finally:
 			await session.kill()
 
 		# Test 2: Chrome with default user_data_dir should show warning and change dir
 		profile2 = BrowserProfile(
 			headless=True,
-			user_data_dir=BROWSERUSE_DEFAULT_PROFILE_DIR,
+			user_data_dir=BROWSERUSE_CHROMIUM_USER_DATA_DIR,
 			channel=BrowserChannel.CHROME,
 			keep_alive=False,
 		)
 
 		# The validator should have changed the user_data_dir
-		assert profile2.user_data_dir != BROWSERUSE_DEFAULT_PROFILE_DIR
-		assert profile2.user_data_dir == BROWSERUSE_DEFAULT_PROFILE_DIR.parent / 'default-chrome'
+		assert profile2.user_data_dir != BROWSERUSE_CHROMIUM_USER_DATA_DIR
+		assert profile2.user_data_dir == BROWSERUSE_CHROMIUM_USER_DATA_DIR.parent / 'default-chrome'
 
 		# Check warning was logged
 		warning_found = any(
