@@ -529,13 +529,28 @@ class BrowserSession(BaseModel):
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROME
 			self.logger.info(f'🕶️ Activated stealth mode using patchright {self.browser_profile.channel.name.lower()} browser...')
 			if not self.playwright:
+				# Check if the global object is still valid
+				should_recreate = False
+
 				# Check if we're in a different event loop than the one that created the global object
 				if GLOBAL_PATCHRIGHT_API_OBJECT and GLOBAL_PATCHRIGHT_EVENT_LOOP != current_loop:
 					self.logger.debug(
-						'⚠️ Detected event loop change. Previous patchright instance was created in a different event loop. '
+						'Detected event loop change. Previous patchright instance was created in a different event loop. '
 						'Creating new instance to avoid asyncio conflicts.'
 					)
-					# Reset the global object since we're in a different event loop
+					should_recreate = True
+
+				# Also check if the object exists but is no longer functional
+				if GLOBAL_PATCHRIGHT_API_OBJECT and not should_recreate:
+					try:
+						# Try to access the chromium property to verify the object is still valid
+						_ = GLOBAL_PATCHRIGHT_API_OBJECT.chromium
+					except Exception as e:
+						self.logger.debug(f'Detected invalid patchright instance: {type(e).__name__}. Creating new instance.')
+						should_recreate = True
+
+				if should_recreate:
+					# Reset the global object since we need a new one
 					GLOBAL_PATCHRIGHT_API_OBJECT = None
 					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
 
@@ -559,13 +574,28 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 			if not self.playwright:
+				# Check if the global object is still valid
+				should_recreate = False
+
 				# Check if we're in a different event loop than the one that created the global object
 				if GLOBAL_PLAYWRIGHT_API_OBJECT and GLOBAL_PLAYWRIGHT_EVENT_LOOP != current_loop:
 					self.logger.debug(
-						'⚠️ Detected event loop change. Previous playwright instance was created in a different event loop. '
+						'Detected event loop change. Previous playwright instance was created in a different event loop. '
 						'Creating new instance to avoid asyncio conflicts.'
 					)
-					# Reset the global object since we're in a different event loop
+					should_recreate = True
+
+				# Also check if the object exists but is no longer functional
+				if GLOBAL_PLAYWRIGHT_API_OBJECT and not should_recreate:
+					try:
+						# Try to access the chromium property to verify the object is still valid
+						_ = GLOBAL_PLAYWRIGHT_API_OBJECT.chromium
+					except Exception as e:
+						self.logger.debug(f'Detected invalid playwright instance: {type(e).__name__}. Creating new instance.')
+						should_recreate = True
+
+				if should_recreate:
+					# Reset the global object since we need a new one
 					GLOBAL_PLAYWRIGHT_API_OBJECT = None
 					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
 
@@ -575,6 +605,33 @@ class BrowserSession(BaseModel):
 					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
 					GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
+
+	async def _recreate_playwright_instance(self) -> None:
+		"""Force recreation of the playwright instance when it's detected to be invalid"""
+		global GLOBAL_PLAYWRIGHT_API_OBJECT
+		global GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		global GLOBAL_PATCHRIGHT_EVENT_LOOP
+
+		try:
+			current_loop = asyncio.get_running_loop()
+		except RuntimeError:
+			current_loop = None
+
+		if self.browser_profile.stealth:
+			# Reset patchright
+			GLOBAL_PATCHRIGHT_API_OBJECT = None
+			GLOBAL_PATCHRIGHT_EVENT_LOOP = None
+			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
+			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
+			self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
+		else:
+			# Reset playwright
+			GLOBAL_PLAYWRIGHT_API_OBJECT = None
+			GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
+			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
+			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
+			self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_browser_via_passed_objects(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
@@ -696,15 +753,32 @@ class BrowserSession(BaseModel):
 			if not self.browser_profile.user_data_dir:
 				# self.logger.debug('🌎 Launching local browser in incognito mode')
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
-				async with asyncio.timeout(30):
-					self.browser = self.browser or await self.playwright.chromium.launch(
-						**self.browser_profile.kwargs_for_launch().model_dump()
+				try:
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						self.browser = self.browser or await self.playwright.chromium.launch(
+							**self.browser_profile.kwargs_for_launch().model_dump()
+						)
+					# self.logger.debug('🌎 Launching new incognito context in browser')
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						self.browser_context = await self.browser.new_context(
+							**self.browser_profile.kwargs_for_new_context().model_dump()
+						)
+				except TimeoutError:
+					self.logger.warning(
+						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
+						'Recreating playwright instance and retrying...'
 					)
-				# self.logger.debug('🌎 Launching new incognito context in browser')
-				async with asyncio.timeout(30):
-					self.browser_context = await self.browser.new_context(
-						**self.browser_profile.kwargs_for_new_context().model_dump()
-					)
+					# Force recreation of the playwright object
+					await self._recreate_playwright_instance()
+					# Retry the operation with the new playwright instance
+					async with asyncio.timeout(10):
+						self.browser = await self.playwright.chromium.launch(
+							**self.browser_profile.kwargs_for_launch().model_dump()
+						)
+					async with asyncio.timeout(10):
+						self.browser_context = await self.browser.new_context(
+							**self.browser_profile.kwargs_for_new_context().model_dump()
+						)
 				# self.logger.debug('🌎 Created new incognito context in browser')
 			else:
 				# user data dir was provided, prepare it for use
@@ -720,46 +794,61 @@ class BrowserSession(BaseModel):
 						break
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
-				async with asyncio.timeout(30):
-					try:
+				try:
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						try:
+							self.browser_context = await self.playwright.chromium.launch_persistent_context(
+								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+							)
+						except Exception as e:
+							# Re-raise if not a timeout
+							if not isinstance(e, asyncio.TimeoutError):
+								raise
+				except TimeoutError:
+					self.logger.warning(
+						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
+						'Recreating playwright instance and retrying...'
+					)
+					# Force recreation of the playwright object
+					await self._recreate_playwright_instance()
+					# Retry the operation with the new playwright instance
+					async with asyncio.timeout(10):
 						self.browser_context = await self.playwright.chromium.launch_persistent_context(
 							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
 						)
-					except Exception as e:
-						# show a nice logger hint explaining what went wrong with the user_data_dir
-						# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
-						user_data_dir_chrome_version = '???'
-						test_browser_version = '???'
-						try:
-							# user_data_dir is corrupted or unreadable because it was migrated to a newer version of chrome than we are running with
-							user_data_dir_chrome_version = (
-								(self.browser_profile.user_data_dir / 'Last Version').read_text().strip()
-							)
-						except Exception:
-							pass  # let the logger below handle it
-						try:
-							test_browser = await self.playwright.chromium.launch(headless=True)
-							test_browser_version = test_browser.version
-							await test_browser.close()
-						except Exception:
-							pass
+				except Exception as e:
+					# show a nice logger hint explaining what went wrong with the user_data_dir
+					# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
+					user_data_dir_chrome_version = '???'
+					test_browser_version = '???'
+					try:
+						# user_data_dir is corrupted or unreadable because it was migrated to a newer version of chrome than we are running with
+						user_data_dir_chrome_version = (self.browser_profile.user_data_dir / 'Last Version').read_text().strip()
+					except Exception:
+						pass  # let the logger below handle it
+					try:
+						test_browser = await self.playwright.chromium.launch(headless=True)
+						test_browser_version = test_browser.version
+						await test_browser.close()
+					except Exception:
+						pass
 
-						# failed to parse extensions == most common error text when user_data_dir is corrupted / has an unusable schema
-						reason = 'due to bad' if 'Failed parsing extensions' in str(e) else 'for unknown reason with'
-						driver = str(type(self.playwright).__module__).split('.')[0].lower()
-						browser_channel = (
-							Path(self.browser_profile.executable_path).name.replace(' ', '-').replace('.exe', '').lower()
-							if self.browser_profile.executable_path
-							else (self.browser_profile.channel or BROWSERUSE_DEFAULT_CHANNEL).name.lower()
-						)
-						self.logger.error(
-							f'❌ Launching new local browser {driver}:{browser_channel} (v{test_browser_version}) failed!'
-							f'\n\tFailed {reason} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (created with v{user_data_dir_chrome_version})'
-							'\n\tTry using a different browser version/channel or delete the user_data_dir to start over with a fresh profile.'
-							'\n\t(can happen if different versions of Chrome/Chromium/Brave/etc. tried to share one dir)'
-							f'\n\n{type(e).__name__} {e}'
-						)
-						raise
+					# failed to parse extensions == most common error text when user_data_dir is corrupted / has an unusable schema
+					reason = 'due to bad' if 'Failed parsing extensions' in str(e) else 'for unknown reason with'
+					driver = str(type(self.playwright).__module__).split('.')[0].lower()
+					browser_channel = (
+						Path(self.browser_profile.executable_path).name.replace(' ', '-').replace('.exe', '').lower()
+						if self.browser_profile.executable_path
+						else (self.browser_profile.channel or BROWSERUSE_DEFAULT_CHANNEL).name.lower()
+					)
+					self.logger.error(
+						f'❌ Launching new local browser {driver}:{browser_channel} (v{test_browser_version}) failed!'
+						f'\n\tFailed {reason} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (created with v{user_data_dir_chrome_version})'
+						'\n\tTry using a different browser version/channel or delete the user_data_dir to start over with a fresh profile.'
+						'\n\t(can happen if different versions of Chrome/Chromium/Brave/etc. tried to share one dir)'
+						f'\n\n{type(e).__name__} {e}'
+					)
+					raise
 
 		# Only restore browser from context if it's connected, otherwise keep it None to force new launch
 		browser_from_context = self.browser_context and self.browser_context.browser
