@@ -249,7 +249,7 @@ reused_session = BrowserSession(
     user_data_dir='~/.config/browseruse/profiles/default',
     keep_alive=True,  # dont close browser after 1st agent.run() ends
 )
-await shared_browser.start()   # when keep_alive=True, session must be started manually
+await reused_session.start()   # when keep_alive=True, session must be started manually
 
 agent1 = Agent(
     task="The first task...",
