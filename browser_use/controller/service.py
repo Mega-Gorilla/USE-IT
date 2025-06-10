@@ -133,7 +133,9 @@ class Controller(Generic[Context]):
 			if params.index not in selector_map:
 				# Force a state refresh in case the cache is stale
 				logger.info(f'Element with index {params.index} not found in selector map, refreshing state...')
-				await browser_session._update_state()  # This will refresh the cached state
+				await browser_session.get_state_summary(
+					cache_clickable_elements_hashes=True
+				)  # This will refresh the cached state
 				selector_map = await browser_session.get_selector_map()
 
 				if params.index not in selector_map:
@@ -170,7 +172,7 @@ class Controller(Generic[Context]):
 				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
 					# Page navigated during click - refresh state and return it
 					logger.info('Page context changed during click, refreshing state...')
-					await browser_session._update_state()
+					await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 					return ActionResult(error='Page navigated during click. Refreshed state provided.', include_in_memory=True)
 				else:
 					logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
