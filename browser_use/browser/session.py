@@ -1390,6 +1390,9 @@ class BrowserSession(BaseModel):
 		await self.save_storage_state(*args, **kwargs)
 
 	async def _save_cookies_to_file(self, path: Path, cookies: list[dict[str, Any]] | None) -> None:
+		if not (path or self.browser_profile.cookies_file):
+			return
+
 		try:
 			cookies_file_path = Path(path or self.browser_profile.cookies_file).expanduser().resolve()
 			cookies_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1470,9 +1473,9 @@ class BrowserSession(BaseModel):
 		# save cookies_file if passed a cookies file path or if profile cookies_file is configured
 		if cookies and self.browser_profile.cookies_file:
 			# only show warning if they configured cookies_file (not if they passed in a path to this function as an arg)
-			await self._save_cookies_to_file(path or self.browser_profile.cookies_file, cookies)
-			await self._save_storage_state_to_file(path.parent / 'storage_state.json', storage_state)
-			new_path = path.parent / 'storage_state.json'
+			await self._save_cookies_to_file(self.browser_profile.cookies_file, cookies)
+			new_path = self.browser_profile.cookies_file.parent / 'storage_state.json'
+			await self._save_storage_state_to_file(new_path, storage_state)
 			self.logger.warning(
 				'⚠️ cookies_file is deprecated and will be removed in a future version. '
 				f'Please use storage_state="{_log_pretty_path(new_path)}" instead for persisting cookies and other browser state. '
