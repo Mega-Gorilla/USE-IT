@@ -35,6 +35,9 @@ def create_mock_llm():
 	mock._verified_api_keys = True
 	mock._verified_tool_calling_method = 'raw'
 
+	# Add model_name attribute for logging
+	mock.model_name = 'mock-llm'
+
 	# Create the response
 	response_content = """
 	{
@@ -71,6 +74,9 @@ def create_mock_llm_with_actions(action_sequence):
 	mock = AsyncMock(spec=BaseChatModel)
 	mock._verified_api_keys = True
 	mock._verified_tool_calling_method = 'raw'
+
+	# Add model_name attribute for logging
+	mock.model_name = 'mock-llm'
 
 	action_index = 0
 
@@ -128,6 +134,7 @@ def run_agent_in_subprocess_module(task_description):
 		mock_llm = AsyncMock(spec=BaseChatModel)
 		mock_llm._verified_api_keys = True
 		mock_llm._verified_tool_calling_method = 'raw'
+		mock_llm.model_name = 'mock-llm'
 
 		response_content = """
 		{

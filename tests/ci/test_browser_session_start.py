@@ -570,6 +570,7 @@ class TestBrowserSessionReusePatterns:
 		# Skip verification by setting these attributes
 		mock._verified_api_keys = True
 		mock._verified_tool_calling_method = 'raw'
+		mock.model_name = 'mock-llm'
 
 		# Mock the invoke method to return a proper response
 		def mock_invoke(*args, **kwargs):
