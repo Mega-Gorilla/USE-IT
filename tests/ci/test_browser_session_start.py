@@ -42,15 +42,7 @@ class TestBrowserSessionStart:
 		"""Create a BrowserSession instance without starting it."""
 		session = BrowserSession(browser_profile=browser_profile)
 		yield session
-		# Cleanup: ensure session is stopped
-		try:
-			# logger.info(f'Fixture cleanup: keep_alive={session.browser_profile.keep_alive}, setting to False')
-			session.browser_profile.keep_alive = False
-			await session.stop()
-			# logger.info('Fixture cleanup completed')
-		except Exception as e:
-			# logger.error(f'Fixture cleanup failed: {e}')
-			pass
+		await session.kill()
 
 	async def test_start_already_started_session(self, browser_session):
 		"""Test calling .start() on a session that's already started."""
