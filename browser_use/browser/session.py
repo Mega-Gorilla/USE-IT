@@ -480,6 +480,13 @@ class BrowserSession(BaseModel):
 		if not self.browser_profile.keep_alive and self.browser_pid:
 			try:
 				browser_proc = psutil.Process(self.browser_pid)
+				try:
+					browser_proc.terminate()
+					browser_proc.wait(
+						timeout=5
+					)  # wait up to 5 seconds for the process to exit cleanly and commit its user_data_dir changes
+				except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
+					pass
 
 				# Kill all child processes first (recursive)
 				for child in browser_proc.children(recursive=True):
@@ -490,11 +497,10 @@ class BrowserSession(BaseModel):
 						pass
 
 				# Kill the main browser process
-				try:
-					# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
-					browser_proc.kill()
-				except (psutil.NoSuchProcess, psutil.AccessDenied):
-					pass
+				# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
+				browser_proc.kill()
+			except psutil.NoSuchProcess:
+				pass
 			except Exception as e:
 				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
 
