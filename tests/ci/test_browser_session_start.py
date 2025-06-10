@@ -784,7 +784,9 @@ class TestBrowserSessionReusePatterns:
 				},
 				"action": [
 					{
-						"create_new_tab": {}
+						"open_tab": {
+							"url": "https://example.com"
+						}
 					}
 				]
 			}
@@ -840,8 +842,20 @@ class TestBrowserSessionReusePatterns:
 			results = await asyncio.gather(agent1.run(), agent2.run(), agent3.run())
 
 			# Verify all agents used the same browser session (using __eq__ to check browser_pid, cdp_url, wss_url)
-			assert agent1.browser_session == agent2.browser_session == agent3.browser_session
-			assert agent1.browser_session == shared_browser
+			# Debug: print the browser sessions to see what's different
+			print(f'Agent1 session: {agent1.browser_session}')
+			print(f'Agent2 session: {agent2.browser_session}')
+			print(f'Agent3 session: {agent3.browser_session}')
+			print(f'Shared session: {shared_browser}')
+
+			# Check each pair individually
+			assert agent1.browser_session == agent2.browser_session, (
+				f'agent1 != agent2: {agent1.browser_session} != {agent2.browser_session}'
+			)
+			assert agent2.browser_session == agent3.browser_session, (
+				f'agent2 != agent3: {agent2.browser_session} != {agent3.browser_session}'
+			)
+			assert agent1.browser_session == shared_browser, f'agent1 != shared: {agent1.browser_session} != {shared_browser}'
 			assert shared_browser.initialized
 
 			# Verify multiple tabs were created
