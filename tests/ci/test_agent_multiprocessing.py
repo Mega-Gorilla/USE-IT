@@ -39,15 +39,18 @@ def patched_del(self):
 	try:
 		# Check if the event loop is closed before calling the original
 		if hasattr(self, '_loop') and self._loop and self._loop.is_closed():
+			self._loop = asyncio.new_event_loop()
+			asyncio.set_event_loop(self._loop)
 			# Event loop is closed, skip cleanup that requires the loop
-			return
+			# return
 		original_del(self)
 	except RuntimeError as e:
-		if 'Event loop is closed' in str(e):
-			# Silently ignore this specific error
-			pass
-		else:
-			raise
+		# if 'Event loop is closed' in str(e):
+		# 	# Silently ignore this specific error
+		# 	pass
+		# else:
+		# 	raise
+		raise
 
 
 base_subprocess.BaseSubprocessTransport.__del__ = patched_del
