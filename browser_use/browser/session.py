@@ -964,7 +964,15 @@ class BrowserSession(BaseModel):
 		"""
 
 		# Expose anti-detection scripts
-		await self.browser_context.add_init_script(init_script)
+		try:
+			await self.browser_context.add_init_script(init_script)
+		except Exception as e:
+			if 'Target page, context or browser has been closed' in str(e):
+				self.logger.warning('⚠️ Browser context was closed before init script could be added')
+				# Reset connection state since browser is no longer valid
+				self._reset_connection_state()
+			else:
+				raise
 
 		if self.browser_profile.stealth and not isinstance(self.playwright, Patchright):
 			self.logger.warning('⚠️ Failed to set up stealth mode. (...) got normal playwright objects as input.')
