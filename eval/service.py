@@ -1078,6 +1078,7 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 			wait_for_network_idle_page_load_time=60.0,
 			maximum_wait_page_load_time=60.0,
 			wait_between_actions=0.5,
+			ignore_https_errors=True,
 		),
 	)
 
