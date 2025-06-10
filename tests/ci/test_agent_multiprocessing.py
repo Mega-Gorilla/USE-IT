@@ -532,6 +532,8 @@ class TestParallelism:
 			# Give playwright tasks a moment to complete before killing
 			await asyncio.sleep(0.1)
 			await shared_session.kill()
+			# Give playwright.stop() time to complete cleanup
+			await asyncio.sleep(0.1)
 
 	async def test_reuse_browser_session_sequentially(self):
 		"""Test reusing a browser session sequentially with keep_alive"""
@@ -627,7 +629,6 @@ class TestParallelism:
 			if last_history.model_output and last_history.model_output.action:
 				assert any(hasattr(action, 'done') for action in last_history.model_output.action)
 
-			# Clean up browser session first
-			await browser_session.kill()
-			# Then close browser to ensure all playwright tasks complete
 			await browser.close()
+			await browser_session.kill()
+		await playwright.stop()
