@@ -1469,13 +1469,28 @@ class BrowserSession(BaseModel):
 				return await perform_click(lambda: element_handle.click(timeout=1500))
 			except URLNotAllowedError as e:
 				raise e
-			except Exception:
-				try:
-					return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
-				except URLNotAllowedError as e:
-					raise e
-				except Exception as e:
-					raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
+			except Exception as e:
+				# Check if it's a context error and provide more info
+				if 'Cannot find context with specified id' in str(e) or 'Protocol error' in str(e):
+					self.logger.warning(f'⚠️ Element context lost, attempting to re-locate element: {type(e).__name__}')
+					# Try to re-locate the element
+					element_handle = await self.get_locate_element(element_node)
+					if element_handle is None:
+						raise Exception(f'Element no longer exists in DOM after context loss: {repr(element_node)}')
+					# Try click again with fresh element
+					try:
+						return await perform_click(lambda: element_handle.click(timeout=1500))
+					except Exception:
+						# Fall back to JavaScript click
+						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+				else:
+					# Original fallback for other errors
+					try:
+						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+					except URLNotAllowedError as e:
+						raise e
+					except Exception as e:
+						raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
 
 		except URLNotAllowedError as e:
 			raise e

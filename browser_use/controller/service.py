@@ -128,8 +128,16 @@ class Controller(Generic[Context]):
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
 			# Browser is now a BrowserSession itself
 
-			if params.index not in await browser_session.get_selector_map():
-				raise Exception(f'Element with index {params.index} does not exist - retry or use alternative actions')
+			# Check if element exists in current selector map
+			selector_map = await browser_session.get_selector_map()
+			if params.index not in selector_map:
+				# Force a state refresh in case the cache is stale
+				logger.info(f'Element with index {params.index} not found in selector map, refreshing state...')
+				await browser_session._update_state()  # This will refresh the cached state
+				selector_map = await browser_session.get_selector_map()
+
+				if params.index not in selector_map:
+					raise Exception(f'Element with index {params.index} does not exist - retry or use alternative actions')
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
@@ -158,8 +166,15 @@ class Controller(Generic[Context]):
 					await browser_session.switch_to_tab(-1)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
-				logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
-				return ActionResult(error=str(e))
+				error_msg = str(e)
+				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
+					# Page navigated during click - refresh state and return it
+					logger.info('Page context changed during click, refreshing state...')
+					await browser_session._update_state()
+					return ActionResult(error='Page navigated during click. Refreshed state provided.', include_in_memory=True)
+				else:
+					logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
+					return ActionResult(error=error_msg)
 
 		@self.registry.action(
 			'Input text into a input interactive element',
