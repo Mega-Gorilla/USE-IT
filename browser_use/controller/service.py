@@ -232,19 +232,33 @@ class Controller(Generic[Context]):
 			page_extraction_llm: BaseChatModel,
 			include_links: bool = False,
 		):
+			from functools import partial
+
 			import markdownify
 
 			strip = []
 			if not include_links:
 				strip = ['a', 'img']
 
-			content = markdownify.markdownify(await page.content(), strip=strip)
+			# Run markdownify in a thread pool to avoid blocking the event loop
+			loop = asyncio.get_event_loop()
+			page_html = await page.content()
+			markdownify_func = partial(markdownify.markdownify, strip=strip)
+			content = await loop.run_in_executor(None, markdownify_func, page_html)
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
+				try:
+					await iframe.wait_for_load_state(timeout=5000)  # extra on top of already loaded page
+				except Exception as e:
+					pass
+
 				if iframe.url != page.url and not iframe.url.startswith('data:'):
 					content += f'\n\nIFRAME {iframe.url}:\n'
-					content += markdownify.markdownify(await iframe.content())
+					# Run markdownify in a thread pool for iframe content as well
+					iframe_html = await iframe.content()
+					iframe_markdown = await loop.run_in_executor(None, markdownify.markdownify, iframe_html)
+					content += iframe_markdown
 
 			prompt = 'Your task is to extract the content of the page. You will be given a page and a goal and you should extract all relevant information around this goal from the page. If the goal is vague, summarize the page. Respond in json format. Extraction goal: {goal}, Page: {page}'
 			template = PromptTemplate(input_variables=['goal', 'page'], template=prompt)
