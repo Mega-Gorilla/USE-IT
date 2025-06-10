@@ -1803,7 +1803,11 @@ class BrowserSession(BaseModel):
 		except Exception:
 			bytes_used = None
 
-		tab_idx = self.tabs.index(page)
+		try:
+			tab_idx = self.tabs.index(page)
+		except ValueError:
+			tab_idx = '??'
+
 		extra_delay = ''
 		if remaining > 0:
 			extra_delay = f', waiting +{remaining:.2f}s for all frames to finish'
