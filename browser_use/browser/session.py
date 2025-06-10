@@ -441,7 +441,10 @@ class BrowserSession(BaseModel):
 		if self.playwright:
 			try:
 				await self.playwright.stop()
-				self.logger.debug('🎭 Stopped playwright instance')
+				# Give playwright tasks a moment to clean up properly
+				# This prevents "Task was destroyed but it is pending!" warnings
+				await asyncio.sleep(0.01)
+				# self.logger.debug('🎭 Stopped playwright node.js API worker')
 			except Exception as e:
 				self.logger.warning(f'❌ Error stopping playwright: {type(e).__name__}: {e}')
 			finally:
@@ -452,11 +455,11 @@ class BrowserSession(BaseModel):
 				if self.playwright == GLOBAL_PLAYWRIGHT_API_OBJECT:
 					GLOBAL_PLAYWRIGHT_API_OBJECT = None
 					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
-					self.logger.debug('🧹 Cleared global playwright references')
+					# self.logger.debug('🧹 Cleared global playwright references')
 				elif self.playwright == GLOBAL_PATCHRIGHT_API_OBJECT:
 					GLOBAL_PATCHRIGHT_API_OBJECT = None
 					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
-					self.logger.debug('🧹 Cleared global patchright references')
+					# self.logger.debug('🧹 Cleared global patchright references')
 
 				self.playwright = None
 
