@@ -2785,6 +2785,11 @@ class BrowserSession(BaseModel):
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
 
+		try:
+			new_page = await self.browser_context.new_page()
+		except Exception as e:
+			self.initialized = False
+
 		if not self.initialized or not self.is_connected():
 			# If we were initialized but lost connection, reset state first to avoid infinite loops
 			if self.initialized and not self.is_connected():
@@ -2794,8 +2799,7 @@ class BrowserSession(BaseModel):
 				self._reset_connection_state()
 			await self.start()
 			assert self.browser_context, 'Browser context is not set'
-
-		new_page = await self.browser_context.new_page()
+			new_page = await self.browser_context.new_page()
 
 		# Update agent tab reference
 		self.agent_current_page = new_page
