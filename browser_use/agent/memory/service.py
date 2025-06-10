@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
@@ -79,7 +80,9 @@ class Memory:
 				)
 
 		# Initialize Mem0 with the configuration
-		self.mem0 = Mem0Memory.from_config(config_dict=self.config.full_config_dict)
+		with warnings.catch_warnings():
+			warnings.filterwarnings('ignore', category=DeprecationWarning)
+			self.mem0 = Mem0Memory.from_config(config_dict=self.config.full_config_dict)
 
 	@time_execution_sync('--create_procedural_memory')
 	def create_procedural_memory(self, current_step: int) -> None:
