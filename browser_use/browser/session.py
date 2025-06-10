@@ -1490,6 +1490,20 @@ class BrowserSession(BaseModel):
 					except URLNotAllowedError as e:
 						raise e
 					except Exception as e:
+						# Final fallback - try clicking by coordinates if available
+						if element_node.viewport_coordinates and element_node.viewport_coordinates.center:
+							try:
+								self.logger.warning(
+									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.viewport_coordinates.center.x}, {element_node.viewport_coordinates.center.y})'
+								)
+								await page.mouse.click(
+									element_node.viewport_coordinates.center.x, element_node.viewport_coordinates.center.y
+								)
+								await page.wait_for_load_state()
+								await self._check_and_handle_navigation(page)
+								return None  # Success
+							except Exception as coord_e:
+								self.logger.error(f'Coordinate click also failed: {type(coord_e).__name__}: {coord_e}')
 						raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
 
 		except URLNotAllowedError as e:

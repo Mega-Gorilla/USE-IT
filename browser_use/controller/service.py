@@ -139,7 +139,12 @@ class Controller(Generic[Context]):
 				selector_map = await browser_session.get_selector_map()
 
 				if params.index not in selector_map:
-					raise Exception(f'Element with index {params.index} does not exist - retry or use alternative actions')
+					# Return informative message with the new state instead of error
+					max_index = max(selector_map.keys()) if selector_map else -1
+					return ActionResult(
+						extracted_content=f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.',
+						include_in_memory=True,
+					)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
