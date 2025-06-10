@@ -86,7 +86,7 @@ class Controller(Generic[Context]):
 			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
 
 			page = await browser_session.get_current_page()
-			if page.url in ('about:blank', 'https://www.google.com'):
+			if page.url.strip('/') == 'https://www.google.com':
 				await page.goto(search_url)
 				await page.wait_for_load_state()
 			else:
