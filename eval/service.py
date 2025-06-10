@@ -1072,6 +1072,12 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 			user_data_dir=str(unique_user_data_dir),
 			headless=headless,
 			chromium_sandbox=False,
+			timeout=60,
+			default_timeout=60,
+			default_navigation_timeout=60,
+			wait_for_network_idle_page_load_time=60,
+			maximum_wait_page_load_time=60,
+			wait_between_actions=0.5,
 		),
 	)
 
