@@ -1451,6 +1451,10 @@ class BrowserSession(BaseModel):
 		"""
 		Save cookies to the specified path or the configured cookies_file and/or storage_state.
 		"""
+
+		if not (path or self.browser_profile.storage_state or self.browser_profile.cookies_file):
+			return
+		
 		storage_state = await self.browser_context.storage_state()
 		cookies = storage_state['cookies']
 
