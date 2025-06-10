@@ -442,6 +442,22 @@ class BrowserSession(BaseModel):
 		await self.start()
 		return self
 
+	def __eq__(self, other: object) -> bool:
+		"""Check if two BrowserSession instances are using the same browser and have the same Agent state."""
+
+		if not isinstance(other, BrowserSession):
+			return False
+
+		# Two sessions are considered equal if they're connected to the same remote browser and are looking at the same page
+		# the .browser, .browser_context, .playwright object identities don't have to match
+		return (
+			self.browser_pid == other.browser_pid
+			and self.cdp_url == other.cdp_url
+			and self.wss_url == other.wss_url
+			and self.agent_current_page == other.agent_current_page
+			and self.human_current_page == other.human_current_page
+		)
+
 	async def __aexit__(self, exc_type, exc_val, exc_tb):
 		# self.logger.debug(
 		# 	f'⏹️ Stopping gracefully browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (context manager exit)'
