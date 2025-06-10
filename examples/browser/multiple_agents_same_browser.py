@@ -6,14 +6,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from dotenv import load_dotenv
 
-from browser_use.browser.session import BrowserSession
-
 load_dotenv()
 
 
 from langchain_openai import ChatOpenAI
 
 from browser_use import Agent
+from browser_use.browser.session import BrowserSession
 
 
 async def main():
