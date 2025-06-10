@@ -534,7 +534,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
 
 	# Required parameter specific to launch_persistent_context, but can be None to use incognito temp dir
-	user_data_dir: str | Path | None = BROWSERUSE_PROFILES_DIR / 'default'
+	user_data_dir: str | Path | None = None
 
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
