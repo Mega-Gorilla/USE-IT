@@ -2587,10 +2587,15 @@ class BrowserSession(BaseModel):
 
 		# Update both tab references - agent wants this tab, and it's now in the foreground
 		self.agent_current_page = page
+
+		# in order for a human watching to be able to follow along with what the agent is doing
+		# bring the agent's active tab to the foreground
+		if self.human_current_page != page:
+			# TODO: figure out how to do this without bringing the entire window to the foreground and stealing foreground app focus
+			await page.bring_to_front()
+
 		self.human_current_page = page
 
-		# Bring tab to front and wait for it to load
-		await page.bring_to_front()
 		await page.wait_for_load_state()
 
 		# Set the viewport size for the tab
