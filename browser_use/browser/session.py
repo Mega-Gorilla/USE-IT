@@ -49,11 +49,15 @@ from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_e
 
 # Define types to be Union[Patchright, Playwright]
 Browser = PatchrightBrowser | PlaywrightBrowser
+BrowserInstance = InstanceOf[PatchrightBrowser] | InstanceOf[PlaywrightBrowser]
 BrowserContext = PatchrightBrowserContext | PlaywrightBrowserContext
+BrowserContextInstance = InstanceOf[PatchrightBrowserContext] | InstanceOf[PlaywrightBrowserContext]
 Page = PatchrightPage | PlaywrightPage
+PageInstance = InstanceOf[PatchrightPage] | InstanceOf[PlaywrightPage]
 ElementHandle = PatchrightElementHandle | PlaywrightElementHandle
+ElementHandleInstance = InstanceOf[PatchrightElementHandle] | InstanceOf[PlaywrightElementHandle]
 FrameLocator = PatchrightFrameLocator | PlaywrightFrameLocator
-
+FrameLocatorInstance = InstanceOf[PatchrightFrameLocator] | InstanceOf[PlaywrightFrameLocator]
 
 # Check if running in Docker
 IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
@@ -186,13 +190,13 @@ class BrowserSession(BaseModel):
 		description='Playwright library object returned by: await (playwright or patchright).async_playwright().start()',
 		exclude=True,
 	)
-	browser: InstanceOf[Browser] | None = Field(
+	browser: BrowserInstance | None = Field(
 		default=None,
 		description='playwright Browser object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser'),
 		exclude=True,
 	)
-	browser_context: InstanceOf[BrowserContext] | None = Field(
+	browser_context: BrowserContextInstance | None = Field(
 		default=None,
 		description='playwright BrowserContext object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser_context', 'context'),
@@ -205,13 +209,13 @@ class BrowserSession(BaseModel):
 		description='Mark BrowserSession launch/connection as already ready and skip setup (not recommended)',
 		validation_alias=AliasChoices('is_initialized'),
 	)
-	agent_current_page: InstanceOf[Page] | None = Field(  # mutated by self.create_new_tab(url)
+	agent_current_page: PageInstance | None = Field(  # mutated by self.create_new_tab(url)
 		default=None,
 		description='Foreground Page that the agent is focused on',
 		validation_alias=AliasChoices('current_page', 'page'),  # alias page= allows passing in a playwright Page object easily
 		exclude=True,
 	)
-	human_current_page: InstanceOf[Page] | None = Field(  # mutated by self._setup_current_page_change_listeners()
+	human_current_page: PageInstance | None = Field(  # mutated by self._setup_current_page_change_listeners()
 		default=None,
 		description='Foreground Page that the human is focused on',
 		exclude=True,
