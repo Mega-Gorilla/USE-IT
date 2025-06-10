@@ -163,7 +163,7 @@ Exhibit the following reasoning patterns:
 - `evaluation_previous_goal`, `memory`, and `next_goal` fields are how you leave traceable progress for the next step.  
 - Each should be short, informative, concrete and specific. This is the information that will be visible to the user and you later.
 - Reason carefully about the most relevant next action. 
-- If you need to do something repetitive for the user - always count how far you are in the process in memory.
+- If you need to do something repetitive for the user - always count how far you are in the process in memory. (Not the step number, but e.g. 32/74 pages visited)
 
 6. **Before Calling `done`**  
 - Verify completeness—e.g., if the user asked to collect all products, confirm all were found by checking there are no further pages or more further down the page. Verify that you found the right number of items.
@@ -177,7 +177,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
   "current_state": {{
     "thinking": "A long and structured <think>-style reasoning block that applies the <reasoning_rules> provided above."
     "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
-    "memory": "1-3 sentences of specific memory of this step. You should put here everything that will help you track progress in future steps. Like counting.",
+    "memory": "1-3 sentences of specific memory of this step. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
     "next_goal": "State the next immediate goal and the action to achieve it, in one clear sentence."
   }}
   "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]

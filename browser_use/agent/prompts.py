@@ -134,22 +134,26 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			todo_contents = '[Current todo.md is empty, fill it with your plan when applicable]'
 
 		agent_state = f"""# Agent State\n
-## USER REQUEST:
+<user_request>
+		## USER REQUEST:
 {self.task}\n
+</user_request>
+<file_system>
 ## File System:
 {self.file_system.describe()}\n
 ## Contents of todo.md:
 {todo_contents}\n
+</file_system>
 ## Step Info:
 {step_info_description}
 """
 		return agent_state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-		state_description = self.agent_history_description + '\n'
-		state_description += self._get_agent_state_description() + '\n'
-		state_description += self._get_browser_state_description() + '\n'
-		state_description += self.read_state_description + '\n'
+		state_description = '<agent_history>' + self.agent_history_description + '</agent_history>\n'
+		state_description += '<agent_state>' + self._get_agent_state_description() + '</agent_state>\n'
+		state_description += '<browser_state>' + self._get_browser_state_description() + '</browser_state>\n'
+		state_description += '<read_state>' + self.read_state_description + '</read_state>\n'
 		if self.page_filtered_actions:
 			state_description += 'For this page, these additional actions are available:\n'
 			state_description += self.page_filtered_actions + '\n'

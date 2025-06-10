@@ -310,7 +310,7 @@ class MessageManager:
 		)
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
 		self.add_tool_message(
-			content='Data written to todo.md. \nData written to github.md. \n Clicked element with index 4. </example_1>',
+			content='Data written to todo.md. \nData written to github.md.\nClicked element with index 4. </example_1>',
 			message_type='init',
 		)
 
