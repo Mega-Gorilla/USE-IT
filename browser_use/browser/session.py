@@ -1129,6 +1129,8 @@ class BrowserSession(BaseModel):
 	async def _setup_viewports(self) -> None:
 		"""Resize any existing page viewports to match the configured size, set up storage_state, permissions, geolocation, etc."""
 
+		assert self.browser_context, 'BrowserSession.browser_context must already be set up before calling _setup_viewports()'
+
 		# log the viewport settings to terminal
 		viewport = self.browser_profile.viewport
 		self.logger.debug(
@@ -1158,16 +1160,16 @@ class BrowserSession(BaseModel):
 		# if we have any viewport settings in the profile, make sure to apply them to the entire browser_context as defaults
 		if self.browser_profile.permissions:
 			try:
-				await self.browser_context.grant_permissions(self.browser_profile.permissions)
+				self.browser_context.grant_permissions(self.browser_profile.permissions)
 			except Exception as e:
 				self.logger.warning(
 					f'⚠️ Failed to grant browser permissions {self.browser_profile.permissions}: {type(e).__name__}: {e}'
 				)
 		try:
 			if self.browser_profile.default_timeout:
-				await self.browser_context.set_default_timeout(self.browser_profile.default_timeout)
+				self.browser_context.set_default_timeout(self.browser_profile.default_timeout)
 			if self.browser_profile.default_navigation_timeout:
-				await self.browser_context.set_default_navigation_timeout(self.browser_profile.default_navigation_timeout)
+				self.browser_context.set_default_navigation_timeout(self.browser_profile.default_navigation_timeout)
 		except Exception as e:
 			self.logger.warning(
 				f'⚠️ Failed to set playwright timeout settings '
@@ -1176,7 +1178,7 @@ class BrowserSession(BaseModel):
 			)
 		try:
 			if self.browser_profile.extra_http_headers:
-				await self.browser_context.set_extra_http_headers(self.browser_profile.extra_http_headers)
+				self.browser_context.set_extra_http_headers(self.browser_profile.extra_http_headers)
 		except Exception as e:
 			self.logger.warning(
 				f'⚠️ Failed to setup playwright extra_http_headers: {type(e).__name__}: {e}'
