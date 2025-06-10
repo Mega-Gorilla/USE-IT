@@ -36,7 +36,9 @@ Action Results: System generated result of those actions
 
 <user_request>
 USER REQUEST: This is your ultimate objective and always remains visible.
-This has the highest priority. Make the user happy.
+- This has the highest priority. Make the user happy.
+- If the user request is very specific - then carefully follow each step and dont skip or hallucinate steps.
+- If the task is open ended you can plan more yourself how to get it done.
 </user_request>
 
 <agent_state>

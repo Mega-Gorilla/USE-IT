@@ -220,24 +220,24 @@ class MessageManager:
 		self._add_message_with_tokens(self.system_prompt, message_type='init')
 
 		if self.settings.message_context:
-			context_message = HumanMessage(content='Context for the task' + self.settings.message_context)
+			context_message = HumanMessage(content='<task_context>' + self.settings.message_context + '</task_context>')
 			self._add_message_with_tokens(context_message, message_type='init')
 
 		if self.settings.sensitive_data:
-			info = f'Here are placeholders for sensitive data: {list(self.settings.sensitive_data.keys())}'
-			info += '\nTo use them, write <secret>the placeholder name</secret>'
+			info = f'<sensitive_data>Here are placeholders for sensitive data: {list(self.settings.sensitive_data.keys())}'
+			info += '\nTo use them, write <secret>the placeholder name</secret> </sensitive_data>'
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message, message_type='init')
 
-		placeholder_message = HumanMessage(
-			content='Here is an example thinking and tool call. You can use it as a reference but do not copy it exactly.'
-		)
 		task_message = HumanMessage(
-			content=f'Your ultimate task is: """{self.task}""". If you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.'
+			content=f'<user_request>Your ultimate goal is: """{self.task}""" \nIf you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.</user_request>'
 		)
 		self._add_message_with_tokens(task_message, message_type='init')
 
-		placeholder_message = HumanMessage(content='Example output:')
+		placeholder_message = HumanMessage(
+			content='<example_1>Here is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.'
+		)
+		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_tokens(placeholder_message, message_type='init')
 
 		example_tool_call_1 = AIMessage(
@@ -307,9 +307,9 @@ class MessageManager:
 			],
 		)
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
-		self.add_tool_message(content='Data written to todo.md successfully.', message_type='init')
+		self.add_tool_message(content='Data written to todo.md successfully. </example_1>', message_type='init')
 
-		placeholder_message = HumanMessage(content='Example thinking and tool call 2:')
+		placeholder_message = HumanMessage(content='<example_2>Example thinking and tool call 2:')
 		# self._add_message_with_tokens(placeholder_message, message_type='init')
 
 		example_tool_call_2 = AIMessage(
@@ -350,14 +350,16 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 			],
 		)
 		# self._add_message_with_tokens(example_tool_call_2, message_type='init')
-		# self.add_tool_message(content='Clicked on index [4].', message_type='init')
+		# self.add_tool_message(content='Clicked on index [4]. </example_2>', message_type='init')
 
 		if self.settings.available_file_paths:
-			filepaths_msg = HumanMessage(content=f'Here are file paths you can use: {self.settings.available_file_paths}')
+			filepaths_msg = HumanMessage(
+				content=f'<available_file_paths>Here are file paths you can use: {self.settings.available_file_paths}</available_file_paths>'
+			)
 			self._add_message_with_tokens(filepaths_msg, message_type='init')
 
 	def add_new_task(self, new_task: str) -> None:
-		content = f'Your new ultimate task is: """{new_task}""". Take the previous context into account and finish your new ultimate task. '
+		content = f'<new_user_request>Your new ultimate task is: """{new_task}""". Take the previous context into account and finish your new ultimate task. </new_user_request>'
 		msg = HumanMessage(content=content)
 		self._add_message_with_tokens(msg)
 		self.task = new_task
