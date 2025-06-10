@@ -2131,9 +2131,12 @@ class BrowserSession(BaseModel):
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
 		page = await self.get_current_page()
-		await page.wait_for_load_state(
-			timeout=5000,
-		)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
+		try:
+			await page.wait_for_load_state(
+				timeout=5000,
+			)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
+		except Exception as e:
+			pass
 
 		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
 		try:
