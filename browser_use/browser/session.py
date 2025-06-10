@@ -437,6 +437,29 @@ class BrowserSession(BaseModel):
 		self.browser_profile.keep_alive = False
 		await self.stop()
 
+		# Clean up playwright instance to prevent background tasks from running
+		if self.playwright:
+			try:
+				await self.playwright.stop()
+				self.logger.debug('🎭 Stopped playwright instance')
+			except Exception as e:
+				self.logger.warning(f'❌ Error stopping playwright: {type(e).__name__}: {e}')
+			finally:
+				# Clear global references if they match this instance
+				global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
+				global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
+
+				if self.playwright == GLOBAL_PLAYWRIGHT_API_OBJECT:
+					GLOBAL_PLAYWRIGHT_API_OBJECT = None
+					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
+					self.logger.debug('🧹 Cleared global playwright references')
+				elif self.playwright == GLOBAL_PATCHRIGHT_API_OBJECT:
+					GLOBAL_PATCHRIGHT_API_OBJECT = None
+					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
+					self.logger.debug('🧹 Cleared global patchright references')
+
+				self.playwright = None
+
 	async def new_context(self, **kwargs):
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()."""
 		# TODO: remove this after >=0.3.0
@@ -1261,6 +1284,7 @@ class BrowserSession(BaseModel):
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
 		self._cached_browser_state_summary = None
+		# Don't clear self.playwright here - it should be cleared explicitly in kill()
 
 		if self.browser_pid:
 			try:

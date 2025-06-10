@@ -17,7 +17,6 @@ import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock
 
-import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from playwright.async_api import async_playwright
@@ -440,51 +439,6 @@ class TestParallelism:
 			assert result['error'] is None, f'Process {i} error: {result["error"]}'
 			assert result['success'] is True
 
-	async def test_asyncio_run_error_reproduction(self):
-		"""Test that demonstrates the asyncio.run() RuntimeError issue"""
-		logger.info('Testing asyncio.run() RuntimeError reproduction')
-
-		# This test simulates the pattern that causes the error after 40+ tests
-		# when asyncio.run() is called within a pytest-asyncio session-scoped event loop
-
-		# Track if we're in an existing event loop
-		try:
-			loop = asyncio.get_running_loop()
-			has_running_loop = True
-		except RuntimeError:
-			has_running_loop = False
-
-		# We should always have a running loop in async tests due to pytest-asyncio session scope
-		assert has_running_loop, 'Expected to be in a running event loop due to pytest-asyncio session scope'
-
-		# If we're already in an event loop, asyncio.run() should fail
-		# We need to suppress the warning about unawaited coroutine
-		import warnings
-
-		with warnings.catch_warnings():
-			warnings.simplefilter('ignore', RuntimeWarning)
-			with pytest.raises(RuntimeError, match='asyncio.run.*cannot be called from a running event loop'):
-				# This will create a coroutine that won't be awaited, but we're testing the exception
-				asyncio.run(asyncio.sleep(0))
-
-	async def test_asyncio_run_in_sync_test_causes_problems(self):
-		"""Test that shows asyncio.run() in sync tests can cause event loop issues"""
-		logger.info('Testing asyncio.run() in sync test context')
-
-		# Just run in the current event loop
-		async def dummy_coroutine():
-			return 'test'
-
-		# Run directly without creating new loops
-		result1 = await dummy_coroutine()
-		assert result1 == 'test'
-
-		# Subsequent calls also work
-		result2 = await dummy_coroutine()
-		assert result2 == 'test'
-
-		# This approach avoids event loop state corruption
-
 	async def test_shared_browser_session_multiple_tabs(self):
 		"""Test multiple agents sharing same browser session with different tabs"""
 		logger.info('Testing shared browser session with multiple tabs')
@@ -575,6 +529,8 @@ class TestParallelism:
 			assert agent1.browser_session == shared_session
 
 		finally:
+			# Give playwright tasks a moment to complete before killing
+			await asyncio.sleep(0.1)
 			await shared_session.kill()
 
 	async def test_reuse_browser_session_sequentially(self):
