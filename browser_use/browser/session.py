@@ -225,7 +225,7 @@ class BrowserSession(BaseModel):
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
-		"""Apply any extra **kwargs passed to BrowserSession(...) as config overrides on top of browser_profile"""
+		"""Apply any extra **kwargs passed to BrowserSession(...) as session-specific config overrides on top of browser_profile"""
 		session_own_fields = type(self).model_fields.keys()
 
 		# get all the extra kwarg overrides passed to BrowserSession(...) that are actually
@@ -235,10 +235,7 @@ class BrowserSession(BaseModel):
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
 
-		# Only create a copy if there are actual overrides to apply
-		if profile_overrides:
-			# replace browser_profile with patched version
-			self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
+		self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
 
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
