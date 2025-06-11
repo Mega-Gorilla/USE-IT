@@ -2200,8 +2200,8 @@ class BrowserSession(BaseModel):
 		structure = await page.evaluate(debug_script)
 		return structure
 
+	@time_execution_async('--get_state_summary')
 	@require_initialization
-	@time_execution_sync('--get_state_summary')
 	async def get_state_summary(self, cache_clickable_elements_hashes: bool) -> BrowserStateSummary:
 		"""Get a summary of the current browser state
 
