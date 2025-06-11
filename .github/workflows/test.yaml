@@ -1,9 +1,11 @@
 name: test
 permissions:
-  contents: read
+  actions: read
+  contents: write
   pull-requests: write  # Allow writing comments on PRs
   issues: write         # Allow writing comments on issues
   statuses: write       # Allow writing statuses on PRs
+  discussions: write
 
 on:
   push:
