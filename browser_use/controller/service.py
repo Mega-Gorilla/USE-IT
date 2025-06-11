@@ -144,6 +144,7 @@ class Controller(Generic[Context]):
 					return ActionResult(
 						extracted_content=f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.',
 						include_in_memory=True,
+						success=False,
 					)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
@@ -153,7 +154,7 @@ class Controller(Generic[Context]):
 			if await browser_session.find_file_upload_element_by_index(params.index) is not None:
 				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True)
+				return ActionResult(extracted_content=msg, include_in_memory=True, success=False)
 
 			msg = None
 
@@ -178,10 +179,12 @@ class Controller(Generic[Context]):
 					# Page navigated during click - refresh state and return it
 					logger.info('Page context changed during click, refreshing state...')
 					await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-					return ActionResult(error='Page navigated during click. Refreshed state provided.', include_in_memory=True)
+					return ActionResult(
+						error='Page navigated during click. Refreshed state provided.', include_in_memory=True, success=False
+					)
 				else:
 					logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
-					return ActionResult(error=error_msg)
+					return ActionResult(error=error_msg, success=False)
 
 		@self.registry.action(
 			'Input text into a input interactive element',

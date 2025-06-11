@@ -268,7 +268,7 @@ class TestControllerIntegration:
 	async def test_error_handling(self, controller, browser_session):
 		"""Test error handling when an action fails."""
 		# Create an action with an invalid index
-		invalid_action = {'click_element_by_index': ClickElementAction(index=9999)}
+		invalid_action = {'click_element_by_index': ClickElementAction(index='abc')}  # wrong type, expects a number
 
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
