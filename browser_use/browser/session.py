@@ -2771,12 +2771,23 @@ class BrowserSession(BaseModel):
 			except Exception:
 				# last resort fallback, assume it's already focused after we clicked on it,
 				# just simulate keypresses on the entire page
-				page = await self.get_current_page()
-				await page.keyboard.type(text)
+				try:
+					page = await self.get_current_page()
+					await page.keyboard.type(text)
+				except Exception as fallback_error:
+					# If we can't even get the current page, re-raise with a clear error
+					raise BrowserError(f'Failed to input text into element: {element_node.xpath}') from fallback_error
 
 		except Exception as e:
+			# Get current page URL safely for error message
+			try:
+				page = await self.get_current_page()
+				page_url = _log_pretty_url(page.url)
+			except Exception:
+				page_url = 'unknown page'
+
 			self.logger.debug(
-				f'❌ Failed to input text into element: {repr(element_node)} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
+				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
 			)
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
