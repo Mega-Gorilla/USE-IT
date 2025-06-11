@@ -1551,7 +1551,7 @@ class BrowserSession(BaseModel):
 	@require_initialization
 	async def navigate(self, url: str) -> None:
 		if self.agent_current_page:
-			await self.agent_current_page.goto(url)
+			await self.agent_current_page.goto(url, wait_until='domcontentloaded')
 		else:
 			await self.create_new_tab(url)
 
