@@ -294,14 +294,13 @@ class Controller(Generic[Context]):
 				return ActionResult(
 					extracted_content=msg,
 					include_in_memory=False,
-					memory=f"Extracted '{content_to_extract}'",
 					update_read_state=True,
 				)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
 				msg = f'📄  Extracted from page\n: {content}\n'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg)
+				return ActionResult(error=str(e))
 
 		@self.registry.action(
 			'Get the accessibility tree of the page in the format "role name" with the number_of_elements to return',

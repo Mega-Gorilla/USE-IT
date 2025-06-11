@@ -391,7 +391,7 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 		for idx, action_result in enumerate(result):
 			if action_result.update_read_state:
 				self.read_state_description += action_result.extracted_content + '\n'
-			if action_result.memory:
+			elif action_result.memory:
 				action_results += f'Action {idx + 1} Result: {action_result.memory}\n'
 			elif action_result.error:
 				action_results += f'Action {idx + 1} Error: {action_result.error[:200]}\n'
@@ -401,7 +401,7 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 					'⚠️ ActionResult does not have memory but has extracted_content. This is not recommended as extracted_content can be too long.'
 				)
 			else:
-				raise ValueError(f'Action {idx + 1} has no memory or error:\n{action_result}')
+				logger.debug(f'Action {idx + 1} has no memory or error:\n{action_result}')
 
 		self.agent_history_description += f"""## Step {step_number}
 Evaluation: {model_output.current_state.evaluation_previous_goal}
