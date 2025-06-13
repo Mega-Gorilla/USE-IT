@@ -443,10 +443,10 @@ class BrowserSession(BaseModel):
 				await self.playwright.stop()
 				# Give playwright tasks a moment to clean up properly
 				# This prevents "Task was destroyed but it is pending!" warnings
-				await asyncio.sleep(0.01)
+				await asyncio.sleep(0.1)
 				# self.logger.debug('🎭 Stopped playwright node.js API worker')
 			except Exception as e:
-				self.logger.warning(f'❌ Error stopping playwright: {type(e).__name__}: {e}')
+				self.logger.warning(f'❌ Error stopping playwright node.js API subprocess: {type(e).__name__}: {e}')
 			finally:
 				# Clear global references if they match this instance
 				global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
@@ -1457,12 +1457,18 @@ class BrowserSession(BaseModel):
 					except Exception:
 						# If no download is triggered, treat as normal click
 						# self.logger.debug('No download triggered within timeout. Checking navigation...')
-						await page.wait_for_load_state()
+						try:
+							await page.wait_for_load_state()
+						except Exception as e:
+							self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}')
 						await self._check_and_handle_navigation(page)
 				else:
 					# If downloads are disabled, just perform the click
 					await click_func()
-					await page.wait_for_load_state()
+					try:
+						await page.wait_for_load_state()
+					except Exception as e:
+						self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}')
 					await self._check_and_handle_navigation(page)
 
 			try:
@@ -1499,7 +1505,10 @@ class BrowserSession(BaseModel):
 								await page.mouse.click(
 									element_node.viewport_coordinates.center.x, element_node.viewport_coordinates.center.y
 								)
-								await page.wait_for_load_state()
+								try:
+									await page.wait_for_load_state()
+								except Exception:
+									pass
 								await self._check_and_handle_navigation(page)
 								return None  # Success
 							except Exception as coord_e:
@@ -2061,14 +2070,20 @@ class BrowserSession(BaseModel):
 
 		page = await self.get_current_page()
 		await page.goto(url)
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after navigation: {type(e).__name__}: {e}')
 
 	async def refresh_page(self):
 		"""Refresh the agent's current page"""
 
 		page = await self.get_current_page()
 		await page.reload()
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after refresh: {type(e).__name__}: {e}')
 
 	async def go_back(self):
 		"""Navigate the agent's tab back in browser history"""
@@ -2332,7 +2347,7 @@ class BrowserSession(BaseModel):
 				full_page=full_page,
 				scale='css',
 				timeout=15000,
-				animations='disabled',
+				animations='allow',
 				caret='initial',
 			)
 
@@ -2372,8 +2387,9 @@ class BrowserSession(BaseModel):
 				scale='css',
 				timeout=30000,
 				clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
+				animations='allow',
+				caret='initial',
 				# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
-				# caret='initial',
 			)
 			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
 
@@ -2814,6 +2830,7 @@ class BrowserSession(BaseModel):
 		# update the human's active tab to match the agent's
 		if self.human_current_page != page:
 			# TODO: figure out how to do this without bringing the entire window to the foreground and stealing foreground app focus
+			# might require browser-use extension loaded into the browser so we can use chrome.tabs extension APIs
 			await page.bring_to_front()
 
 		self.human_current_page = page
@@ -2859,7 +2876,11 @@ class BrowserSession(BaseModel):
 		if (not self.human_current_page) or self.human_current_page.is_closed():
 			self.human_current_page = new_page
 
-		await new_page.wait_for_load_state()
+		tab_idx = self.tabs.index(new_page)
+		try:
+			await new_page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}')
 
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
