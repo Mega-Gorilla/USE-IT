@@ -234,10 +234,13 @@ class DOMElementNode(DOMBaseNode):
 		return '\n'.join(formatted_text)
 
 	def is_iframe_element(self, url: str, name: str | None = None, id: str | None = None) -> bool:
-		return (self.tag_name.lower() == 'iframe' and 
-			self.attributes.get('src') == url and
-			(name is None or self.attributes.get('name') == name) and
-			(id is None or self.attributes.get('id') == id))
+		return (
+			self.tag_name.lower() == 'iframe'
+			and self.attributes.get('src') == url
+			and (name is None or self.attributes.get('name') == name)
+			and (id is None or self.attributes.get('id') == id)
+		)
+
 
 SelectorMap = dict[int, DOMElementNode]
 

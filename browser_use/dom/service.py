@@ -22,6 +22,7 @@ class ViewportInfo:
 	width: int
 	height: int
 
+
 @dataclass
 class PageFrameEvaluationResult:
 	url: str
@@ -32,27 +33,27 @@ class PageFrameEvaluationResult:
 	@property
 	def known_frame_urls(self) -> list[str]:
 		return [
-			v.get('attributes', {}).get('src') for v 
-			in self.map.values() 
+			v.get('attributes', {}).get('src')
+			for v in self.map.values()
 			if v.get('hasIframeContent') and v.get('attributes', {}).get('src')
 		]
-	
+
 	@property
 	def map(self) -> dict:
 		return self.result.get('map', {})
-	
+
 	@property
 	def map_size(self) -> int:
 		return len(self.map)
-	
+
 	@property
-	def perf_metrics(self) -> dict:	
+	def perf_metrics(self) -> dict:
 		return self.result.get('perfMetrics', {})
-	
+
 	@property
 	def short_url(self) -> str:
 		return self.url[:50] + '...' if len(self.url) > 50 else self.url
-	
+
 	@property
 	def root_id(self) -> str | None:
 		return self.result.get('rootId')
@@ -149,11 +150,12 @@ class DomService:
 		known_frame_urls = page_eval_result.known_frame_urls
 		# TODO: only look in iframes from enabled_domains
 		for iframe in self.page.frames:
-			if (iframe.url and 
-	   			iframe.url != self.page.url and 
-				not iframe.url.startswith('data:') and 
-				iframe.url not in known_frame_urls):
-
+			if (
+				iframe.url
+				and iframe.url != self.page.url
+				and not iframe.url.startswith('data:')
+				and iframe.url not in known_frame_urls
+			):
 				try:
 					frame_element = await iframe.frame_element()
 				except Exception as e:
@@ -205,7 +207,7 @@ class DomService:
 						total_nodes,
 						# processed_nodes,
 					)
-					
+
 		return await self._construct_dom_tree(frames)
 
 	@time_execution_async('--construct_dom_tree')
@@ -251,14 +253,17 @@ class DomService:
 			if content_root_node:
 				# Find the iframe element in the main page
 				iframe_element_node = next(
-					(node for node in node_map.values() 
-						if isinstance(node, DOMElementNode) and 
-							node.is_iframe_element(url=frame.url, name=frame.name, id=frame.id)),
-					None
+					(
+						node
+						for node in node_map.values()
+						if isinstance(node, DOMElementNode)
+						and node.is_iframe_element(url=frame.url, name=frame.name, id=frame.id)
+					),
+					None,
 				)
 				if iframe_element_node:
 					if not iframe_element_node.children:
-						iframe_element_node.children=[content_root_node]
+						iframe_element_node.children = [content_root_node]
 						content_root_node.parent = iframe_element_node
 						continue
 					else:
