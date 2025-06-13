@@ -111,7 +111,16 @@ class Controller(Generic[Context]):
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors
-				if any(err in error_msg for err in ['ERR_NAME_NOT_RESOLVED', 'ERR_INTERNET_DISCONNECTED', 'ERR_CONNECTION_REFUSED', 'ERR_TIMED_OUT', 'net::']):
+				if any(
+					err in error_msg
+					for err in [
+						'ERR_NAME_NOT_RESOLVED',
+						'ERR_INTERNET_DISCONNECTED',
+						'ERR_CONNECTION_REFUSED',
+						'ERR_TIMED_OUT',
+						'net::',
+					]
+				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
 					return ActionResult(success=False, error=site_unavailable_msg, include_in_memory=True)

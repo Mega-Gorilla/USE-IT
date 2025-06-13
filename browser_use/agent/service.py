@@ -15,7 +15,6 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
-from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 
 load_dotenv()
 
@@ -29,6 +28,7 @@ from playwright.async_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ValidationError
 from uuid_extensions import uuid7str
 
+from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
@@ -38,6 +38,7 @@ from browser_use.agent.message_manager.utils import (
 	is_model_without_tool_support,
 	save_conversation,
 )
+from browser_use.utils import _log_pretty_path
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
@@ -132,7 +133,7 @@ class Agent(Generic[Context]):
 		# Agent settings
 		use_vision: bool = True,
 		use_vision_for_planner: bool = False,
-		save_conversation_path: str | None = None,
+		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
 		retry_delay: int = 10,
@@ -417,7 +418,8 @@ class Agent(Generic[Context]):
 		self.telemetry = ProductTelemetry()
 
 		if self.settings.save_conversation_path:
-			self.logger.info(f'Saving conversation to {self.settings.save_conversation_path}')
+			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
+			self.logger.info(f'Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
@@ -910,8 +912,8 @@ class Agent(Generic[Context]):
 					else:
 						self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
-					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
-					save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
+					target = Path(self.settings.save_conversation_path).with_suffix('').as_posix() + f'_{self.state.n_steps}.txt'
+					await save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 

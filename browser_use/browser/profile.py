@@ -375,9 +375,9 @@ class BrowserContextArgs(BaseModel):
 	record_har_content: RecordHarContent = RecordHarContent.EMBED
 	record_har_mode: RecordHarMode = RecordHarMode.FULL
 	record_har_omit_content: bool = False
-	record_har_path: str | Path | None = None
+	record_har_path: str | Path | None = Field(default=None, validation_alias=AliasChoices('save_har_path', 'record_har_path'))
 	record_har_url_filter: str | Pattern | None = None
-	record_video_dir: str | Path | None = None
+	record_video_dir: str | Path | None = Field(default=None, validation_alias=AliasChoices('save_recording_path', 'record_video_dir'))
 	record_video_size: ViewportSize | None = None
 
 
@@ -452,7 +452,7 @@ class BrowserLaunchArgs(BaseModel):
 		description='Directory to save downloads to.',
 		validation_alias=AliasChoices('downloads_dir', 'save_downloads_path'),
 	)
-	traces_dir: str | Path | None = Field(default=None, description='Directory to save HAR trace files to.')
+	traces_dir: str | Path | None = Field(default=None, description='Directory for saving playwright trace.zip files (playwright actions, screenshots, DOM snapshots, HAR traces).', validation_alias=AliasChoices('trace_path', 'traces_dir'))
 	handle_sighup: bool = Field(
 		default=True, description='Whether playwright should swallow SIGHUP signals and kill the browser.'
 	)
@@ -599,9 +599,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	profile_directory: str = 'Default'  # e.g. 'Profile 1', 'Profile 2', 'Custom Profile', etc.
 
-	save_recording_path: str | None = Field(default=None, description='Directory for video recordings.')
-	save_har_path: str | None = Field(default=None, description='Directory for saving HAR files.')
-	trace_path: str | None = Field(default=None, description='Directory for saving trace files.')
+	# these can be found in BrowserLaunchArgs, BrowserLaunchPersistentContextArgs, BrowserNewContextArgs, BrowserConnectArgs:
+	# save_recording_path: alias of record_video_dir
+	# save_har_path: alias of record_har_path
+	# trace_path: alias of traces_dir
 
 	cookies_file: Path | None = Field(
 		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
@@ -712,7 +713,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return BrowserLaunchArgs(**self.model_dump(exclude={'args'}), args=self.get_args())
 
 	def prepare_user_data_dir(self) -> None:
-		"""Create and unlock the user data dir for first-run initialization."""
+		"""Create and unlock the user data dir and ensure all recording paths exist."""
 
 		if self.user_data_dir:
 			try:
@@ -734,9 +735,49 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 					f'⚠️ Multiple chrome processes may be trying to share user_data_dir={self.user_data_dir} which can lead to crashes and profile data corruption!'
 				)
 
-		if self.downloads_path:
-			self.downloads_path = Path(self.downloads_path).expanduser().resolve()
-			self.downloads_path.mkdir(parents=True, exist_ok=True)
+		# Ensure all recording and download paths exist
+		paths_to_create = [
+			('downloads_path', self.downloads_path),
+			('record_video_dir', self.record_video_dir),
+		]
+		
+		for path_name, path_value in paths_to_create:
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.mkdir(parents=True, exist_ok=True)
+					# Update the field with the resolved path
+					setattr(self, path_name, path_obj)
+				except Exception as e:
+					logger.error(f'❌ Failed to create {path_name} directory {path_value}: {e}')
+
+		# Handle traces_dir - ensure parent directory is writable
+		if self.traces_dir:
+			try:
+				traces_path = Path(self.traces_dir).expanduser().resolve()
+				traces_path.parent.mkdir(parents=True, exist_ok=True)
+				# Test that parent directory is writable by touching a test file
+				test_file = traces_path.parent / '.browseruse_test'
+				test_file.touch()
+				test_file.unlink()
+				# Keep the original path (could be file or directory)
+				setattr(self, 'traces_dir', str(traces_path))
+			except Exception as e:
+				logger.error(f'❌ Failed to create or access traces_dir {self.traces_dir}: {e}')
+
+		# Ensure parent directories exist for file paths
+		file_paths_to_create_parents = [
+			('record_har_path', self.record_har_path),
+		]
+		
+		for path_name, path_value in file_paths_to_create_parents:
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.parent.mkdir(parents=True, exist_ok=True)
+					# logger.debug(f'📁 Created parent directory for {path_name}: {path_obj.parent}')
+				except Exception as e:
+					logger.error(f'❌ Failed to create parent directory for {path_name} {path_value}: {e}')
 
 	# def preinstall_extensions(self) -> None:
 	# 	"""Preinstall the extensions."""

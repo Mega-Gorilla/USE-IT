@@ -325,6 +325,7 @@ class BrowserSession(BaseModel):
 					# resize the existing pages and set up foreground tab detection
 					await self._setup_viewports()
 					await self._setup_current_page_change_listeners()
+					await self._start_context_tracing()
 				except BaseException:
 					self.initialized = False
 					raise
@@ -361,6 +362,30 @@ class BrowserSession(BaseModel):
 	async def stop(self) -> None:
 		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
+		# cleanly stop any active HAR/gif/mp4/trace recording
+		if self.browser_profile.traces_dir and self.browser_context:
+			try:
+				traces_path = Path(self.browser_profile.traces_dir)
+				if traces_path.suffix:
+					# Path has extension, use as-is (user specified exact file path)
+					final_trace_path = traces_path
+				else:
+					# Path has no extension, treat as directory and create filename
+					trace_filename = f'BrowserSession_{self.id}.zip'
+					final_trace_path = traces_path / trace_filename
+				
+				self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
+				async with asyncio.timeout(30):
+					await self.browser_context.tracing.stop(path=str(final_trace_path))
+			except Exception as e:
+				self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
+		if self.browser_profile.traces_dir and self.browser:
+			try:
+				async with asyncio.timeout(30):
+					await self.browser.stop_tracing()
+			except Exception as e:
+				self.logger.error(f'❌ Error saving browser trace to {_log_pretty_path(self.browser_profile.traces_dir)}: {type(e).__name__}: {e}')
+
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
@@ -382,10 +407,17 @@ class BrowserSession(BaseModel):
 
 				if self.browser_context or self.browser:
 					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser_context or self.browser}')
+					
+					# playwright saves these on browser.close() automatically
+					if self.browser_profile.record_video_dir:
+						self.logger.info(f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...')
+					if self.browser_profile.record_har_path:
+						self.logger.info(f'🎥 Saving HAR file to record_har_path= {self.browser_profile.record_har_path}...')
+
 					try:
 						# Add timeout to prevent hanging on close if context is already closed
 						try:
-							async with asyncio.timeout(5):  # 5 second timeout for close operation
+							async with asyncio.timeout(30):  # 5 second timeout for close operation
 								await (self.browser or self.browser_context.browser or self.browser_context).close()
 						except TimeoutError:
 							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
@@ -534,14 +566,34 @@ class BrowserSession(BaseModel):
 			except Exception as e:
 				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
 
+	@staticmethod
+	async def _start_global_playwright_subprocess(is_stealth: bool) -> Playwright | Patchright:
+		"""Create and return a new playwright or patchright node.js subprocess / API connector"""
+		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
+		
+		try:
+			current_loop = asyncio.get_running_loop()
+		except RuntimeError:
+			current_loop = None
+		
+		if is_stealth:
+			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
+			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
+			return GLOBAL_PATCHRIGHT_API_OBJECT
+		else:
+			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
+			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
+			return GLOBAL_PLAYWRIGHT_API_OBJECT
+
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
 		Override to customize the set up of the playwright or patchright library object
 		"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_API_OBJECT  # one per thread, represents a node.js playwright subprocess that relays comamnds to the browser via CDP
 		global GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays comamnds to the browser via CDP
 		global GLOBAL_PATCHRIGHT_EVENT_LOOP
 
 		# Get current event loop
@@ -550,44 +602,46 @@ class BrowserSession(BaseModel):
 		except RuntimeError:
 			current_loop = None
 
-		if self.browser_profile.stealth:
+		is_stealth = self.browser_profile.stealth
+		
+		# Configure browser channel based on stealth mode
+		if is_stealth:
 			# use patchright + chrome when stealth=True
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROME
 			self.logger.info(f'🕶️ Activated stealth mode using patchright {self.browser_profile.channel.name.lower()} browser...')
-			if not self.playwright:
-				# Check if the global object is still valid
-				should_recreate = False
+		else:
+			# use playwright + chromium by default
+			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-				# Check if we're in a different event loop than the one that created the global object
-				if GLOBAL_PATCHRIGHT_API_OBJECT and GLOBAL_PATCHRIGHT_EVENT_LOOP != current_loop:
-					self.logger.debug(
-						'Detected event loop change. Previous patchright instance was created in a different event loop. '
-						'Creating new instance to avoid asyncio conflicts.'
-					)
-					should_recreate = True
 
-				# Also check if the object exists but is no longer functional
-				if GLOBAL_PATCHRIGHT_API_OBJECT and not should_recreate:
-					try:
-						# Try to access the chromium property to verify the object is still valid
-						_ = GLOBAL_PATCHRIGHT_API_OBJECT.chromium
-					except Exception as e:
-						self.logger.debug(f'Detected invalid patchright instance: {type(e).__name__}. Creating new instance.')
-						should_recreate = True
+		# Check if we're in a different event loop than the one that created the global object
+		should_recreate = False
+		driver_name = 'patchright' if is_stealth else 'playwright'
+		global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+		global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		self.playwright = self.playwright or global_api_object or await self._start_global_playwright_subprocess(is_stealth=is_stealth)
 
-				if should_recreate:
-					# Reset the global object since we need a new one
-					GLOBAL_PATCHRIGHT_API_OBJECT = None
-					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
+		if (global_api_object and global_event_loop != current_loop):
+			self.logger.debug(
+				f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
+				'Creating new instance to avoid disconnection when the previous loop closes.'
+			)
+			should_recreate = True
 
-				if GLOBAL_PATCHRIGHT_API_OBJECT:
-					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
-				else:
-					GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
-					GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
-					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
+		# Also check if the object exists but is no longer functional
+		if global_api_object and not should_recreate:
+			try:
+				# Try to access the chromium property to verify the object is still valid
+				_ = global_api_object.chromium.executable_path
+			except Exception as e:
+				self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
+				should_recreate = True
 
-			# check for stealth best-practices
+		if should_recreate:
+			self.playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+
+		# Log stealth best-practices warnings if applicable
+		if is_stealth:
 			if self.browser_profile.channel and self.browser_profile.channel != BrowserChannel.CHROME:
 				self.logger.info(
 					' 🪄 For maximum stealth, BrowserSession(...) should be passed channel=None or BrowserChannel.CHROME'
@@ -596,68 +650,6 @@ class BrowserSession(BaseModel):
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed a persistent user_data_dir=...')
 			if self.browser_profile.headless or not self.browser_profile.no_viewport:
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed headless=False & viewport=None')
-		else:
-			# use playwright + chromium by default
-			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
-			if not self.playwright:
-				# Check if the global object is still valid
-				should_recreate = False
-
-				# Check if we're in a different event loop than the one that created the global object
-				if GLOBAL_PLAYWRIGHT_API_OBJECT and GLOBAL_PLAYWRIGHT_EVENT_LOOP != current_loop:
-					self.logger.debug(
-						'Detected event loop change. Previous playwright instance was created in a different event loop. '
-						'Creating new instance to avoid asyncio conflicts.'
-					)
-					should_recreate = True
-
-				# Also check if the object exists but is no longer functional
-				if GLOBAL_PLAYWRIGHT_API_OBJECT and not should_recreate:
-					try:
-						# Try to access the chromium property to verify the object is still valid
-						_ = GLOBAL_PLAYWRIGHT_API_OBJECT.chromium
-					except Exception as e:
-						self.logger.debug(f'Detected invalid playwright instance: {type(e).__name__}. Creating new instance.')
-						should_recreate = True
-
-				if should_recreate:
-					# Reset the global object since we need a new one
-					GLOBAL_PLAYWRIGHT_API_OBJECT = None
-					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
-
-				if GLOBAL_PLAYWRIGHT_API_OBJECT:
-					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
-				else:
-					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()  # never start more than one per thread, never try to close it if any other code might be trying to use it, cannot be re-opened once closed
-					GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
-					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
-
-	async def _recreate_playwright_instance(self) -> None:
-		"""Force recreation of the playwright instance when it's detected to be invalid"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT
-		global GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP
-		global GLOBAL_PATCHRIGHT_EVENT_LOOP
-
-		try:
-			current_loop = asyncio.get_running_loop()
-		except RuntimeError:
-			current_loop = None
-
-		if self.browser_profile.stealth:
-			# Reset patchright
-			GLOBAL_PATCHRIGHT_API_OBJECT = None
-			GLOBAL_PATCHRIGHT_EVENT_LOOP = None
-			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
-			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
-			self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
-		else:
-			# Reset playwright
-			GLOBAL_PLAYWRIGHT_API_OBJECT = None
-			GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
-			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
-			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
-			self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_browser_via_passed_objects(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
@@ -795,7 +787,7 @@ class BrowserSession(BaseModel):
 						'Recreating playwright instance and retrying...'
 					)
 					# Force recreation of the playwright object
-					await self._recreate_playwright_instance()
+					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
 					# Retry the operation with the new playwright instance
 					async with asyncio.timeout(10):
 						self.browser = await self.playwright.chromium.launch(
@@ -824,7 +816,7 @@ class BrowserSession(BaseModel):
 					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
 						try:
 							self.browser_context = await self.playwright.chromium.launch_persistent_context(
-								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
 							)
 						except Exception as e:
 							# Re-raise if not a timeout
@@ -836,7 +828,7 @@ class BrowserSession(BaseModel):
 						'Recreating playwright instance and retrying...'
 					)
 					# Force recreation of the playwright object
-					await self._recreate_playwright_instance()
+					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
 					# Retry the operation with the new playwright instance
 					async with asyncio.timeout(10):
 						self.browser_context = await self.playwright.chromium.launch_persistent_context(
@@ -1460,7 +1452,9 @@ class BrowserSession(BaseModel):
 						try:
 							await page.wait_for_load_state()
 						except Exception as e:
-							self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}')
+							self.logger.warning(
+								f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
+							)
 						await self._check_and_handle_navigation(page)
 				else:
 					# If downloads are disabled, just perform the click
@@ -1468,7 +1462,9 @@ class BrowserSession(BaseModel):
 					try:
 						await page.wait_for_load_state()
 					except Exception as e:
-						self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}')
+						self.logger.warning(
+							f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
+						)
 					await self._check_and_handle_navigation(page)
 
 			try:
@@ -2073,7 +2069,9 @@ class BrowserSession(BaseModel):
 		try:
 			await page.wait_for_load_state()
 		except Exception as e:
-			self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after navigation: {type(e).__name__}: {e}')
+			self.logger.warning(
+				f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after navigation: {type(e).__name__}: {e}'
+			)
 
 	async def refresh_page(self):
 		"""Refresh the agent's current page"""
@@ -2418,6 +2416,41 @@ class BrowserSession(BaseModel):
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
+
+	async def _start_context_tracing(self):
+		"""Start tracing on browser context if trace_path is configured."""
+		if self.browser_profile.traces_dir:
+			try:
+				if self.browser_context:
+					self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
+					# Don't pass any path to start() - let Playwright handle internal temp files
+					await self.browser_context.tracing.start(
+						screenshots=True, 
+						snapshots=True,
+						sources=False  # Reduce trace size
+					)
+				elif self.browser:
+					# Fallback to browser.start_tracing() if context not available
+					await self.browser.start_tracing()
+					traces_path = Path(self.browser_profile.traces_dir)
+					
+					# Determine trace file path (same logic as in stop method)
+					if str(traces_path).endswith('.zip'):
+						# User wants exact zip file path
+						if traces_path.exists() and traces_path.is_dir():
+							self.logger.error(f'Cannot start trace: directory exists at zip path {traces_path}')
+							return
+						trace_file = traces_path
+					else:
+						# User wants directory (intuitive default)
+						if traces_path.exists() and traces_path.is_file():
+							self.logger.error(f'Cannot start trace: file exists at directory path {traces_path}')
+							return
+						trace_file = traces_path / f'BrowserSession_{self.id}.zip'
+					
+					self.logger.debug(f'📽️ Started tracing, will save to: {trace_file}')
+			except Exception as e:
+				self.logger.warning(f'Failed to start tracing: {e}')
 
 	@staticmethod
 	def _convert_simple_xpath_to_css_selector(xpath: str) -> str:
@@ -2880,7 +2913,9 @@ class BrowserSession(BaseModel):
 		try:
 			await new_page.wait_for_load_state()
 		except Exception as e:
-			self.logger.warning(f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}')
+			self.logger.warning(
+				f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}'
+			)
 
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
