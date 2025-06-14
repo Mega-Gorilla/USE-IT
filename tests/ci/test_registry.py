@@ -231,7 +231,9 @@ class TestActionRegistryParameterPatterns:
 		assert isinstance(result, ActionResult)
 		assert 'Text: hello' in result.extracted_content
 		assert base_url in result.extracted_content
-		assert 'LLM: Mocked LLM response' in result.extracted_content
+		# The mock LLM returns a JSON response
+		assert 'LLM: \n\t{\n\t\t"current_state":' in result.extracted_content
+		assert '"Task completed successfully"' in result.extracted_content
 		assert 'Files: 2' in result.extracted_content
 
 	async def test_no_params_action(self, registry, browser_session):
