@@ -307,8 +307,8 @@ class BrowserSession(BaseModel):
 				try:
 					# apply last-minute runtime-computed options to the the browser_profile, validate profile, set up folders on disk
 					assert isinstance(self.browser_profile, BrowserProfile)
-					self.browser_profile.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
 					self.browser_profile.detect_display_configuration()  # adjusts config values, must come before launch/connect
+					self.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
 
 					# launch/connect to the browser:
 					# setup playwright library client, Browser, and BrowserContext objects
@@ -362,30 +362,6 @@ class BrowserSession(BaseModel):
 	async def stop(self) -> None:
 		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
-		# cleanly stop any active HAR/gif/mp4/trace recording
-		if self.browser_profile.traces_dir and self.browser_context:
-			try:
-				traces_path = Path(self.browser_profile.traces_dir)
-				if traces_path.suffix:
-					# Path has extension, use as-is (user specified exact file path)
-					final_trace_path = traces_path
-				else:
-					# Path has no extension, treat as directory and create filename
-					trace_filename = f'BrowserSession_{self.id}.zip'
-					final_trace_path = traces_path / trace_filename
-				
-				self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
-				async with asyncio.timeout(30):
-					await self.browser_context.tracing.stop(path=str(final_trace_path))
-			except Exception as e:
-				self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
-		if self.browser_profile.traces_dir and self.browser:
-			try:
-				async with asyncio.timeout(30):
-					await self.browser.stop_tracing()
-			except Exception as e:
-				self.logger.error(f'❌ Error saving browser trace to {_log_pretty_path(self.browser_profile.traces_dir)}: {type(e).__name__}: {e}')
-
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
@@ -407,18 +383,50 @@ class BrowserSession(BaseModel):
 
 				if self.browser_context or self.browser:
 					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser_context or self.browser}')
-					
+
+					# Stop trace recording before closing context
+					if self.browser_profile.traces_dir and self.browser_context is not None:
+						try:
+							traces_path = Path(self.browser_profile.traces_dir)
+							if traces_path.suffix:
+								# Path has extension, use as-is (user specified exact file path)
+								final_trace_path = traces_path
+							else:
+								# Path has no extension, treat as directory and create filename
+								trace_filename = f'BrowserSession_{self.id}.zip'
+								final_trace_path = traces_path / trace_filename
+
+							self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
+							async with asyncio.timeout(30):
+								await self.browser_context.tracing.stop(path=str(final_trace_path))
+						except Exception as e:
+							# TargetClosedError is expected when browser has already been closed - don't log as error
+							from playwright._impl._errors import TargetClosedError
+
+							if isinstance(e, TargetClosedError):
+								self.logger.debug('Browser context already closed, trace may have been saved automatically')
+							else:
+								self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
+
 					# playwright saves these on browser.close() automatically
 					if self.browser_profile.record_video_dir:
-						self.logger.info(f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...')
+						self.logger.info(
+							f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...'
+						)
 					if self.browser_profile.record_har_path:
 						self.logger.info(f'🎥 Saving HAR file to record_har_path= {self.browser_profile.record_har_path}...')
 
 					try:
 						# Add timeout to prevent hanging on close if context is already closed
 						try:
-							async with asyncio.timeout(30):  # 5 second timeout for close operation
-								await (self.browser or self.browser_context.browser or self.browser_context).close()
+							async with asyncio.timeout(30):  # 30 second timeout for close operation
+								# IMPORTANT: Close context first to ensure HAR/video files are saved
+								if self.browser_context:
+									await self.browser_context.close()
+									self.browser_context = None  # Prevent duplicate close attempts
+								# Then close browser if we have one
+								if self.browser and self.browser.is_connected():
+									await self.browser.close()
 						except TimeoutError:
 							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
 					except Exception as e:
@@ -801,7 +809,7 @@ class BrowserSession(BaseModel):
 				# self.logger.debug('🌎 Created new incognito context in browser')
 			else:
 				# user data dir was provided, prepare it for use
-				self.browser_profile.prepare_user_data_dir()
+				self.prepare_user_data_dir()
 
 				# search for potentially conflicting local processes running on the same user_data_dir
 				for proc in psutil.process_iter(['pid', 'cmdline']):
@@ -1308,6 +1316,57 @@ class BrowserSession(BaseModel):
 
 		if not already_disconnected:
 			self.logger.debug(f'⚰️ Browser {self._connection_str} disconnected')
+
+	def prepare_user_data_dir(self) -> None:
+		"""Create and unlock the user data dir and ensure all recording paths exist."""
+
+		if self.browser_profile.user_data_dir:
+			try:
+				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
+				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
+				(self.browser_profile.user_data_dir / '.browseruse_profile_id').write_text(self.browser_profile.id)
+			except Exception as e:
+				raise ValueError(
+					f'Unusable path provided for user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (check for typos/permissions issues)'
+				) from e
+
+			# clear any existing locks by any other chrome processes (hacky)
+			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
+			if singleton_lock.exists():
+				singleton_lock.unlink()
+				self.logger.warning(
+					f'⚠️ Multiple chrome processes may be trying to share user_data_dir={self.browser_profile.user_data_dir} which can lead to crashes and profile data corruption!'
+				)
+
+		# Create directories for all paths that need them
+		dir_paths = {
+			'downloads_path': self.browser_profile.downloads_path,
+			'record_video_dir': self.browser_profile.record_video_dir,
+			'traces_dir': self.browser_profile.traces_dir,
+		}
+
+		file_paths = {
+			'record_har_path': self.browser_profile.record_har_path,
+		}
+
+		# Handle directory creation
+		for path_name, path_value in dir_paths.items():
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.mkdir(parents=True, exist_ok=True)
+					setattr(self.browser_profile, path_name, str(path_obj) if path_name == 'traces_dir' else path_obj)
+				except Exception as e:
+					self.logger.error(f'❌ Failed to create {path_name} directory {path_value}: {e}')
+
+		# Handle file path parent directory creation
+		for path_name, path_value in file_paths.items():
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.parent.mkdir(parents=True, exist_ok=True)
+				except Exception as e:
+					self.logger.error(f'❌ Failed to create parent directory for {path_name} {path_value}: {e}')
 
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
@@ -2420,36 +2479,15 @@ class BrowserSession(BaseModel):
 
 	async def _start_context_tracing(self):
 		"""Start tracing on browser context if trace_path is configured."""
-		if self.browser_profile.traces_dir:
+		if self.browser_profile.traces_dir and self.browser_context:
 			try:
-				if self.browser_context:
-					self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
-					# Don't pass any path to start() - let Playwright handle internal temp files
-					await self.browser_context.tracing.start(
-						screenshots=True, 
-						snapshots=True,
-						sources=False  # Reduce trace size
-					)
-				elif self.browser:
-					# Fallback to browser.start_tracing() if context not available
-					await self.browser.start_tracing()
-					traces_path = Path(self.browser_profile.traces_dir)
-					
-					# Determine trace file path (same logic as in stop method)
-					if str(traces_path).endswith('.zip'):
-						# User wants exact zip file path
-						if traces_path.exists() and traces_path.is_dir():
-							self.logger.error(f'Cannot start trace: directory exists at zip path {traces_path}')
-							return
-						trace_file = traces_path
-					else:
-						# User wants directory (intuitive default)
-						if traces_path.exists() and traces_path.is_file():
-							self.logger.error(f'Cannot start trace: file exists at directory path {traces_path}')
-							return
-						trace_file = traces_path / f'BrowserSession_{self.id}.zip'
-					
-					self.logger.debug(f'📽️ Started tracing, will save to: {trace_file}')
+				self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
+				# Don't pass any path to start() - let Playwright handle internal temp files
+				await self.browser_context.tracing.start(
+					screenshots=True,
+					snapshots=True,
+					sources=False,  # Reduce trace size
+				)
 			except Exception as e:
 				self.logger.warning(f'Failed to start tracing: {e}')
 
