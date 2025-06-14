@@ -545,7 +545,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
 	"""
-	A BrowserProfile is a static template collection of kwargs that can get passed into to:
+	A BrowserProfile is a static template collection of kwargs that can be passed to:
 		- BrowserType.launch(**BrowserLaunchArgs)
 		- BrowserType.connect(**BrowserConnectArgs)
 		- BrowserType.connect_over_cdp(**BrowserConnectArgs)
