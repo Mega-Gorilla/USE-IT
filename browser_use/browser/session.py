@@ -2947,7 +2947,8 @@ class BrowserSession(BaseModel):
 		if self.human_current_page != page:
 			# TODO: figure out how to do this without bringing the entire window to the foreground and stealing foreground app focus
 			# might require browser-use extension loaded into the browser so we can use chrome.tabs extension APIs
-			await page.bring_to_front()
+			# await page.bring_to_front()
+			pass
 
 		self.human_current_page = page
 
