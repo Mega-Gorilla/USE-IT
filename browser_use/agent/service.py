@@ -439,7 +439,7 @@ class Agent(Generic[Context]):
 
 		_browser_session_id = self.browser_session.id if self.browser_session else self.id
 		_current_page_id = str(id(self.browser_session and self.browser_session.agent_current_page))[-2:]
-		return logging.getLogger(f'browser_use.Agent✻{self.task_id[-4:]} on ⛶{_browser_session_id[-4:]}.{_current_page_id}')
+		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]}.{_current_page_id}')
 
 	@property
 	def browser(self) -> Browser:
