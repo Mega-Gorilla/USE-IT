@@ -255,10 +255,10 @@ class BrowserSession(BaseModel):
 		return self._logger
 
 	def __repr__(self) -> str:
-		return f'BrowserSession#{self.id[-4:]}(profile={self.browser_profile}, {self._connection_str})'
+		return f'BrowserSession⛶{self.id[-4:]}(profile={self.browser_profile}, {self._connection_str}) ref#={str(id(self))[-2:]}'
 
 	def __str__(self) -> str:
-		return f'BrowserSession#{self.id[-4:]}'
+		return f'BrowserSession⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}'
 
 	# def __getattr__(self, key: str) -> Any:
 	# 	"""
@@ -285,8 +285,8 @@ class BrowserSession(BaseModel):
 
 		# Use timeout to prevent indefinite waiting on lock acquisition
 
-		async with asyncio.timeout(60):  # 60 overall second timeout for entire launching process
-			async with self._start_lock:
+		async with asyncio.timeout(60):  # 60 second overall timeout for entire launching process to avoid deadlocks
+			async with self._start_lock:  # prevent parallel calls to start() / stop() / save_storage_state() from clashing
 				if self.initialized:
 					if self.is_connected():
 						return self
@@ -571,12 +571,12 @@ class BrowserSession(BaseModel):
 		"""Create and return a new playwright or patchright node.js subprocess / API connector"""
 		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
 		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
-		
+
 		try:
 			current_loop = asyncio.get_running_loop()
 		except RuntimeError:
 			current_loop = None
-		
+
 		if is_stealth:
 			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
 			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
@@ -591,9 +591,9 @@ class BrowserSession(BaseModel):
 		Set up playwright library client object: usually the result of (await async_playwright().start())
 		Override to customize the set up of the playwright or patchright library object
 		"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT  # one per thread, represents a node.js playwright subprocess that relays comamnds to the browser via CDP
+		global GLOBAL_PLAYWRIGHT_API_OBJECT  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
 		global GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays comamnds to the browser via CDP
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
 		global GLOBAL_PATCHRIGHT_EVENT_LOOP
 
 		# Get current event loop
@@ -603,7 +603,7 @@ class BrowserSession(BaseModel):
 			current_loop = None
 
 		is_stealth = self.browser_profile.stealth
-		
+
 		# Configure browser channel based on stealth mode
 		if is_stealth:
 			# use patchright + chrome when stealth=True
@@ -613,15 +613,16 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-
 		# Check if we're in a different event loop than the one that created the global object
 		should_recreate = False
 		driver_name = 'patchright' if is_stealth else 'playwright'
 		global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
 		global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
-		self.playwright = self.playwright or global_api_object or await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+		self.playwright = (
+			self.playwright or global_api_object or await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+		)
 
-		if (global_api_object and global_event_loop != current_loop):
+		if global_api_object and global_event_loop != current_loop:
 			self.logger.debug(
 				f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
 				'Creating new instance to avoid disconnection when the previous loop closes.'
@@ -2936,12 +2937,21 @@ class BrowserSession(BaseModel):
 		# 	assert self.agent_current_page.url == 'about:blank'
 
 		# if there are any unused about:blank tabs after we open a new tab, close them to clean up unused tabs
+
+		# hacky way to be sure we only close our own tabs, check the title of the tab for our BrowserSession name
+		title_of_our_setup_tab = f'Setting up #{str(self.id)[-4:]}...'  # set up by self._show_dvd_screensaver_loading_animation()
+
 		for page in self.browser_context.pages:
-			if page.url == 'about:blank' and page != self.agent_current_page:
+			page_title = await page.title()
+			if page.url == 'about:blank' and page != self.agent_current_page and page_title == title_of_our_setup_tab:
 				await page.close()
 				self.human_current_page = (  # in case we just closed the human's tab, fix the refs
 					self.human_current_page if not self.human_current_page.is_closed() else self.agent_current_page
 				)
+				break  # only close a maximum of one unused about:blank tab,
+				# if multiple parallel agents share one BrowserSession
+				# closing every new_page() tab (which start on about:blank) causes lots of problems
+				# (the title check is not enough when they share a single BrowserSession)
 
 		return new_page
 
@@ -3106,8 +3116,18 @@ class BrowserSession(BaseModel):
 			# dont bother wasting CPU showing animations during evals
 			return
 
-		await page.evaluate("""() => {
-			document.title = 'Setting up...';
+		# we could enforce this, but maybe it's useful to be able to show it on other tabs?
+		# assert page.url == 'about:blank', 'DVD screensaver loading animation should only be shown on about:blank tabs'
+
+		# all in one JS function for speed, we want as few roundtrip CDP calls as possible
+		# between opening the tab and showing the animation
+		await page.evaluate(
+			"""(browser_session_label) => {
+			const animated_title = `Setting up #${browser_session_label}...`;
+			if (document.title === animated_title) {
+				return;      // already run on this tab, dont run again
+			}
+			document.title = animated_title;
 
 			// Create the main overlay
 			const loadingOverlay = document.createElement('div');
@@ -3191,4 +3211,6 @@ class BrowserSession(BaseModel):
 				}
 			`;
 			document.head.appendChild(style);
-		}""")
+		}""",
+			str(self.id)[-4:],
+		)
