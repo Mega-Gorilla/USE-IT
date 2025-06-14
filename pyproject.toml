@@ -26,6 +26,7 @@ dependencies = [
     "markdownify==1.1.0",
     "mem0ai>=0.1.106",
     "patchright>=1.52.5",
+    "playwright>=1.52.0",
     "posthog>=3.7.0",
     "psutil>=7.0.0",
     "pydantic>=2.11.5",
