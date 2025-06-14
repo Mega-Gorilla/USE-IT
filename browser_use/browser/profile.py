@@ -377,7 +377,9 @@ class BrowserContextArgs(BaseModel):
 	record_har_omit_content: bool = False
 	record_har_path: str | Path | None = Field(default=None, validation_alias=AliasChoices('save_har_path', 'record_har_path'))
 	record_har_url_filter: str | Pattern | None = None
-	record_video_dir: str | Path | None = Field(default=None, validation_alias=AliasChoices('save_recording_path', 'record_video_dir'))
+	record_video_dir: str | Path | None = Field(
+		default=None, validation_alias=AliasChoices('save_recording_path', 'record_video_dir')
+	)
 	record_video_size: ViewportSize | None = None
 
 
@@ -452,7 +454,11 @@ class BrowserLaunchArgs(BaseModel):
 		description='Directory to save downloads to.',
 		validation_alias=AliasChoices('downloads_dir', 'save_downloads_path'),
 	)
-	traces_dir: str | Path | None = Field(default=None, description='Directory for saving playwright trace.zip files (playwright actions, screenshots, DOM snapshots, HAR traces).', validation_alias=AliasChoices('trace_path', 'traces_dir'))
+	traces_dir: str | Path | None = Field(
+		default=None,
+		description='Directory for saving playwright trace.zip files (playwright actions, screenshots, DOM snapshots, HAR traces).',
+		validation_alias=AliasChoices('trace_path', 'traces_dir'),
+	)
 	handle_sighup: bool = Field(
 		default=True, description='Whether playwright should swallow SIGHUP signals and kill the browser.'
 	)
@@ -539,7 +545,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
 	"""
-	A BrowserProfile is a static collection of kwargs that get passed to:
+	A BrowserProfile is a static template collection of kwargs that can get passed into to:
 		- BrowserType.launch(**BrowserLaunchArgs)
 		- BrowserType.connect(**BrowserConnectArgs)
 		- BrowserType.connect_over_cdp(**BrowserConnectArgs)
@@ -575,7 +581,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	window_size: ViewportSize | None = Field(
 		default=None,
-		description='Window size to use for the browser when headless=False.',
+		description='Browser window size to use when headless=False.',
 	)
 	window_height: int | None = Field(default=None, description='DEPRECATED, use window_size["height"] instead', exclude=True)
 	window_width: int | None = Field(default=None, description='DEPRECATED, use window_size["width"] instead', exclude=True)
@@ -608,6 +614,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
 	)
 
+	# TODO: finish implementing extension support in extensions.py
 	# extension_ids_to_preinstall: list[str] = Field(
 	# 	default_factory=list, description='List of Chrome extension IDs to preinstall.'
 	# )
@@ -627,6 +634,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	def copy_old_config_names_to_new(self) -> Self:
 		"""Copy old config window_width & window_height to window_size."""
 		if self.window_width or self.window_height:
+			logger.warning(
+				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1280, "height": 1100}) instead.'
+			)
 			self.window_size = self.window_size or {}
 			self.window_size['width'] = (self.window_size or {}).get('width') or self.window_width or 1280
 			self.window_size['height'] = (self.window_size or {}).get('height') or self.window_height or 1100
@@ -645,13 +655,16 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				f'⚠️ BrowserSession(...) was passed both {static_source} AND user_data_dir. {static_source}={self.storage_state or self.cookies_file} will forcibly overwrite '
 				f'cookies/localStorage/sessionStorage in user_data_dir={self.user_data_dir}. '
 				f'For multiple browsers in parallel, use only storage_state with user_data_dir=None, '
-				f'or use separate user_data_dirs for each browser and set storage_state=None.'
+				f'or use a separate user_data_dir for each browser and set storage_state=None.'
 			)
 		return self
 
 	@model_validator(mode='after')
 	def warn_user_data_dir_non_default_version(self) -> Self:
-		"""If user is using default profile dir with a non-default channel, force-change it to avoid corrupting the default data dir."""
+		"""
+		If user is using default profile dir with a non-default channel, force-change it
+		to avoid corrupting the default data dir created with a different channel.
+		"""
 
 		is_not_using_default_chromium = self.executable_path or self.channel not in (BROWSERUSE_DEFAULT_CHANNEL, None)
 		if self.user_data_dir == BROWSERUSE_CHROMIUM_USER_DATA_DIR and is_not_using_default_chromium:
@@ -665,6 +678,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return self
 
 	def get_args(self) -> list[str]:
+		"""Get the list of all Chrome CLI launch args for this profile (compiled from defaults, user-provided, and system-specific)."""
+
 		if isinstance(self.ignore_default_args, list):
 			default_args = set(CHROME_DEFAULT_ARGS) - set(self.ignore_default_args)
 		elif self.ignore_default_args is True:
@@ -693,6 +708,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			),
 		]
 
+		# convert to dict and back to dedupe and merge duplicate args
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
 		return final_args_list
 
