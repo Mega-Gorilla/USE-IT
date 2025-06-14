@@ -1647,6 +1647,9 @@ class BrowserSession(BaseModel):
 		if not (path or self.browser_profile.cookies_file):
 			return
 
+		if not cookies:
+			return
+
 		try:
 			cookies_file_path = Path(path or self.browser_profile.cookies_file).expanduser().resolve()
 			cookies_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1695,7 +1698,9 @@ class BrowserSession(BaseModel):
 				pass
 			temp_path.replace(json_path)
 
-			self.logger.info(f'🍪 Saved {len(storage_state["cookies"])} cookies to storage_state= {_log_pretty_path(json_path)}')
+			self.logger.info(
+				f'🍪 Saved {len(storage_state["cookies"]) + len(storage_state.get("origins", []))} cookies to storage_state= {_log_pretty_path(json_path)}'
+			)
 		except Exception as e:
 			self.logger.warning(f'❌ Failed to save cookies to storage_state= {_log_pretty_path(path)}: {type(e).__name__}: {e}')
 
@@ -1709,9 +1714,10 @@ class BrowserSession(BaseModel):
 
 		storage_state = await self.browser_context.storage_state()
 		cookies = storage_state['cookies']
+		has_any_auth_data = cookies or storage_state.get('origins', [])
 
 		# they passed an explicit path, only save to that path and return
-		if path:
+		if path and has_any_auth_data:
 			if path.name == 'storage_state.json':
 				await self._save_storage_state_to_file(path, storage_state)
 				return
@@ -1808,9 +1814,11 @@ class BrowserSession(BaseModel):
 				# playwright doesn't provide an API for setting these before launch
 				# https://playwright.dev/python/docs/auth#session-storage
 				# await self.browser_context.add_local_storage(storage_state['localStorage'])
-				self.logger.info(
-					f'🍪 Loaded {len(storage_state["cookies"])} cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}'
-				)
+				num_entries = len(storage_state['cookies']) + len(storage_state.get('origins', []))
+				if num_entries:
+					self.logger.info(
+						f'🍪 Loaded {num_entries} cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}'
+					)
 			except Exception as e:
 				self.logger.warning(
 					f'❌ Failed to load cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}: {type(e).__name__}: {e}'
