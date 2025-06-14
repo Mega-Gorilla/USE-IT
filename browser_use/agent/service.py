@@ -15,7 +15,6 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -28,7 +27,6 @@ from playwright.async_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ValidationError
 from uuid_extensions import uuid7str
 
-from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
@@ -38,7 +36,6 @@ from browser_use.agent.message_manager.utils import (
 	is_model_without_tool_support,
 	save_conversation,
 )
-from browser_use.utils import _log_pretty_path
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
@@ -54,6 +51,7 @@ from browser_use.agent.views import (
 	ToolCallingMethod,
 )
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 
 # from lmnr.sdk.decorators import observe
 from browser_use.browser.views import BrowserStateSummary
@@ -68,7 +66,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	AgentTelemetryEvent,
 )
-from browser_use.utils import get_browser_use_version, time_execution_async, time_execution_sync
+from browser_use.utils import _log_pretty_path, get_browser_use_version, time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -419,7 +417,7 @@ class Agent(Generic[Context]):
 
 		if self.settings.save_conversation_path:
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
-			self.logger.info(f'Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
+			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
@@ -912,7 +910,10 @@ class Agent(Generic[Context]):
 					else:
 						self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
-					target = Path(self.settings.save_conversation_path).with_suffix('').as_posix() + f'_{self.state.n_steps}.txt'
+					# Treat save_conversation_path as a directory (consistent with other recording paths)
+					conversation_dir = Path(self.settings.save_conversation_path)
+					conversation_filename = f'conversation_{self.id}_{self.state.n_steps}.txt'
+					target = conversation_dir / conversation_filename
 					await save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
@@ -1593,7 +1594,7 @@ class Agent(Generic[Context]):
 			self.logger.info('❌ Task completed without success')
 
 		total_tokens = self.state.history.total_input_tokens()
-		self.logger.debug(f'📝 Total input tokens used (approximate): {total_tokens}')
+		self.logger.debug(f'💲 Total input tokens used (approximate): {total_tokens}')
 
 		if self.register_done_callback:
 			if inspect.iscoroutinefunction(self.register_done_callback):
