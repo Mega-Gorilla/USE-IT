@@ -303,8 +303,14 @@ class EventBus:
 		else:
 			# otherwise, execute handlers serially, wait until each one completes before moving on to the next
 			for handler_name, handler in applicable_handlers.items():
-				result = await self._execute_sync_or_async_handler(event, handler)
-				event.record_results({handler_name: result}, complete=False)
+				try:
+					result = await self._execute_sync_or_async_handler(event, handler)
+					event.record_results({handler_name: result}, complete=False)
+				except Exception as e:
+					event.event_errors[handler_name] = str(e)
+					logger.error(
+						f'❌ {self} Handler {handler_name} failed for event {event.event_id}: {type(e).__name__} {e}\n{event.model_dump()}'
+					)
 
 	async def _execute_sync_or_async_handler(self, event: BaseEvent, handler: EventHandler) -> Any:
 		"""Safely execute a single handler"""
