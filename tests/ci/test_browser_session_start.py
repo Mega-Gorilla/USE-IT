@@ -880,7 +880,7 @@ class TestBrowserSessionReusePatterns:
 		# Create a shared profile with storage state
 		with tempfile.NamedTemporaryFile(suffix='.json', delete=False, mode='w') as f:
 			# Write minimal valid storage state
-			f.write('{"cookies": [], "origins": [{"origin": "example.com", "localStorage": {"testkey": "testvalue"}}]}')
+			f.write('{"cookies": [], "origins": [{"origin": "example.com", "localStorage": []}]}')
 			auth_json_path = f.name
 
 		# Convert to Path object
