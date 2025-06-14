@@ -42,7 +42,7 @@ class UpdateAgentTaskEvent(BaseEvent):
 			stopped=agent.state.stopped if hasattr(agent.state, 'stopped') else False,
 			paused=agent.state.paused if hasattr(agent.state, 'paused') else False,
 			done_output=done_output,
-            finished_at=datetime.utcnow() if agent.state.history and agent.state.history.is_done() else None,
+			finished_at=datetime.utcnow() if agent.state.history and agent.state.history.is_done() else None,
 			agent_state=agent.state.model_dump() if hasattr(agent.state, 'model_dump') else {},
 			# user_feedback_type and user_comment would be set by the API/frontend
 			# gif_url would be set after GIF generation if needed
