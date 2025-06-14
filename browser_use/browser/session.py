@@ -2706,7 +2706,12 @@ class BrowserSession(BaseModel):
 				parent,
 				include_dynamic_attributes=self.browser_profile.include_dynamic_attributes,
 			)
-			current_frame = current_frame.frame_locator(css_selector)
+			# Use CSS selector if available, otherwise fall back to XPath
+			if css_selector:
+				current_frame = current_frame.frame_locator(css_selector)
+			else:
+				self.logger.debug(f'Using XPath for iframe: {parent.xpath}')
+				current_frame = current_frame.frame_locator(f'xpath={parent.xpath}')
 
 		css_selector = self._enhanced_css_selector_for_element(
 			element, include_dynamic_attributes=self.browser_profile.include_dynamic_attributes
@@ -2714,11 +2719,22 @@ class BrowserSession(BaseModel):
 
 		try:
 			if isinstance(current_frame, FrameLocator):
-				element_handle = await current_frame.locator(css_selector).element_handle()
+				if css_selector:
+					element_handle = await current_frame.locator(css_selector).element_handle()
+				else:
+					# Fall back to XPath when CSS selector is empty
+					self.logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
 				return element_handle
 			else:
-				# Try to scroll into view if hidden
-				element_handle = await current_frame.query_selector(css_selector)
+				# Try CSS selector first if available
+				if css_selector:
+					element_handle = await current_frame.query_selector(css_selector)
+				else:
+					# Fall back to XPath
+					self.logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+
 				if element_handle:
 					is_visible = await self._is_visible(element_handle)
 					if is_visible:
@@ -2726,10 +2742,30 @@ class BrowserSession(BaseModel):
 					return element_handle
 				return None
 		except Exception as e:
-			self.logger.error(
-				f'❌ Failed to locate element {css_selector} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
-			)
-			return None
+			# If CSS selector failed, try XPath as fallback
+			if css_selector and 'CSS.escape' not in str(e):
+				try:
+					self.logger.debug(f'CSS selector failed, trying XPath fallback: {element.xpath}')
+					if isinstance(current_frame, FrameLocator):
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+					else:
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+
+					if element_handle:
+						is_visible = await self._is_visible(element_handle)
+						if is_visible:
+							await element_handle.scroll_into_view_if_needed()
+						return element_handle
+				except Exception as xpath_e:
+					self.logger.error(
+						f'❌ Failed to locate element with both CSS ({css_selector}) and XPath ({element.xpath}): {type(xpath_e).__name__}: {xpath_e}'
+					)
+					return None
+			else:
+				self.logger.error(
+					f'❌ Failed to locate element {css_selector or element.xpath} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
+				)
+				return None
 
 	@require_initialization
 	@time_execution_async('--get_locate_element_by_xpath')
