@@ -759,7 +759,7 @@ class BrowserSession(BaseModel):
 				self.logger.info(f'🌎 Using first browser_context available in existing browser: {self.browser_context}')
 			else:
 				self.browser_context = await self.browser.new_context(
-					**self.browser_profile.kwargs_for_new_context().model_dump()
+					**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
 				)
 				storage_info = (
 					f' + loaded storage_state={len(self.browser_profile.storage_state.cookies) if self.browser_profile.storage_state else 0} cookies'
@@ -788,7 +788,7 @@ class BrowserSession(BaseModel):
 					# self.logger.debug('🌎 Launching new incognito context in browser')
 					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
 						self.browser_context = await self.browser.new_context(
-							**self.browser_profile.kwargs_for_new_context().model_dump()
+							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
 						)
 				except TimeoutError:
 					self.logger.warning(
