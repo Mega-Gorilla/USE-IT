@@ -177,15 +177,15 @@ class DOMElementNode(DOMBaseNode):
 
 						# if aria-label == text of the node, don't include it
 						if (
-								attributes_to_include.get('aria-label')
-								and attributes_to_include.get('aria-label', '').strip() == text.strip()
+							attributes_to_include.get('aria-label')
+							and attributes_to_include.get('aria-label', '').strip() == text.strip()
 						):
 							del attributes_to_include['aria-label']
 
 						# if placeholder == text of the node, don't include it
 						if (
-								attributes_to_include.get('placeholder')
-								and attributes_to_include.get('placeholder', '').strip() == text.strip()
+							attributes_to_include.get('placeholder')
+							and attributes_to_include.get('placeholder', '').strip() == text.strip()
 						):
 							del attributes_to_include['placeholder']
 
@@ -223,17 +223,14 @@ class DOMElementNode(DOMBaseNode):
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
 				if (
-						node.parent.highlight_index is None
-						and node.parent
-						and node.parent.is_visible
-						and node.parent.is_top_element
+					node.parent.highlight_index is None
+					and node.parent
+					and node.parent.is_visible
+					and node.parent.is_top_element
 				):  # and node.is_parent_top_element()
 					formatted_text.append(f'{depth_str}{node.text}')
 
-		try:
-			process_node(self, 0)
-		except Exception as e:
-			print(e)
+		process_node(self, 0)
 		return '\n'.join(formatted_text)
 
 
