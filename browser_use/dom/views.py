@@ -162,6 +162,8 @@ class DOMElementNode(DOMBaseNode):
 				# Add element with highlight_index
 				if node.highlight_index is not None:
 					next_depth += 1
+
+					text = node.get_all_text_till_next_clickable_element(max_depth=1)
 					attributes_html_str = ''
 					if include_attributes:
 						attributes_to_include = {
@@ -172,6 +174,20 @@ class DOMElementNode(DOMBaseNode):
 						# if tag == role attribute, don't include it
 						if node.tag_name == attributes_to_include.get('role'):
 							del attributes_to_include['role']
+
+						# if aria-label == text of the node, don't include it
+						if (
+								attributes_to_include.get('aria-label')
+								and attributes_to_include.get('aria-label', '').strip() == text.strip()
+						):
+							del attributes_to_include['aria-label']
+
+						# if placeholder == text of the node, don't include it
+						if (
+								attributes_to_include.get('placeholder')
+								and attributes_to_include.get('placeholder', '').strip() == text.strip()
+						):
+							del attributes_to_include['placeholder']
 
 						if attributes_to_include:
 							# Format as key1='value1' key2='value2'
@@ -188,7 +204,13 @@ class DOMElementNode(DOMBaseNode):
 					if attributes_html_str:
 						line += f' {attributes_html_str}'
 
-					if not attributes_html_str:
+					if text:
+						# Add space before >text only if there were NO attributes added before
+						if not attributes_html_str:
+							line += ' '
+						line += f'>{text}'
+					# Add space before /> only if neither attributes NOR text were added
+					elif not attributes_html_str:
 						line += ' '
 
 					line += ' />'  # 1 token
@@ -200,15 +222,18 @@ class DOMElementNode(DOMBaseNode):
 
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
-				# if (
-				# 	not node.has_parent_with_highlight_index()
-				# 	and node.parent
-				# 	and node.parent.is_visible
-				# 	and node.parent.is_top_element
-				# ):  # and node.is_parent_top_element()
-				formatted_text.append(f'{depth_str}{node.text}')
+				if (
+						node.parent.highlight_index is None
+						and node.parent
+						and node.parent.is_visible
+						and node.parent.is_top_element
+				):  # and node.is_parent_top_element()
+					formatted_text.append(f'{depth_str}{node.text}')
 
-		process_node(self, 0)
+		try:
+			process_node(self, 0)
+		except Exception as e:
+			print(e)
 		return '\n'.join(formatted_text)
 
 
