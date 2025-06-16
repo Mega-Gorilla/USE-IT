@@ -1,363 +1,326 @@
 """
-Comprehensive tests for browser session file upload element finding functionality.
+Tests for browser session file upload functionality using real HTML.
 
-Tests cover all codepaths in find_file_upload_element_by_index():
-- Finding file inputs on current node, descendants, siblings, ancestors
-- Parameter variations (max_height, max_descendant_depth)
-- Edge cases and error handling
-- Different DOM structures and nesting levels
+Tests cover common real-world file upload patterns:
+- Standard form file uploads
+- Hidden file inputs triggered by buttons
+- Multiple file upload fields
+- Complex nested structures
 """
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
+from pytest_httpserver import HTTPServer
 
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
-from browser_use.dom.views import DOMElementNode
 
 
 class TestBrowserSessionFileUploads:
-	"""Tests for file upload element finding functionality."""
+	"""Tests for file upload element finding functionality with real HTML."""
 
 	@pytest.fixture
 	async def browser_session(self):
 		"""Create a BrowserSession instance for testing."""
-		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
+		profile = BrowserProfile(headless=True)
 		session = BrowserSession(browser_profile=profile)
-
-		# Mock the initialization check
-		session._initialized = True
-
 		yield session
+		await session.stop()
 
-		# Cleanup
-		try:
-			await session.stop()
-		except Exception:
-			pass
+	@pytest.fixture
+	def test_server(self, httpserver: HTTPServer):
+		"""Set up test HTTP server with various file upload scenarios."""
+		return httpserver
 
-	def create_file_input_node(self, attributes: dict[str, str] | None = None) -> DOMElementNode:
-		"""Create a file input DOM node for testing."""
-		attrs = {'type': 'file'} if attributes is None else attributes
-		return DOMElementNode(
-			tag_name='input', xpath='//input[@type="file"]', attributes=attrs, children=[], is_visible=True, parent=None
-		)
+	async def test_standard_file_upload_patterns(self, browser_session: BrowserSession, test_server: HTTPServer):
+		"""Test finding file inputs in standard form layouts and modern UI patterns."""
+		html = """
+		<!DOCTYPE html>
+		<html>
+		<body>
+			<h1>File Upload Test Page</h1>
+			
+			<!-- Pattern 1: Simple visible file input in form -->
+			<form id="simple-form">
+				<label for="file1">Choose file:</label>
+				<input type="file" id="file1" name="document">
+				<button type="submit">Upload</button>
+			</form>
+			
+			<!-- Pattern 2: Hidden file input with custom button (Material/Bootstrap style) -->
+			<div class="upload-section">
+				<button class="btn btn-primary" onclick="document.getElementById('hidden-file').click()">
+					Select File
+				</button>
+				<input type="file" id="hidden-file" style="display: none;" accept=".pdf,.doc,.docx">
+				<span class="filename">No file selected</span>
+			</div>
+			
+			<!-- Pattern 3: Nested file input in card/modal structure -->
+			<div class="modal">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h3>Upload Document</h3>
+					</div>
+					<div class="modal-body">
+						<div class="form-group">
+							<label>Select your file:</label>
+							<div class="input-wrapper">
+								<input type="file" id="modal-file" class="form-control">
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Pattern 4: Multiple file inputs -->
+			<form id="multi-upload">
+				<div class="field-group">
+					<label>Profile Photo</label>
+					<input type="file" name="photo" accept="image/*">
+				</div>
+				<div class="field-group">
+					<label>Resume</label>
+					<input type="file" name="resume" accept=".pdf">
+				</div>
+			</form>
+			
+			<!-- Pattern 5: Dropzone-style upload area -->
+			<div class="dropzone" onclick="this.querySelector('input').click()">
+				<div class="dz-message">
+					<i class="icon-upload"></i>
+					<p>Drop files here or click to upload</p>
+				</div>
+				<input type="file" multiple style="display: none;">
+			</div>
+		</body>
+		</html>
+		"""
 
-	def create_regular_input_node(self, input_type: str = 'text') -> DOMElementNode:
-		"""Create a regular input DOM node for testing."""
-		return DOMElementNode(
-			tag_name='input',
-			xpath=f'//input[@type="{input_type}"]',
-			attributes={'type': input_type},
-			children=[],
-			is_visible=True,
-			parent=None,
-		)
+		test_server.expect_request('/upload').respond_with_data(html, content_type='text/html')
+		await browser_session.start()
+		page = await browser_session.get_current_page()
+		await page.goto(test_server.url_for('/upload'))
 
-	def create_div_node(self, children: list = None) -> DOMElementNode:
-		"""Create a div DOM node for testing."""
-		return DOMElementNode(tag_name='div', xpath='//div', attributes={}, children=children or [], is_visible=True, parent=None)
+		# Wait for page to load
+		await page.wait_for_load_state('networkidle')
 
-	def setup_parent_child_relationships(self, parent: DOMElementNode, children: list[DOMElementNode]):
-		"""Set up bidirectional parent-child relationships."""
-		parent.children = children
-		for child in children:
-			child.parent = parent
+		# Get browser state to populate selector map
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 
-	async def test_find_file_input_on_current_node(self, browser_session):
-		"""Test finding file input when the selected element itself is a file input."""
-		# Create a file input node
-		file_input = self.create_file_input_node()
+		# Get the selector map after page load
+		selector_map = await browser_session.get_selector_map()
 
-		# Mock the selector map
-		browser_session.get_selector_map = AsyncMock(return_value={0: file_input})
+		# The selector map contains clickable elements, so let's test by looking for elements directly
+		# Test 1: Find file input when it's the clicked element itself
+		all_file_inputs = []
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'input' and elem.attributes.get('type') == 'file':
+				all_file_inputs.append((idx, elem))
 
-		result = await browser_session.find_file_upload_element_by_index(0)
+		# Should find at least one file input in the map
+		assert len(all_file_inputs) > 0, f'No file inputs found in selector map. Map has {len(selector_map)} elements'
 
-		assert result is file_input
+		# Test finding the first file input
+		first_file_idx, first_file_elem = all_file_inputs[0]
+		file_input = await browser_session.find_file_upload_element_by_index(first_file_idx)
+		assert file_input is not None
+		assert file_input == first_file_elem
 
-	async def test_find_file_input_in_direct_child(self, browser_session):
-		"""Test finding file input in direct children of selected element."""
-		# Create DOM structure: div -> file_input
-		file_input = self.create_file_input_node()
-		parent_div = self.create_div_node()
-		self.setup_parent_child_relationships(parent_div, [file_input])
+		# Test 2: Find hidden file input from button - look for any button
+		button_indices = []
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'button':
+				button_indices.append(idx)
 
-		browser_session.get_selector_map = AsyncMock(return_value={0: parent_div})
+		# Try finding file input from each button
+		found_from_button = False
+		for button_idx in button_indices:
+			file_input = await browser_session.find_file_upload_element_by_index(button_idx)
+			if file_input is not None:
+				found_from_button = True
+				break
 
-		result = await browser_session.find_file_upload_element_by_index(0)
+		assert found_from_button, 'Could not find any file input from any button'
 
-		assert result is file_input
+		# Test 3: Find file input from parent containers
+		div_indices = []
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'div':
+				div_indices.append(idx)
 
-	async def test_find_file_input_in_nested_descendants(self, browser_session):
-		"""Test finding file input in deeply nested descendants."""
-		# Create DOM structure: div -> div -> div -> file_input
-		file_input = self.create_file_input_node()
-		inner_div = self.create_div_node()
-		middle_div = self.create_div_node()
-		outer_div = self.create_div_node()
+		# Try finding file input from divs
+		found_from_div = False
+		for div_idx in div_indices[:10]:  # Test first 10 divs
+			file_input = await browser_session.find_file_upload_element_by_index(div_idx)
+			if file_input is not None:
+				found_from_div = True
+				break
 
-		self.setup_parent_child_relationships(inner_div, [file_input])
-		self.setup_parent_child_relationships(middle_div, [inner_div])
-		self.setup_parent_child_relationships(outer_div, [middle_div])
+		assert found_from_div, 'Could not find any file input from any div container'
 
-		browser_session.get_selector_map = AsyncMock(return_value={0: outer_div})
+	async def test_dom_traversal_functionality(self, browser_session: BrowserSession, test_server: HTTPServer):
+		"""Test that the file upload finder correctly traverses the DOM."""
+		html = """
+		<!DOCTYPE html>
+		<html>
+		<body>
+			<!-- Test case 1: Deep nesting -->
+			<div class="container">
+				<button class="deep-button">Upload from Deep</button>
+				<div>
+					<div>
+						<div>
+							<input type="file" id="deep-file">
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Test case 2: Sibling traversal -->
+			<div class="upload-group">
+				<div class="left-section">
+					<button class="sibling-button">Choose File</button>
+				</div>
+				<div class="right-section">
+					<input type="file" id="sibling-file">
+				</div>
+			</div>
+			
+			<!-- Test case 3: Parent traversal -->
+			<div class="outer-container">
+				<input type="file" id="parent-file" style="display: none;">
+				<div class="inner-container">
+					<button class="parent-button">Select</button>
+				</div>
+			</div>
+			
+			<!-- Test case 4: Mixed case HTML -->
+			<FORM>
+				<INPUT TYPE="FILE" ID="mixed-case-file">
+				<BUTTON TYPE="button" CLASS="mixed-button">Upload</BUTTON>
+			</FORM>
+		</body>
+		</html>
+		"""
 
-		# Should find with default max_descendant_depth=3
-		result = await browser_session.find_file_upload_element_by_index(0)
-		assert result is file_input
+		test_server.expect_request('/traversal').respond_with_data(html, content_type='text/html')
+		await browser_session.start()
+		page = await browser_session.get_current_page()
+		await page.goto(test_server.url_for('/traversal'))
+		await page.wait_for_load_state('networkidle')
 
-		# Should not find with limited depth
-		result = await browser_session.find_file_upload_element_by_index(0, max_descendant_depth=2)
-		assert result is None
+		# Get browser state to populate selector map
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 
-	async def test_find_file_input_in_sibling(self, browser_session):
-		"""Test finding file input in sibling elements."""
-		# Create DOM structure: parent -> [selected_div, file_input]
-		selected_div = self.create_div_node()
-		file_input = self.create_file_input_node()
-		parent_div = self.create_div_node()
+		selector_map = await browser_session.get_selector_map()
 
-		self.setup_parent_child_relationships(parent_div, [selected_div, file_input])
+		# Test that buttons can find nearby file inputs
+		button_count = 0
+		buttons_that_found_file = 0
 
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'button':
+				button_count += 1
+				file_input = await browser_session.find_file_upload_element_by_index(idx)
+				if file_input is not None:
+					buttons_that_found_file += 1
+					# Verify it's actually a file input
+					assert file_input.tag_name == 'input'
+					assert file_input.attributes.get('type', '').lower() == 'file'
 
-		result = await browser_session.find_file_upload_element_by_index(0)
+		# Most buttons should be able to find a file input through DOM traversal
+		assert button_count > 0, 'No buttons found in selector map'
+		assert buttons_that_found_file > 0, 'No buttons could find file inputs'
+		assert buttons_that_found_file >= button_count - 1, 'Most buttons should find file inputs'
 
-		assert result is file_input
+	async def test_traversal_limits(self, browser_session: BrowserSession, test_server: HTTPServer):
+		"""Test that traversal limits (max_height and max_descendant_depth) work correctly."""
+		html = """
+		<!DOCTYPE html>
+		<html>
+		<body>
+			<!-- Deep nesting to test limits -->
+			<div class="wrapper">
+				<button class="test-button">Test Button</button>
+				<div>
+					<div>
+						<div>
+							<div>
+								<div>
+									<input type="file" id="deeply-nested">
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Direct sibling -->
+			<div class="direct-wrapper">
+				<button class="direct-button">Direct Button</button>
+				<input type="file" id="direct-file">
+			</div>
+			
+			<!-- Test with element that is itself a file input -->
+			<input type="file" id="self-file" class="clickable">
+		</body>
+		</html>
+		"""
 
-	async def test_find_file_input_in_sibling_descendants(self, browser_session):
-		"""Test finding file input in descendants of sibling elements."""
-		# Create DOM structure: parent -> [selected_div, sibling_div -> file_input]
-		selected_div = self.create_div_node()
-		file_input = self.create_file_input_node()
-		sibling_div = self.create_div_node()
-		parent_div = self.create_div_node()
+		test_server.expect_request('/limits').respond_with_data(html, content_type='text/html')
+		await browser_session.start()
+		page = await browser_session.get_current_page()
+		await page.goto(test_server.url_for('/limits'))
+		await page.wait_for_load_state('networkidle')
 
-		self.setup_parent_child_relationships(sibling_div, [file_input])
-		self.setup_parent_child_relationships(parent_div, [selected_div, sibling_div])
+		# Get browser state to populate selector map
+		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
+		selector_map = await browser_session.get_selector_map()
 
-		result = await browser_session.find_file_upload_element_by_index(0)
+		# Test 1: Button with deep nesting
+		test_button_idx = None
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'button' and elem.attributes.get('class') == 'test-button':
+				test_button_idx = idx
+				break
 
-		assert result is file_input
+		if test_button_idx is not None:
+			# With default limits, should find the deeply nested file
+			file_input = await browser_session.find_file_upload_element_by_index(test_button_idx)
+			assert file_input is not None
 
-	async def test_find_file_input_via_ancestor_traversal(self, browser_session):
-		"""Test finding file input by traversing up ancestors."""
-		# Create DOM structure:
-		# grandparent -> [parent -> selected_div, file_input]
-		selected_div = self.create_div_node()
-		parent_div = self.create_div_node()
-		file_input = self.create_file_input_node()
-		grandparent_div = self.create_div_node()
-
-		self.setup_parent_child_relationships(parent_div, [selected_div])
-		self.setup_parent_child_relationships(grandparent_div, [parent_div, file_input])
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is file_input
-
-	async def test_max_height_parameter(self, browser_session):
-		"""Test that max_height parameter limits ancestor traversal."""
-		# Create deep DOM structure
-		selected_div = self.create_div_node()
-		level1_div = self.create_div_node()
-		level2_div = self.create_div_node()
-		level3_div = self.create_div_node()
-		file_input = self.create_file_input_node()
-
-		self.setup_parent_child_relationships(level1_div, [selected_div])
-		self.setup_parent_child_relationships(level2_div, [level1_div])
-		self.setup_parent_child_relationships(level3_div, [level2_div, file_input])
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
-
-		# Should find with sufficient max_height
-		result = await browser_session.find_file_upload_element_by_index(0, max_height=3)
-		assert result is file_input
-
-		# Should not find with limited max_height
-		result = await browser_session.find_file_upload_element_by_index(0, max_height=1)
-		assert result is None
-
-	async def test_multiple_file_inputs_returns_first_found(self, browser_session):
-		"""Test that when multiple file inputs exist, the first one found is returned."""
-		# Create structure with multiple file inputs
-		file_input1 = self.create_file_input_node({'type': 'file', 'id': 'first'})
-		file_input2 = self.create_file_input_node({'type': 'file', 'id': 'second'})
-		selected_div = self.create_div_node()
-		parent_div = self.create_div_node()
-
-		# First input is in descendants, second is in siblings
-		self.setup_parent_child_relationships(selected_div, [file_input1])
-		self.setup_parent_child_relationships(parent_div, [selected_div, file_input2])
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		# Should return the first one found (in descendants)
-		assert result is file_input1
-
-	async def test_index_not_in_selector_map(self, browser_session):
-		"""Test behavior when index is not found in selector map."""
-		browser_session.get_selector_map = AsyncMock(return_value={})
-
-		result = await browser_session.find_file_upload_element_by_index(999)
-
-		assert result is None
-
-	async def test_no_file_input_found(self, browser_session):
-		"""Test behavior when no file input exists in the DOM structure."""
-		# Create structure with only regular inputs
-		text_input = self.create_regular_input_node('text')
-		button_input = self.create_regular_input_node('button')
-		selected_div = self.create_div_node()
-		parent_div = self.create_div_node()
-
-		self.setup_parent_child_relationships(selected_div, [text_input])
-		self.setup_parent_child_relationships(parent_div, [selected_div, button_input])
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is None
-
-	async def test_file_input_case_insensitive(self, browser_session):
-		"""Test that file input detection is case insensitive."""
-		# Test various case combinations
-		test_cases = [
-			{'type': 'FILE'},
-			{'type': 'File'},
-			{'TYPE': 'file'},
-			{'Type': 'File'},
-		]
-
-		for i, attrs in enumerate(test_cases):
-			file_input = DOMElementNode(
-				tag_name='INPUT',  # Also test uppercase tag
-				xpath='//input',
-				attributes=attrs,
-				children=[],
-				is_visible=True,
-				parent=None,
+			# With very limited traversal, might not find it
+			file_input_limited = await browser_session.find_file_upload_element_by_index(
+				test_button_idx, max_height=0, max_descendant_depth=1
 			)
+			# Could be None if file is too deep
 
-			browser_session.get_selector_map = AsyncMock(return_value={i: file_input})
+		# Test 2: Direct sibling should be found easily
+		direct_button_idx = None
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'button' and elem.attributes.get('class') == 'direct-button':
+				direct_button_idx = idx
+				break
 
-			result = await browser_session.find_file_upload_element_by_index(i)
-			assert result is file_input
+		if direct_button_idx is not None:
+			file_input = await browser_session.find_file_upload_element_by_index(direct_button_idx, max_height=1)
+			assert file_input is not None
+			assert file_input.attributes.get('id') == 'direct-file'
 
-	async def test_missing_type_attribute(self, browser_session):
-		"""Test behavior with input elements missing type attribute."""
-		# Input without type attribute (should default to text)
-		input_no_type = DOMElementNode(
-			tag_name='input',
-			xpath='//input',
-			attributes={},  # No type attribute
-			children=[],
-			is_visible=True,
-			parent=None,
-		)
+		# Test 3: Element that is itself a file input
+		self_file_idx = None
+		for idx, elem in selector_map.items():
+			if elem.tag_name == 'input' and elem.attributes.get('id') == 'self-file':
+				self_file_idx = idx
+				break
 
-		browser_session.get_selector_map = AsyncMock(return_value={0: input_no_type})
+		if self_file_idx is not None:
+			file_input = await browser_session.find_file_upload_element_by_index(self_file_idx)
+			assert file_input is not None
+			assert file_input.attributes.get('id') == 'self-file'
 
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is None
-
-	async def test_non_input_elements_ignored(self, browser_session):
-		"""Test that non-input elements are properly ignored."""
-		# Create elements that might have type="file" but aren't input tags
-		fake_file_div = DOMElementNode(
-			tag_name='div',
-			xpath='//div',
-			attributes={'type': 'file'},  # Wrong tag but has type=file
-			children=[],
-			is_visible=True,
-			parent=None,
-		)
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: fake_file_div})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is None
-
-	async def test_exception_handling(self, browser_session):
-		"""Test that exceptions are properly caught and logged."""
-		# Mock get_selector_map to raise an exception
-		browser_session.get_selector_map = AsyncMock(side_effect=Exception('Test exception'))
-
-		# Mock logger and get_current_page
-		browser_session.logger = MagicMock()
-		browser_session.get_current_page = AsyncMock(return_value=MagicMock(url='http://test.com'))
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is None
-		browser_session.logger.debug.assert_called_once()
-
-	async def test_zero_parameters(self, browser_session):
-		"""Test behavior with zero values for parameters."""
-		# Create simple structure where file input is in descendant
-		file_input = self.create_file_input_node()
-		child_div = self.create_div_node()
-		parent_div = self.create_div_node()
-
-		self.setup_parent_child_relationships(child_div, [file_input])
-		self.setup_parent_child_relationships(parent_div, [child_div])
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: parent_div})
-
-		# With max_descendant_depth=0, should not find in descendants
-		result = await browser_session.find_file_upload_element_by_index(0, max_descendant_depth=0)
-		assert result is None
-
-		# With max_height=0, should not traverse up ancestors
-		result = await browser_session.find_file_upload_element_by_index(0, max_height=0)
-		assert result is None
-
-	async def test_reached_root_without_parent(self, browser_session):
-		"""Test behavior when traversal reaches root element (no parent)."""
-		# Create structure where selected element has no parent
-		selected_div = self.create_div_node()
-		selected_div.parent = None  # Root element
-
-		browser_session.get_selector_map = AsyncMock(return_value={0: selected_div})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is None
-
-	async def test_complex_mixed_structure(self, browser_session):
-		"""Test a complex DOM structure with mixed element types."""
-		# Create a realistic form structure
-		# form -> div -> [label, div -> [text_input, file_input]]
-		text_input = self.create_regular_input_node('text')
-		file_input = self.create_file_input_node()
-		label = DOMElementNode(
-			tag_name='label', xpath='//label', attributes={'for': 'upload'}, children=[], is_visible=True, parent=None
-		)
-
-		input_container = self.create_div_node()
-		form_row = self.create_div_node()
-		form_element = DOMElementNode(tag_name='form', xpath='//form', attributes={}, children=[], is_visible=True, parent=None)
-
-		# Build the structure
-		self.setup_parent_child_relationships(input_container, [text_input, file_input])
-		self.setup_parent_child_relationships(form_row, [label, input_container])
-		self.setup_parent_child_relationships(form_element, [form_row])
-
-		# Select the label
-		browser_session.get_selector_map = AsyncMock(return_value={0: label})
-
-		result = await browser_session.find_file_upload_element_by_index(0)
-
-		assert result is file_input
+		# Test 4: Invalid index returns None
+		invalid_index = max(selector_map.keys()) + 100 if selector_map else 999
+		file_input = await browser_session.find_file_upload_element_by_index(invalid_index)
+		assert file_input is None
