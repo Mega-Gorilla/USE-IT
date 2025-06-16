@@ -11,7 +11,6 @@ Tests cover common real-world file upload patterns:
 import pytest
 from pytest_httpserver import HTTPServer
 
-from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 
 
@@ -21,10 +20,9 @@ class TestBrowserSessionFileUploads:
 	@pytest.fixture
 	async def browser_session(self):
 		"""Create a BrowserSession instance for testing."""
-		profile = BrowserProfile(headless=True)
-		session = BrowserSession(browser_profile=profile)
+		session = BrowserSession(headless=True, user_data_dir=None, keep_alive=True)
 		yield session
-		await session.stop()
+		await session.kill()
 
 	@pytest.fixture
 	def test_server(self, httpserver: HTTPServer):
