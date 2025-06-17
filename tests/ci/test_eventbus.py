@@ -24,7 +24,6 @@ from pydantic import Field
 
 from browser_use.agent.cloud_events import CreateAgentTaskEvent
 from browser_use.eventbus import BaseEvent, EventBus
-from browser_use.eventbus.models import EventResults
 
 
 # Test event models
@@ -129,7 +128,15 @@ class TestEventEnqueueing:
 		processed = await result.result()
 		assert processed.event_started_at is not None
 		assert processed.event_completed_at is not None
-		assert processed.event_results['_default_log_handler'] == 'logged'
+		# Check that we have results from the default handler
+		assert len(processed.event_results) == 1
+		# Get the result from the default handler (by checking handler name)
+		default_handler_result = None
+		for event_result in processed.event_results.values():
+			if event_result.handler_name == '_default_log_handler':
+				default_handler_result = event_result.result
+				break
+		assert default_handler_result == 'logged'
 
 		# Check event history
 		assert len(eventbus.event_history) == 1
@@ -215,8 +222,10 @@ class TestHandlerRegistration:
 		assert len(end_times) == 2
 
 		# Check results
-		assert event.event_results['slow_handler_1'] == 'handler1'
-		assert event.event_results['slow_handler_2'] == 'handler2'
+		handler1_result = next((r for r in event.event_results.values() if r.handler_name == 'slow_handler_1'), None)
+		handler2_result = next((r for r in event.event_results.values() if r.handler_name == 'slow_handler_2'), None)
+		assert handler1_result is not None and handler1_result.result == 'handler1'
+		assert handler2_result is not None and handler2_result.result == 'handler2'
 
 	def test_handler_can_be_sync_or_async(self, mock_agent):
 		"""Test that both sync and async handlers are accepted"""
@@ -292,9 +301,13 @@ class TestErrorHandling:
 		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
 
 		# Verify error capture and isolation
-		assert 'failing_handler' in event.event_errors
-		assert 'Expected to fail' in event.event_errors['failing_handler']
-		assert event.event_results['working_handler'] == 'worked'
+		failing_result = next((r for r in event.event_results.values() if r.handler_name == 'failing_handler'), None)
+		assert failing_result is not None
+		assert failing_result.status == 'error'
+		assert 'Expected to fail' in failing_result.error
+		working_result = next((r for r in event.event_results.values() if r.handler_name == 'working_handler'), None)
+		assert working_result is not None
+		assert working_result.result == 'worked'
 		assert results == ['success']
 
 
@@ -317,7 +330,7 @@ class TestBatchOperations:
 		assert len(results) == 3
 		for result in results:
 			assert result.event_completed_at is not None
-			assert '_default_log_handler' in result.event_results
+			assert any(r.handler_name == '_default_log_handler' for r in result.event_results.values())
 
 
 class TestWriteAheadLog:
@@ -1013,10 +1026,10 @@ class TestExpectMethod:
 
 
 class TestEventResults:
-	"""Test the new EventResults functionality"""
+	"""Test the event results functionality on BaseEvent"""
 
 	async def test_dispatch_returns_event_results(self, eventbus):
-		"""Test that dispatch now returns EventResults"""
+		"""Test that dispatch returns BaseEvent with result methods"""
 		# Register a specific handler
 		async def test_handler(event):
 			return 'test_result'
@@ -1024,10 +1037,12 @@ class TestEventResults:
 		eventbus.on('UserActionEvent', test_handler)
 		
 		result = eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
-		assert isinstance(result, EventResults)
+		assert isinstance(result, BaseEvent)
 		
-		# Can be awaited directly (returns by_handler_id dict)
-		all_results = await result
+		# Wait for completion
+		await result.result()
+		# Get results by handler ID
+		all_results = await result.event_results_by_handler_id()
 		assert isinstance(all_results, dict)
 		# Should contain both test_handler and default log handler results
 		assert len(all_results) == 2
@@ -1036,11 +1051,12 @@ class TestEventResults:
 		
 		# Test with no specific handlers (only wildcard)
 		result_no_handlers = eventbus.dispatch(BaseEvent(event_type='NoHandlersEvent'))
-		assert await result_no_handlers.first() is None  # No specific handlers
-		
-		# Test including wildcards explicitly
-		result_with_wildcards = EventResults(result_no_handlers.event, eventbus, include_wildcards=True)
-		assert await result_with_wildcards.first() == 'logged'  # Wildcard handler result
+		await result_no_handlers.result()
+		# Should only have the default log handler
+		assert len(result_no_handlers.event_results) == 1
+		default_result = next((r for r in result_no_handlers.event_results.values() if r.handler_name == '_default_log_handler'), None)
+		assert default_result is not None
+		assert default_result.result == 'logged'
 
 	async def test_event_results_indexing(self, eventbus):
 		"""Test indexing by handler name and ID"""
@@ -1066,20 +1082,19 @@ class TestEventResults:
 		hr = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 		
 		# Wait for all handlers to complete
-		await hr
+		await hr.result()
 		
-		# Index by handler name
-		assert hr['handler1'] == 'first'
-		assert hr['handler2'] == 'second'
-		assert hr['handler3'] == 'third'
+		# Get results by handler name
+		handler1_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler1'), None)
+		handler2_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler2'), None)
+		handler3_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler3'), None)
 		
-		# Index by handler function
-		assert hr[handler1] == 'first'
-		assert hr[handler2] == 'second'
-		assert hr[handler3] == 'third'
+		assert handler1_result is not None and handler1_result.result == 'first'
+		assert handler2_result is not None and handler2_result.result == 'second'
+		assert handler3_result is not None and handler3_result.result == 'third'
 
-	async def test_first_last_methods(self, eventbus):
-		"""Test first() and last() methods"""
+	async def test_event_results_access(self, eventbus):
+		"""Test accessing event results"""
 		async def early_handler(event):
 			return 'early'
 			
@@ -1090,19 +1105,21 @@ class TestEventResults:
 		eventbus.on('TestEvent', early_handler)
 		eventbus.on('TestEvent', late_handler)
 		
-		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		result = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		await result.result()
 		
-		# first() returns first handler result
-		assert await results.first() == 'early'
-		
-		# last() returns last handler result
-		assert await results.last() == 'late'
+		# Check both handlers ran
+		assert len(result.event_results) == 2
+		early_result = next((r for r in result.event_results.values() if r.handler_name == 'early_handler'), None)
+		late_result = next((r for r in result.event_results.values() if r.handler_name == 'late_handler'), None)
+		assert early_result is not None and early_result.result == 'early'
+		assert late_result is not None and late_result.result == 'late'
 		
 		# With empty handlers
 		eventbus.handlers['EmptyEvent'] = []
 		results_empty = eventbus.dispatch(BaseEvent(event_type='EmptyEvent'))
-		assert await results_empty.first(default='none') == 'none'
-		assert await results_empty.last() is None
+		await results_empty.result()
+		assert len(results_empty.event_results) == 0
 
 	async def test_by_handler_name(self, eventbus):
 		"""Test by_handler_name() with duplicate names"""
