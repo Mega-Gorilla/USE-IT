@@ -98,7 +98,7 @@ class Controller(Generic[Context]):
 						if file_content:
 							file_msg += f'\n\n{file_name}:\n{file_content}'
 					if file_msg:
-						user_message += '\n\nBelow are the files I saved for you:'
+						user_message += '\n\nAttachments:'
 						user_message += file_msg
 					else:
 						logger.warning('Agent wanted to display files but none were found')
@@ -133,9 +133,9 @@ class Controller(Generic[Context]):
 					await page.wait_for_load_state()
 				else:
 					page = await browser_session.create_new_tab(params.url)
-				msg = f'🔗  Navigated to {params.url}'
-				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True)
+				msg = f'Navigated to {params.url}'
+				logger.info(f'🔗  {msg}')
+				return ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors
@@ -151,7 +151,9 @@ class Controller(Generic[Context]):
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
-					return ActionResult(success=False, error=site_unavailable_msg, include_in_memory=True)
+					return ActionResult(
+						success=False, error=site_unavailable_msg, include_in_memory=True, memory=site_unavailable_msg
+					)
 				else:
 					# Re-raise non-network errors
 					raise
@@ -309,13 +311,19 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 		@self.registry.action(
-			'Extract specific information from the current webpage. Provide a clear, detailed description of what you want to extract in the "content_to_extract" field. Be extremely specific about the data you need. Set include_links=True if you need to preserve links.',
+			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
+Only use this action for extracting specific information from a single item/article/product page. Do NOT use this for pages with listings or search results with many items.
+Use include_links=True if extraction requires links.
+If you want to persist the extracted data, optionally set the file_to_save parameter to a file name. ALWAYS use a new file name with .txt or .md extension for each extraction.
+""",
 		)
-		async def extract_content(
-			content_to_extract: str,
+		async def extract_structured_data(
+			query: str,
 			page: Page,
 			page_extraction_llm: BaseChatModel,
+			file_system: FileSystem,
 			include_links: bool = False,
+			file_to_save: str = '',
 		):
 			from functools import partial
 
@@ -350,20 +358,31 @@ class Controller(Generic[Context]):
 					content += iframe_markdown
 
 			# limit to 60000 characters - remove text in the middle this is approx 20000 tokens
-			if len(content) > 60000:
-				content = content[:30000] + '... left out the middle because it was too long ...' + content[-30000:]
+			max_chars = 60000
+			if len(content) > max_chars:
+				content = (
+					content[: max_chars // 2]
+					+ '\n... left out the middle because it was too long ...\n'
+					+ content[-max_chars // 2 :]
+				)
 
-			prompt = 'You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague or does not make sense for the page, provide a brief summary of the page. Respond in JSON format.\nQuery: {content_to_extract}\n answer:\n{page}'
-			template = PromptTemplate(input_variables=['content_to_extract', 'page'], template=prompt)
+			prompt = 'You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, does not make sense for the page, provide a brief summary of the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}'
+			template = PromptTemplate(input_variables=['query', 'page'], template=prompt)
 			try:
-				output = await page_extraction_llm.ainvoke(template.format(content_to_extract=content_to_extract, page=content))
+				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
 				output_text = output.content
-				msg = f'📄  Extracted from page\n: {output_text}\n'
-				logger.info(msg + f' for query "{content_to_extract}"')
+				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
+				memory = f'Extracted content from {page.url} for query "{query}"'
+				logger.info(f'📄 {memory}')
+				if file_to_save:
+					result = await file_system.write_file(file_to_save, output_text)
+					logger.info(f'💾 {result}')
+					memory += '\n' + result
 				return ActionResult(
-					extracted_content=msg,
+					extracted_content=extracted_content,
 					include_in_memory=False,
 					update_read_state=True,
+					memory=memory,
 				)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
