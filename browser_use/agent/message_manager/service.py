@@ -209,7 +209,7 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = '# Agent History\n'
+		self.agent_history_description = ''
 		self.read_state_description = ''
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
@@ -229,13 +229,8 @@ class MessageManager:
 			info_message = HumanMessage(content=info)
 			self._add_message_with_tokens(info_message, message_type='init')
 
-		task_message = HumanMessage(
-			content=f'<user_request>Your ultimate goal is: """{self.task}""" \nIf you achieved your ultimate task, stop everything and use the done action in the next step to complete the task. If not, continue as usual.</user_request>'
-		)
-		self._add_message_with_tokens(task_message, message_type='init')
-
 		placeholder_message = HumanMessage(
-			content='<example_1>Here is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.'
+			content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.'
 		)
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_tokens(placeholder_message, message_type='init')
@@ -310,7 +305,7 @@ class MessageManager:
 		)
 		self._add_message_with_tokens(example_tool_call_1, message_type='init')
 		self.add_tool_message(
-			content='Data written to todo.md. \nData written to github.md.\nClicked element with index 4. </example_1>',
+			content='Data written to todo.md.\nData written to github.md.\nClicked element with index 4.\n</example_1>',
 			message_type='init',
 		)
 
@@ -380,9 +375,7 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 		if None in [model_output, result, step_info]:
 			return
 
-		self.read_state_initialization = (
-			'# Read State (displayed only **one time**, save this information if you need it later)\n'
-		)
+		self.read_state_initialization = 'This is displayed only **one time**, save this information if you need it later.\n'
 		self.read_state_description = self.read_state_initialization
 
 		step_number = step_info.step_number
@@ -447,25 +440,6 @@ Next goal: {model_output.current_state.next_goal}
 		"""Add browser state as human message"""
 
 		self._update_agent_history_description(model_output, result, step_info)
-		"""
-		# if keep in memory, add to directly to history and add state without result
-		if result:
-			for r in result:
-				if r.include_in_memory:
-					if r.extracted_content:
-						msg = HumanMessage(content='Action result: ' + str(r.extracted_content))
-						self._add_message_with_tokens(msg)
-					if r.error:
-						# if endswith \n, remove it
-						if r.error.endswith('\n'):
-							r.error = r.error[:-1]
-						# get only last line of error
-						last_line = r.error.split('\n')[-1]
-						msg = HumanMessage(content='Action error: ' + last_line)
-						self._add_message_with_tokens(msg)
-					result = None  # if result in history, we dont want to add it again
-		"""
-
 		# otherwise add state message and result to next message (which will not stay in memory)
 		assert browser_state_summary
 		state_message = AgentMessagePrompt(
