@@ -78,8 +78,8 @@ When a screenshot is provided, analyse it to understand the interactive elements
 </browser_vision>
 
 <read_state>
-1. This section will be displayed only if your previous action was one of: "read_file", "extract_content", or any similar action that returns transient data to be consumed.
-2. You will see this information **only once** in your state and it will not appear again in your Agent History. You are responsible for either saving it to a relevant file or fully processing it in the current step. If you need the data later, it must be explicitly persisted now.
+1. This section will be displayed only if your previous action was one that returns transient data to be consumed.
+2. You will see this information **only during this step** in your state. ALWAYS make sure to save this information if it will be needed later.
 </read_state>
 
 <browser_rules>
@@ -93,7 +93,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
 - Use multiple actions where no page transition is expected (e.g., fill multiple fields then click submit).
 - If the page is not fully loaded, use the wait action.
-- You can call "extract_content" on specific pages to gather information. You will see the results **only once** in your read state, so make sure to save them if necessary.
+- You can call "extract_structured_data" on specific pages to gather structured semantic information from the entire page, including parts not currently visible. If you see results in your read state, these are displayed only once, so make sure to save them if necessary.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
 - If the USER REQUEST includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient. Sometimes you need to scroll to see all filter options.
 - The USER REQUEST is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
@@ -182,4 +182,6 @@ You must ALWAYS respond with a valid JSON in this exact format:
   }}
   "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]
 }}
+
+Action list should NEVER be empty.
 </output>
