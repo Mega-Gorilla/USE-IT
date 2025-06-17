@@ -71,7 +71,7 @@ class AgentMessagePrompt:
 		include_attributes: list[str] | None = None,
 		step_info: Optional['AgentStepInfo'] = None,
 		page_filtered_actions: str | None = None,
-		max_clickable_elements_length: int = 10000,
+		max_clickable_elements_length: int = 40000,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem' | None = file_system

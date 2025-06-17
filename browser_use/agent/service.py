@@ -470,7 +470,7 @@ class Agent(Generic[Context]):
 		logger.info(f'💾 File system path: {self.file_system_path}')
 
 		# if file system is set, add actions to the controller
-		@self.controller.registry.action('Write content to file_name in file system')
+		@self.controller.registry.action('Write content to file_name in file system, use only .md or .txt extensions.')
 		async def write_file(file_name: str, content: str):
 			result = await self.file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
