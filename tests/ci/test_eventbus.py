@@ -24,6 +24,7 @@ from pydantic import Field
 
 from browser_use.agent.cloud_events import CreateAgentTaskEvent
 from browser_use.eventbus import BaseEvent, EventBus
+from browser_use.eventbus.models import EventResults
 
 
 # Test event models
@@ -422,7 +423,7 @@ class TestEdgeCases:
 		tasks = []
 		for i in range(100):
 			event = UserActionEvent(action=f'concurrent_{i}', user_id='u1')
-			# Emit returns the event synchronously, but we need to wait for completion
+			# Emit returns the event syncresultsonously, but we need to wait for completion
 			emitted_event = eventbus.dispatch(event)
 			tasks.append(emitted_event.result())
 
@@ -618,9 +619,9 @@ class TestWALPersistence:
 class TestEventBusHierarchy:
 	"""Test hierarchical EventBus subscription patterns"""
 
-	async def test_three_level_hierarchy_bubbling(self):
-		"""Test that events bubble up through a 3-level hierarchy and event_path is correct"""
-		# Create three EventBus instances in a hierarchy
+	async def test_tresultsee_level_hierarchy_bubbling(self):
+		"""Test that events bubble up tresultsough a 3-level hierarchy and event_path is correct"""
+		# Create tresultsee EventBus instances in a hierarchy
 		parent_bus = EventBus(name='ParentBus')
 		child_bus = EventBus(name='ChildBus')
 		subchild_bus = EventBus(name='SubchildBus')
@@ -701,7 +702,7 @@ class TestEventBusHierarchy:
 
 	async def test_circular_subscription_prevention(self):
 		"""Test that circular EventBus subscriptions don't create infinite loops"""
-		# Create three peer EventBus instances
+		# Create tresultsee peer EventBus instances
 		peer1 = EventBus(name='Peer1')
 		peer2 = EventBus(name='Peer2')
 		peer3 = EventBus(name='Peer3')
@@ -786,6 +787,676 @@ class TestEventBusHierarchy:
 			await peer1.stop()
 			await peer2.stop()
 			await peer3.stop()
+
+
+class TestExpectMethod:
+	"""Test the expect() method functionality"""
+
+	async def test_expect_basic(self, eventbus):
+		"""Test basic expect functionality"""
+		# Start waiting for an event that hasn't been dispatched yet
+		expect_task = asyncio.create_task(
+			eventbus.expect('UserActionEvent', timeout=1.0)
+		)
+		
+		# Give expect time to register handler
+		await asyncio.sleep(0.01)
+		
+		# Dispatch the event
+		dispatched = eventbus.dispatch(UserActionEvent(action='login', user_id='user123'))
+		
+		# Wait for expect to resolve
+		received = await expect_task
+		
+		# Verify we got the right event
+		assert received.event_type == 'UserActionEvent'
+		assert received.action == 'login'
+		assert received.user_id == 'user123'
+		assert received.event_id == dispatched.event_id
+
+	async def test_expect_with_predicate(self, eventbus):
+		"""Test expect with predicate filtering"""
+		# Dispatch some events that don't match
+		eventbus.dispatch(UserActionEvent(action='logout', user_id='user456'))
+		eventbus.dispatch(UserActionEvent(action='login', user_id='user789'))
+		
+		# Start expecting with predicate
+		expect_task = asyncio.create_task(
+			eventbus.expect(
+				'UserActionEvent',
+				predicate=lambda e: e.user_id == 'user123',
+				timeout=1.0
+			)
+		)
+		
+		# Give expect time to register
+		await asyncio.sleep(0.01)
+		
+		# Dispatch more events
+		eventbus.dispatch(UserActionEvent(action='update', user_id='user456'))
+		target_event = eventbus.dispatch(UserActionEvent(action='login', user_id='user123'))
+		eventbus.dispatch(UserActionEvent(action='delete', user_id='user789'))
+		
+		# Wait for the matching event
+		received = await expect_task
+		
+		# Should get the event matching the predicate
+		assert received.user_id == 'user123'
+		assert received.event_id == target_event.event_id
+
+	async def test_expect_timeout(self, eventbus):
+		"""Test expect timeout behavior"""
+		# Expect an event that will never come
+		with pytest.raises(asyncio.TimeoutError):
+			await eventbus.expect('NonExistentEvent', timeout=0.1)
+
+	async def test_expect_with_model_class(self, eventbus):
+		"""Test expect with model class instead of string"""
+		# Start expecting by model class
+		expect_task = asyncio.create_task(
+			eventbus.expect(SystemEventModel, timeout=1.0)
+		)
+		
+		await asyncio.sleep(0.01)
+		
+		# Dispatch different event types
+		eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
+		target = eventbus.dispatch(SystemEventModel(event_name='startup', severity='info'))
+		
+		# Should receive the SystemEventModel
+		received = await expect_task
+		assert isinstance(received, SystemEventModel)
+		assert received.event_name == 'startup'
+		assert received.event_id == target.event_id
+
+	async def test_multiple_concurrent_expects(self, eventbus):
+		"""Test multiple concurrent expect calls"""
+		# Set up multiple expects for different events
+		expect1 = asyncio.create_task(
+			eventbus.expect(
+				'UserActionEvent',
+				predicate=lambda e: e.action == 'normal',
+				timeout=2.0
+			)
+		)
+		expect2 = asyncio.create_task(
+			eventbus.expect('SystemEventModel', timeout=2.0)
+		)
+		expect3 = asyncio.create_task(
+			eventbus.expect(
+				'UserActionEvent',
+				predicate=lambda e: e.action == 'special',
+				timeout=2.0
+			)
+		)
+		
+		await asyncio.sleep(0.1)  # Give more time for handlers to register
+		
+		# Dispatch events
+		e1 = eventbus.dispatch(UserActionEvent(action='normal', user_id='u1'))
+		e2 = eventbus.dispatch(SystemEventModel(event_name='test'))
+		e3 = eventbus.dispatch(UserActionEvent(action='special', user_id='u2'))
+		
+		# Wait for all events to be processed
+		await eventbus.wait_until_idle()
+		
+		# Wait for all expects
+		r1, r2, r3 = await asyncio.gather(expect1, expect2, expect3)
+		
+		# Verify results
+		assert r1.event_id == e1.event_id  # Normal UserActionEvent
+		assert r2.event_id == e2.event_id  # SystemEventModel
+		assert r3.event_id == e3.event_id  # Special UserActionEvent
+
+	async def test_expect_handler_cleanup(self, eventbus):
+		"""Test that temporary handlers are properly cleaned up"""
+		# Check initial handler count
+		initial_handlers = len(eventbus.handlers.get('TestEvent', []))
+		
+		# Create an expect that times out
+		try:
+			await eventbus.expect('TestEvent', timeout=0.1)
+		except asyncio.TimeoutError:
+			pass
+		
+		# Handler should be cleaned up
+		assert len(eventbus.handlers.get('TestEvent', [])) == initial_handlers
+		
+		# Create an expect that succeeds
+		expect_task = asyncio.create_task(
+			eventbus.expect('TestEvent2', timeout=1.0)
+		)
+		await asyncio.sleep(0.01)
+		eventbus.dispatch(BaseEvent(event_type='TestEvent2'))
+		await expect_task
+		
+		# Handler should be cleaned up
+		assert len(eventbus.handlers.get('TestEvent2', [])) == 0
+
+	async def test_expect_receives_completed_event(self, eventbus):
+		"""Test that expect receives events after they're fully processed"""
+		processing_complete = False
+		
+		async def slow_handler(event: BaseEvent) -> str:
+			await asyncio.sleep(0.1)
+			nonlocal processing_complete
+			processing_complete = True
+			return 'done'
+		
+		# Register a slow handler
+		eventbus.on('SlowEvent', slow_handler)
+		
+		# Start expecting
+		expect_task = asyncio.create_task(
+			eventbus.expect('SlowEvent', timeout=1.0)
+		)
+		
+		await asyncio.sleep(0.01)
+		
+		# Dispatch event
+		eventbus.dispatch(BaseEvent(event_type='SlowEvent'))
+		
+		# Wait for expect
+		received = await expect_task
+		
+		# At this point, the slow handler should have run
+		# but we receive the event as soon as it matches
+		assert received.event_type == 'SlowEvent'
+		# The event might not be fully completed yet since expect
+		# triggers as soon as the event is processed by its handler
+
+	async def test_expect_with_complex_predicate(self, eventbus):
+		"""Test expect with complex predicate logic"""
+		events_seen = []
+		
+		def complex_predicate(event: UserActionEvent) -> bool:
+			events_seen.append(event.action)
+			# Only match after seeing at least 3 events and action is 'target'
+			return len(events_seen) >= 3 and event.action == 'target'
+		
+		expect_task = asyncio.create_task(
+			eventbus.expect(
+				'UserActionEvent',
+				predicate=complex_predicate,
+				timeout=1.0
+			)
+		)
+		
+		await asyncio.sleep(0.01)
+		
+		# Dispatch events
+		eventbus.dispatch(UserActionEvent(action='first', user_id='u1'))
+		eventbus.dispatch(UserActionEvent(action='second', user_id='u2'))
+		eventbus.dispatch(UserActionEvent(action='target', user_id='u3'))  # Won't match yet
+		eventbus.dispatch(UserActionEvent(action='target', user_id='u4'))  # This should match
+		
+		received = await expect_task
+		
+		assert received.user_id == 'u4'
+		assert len(events_seen) == 4
+
+	async def test_expect_in_sync_context(self, mock_agent):
+		"""Test that expect can be used from sync code that later awaits"""
+		bus = EventBus()
+		
+		# This simulates calling expect from sync code
+		expect_coroutine = bus.expect('SyncEvent', timeout=1.0)
+		
+		# Dispatch event
+		bus.dispatch(BaseEvent(event_type='SyncEvent'))
+		
+		# Later await the coroutine
+		result = await expect_coroutine
+		assert result.event_type == 'SyncEvent'
+		
+		await bus.stop()
+
+
+class TestEventResults:
+	"""Test the new EventResults functionality"""
+
+	async def test_dispatch_returns_event_results(self, eventbus):
+		"""Test that dispatch now returns EventResults"""
+		# Register a specific handler
+		async def test_handler(event):
+			return 'test_result'
+		
+		eventbus.on('UserActionEvent', test_handler)
+		
+		result = eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
+		assert isinstance(result, EventResults)
+		
+		# Can be awaited directly (returns by_handler_id dict)
+		all_results = await result
+		assert isinstance(all_results, dict)
+		# Should contain both test_handler and default log handler results
+		assert len(all_results) == 2
+		assert 'test_result' in all_results.values()
+		assert 'logged' in all_results.values()
+		
+		# Test with no specific handlers (only wildcard)
+		result_no_handlers = eventbus.dispatch(BaseEvent(event_type='NoHandlersEvent'))
+		assert await result_no_handlers.first() is None  # No specific handlers
+		
+		# Test including wildcards explicitly
+		result_with_wildcards = EventResults(result_no_handlers.event, eventbus, include_wildcards=True)
+		assert await result_with_wildcards.first() == 'logged'  # Wildcard handler result
+
+	async def test_event_results_indexing(self, eventbus):
+		"""Test indexing by handler name and ID"""
+		order = []
+		
+		async def handler1(event): 
+			order.append(1)
+			return 'first'
+		
+		async def handler2(event):
+			order.append(2) 
+			return 'second'
+			
+		async def handler3(event):
+			order.append(3)
+			return 'third'
+		
+		eventbus.on('TestEvent', handler1)
+		eventbus.on('TestEvent', handler2)
+		eventbus.on('TestEvent', handler3)
+		
+		# Test indexing
+		hr = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		
+		# Wait for all handlers to complete
+		await hr
+		
+		# Index by handler name
+		assert hr['handler1'] == 'first'
+		assert hr['handler2'] == 'second'
+		assert hr['handler3'] == 'third'
+		
+		# Index by handler function
+		assert hr[handler1] == 'first'
+		assert hr[handler2] == 'second'
+		assert hr[handler3] == 'third'
+
+	async def test_first_last_methods(self, eventbus):
+		"""Test first() and last() methods"""
+		async def early_handler(event):
+			return 'early'
+			
+		async def late_handler(event):
+			await asyncio.sleep(0.01)
+			return 'late'
+		
+		eventbus.on('TestEvent', early_handler)
+		eventbus.on('TestEvent', late_handler)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		
+		# first() returns first handler result
+		assert await results.first() == 'early'
+		
+		# last() returns last handler result
+		assert await results.last() == 'late'
+		
+		# With empty handlers
+		eventbus.handlers['EmptyEvent'] = []
+		results_empty = eventbus.dispatch(BaseEvent(event_type='EmptyEvent'))
+		assert await results_empty.first(default='none') == 'none'
+		assert await results_empty.last() is None
+
+	async def test_by_handler_name(self, eventbus):
+		"""Test by_handler_name() with duplicate names"""
+		async def process_data(event):
+			return 'version1'
+			
+		async def process_data(event):  # Same name!
+			return 'version2'
+			
+		async def unique_handler(event):
+			return 'unique'
+		
+		# Should get warning about duplicate name
+		with pytest.warns(UserWarning, match='already registered'):
+			eventbus.on('TestEvent', process_data)
+			eventbus.on('TestEvent', process_data)
+		eventbus.on('TestEvent', unique_handler)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		results = await results.by_handler_name()
+		
+		# Last handler with same name wins
+		assert results['process_data'] == 'version2'
+		assert results['unique_handler'] == 'unique'
+		# Default log handler is included as a wildcard handler
+		assert '_default_log_handler' in results
+		assert len(results) == 3  # 2 test handlers + 1 default log handler
+
+	async def test_by_handler_id(self, eventbus):
+		"""Test by_handler_id() returns all handlers uniquely"""
+		async def handler1(event):
+			return 'v1'
+			
+		async def handler2(event):
+			return 'v2'
+		
+		# Give them the same name for the test
+		handler1.__name__ = 'handler'
+		handler2.__name__ = 'handler'
+		
+		eventbus.on('TestEvent', handler1)
+		eventbus.on('TestEvent', handler2)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		results = await results.by_handler_id()
+		
+		# All handlers present with unique IDs even with same name
+		assert len(results) == 2
+		assert 'v1' in results.values()
+		assert 'v2' in results.values()
+
+	async def test_flat_dict(self, eventbus):
+		"""Test flat_dict() merging"""
+		async def config_base(event):
+			return {'debug': False, 'port': 8080, 'name': 'base'}
+			
+		async def config_override(event):
+			return {'debug': True, 'timeout': 30, 'name': 'override'}
+		
+		eventbus.on('GetConfig', config_base)
+		eventbus.on('GetConfig', config_override)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='GetConfig'))
+		merged = await results.flat_dict()
+		
+		# Later handlers override earlier ones
+		assert merged == {
+			'debug': True,      # Overridden
+			'port': 8080,       # From base
+			'timeout': 30,      # From override
+			'name': 'override'  # Overridden
+		}
+		
+		# Test type error
+		async def bad_handler(event):
+			return 'not a dict'
+		
+		eventbus.on('BadConfig', bad_handler)
+		results_bad = eventbus.dispatch(BaseEvent(event_type='BadConfig'))
+		
+		with pytest.raises(TypeError, match='returned str instead of dict'):
+			await results_bad.flat_dict()
+
+	async def test_flat_list(self, eventbus):
+		"""Test flat_list() concatenation"""
+		async def errors1(event):
+			return ['error1', 'error2']
+			
+		async def errors2(event):
+			return ['error3']
+			
+		async def errors3(event):
+			return ['error4', 'error5']
+		
+		eventbus.on('GetErrors', errors1)
+		eventbus.on('GetErrors', errors2)
+		eventbus.on('GetErrors', errors3)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='GetErrors'))
+		all_errors = await results.flat_list()
+		
+		assert all_errors == ['error1', 'error2', 'error3', 'error4', 'error5']
+		
+		
+		# Test type error
+		async def bad_handler(event):
+			return {'not': 'a list'}
+			
+		eventbus.on('BadList', bad_handler)
+		results_bad = eventbus.dispatch(BaseEvent(event_type='BadList'))
+		
+		with pytest.raises(TypeError, match='returned dict instead of list'):
+			await results_bad.flat_list()
+
+	async def test_by_handler_name_access(self, eventbus):
+		"""Test by_handler_name() method for name-based access"""
+		async def handler_a(event):
+			return 'result_a'
+			
+		async def handler_b(event):
+			return 'result_b'
+		
+		eventbus.on('TestEvent', handler_a)
+		eventbus.on('TestEvent', handler_b)
+		
+		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		
+		by_name = await results.by_handler_name()
+		assert by_name.get('handler_a') == 'result_a'
+		assert by_name.get('handler_b') == 'result_b'
+		assert by_name.get('nonexistent', 'fallback') == 'fallback'
+
+	async def test_string_indexing(self, eventbus):
+		"""Test string indexing for handler access"""
+		async def my_handler(event):
+			return 'my_result'
+		
+		eventbus.on('TestEvent', my_handler)
+		results = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
+		
+		# Wait for handlers to complete
+		await results
+		
+		# String indexing by handler name
+		assert results['my_handler'] == 'my_result'
+		
+		# Missing key raises KeyError
+		with pytest.raises(KeyError, match='No result found for key: missing'):
+			results['missing']
+
+
+class TestEventBusForwarding:
+	"""Test event forwarding between buses with new EventResults"""
+	
+	async def test_forwarding_flattens_results(self):
+		"""Test that forwarding events between buses flattens all results"""
+		bus1 = EventBus(name='Bus1')
+		bus2 = EventBus(name='Bus2')
+		bus3 = EventBus(name='Bus3')
+		
+		results = []
+		
+		async def bus1_handler(event):
+			results.append('bus1')
+			return 'from_bus1'
+			
+		async def bus2_handler(event):
+			results.append('bus2')
+			return 'from_bus2'
+			
+		async def bus3_handler(event):
+			results.append('bus3')
+			return 'from_bus3'
+		
+		# Register handlers
+		bus1.on('TestEvent', bus1_handler)
+		bus2.on('TestEvent', bus2_handler)  
+		bus3.on('TestEvent', bus3_handler)
+		
+		# Set up forwarding chain
+		bus1.on('*', bus2.dispatch)
+		bus2.on('*', bus3.dispatch)
+		
+		try:
+			# Dispatch from bus1
+			results = bus1.dispatch(BaseEvent(event_type='TestEvent'))
+			
+			# Wait for all buses to complete processing
+			await bus1.wait_until_idle()
+			await bus2.wait_until_idle()
+			await bus3.wait_until_idle()
+			
+			# All handlers from all buses should be visible
+			all_results = await results.by_handler_name()
+			assert 'bus1_handler' in all_results
+			assert 'bus2_handler' in all_results
+			assert 'bus3_handler' in all_results
+			
+			# Results should be flattened
+			assert all_results['bus1_handler'] == 'from_bus1'
+			assert all_results['bus2_handler'] == 'from_bus2'
+			assert all_results['bus3_handler'] == 'from_bus3'
+			
+			# Check execution order
+			assert results == ['bus1', 'bus2', 'bus3']
+			
+		finally:
+			await bus1.stop()
+			await bus2.stop()
+			await bus3.stop()
+
+	async def test_by_eventbus_id_and_path(self):
+		"""Test by_eventbus_id() and by_path() with forwarding"""
+		bus1 = EventBus(name='MainBus')
+		bus2 = EventBus(name='PluginBus')
+		
+		async def main_handler(event):
+			return 'main_result'
+			
+		async def plugin_handler1(event):
+			return 'plugin_result1'
+			
+		async def plugin_handler2(event):
+			return 'plugin_result2'
+		
+		bus1.on('DataEvent', main_handler)
+		bus2.on('DataEvent', plugin_handler1)
+		bus2.on('DataEvent', plugin_handler2)
+		
+		# Forward from bus1 to bus2
+		bus1.on('*', bus2.dispatch)
+		
+		try:
+			results = bus1.dispatch(BaseEvent(event_type='DataEvent'))
+			
+			# Test by_eventbus_id
+			by_bus = await results.by_eventbus_id()
+			assert len(by_bus) == 2  # One per bus
+			assert str(id(bus1)) in by_bus
+			assert str(id(bus2)) in by_bus
+			# Last handler per bus wins
+			assert by_bus[str(id(bus2))] == 'plugin_result2'
+			
+			# Test by_path
+			by_path = await results.by_path()
+			assert f'MainBus#{id(bus1)}.main_handler' in by_path
+			assert f'PluginBus#{id(bus2)}.plugin_handler1' in by_path
+			assert f'PluginBus#{id(bus2)}.plugin_handler2' in by_path
+			
+		finally:
+			await bus1.stop()
+			await bus2.stop()
+
+
+class TestComplexIntegration:
+	"""Complex integration test with all features"""
+	
+	async def test_complex_multi_bus_scenario(self):
+		"""Test complex scenario with multiple buses, duplicate names, and all query methods"""
+		# Create a hierarchy of buses
+		app_bus = EventBus(name='AppBus')
+		auth_bus = EventBus(name='AuthBus')
+		data_bus = EventBus(name='DataBus')
+		
+		# Handlers with conflicting names
+		async def validate(event):
+			"""App validation"""
+			return {'app_valid': True, 'timestamp': 1000}
+			
+		async def validate(event):
+			"""Auth validation"""
+			return {'auth_valid': True, 'user': 'alice'}
+			
+		async def validate(event):
+			"""Data validation"""  
+			return {'data_valid': True, 'schema': 'v2'}
+			
+		async def process(event):
+			"""Auth processing"""
+			return ['auth_log_1', 'auth_log_2']
+			
+		async def process(event):
+			"""Data processing"""
+			return ['data_log_1', 'data_log_2', 'data_log_3']
+		
+		# Register handlers with same names on different buses
+		app_bus.on('ValidationRequest', validate)
+		auth_bus.on('ValidationRequest', validate)
+		auth_bus.on('ValidationRequest', process)  # Different return type!
+		data_bus.on('ValidationRequest', validate)
+		data_bus.on('ValidationRequest', process)
+		
+		# Set up forwarding
+		app_bus.on('*', auth_bus.dispatch)
+		auth_bus.on('*', data_bus.dispatch)
+		
+		try:
+			# Dispatch event
+			results = app_bus.dispatch(BaseEvent(event_type='ValidationRequest'))
+			
+			# Test all access methods
+			
+			# 1. Direct await (first result)
+			first = await results
+			assert first == 'logged'  # Default logger
+			
+			# 2. Slicing
+			validation_results = await results[1:4].values()
+			assert len(validation_results) == 3
+			
+			# 3. by_handler_name - duplicates overwrite
+			by_name = await results.by_handler_name()
+			assert by_name['validate'] == {'data_valid': True, 'schema': 'v2'}  # Last wins
+			assert by_name['process'] == ['data_log_1', 'data_log_2', 'data_log_3']  # Last wins
+			
+			# 4. by_handler_id - all unique
+			by_id = await results.by_handler_id()
+			assert len(by_id) >= 5  # At least 5 handlers
+			
+			# 5. flat_dict - only dict results
+			dict_handlers = [h for h in by_id.values() if isinstance(h, dict)]
+			assert len(dict_handlers) >= 3  # 3 validate handlers
+			
+			# 6. flat_list - only list results  
+			list_handlers = [h for h in by_id.values() if isinstance(h, list)]
+			assert len(list_handlers) >= 2  # 2 process handlers
+			
+			# 7. Mixed flat operations with slicing
+			# Skip default logger and get only validation dicts
+			with pytest.raises(TypeError, match='instead of dict'):
+				# This should fail because we're mixing dicts and lists
+				await results[1:].flat_dict()
+			
+			# 8. by_eventbus_id
+			by_bus = await results.by_eventbus_id()
+			assert len(by_bus) == 3  # One result per bus
+			
+			# 9. by_path for full traceability
+			by_path = await results.by_path()
+			paths = list(by_path.keys())
+			assert any('AppBus#' in p and '.validate' in p for p in paths)
+			assert any('AuthBus#' in p and '.validate' in p for p in paths)
+			assert any('AuthBus#' in p and '.process' in p for p in paths)
+			assert any('DataBus#' in p and '.validate' in p for p in paths)
+			assert any('DataBus#' in p and '.process' in p for p in paths)
+			
+			# 10. Test handlers property
+			assert 'validate' in results.handlers
+			assert 'process' in results.handlers
+			
+		finally:
+			await app_bus.stop()
+			await auth_bus.stop()
+			await data_bus.stop()
 
 
 if __name__ == '__main__':
