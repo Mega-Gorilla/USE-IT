@@ -312,18 +312,15 @@ class Controller(Generic[Context]):
 		# Content Actions
 		@self.registry.action(
 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-Only use this action for extracting specific information from a single item/article/product page. Do NOT use this for pages with listings or search results with many items.
+Only use this for extracting info from a single product/article page, not listing or search results pages.
 Use include_links=True if extraction requires links.
-If you want to persist the extracted data, optionally set the file_to_save parameter to a file name. ALWAYS use a new file name with .txt or .md extension for each extraction.
 """,
 		)
 		async def extract_structured_data(
 			query: str,
 			page: Page,
 			page_extraction_llm: BaseChatModel,
-			file_system: FileSystem,
 			include_links: bool = False,
-			file_to_save: str = '',
 		):
 			from functools import partial
 
@@ -374,10 +371,6 @@ If you want to persist the extracted data, optionally set the file_to_save param
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
 				memory = f'Extracted content from {page.url} for query "{query}"'
 				logger.info(f'📄 {memory}')
-				if file_to_save:
-					result = await file_system.write_file(file_to_save, output_text)
-					logger.info(f'💾 {result}')
-					memory += '\n' + result
 				return ActionResult(
 					extracted_content=extracted_content,
 					include_in_memory=False,

@@ -404,6 +404,8 @@ Next goal: {model_output.current_state.next_goal}
 """
 		if self.read_state_description == self.read_state_initialization:
 			self.read_state_description = ''
+		else:
+			self.read_state_description += '\nMAKE SURE TO SAVE THIS INFORMATION INTO A FILE OR TO MEMORY IF YOU NEED IT LATER.'
 
 	def add_sensitive_data(self, current_page_url) -> None:
 		sensitive_data = self.settings.sensitive_data
