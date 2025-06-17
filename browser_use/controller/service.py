@@ -223,7 +223,7 @@ class Controller(Generic[Context]):
 					logger.info(new_tab_msg)
 					await browser_session.switch_to_tab(-1)
 				return ActionResult(
-					extracted_content=msg, include_in_memory=True, success=True, memory=f'Clicked element {params.index}'
+					extracted_content=msg, include_in_memory=True, success=False, memory=f'Clicked element {params.index}'
 				)
 			except Exception as e:
 				error_msg = str(e)
