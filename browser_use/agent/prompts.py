@@ -98,11 +98,11 @@ class AgentMessagePrompt:
 
 		if elements_text != '':
 			if has_content_above:
-				elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll or extract content to see more ...\n{elements_text}'
+				elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
 			else:
 				elements_text = f'[Start of page]\n{elements_text}'
 			if has_content_below:
-				elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll or extract content to see more ...'
+				elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
 			else:
 				elements_text = f'{elements_text}\n[End of page]'
 		else:
@@ -112,8 +112,7 @@ class AgentMessagePrompt:
 		for tab in self.browser_state.tabs:
 			tabs_text += f'Tab {tab.page_id}: URL={tab.url}, Title={tab.title[:30]}\n'
 
-		browser_state = f"""# Browser State
-Current URL: {self.browser_state.url}
+		browser_state = f"""Current URL: {self.browser_state.url}
 Available tabs:
 {tabs_text}
 Interactive elements from top layer of the current page inside the viewport{truncated_text}:
@@ -133,27 +132,27 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		if not len(todo_contents):
 			todo_contents = '[Current todo.md is empty, fill it with your plan when applicable]'
 
-		agent_state = f"""# Agent State\n
+		agent_state = f"""
 <user_request>
-		## USER REQUEST:
-{self.task}\n
+{self.task}
 </user_request>
 <file_system>
-## File System:
-{self.file_system.describe()}\n
-## Contents of todo.md:
-{todo_contents}\n
+{self.file_system.describe()}
 </file_system>
-## Step Info:
+<todo_contents>
+{todo_contents}
+</todo_contents>
+<step_info>
 {step_info_description}
+</step_info>
 """
 		return agent_state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-		state_description = '<agent_history>' + self.agent_history_description + '</agent_history>\n'
-		state_description += '<agent_state>' + self._get_agent_state_description() + '</agent_state>\n'
-		state_description += '<browser_state>' + self._get_browser_state_description() + '</browser_state>\n'
-		state_description += '<read_state>' + self.read_state_description + '</read_state>\n'
+		state_description = '<agent_history>\n' + self.agent_history_description.strip('\n') + '\n</agent_history>\n'
+		state_description += '<agent_state>\n' + self._get_agent_state_description().strip('\n') + '\n</agent_state>\n'
+		state_description += '<browser_state>\n' + self._get_browser_state_description().strip('\n') + '\n</browser_state>\n'
+		state_description += '<read_state>\n' + self.read_state_description.strip('\n') + '\n</read_state>\n'
 		if self.page_filtered_actions:
 			state_description += 'For this page, these additional actions are available:\n'
 			state_description += self.page_filtered_actions + '\n'
