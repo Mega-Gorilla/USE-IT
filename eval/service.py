@@ -53,18 +53,6 @@ MAX_IMAGE = 5
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-import os
-
-try:
-	from lmnr import Laminar
-except ImportError:
-	print('⚠️  Laminar tracing not enabled: lmnr package not installed. Install with `pip install "lmnr[all]"` to enable tracing.')
-else:
-	laminar_api_key = os.getenv('LMNR_PROJECT_API_KEY')
-	if laminar_api_key:
-		print('Laminar tracing enabled')
-		Laminar.initialize(project_api_key=laminar_api_key)
-
 
 def encode_image(image):
 	"""Convert a PIL image to base64 string."""
