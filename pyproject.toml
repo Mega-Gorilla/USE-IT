@@ -23,6 +23,7 @@ dependencies = [
     "langchain-ollama==0.3.3",
     "langchain-openai==0.3.21",
     "langchain>=0.3.25",
+    "lmnr[all]>=0.6.10",
     "markdownify==1.1.0",
     "mem0ai>=0.1.106",
     "patchright>=1.52.5",
@@ -65,6 +66,9 @@ examples = [
     "imgcat>=0.6.0",
     "stagehand-py>=0.3.6",
     "browserbase>=0.4.0",
+]
+eval = [
+    "lmnr[all]>=0.6.10",
 ]
 all = [
     "browser-use[memory,cli,examples]",
