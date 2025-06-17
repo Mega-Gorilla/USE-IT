@@ -49,25 +49,29 @@ from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_e
 
 # Define types to be Union[Patchright, Playwright]
 Browser = PatchrightBrowser | PlaywrightBrowser
+BrowserInstance = InstanceOf[PatchrightBrowser] | InstanceOf[PlaywrightBrowser]
 BrowserContext = PatchrightBrowserContext | PlaywrightBrowserContext
+BrowserContextInstance = InstanceOf[PatchrightBrowserContext] | InstanceOf[PlaywrightBrowserContext]
 Page = PatchrightPage | PlaywrightPage
+PageInstance = InstanceOf[PatchrightPage] | InstanceOf[PlaywrightPage]
 ElementHandle = PatchrightElementHandle | PlaywrightElementHandle
+ElementHandleInstance = InstanceOf[PatchrightElementHandle] | InstanceOf[PlaywrightElementHandle]
 FrameLocator = PatchrightFrameLocator | PlaywrightFrameLocator
-
+FrameLocatorInstance = InstanceOf[PatchrightFrameLocator] | InstanceOf[PlaywrightFrameLocator]
 
 # Check if running in Docker
 IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
-
-logger = logging.getLogger('browser_use.browser.session')
 
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
 GLOBAL_PLAYWRIGHT_API_OBJECT = None  # never instantiate the playwright API object more than once per thread
 GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API object more than once per thread
+GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
+GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 
 
-def _log_glob_warning(domain: str, glob: str):
+def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
 	global _GLOB_WARNING_SHOWN
 	if not _GLOB_WARNING_SHOWN:
 		logger.warning(
@@ -186,13 +190,13 @@ class BrowserSession(BaseModel):
 		description='Playwright library object returned by: await (playwright or patchright).async_playwright().start()',
 		exclude=True,
 	)
-	browser: InstanceOf[Browser] | None = Field(
+	browser: BrowserInstance | None = Field(
 		default=None,
 		description='playwright Browser object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser'),
 		exclude=True,
 	)
-	browser_context: InstanceOf[BrowserContext] | None = Field(
+	browser_context: BrowserContextInstance | None = Field(
 		default=None,
 		description='playwright BrowserContext object to use (optional)',
 		validation_alias=AliasChoices('playwright_browser_context', 'context'),
@@ -205,13 +209,13 @@ class BrowserSession(BaseModel):
 		description='Mark BrowserSession launch/connection as already ready and skip setup (not recommended)',
 		validation_alias=AliasChoices('is_initialized'),
 	)
-	agent_current_page: InstanceOf[Page] | None = Field(  # mutated by self.create_new_tab(url)
+	agent_current_page: PageInstance | None = Field(  # mutated by self.create_new_tab(url)
 		default=None,
 		description='Foreground Page that the agent is focused on',
 		validation_alias=AliasChoices('current_page', 'page'),  # alias page= allows passing in a playwright Page object easily
 		exclude=True,
 	)
-	human_current_page: InstanceOf[Page] | None = Field(  # mutated by self._setup_current_page_change_listeners()
+	human_current_page: PageInstance | None = Field(  # mutated by self._setup_current_page_change_listeners()
 		default=None,
 		description='Foreground Page that the human is focused on',
 		exclude=True,
@@ -225,7 +229,7 @@ class BrowserSession(BaseModel):
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
-		"""Apply any extra **kwargs passed to BrowserSession(...) as config overrides on top of browser_profile"""
+		"""Apply any extra **kwargs passed to BrowserSession(...) as session-specific config overrides on top of browser_profile"""
 		session_own_fields = type(self).model_fields.keys()
 
 		# get all the extra kwarg overrides passed to BrowserSession(...) that are actually
@@ -235,10 +239,7 @@ class BrowserSession(BaseModel):
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
 
-		# Only create a copy if there are actual overrides to apply
-		if profile_overrides:
-			# replace browser_profile with patched version
-			self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
+		self.browser_profile = self.browser_profile.model_copy(update=profile_overrides)
 
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
@@ -250,14 +251,14 @@ class BrowserSession(BaseModel):
 		"""Get instance-specific logger with session ID in the name"""
 		if self._logger is None:
 			# Create a child logger with the session ID
-			self._logger = logging.getLogger(f'browser_use.BrowserSession[{self.id[-4:]}]')
+			self._logger = logging.getLogger(f'browser_use.BrowserSession⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}')
 		return self._logger
 
 	def __repr__(self) -> str:
-		return f'BrowserSession[{self.id[-4:]}](profile={self.browser_profile}, {self._connection_str})'
+		return f'BrowserSession⛶{self.id[-4:]}(profile={self.browser_profile}, {self._connection_str}) ref#={str(id(self))[-2:]}'
 
 	def __str__(self) -> str:
-		return f'BrowserSession[{self.id[-4:]}]'
+		return f'BrowserSession⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}'
 
 	# def __getattr__(self, key: str) -> Any:
 	# 	"""
@@ -284,8 +285,8 @@ class BrowserSession(BaseModel):
 
 		# Use timeout to prevent indefinite waiting on lock acquisition
 
-		async with asyncio.timeout(30):  # 30 second timeout for launching
-			async with self._start_lock:
+		async with asyncio.timeout(60):  # 60 second overall timeout for entire launching process to avoid deadlocks
+			async with self._start_lock:  # prevent parallel calls to start() / stop() / save_storage_state() from clashing
 				if self.initialized:
 					if self.is_connected():
 						return self
@@ -306,8 +307,8 @@ class BrowserSession(BaseModel):
 				try:
 					# apply last-minute runtime-computed options to the the browser_profile, validate profile, set up folders on disk
 					assert isinstance(self.browser_profile, BrowserProfile)
-					self.browser_profile.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
 					self.browser_profile.detect_display_configuration()  # adjusts config values, must come before launch/connect
+					self.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
 
 					# launch/connect to the browser:
 					# setup playwright library client, Browser, and BrowserContext objects
@@ -324,6 +325,7 @@ class BrowserSession(BaseModel):
 					# resize the existing pages and set up foreground tab detection
 					await self._setup_viewports()
 					await self._setup_current_page_change_listeners()
+					await self._start_context_tracing()
 				except BaseException:
 					self.initialized = False
 					raise
@@ -363,7 +365,7 @@ class BrowserSession(BaseModel):
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
-		async with asyncio.timeout(15):  # 15 second timeout for stop operations
+		async with asyncio.timeout(30):  # 30 second timeout for stop operations
 			async with self._start_lock:
 				# save cookies to disk if cookies_file or storage_state is configured
 				# but only if the browser context is still connected
@@ -381,11 +383,50 @@ class BrowserSession(BaseModel):
 
 				if self.browser_context or self.browser:
 					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser_context or self.browser}')
+
+					# Stop trace recording before closing context
+					if self.browser_profile.traces_dir and self.browser_context is not None:
+						try:
+							traces_path = Path(self.browser_profile.traces_dir)
+							if traces_path.suffix:
+								# Path has extension, use as-is (user specified exact file path)
+								final_trace_path = traces_path
+							else:
+								# Path has no extension, treat as directory and create filename
+								trace_filename = f'BrowserSession_{self.id}.zip'
+								final_trace_path = traces_path / trace_filename
+
+							self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
+							async with asyncio.timeout(30):
+								await self.browser_context.tracing.stop(path=str(final_trace_path))
+						except Exception as e:
+							# TargetClosedError is expected when browser has already been closed - don't log as error
+							from playwright._impl._errors import TargetClosedError
+
+							if isinstance(e, TargetClosedError):
+								self.logger.debug('Browser context already closed, trace may have been saved automatically')
+							else:
+								self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
+
+					# playwright saves these on browser.close() automatically
+					if self.browser_profile.record_video_dir:
+						self.logger.info(
+							f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...'
+						)
+					if self.browser_profile.record_har_path:
+						self.logger.info(f'🎥 Saving HAR file to record_har_path= {self.browser_profile.record_har_path}...')
+
 					try:
 						# Add timeout to prevent hanging on close if context is already closed
 						try:
-							async with asyncio.timeout(5):  # 5 second timeout for close operation
-								await (self.browser or self.browser_context.browser or self.browser_context).close()
+							async with asyncio.timeout(30):  # 30 second timeout for close operation
+								# IMPORTANT: Close context first to ensure HAR/video files are saved
+								if self.browser_context:
+									await self.browser_context.close()
+									self.browser_context = None  # Prevent duplicate close attempts
+								# Then close browser if we have one
+								if self.browser and self.browser.is_connected():
+									await self.browser.close()
 						except TimeoutError:
 							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
 					except Exception as e:
@@ -436,6 +477,32 @@ class BrowserSession(BaseModel):
 		self.browser_profile.keep_alive = False
 		await self.stop()
 
+		# Clean up playwright instance to prevent background tasks from running
+		if self.playwright:
+			try:
+				await self.playwright.stop()
+				# Give playwright tasks a moment to clean up properly
+				# This prevents "Task was destroyed but it is pending!" warnings
+				await asyncio.sleep(0.1)
+				# self.logger.debug('🎭 Stopped playwright node.js API worker')
+			except Exception as e:
+				self.logger.warning(f'❌ Error stopping playwright node.js API subprocess: {type(e).__name__}: {e}')
+			finally:
+				# Clear global references if they match this instance
+				global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
+				global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
+
+				if self.playwright == GLOBAL_PLAYWRIGHT_API_OBJECT:
+					GLOBAL_PLAYWRIGHT_API_OBJECT = None
+					GLOBAL_PLAYWRIGHT_EVENT_LOOP = None
+					# self.logger.debug('🧹 Cleared global playwright references')
+				elif self.playwright == GLOBAL_PATCHRIGHT_API_OBJECT:
+					GLOBAL_PATCHRIGHT_API_OBJECT = None
+					GLOBAL_PATCHRIGHT_EVENT_LOOP = None
+					# self.logger.debug('🧹 Cleared global patchright references')
+
+				self.playwright = None
+
 	async def new_context(self, **kwargs):
 		"""Deprecated: Provides backwards-compatibility with old class method Browser().new_context()."""
 		# TODO: remove this after >=0.3.0
@@ -444,6 +511,16 @@ class BrowserSession(BaseModel):
 	async def __aenter__(self) -> BrowserSession:
 		await self.start()
 		return self
+
+	def __eq__(self, other: object) -> bool:
+		"""Check if two BrowserSession instances are using the same browser."""
+
+		if not isinstance(other, BrowserSession):
+			return False
+
+		# Two sessions are considered equal if they're connected to the same browser
+		# All three connection identifiers must match
+		return self.browser_pid == other.browser_pid and self.cdp_url == other.cdp_url and self.wss_url == other.wss_url
 
 	async def __aexit__(self, exc_type, exc_val, exc_tb):
 		# self.logger.debug(
@@ -457,12 +534,12 @@ class BrowserSession(BaseModel):
 			profile = getattr(self, 'browser_profile', None)
 			keep_alive = getattr(profile, 'keep_alive', None)
 			user_data_dir = getattr(profile, 'user_data_dir', None)
-			self.logger.debug(
-				f'🛑 Stopping (garbage collected) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
-			)
+			if self.initialized:
+				self.logger.debug(
+					f'🛑 Stopping (garbage collected BrowserSession ⛶{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]}) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
+				)
 
 			self._kill_child_processes()
-
 		except BaseException:
 			# Never let __del__ raise exceptions
 			pass
@@ -473,6 +550,13 @@ class BrowserSession(BaseModel):
 		if not self.browser_profile.keep_alive and self.browser_pid:
 			try:
 				browser_proc = psutil.Process(self.browser_pid)
+				try:
+					browser_proc.terminate()
+					browser_proc.wait(
+						timeout=5
+					)  # wait up to 5 seconds for the process to exit cleanly and commit its user_data_dir changes
+				except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
+					pass
 
 				# Kill all child processes first (recursive)
 				for child in browser_proc.children(recursive=True):
@@ -483,34 +567,90 @@ class BrowserSession(BaseModel):
 						pass
 
 				# Kill the main browser process
-				try:
-					# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
-					browser_proc.kill()
-				except (psutil.NoSuchProcess, psutil.AccessDenied):
-					pass
+				# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
+				browser_proc.kill()
+			except psutil.NoSuchProcess:
+				pass
 			except Exception as e:
 				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
+
+	@staticmethod
+	async def _start_global_playwright_subprocess(is_stealth: bool) -> Playwright | Patchright:
+		"""Create and return a new playwright or patchright node.js subprocess / API connector"""
+		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
+
+		try:
+			current_loop = asyncio.get_running_loop()
+		except RuntimeError:
+			current_loop = None
+
+		if is_stealth:
+			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
+			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
+			return GLOBAL_PATCHRIGHT_API_OBJECT
+		else:
+			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
+			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
+			return GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
 		Override to customize the set up of the playwright or patchright library object
 		"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_API_OBJECT  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
 		global GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
+		global GLOBAL_PATCHRIGHT_EVENT_LOOP
 
-		if self.browser_profile.stealth:
+		# Get current event loop
+		try:
+			current_loop = asyncio.get_running_loop()
+		except RuntimeError:
+			current_loop = None
+
+		is_stealth = self.browser_profile.stealth
+
+		# Configure browser channel based on stealth mode
+		if is_stealth:
 			# use patchright + chrome when stealth=True
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROME
 			self.logger.info(f'🕶️ Activated stealth mode using patchright {self.browser_profile.channel.name.lower()} browser...')
-			if not self.playwright:
-				if GLOBAL_PATCHRIGHT_API_OBJECT:
-					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
-				else:
-					GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
-					self.playwright = GLOBAL_PATCHRIGHT_API_OBJECT
+		else:
+			# use playwright + chromium by default
+			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-			# check for stealth best-practices
+		# Check if we're in a different event loop than the one that created the global object
+		should_recreate = False
+		driver_name = 'patchright' if is_stealth else 'playwright'
+		global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+		global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		self.playwright = (
+			self.playwright or global_api_object or await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+		)
+
+		if global_api_object and global_event_loop != current_loop:
+			self.logger.debug(
+				f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
+				'Creating new instance to avoid disconnection when the previous loop closes.'
+			)
+			should_recreate = True
+
+		# Also check if the object exists but is no longer functional
+		if global_api_object and not should_recreate:
+			try:
+				# Try to access the chromium property to verify the object is still valid
+				_ = global_api_object.chromium.executable_path
+			except Exception as e:
+				self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
+				should_recreate = True
+
+		if should_recreate:
+			self.playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+
+		# Log stealth best-practices warnings if applicable
+		if is_stealth:
 			if self.browser_profile.channel and self.browser_profile.channel != BrowserChannel.CHROME:
 				self.logger.info(
 					' 🪄 For maximum stealth, BrowserSession(...) should be passed channel=None or BrowserChannel.CHROME'
@@ -519,15 +659,6 @@ class BrowserSession(BaseModel):
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed a persistent user_data_dir=...')
 			if self.browser_profile.headless or not self.browser_profile.no_viewport:
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed headless=False & viewport=None')
-		else:
-			# use playwright + chromium by default
-			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
-			if not self.playwright:
-				if GLOBAL_PLAYWRIGHT_API_OBJECT:
-					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
-				else:
-					GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
-					self.playwright = GLOBAL_PLAYWRIGHT_API_OBJECT
 
 	async def setup_browser_via_passed_objects(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
@@ -628,7 +759,7 @@ class BrowserSession(BaseModel):
 				self.logger.info(f'🌎 Using first browser_context available in existing browser: {self.browser_context}')
 			else:
 				self.browser_context = await self.browser.new_context(
-					**self.browser_profile.kwargs_for_new_context().model_dump()
+					**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
 				)
 				storage_info = (
 					f' + loaded storage_state={len(self.browser_profile.storage_state.cookies) if self.browser_profile.storage_state else 0} cookies'
@@ -649,17 +780,36 @@ class BrowserSession(BaseModel):
 			if not self.browser_profile.user_data_dir:
 				# self.logger.debug('🌎 Launching local browser in incognito mode')
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
-				self.browser = self.browser or await self.playwright.chromium.launch(
-					**self.browser_profile.kwargs_for_launch().model_dump()
-				)
-				# self.logger.debug('🌎 Launching new incognito context in browser')
-				self.browser_context = await self.browser.new_context(
-					**self.browser_profile.kwargs_for_new_context().model_dump()
-				)
+				try:
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						self.browser = self.browser or await self.playwright.chromium.launch(
+							**self.browser_profile.kwargs_for_launch().model_dump()
+						)
+					# self.logger.debug('🌎 Launching new incognito context in browser')
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						self.browser_context = await self.browser.new_context(
+							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
+						)
+				except TimeoutError:
+					self.logger.warning(
+						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
+						'Recreating playwright instance and retrying...'
+					)
+					# Force recreation of the playwright object
+					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
+					# Retry the operation with the new playwright instance
+					async with asyncio.timeout(10):
+						self.browser = await self.playwright.chromium.launch(
+							**self.browser_profile.kwargs_for_launch().model_dump()
+						)
+					async with asyncio.timeout(10):
+						self.browser_context = await self.browser.new_context(
+							**self.browser_profile.kwargs_for_new_context().model_dump()
+						)
 				# self.logger.debug('🌎 Created new incognito context in browser')
 			else:
 				# user data dir was provided, prepare it for use
-				self.browser_profile.prepare_user_data_dir()
+				self.prepare_user_data_dir()
 
 				# search for potentially conflicting local processes running on the same user_data_dir
 				for proc in psutil.process_iter(['pid', 'cmdline']):
@@ -672,9 +822,27 @@ class BrowserSession(BaseModel):
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
 				try:
-					self.browser_context = await self.playwright.chromium.launch_persistent_context(
-						**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+						try:
+							self.browser_context = await self.playwright.chromium.launch_persistent_context(
+								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
+							)
+						except Exception as e:
+							# Re-raise if not a timeout
+							if not isinstance(e, asyncio.TimeoutError):
+								raise
+				except TimeoutError:
+					self.logger.warning(
+						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
+						'Recreating playwright instance and retrying...'
 					)
+					# Force recreation of the playwright object
+					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
+					# Retry the operation with the new playwright instance
+					async with asyncio.timeout(10):
+						self.browser_context = await self.playwright.chromium.launch_persistent_context(
+							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+						)
 				except Exception as e:
 					# show a nice logger hint explaining what went wrong with the user_data_dir
 					# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
@@ -797,7 +965,15 @@ class BrowserSession(BaseModel):
 		"""
 
 		# Expose anti-detection scripts
-		await self.browser_context.add_init_script(init_script)
+		try:
+			await self.browser_context.add_init_script(init_script)
+		except Exception as e:
+			if 'Target page, context or browser has been closed' in str(e):
+				self.logger.warning('⚠️ Browser context was closed before init script could be added')
+				# Reset connection state since browser is no longer valid
+				self._reset_connection_state()
+			else:
+				raise
 
 		if self.browser_profile.stealth and not isinstance(self.playwright, Patchright):
 			self.logger.warning('⚠️ Failed to set up stealth mode. (...) got normal playwright objects as input.')
@@ -850,7 +1026,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
@@ -954,6 +1130,8 @@ class BrowserSession(BaseModel):
 	async def _setup_viewports(self) -> None:
 		"""Resize any existing page viewports to match the configured size, set up storage_state, permissions, geolocation, etc."""
 
+		assert self.browser_context, 'BrowserSession.browser_context must already be set up before calling _setup_viewports()'
+
 		# log the viewport settings to terminal
 		viewport = self.browser_profile.viewport
 		self.logger.debug(
@@ -990,9 +1168,9 @@ class BrowserSession(BaseModel):
 				)
 		try:
 			if self.browser_profile.default_timeout:
-				await self.browser_context.set_default_timeout(self.browser_profile.default_timeout)
+				self.browser_context.set_default_timeout(self.browser_profile.default_timeout)
 			if self.browser_profile.default_navigation_timeout:
-				await self.browser_context.set_default_navigation_timeout(self.browser_profile.default_navigation_timeout)
+				self.browser_context.set_default_navigation_timeout(self.browser_profile.default_navigation_timeout)
 		except Exception as e:
 			self.logger.warning(
 				f'⚠️ Failed to set playwright timeout settings '
@@ -1001,7 +1179,7 @@ class BrowserSession(BaseModel):
 			)
 		try:
 			if self.browser_profile.extra_http_headers:
-				await self.browser_context.set_extra_http_headers(self.browser_profile.extra_http_headers)
+				self.browser_context.set_extra_http_headers(self.browser_profile.extra_http_headers)
 		except Exception as e:
 			self.logger.warning(
 				f'⚠️ Failed to setup playwright extra_http_headers: {type(e).__name__}: {e}'
@@ -1120,6 +1298,7 @@ class BrowserSession(BaseModel):
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
 		self._cached_browser_state_summary = None
+		# Don't clear self.playwright here - it should be cleared explicitly in kill()
 
 		if self.browser_pid:
 			try:
@@ -1136,7 +1315,58 @@ class BrowserSession(BaseModel):
 				self.browser_pid = None
 
 		if not already_disconnected:
-			self.logger.debug(f'🪢 Browser {self._connection_str} disconnected')
+			self.logger.debug(f'⚰️ Browser {self._connection_str} disconnected')
+
+	def prepare_user_data_dir(self) -> None:
+		"""Create and unlock the user data dir and ensure all recording paths exist."""
+
+		if self.browser_profile.user_data_dir:
+			try:
+				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
+				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
+				(self.browser_profile.user_data_dir / '.browseruse_profile_id').write_text(self.browser_profile.id)
+			except Exception as e:
+				raise ValueError(
+					f'Unusable path provided for user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (check for typos/permissions issues)'
+				) from e
+
+			# clear any existing locks by any other chrome processes (hacky)
+			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
+			if singleton_lock.exists():
+				singleton_lock.unlink()
+				self.logger.warning(
+					f'⚠️ Multiple chrome processes may be trying to share user_data_dir={self.browser_profile.user_data_dir} which can lead to crashes and profile data corruption!'
+				)
+
+		# Create directories for all paths that need them
+		dir_paths = {
+			'downloads_path': self.browser_profile.downloads_path,
+			'record_video_dir': self.browser_profile.record_video_dir,
+			'traces_dir': self.browser_profile.traces_dir,
+		}
+
+		file_paths = {
+			'record_har_path': self.browser_profile.record_har_path,
+		}
+
+		# Handle directory creation
+		for path_name, path_value in dir_paths.items():
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.mkdir(parents=True, exist_ok=True)
+					setattr(self.browser_profile, path_name, str(path_obj) if path_name == 'traces_dir' else path_obj)
+				except Exception as e:
+					self.logger.error(f'❌ Failed to create {path_name} directory {path_value}: {e}')
+
+		# Handle file path parent directory creation
+		for path_name, path_value in file_paths.items():
+			if path_value:
+				try:
+					path_obj = Path(path_value).expanduser().resolve()
+					path_obj.parent.mkdir(parents=True, exist_ok=True)
+				except Exception as e:
+					self.logger.error(f'❌ Failed to create parent directory for {path_name} {path_value}: {e}')
 
 	# --- Tab management ---
 	async def get_current_page(self) -> Page:
@@ -1274,30 +1504,72 @@ class BrowserSession(BaseModel):
 						unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
 						download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
 						await download.save_as(download_path)
-						self.logger.debug(f'⬇️ Download triggered. Saved file to: {download_path}')
+						self.logger.info(f'⬇️ Downloaded file to: {download_path}')
 						return download_path
 					except Exception:
 						# If no download is triggered, treat as normal click
-						self.logger.debug('No download triggered within timeout. Checking navigation...')
-						await page.wait_for_load_state()
+						# self.logger.debug('No download triggered within timeout. Checking navigation...')
+						try:
+							await page.wait_for_load_state()
+						except Exception as e:
+							self.logger.warning(
+								f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
+							)
 						await self._check_and_handle_navigation(page)
 				else:
 					# If downloads are disabled, just perform the click
 					await click_func()
-					await page.wait_for_load_state()
+					try:
+						await page.wait_for_load_state()
+					except Exception as e:
+						self.logger.warning(
+							f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
+						)
 					await self._check_and_handle_navigation(page)
 
 			try:
 				return await perform_click(lambda: element_handle.click(timeout=1500))
 			except URLNotAllowedError as e:
 				raise e
-			except Exception:
-				try:
-					return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
-				except URLNotAllowedError as e:
-					raise e
-				except Exception as e:
-					raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
+			except Exception as e:
+				# Check if it's a context error and provide more info
+				if 'Cannot find context with specified id' in str(e) or 'Protocol error' in str(e):
+					self.logger.warning(f'⚠️ Element context lost, attempting to re-locate element: {type(e).__name__}')
+					# Try to re-locate the element
+					element_handle = await self.get_locate_element(element_node)
+					if element_handle is None:
+						raise Exception(f'Element no longer exists in DOM after context loss: {repr(element_node)}')
+					# Try click again with fresh element
+					try:
+						return await perform_click(lambda: element_handle.click(timeout=1500))
+					except Exception:
+						# Fall back to JavaScript click
+						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+				else:
+					# Original fallback for other errors
+					try:
+						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+					except URLNotAllowedError as e:
+						raise e
+					except Exception as e:
+						# Final fallback - try clicking by coordinates if available
+						if element_node.viewport_coordinates and element_node.viewport_coordinates.center:
+							try:
+								self.logger.warning(
+									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.viewport_coordinates.center.x}, {element_node.viewport_coordinates.center.y})'
+								)
+								await page.mouse.click(
+									element_node.viewport_coordinates.center.x, element_node.viewport_coordinates.center.y
+								)
+								try:
+									await page.wait_for_load_state()
+								except Exception:
+									pass
+								await self._check_and_handle_navigation(page)
+								return None  # Success
+							except Exception as coord_e:
+								self.logger.error(f'Coordinate click also failed: {type(coord_e).__name__}: {coord_e}')
+						raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
 
 		except URLNotAllowedError as e:
 			raise e
@@ -1344,7 +1616,7 @@ class BrowserSession(BaseModel):
 	@require_initialization
 	async def navigate(self, url: str) -> None:
 		if self.agent_current_page:
-			await self.agent_current_page.goto(url)
+			await self.agent_current_page.goto(url, wait_until='domcontentloaded')
 		else:
 			await self.create_new_tab(url)
 
@@ -1372,6 +1644,12 @@ class BrowserSession(BaseModel):
 		await self.save_storage_state(*args, **kwargs)
 
 	async def _save_cookies_to_file(self, path: Path, cookies: list[dict[str, Any]] | None) -> None:
+		if not (path or self.browser_profile.cookies_file):
+			return
+
+		if not cookies:
+			return
+
 		try:
 			cookies_file_path = Path(path or self.browser_profile.cookies_file).expanduser().resolve()
 			cookies_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1420,7 +1698,9 @@ class BrowserSession(BaseModel):
 				pass
 			temp_path.replace(json_path)
 
-			self.logger.info(f'🍪 Saved {len(storage_state["cookies"])} cookies to storage_state= {_log_pretty_path(json_path)}')
+			self.logger.info(
+				f'🍪 Saved {len(storage_state["cookies"]) + len(storage_state.get("origins", []))} cookies to storage_state= {_log_pretty_path(json_path)}'
+			)
 		except Exception as e:
 			self.logger.warning(f'❌ Failed to save cookies to storage_state= {_log_pretty_path(path)}: {type(e).__name__}: {e}')
 
@@ -1428,11 +1708,16 @@ class BrowserSession(BaseModel):
 		"""
 		Save cookies to the specified path or the configured cookies_file and/or storage_state.
 		"""
+
+		if not (path or self.browser_profile.storage_state or self.browser_profile.cookies_file):
+			return
+
 		storage_state = await self.browser_context.storage_state()
 		cookies = storage_state['cookies']
+		has_any_auth_data = cookies or storage_state.get('origins', [])
 
 		# they passed an explicit path, only save to that path and return
-		if path:
+		if path and has_any_auth_data:
 			if path.name == 'storage_state.json':
 				await self._save_storage_state_to_file(path, storage_state)
 				return
@@ -1452,9 +1737,9 @@ class BrowserSession(BaseModel):
 		# save cookies_file if passed a cookies file path or if profile cookies_file is configured
 		if cookies and self.browser_profile.cookies_file:
 			# only show warning if they configured cookies_file (not if they passed in a path to this function as an arg)
-			await self._save_cookies_to_file(path or self.browser_profile.cookies_file, cookies)
-			await self._save_storage_state_to_file(path.parent / 'storage_state.json', storage_state)
-			new_path = path.parent / 'storage_state.json'
+			await self._save_cookies_to_file(self.browser_profile.cookies_file, cookies)
+			new_path = self.browser_profile.cookies_file.parent / 'storage_state.json'
+			await self._save_storage_state_to_file(new_path, storage_state)
 			self.logger.warning(
 				'⚠️ cookies_file is deprecated and will be removed in a future version. '
 				f'Please use storage_state="{_log_pretty_path(new_path)}" instead for persisting cookies and other browser state. '
@@ -1477,6 +1762,7 @@ class BrowserSession(BaseModel):
 
 		if isinstance(self.browser_profile.storage_state, (str, Path)):
 			await self._save_storage_state_to_file(self.browser_profile.storage_state, storage_state)
+			return
 
 		raise Exception(f'Got unexpected type for storage_state: {type(self.browser_profile.storage_state)}')
 
@@ -1495,9 +1781,9 @@ class BrowserSession(BaseModel):
 				'See: https://playwright.dev/python/docs/api/class-browsercontext#browser-context-storage-state'
 			)
 
-			cookies_path = Path(self.browser_profile.cookies_file)
+			cookies_path = Path(self.browser_profile.cookies_file).expanduser()
 			if not cookies_path.is_absolute():
-				cookies_path = Path(self.browser_profile.downloads_path or '.') / cookies_path
+				cookies_path = Path(self.browser_profile.downloads_path or '.').expanduser().resolve() / cookies_path.name
 
 			try:
 				cookies_data = json.loads(cookies_path.read_text())
@@ -1528,9 +1814,11 @@ class BrowserSession(BaseModel):
 				# playwright doesn't provide an API for setting these before launch
 				# https://playwright.dev/python/docs/auth#session-storage
 				# await self.browser_context.add_local_storage(storage_state['localStorage'])
-				self.logger.info(
-					f'🍪 Loaded {len(storage_state["cookies"])} cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}'
-				)
+				num_entries = len(storage_state['cookies']) + len(storage_state.get('origins', []))
+				if num_entries:
+					self.logger.info(
+						f'🍪 Loaded {num_entries} cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}'
+					)
 			except Exception as e:
 				self.logger.warning(
 					f'❌ Failed to load cookies from storage_state= {_log_pretty_path(self.browser_profile.storage_state)}: {type(e).__name__}: {e}'
@@ -1775,15 +2063,21 @@ class BrowserSession(BaseModel):
 		except Exception:
 			bytes_used = None
 
-		tab_idx = self.tabs.index(page)
+		try:
+			tab_idx = self.tabs.index(page)
+		except ValueError:
+			tab_idx = '??'
+
+		extra_delay = ''
+		if remaining > 0:
+			extra_delay = f', waiting +{remaining:.2f}s for all frames to finish'
+
 		if bytes_used is not None:
-			self.logger.debug(
-				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
+			self.logger.info(
+				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s{extra_delay}'
 			)
 		else:
-			self.logger.debug(
-				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} took {elapsed:.2f}s, waiting +{remaining:.2f}s for all frames to finish'
-			)
+			self.logger.info(f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} took {elapsed:.2f}s{extra_delay}')
 
 		# Sleep remaining time if needed
 		if remaining > 0:
@@ -1814,7 +2108,7 @@ class BrowserSession(BaseModel):
 					if '*' in allowed_domain:
 						parsed_url = urlparse(url)
 						domain = parsed_url.hostname.lower() if parsed_url.hostname else ''
-						_log_glob_warning(domain, allowed_domain)
+						_log_glob_warning(domain, allowed_domain, self.logger)
 					return True
 			except AssertionError:
 				# This would only happen if about:blank is passed to match_url_with_domain_pattern,
@@ -1840,14 +2134,22 @@ class BrowserSession(BaseModel):
 
 		page = await self.get_current_page()
 		await page.goto(url)
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(
+				f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after navigation: {type(e).__name__}: {e}'
+			)
 
 	async def refresh_page(self):
 		"""Refresh the agent's current page"""
 
 		page = await self.get_current_page()
 		await page.reload()
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after refresh: {type(e).__name__}: {e}')
 
 	async def go_back(self):
 		"""Navigate the agent's tab back in browser history"""
@@ -1979,7 +2281,8 @@ class BrowserSession(BaseModel):
 		structure = await page.evaluate(debug_script)
 		return structure
 
-	@time_execution_sync('--get_state_summary')  # This decorator might need to be updated to handle async
+	@time_execution_async('--get_state_summary')
+	@require_initialization
 	async def get_state_summary(self, cache_clickable_elements_hashes: bool) -> BrowserStateSummary:
 		"""Get a summary of the current browser state
 
@@ -2035,7 +2338,7 @@ class BrowserSession(BaseModel):
 
 		try:
 			await self.remove_highlights()
-			dom_service = DomService(page)
+			dom_service = DomService(page, logger=self.logger)
 			content = await dom_service.get_clickable_elements(
 				focus_element=focus_element,
 				viewport_expansion=self.browser_profile.viewport_expansion,
@@ -2097,9 +2400,12 @@ class BrowserSession(BaseModel):
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
 		page = await self.get_current_page()
-		await page.wait_for_load_state(
-			timeout=5000,
-		)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
+		try:
+			await page.wait_for_load_state(
+				timeout=5000,
+			)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
+		except Exception as e:
+			pass
 
 		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
 		try:
@@ -2107,7 +2413,7 @@ class BrowserSession(BaseModel):
 				full_page=full_page,
 				scale='css',
 				timeout=15000,
-				animations='disabled',
+				animations='allow',
 				caret='initial',
 			)
 
@@ -2147,8 +2453,9 @@ class BrowserSession(BaseModel):
 				scale='css',
 				timeout=30000,
 				clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
+				animations='allow',
+				caret='initial',
 				# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
-				# caret='initial',
 			)
 			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
 
@@ -2177,6 +2484,20 @@ class BrowserSession(BaseModel):
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
+
+	async def _start_context_tracing(self):
+		"""Start tracing on browser context if trace_path is configured."""
+		if self.browser_profile.traces_dir and self.browser_context:
+			try:
+				self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
+				# Don't pass any path to start() - let Playwright handle internal temp files
+				await self.browser_context.tracing.start(
+					screenshots=True,
+					snapshots=True,
+					sources=False,  # Reduce trace size
+				)
+			except Exception as e:
+				self.logger.warning(f'Failed to start tracing: {e}')
 
 	@staticmethod
 	def _convert_simple_xpath_to_css_selector(xpath: str) -> str:
@@ -2385,7 +2706,12 @@ class BrowserSession(BaseModel):
 				parent,
 				include_dynamic_attributes=self.browser_profile.include_dynamic_attributes,
 			)
-			current_frame = current_frame.frame_locator(css_selector)
+			# Use CSS selector if available, otherwise fall back to XPath
+			if css_selector:
+				current_frame = current_frame.frame_locator(css_selector)
+			else:
+				self.logger.debug(f'Using XPath for iframe: {parent.xpath}')
+				current_frame = current_frame.frame_locator(f'xpath={parent.xpath}')
 
 		css_selector = self._enhanced_css_selector_for_element(
 			element, include_dynamic_attributes=self.browser_profile.include_dynamic_attributes
@@ -2393,11 +2719,22 @@ class BrowserSession(BaseModel):
 
 		try:
 			if isinstance(current_frame, FrameLocator):
-				element_handle = await current_frame.locator(css_selector).element_handle()
+				if css_selector:
+					element_handle = await current_frame.locator(css_selector).element_handle()
+				else:
+					# Fall back to XPath when CSS selector is empty
+					self.logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
 				return element_handle
 			else:
-				# Try to scroll into view if hidden
-				element_handle = await current_frame.query_selector(css_selector)
+				# Try CSS selector first if available
+				if css_selector:
+					element_handle = await current_frame.query_selector(css_selector)
+				else:
+					# Fall back to XPath
+					self.logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+
 				if element_handle:
 					is_visible = await self._is_visible(element_handle)
 					if is_visible:
@@ -2405,10 +2742,30 @@ class BrowserSession(BaseModel):
 					return element_handle
 				return None
 		except Exception as e:
-			self.logger.error(
-				f'❌ Failed to locate element {css_selector} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
-			)
-			return None
+			# If CSS selector failed, try XPath as fallback
+			if css_selector and 'CSS.escape' not in str(e):
+				try:
+					self.logger.debug(f'CSS selector failed, trying XPath fallback: {element.xpath}')
+					if isinstance(current_frame, FrameLocator):
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+					else:
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+
+					if element_handle:
+						is_visible = await self._is_visible(element_handle)
+						if is_visible:
+							await element_handle.scroll_into_view_if_needed()
+						return element_handle
+				except Exception as xpath_e:
+					self.logger.error(
+						f'❌ Failed to locate element with both CSS ({css_selector}) and XPath ({element.xpath}): {type(xpath_e).__name__}: {xpath_e}'
+					)
+					return None
+			else:
+				self.logger.error(
+					f'❌ Failed to locate element {css_selector or element.xpath} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
+				)
+				return None
 
 	@require_initialization
 	@time_execution_async('--get_locate_element_by_xpath')
@@ -2546,12 +2903,23 @@ class BrowserSession(BaseModel):
 			except Exception:
 				# last resort fallback, assume it's already focused after we clicked on it,
 				# just simulate keypresses on the entire page
-				page = await self.get_current_page()
-				await page.keyboard.type(text)
+				try:
+					page = await self.get_current_page()
+					await page.keyboard.type(text)
+				except Exception as fallback_error:
+					# If we can't even get the current page, re-raise with a clear error
+					raise BrowserError(f'Failed to input text into element: {element_node.xpath}') from fallback_error
 
 		except Exception as e:
+			# Get current page URL safely for error message
+			try:
+				page = await self.get_current_page()
+				page_url = _log_pretty_url(page.url)
+			except Exception:
+				page_url = 'unknown page'
+
 			self.logger.debug(
-				f'❌ Failed to input text into element: {repr(element_node)} on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}'
+				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
 			)
 			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
 
@@ -2573,11 +2941,21 @@ class BrowserSession(BaseModel):
 
 		# Update both tab references - agent wants this tab, and it's now in the foreground
 		self.agent_current_page = page
+
+		# in order for a human watching to be able to follow along with what the agent is doing
+		# update the human's active tab to match the agent's
+		if self.human_current_page != page:
+			# TODO: figure out how to do this without bringing the entire window to the foreground and stealing foreground app focus
+			# might require browser-use extension loaded into the browser so we can use chrome.tabs extension APIs
+			# await page.bring_to_front()
+			pass
+
 		self.human_current_page = page
 
-		# Bring tab to front and wait for it to load
-		await page.bring_to_front()
-		await page.wait_for_load_state()
+		try:
+			await page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(f'⚠️ New page failed to fully load: {type(e).__name__}: {e}')
 
 		# Set the viewport size for the tab
 		if self.browser_profile.viewport:
@@ -2592,6 +2970,11 @@ class BrowserSession(BaseModel):
 		if url and not self._is_url_allowed(url):
 			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
 
+		try:
+			new_page = await self.browser_context.new_page()
+		except Exception as e:
+			self.initialized = False
+
 		if not self.initialized or not self.is_connected():
 			# If we were initialized but lost connection, reset state first to avoid infinite loops
 			if self.initialized and not self.is_connected():
@@ -2601,8 +2984,7 @@ class BrowserSession(BaseModel):
 				self._reset_connection_state()
 			await self.start()
 			assert self.browser_context, 'Browser context is not set'
-
-		new_page = await self.browser_context.new_page()
+			new_page = await self.browser_context.new_page()
 
 		# Update agent tab reference
 		self.agent_current_page = new_page
@@ -2611,7 +2993,13 @@ class BrowserSession(BaseModel):
 		if (not self.human_current_page) or self.human_current_page.is_closed():
 			self.human_current_page = new_page
 
-		await new_page.wait_for_load_state()
+		tab_idx = self.tabs.index(new_page)
+		try:
+			await new_page.wait_for_load_state()
+		except Exception as e:
+			self.logger.warning(
+				f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}'
+			)
 
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
@@ -2632,12 +3020,21 @@ class BrowserSession(BaseModel):
 		# 	assert self.agent_current_page.url == 'about:blank'
 
 		# if there are any unused about:blank tabs after we open a new tab, close them to clean up unused tabs
+
+		# hacky way to be sure we only close our own tabs, check the title of the tab for our BrowserSession name
+		title_of_our_setup_tab = f'Setting up #{str(self.id)[-4:]}...'  # set up by self._show_dvd_screensaver_loading_animation()
+
 		for page in self.browser_context.pages:
-			if page.url == 'about:blank' and page != self.agent_current_page:
+			page_title = await page.title()
+			if page.url == 'about:blank' and page != self.agent_current_page and page_title == title_of_our_setup_tab:
 				await page.close()
 				self.human_current_page = (  # in case we just closed the human's tab, fix the refs
 					self.human_current_page if not self.human_current_page.is_closed() else self.agent_current_page
 				)
+				break  # only close a maximum of one unused about:blank tab,
+				# if multiple parallel agents share one BrowserSession
+				# closing every new_page() tab (which start on about:blank) causes lots of problems
+				# (the title check is not enough when they share a single BrowserSession)
 
 		return new_page
 
@@ -2656,19 +3053,16 @@ class BrowserSession(BaseModel):
 		return element_handle
 
 	@require_initialization
-	async def find_file_upload_element_by_index(self, index: int) -> DOMElementNode | None:
+	async def find_file_upload_element_by_index(
+		self, index: int, max_height: int = 3, max_descendant_depth: int = 3
+	) -> DOMElementNode | None:
 		"""
-		Find a file upload element related to the element at the given index:
-		- Check if the element itself is a file input
-		- Check if it's a label pointing to a file input
-		- Recursively search children for file inputs
-		- Check siblings for file inputs
-
-		Args:
-			index: The index of the candidate element (could be a file input, label, or parent element)
-
-		Returns:
-			The DOM element for the file input if found, None otherwise
+		Find the closest file input to the selected element by traversing the DOM bottom-up.
+		At each level (up to max_height ancestors):
+		- Check the current node itself
+		- Check all its children/descendants up to max_descendant_depth
+		- Check all siblings (and their descendants up to max_descendant_depth)
+		Returns the first file input found, or None if not found.
 		"""
 		try:
 			selector_map = await self.get_selector_map()
@@ -2678,70 +3072,47 @@ class BrowserSession(BaseModel):
 			candidate_element = selector_map[index]
 
 			def is_file_input(node: DOMElementNode) -> bool:
-				return isinstance(node, DOMElementNode) and node.tag_name == 'input' and node.attributes.get('type') == 'file'
+				return (
+					isinstance(node, DOMElementNode)
+					and getattr(node, 'tag_name', '').lower() == 'input'
+					and node.attributes.get('type', '').lower() == 'file'
+				)
 
-			def find_element_by_id(node: DOMElementNode, element_id: str) -> DOMElementNode | None:
-				if isinstance(node, DOMElementNode):
-					if node.attributes.get('id') == element_id:
-						return node
-					for child in node.children:
-						result = find_element_by_id(child, element_id)
-						if result:
-							return result
-				return None
-
-			def get_root(node: DOMElementNode) -> DOMElementNode:
-				root = node
-				while root.parent:
-					root = root.parent
-				return root
-
-			# Recursively search for file input in node and its children
-			def find_file_input_recursive(
-				node: DOMElementNode, max_depth: int = 3, current_depth: int = 0
-			) -> DOMElementNode | None:
-				if current_depth > max_depth or not isinstance(node, DOMElementNode):
+			def find_file_input_in_descendants(node: DOMElementNode, depth: int) -> DOMElementNode | None:
+				if depth < 0 or not isinstance(node, DOMElementNode):
 					return None
-
-				# Check current element
 				if is_file_input(node):
 					return node
-
-				# Recursively check children
-				if node.children and current_depth < max_depth:
-					for child in node.children:
-						if isinstance(child, DOMElementNode):
-							result = find_file_input_recursive(child, max_depth, current_depth + 1)
-							if result:
-								return result
+				for child in getattr(node, 'children', []):
+					result = find_file_input_in_descendants(child, depth - 1)
+					if result:
+						return result
 				return None
 
-			# Check if current element is a file input
-			if is_file_input(candidate_element):
-				return candidate_element
-
-			# Check if it's a label pointing to a file input
-			if candidate_element.tag_name == 'label' and candidate_element.attributes.get('for'):
-				input_id = candidate_element.attributes.get('for')
-				root_element = get_root(candidate_element)
-
-				target_input = find_element_by_id(root_element, input_id)
-				if target_input and is_file_input(target_input):
-					return target_input
-
-			# Recursively check children
-			child_result = find_file_input_recursive(candidate_element)
-			if child_result:
-				return child_result
-
-			# Check siblings
-			if candidate_element.parent:
-				for sibling in candidate_element.parent.children:
-					if sibling is not candidate_element and isinstance(sibling, DOMElementNode):
+			current = candidate_element
+			for _ in range(max_height + 1):  # include the candidate itself
+				# 1. Check the current node itself
+				if is_file_input(current):
+					return current
+				# 2. Check all descendants of the current node
+				result = find_file_input_in_descendants(current, max_descendant_depth)
+				if result:
+					return result
+				# 3. Check all siblings and their descendants
+				parent = getattr(current, 'parent', None)
+				if parent:
+					for sibling in getattr(parent, 'children', []):
+						if sibling is current:
+							continue
 						if is_file_input(sibling):
 							return sibling
+						result = find_file_input_in_descendants(sibling, max_descendant_depth)
+						if result:
+							return result
+				current = parent
+				if not current:
+					break
 			return None
-
 		except Exception as e:
 			page = await self.get_current_page()
 			self.logger.debug(
@@ -2798,8 +3169,22 @@ class BrowserSession(BaseModel):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
-		await page.evaluate("""() => {
-			document.title = 'Setting up...';
+		if os.environ.get('IS_IN_EVALS', 'false').lower()[0] in 'ty1':
+			# dont bother wasting CPU showing animations during evals
+			return
+
+		# we could enforce this, but maybe it's useful to be able to show it on other tabs?
+		# assert page.url == 'about:blank', 'DVD screensaver loading animation should only be shown on about:blank tabs'
+
+		# all in one JS function for speed, we want as few roundtrip CDP calls as possible
+		# between opening the tab and showing the animation
+		await page.evaluate(
+			"""(browser_session_label) => {
+			const animated_title = `Setting up #${browser_session_label}...`;
+			if (document.title === animated_title) {
+				return;      // already run on this tab, dont run again
+			}
+			document.title = animated_title;
 
 			// Create the main overlay
 			const loadingOverlay = document.createElement('div');
@@ -2815,7 +3200,7 @@ class BrowserSession(BaseModel):
 
 			// Create the image element
 			const img = document.createElement('img');
-			img.src = 'https://github.com/browser-use.png';
+			img.src = 'https://cf.browser-use.com/logo.svg';
 			img.alt = 'Browser-Use';
 			img.style.width = '200px';
 			img.style.height = 'auto';
@@ -2883,4 +3268,6 @@ class BrowserSession(BaseModel):
 				}
 			`;
 			document.head.appendChild(style);
-		}""")
+		}""",
+			str(self.id)[-4:],
+		)
