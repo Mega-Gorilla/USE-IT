@@ -5,8 +5,7 @@ Test parent event tracking functionality in EventBus.
 import asyncio
 
 import pytest
-
-from browser_use.eventbus import BaseEvent, EventBus
+from bubus import BaseEvent, EventBus
 
 
 class ParentEvent(BaseEvent):

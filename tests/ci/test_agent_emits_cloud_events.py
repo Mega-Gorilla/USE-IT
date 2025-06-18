@@ -29,11 +29,10 @@ from browser_use.agent.cloud_events import (
 # Skip LLM API key verification for tests
 os.environ['SKIP_LLM_API_KEY_VERIFICATION'] = 'true'
 
+from bubus import BaseEvent
+
 from browser_use import Agent
 from browser_use.browser import BrowserSession
-from browser_use.eventbus import (
-	BaseEvent,
-)
 
 
 @pytest.fixture

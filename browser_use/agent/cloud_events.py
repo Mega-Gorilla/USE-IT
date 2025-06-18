@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
 
+from bubus import BaseEvent
 from pydantic import Field, field_validator
 from uuid_extensions import uuid7str
-
-from browser_use.eventbus.models import BaseEvent
 
 MAX_STRING_LENGTH = 10000  # 10K chars for most strings
 MAX_URL_LENGTH = 2000

@@ -26,6 +26,8 @@ from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 
 load_dotenv()
 
+# from lmnr.sdk.decorators import observe
+from bubus import EventBus
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
@@ -60,13 +62,10 @@ from browser_use.agent.views import (
 	ToolCallingMethod,
 )
 from browser_use.browser import BrowserProfile, BrowserSession
-
-# from lmnr.sdk.decorators import observe
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
-from browser_use.eventbus import EventBus
 from browser_use.exceptions import LLMException
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
