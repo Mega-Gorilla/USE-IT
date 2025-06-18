@@ -136,7 +136,7 @@ jobs:
 
           # Build command using array for cleaner construction
           CMD_ARGS=(
-            "python" "eval/service.py"
+            "python" "eval/laminar_eval.py"
             "--model" "$MODEL"
             "--eval-model" "$EVAL_MODEL"
             "--parallel-runs" "$PARALLEL_RUNS"
