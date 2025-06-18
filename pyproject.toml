@@ -24,7 +24,6 @@ dependencies = [
     "langchain-ollama==0.3.3",
     "langchain-openai==0.3.21",
     "langchain>=0.3.25",
-    "lmnr[all]>=0.6.10",
     "markdownify==1.1.0",
     "mem0ai>=0.1.106",
     "patchright>=1.52.5",
@@ -165,5 +164,9 @@ dev-dependencies = [
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
-    "pytest-xdist>=3.7.0"
+    "pytest-xdist>=3.7.0",
+    "browser-use[dev,eval]",
 ]
+
+[tool.uv.sources]
+browser-use = { workspace = true }
