@@ -359,10 +359,8 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 			self._add_message_with_tokens(filepaths_msg, message_type='init')
 
 	def add_new_task(self, new_task: str) -> None:
-		content = f'<new_user_request>Your new ultimate task is: """{new_task}""". Take the previous context into account and finish your new ultimate task. </new_user_request>'
-		msg = HumanMessage(content=content)
-		self._add_message_with_tokens(msg)
 		self.task = new_task
+		self.agent_history_description += f'\nUser updated USER REQUEST to:\n{new_task}\n'
 
 	def _update_agent_history_description(
 		self,
