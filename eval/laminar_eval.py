@@ -1222,7 +1222,7 @@ async def run_task_with_semaphore(
 		logger.info(f'Task {task.task_id}: Semaphore acquired (remaining slots: ~{semaphore_runs._value})')
 		task_result = None
 		browser_session = None
-		link = None
+		laminar_task_link = None
 		datapoint_id = None
 
 		try:
@@ -1254,8 +1254,8 @@ async def run_task_with_semaphore(
 					)
 					# Only create task-specific link if we have the evaluation link
 					if laminar_eval_link:
-						link = f'{laminar_eval_link}?traceId={Laminar.get_trace_id()}&datapointId={datapoint_id}'
-						logger.info(f'Task {task.task_id}: Laminar link: {link}')
+						laminar_task_link = f'{laminar_eval_link}?traceId={Laminar.get_trace_id()}&datapointId={datapoint_id}'
+						logger.info(f'Task {task.task_id}: Laminar link: {laminar_task_link}')
 					else:
 						logger.debug(f'Task {task.task_id}: No Laminar evaluation link available, task link not created')
 				except Exception as e:
@@ -1264,7 +1264,7 @@ async def run_task_with_semaphore(
 				logger.debug(f'Task {task.task_id}: No Laminar run ID available, skipping datapoint creation')
 
 				# Initialize task result and basic setup
-			task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, link)
+			task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link)
 
 			task_folder = Path(f'saved_trajectories/{task.task_id}')
 
@@ -1449,7 +1449,9 @@ async def run_task_with_semaphore(
 			if task_result is None:
 				# Create minimal task result for server reporting
 				try:
-					task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, link)
+					task_result = TaskResult(
+						task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link
+					)
 					task_result.mark_critical_error(f'Initialization failed: {str(init_error)}')
 				except Exception as result_error:
 					logger.critical(f'Task {task.task_id}: Cannot create TaskResult: {str(result_error)}')
