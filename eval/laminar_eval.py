@@ -46,8 +46,8 @@ import re
 import shutil
 
 import anyio
+from lmnr import AsyncLaminarClient, Laminar, observe
 from PIL import Image
-from lmnr import AsyncLaminarClient, Laminar, observe	
 
 MAX_IMAGE = 5
 
@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 Laminar.initialize()
 laminar_client = AsyncLaminarClient()
+
 
 def encode_image(image):
 	"""Convert a PIL image to base64 string."""
@@ -1097,7 +1098,8 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	logger.debug(f'Browser setup: Setup completed for task {task.task_id}')
 	return browser_session
 
-@observe(name="executor", span_type="EXECUTOR")
+
+@observe(name='executor', span_type='EXECUTOR')
 async def run_agent_with_browser(
 	browser_session: BrowserSession,
 	task: Task,
@@ -1140,7 +1142,7 @@ async def run_agent_with_browser(
 	return agent.state.history
 
 
-@observe(name="evaluate_task_result", span_type="EVALUATOR")
+@observe(name='evaluate_task_result', span_type='EVALUATOR')
 async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path) -> dict:
 	"""Evaluate the task result"""
 	return await judge_task_result(eval_model, task_folder, score_threshold=3)
@@ -1181,7 +1183,7 @@ def determine_current_stage(completed_stages: set) -> Stage:
 		return Stage.LOAD_EXISTING  # Default starting stage
 
 
-@observe(name="evaluation", span_type="EVALUATION")
+@observe(name='evaluation', span_type='EVALUATION')
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,
@@ -1206,7 +1208,6 @@ async def run_task_with_semaphore(
 	"""Clean pipeline approach for running tasks"""
 	logger.info(f'Task {task.task_id}: Waiting to acquire semaphore (current value: ~{semaphore_runs._value})')
 	async with semaphore_runs:
-
 		logger.info(f'Task {task.task_id}: Semaphore acquired (remaining slots: ~{semaphore_runs._value})')
 		task_result = None
 		browser_session = None
@@ -1214,24 +1215,24 @@ async def run_task_with_semaphore(
 		datapoint_id = await laminar_client.evals.create_datapoint(
 			eval_id=run_id,
 			data={
-				"task_id": task.task_id,
-				"confirmed_task": task.confirmed_task,
-				"website": task.website,
-				"reference_length": task.reference_length,
-				"level": task.level,
-				"cluster_id": task.cluster_id,
-				"category": task.category,
+				'task_id': task.task_id,
+				'confirmed_task': task.confirmed_task,
+				'website': task.website,
+				'reference_length': task.reference_length,
+				'level': task.level,
+				'cluster_id': task.cluster_id,
+				'category': task.category,
 			},
 			metadata={
-				"use_vision": str(use_vision),
-				"use_serp": str(use_serp),
-				"enable_memory": str(enable_memory),
-				"memory_interval": str(memory_interval),
-				"max_actions_per_step": str(max_actions_per_step),
-				"validate_output": str(validate_output),
-				"planner_model": str(planner_llm),
-				"planner_interval": str(planner_interval),
-				"include_result": str(include_result),
+				'use_vision': str(use_vision),
+				'use_serp': str(use_serp),
+				'enable_memory': str(enable_memory),
+				'memory_interval': str(memory_interval),
+				'max_actions_per_step': str(max_actions_per_step),
+				'validate_output': str(validate_output),
+				'planner_model': str(planner_llm),
+				'planner_interval': str(planner_interval),
+				'include_result': str(include_result),
 			},
 			trace_id=Laminar.get_trace_id(),
 		)
@@ -1338,8 +1339,8 @@ async def run_task_with_semaphore(
 							eval_id=run_id,
 							datapoint_id=datapoint_id,
 							scores={
-								"accuracy": evaluation["score"],
-							}
+								'accuracy': evaluation['score'],
+							},
 						)
 					except Exception as e:
 						error = StageError(Stage.EVALUATE, 'exception', str(e))
