@@ -26,6 +26,9 @@ class FileSystem:
 		self.results_file.touch(exist_ok=True)
 		self.todo_file.touch(exist_ok=True)
 
+	def get_dir(self) -> Path:
+		return self.dir
+
 	def _is_valid_filename(self, file_name: str) -> bool:
 		"""Check if filename matches the required pattern: name.extension"""
 		pattern = r'^[a-zA-Z0-9_\-]+\.(txt|md)$'

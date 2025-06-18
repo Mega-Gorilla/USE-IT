@@ -89,6 +89,7 @@ class Controller(Generic[Context]):
 				if len_text > len_max_memory:
 					memory += f' - {len_text - len_max_memory} more characters'
 
+				attachments = []
 				if params.files_to_display:
 					file_msg = ''
 					for file_name in params.files_to_display:
@@ -97,13 +98,18 @@ class Controller(Generic[Context]):
 						file_content = file_system.display_file(file_name)
 						if file_content:
 							file_msg += f'\n\n{file_name}:\n{file_content}'
+							attachments.append(file_name)
 					if file_msg:
 						user_message += '\n\nAttachments:'
 						user_message += file_msg
 					else:
 						logger.warning('Agent wanted to display files but none were found')
 
-				return ActionResult(is_done=True, success=params.success, extracted_content=user_message, memory=memory)
+				attachments = [str(file_system.get_dir() / file_name) for file_name in attachments]
+
+				return ActionResult(
+					is_done=True, success=params.success, extracted_content=user_message, memory=memory, attachments=attachments
+				)
 
 		# Basic Navigation Actions
 		@self.registry.action(
@@ -191,11 +197,8 @@ class Controller(Generic[Context]):
 				if params.index not in selector_map:
 					# Return informative message with the new state instead of error
 					max_index = max(selector_map.keys()) if selector_map else -1
-					return ActionResult(
-						extracted_content=f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.',
-						include_in_memory=True,
-						success=False,
-					)
+					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.'
+					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, memory=msg)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)

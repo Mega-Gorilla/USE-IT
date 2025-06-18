@@ -1001,6 +1001,10 @@ class Agent(Generic[Context]):
 
 			if len(result) > 0 and result[-1].is_done:
 				self.logger.info(f'📄 Result: {result[-1].extracted_content}')
+				if result[-1].attachments:
+					self.logger.info('📎 Click links below to access the attachments:')
+					for file_path in result[-1].attachments:
+						self.logger.info(f'👉 {file_path}')
 
 			self.state.consecutive_failures = 0
 

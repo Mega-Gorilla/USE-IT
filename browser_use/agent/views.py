@@ -111,6 +111,7 @@ class ActionResult(BaseModel):
 	include_in_memory: bool = False  # whether to include in past messages as context or not
 	memory: str | None = None  # Memory of this action
 	update_read_state: bool = False  # Whether the extracted content should be used to update the read_state
+	attachments: list[str] | None = None  # Files to display in the done message
 
 
 class StepMetadata(BaseModel):
