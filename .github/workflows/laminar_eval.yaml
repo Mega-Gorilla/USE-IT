@@ -1,4 +1,4 @@
-name: Run Evaluation Script
+name: Run Laminar Eval Script
 
 on:
   repository_dispatch:
@@ -47,7 +47,7 @@ jobs:
           activate-environment: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra eval
 
       - name: Detect installed Playwright version
         id: playwright_version
