@@ -310,21 +310,20 @@ class Controller(Generic[Context]):
 		# Content Actions
 		@self.registry.action(
 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-Only use this for extracting info from a single product/article page, not listing or search results pages.
-Use include_links=True if extraction requires links.
+Only use this for extracting info from a single product/article page, not for entire listings or search results pages.
 """,
 		)
 		async def extract_structured_data(
 			query: str,
 			page: Page,
 			page_extraction_llm: BaseChatModel,
-			include_links: bool = False,
 		):
 			from functools import partial
 
 			import markdownify
 
 			strip = []
+			include_links: bool = True  # default to True to simplify the tool call
 			if not include_links:
 				strip = ['a', 'img']
 
