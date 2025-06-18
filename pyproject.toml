@@ -164,9 +164,5 @@ dev-dependencies = [
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
-    "pytest-xdist>=3.7.0",
-    "browser-use[dev,eval]",
+    "pytest-xdist>=3.7.0"
 ]
-
-[tool.uv.sources]
-browser-use = { workspace = true }
