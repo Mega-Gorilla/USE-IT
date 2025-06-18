@@ -326,7 +326,7 @@ Only use this for extracting info from a single product/article page, not for en
 			import markdownify
 
 			strip = []
-			include_links: bool = True  # default to True to simplify the tool call
+			include_links: bool = False  # default to False to simplify the tool call
 			if not include_links:
 				strip = ['a', 'img']
 
