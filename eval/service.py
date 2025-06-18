@@ -158,6 +158,7 @@ Your response must strictly follow the following evaluation criteria!
 7. If the retrieved information is invalid or empty(e.g., No match was found), but the agent has correctly performed the required action, it should still be considered successful.
 8. If the current page already displays all available items, then applying a filter is not necessary. As long as the agent selects items that meet the requirements (e.g., the cheapest or lowest price), the task is still considered successful.
 9. Ultimately, you should check whether the user would be happy with the results. If the results are not satisfactory, the task is not considered successful.
+10. If the user's task is vague (search for x, browse y, etc.), you should check whether the agent made reasonable assumptions, explored relevant options thoroughly, and presented plausible results a typical user would find helpful.
 
 *IMPORTANT*
 Format your response into two lines as shown below:
