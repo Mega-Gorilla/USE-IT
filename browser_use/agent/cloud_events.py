@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import Field, field_validator
 from uuid_extensions import uuid7str
@@ -42,7 +42,7 @@ class UpdateAgentTaskEvent(BaseEvent):
 			stopped=agent.state.stopped if hasattr(agent.state, 'stopped') else False,
 			paused=agent.state.paused if hasattr(agent.state, 'paused') else False,
 			done_output=done_output,
-			finished_at=datetime.utcnow() if agent.state.history and agent.state.history.is_done() else None,
+			finished_at=datetime.now(timezone.utc) if agent.state.history and agent.state.history.is_done() else None,
 			agent_state=agent.state.model_dump() if hasattr(agent.state, 'model_dump') else {},
 			# user_feedback_type and user_comment would be set by the API/frontend
 			# gif_url would be set after GIF generation if needed
@@ -59,7 +59,7 @@ class CreateAgentOutputFileEvent(BaseEvent):
 	file_name: str = Field(max_length=255)
 	file_content: str | None = None  # Base64 encoded file content
 	content_type: str | None = Field(None, max_length=100)  # MIME type for file uploads
-	created_at: datetime = Field(default_factory=datetime.utcnow)
+	created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 	@field_validator('file_content')
 	@classmethod
@@ -113,7 +113,7 @@ class CreateAgentStepEvent(BaseEvent):
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)  # Added for authorization checks
-	created_at: datetime = Field(default_factory=datetime.utcnow)
+	created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 	agent_task_id: str
 	step: int
 	evaluation_previous_goal: str = Field(max_length=MAX_STRING_LENGTH)
@@ -179,7 +179,7 @@ class CreateAgentTaskEvent(BaseEvent):
 	task: str = Field(max_length=MAX_TASK_LENGTH)
 	done_output: str | None = Field(None, max_length=MAX_STRING_LENGTH)
 	scheduled_task_id: str | None = None
-	started_at: datetime = Field(default_factory=datetime.utcnow)
+	started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 	finished_at: datetime | None = None
 	agent_state: dict = Field(default_factory=dict)
 	user_feedback_type: str | None = Field(None, max_length=10)  # UserFeedbackType enum value as string
@@ -199,7 +199,7 @@ class CreateAgentTaskEvent(BaseEvent):
 			stopped=False,
 			paused=False,
 			done_output=None,
-			started_at=datetime.fromtimestamp(agent._task_start_time),
+			started_at=datetime.fromtimestamp(agent._task_start_time, tz=timezone.utc),
 			finished_at=None,
 		)
 

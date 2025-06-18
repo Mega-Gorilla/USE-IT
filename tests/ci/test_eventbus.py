@@ -16,7 +16,7 @@ Tests cover:
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -421,7 +421,7 @@ class TestEdgeCases:
 		complex_data = {
 			'nested': {
 				'list': [1, 2, {'inner': 'value'}],
-				'datetime': datetime.utcnow(),
+				'datetime': datetime.now(timezone.utc),
 				'none': None,
 			}
 		}

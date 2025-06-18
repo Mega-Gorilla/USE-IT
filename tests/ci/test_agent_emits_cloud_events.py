@@ -8,7 +8,7 @@ emitted in the correct order during agent execution.
 import base64
 import json
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -470,8 +470,8 @@ class TestCloudEventValidation:
 			task='Test task',
 			llm_model='gpt-4o',
 			done_output='Task completed successfully',
-			started_at=datetime.utcnow(),
-			finished_at=datetime.utcnow(),
+			started_at=datetime.now(timezone.utc),
+			finished_at=datetime.now(timezone.utc),
 			agent_state={'n_steps': 1},
 		)
 
@@ -523,7 +523,7 @@ class TestCloudEventValidation:
 			# Only update some fields
 			stopped=True,
 			done_output='Task completed with results',
-			finished_at=datetime.utcnow(),
+			finished_at=datetime.now(timezone.utc),
 			agent_state={'final_state': True, 'n_steps': 10},
 		)
 
@@ -588,7 +588,7 @@ class TestCloudEventValidation:
 				user_id='test',
 				stopped=True,
 				done_output='Task completed',
-				finished_at=datetime.now(UTC),
+				finished_at=datetime.now(timezone.utc),
 			),
 		]
 
