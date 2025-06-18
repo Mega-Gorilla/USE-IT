@@ -1,54 +1,104 @@
 import asyncio
 import logging
-import warnings
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, Field, PrivateAttr
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
 from browser_use.utils import get_browser_use_version
 
-logger = logging.getLogger(__name__)
-
 if TYPE_CHECKING:
 	from browser_use.eventbus.service import EventBus
 
-# Constants for validation
-MAX_STRING_LENGTH = 10000  # 10K chars for most strings
-MAX_URL_LENGTH = 2000
-MAX_TASK_LENGTH = 5000
-MAX_COMMENT_LENGTH = 2000
-MAX_FILE_CONTENT_SIZE = 50 * 1024 * 1024  # 50MB
+
+logger = logging.getLogger(__name__)
+
+
+def is_valid_event_name(s: str) -> bool:
+	assert str(s).isidentifier() and not str(s).startswith('_'), f'Invalid event name: {s}'
+	return str(s)
+
+
+def is_valid_python_id(s: str) -> bool:
+	assert str(s).isdigit(), f'Invalid Python ID: {s}'
+	return str(s)
+
 
 UUIDStr = Annotated[str, AfterValidator(lambda s: str(UUID(s)))]
+PythonIdStr = Annotated[str, AfterValidator(is_valid_python_id)]
+PythonIdentifierStr = Annotated[str, AfterValidator(is_valid_event_name)]
+EventHandler = Callable[['BaseEvent'], Any] | Callable[['BaseEvent'], Awaitable[Any]]
+
 
 class BaseEvent(BaseModel):
 	"""
 	The base model used for all Events that flow through the EventBus system.
 	"""
-	
-	model_config = {'arbitrary_types_allowed': True}
 
+	model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True, validate_default=True)
+
+	event_type: PythonIdentifierStr
 	event_schema: str | None = Field(default=None, description='Event schema version in format ClassName@version', max_length=100)
-	event_type: str
-	event_id: str = Field(default_factory=uuid7str)
-	event_path: list[str] = Field(default_factory=list, description='Path tracking for event routing')
-	event_parent_id: str | None = Field(default=None, description='ID of the parent event that triggered this event')
+	event_timeout: float | None = Field(default=60.0, description='Timeout in seconds for event to complete')
+
+	# Runtime metadata
+	event_id: UUIDStr = Field(default_factory=uuid7str, max_length=36)
+	event_path: list[PythonIdentifierStr] = Field(default_factory=list, description='Path tracking for event routing')
+	event_parent_id: UUIDStr | None = Field(
+		default=None, description='ID of the parent event that triggered this event', max_length=36
+	)
 
 	# Completion tracking fields
 	event_created_at: datetime = Field(
-		default_factory=lambda: datetime.now(UTC), description='Timestamp when event was queued/created'
+		default_factory=lambda: datetime.now(UTC),
+		description='Timestamp when event was first dispatched to an EventBus aka marked pending',
 	)
-	event_started_at: datetime | None = Field(default=None, description='Timestamp when event was started')
-	event_completed_at: datetime | None = Field(default=None, description='Timestamp when event was completed')
-	
-	# Results indexed by handler ID
-	event_results: dict[str, 'EventResult'] = Field(default_factory=dict, exclude=True)
-	
+
+	event_results: dict[PythonIdStr, 'EventResult'] = Field(
+		default_factory=dict, exclude=True
+	)  # Results indexed by str(id(handler_func))
+
 	# Completion signal
 	_event_completed: asyncio.Event | None = PrivateAttr(default=None)
+	_event_processed_at: datetime | None = PrivateAttr(default=None)
+
+	def __str__(self) -> str:
+		icon = (
+			'⏳'
+			if self.event_status == 'pending'
+			else '✅'
+			if self.event_status == 'completed'
+			else '❌'
+			if self.event_status == 'error'
+			else '🏃'
+		)
+		return f'{self.__class__.__name__}#{self.event_id[-4:]}{icon}{">".join(self.event_path[1:])})'
+
+	def _log_safe_summary(self) -> str:
+		"""only event metadata without contents, avoid potentially sensitive event contents in logs"""
+		return {k: v for k, v in self.model_dump(mode='json').items() if k.startswith('event_') and 'results' not in k}
+
+	def __await__(self) -> Self:
+		"""Wait for event to complete and return self"""
+
+		async def wait_for_handlers_to_complete_then_return_event():
+			assert self.event_completed is not None
+			try:
+				await asyncio.wait_for(self.event_completed.wait(), timeout=self.event_timeout)
+			except TimeoutError as err:
+				raise RuntimeError(
+					f'{self} waiting for results timed out after {self.event_timeout}s (being processed by {len(self.event_results)} handlers)'
+				) from err
+			return self
+
+		return wait_for_handlers_to_complete_then_return_event().__await__()
+
+	def __hash__(self) -> int:
+		"""Make events hashable using their unique event_id"""
+		return hash(self.event_id)
 
 	@property
 	def event_completed(self) -> asyncio.Event | None:
@@ -62,115 +112,166 @@ class BaseEvent(BaseModel):
 		return self._event_completed
 
 	@property
-	def state(self) -> str:
-		return 'completed' if self.event_completed_at else 'started' if self.event_started_at else 'queued'
+	def event_started_at(self) -> datetime | None:
+		"""Timestamp when event first started being processed by any handler"""
+		started_times = [result.started_at for result in self.event_results.values() if result.started_at is not None]
+		# If no handlers but event was processed, use the processed timestamp
+		if not started_times and self._event_processed_at:
+			return self._event_processed_at
+		return min(started_times) if started_times else None
+
+	@property
+	def event_completed_at(self) -> datetime | None:
+		"""Timestamp when event was completed by all handlers"""
+		# If no handlers at all but event was processed, use the processed timestamp
+		if not self.event_results and self._event_processed_at:
+			return self._event_processed_at
+
+		# All handlers must be done (completed or error)
+		all_done = all(result.status in ('completed', 'error') for result in self.event_results.values())
+		if not all_done:
+			return None
+
+		# Return the latest completion time
+		completed_times = [result.completed_at for result in self.event_results.values() if result.completed_at is not None]
+		return max(completed_times) if completed_times else self._event_processed_at
+
+	@property
+	def event_status(self) -> str:
+		return 'completed' if self.event_completed_at else 'started' if self.event_started_at else 'pending'
 
 	def model_post_init(self, __context: Any) -> None:
-		"""Initialize completion event and set event schema after model creation"""
+		"""Append the library version number to the event schema so we know what version was used to create any JSON dump"""
 		if self.event_schema is None:
 			version = get_browser_use_version()
 			self.event_schema = f'{self.__class__.__module__}.{self.__class__.__qualname__}@{version}'
 
-	def event_result_update(self, handler: Any=None, eventbus: 'EventBus'=None, **kwargs) -> None:
+	def event_result_update(
+		self, handler: EventHandler | None = None, eventbus: 'EventBus | None' = None, **kwargs
+	) -> 'EventResult':
 		"""Create or update an EventResult for a handler"""
-		handler_id = str(id(handler))
+		handler_id: PythonIdStr = str(id(handler))
 		eventbus = eventbus or (handler and hasattr(handler, '__self__') and handler.__self__) or None
-		eventbus_id = str(id(eventbus))
+		eventbus_id: PythonIdStr = str(id(eventbus))
 
 		# Get or create EventResult
 		if handler_id not in self.event_results:
 			self.event_results[handler_id] = EventResult(
 				handler_id=handler_id,
-				handler_name=handler and handler.__name__ or '??unknown_handler??',
+				handler_name=handler and handler.__name__ or str(handler),
 				eventbus_id=eventbus_id,
-				eventbus_name=eventbus and eventbus.name or '??unknown_eventbus??',
+				eventbus_name=eventbus and eventbus.name or str(eventbus),
 				event_parent_id=self.event_id,
 				status=kwargs.get('status', 'pending'),
+				timeout=self.event_timeout,
 			)
-		
+			logger.debug(f'Created EventResult for handler {handler_id}: {handler.__name__}')
+
 		# Update the EventResult with provided kwargs
 		self.event_results[handler_id].update(**kwargs)
-		self._check_completion()
+		logger.debug(
+			f'Updated EventResult for handler {handler_id}: status={self.event_results[handler_id].status}, total_results={len(self.event_results)}'
+		)
+		# Don't mark complete here - let the EventBus do it after all handlers are done
+		return self.event_results[handler_id]
 
-	def _check_completion(self) -> None:
+	def _mark_complete_if_all_handlers_completed(self) -> None:
 		"""Check if all handlers are done and signal completion"""
 		if self.event_completed and not self.event_completed.is_set():
-			all_done = all(
-				result.status in ('completed', 'error')
-				for result in self.event_results.values()
-			)
-			if all_done:
-				self.event_completed_at = datetime.now(UTC)
+			# If there are no results at all, the event is complete
+			if not self.event_results:
+				self._event_processed_at = datetime.now(UTC)
 				self.event_completed.set()
-	
-	async def event_results_by_handler_id(self) -> dict[str, Any]:
-		"""Get results keyed by handler ID"""
-		# Wait for completion
-		if self.event_completed:
-			await self.event_completed.wait()
-		
-		results = {}
-		for handler_id, event_result in self.event_results.items():
-			if event_result.status == 'completed' and event_result.result is not None:
-				results[handler_id] = event_result.result
-		return results
-	
-	async def event_results_flat_dict(self) -> dict[str, Any]:
+				return
+
+			# Otherwise check if all results are done
+			all_done = all(result.status in ('completed', 'error') for result in self.event_results.values())
+			if all_done:
+				self._event_processed_at = datetime.now(UTC)
+				self.event_completed.set()
+
+	async def event_results_by_handler_id(self, timeout: float | None = None) -> dict[PythonIdStr, Any]:
+		"""Get all results by handler id"""
+		try:
+			await asyncio.wait_for(self.event_completed.wait(), timeout=timeout or self.event_timeout)
+		except TimeoutError:
+			pass
+		return {handler_id: await event_result for handler_id, event_result in self.event_results.items()}
+
+	async def event_results_flat_dict(self, timeout: float | None = None) -> dict[Any, Any]:
 		"""Merge all dict results into single dict"""
 
-		await self.event_completed.wait()
-		
-		merged = {}
+		try:
+			await asyncio.wait_for(self.event_completed.wait(), timeout=timeout or self.event_timeout)
+		except TimeoutError:
+			pass
+
+		merged_results: dict[Any, Any] = {}
 		for event_result in self.event_results.values():
 			if event_result.status == 'completed' and event_result.result is not None:
 				if not event_result.result:  # skip if result is {} or None
 					continue
+				if isinstance(event_result.result, BaseEvent):  # skip if result is another Event
+					continue
 				if not isinstance(event_result.result, dict):
-					raise TypeError(f"Handler '{event_result.handler_name}' returned {type(event_result.result).__name__} instead of dict")
-				merged.update(event_result.result)  # update the merged dict with the contents of the result dict
-		return merged
-	
-	async def event_results_flat_list(self) -> list[Any]:
+					# raise TypeError(f"Handler '{event_result.handler_name}' returned {type(event_result.result).__name__} instead of dict")
+					continue
+				merged_results.update(event_result.result)  # update the merged dict with the contents of the result dict
+		return merged_results
+
+	async def event_results_flat_list(self, timeout: float | None = None) -> list[Any]:
 		"""Merge all list results into single list"""
 
-		await self.event_completed.wait()
-		
-		merged = []
+		try:
+			await asyncio.wait_for(self.event_completed.wait(), timeout=timeout or self.event_timeout)
+		except TimeoutError:
+			pass
+
+		merged_results = []
 		for event_result in self.event_results.values():
 			if event_result.status == 'completed' and event_result.result is not None:
 				if isinstance(event_result.result, list):
-					merged.extend(event_result.result)  # append the contents of the list to the merged list
+					merged_results.extend(event_result.result)  # append the contents of the list to the merged list
+				elif isinstance(event_result.result, BaseEvent):  # skip if result is another Event
+					continue
 				else:
-					merged.append(event_result.result)  # append individual item to the merged list
-		return merged
+					merged_results.append(event_result.result)  # append individual item to the merged list
+		return merged_results
 
-	async def event_result(self, timeout: float = 30.0) -> Any:
-		results = await self.event_results_flat_list()
+	async def event_result(self, timeout: float | None = None) -> Any:
+		results = await self.event_results_flat_list(timeout=timeout)
 		return results[0] if results else None
-	
-	async def result(self, timeout: float = 30.0) -> 'BaseEvent':
-		"""Wait for event to complete and return self"""
-		if self.event_completed:
-			await self.event_completed.wait()
-		return self
+
+
+# PSA: All BaseEvent buil-in attrs and methods must be prefixed with "event_" in order to avoid clashing with data contents (which share a namespace with the metadata)
+# This is the same approach Pydantic uses for their special `model_*` attrs (and BaseEvent is also a pydantic model, so model_ prefixes are reserved too)
+# resist the urge to nest the event data in an inner object unless absolutely necessary, flat simplifies most of the code and makes it easier to read JSON logs with less nesting
+pydantic_builtin_attrs = dir(BaseModel)
+event_builtin_attrs = {key for key in dir(BaseEvent) if key.startswith('event_')}
+attr_name_allowed = lambda key: key in pydantic_builtin_attrs or key in event_builtin_attrs or key.startswith('_')
+illegal_attrs = {key for key in dir(BaseEvent) if not attr_name_allowed(key)}
+assert not illegal_attrs, (
+	f'All BaseEvent attrs and methods must be prefixed with "event_" in order to avoid clashing with BaseEvent subclass fields used to store event contents (which share a namespace with the event_ metadata). not allowed: {illegal_attrs}'
+)
 
 
 class EventResult(BaseModel):
 	"""Individual result from a single handler"""
-	
+
 	id: str = Field(default_factory=uuid7str)
 	handler_id: str
 	handler_name: str
 	eventbus_id: str
 	eventbus_name: str
+	timeout: float = 60.0
 	status: str = 'pending'  # pending, started, completed, error
 	result: Any = None
 	error: str | None = None
 	started_at: datetime | None = None
 	completed_at: datetime | None = None
 	event_parent_id: str | None = None
-	
-	# Completion signal  
+
+	# Completion signal
 	_completed: asyncio.Event | None = PrivateAttr(default=None)
 
 	@property
@@ -183,27 +284,35 @@ class EventResult(BaseModel):
 			except RuntimeError:
 				pass  # Keep it None if no event loop
 		return self._completed
+
 	# _event: BaseEvent | None = PrivateAttr(default=None)       # in a db we'd store a foreign key to the event
-	
+
 	model_config = {'arbitrary_types_allowed': True}
 
 	def __str__(self) -> str:
 		handler_qualname = f'{self.eventbus_name}.{self.handler_name}'
-		return f"{handler_qualname}() -> {self.result or self.error or '...'} ({self.status})"
-	
-	
+		return f'{handler_qualname}() -> {self.result or self.error or "..."} ({self.status})'
+
+	def __repr__(self) -> str:
+		icon = '🏃' if self.status == 'pending' else '✅' if self.status == 'completed' else '❌'
+		return f'{self.handler_name}#{self.handler_id[-4:]}(e) {icon}'
+
 	def __await__(self):
 		"""Wait for this result to complete and return the result or raise error"""
-		async def wait_and_return():
-			await self.completed.wait()
-			
+
+		async def wait_for_handler_to_complete_and_return_result():
+			try:
+				await asyncio.wait_for(self.completed.wait(), timeout=self.timeout)
+			except TimeoutError as err:
+				raise RuntimeError(f'Handler {self.handler_name} timed out after {self.event_timeout}s') from err
+
 			if self.status == 'error' and self.error:
-				raise RuntimeError(f"Handler {self.handler_name} failed: {self.error}")
-			
+				raise RuntimeError(f'Handler {self.handler_name} failed: {self.error}')
+
 			return self.result
-		
-		return wait_and_return().__await__()
-	
+
+		return wait_for_handler_to_complete_and_return_result().__await__()
+
 	def update(self, **kwargs) -> None:
 		"""Update the EventResult with provided kwargs"""
 		if 'result' in kwargs:

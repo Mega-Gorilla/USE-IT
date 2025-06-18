@@ -62,7 +62,7 @@ class TestParentEventTracking:
 		await eventbus.wait_until_idle()
 
 		# Verify parent processed
-		await parent_result.result()
+		await parent_result
 		parent_handler_result = next(
 			(r for r in parent_result.event_results.values() if r.handler_name == 'parent_handler'), None
 		)
@@ -176,7 +176,8 @@ class TestParentEventTracking:
 		async def parent_handler(event: ParentEvent) -> str:
 			nonlocal captured_child
 			# Create child with explicit event_parent_id
-			child = ChildEvent(data='explicit', event_parent_id='explicit_parent_id')
+			explicit_parent_id = '01234567-89ab-cdef-0123-456789abcdef'
+			child = ChildEvent(data='explicit', event_parent_id=explicit_parent_id)
 			eventbus.dispatch(child)
 			captured_child = child
 			return 'dispatched'
@@ -190,7 +191,7 @@ class TestParentEventTracking:
 
 		# Explicit event_parent_id should be preserved
 		assert captured_child is not None
-		assert captured_child.event_parent_id == 'explicit_parent_id'
+		assert captured_child.event_parent_id == '01234567-89ab-cdef-0123-456789abcdef'
 		assert captured_child.event_parent_id != parent.event_id
 
 	async def test_cross_eventbus_parent_tracking(self):

@@ -86,7 +86,7 @@ class TestEventBusBasics:
 		assert bus._is_running is False
 		assert bus._runloop_task is None
 		assert len(bus.event_history) == 0
-		assert len(bus.handlers['*']) == 1  # Default logger
+		assert len(bus.handlers['*']) == 0  # No default logger anymore
 
 	async def test_auto_start_and_stop(self, mock_agent):
 		"""Test auto-start functionality and stopping the event bus"""
@@ -119,32 +119,27 @@ class TestEventEnqueueing:
 	async def test_emit_and_result(self, eventbus):
 		"""Test event emission in async and sync contexts, and result() pattern"""
 		# Test async emission
-		event = UserActionEvent(action='login', user_id='user123')
-		result = eventbus.dispatch(event)
+		event = UserActionEvent(action='login', user_id='user123', event_timeout=1)
+		queued = eventbus.dispatch(event)
 
 		# Check immediate result
-		assert isinstance(result, UserActionEvent)
-		assert result.event_type == 'UserActionEvent'
-		assert result.action == 'login'
-		assert result.user_id == 'user123'
-		assert result.event_id is not None
-		assert result.event_created_at is not None
-		assert result.event_started_at is None  # Not started yet
-		assert result.event_completed_at is None  # Not completed yet
+		assert isinstance(queued, UserActionEvent)
+		assert queued.event_type == 'UserActionEvent'
+		assert queued.action == 'login'
+		assert queued.user_id == 'user123'
+		assert queued.event_id is not None
+		assert queued.event_created_at is not None
+		assert queued.event_started_at is None  # Not started yet
+		assert queued.event_completed_at is None  # Not completed yet
+		assert queued.event_status == 'pending'
 
 		# Test result() pattern
-		processed = await result.result()
+		processed = await queued
 		assert processed.event_started_at is not None
 		assert processed.event_completed_at is not None
-		# Check that we have results from the default handler
-		assert len(processed.event_results) == 1
-		# Get the result from the default handler (by checking handler name)
-		default_handler_result = None
-		for event_result in processed.event_results.values():
-			if event_result.handler_name == '_default_log_handler':
-				default_handler_result = event_result.result
-				break
-		assert default_handler_result == 'logged'
+		assert processed.event_status == 'completed'
+		# Check that we have no results (no default handler anymore)
+		assert len(processed.event_results) == 0
 
 		# Check event history
 		assert len(eventbus.event_history) == 1
@@ -222,7 +217,7 @@ class TestHandlerRegistration:
 
 		# Emit event and wait
 		start = time.time()
-		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
+		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
 		duration = time.time() - start
 
 		# Check handlers ran in parallel (should take ~0.1s, not 0.2s)
@@ -307,7 +302,7 @@ class TestErrorHandling:
 		eventbus.on('UserActionEvent', working_handler)
 
 		# Emit and wait for result
-		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
+		event = await eventbus.dispatch(UserActionEvent(action='test', user_id='u1'))
 
 		# Verify error capture and isolation
 		failing_result = next((r for r in event.event_results.values() if r.handler_name == 'failing_handler'), None)
@@ -333,13 +328,12 @@ class TestBatchOperations:
 
 		# Enqueue batch
 		emitted_events = [eventbus.dispatch(event) for event in events]
-		results = await asyncio.gather(*[event.result() for event in emitted_events])
+		results = await asyncio.gather(*emitted_events)
 
 		# Check all processed
 		assert len(results) == 3
 		for result in results:
 			assert result.event_completed_at is not None
-			assert any(r.handler_name == '_default_log_handler' for r in result.event_results.values())
 
 
 class TestWriteAheadLog:
@@ -363,7 +357,7 @@ class TestWriteAheadLog:
 
 		# Check event state properties
 		completed = eventbus.events_completed
-		pending = eventbus.events_queued
+		pending = eventbus.events_pending
 		processing = eventbus.events_started
 		assert len(completed) + len(pending) + len(processing) == len(log)
 		assert len(completed) == 5  # All events should be completed
@@ -390,7 +384,7 @@ class TestEventCompletion:
 		completion_order.append('enqueue_done')
 
 		# Wait for completion
-		await event.result()
+		event = await event
 		completion_order.append('wait_done')
 
 		# Check order
@@ -434,7 +428,7 @@ class TestEdgeCases:
 
 		event = SystemEventModel(event_name='complex', details=complex_data)
 
-		result = await eventbus.dispatch(event).result()
+		result = await eventbus.dispatch(event)
 
 		# Check data preserved
 		assert result.details['nested']['list'][2]['inner'] == 'value'
@@ -447,7 +441,7 @@ class TestEdgeCases:
 			event = UserActionEvent(action=f'concurrent_{i}', user_id='u1')
 			# Emit returns the event syncresultsonously, but we need to wait for completion
 			emitted_event = eventbus.dispatch(event)
-			tasks.append(emitted_event.result())
+			tasks.append(emitted_event)
 
 		# Wait for all events to complete
 		await asyncio.gather(*tasks)
@@ -553,8 +547,8 @@ class TestWALPersistence:
 			for i in range(3):
 				event = UserActionEvent(action=f'action_{i}', user_id=f'user_{i}')
 				emitted_event = bus.dispatch(event)
-				result = await emitted_event.result()
-				events.append(result)
+				completed_event = await emitted_event
+				events.append(completed_event)
 
 			# Wait for processing
 			await bus.wait_until_idle()
@@ -573,9 +567,7 @@ class TestWALPersistence:
 				assert data['user_id'] == f'user_{i}'
 				assert data['event_type'] == 'UserActionEvent'
 				assert isinstance(data['event_created_at'], str)
-				assert isinstance(data['event_completed_at'], str)
 				datetime.fromisoformat(data['event_created_at'])
-				datetime.fromisoformat(data['event_completed_at'])
 
 		finally:
 			await bus.stop()
@@ -589,14 +581,16 @@ class TestWALPersistence:
 		# Create event bus
 		bus = EventBus(name='TestBus', wal_path=wal_path)
 
-		# Parent directory should be created
-		assert wal_path.parent.exists()
 		try:
 			# Emit an event
-			await bus.dispatch(UserActionEvent(action='test', user_id='u1')).result()
+			event = bus.dispatch(UserActionEvent(action='test', user_id='u1'))
+			await event
 
 			# Wait for WAL persistence to complete
 			await bus.wait_until_idle()
+
+			# Parent directory should be created after event is processed
+			assert wal_path.parent.exists()
 
 			# Check file was created
 			assert wal_path.exists()
@@ -623,7 +617,7 @@ class TestWALPersistence:
 			assert not wal_path.exists()
 
 			# Wait for completion
-			await event.result()
+			event = await event
 			await bus.wait_until_idle()
 
 			# Now file should exist with completed event
@@ -632,7 +626,9 @@ class TestWALPersistence:
 			assert len(lines) == 1
 			data = json.loads(lines[0])
 			assert data['event_type'] == 'UserActionEvent'
-			assert 'event_completed_at' in data
+			# The WAL should have been written after the event completed
+			assert data['action'] == 'test'
+			assert data['user_id'] == 'u1'
 
 		finally:
 			await bus.stop()
@@ -1013,7 +1009,7 @@ class TestEventResults:
 
 		# Register a specific handler
 		async def test_handler(event):
-			return 'test_result'
+			return {'result': 'test_result'}
 
 		eventbus.on('UserActionEvent', test_handler)
 
@@ -1021,25 +1017,19 @@ class TestEventResults:
 		assert isinstance(result, BaseEvent)
 
 		# Wait for completion
-		await result.result()
+		await result
 		# Get results by handler ID
-		all_results = await result.event_results_by_handler_id()
+		all_results = await result.event_results_flat_dict()
 		assert isinstance(all_results, dict)
-		# Should contain both test_handler and default log handler results
-		assert len(all_results) == 2
-		assert 'test_result' in all_results.values()
-		assert 'logged' in all_results.values()
+		# Should contain only test_handler result
+		assert len(all_results) == 1
+		assert all_results['result'] == 'test_result'
 
-		# Test with no specific handlers (only wildcard)
+		# Test with no specific handlers
 		result_no_handlers = eventbus.dispatch(BaseEvent(event_type='NoHandlersEvent'))
-		await result_no_handlers.result()
-		# Should only have the default log handler
-		assert len(result_no_handlers.event_results) == 1
-		default_result = next(
-			(r for r in result_no_handlers.event_results.values() if r.handler_name == '_default_log_handler'), None
-		)
-		assert default_result is not None
-		assert default_result.result == 'logged'
+		await result_no_handlers
+		# Should have no handlers
+		assert len(result_no_handlers.event_results) == 0
 
 	async def test_event_results_indexing(self, eventbus):
 		"""Test indexing by handler name and ID"""
@@ -1062,15 +1052,12 @@ class TestEventResults:
 		eventbus.on('TestEvent', handler3)
 
 		# Test indexing
-		hr = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-
-		# Wait for all handlers to complete
-		await hr.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
 		# Get results by handler name
-		handler1_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler1'), None)
-		handler2_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler2'), None)
-		handler3_result = next((r for r in hr.event_results.values() if r.handler_name == 'handler3'), None)
+		handler1_result = next((r for r in event.event_results.values() if r.handler_name == 'handler1'), None)
+		handler2_result = next((r for r in event.event_results.values() if r.handler_name == 'handler2'), None)
+		handler3_result = next((r for r in event.event_results.values() if r.handler_name == 'handler3'), None)
 
 		assert handler1_result is not None and handler1_result.result == 'first'
 		assert handler2_result is not None and handler2_result.result == 'second'
@@ -1089,24 +1076,21 @@ class TestEventResults:
 		eventbus.on('TestEvent', early_handler)
 		eventbus.on('TestEvent', late_handler)
 
-		result = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-		await result.result()
+		result = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
-		# Check both handlers ran (plus default logger)
-		assert len(result.event_results) == 3
+		# Check both handlers ran
+		assert len(result.event_results) == 2
 		early_result = next((r for r in result.event_results.values() if r.handler_name == 'early_handler'), None)
 		late_result = next((r for r in result.event_results.values() if r.handler_name == 'late_handler'), None)
 		assert early_result is not None and early_result.result == 'early'
 		assert late_result is not None and late_result.result == 'late'
 
-		# With empty handlers (only default logger remains)
+		# With empty handlers
 		eventbus.handlers['EmptyEvent'] = []
 		results_empty = eventbus.dispatch(BaseEvent(event_type='EmptyEvent'))
-		await results_empty.result()
-		# Should only have the default wildcard handler
-		assert len(results_empty.event_results) == 1
-		default_result = next((r for r in results_empty.event_results.values() if r.handler_name == '_default_log_handler'), None)
-		assert default_result is not None
+		await results_empty
+		# Should have no handlers
+		assert len(results_empty.event_results) == 0
 
 	async def test_by_handler_name(self, eventbus):
 		"""Test handler results with duplicate names"""
@@ -1128,8 +1112,7 @@ class TestEventResults:
 			eventbus.on('TestEvent', process_data2)
 		eventbus.on('TestEvent', unique_handler)
 
-		event = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
 		# Check results - with duplicate names, both handlers run
 		process_results = [r for r in event.event_results.values() if r.handler_name == 'process_data']
@@ -1156,15 +1139,14 @@ class TestEventResults:
 			eventbus.on('TestEvent', handler1)
 			eventbus.on('TestEvent', handler2)
 
-		event = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
 		# Get results by handler ID using the method that exists
 		results = await event.event_results_by_handler_id()
 
 		# All handlers present with unique IDs even with same name
-		# Should have 3 results: handler1, handler2, and default logger
-		assert len(results) >= 2
+		# Should have 2 results: handler1, handler2
+		assert len(results) == 2
 		assert 'v1' in results.values()
 		assert 'v2' in results.values()
 
@@ -1180,8 +1162,7 @@ class TestEventResults:
 		eventbus.on('GetConfig', config_base)
 		eventbus.on('GetConfig', config_override)
 
-		event = eventbus.dispatch(BaseEvent(event_type='GetConfig'))
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='GetConfig'))
 		merged = await event.event_results_flat_dict()
 
 		# Later handlers override earlier ones
@@ -1197,8 +1178,7 @@ class TestEventResults:
 			return 'not a dict'
 
 		eventbus.on('BadConfig', bad_handler)
-		event_bad = eventbus.dispatch(BaseEvent(event_type='BadConfig'))
-		await event_bad.result()
+		event_bad = await eventbus.dispatch(BaseEvent(event_type='BadConfig'))
 
 		# Non-dict results should be skipped, not raise error
 		merged_bad = await event_bad.event_results_flat_dict()
@@ -1220,24 +1200,22 @@ class TestEventResults:
 		eventbus.on('GetErrors', errors2)
 		eventbus.on('GetErrors', errors3)
 
-		event = eventbus.dispatch(BaseEvent(event_type='GetErrors'))
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='GetErrors'))
 		all_errors = await event.event_results_flat_list()
 
 		# Check that all errors are collected (order may vary due to handler execution)
-		assert set(all_errors) == {'error1', 'error2', 'error3', 'error4', 'error5', 'logged'}
+		assert set(all_errors) == {'error1', 'error2', 'error3', 'error4', 'error5'}
 
 		# Test with non-list handler
 		async def single_value(event):
 			return 'single'
 
 		eventbus.on('GetSingle', single_value)
-		event_single = eventbus.dispatch(BaseEvent(event_type='GetSingle'))
-		await event_single.result()
+		event_single = await eventbus.dispatch(BaseEvent(event_type='GetSingle'))
 
 		result = await event_single.event_results_flat_list()
 		assert 'single' in result  # Single values are appended
-		assert 'logged' in result
+		assert len(result) == 1
 
 	async def test_by_handler_name_access(self, eventbus):
 		"""Test accessing results by handler name"""
@@ -1251,8 +1229,7 @@ class TestEventResults:
 		eventbus.on('TestEvent', handler_a)
 		eventbus.on('TestEvent', handler_b)
 
-		event = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
 		# Access results by handler name
 		handler_a_result = next((r for r in event.event_results.values() if r.handler_name == 'handler_a'), None)
@@ -1268,10 +1245,7 @@ class TestEventResults:
 			return 'my_result'
 
 		eventbus.on('TestEvent', my_handler)
-		event = eventbus.dispatch(BaseEvent(event_type='TestEvent'))
-
-		# Wait for handlers to complete
-		await event.result()
+		event = await eventbus.dispatch(BaseEvent(event_type='TestEvent'))
 
 		# Access result by handler name
 		my_handler_result = next((r for r in event.event_results.values() if r.handler_name == 'my_handler'), None)
@@ -1324,7 +1298,7 @@ class TestEventBusForwarding:
 			await bus3.wait_until_idle()
 
 			# Wait for event completion
-			await event.result()
+			event = await event
 
 			# All handlers from all buses should be visible
 			bus1_result = next((r for r in event.event_results.values() if r.handler_name == 'bus1_handler'), None)
@@ -1370,7 +1344,7 @@ class TestEventBusForwarding:
 			# Wait for processing
 			await bus1.wait_until_idle()
 			await bus2.wait_until_idle()
-			await event.result()
+			event = await event
 
 			# Check results from both buses
 			main_result = next((r for r in event.event_results.values() if r.handler_name == 'main_handler'), None)
@@ -1449,7 +1423,7 @@ class TestComplexIntegration:
 			await app_bus.wait_until_idle()
 			await auth_bus.wait_until_idle()
 			await data_bus.wait_until_idle()
-			await event.result()
+			event = await event
 
 			# Test that all handlers ran
 			# Count handlers by name
@@ -1468,7 +1442,7 @@ class TestComplexIntegration:
 			# Test flat dict merging
 			dict_result = await event.event_results_flat_dict()
 			# Should have merged all dict returns
-			assert 'app_valid' in dict_result or 'auth_valid' in dict_result or 'data_valid' in dict_result
+			assert 'app_valid' in dict_result and 'auth_valid' in dict_result and 'data_valid' in dict_result
 
 			# Test flat list
 			list_result = await event.event_results_flat_list()
