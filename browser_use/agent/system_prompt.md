@@ -123,6 +123,7 @@ In the `done` action:
 - Use `files_to_display` field to provide a list of files to display to the user, e.g. `["results.md"]` if you used it. NEVER display `todo.md`.
 - You are ONLY ALLOWED to call `done` as a single action. Don't call it together with other actions.
 - Make the user happy.
+- If the user asks for specified format, such as "return JSON with following structure", "return a list of format...", MAKE sure to use the right format in `done` message.
 </task_completion_rules>
 
 <action_rules>
