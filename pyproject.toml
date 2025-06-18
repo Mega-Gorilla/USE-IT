@@ -69,7 +69,7 @@ examples = [
     "browserbase>=0.4.0",
 ]
 eval = [
-    "lmnr[all]>=0.6.10",
+    "lmnr[all]>=0.6.11",
 ]
 all = [
     "browser-use[memory,cli,examples]",
@@ -165,5 +165,5 @@ dev-dependencies = [
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
-    "pytest-xdist>=3.7.0",
+    "pytest-xdist>=3.7.0"
 ]
