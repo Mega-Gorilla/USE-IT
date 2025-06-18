@@ -879,9 +879,6 @@ class Agent(Generic[Context]):
 			# Get page-specific filtered actions
 			page_filtered_actions = self.controller.registry.get_prompt_description(current_page)
 
-			if self.sensitive_data:
-				self._message_manager.add_sensitive_data(current_page.url)
-
 			# If there are page-specific actions, add them as a special message for this step only
 			if page_filtered_actions:
 				page_action_message = f'For this page, these additional actions are available:\n{page_filtered_actions}'
@@ -911,6 +908,7 @@ class Agent(Generic[Context]):
 				step_info=step_info,
 				use_vision=self.settings.use_vision,
 				page_filtered_actions=page_filtered_actions if page_filtered_actions else None,
+				sensitive_data=self.sensitive_data,
 			)
 
 			# Run planner at specified intervals if planner is configured

@@ -209,8 +209,9 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = ''
+		self.agent_history_description = f'Agent initialized with USER REQUEST: {task}\n'
 		self.read_state_description = ''
+		self.sensitive_data_description = ''
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
 			self._init_messages()
@@ -360,7 +361,7 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
-		self.agent_history_description += f'\nUser updated USER REQUEST to:\n{new_task}\n'
+		self.agent_history_description += f'\nUser updated USER REQUEST to: {new_task}\n'
 
 	def _update_agent_history_description(
 		self,
@@ -405,10 +406,10 @@ Next goal: {model_output.current_state.next_goal}
 		else:
 			self.read_state_description += '\nMAKE SURE TO SAVE THIS INFORMATION INTO A FILE OR TO MEMORY IF YOU NEED IT LATER.'
 
-	def add_sensitive_data(self, current_page_url) -> None:
+	def _get_sensitive_data_description(self, current_page_url) -> str:
 		sensitive_data = self.settings.sensitive_data
 		if not sensitive_data:
-			return
+			return ''
 
 		# Collect placeholders for sensitive data
 		placeholders = set()
@@ -424,8 +425,9 @@ Next goal: {model_output.current_state.next_goal}
 		if placeholders:
 			info = f'Here are placeholders for sensitive data: {list(placeholders)}'
 			info += '\nTo use them, write <secret>the placeholder name</secret>'
-			info_message = HumanMessage(content=info)
-			self._add_message_with_tokens(info_message, message_type='init')
+			return info
+
+		return ''
 
 	@time_execution_sync('--add_state_message')
 	def add_state_message(
@@ -436,10 +438,13 @@ Next goal: {model_output.current_state.next_goal}
 		step_info: AgentStepInfo | None = None,
 		use_vision=True,
 		page_filtered_actions: str | None = None,
+		sensitive_data=None,
 	) -> None:
 		"""Add browser state as human message"""
 
 		self._update_agent_history_description(model_output, result, step_info)
+		if sensitive_data:
+			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 		# otherwise add state message and result to next message (which will not stay in memory)
 		assert browser_state_summary
 		state_message = AgentMessagePrompt(
@@ -451,6 +456,7 @@ Next goal: {model_output.current_state.next_goal}
 			include_attributes=self.settings.include_attributes,
 			step_info=step_info,
 			page_filtered_actions=page_filtered_actions,
+			sensitive_data=self.sensitive_data_description,
 		).get_user_message(use_vision)
 		self._add_message_with_tokens(state_message)
 

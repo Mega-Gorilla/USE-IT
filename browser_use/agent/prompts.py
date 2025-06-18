@@ -72,6 +72,7 @@ class AgentMessagePrompt:
 		step_info: Optional['AgentStepInfo'] = None,
 		page_filtered_actions: str | None = None,
 		max_clickable_elements_length: int = 40000,
+		sensitive_data: str | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem' | None = file_system
@@ -82,6 +83,7 @@ class AgentMessagePrompt:
 		self.step_info = step_info
 		self.page_filtered_actions: str | None = page_filtered_actions
 		self.max_clickable_elements_length: int = max_clickable_elements_length
+		self.sensitive_data: str | None = sensitive_data
 		assert self.browser_state
 
 	def _get_browser_state_description(self) -> str:
@@ -142,10 +144,11 @@ Interactive elements from top layer of the current page inside the viewport{trun
 <todo_contents>
 {todo_contents}
 </todo_contents>
-<step_info>
-{step_info_description}
-</step_info>
 """
+		if self.sensitive_data:
+			agent_state += f'<sensitive_data>\n{self.sensitive_data}\n</sensitive_data>\n'
+
+		agent_state += f'<step_info>\n{step_info_description}\n</step_info>\n'
 		return agent_state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
