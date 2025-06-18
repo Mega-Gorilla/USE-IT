@@ -268,6 +268,82 @@ async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model
 			await asyncio.sleep(2**attempt)  # Exponential backoff
 
 
+async def login_cookie_eval(login_cookie: str, browser_session: 'BrowserSession') -> dict:
+	"""
+	Evaluate login tasks by checking if the login cookie is present in browser storage.
+	
+	Args:
+	    login_cookie: The string identifier that should be present in cookies if login succeeded
+	    browser_session: The browser session to extract cookies from
+	    
+	Returns:
+	    Dictionary containing evaluation results in the same format as Online_Mind2Web_eval
+	"""
+	try:
+		# Get the browser storage state which includes cookies
+		logger.info('[TEMPORARY DEBUG] Getting browser storage state for login cookie evaluation')
+		storage_state = await browser_session.browser_context.storage_state()
+		
+		# Extract cookies from storage state
+		cookies = storage_state.get('cookies', [])
+		
+		# [TEMPORARY DEBUG] Log the login cookie we're looking for
+		logger.info(f'[TEMPORARY DEBUG] Looking for login_cookie: "{login_cookie}"')
+		
+		# [TEMPORARY DEBUG] Log all cookies (be careful with sensitive data in production)
+		logger.info(f'[TEMPORARY DEBUG] Found {len(cookies)} cookies in browser storage')
+		for i, cookie in enumerate(cookies):
+			# Log cookie info but mask values for security
+			cookie_info = {
+				'name': cookie.get('name', 'unknown'),
+				'domain': cookie.get('domain', 'unknown'),
+				'path': cookie.get('path', 'unknown'),
+				'value_length': len(cookie.get('value', '')) if cookie.get('value') else 0,
+				'value_contains_login_cookie': login_cookie in cookie.get('value', '') if cookie.get('value') else False
+			}
+			logger.info(f'[TEMPORARY DEBUG] Cookie {i}: {cookie_info}')
+		
+		# Check if login_cookie string is present in any cookie value
+		login_success = False
+		for cookie in cookies:
+			cookie_value = cookie.get('value', '')
+			if login_cookie in cookie_value:
+				login_success = True
+				logger.info(f'[TEMPORARY DEBUG] Login cookie found in cookie: {cookie.get("name", "unknown")}')
+				break
+		
+		# Create judgement message
+		if login_success:
+			judgement = f"Automatic judgement: Login cookie '{login_cookie}' was found in browser storage. Login task completed successfully."
+			score = 1.0
+			success = True
+		else:
+			judgement = f"Automatic judgement: Login cookie '{login_cookie}' was NOT found in browser storage. Login task failed."
+			score = 0.0
+			success = False
+			
+		logger.info(f'[TEMPORARY DEBUG] Login evaluation result: success={success}, score={score}')
+		
+		return {
+			'task_id': 'login_task',  # This will be overridden by caller
+			'judgement': judgement,
+			'success': success,
+			'error': None,
+			'score': score
+		}
+		
+	except Exception as e:
+		error_msg = f'Login cookie evaluation failed: {type(e).__name__}: {str(e)}'
+		logger.error(f'[TEMPORARY DEBUG] {error_msg}')
+		return {
+			'task_id': 'login_task',
+			'judgement': f'Automatic judgement: Error during login cookie evaluation - {error_msg}',
+			'success': False,
+			'error': error_msg,
+			'score': 0.0
+		}
+
+
 # ==============================================================================================================
 
 
@@ -701,12 +777,16 @@ class Task:
 		return self.__str__()
 
 
-async def judge_task_result(model, task_folder: Path, score_threshold: float = 3) -> dict:
+async def judge_task_result(model, task_folder: Path, score_threshold: float = 3, task: 'Task' = None, browser_session: 'BrowserSession' = None) -> dict:
 	"""
 	Judge a single task result based on the success value of the final action.
 
 	Args:
+	    model: The evaluation model
 	    task_folder: Path to the task result folder
+	    score_threshold: Score threshold for image filtering
+	    task: Task object (optional, needed for login cookie evaluation)
+	    browser_session: Browser session (optional, needed for login cookie evaluation)
 
 	Returns:
 	    Dictionary containing judgment results
@@ -722,6 +802,34 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 		# If a Online_Mind2Web_evaluation is already saved, we can skip the eval
 		if result.get('Online_Mind2Web_evaluation'):
 			return result.get('Online_Mind2Web_evaluation')
+
+		# Check if this is a login task and use login cookie evaluation
+		if task and hasattr(task, 'login_cookie') and task.login_cookie and browser_session:
+			logger.info(f'[TEMPORARY DEBUG] Task {task.task_id} is a login task with login_cookie: "{task.login_cookie}"')
+			try:
+				evaluation = await login_cookie_eval(task.login_cookie, browser_session)
+				evaluation['task_id'] = task_folder.name  # Override with correct task_id
+				
+				# Save the evaluation into the result.json file
+				result['Online_Mind2Web_evaluation'] = evaluation
+				async with await anyio.open_file(result_file, 'w') as f:
+					await f.write(json.dumps(result, indent=2))
+				
+				logger.info(f'[TEMPORARY DEBUG] Login cookie evaluation completed for task {task.task_id}: success={evaluation["success"]}')
+				return evaluation
+				
+			except Exception as err:
+				logger.error(f'[TEMPORARY DEBUG] Login cookie evaluation failed for task {task.task_id}: {type(err).__name__}: {err}')
+				return {
+					'task_id': task_folder.name,
+					'judgement': f'Login cookie evaluation error: {type(err).__name__}: {err}',
+					'success': False,
+					'error': f'Login cookie evaluation failed: {type(err).__name__}: {err}',
+					'score': 0.0,
+				}
+		
+		# Regular Online_Mind2Web evaluation for non-login tasks
+		logger.info(f'[TEMPORARY DEBUG] Task {task_folder.name} is using standard Online_Mind2Web evaluation')
 
 		# Get the screenshot paths, task description, and action history
 		screenshot_paths = result.get('screenshot_paths', [])
@@ -1152,9 +1260,9 @@ async def run_agent_with_browser(
 
 
 @observe(name='evaluate_task_result', span_type='EVALUATOR')
-async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path) -> dict:
+async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path, task: 'Task' = None, browser_session: 'BrowserSession' = None) -> dict:
 	"""Evaluate the task result"""
-	return await judge_task_result(eval_model, task_folder, score_threshold=3)
+	return await judge_task_result(eval_model, task_folder, score_threshold=3, task=task, browser_session=browser_session)
 
 
 def save_result_to_server(convex_url: str, secret_key: str, payload: dict) -> bool:
@@ -1356,7 +1464,7 @@ async def run_task_with_semaphore(
 					try:
 						logger.info(f'Task {task.task_id}: Evaluation starting.')
 						evaluation = await run_stage(
-							Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
+							Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder, task=task, browser_session=browser_session), timeout=300
 						)
 						task_result.stage_completed(Stage.EVALUATE, evaluation)
 						logger.info(f'Task {task.task_id}: Evaluation completed.')
