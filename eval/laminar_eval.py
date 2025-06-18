@@ -1187,6 +1187,7 @@ def determine_current_stage(completed_stages: set) -> Stage:
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,
+	lmnr_run_id: str,
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
@@ -1213,7 +1214,7 @@ async def run_task_with_semaphore(
 		browser_session = None
 
 		datapoint_id = await laminar_client.evals.create_datapoint(
-			eval_id=run_id,
+			eval_id=lmnr_run_id,
 			data={
 				'task_id': task.task_id,
 				'confirmed_task': task.confirmed_task,
@@ -1236,6 +1237,8 @@ async def run_task_with_semaphore(
 			},
 			trace_id=Laminar.get_trace_id(),
 		)
+		link = f'https://www.lmnr.ai/project/{lmnr_run_id}/evaluations/{lmnr_run_id}?traceId={Laminar.get_trace_id()}&datapointId={datapoint_id}'
+		logger.info(f'Task {task.task_id}: Laminar link: {link}')
 
 		try:
 			# Initialize task result and basic setup
@@ -1336,7 +1339,7 @@ async def run_task_with_semaphore(
 						logger.info(f'Task {task.task_id}: Evaluation completed.')
 
 						await laminar_client.evals.update_datapoint(
-							eval_id=run_id,
+							eval_id=lmnr_run_id,
 							datapoint_id=datapoint_id,
 							scores={
 								'accuracy': evaluation['score'],
@@ -1348,20 +1351,20 @@ async def run_task_with_semaphore(
 						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
 
 				# Stage 6: Save to server (always attempt)
-				# try:
-				# 	logger.info(f'Task {task.task_id}: Saving result to server.')
-				# 	await run_stage(
-				# 		Stage.SAVE_SERVER,
-				# 		lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
-				# 		timeout=60,
-				# 	)
-				# 	task_result.stage_completed(Stage.SAVE_SERVER)
-				# 	logger.info(f'Task {task.task_id}: Successfully saved result to server.')
-				# except Exception as e:
-				# 	error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
-				# 	task_result.stage_failed(Stage.SAVE_SERVER, error)
-				# 	task_result.mark_server_save_failed(str(e))
-				# 	logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
+				try:
+					logger.info(f'Task {task.task_id}: Saving result to server.')
+					await run_stage(
+						Stage.SAVE_SERVER,
+						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						timeout=60,
+					)
+					task_result.stage_completed(Stage.SAVE_SERVER)
+					logger.info(f'Task {task.task_id}: Successfully saved result to server.')
+				except Exception as e:
+					error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
+					task_result.stage_failed(Stage.SAVE_SERVER, error)
+					task_result.mark_server_save_failed(str(e))
+					logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
 
 			except TimeoutError:
 				current_stage = determine_current_stage(task_result.completed_stages)
@@ -1460,6 +1463,7 @@ async def run_task_with_semaphore(
 async def run_multiple_tasks(
 	tasks: list[Task],
 	llm: BaseChatModel,
+	run_id: str,
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
@@ -1488,7 +1492,7 @@ async def run_multiple_tasks(
 
 	logger.info(f'Starting {len(tasks_to_run)} tasks with parallel limit of {max_parallel_runs}')
 
-	run_id = await laminar_client.evals.create_evaluation()
+	lmnr_run_id = await laminar_client.evals.create_evaluation()
 
 	# Run all tasks in parallel with additional parameters
 	task_results = await asyncio.gather(
@@ -1496,6 +1500,7 @@ async def run_multiple_tasks(
 			run_task_with_semaphore(
 				task=task,
 				run_id=run_id,
+				lmnr_run_id=lmnr_run_id,
 				convex_url=convex_url,
 				secret_key=secret_key,
 				eval_model=eval_model,
@@ -1628,6 +1633,58 @@ def get_git_info():
 			'timestamp': int(time.time()),  # Fallback to current time
 			'repo': 'unknown',
 		}
+
+
+# Helper function to start a new run on the server
+def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_run_id: str = None):
+	"""Sends a request to start a new evaluation run and returns the run ID."""
+	if not convex_url or not secret_key:
+		logger.error('Error: Convex URL or Secret Key not provided for starting run.')
+		return None
+
+	endpoint_url = f'{convex_url}/api/startRun'
+	headers = {
+		'Authorization': f'Bearer {secret_key}',
+		'Content-Type': 'application/json',
+	}
+
+	# Add existing_run_id to the payload if provided
+	payload = run_details.copy()
+	if existing_run_id:
+		payload['runId'] = existing_run_id
+
+	logger.info(f'Sending request to start run at {endpoint_url}...')
+	# Avoid logging secret key in run_details if it were ever passed
+	loggable_details = {k: v for k, v in payload.items() if k != 'secret_key'}
+	logger.info(f'Run details: {json.dumps(loggable_details, indent=2)}')
+
+	try:
+		response = requests.post(endpoint_url, headers=headers, json=payload)
+		logger.info(f'Start Run Status Code: {response.status_code}')
+
+		if response.status_code == 200:
+			try:
+				data = response.json()
+				run_id = data.get('runId')
+				if run_id:
+					logger.info(f'Successfully started run. Run ID: {run_id}')
+					return run_id
+				else:
+					logger.error("Error: 'runId' not found in successful startRun response.")
+					logger.error(f'Raw response: {response.text}')
+					return None
+			except json.JSONDecodeError:
+				logger.error('Error: Failed to decode startRun JSON response.')
+				logger.error(f'Raw response text: {response.text}')
+				return None
+		else:
+			logger.error('Error: Failed to start run.')
+			logger.error(f'Response: {response.text}')
+			return None
+
+	except requests.exceptions.RequestException as e:
+		logger.error(f'Error during startRun request: {type(e).__name__}: {e}')
+		return None
 
 
 # Helper function to save a task result to the server
@@ -1788,9 +1845,9 @@ if __name__ == '__main__':
 		CONVEX_URL = os.getenv('EVALUATION_TOOL_URL')
 		SECRET_KEY = os.getenv('EVALUATION_TOOL_SECRET_KEY')
 
-		# if not CONVEX_URL or not SECRET_KEY:
-		# 	logger.error('Error: EVALUATION_TOOL_URL or EVALUATION_TOOL_SECRET_KEY environment variables not set.')
-		# 	exit(1)  # Exit if config is missing
+		if not CONVEX_URL or not SECRET_KEY:
+			logger.error('Error: EVALUATION_TOOL_URL or EVALUATION_TOOL_SECRET_KEY environment variables not set.')
+			exit(1)  # Exit if config is missing
 
 		logger.info(f"Attempting to fetch task list '{args.test_case}' from server...")
 		fetched_task_data = fetch_tasks_from_server(CONVEX_URL, SECRET_KEY, args.test_case)
@@ -1852,6 +1909,14 @@ if __name__ == '__main__':
 			'testCaseName': args.test_case,
 			'additionalData': additional_run_data,
 		}
+
+		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
+
+		if not run_id:
+			logger.error('Failed to start/initialize run on the server. Exiting.')
+			exit(1)
+
+		logger.info(f'Successfully obtained run ID: {run_id}. Proceeding with tasks...')
 
 		# Log search mode being used
 		if args.use_serp:
@@ -1922,6 +1987,7 @@ if __name__ == '__main__':
 			run_multiple_tasks(
 				tasks=tasks,
 				llm=llm,
+				run_id=run_id,
 				convex_url=CONVEX_URL,
 				secret_key=SECRET_KEY,
 				eval_model=eval_model,
