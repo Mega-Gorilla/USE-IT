@@ -165,4 +165,5 @@ dev-dependencies = [
     "ty>=0.0.1a1",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-xdist>=3.7.0",
+    "lmnr[all]>=0.6.11",
 ]
