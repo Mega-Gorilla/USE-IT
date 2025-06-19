@@ -3,7 +3,8 @@ import enum
 import json
 import logging
 import re
-from typing import Generic, TypeVar, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, Generic, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
@@ -34,6 +35,35 @@ from browser_use.filesystem.file_system import FileSystem
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
+
+
+async def retry_async_function(
+	func: Callable[[], Awaitable[Any]], error_message: str, n_retries: int = 3, sleep_seconds: float = 1
+) -> tuple[Any | None, ActionResult | None]:
+	"""
+	Retry an async function n times before giving up and returning an ActionResult with an error.
+
+	Args:
+		func: Async function to retry
+		error_message: Error message to use in ActionResult if all retries fail
+		n_retries: Number of retries (default 3)
+		sleep_seconds: Seconds to sleep between retries (default 1)
+
+	Returns:
+		Tuple of (result, None) on success or (None, ActionResult) on failure
+	"""
+	for attempt in range(n_retries):
+		try:
+			result = await func()
+			return result, None
+		except Exception as e:
+			await asyncio.sleep(sleep_seconds)
+			logger.debug(f'Error (attempt {attempt + 1}/{n_retries}): {e}')
+			if attempt == n_retries - 1:  # Last attempt failed
+				return None, ActionResult(error=error_message)
+
+	# Should never reach here but make type checker happy
+	return None, ActionResult(error=error_message)
 
 
 Context = TypeVar('Context')
@@ -328,13 +358,26 @@ Only use this for extracting info from a single product/article page, not for en
 			import markdownify
 
 			strip = []
-			include_links: bool = False  # default to False to simplify the tool call
+			include_links = False
+			lower_query = query.lower()
+			url_keywords = ['url', 'links']
+			if any(keyword in lower_query for keyword in url_keywords):
+				include_links = True
+
 			if not include_links:
 				strip = ['a', 'img']
 
 			# Run markdownify in a thread pool to avoid blocking the event loop
 			loop = asyncio.get_event_loop()
-			page_html = await page.content()
+
+			# Try getting page content with retries
+			page_html_result, action_result = await retry_async_function(
+				lambda: page.content(), "Couldn't extract page content due to an error."
+			)
+			if action_result:
+				return action_result
+			page_html = page_html_result
+
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
 			content = await loop.run_in_executor(None, markdownify_func, page_html)
 
@@ -418,7 +461,16 @@ Only use this for extracting info from a single product/article page, not for en
 			(b) If that JavaScript throws, fall back to window.scrollBy().
 			"""
 			page = await browser_session.get_current_page()
-			dy = params.amount or await page.evaluate('() => window.innerHeight')
+			if params.amount:
+				dy = params.amount
+			else:
+				# Get window height with retries
+				dy_result, action_result = await retry_async_function(
+					lambda: page.evaluate('() => window.innerHeight'), 'Scroll down failed due to an error.'
+				)
+				if action_result:
+					return action_result
+				dy = dy_result
 
 			try:
 				await browser_session._scroll_container(dy)
@@ -438,7 +490,16 @@ Only use this for extracting info from a single product/article page, not for en
 		)
 		async def scroll_up(params: ScrollAction, browser_session: BrowserSession):
 			page = await browser_session.get_current_page()
-			dy = -(params.amount or await page.evaluate('() => window.innerHeight'))
+			if params.amount:
+				dy = -(params.amount)
+			else:
+				# Get window height with retries
+				dy_result, action_result = await retry_async_function(
+					lambda: -(page.evaluate('() => window.innerHeight')), 'Scroll up failed due to an error.'
+				)
+				if action_result:
+					return action_result
+				dy = dy_result
 
 			try:
 				await browser_session._scroll_container(dy)
