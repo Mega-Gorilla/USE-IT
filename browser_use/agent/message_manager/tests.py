@@ -21,6 +21,13 @@ from browser_use.filesystem.file_system import FileSystem
 def message_manager(request: pytest.FixtureRequest):
 	task = 'Test task'
 	action_descriptions = 'Test actions'
+
+	import os
+	import tempfile
+	import uuid
+
+	base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
+	file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
 	return MessageManager(
 		task=task,
 		system_message=SystemMessage(content=action_descriptions),
@@ -29,7 +36,7 @@ def message_manager(request: pytest.FixtureRequest):
 			estimated_characters_per_token=3,
 			image_tokens=800,
 		),
-		file_system=FileSystem(),
+		file_system=FileSystem(file_system_path),
 	)
 
 

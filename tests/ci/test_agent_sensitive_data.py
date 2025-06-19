@@ -22,12 +22,18 @@ def registry():
 
 @pytest.fixture
 def message_manager():
+	import os
+	import tempfile
+	import uuid
+
+	base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
+	file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
 	return MessageManager(
 		task='Test task',
 		system_message=SystemMessage(content='System message'),
 		settings=MessageManagerSettings(),
 		state=MessageManagerState(),
-		file_system=FileSystem(),
+		file_system=FileSystem(file_system_path),
 	)
 
 
