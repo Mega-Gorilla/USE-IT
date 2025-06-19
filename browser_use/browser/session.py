@@ -2453,21 +2453,25 @@ class BrowserSession(BaseModel):
 			pass
 
 		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
-		try:
-			screenshot = await page.screenshot(
-				full_page=full_page,
-				scale='css',
-				timeout=15000,
-				animations='allow',
-				caret='initial',
-			)
+		if full_page:
+			try:
+				screenshot = await asyncio.wait_for(
+					page.screenshot(
+						full_page=True,
+						scale='css',
+						timeout=10000,
+						animations='allow',
+						caret='initial',
+					),
+					timeout=15000,
+				)
 
-			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
-			return screenshot_b64
-		except Exception as e:
-			self.logger.error(
-				f'❌ Failed to take full-page screenshot: {type(e).__name__}: {e} falling back to viewport-only screenshot'
-			)
+				screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+				return screenshot_b64
+			except Exception as e:
+				self.logger.warning(
+					f'⚠️ Failed to take full-page screenshot after 10s: {type(e).__name__}: {e} trying with height limit instead...'
+				)
 
 		# Fallback method: manually expand the viewport and take a screenshot of the entire viewport
 
