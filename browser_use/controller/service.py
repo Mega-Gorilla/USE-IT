@@ -60,7 +60,7 @@ async def retry_async_function(
 			await asyncio.sleep(sleep_seconds)
 			logger.debug(f'Error (attempt {attempt + 1}/{n_retries}): {e}')
 			if attempt == n_retries - 1:  # Last attempt failed
-				return None, ActionResult(error=error_message)
+				return None, ActionResult(error=error_message + str(e))
 
 	# Should never reach here but make type checker happy
 	return None, ActionResult(error=error_message)
@@ -527,11 +527,11 @@ Explain the content of the page and that the requested information is not availa
 			else:
 				# Get window height with retries
 				dy_result, action_result = await retry_async_function(
-					lambda: -(page.evaluate('() => window.innerHeight')), 'Scroll up failed due to an error.'
+					lambda: page.evaluate('() => window.innerHeight'), 'Scroll up failed due to an error.'
 				)
 				if action_result:
 					return action_result
-				dy = dy_result
+				dy = -(dy_result)
 
 			try:
 				await browser_session._scroll_container(dy)
