@@ -7,6 +7,7 @@ from browser_use.agent.message_manager.service import MessageManager, MessageMan
 from browser_use.agent.views import ActionResult
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import DOMElementNode, DOMTextNode
+from browser_use.filesystem.file_system import FileSystem
 
 
 @pytest.fixture(
@@ -28,6 +29,7 @@ def message_manager(request: pytest.FixtureRequest):
 			estimated_characters_per_token=3,
 			image_tokens=800,
 		),
+		file_system=FileSystem(),
 	)
 
 

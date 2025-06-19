@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.views import MessageManagerState
 from browser_use.controller.registry.service import Registry
+from browser_use.filesystem.file_system import FileSystem
 from browser_use.utils import match_url_with_domain_pattern
 
 
@@ -26,6 +27,7 @@ def message_manager():
 		system_message=SystemMessage(content='System message'),
 		settings=MessageManagerSettings(),
 		state=MessageManagerState(),
+		file_system=FileSystem(),
 	)
 
 
