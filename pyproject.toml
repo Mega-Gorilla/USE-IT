@@ -76,6 +76,14 @@ all = [
     "browser-use[memory,cli,examples]",
 ]
 
+# will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
+[tool.uv.sources]
+bubus = { workspace = true }
+
+[tool.uv.workspace]
+members = ["../bubus"]  # assume parent dir contains bubus repo cloned next to browser-use repo
+exclude = ["**/__pycache__"]
+
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
 
@@ -165,6 +173,6 @@ dev-dependencies = [
     "codespell>=2.4.1",
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
-    # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-xdist>=3.7.0"
+    # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
 ]
