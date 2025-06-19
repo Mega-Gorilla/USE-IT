@@ -111,10 +111,23 @@ class AgentMessagePrompt:
 			elements_text = 'empty page'
 
 		tabs_text = ''
-		for tab in self.browser_state.tabs:
-			tabs_text += f'Tab {tab.page_id}: URL={tab.url}, Title={tab.title[:30]}\n'
+		current_tab_candidates = []
 
-		browser_state = f"""Current URL: {self.browser_state.url}
+		# Find tabs that match both URL and title to identify current tab more reliably
+		for tab in self.browser_state.tabs:
+			if tab.url == self.browser_state.url and tab.title == self.browser_state.title:
+				current_tab_candidates.append(tab.page_id)
+
+		# If we have exactly one match, mark it as current
+		# Otherwise, don't mark any tab as current to avoid confusion
+		current_tab_id = current_tab_candidates[0] if len(current_tab_candidates) == 1 else None
+
+		for tab in self.browser_state.tabs:
+			tabs_text += f'Tab {tab.page_id}: {tab.url} - {tab.title[:30]}\n'
+
+		current_tab_text = f'Current tab: {current_tab_id}' if current_tab_id is not None else ''
+
+		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
 Interactive elements from top layer of the current page inside the viewport{truncated_text}:
