@@ -10,8 +10,7 @@ import pytest
 
 from browser_use.agent.service import Agent
 from browser_use.sync.service import CloudSyncService
-
-from .mocks import create_mocked_browser, create_mocked_model
+from tests.ci.mocks import create_mocked_browser, create_mocked_model
 
 
 class TestAgentCloudIntegration:
