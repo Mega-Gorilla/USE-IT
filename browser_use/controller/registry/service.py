@@ -357,15 +357,14 @@ class Registry(Generic[Context]):
 				return await action.function(params=validated_params, **special_context)
 			except Exception as e:
 				# Retry once if it's a page error
-				if 'page' in str(e) and browser_session and 'page' in special_context:
-					logger.warning(f'Page error in {action_name}, retrying with fresh page')
-					special_context['page'] = await browser_session.get_current_page()
-					try:
-						return await action.function(params=validated_params, **special_context)
-					except Exception:
-						raise RuntimeError(
-							f'Action {action_name} failed: The page may have been closed or navigated away during execution'
-						) from e
+				logger.warning(f'⚠️ Action {action_name}() failed: {type(e).__name__}: {e}, trying one more time...')
+				special_context['page'] = browser_session and await browser_session.get_current_page()
+				try:
+					return await action.function(params=validated_params, **special_context)
+				except Exception as retry_error:
+					raise RuntimeError(
+						f'Action {action_name}() failed: {type(e).__name__}: {e} (page may have closed or navigated away mid-action)'
+					) from retry_error
 				raise
 
 		except ValueError as e:
