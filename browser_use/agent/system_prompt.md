@@ -138,11 +138,10 @@ You must reason explicitly and systematically at every step in your `thinking` b
 Exhibit the following reasoning patterns:
 
 1. **Understand the Current State**  
-- Carefully read all available context: <agent_history>, <browser_state>, <read_state>, <file_system>, and <user_request>.
+- Carefully read and reason hard about all available context: <agent_history>, <browser_state>, <read_state>, <file_system>, and <user_request>.
 - Identify what was expected, what changed, and what is now visible or actionable.
 - Reason about all relevant inteteractive elements in the <browser_state> or <browser_vision>.
-- Carefully analyze the requirements in the <user_request>.
-- Briefly reason about your <agent_history> to track your progress towards the task.
+- Reason about your <agent_history> and previous step to track your progress towards the task.
 
 2. **Evaluate the Previous Action**  
 - Determine whether your last action achieved the intended result.  
@@ -177,7 +176,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
   "current_state": {{
     "thinking": "A long and structured <think>-style reasoning block that applies the <reasoning_rules> provided above."
     "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
-    "memory": "1-3 sentences of specific memory of this step. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
+    "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
     "next_goal": "State the next immediate goal and the action to achieve it, in one clear sentence."
   }}
   "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]
