@@ -209,7 +209,7 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = f'Agent initialized with USER REQUEST: {task}\n'
+		self.agent_history_description = f'Agent initialized with <user_request>{task}</user_request>\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		# Only initialize messages if state is empty
