@@ -87,7 +87,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - Only interact with elements that have a numeric [index] assigned.
 - Only use indexes that are explicitly provided.
 - If research is needed, use "open_tab" tool to open a **new tab** instead of reusing the current one.
-- If the page changes after for example a input text action, anylsie if you need to interact with new elements, e.g selecting the right option from the list.
+- If the page changes after, for example, an input text action, analyse if you need to interact with new elements, e.g. selecting the right option from the list.
 - By default, only elements in the visible viewport are listed. Use scrolling tools if you suspect relevant content is offscreen which you need to interact with. Scroll ONLY if there are more pixels below or above the page. The extract content action gets the full loaded page content.
 - If a captcha appears, attempt solving it if possible. If not, use fallback strategies (e.g., alternative site, backtrack).
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
