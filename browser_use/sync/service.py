@@ -5,6 +5,7 @@ Cloud sync service for sending events to the Browser Use cloud.
 import asyncio
 import json
 import logging
+import os
 
 import anyio
 import httpx
@@ -15,13 +16,14 @@ from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
 logger = logging.getLogger(__name__)
 
 
-class CloudSyncService:
+class CloudSync:
 	"""Service for syncing events to the Browser Use cloud"""
 
-	def __init__(self, base_url: str = 'https://cloud.browser-use.com', enable_auth: bool = True):
-		self.base_url = base_url
+	def __init__(self, base_url: str | None = None, enable_auth: bool = True):
+		# Backend API URL for all API requests - can be passed directly or defaults to env var
+		self.base_url = base_url or os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com')
 		self.enable_auth = enable_auth
-		self.auth_client = DeviceAuthClient(base_url) if enable_auth else None
+		self.auth_client = DeviceAuthClient(base_url=self.base_url) if enable_auth else None
 		self.pending_events: list[dict] = []
 		self.auth_task = None
 		self.session_id: str | None = None
@@ -76,7 +78,7 @@ class CloudSyncService:
 		# Send event
 		async with httpx.AsyncClient() as client:
 			response = await client.post(
-				f'{self.base_url}/api/v1/events/',
+				f'{self.base_url.rstrip("/")}/api/v1/events/',
 				json={'events': [event_data]},
 				headers=headers,
 				timeout=10.0,
@@ -162,8 +164,19 @@ class CloudSyncService:
 
 	async def send_event(self, event_type: str, event_data: dict, event_schema: str) -> None:
 		"""Send a single event to the cloud - convenience method for tests"""
-		event = BaseEvent(event_type=event_type, **event_data)
-		await self.handle_event(event)
+		# Create a dynamic subclass that includes the custom event data
+		from pydantic import ConfigDict, Field
+
+		etype = event_type
+
+		class CustomEvent(BaseEvent):
+			model_config = ConfigDict(
+				extra='allow', arbitrary_types_allowed=True, validate_assignment=True, validate_default=True
+			)
+			event_type: str = Field(default=etype, frozen=True)
+
+		CustomEvent.__name__ = etype
+		await self.handle_event(CustomEvent(**event_data))
 
 	async def authenticate(self, show_instructions: bool = True) -> bool:
 		"""Authenticate with the cloud service"""

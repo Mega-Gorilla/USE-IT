@@ -59,9 +59,10 @@ class CloudAuthConfig(BaseModel):
 class DeviceAuthClient:
 	"""Client for OAuth2 device authorization flow"""
 
-	def __init__(self, base_url: str = 'https://cloud.browser-use.com', http_client: httpx.AsyncClient | None = None):
-		self.base_url = base_url
-		self.client_id = 'bu_cli'
+	def __init__(self, base_url: str | None = None, http_client: httpx.AsyncClient | None = None):
+		# Backend API URL for OAuth requests - can be passed directly or defaults to env var
+		self.base_url = base_url or os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com')
+		self.client_id = 'library'
 		self.scope = 'read write'
 
 		# If no client provided, we'll create one per request
@@ -98,7 +99,7 @@ class DeviceAuthClient:
 		"""
 		if self.http_client:
 			response = await self.http_client.post(
-				f'{self.base_url}/api/v1/oauth/device/authorize',
+				f'{self.base_url.rstrip("/")}/api/v1/oauth/device/authorize',
 				data={
 					'client_id': self.client_id,
 					'scope': self.scope,
@@ -110,7 +111,7 @@ class DeviceAuthClient:
 		else:
 			async with httpx.AsyncClient() as client:
 				response = await client.post(
-					f'{self.base_url}/api/v1/oauth/device/authorize',
+					f'{self.base_url.rstrip("/")}/api/v1/oauth/device/authorize',
 					data={
 						'client_id': self.client_id,
 						'scope': self.scope,
@@ -137,7 +138,7 @@ class DeviceAuthClient:
 			while time.time() - start_time < timeout:
 				try:
 					response = await self.http_client.post(
-						f'{self.base_url}/api/v1/oauth/device/token',
+						f'{self.base_url.rstrip("/")}/api/v1/oauth/device/token',
 						data={
 							'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
 							'device_code': device_code,
@@ -189,7 +190,7 @@ class DeviceAuthClient:
 				while time.time() - start_time < timeout:
 					try:
 						response = await client.post(
-							f'{self.base_url}/api/v1/oauth/device/token',
+							f'{self.base_url.rstrip("/")}/api/v1/oauth/device/token',
 							data={
 								'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
 								'device_code': device_code,
@@ -255,8 +256,8 @@ class DeviceAuthClient:
 			# Start device authorization
 			device_auth = await self.start_device_authorization(agent_session_id)
 
-			# Override frontend URL if environment variable is set
-			frontend_url = os.environ.get('BROWSER_USE_CLOUD_FRONTEND_URL', self.base_url)
+			# Use frontend URL for user-facing links
+			frontend_url = os.getenv('BROWSER_USE_CLOUD_UI_URL', self.base_url)
 
 			# Replace backend URL with frontend URL in verification URIs
 			verification_uri = device_auth['verification_uri'].replace(self.base_url, frontend_url)

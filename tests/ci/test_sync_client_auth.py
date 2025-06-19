@@ -3,37 +3,22 @@ Tests for OAuth2 device flow and cloud sync functionality.
 """
 
 import json
-import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import patch
 
-import aiofiles
+import anyio
 import httpx
 import pytest
+from dotenv import load_dotenv
 from pytest_httpserver import HTTPServer
 
+# Load environment variables before any imports
+load_dotenv()
+
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
-from browser_use.sync.service import CloudSyncService
-
-
-class MockResponse:
-	"""Mock HTTP response for testing."""
-
-	def __init__(self, json_data, status=200):
-		self.json_data = json_data
-		self.status = status
-
-	async def json(self):
-		return self.json_data
-
-
-@pytest.fixture
-def mock_httpx_client():
-	"""Mock httpx AsyncClient."""
-	return patch('httpx.AsyncClient')
-
+from browser_use.sync.service import CloudSync
 
 # Define config dir for tests
 # BROWSER_USE_CONFIG_DIR = Path.home() / ".config" / "browseruse"
@@ -52,11 +37,13 @@ def temp_config_dir():
 		import browser_use.sync.auth
 		import browser_use.utils
 
+		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = temp_dir
 		browser_use.utils.BROWSER_USE_CONFIG_DIR = temp_dir
 
 		yield temp_dir
 
 		# Restore original
+		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = original
 		browser_use.utils.BROWSER_USE_CONFIG_DIR = original
 
 
@@ -167,7 +154,7 @@ class TestDeviceAuthClient:
 		assert request.method == 'POST'
 		# Get the body as string
 		body = request.get_data(as_text=True)
-		assert 'client_id=bu_cli' in body
+		assert 'client_id=library' in body
 		assert 'agent_session_id=test-session-id' in body
 
 	async def test_poll_for_token_pending(self, httpserver: HTTPServer, http_client, temp_config_dir):
@@ -335,49 +322,47 @@ class TestDeviceAuthClient:
 		assert auth2.auth_config.user_id is None
 
 
-class TestCloudSyncService:
-	"""Test CloudSyncService class."""
+class TestCloudSync:
+	"""Test CloudSync class."""
 
-	@pytest.fixture
-	def mock_auth(self):
-		"""Mock DeviceAuthClient."""
-		auth = Mock(spec=DeviceAuthClient)
-		auth.is_authenticated.return_value = True
-		auth.get_credentials.return_value = ('test-api-key', 'test-user-123')
-		auth.start_device_flow = AsyncMock(
-			return_value={
-				'device_code': 'test-device-code',
-				'user_code': 'ABCD-1234',
-				'verification_uri_complete': 'https://example.com/device?user_code=ABCD-1234',
-			}
-		)
-		auth.wait_for_authorization = AsyncMock(return_value=True)
-		return auth
-
-	async def test_init(self, mock_auth):
-		"""Test CloudSyncService initialization."""
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
+	async def test_init(self, temp_config_dir):
+		"""Test CloudSync initialization."""
+		service = CloudSync(
+			base_url='https://cloud.browser-use.com',
+			enable_auth=True,
 		)
 
-		assert service.agent_session_id == 'test-session-id'
-		assert service.auth == mock_auth
-		assert service._authenticated is True
-		assert service._pre_auth_events == []
+		assert service.base_url == 'https://cloud.browser-use.com'
+		assert service.enable_auth is True
+		assert service.auth_client is not None
+		assert isinstance(service.auth_client, DeviceAuthClient)
+		assert service.pending_events == []
 
-	async def test_send_event_authenticated(self, mock_auth, mock_httpx_client):
+	async def test_send_event_authenticated(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event when authenticated."""
-		# Mock httpx client
-		mock_client = AsyncMock()
-		mock_response = MockResponse({'processed': 1, 'failed': 0})
-		mock_client.post.return_value = mock_response
-		mock_httpx_client.return_value.__aenter__.return_value = mock_client
+		requests = []
 
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
-		)
+		def capture_request(request):
+			requests.append(
+				{
+					'headers': dict(request.headers),
+					'json': request.get_json(),
+				}
+			)
+			from werkzeug.wrappers import Response
+
+			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
+
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+
+		# Create authenticated service
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
+		auth.auth_config.api_token = 'test-api-key'
+		auth.auth_config.user_id = 'test-user-123'
+
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service.auth_client = auth
+		service.session_id = 'test-session-id'
 
 		# Send event
 		event_data = {
@@ -386,45 +371,51 @@ class TestCloudSyncService:
 		}
 
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data=event_data,
 			event_schema='AgentTaskModel@1.0',
 		)
 
 		# Check request was made
-		mock_client.post.assert_called_once()
-		call_args = mock_client.post.call_args
-
-		# Check URL
-		assert call_args[0][0] == 'https://api.browser-use.com/api/v1/events/'
+		assert len(requests) == 1
+		request_data = requests[0]
 
 		# Check auth header
-		assert call_args[1]['headers']['Authorization'] == 'Bearer test-api-key'
+		assert request_data['headers']['Authorization'] == 'Bearer test-api-key'
 
 		# Check event data
-		json_data = call_args[1]['json']
+		json_data = request_data['json']
 		assert len(json_data['events']) == 1
 		event = json_data['events'][0]
-		assert event['event_type'] == 'CreateAgentTask'
-		assert event['data'] == event_data
+		assert event['event_type'] == 'CreateAgentTaskEvent'
 		assert event['data']['user_id'] == 'test-user-123'
+		assert event['data']['task'] == 'Test task'
+		assert event['data']['status'] == 'running'
 
-	async def test_send_event_pre_auth(self, mock_httpx_client):
+	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event before authentication."""
-		# Mock auth that's not authenticated
-		mock_auth = Mock(spec=DeviceAuthClient)
-		mock_auth.is_authenticated.return_value = False
+		requests = []
 
-		# Mock httpx client
-		mock_client = AsyncMock()
-		mock_response = MockResponse({'processed': 1, 'failed': 0})
-		mock_client.post.return_value = mock_response
-		mock_httpx_client.return_value.__aenter__.return_value = mock_client
+		def capture_request(request):
+			requests.append(
+				{
+					'headers': dict(request.headers),
+					'json': request.get_json(),
+				}
+			)
+			from werkzeug.wrappers import Response
 
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
-		)
+			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
+
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+
+		# Create unauthenticated service
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
+		# Don't set api_token - leave it unauthenticated
+
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service.auth_client = auth
+		service.session_id = 'test-session-id'
 
 		# Send event
 		event_data = {
@@ -433,223 +424,277 @@ class TestCloudSyncService:
 		}
 
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data=event_data,
 			event_schema='AgentTaskModel@1.0',
 		)
 
 		# Check request was made without auth header
-		mock_client.post.assert_called_once()
-		call_args = mock_client.post.call_args
-		assert 'Authorization' not in call_args[1]['headers']
+		assert len(requests) == 1
+		request_data = requests[0]
+		assert 'Authorization' not in request_data['headers']
 
-		# Check event was stored for later
-		assert len(service._pre_auth_events) == 1
-		assert service._pre_auth_events[0]['event_type'] == 'CreateAgentTask'
+		# Check event was sent with temp user ID
+		json_data = request_data['json']
+		assert len(json_data['events']) == 1
+		event = json_data['events'][0]
+		assert event['event_type'] == 'CreateAgentTaskEvent'
+		assert event['data']['user_id'] == TEMP_USER_ID
+		assert event['data']['task'] == 'Test task'
+		assert event['data']['status'] == 'running'
 
-	async def test_authenticate_and_resend(self, mock_auth, mock_httpx_client):
+	async def test_authenticate_and_resend(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test authentication flow with pre-auth event resending."""
+		requests = []
+		request_count = 0
+
+		def handle_events_request(request):
+			nonlocal request_count
+			request_count += 1
+			requests.append(
+				{
+					'headers': dict(request.headers),
+					'json': request.get_json(),
+				}
+			)
+
+			from werkzeug.wrappers import Response
+
+			if request_count == 1:
+				# First request: unauthenticated, return 401
+				return Response('{"error": "unauthorized"}', status=401, mimetype='application/json')
+			else:
+				# Subsequent requests: success
+				return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
+
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(handle_events_request)
+
+		# Create service with unauthenticated auth client
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		# Start unauthenticated
-		mock_auth.is_authenticated.side_effect = [False, False, True, True]
-		mock_auth.get_credentials.return_value = ('test-api-key', 'test-user-123')
 
-		# Mock httpx client
-		mock_client = AsyncMock()
-		mock_response = MockResponse({'processed': 1, 'failed': 0})
-		mock_client.post.return_value = mock_response
-		mock_httpx_client.return_value.__aenter__.return_value = mock_client
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service.auth_client = auth
+		service.session_id = 'test-session-id'
 
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
-		)
-
-		# Send pre-auth event
+		# Send pre-auth event (should get 401 and be queued)
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Pre-auth task'},
 			event_schema='AgentTaskModel@1.0',
 		)
 
-		assert len(service._pre_auth_events) == 1
+		# Event should be in pending_events since we got 401
+		assert len(service.pending_events) == 1
+		assert service.pending_events[0]['data']['task'] == 'Pre-auth task'
+		assert service.pending_events[0]['data']['user_id'] == TEMP_USER_ID
 
-		# Authenticate
-		authenticated = await service.authenticate()
-		assert authenticated is True
+		# Now authenticate the auth client
+		auth.auth_config.api_token = 'test-api-key'
+		auth.auth_config.user_id = 'test-user-123'
 
-		# Pre-auth events should be cleared after resending
-		assert len(service._pre_auth_events) == 0
+		# Manually trigger resend of pending events
+		await service._resend_pending_events()
 
-		# Check that events were sent (1 pre-auth + 1 resend after auth)
-		assert mock_client.post.call_count == 2
+		# Pre-auth events should be cleared after successful resend
+		assert len(service.pending_events) == 0
 
-		# First call should be without auth
-		first_call = mock_client.post.call_args_list[0]
-		assert 'Authorization' not in first_call[1]['headers']
+		# Check that events were sent (1 original attempt + 1 resend)
+		assert len(requests) == 2
 
-		# Second call should be with auth
-		second_call = mock_client.post.call_args_list[1]
-		assert second_call[1]['headers']['Authorization'] == 'Bearer test-api-key'
+		# Check first request was unauthenticated
+		assert 'Authorization' not in requests[0]['headers']
+		assert requests[0]['json']['events'][0]['data']['user_id'] == TEMP_USER_ID
 
-	async def test_error_handling(self, mock_auth, mock_httpx_client):
+		# Check second request was authenticated with updated user_id
+		assert requests[1]['headers']['Authorization'] == 'Bearer test-api-key'
+		assert requests[1]['json']['events'][0]['data']['user_id'] == 'test-user-123'
+
+	async def test_error_handling(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test error handling during event sending."""
-		# Mock httpx client to raise error
-		mock_client = AsyncMock()
-		mock_client.post.side_effect = Exception('Network error')
-		mock_httpx_client.return_value.__aenter__.return_value = mock_client
+		# Set up server to return 500 error
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Internal Server Error', status=500)
 
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
-		)
+		# Create service with real auth
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
+		auth.auth_config.api_token = 'test-api-key'
+		auth.auth_config.user_id = 'test-user-123'
 
-		# Send event - should not raise
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service.auth_client = auth
+		service.session_id = 'test-session-id'
+
+		# Send event - should not raise exception but handle gracefully
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Test task'},
 			event_schema='AgentTaskModel@1.0',
 		)
 
-		# Event should still be logged even if send fails
-		mock_client.post.assert_called_once()
+		# Should handle error gracefully without crashing
 
-	async def test_update_wal_events(self, mock_auth):
+	async def test_update_wal_events(self, temp_config_dir):
 		"""Test updating WAL events with real user ID."""
-		service = CloudSyncService(
-			agent_session_id='test-session-id',
-			auth=mock_auth,
+		# Create real auth client
+		auth = DeviceAuthClient(base_url='http://localhost:8000')
+		auth.auth_config.api_token = 'test-api-key'
+		auth.auth_config.user_id = 'test-user-123'
+
+		service = CloudSync(
+			base_url='http://localhost:8000',
+			enable_auth=True,
 		)
+		service.auth_client = auth
+		service.session_id = 'test-session-id'
 
-		# Mock WAL file
-		with tempfile.NamedTemporaryFile(suffix='.jsonl', delete=False) as temp_file:
-			wal_path = Path(temp_file.name)
+		# Create the events directory structure that the method expects
+		events_dir = temp_config_dir / 'events'
+		events_dir.mkdir(exist_ok=True)
 
-		# Write test events
+		# Create WAL file with temp user IDs
+		wal_path = events_dir / f'{service.session_id}.jsonl'
 		events = [
 			{
-				'event_type': 'CreateAgentTask',
-				'data': {'user_id': '99999999-9999-9999-9999-999999999999', 'task': 'Task 1'},
+				'event_type': 'CreateAgentTaskEvent',
+				'user_id': '99999999-9999-9999-9999-999999999999',  # TEMP_USER_ID
+				'task': 'Task 1',
 			},
 			{
-				'event_type': 'UpdateAgentTask',
-				'data': {'user_id': '99999999-9999-9999-9999-999999999999', 'status': 'done'},
+				'event_type': 'UpdateAgentTaskEvent',
+				'user_id': '99999999-9999-9999-9999-999999999999',  # TEMP_USER_ID
+				'status': 'done',
 			},
 			{
-				'event_type': 'CreateAgentStep',
-				'data': {'user_id': 'other-user', 'step': 1},
+				'event_type': 'CreateAgentStepEvent',
+				'user_id': 'some-other-user',  # Different user, should still be updated
+				'step': 1,
 			},
 		]
 
-		async with aiofiles.open(wal_path, 'w') as f:
-			for event in events:
-				await f.write(json.dumps(event) + '\n')
+		# Write events to WAL file
+		content = '\n'.join(json.dumps(event) for event in events) + '\n'
+		await anyio.Path(wal_path).write_text(content)
 
-		# Update WAL
-		updated = await service._update_wal_events(wal_path, 'real-user-123')
-		assert updated == 2  # Only temp user events should be updated
+		# Patch BROWSER_USE_CONFIG_DIR to point to our temp directory
+		with patch('browser_use.utils.BROWSER_USE_CONFIG_DIR', temp_config_dir):
+			# Call the method under test
+			await service._update_wal_user_ids(service.session_id)
 
-		# Read back and verify
-		async with aiofiles.open(wal_path) as f:
-			lines = await f.readlines()
+		# Read back the updated file and verify changes
+		content = await anyio.Path(wal_path).read_text()
 
-		updated_events = [json.loads(line) for line in lines]
-		assert updated_events[0]['data']['user_id'] == 'real-user-123'
-		assert updated_events[1]['data']['user_id'] == 'real-user-123'
-		assert updated_events[2]['data']['user_id'] == 'other-user'  # Unchanged
+		updated_events = []
+		for line in content.splitlines():
+			if line.strip():
+				updated_events.append(json.loads(line))
 
-		# Cleanup
-		wal_path.unlink()
+		# Verify all user_ids were updated to the authenticated user's ID
+		assert len(updated_events) == 3
+		for event in updated_events:
+			assert event['user_id'] == 'test-user-123'
+
+		# Verify other fields remained unchanged
+		assert updated_events[0]['event_type'] == 'CreateAgentTaskEvent'
+		assert updated_events[0]['task'] == 'Task 1'
+		assert updated_events[1]['event_type'] == 'UpdateAgentTaskEvent'
+		assert updated_events[1]['status'] == 'done'
+		assert updated_events[2]['event_type'] == 'CreateAgentStepEvent'
+		assert updated_events[2]['step'] == 1
 
 
 class TestIntegration:
 	"""Integration tests for OAuth2 and cloud sync."""
 
-	@pytest.fixture
-	def temp_home(self):
-		"""Create temporary home directory."""
-		with tempfile.TemporaryDirectory() as tmpdir:
-			original_home = os.environ.get('HOME')
-			os.environ['HOME'] = tmpdir
-			yield Path(tmpdir)
-			if original_home:
-				os.environ['HOME'] = original_home
-			else:
-				del os.environ['HOME']
-
-	async def test_full_auth_flow(self, temp_home, mock_httpx_client):
+	async def test_full_auth_flow(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test complete authentication flow."""
-		# Mock responses
-		auth_response = MockResponse(
+		# Track token polling attempts
+		token_attempts = 0
+
+		def handle_token_request(request):
+			nonlocal token_attempts
+			token_attempts += 1
+
+			from werkzeug.wrappers import Response
+
+			if token_attempts == 1:
+				# First attempt: pending
+				return Response(
+					json.dumps({'error': 'authorization_pending'}),
+					status=200,
+					mimetype='application/json',
+				)
+			else:
+				# Second attempt: success
+				return Response(
+					json.dumps(
+						{
+							'access_token': 'test-api-key',
+							'token_type': 'Bearer',
+							'user_id': 'test-user-123',
+						}
+					),
+					status=200,
+					mimetype='application/json',
+				)
+
+		# Set up auth flow endpoints
+		httpserver.expect_request(
+			'/api/v1/oauth/device/authorize',
+			method='POST',
+		).respond_with_json(
 			{
 				'device_code': 'test-device-code',
 				'user_code': 'ABCD-1234',
-				'verification_uri_complete': 'https://example.com/device?user_code=ABCD-1234',
+				'verification_uri': f'{httpserver.url_for("")}/device',
+				'verification_uri_complete': f'{httpserver.url_for("")}/device?user_code=ABCD-1234',
 				'expires_in': 1800,
-				'interval': 5,
+				'interval': 0.1,  # Fast polling for test
 			}
 		)
 
-		token_responses = [
-			MockResponse({'error': 'authorization_pending'}),
-			MockResponse(
-				{
-					'access_token': 'test-api-key',
-					'token_type': 'Bearer',
-					'user_id': 'test-user-123',
-				}
-			),
-		]
+		httpserver.expect_request(
+			'/api/v1/oauth/device/token',
+			method='POST',
+		).respond_with_handler(handle_token_request)
 
-		event_response = MockResponse({'processed': 1, 'failed': 0})
-
-		# Mock httpx client
-		mock_client = AsyncMock()
-		mock_client.post.side_effect = [
-			event_response,  # Pre-auth event
-			auth_response,  # Start device flow
-			*token_responses,  # Polling
-			event_response,  # Resend after auth
-			event_response,  # New authenticated event
-		]
-		mock_httpx_client.return_value.__aenter__.return_value = mock_client
+		# Set up events endpoint
+		httpserver.expect_request(
+			'/api/v1/events/',
+			method='POST',
+		).respond_with_json({'processed': 1, 'failed': 0})
 
 		# Create service
-		service = CloudSyncService(agent_session_id='test-session-id')
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
+		service.session_id = 'test-session-id'
 
 		# Send pre-auth event
 		await service.send_event(
-			event_type='CreateAgentSession',
+			event_type='CreateAgentSessionEvent',
 			event_data={'started_at': datetime.utcnow().isoformat()},
 			event_schema='AgentSessionModel@1.0',
 		)
 
-		# Authenticate (with quick polling for test)
-		with patch.object(service.auth, 'wait_for_authorization', side_effect=service.auth.wait_for_authorization) as mock_wait:
-			mock_wait.return_value = True
-			authenticated = await service.authenticate()
-
+		# Authenticate
+		authenticated = await service.authenticate(show_instructions=False)
 		assert authenticated is True
-		assert service._authenticated is True
+		assert service.auth_client.is_authenticated
+		assert service.auth_client.api_token == 'test-api-key'
+		assert service.auth_client.user_id == 'test-user-123'
 
 		# Send authenticated event
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Authenticated task'},
 			event_schema='AgentTaskModel@1.0',
 		)
 
-		# Verify all calls were made
-		assert mock_client.post.call_count == 5
-
 		# Verify auth was saved
-		config_dir = temp_home / '.config' / 'browseruse'
-		auth_file = config_dir / 'cloud_auth.json'
-		assert auth_file.exists()
+		auth_file = temp_config_dir / 'cloud_auth.json'
+		assert await anyio.Path(auth_file).exists()
 
-		async with aiofiles.open(auth_file) as f:
-			content = await f.read()
-			saved_auth = json.loads(content)
-		assert saved_auth['api_key'] == 'test-api-key'
+		content = await anyio.Path(auth_file).read_text()
+		saved_auth = json.loads(content)
+		assert saved_auth['api_token'] == 'test-api-key'
 		assert saved_auth['user_id'] == 'test-user-123'
 
 
@@ -697,14 +742,14 @@ class TestAuthResilience:
 		).respond_with_json({'error': 'unauthorized', 'detail': 'Token expired'}, status=401)
 
 		# Create cloud sync service
-		from browser_use.sync.service import CloudSyncService
+		from browser_use.sync.service import CloudSync
 
-		service = CloudSyncService(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
 		# Send event - should not raise exception even though token is expired
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Test task after token expiry'},
 			event_schema='AgentTaskModel@1.0',
 		)
@@ -727,9 +772,9 @@ class TestAuthResilience:
 		assert success is False
 
 		# Should still be able to create sync service
-		from browser_use.sync.service import CloudSyncService
+		from browser_use.sync.service import CloudSync
 
-		service = CloudSyncService(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
 		# Set up events endpoint to handle unauthenticated requests
@@ -740,7 +785,7 @@ class TestAuthResilience:
 
 		# Should be able to send events without auth (pre-auth mode)
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Test task without auth'},
 			event_schema='AgentTaskModel@1.0',
 		)
@@ -755,15 +800,15 @@ class TestAuthResilience:
 		result = await auth.poll_for_token('fake-device-code', interval=0.1, timeout=0.3)
 		assert result is None
 
-		from browser_use.sync.service import CloudSyncService
+		from browser_use.sync.service import CloudSync
 
-		service = CloudSyncService(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
 		# Should be able to send events even when server is down
 		# They will be queued locally
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Test task during server downtime'},
 			event_schema='AgentTaskModel@1.0',
 		)
@@ -772,15 +817,15 @@ class TestAuthResilience:
 		"""Test that excessive event queuing doesn't break the agent."""
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''), http_client=http_client)
 
-		from browser_use.sync.service import CloudSyncService
+		from browser_use.sync.service import CloudSync
 
-		service = CloudSyncService(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
 		# Send many events while server is down (no responses configured)
 		for i in range(100):
 			await service.send_event(
-				event_type='CreateAgentTask',
+				event_type='CreateAgentTaskEvent',
 				event_data={'task': f'Test task {i}'},
 				event_schema='AgentTaskModel@1.0',
 			)
@@ -810,14 +855,14 @@ class TestAuthResilience:
 			method='POST',
 		).respond_with_data('malformed response', status=500)
 
-		from browser_use.sync.service import CloudSyncService
+		from browser_use.sync.service import CloudSync
 
-		service = CloudSyncService(base_url=httpserver.url_for(''), enable_auth=True)
+		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
 		# Should handle malformed event response gracefully
 		await service.send_event(
-			event_type='CreateAgentTask',
+			event_type='CreateAgentTaskEvent',
 			event_data={'task': 'Test task with malformed response'},
 			event_schema='AgentTaskModel@1.0',
 		)

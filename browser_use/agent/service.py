@@ -429,11 +429,11 @@ class Agent(Generic[Context]):
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service
-		self.enable_cloud_sync = os.environ.get('BROWSERUSE_CLOUD_SYNC', 'true').lower() == 'true'
+		self.enable_cloud_sync = os.environ.get('BROWSERUSE_CLOUD_SYNC', 'true').lower()[0] in 'ty1'
 		if self.enable_cloud_sync:
-			from browser_use.sync import CloudSyncService
+			from browser_use.sync import CloudSync
 
-			self.cloud_sync = CloudSyncService(base_url=os.environ.get('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com'))
+			self.cloud_sync = CloudSync()
 			# Register cloud sync handler
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 

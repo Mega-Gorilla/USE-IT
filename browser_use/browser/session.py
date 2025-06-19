@@ -2489,29 +2489,39 @@ class BrowserSession(BaseModel):
 
 		# 3. Expand the viewport if we are using one
 		if original_viewport:
-			await page.set_viewport_size({'width': expanded_width, 'height': expanded_height})
+			await asyncio.wait_for(
+				page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000
+			)  # intentionally set short because we want this to be noisy if it's slowing us down
 
 		try:
 			# 4. Take full-viewport screenshot
-			screenshot = await page.screenshot(
-				full_page=False,
-				scale='css',
-				timeout=30000,
-				clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
-				animations='allow',
-				caret='initial',
-				# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
+			screenshot = await asyncio.wait_for(
+				page.screenshot(
+					full_page=False,
+					scale='css',
+					timeout=10000,
+					clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
+					animations='allow',
+					caret='initial',
+					# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
+				),
+				timeout=15000,
 			)
 			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
 
 			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 			return screenshot_b64
+		except Exception as e:
+			self.logger.error(f'❌ Failed to take full-page screenshot after 2 tries: {type(e).__name__}: {e}')
+			raise
 
 		finally:
 			# 5. Restore original viewport state if we expanded it
 			if original_viewport:
 				# Viewport was originally enabled, restore to original dimensions
-				await page.set_viewport_size(original_viewport)
+				await asyncio.wait_for(
+					page.set_viewport_size(original_viewport), timeout=2000
+				)  # intentionally set short because we want this to be noisy if it's slowing us down
 			else:
 				# Viewport was originally disabled, no need to restore it
 				# await page.set_viewport_size(None)  # unfortunately this is not supported by playwright
