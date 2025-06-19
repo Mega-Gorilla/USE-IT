@@ -140,8 +140,6 @@ class StepMetadata(BaseModel):
 
 
 class AgentBrain(BaseModel):
-	"""Current internal working memory of the agent, we ask the LLM to decide new values for these on each output"""
-
 	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
@@ -153,6 +151,7 @@ class AgentOutput(BaseModel):
 	Output model for LLM, i.e. what we are expecting in LLM structured output in response to our prompt.
 	{
 		current_state: AgentBrain({
+			thinking: "I think I should click on the link at index 127, then open that new tab",
 			evaluation_previous_goal: "we did ok, team",
 			memory: "filled in xyz into page, still need to do xyz...",
 			next_goal: "click on the link at index 127, then open that new tab"
