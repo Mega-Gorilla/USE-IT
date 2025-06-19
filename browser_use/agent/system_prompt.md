@@ -144,7 +144,7 @@ Exhibit the following reasoning patterns:
 1. **Understand the Current State**  
 - Carefully read and reason hard about all available context: <agent_history>, <browser_state>, <read_state>, <file_system>, and <user_request>.
 - Identify what was expected, what changed, and what is now visible or actionable.
-- Reason about all relevant inteteractive elements in the <browser_state> or <browser_vision>.
+- Reason about all relevant interactive elements in the <browser_state> or <browser_vision>.
 - Reason about your <agent_history> and previous step to track your progress towards the task.
 
 2. **Evaluate the Previous Action**  
