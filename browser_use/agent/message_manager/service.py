@@ -381,13 +381,13 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 
 		action_results = ''
 		for idx, action_result in enumerate(result):
-			if action_result.update_read_state:
+			if action_result.include_in_memory:
 				self.read_state_description += action_result.extracted_content + '\n'
-			elif action_result.memory:
+			if action_result.memory:
 				action_results += f'Action {idx + 1} Result: {action_result.memory}\n'
 			elif action_result.error:
 				action_results += f'Action {idx + 1} Error: {action_result.error[:200]}\n'
-			elif action_result.extracted_content:
+			elif action_result.extracted_content and not action_result.include_in_memory:
 				action_results += f'Action {idx + 1} Result: {action_result.extracted_content}\n'
 				logger.warning(
 					'⚠️ ActionResult does not have memory but has extracted_content. This is not recommended as extracted_content can be too long.'
