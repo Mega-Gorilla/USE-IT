@@ -1037,14 +1037,14 @@ class Agent(Generic[Context]):
 			# self.logger.debug('Agent paused')
 			self.state.last_result = [
 				ActionResult(
-					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=False
+					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=True
 				)
 			]
 			return
 		except asyncio.CancelledError:
 			# Directly handle the case where the step is cancelled at a higher level
 			# self.logger.debug('Task cancelled - agent was paused with Ctrl+C')
-			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=False)]
+			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=True)]
 			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
@@ -1090,7 +1090,7 @@ class Agent(Generic[Context]):
 
 		if 'Browser closed' in error_msg:
 			self.logger.error('❌  Browser is closed or disconnected, unable to proceed')
-			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=False)]
+			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=True)]
 
 		if isinstance(error, (ValidationError, ValueError)):
 			self.logger.error(f'{prefix}{error_msg}')

@@ -443,7 +443,7 @@ def create_controller_with_serp_search():
 	async def search_web(query: str):
 		"""Search the web using Serper API"""
 		if not SERPER_API_KEY:
-			return ActionResult(extracted_content='Search unavailable: SERPER_API_KEY not configured', include_in_memory=False)
+			return ActionResult(extracted_content='Search unavailable: SERPER_API_KEY not configured', include_in_memory=True)
 
 		try:
 			# Make request to Serper API
