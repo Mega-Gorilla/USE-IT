@@ -77,12 +77,11 @@ all = [
 ]
 
 # will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
-[tool.uv.sources]
-bubus = { workspace = true }
+# [tool.uv.sources]
+# bubus = { path = "../bubus", editable = true }
 
-[tool.uv.workspace]
-members = ["../bubus"]  # assume parent dir contains bubus repo cloned next to browser-use repo
-exclude = ["**/__pycache__"]
+# [tool.uv.workspace]
+# members = ["../bubus"]  # assume parent dir contains bubus repo cloned next to browser-use repo
 
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
