@@ -24,6 +24,8 @@ try:
 	from groq import BadRequestError as GroqBadRequestError
 except ImportError:
 	GroqBadRequestError = None
+# Browser Use configuration directory
+BROWSER_USE_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
 
 # Global flag to prevent duplicate exit messages
 _exiting = False

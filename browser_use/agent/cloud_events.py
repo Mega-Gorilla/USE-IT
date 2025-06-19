@@ -12,8 +12,6 @@ MAX_FILE_CONTENT_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 class UpdateAgentTaskEvent(BaseEvent):
-	event_type: str = Field(default='UpdateAgentTask', frozen=True)
-
 	# Required fields for identification
 	id: str  # The task ID to update
 	user_id: str = Field(max_length=255)  # For authorization
@@ -49,8 +47,6 @@ class UpdateAgentTaskEvent(BaseEvent):
 
 
 class CreateAgentOutputFileEvent(BaseEvent):
-	event_type: str = Field(default='CreateAgentOutputFile', frozen=True)
-
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)
@@ -107,8 +103,6 @@ class CreateAgentOutputFileEvent(BaseEvent):
 
 
 class CreateAgentStepEvent(BaseEvent):
-	event_type: str = Field(default='CreateAgentStep', frozen=True)
-
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)  # Added for authorization checks
@@ -166,8 +160,6 @@ class CreateAgentStepEvent(BaseEvent):
 
 
 class CreateAgentTaskEvent(BaseEvent):
-	event_type: str = Field(default='CreateAgentTask', frozen=True)
-
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)  # Added for authorization checks
@@ -204,8 +196,6 @@ class CreateAgentTaskEvent(BaseEvent):
 
 
 class CreateAgentSessionEvent(BaseEvent):
-	event_type: str = Field(default='CreateAgentSession', frozen=True)
-
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)
