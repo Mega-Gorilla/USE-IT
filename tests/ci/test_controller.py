@@ -1195,7 +1195,7 @@ class TestControllerIntegration:
 
 		# This should fail if page_extraction_llm is not passed correctly
 		with pytest.raises(RuntimeError) as exc_info:
-			await controller.act(ExtractContentActionModel(**extract_action), browser_session)
+			await controller.act(ExtractContentActionModel(**extract_action), browser_session, page_extraction_llm=None)
 
 		# Should fail because page_extraction_llm is required but not provided
 		assert 'page_extraction_llm' in str(exc_info.value)
