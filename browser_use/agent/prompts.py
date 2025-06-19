@@ -124,7 +124,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 
 	def _get_agent_state_description(self) -> str:
 		if self.step_info:
-			step_info_description = f'Current step: {self.step_info.step_number + 1}/{self.step_info.max_steps}\n'
+			step_info_description = f'Step {self.step_info.step_number + 1} of {self.step_info.max_steps} max possible steps\n'
 		else:
 			step_info_description = ''
 		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
