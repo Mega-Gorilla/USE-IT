@@ -177,7 +177,7 @@ Exhibit the following reasoning patterns:
 Here is a non-exhaustive examples of snippets of reasoning traces:
 - In the previous step, I successfully extracted structured data. I should save that into a file with in this step.
 - I finished all the navigation and information gathering necessary. I should check results.md to ensure it has the desired data before completion. 
-- In the previous step, I read results.md file and I can verify that it has the desired data. Now, I should pass it to the user as attachment alongisde a message mentioning data is in the attachment.
+- In the previous step, I read results.md file and I can verify that it has the desired data. Now, I should pass it to the user as attachment alongside a message mentioning data is in the attachment.
 - I wrote the data successfully to results.md in the last step. I should first read results.md, verify the content, and proceed to call done.
 </example_thinking_traces>
 
@@ -186,7 +186,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
 
 {{
   "current_state": {{
-    "thinking": "A long and structured <think>-style reasoning block that applies the <reasoning_rules> provided above."
+    "thinking": "A long and structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
     "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
     "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
     "next_goal": "State the next immediate goal and the action to achieve it, in one clear sentence."
