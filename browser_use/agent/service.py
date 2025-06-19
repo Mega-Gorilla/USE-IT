@@ -426,8 +426,19 @@ class Agent(Generic[Context]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_task_id}.jsonl
-		wal_path = Path.home() / '.config' / 'browseruse' / 'events' / f'{self.task_id}.jsonl'
+		from browser_use.utils import BROWSER_USE_CONFIG_DIR
+
+		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.task_id}.jsonl'
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
+
+		# Cloud sync service
+		self.enable_cloud_sync = os.environ.get('BROWSERUSE_CLOUD_SYNC', 'true').lower()[0] in 'ty1'
+		if self.enable_cloud_sync:
+			from browser_use.sync import CloudSync
+
+			self.cloud_sync = CloudSync()
+			# Register cloud sync handler
+			self.eventbus.on('*', self.cloud_sync.handle_event)
 
 		if self.settings.save_conversation_path:
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
@@ -1524,6 +1535,10 @@ class Agent(Generic[Context]):
 				# Emit output file generated event for GIF
 				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
 				self.eventbus.dispatch(output_event)
+
+			# Wait for cloud auth to complete if in progress
+			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
+				await self.cloud_sync.wait_for_auth()
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			await self.eventbus.stop(timeout=5.0)
