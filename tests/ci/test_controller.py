@@ -1,4 +1,5 @@
 import asyncio
+import tempfile
 import time
 
 import pytest
@@ -22,6 +23,7 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	SwitchTabAction,
 )
+from browser_use.filesystem.file_system import FileSystem
 
 
 @pytest.fixture(scope='session')
@@ -481,46 +483,50 @@ class TestControllerIntegration:
 
 	async def test_done_action(self, controller, browser_session, base_url):
 		"""Test that DoneAction completes a task and reports success or failure."""
-		# First navigate to a page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
+		# Create a temporary directory for the file system
+		with tempfile.TemporaryDirectory() as temp_dir:
+			file_system = FileSystem(temp_dir)
 
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
+			# First navigate to a page
+			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1')}
 
-		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
 
-		success_done_message = 'Successfully completed task'
+			await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
-		# Create done action with success
-		done_action = {'done': DoneAction(text=success_done_message, success=True)}
+			success_done_message = 'Successfully completed task'
 
-		class DoneActionModel(ActionModel):
-			done: DoneAction | None = None
+			# Create done action with success
+			done_action = {'done': DoneAction(text=success_done_message, success=True)}
 
-		# Execute done action
-		result = await controller.act(DoneActionModel(**done_action), browser_session)
+			class DoneActionModel(ActionModel):
+				done: DoneAction | None = None
 
-		# Verify the result
-		assert isinstance(result, ActionResult)
-		assert success_done_message in result.extracted_content
-		assert result.success is True
-		assert result.is_done is True
-		assert result.error is None
+			# Execute done action with file_system
+			result = await controller.act(DoneActionModel(**done_action), browser_session, file_system=file_system)
 
-		failed_done_message = 'Failed to complete task'
+			# Verify the result
+			assert isinstance(result, ActionResult)
+			assert success_done_message in result.extracted_content
+			assert result.success is True
+			assert result.is_done is True
+			assert result.error is None
 
-		# Test with failure case
-		failed_done_action = {'done': DoneAction(text=failed_done_message, success=False)}
+			failed_done_message = 'Failed to complete task'
 
-		# Execute failed done action
-		result = await controller.act(DoneActionModel(**failed_done_action), browser_session)
+			# Test with failure case
+			failed_done_action = {'done': DoneAction(text=failed_done_message, success=False)}
 
-		# Verify the result
-		assert isinstance(result, ActionResult)
-		assert failed_done_message in result.extracted_content
-		assert result.success is False
-		assert result.is_done is True
-		assert result.error is None
+			# Execute failed done action with file_system
+			result = await controller.act(DoneActionModel(**failed_done_action), browser_session, file_system=file_system)
+
+			# Verify the result
+			assert isinstance(result, ActionResult)
+			assert failed_done_message in result.extracted_content
+			assert result.success is False
+			assert result.is_done is True
+			assert result.error is None
 
 	async def test_drag_drop_action(self, controller, browser_session, base_url, http_server):
 		"""Test that DragDropAction correctly drags and drops elements."""
