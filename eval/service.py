@@ -14,7 +14,6 @@
 # We are using our langchain wrapper for the OpenAI API
 # This means we changed model.generate to model.invoke. The behavior of the model should be identical.
 # Added a Online_Mind2Web_eval_with_retry wrapper with retry logic in case of API rate limiting or other issues.
-# Adapting the system message to be more general and applicable to more tasks.
 
 
 # @article{xue2025illusionprogressassessingcurrent,
@@ -78,7 +77,7 @@ async def identify_key_points(task, model):
 2. Identify and extract **key points** directly stated in the task description.
    - A **key point** is a critical element, condition, or step explicitly mentioned in the task description.
    - Do not infer or add any unstated elements.
-   - Words such as "best," "highest," "cheapest," "latest," "most recent," "lowest," "closest," "highest-rated," "largest," and "newest" should be included in the key points.
+   - Words such as "best," "highest," "cheapest," "latest," "most recent," "lowest," "closest," "highest-rated," "largest," and "newest" must go through the sort function(e.g., the key point should be "Filter by highest").
 
 **Respond with**:
 - **Key Points**: A numbered list of the explicit key points for completing this task, one per line, without explanations or additional details."""
@@ -153,16 +152,20 @@ async def Online_Mind2Web_eval(task, last_actions, images_path, model, score_thr
 
 Your response must strictly follow the following evaluation criteria!
 *Important Evaluation Criteria*:
-1. If the user provided explicit instructions for the agent to follow, check if the agent followed them exactly. If the agent did not follow the instructions, the task is not considered successful.
-2. If the user asks to find a product/item/service etc. with certain criteria, you should check whether the items found by the agent meet the criteria. If the items do not meet the criteria, the task is not considered successful.
-3. If the user asks to find ALL product/item/service etc. with certain criteria, you should check whether the agent did its best to find all the items. If you see some evidence in the traces that there could be more items that agent didn't find, the task is not considered successful.
-4. You should evaluate whether the user would be happy with the results. If the results are not satisfactory, the task is not considered successful.
-5. If the user asks to apply some filters such as sort by price, filter by requirement, etc., you should check whether the agent applied the filters correctly. If the filters were not properly applied, the task is not considered successful.
-6. Some tasks require a submission action or a display of results to be considered successful.
-7. If the retrieved information is invalid or empty(e.g., No match was found), but the agent has correctly performed the required action, it should still be considered successful.
-8. If the current page already displays all available items, then applying a filter is not necessary. As long as the agent selects items that meet the requirements (e.g., the cheapest or lowest price), the task is still considered successful.
-9. Ultimately, you should check whether the user would be happy with the results. If the results are not satisfactory, the task is not considered successful.
-10. If the user's task is vague (search for x, browse y, etc.), you should check whether the agent made reasonable assumptions, explored relevant options thoroughly, and presented plausible results a typical user would find helpful.
+1: The filtered results must be displayed correctly. If filters were not properly applied (i.e., missing selection, missing confirmation, or no visible effect in results), the task is not considered successful.
+2: You must carefully check whether these snapshots and action history meet these key points. Ensure that specific filter conditions, such as "best," "highest," "cheapest," "latest," "most recent," "lowest," "closest," "highest-rated," "largest," and "newest" are correctly applied using the filter function(e.g., sort function).
+3: Certain key points or requirements should be applied by the filter. Otherwise, a search with all requirements as input will be deemed a failure since it cannot guarantee that all results meet the requirements!
+4: If the task requires filtering by a specific range of money, years, or the number of beds and bathrooms, the applied filter must exactly match the given requirement. Any deviation results in failure. To ensure the task is successful, the applied filter must precisely match the specified range without being too broad or too narrow.
+Examples of Failure Cases:
+- If the requirement is less than $50, but the applied filter is less than $25, it is a failure.
+- If the requirement is $1500-$2500, but the applied filter is $2000-$2500, it is a failure.
+- If the requirement is $25-$200, but the applied filter is $0-$200, it is a failure.
+- If the required years are 2004-2012, but the filter applied is 2001-2012, it is a failure.
+- If the required years are before 2015, but the applied filter is 2000-2014, it is a failure.
+- If the task requires exactly 2 beds, but the filter applied is 2+ beds, it is a failure.
+5: Some tasks require a submission action or a display of results to be considered successful.
+6: If the retrieved information is invalid or empty(e.g., No match was found), but the agent has correctly performed the required action, it should still be considered successful.
+7: If the current page already displays all available items, then applying a filter is not necessary. As long as the agent selects items that meet the requirements (e.g., the cheapest or lowest price), the task is still considered successful.
 
 *IMPORTANT*
 Format your response into two lines as shown below:
@@ -436,33 +439,36 @@ def create_controller_with_serp_search():
 	"""Create a controller with SERP search instead of Google search"""
 	controller = Controller(exclude_actions=['search_google'])
 
-	@controller.registry.action('Search the web for a specific query. Returns a short description and links of the results.')
+	@controller.registry.action('Search the web for a specific query')
 	async def search_web(query: str):
-		# do a serp search for the query
-		conn = http.client.HTTPSConnection('google.serper.dev')
-		payload = json.dumps({'q': query})
-		headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
-		conn.request('POST', '/search', payload, headers)
-		res = conn.getresponse()
-		data = res.read()
-		serp_data = json.loads(data.decode('utf-8'))
+		"""Search the web using Serper API"""
+		if not SERPER_API_KEY:
+			return ActionResult(extracted_content='Search unavailable: SERPER_API_KEY not configured', include_in_memory=False)
 
-		# exclude searchParameters and credits
-		serp_data = {k: v for k, v in serp_data.items() if k not in ['searchParameters', 'credits']}
+		try:
+			# Make request to Serper API
+			conn = http.client.HTTPSConnection('google.serper.dev')
+			payload = json.dumps({'q': query})
+			headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+			conn.request('POST', '/search', payload, headers)
+			res = conn.getresponse()
+			data = res.read()
+			serp_data = json.loads(data.decode('utf-8'))
 
-		# keep the value of the key "organic"
+			# Exclude searchParameters and credits to reduce noise
+			serp_data = {k: v for k, v in serp_data.items() if k not in ['searchParameters', 'credits']}
 
-		organic = serp_data.get('organic', [])
-		# remove the key "position"
-		organic = [{k: v for k, v in d.items() if k != 'position'} for d in organic]
+			# Log the search data for debugging
+			logger.debug(f"SERP search for '{query}': {json.dumps(serp_data, indent=2)}")
 
-		# print the original data
-		logger.debug(json.dumps(organic, indent=2))
+			# Convert to string for the agent
+			serp_data_str = json.dumps(serp_data)
 
-		# to string
-		organic_str = json.dumps(organic)
+			return ActionResult(extracted_content=serp_data_str, include_in_memory=False)
 
-		return ActionResult(extracted_content=organic_str, include_in_memory=False)
+		except Exception as e:
+			logger.error(f'Error in SERP search: {type(e).__name__}: {e}')
+			return ActionResult(extracted_content=f'Search error: {str(e)}', include_in_memory=False)
 
 	return controller
 
@@ -491,12 +497,10 @@ def get_llm(model_name: str):
 		)
 		api_key = None
 
-	temperature = 0.1
-	max_tokens = 8192
 	api_key_secret = SecretStr(api_key) if api_key else None
 	match provider:
 		case 'openai':
-			kwargs = {'model': config['model_name'], 'temperature': temperature, 'max_tokens': max_tokens}
+			kwargs = {'model': config['model_name'], 'temperature': 0.0}
 			# Must set temperatue=1 if model is gpt-o4-mini
 			if model_name == 'gpt-o4-mini':
 				kwargs['temperature'] = 1
@@ -504,28 +508,17 @@ def get_llm(model_name: str):
 				kwargs['api_key'] = api_key_secret
 			return ChatOpenAI(**kwargs)
 		case 'anthropic':
-			kwargs = {
-				'model_name': config['model_name'],
-				'temperature': temperature,
-				'timeout': 100,
-				'stop': None,
-				'max_tokens': max_tokens,
-			}
+			kwargs = {'model_name': config['model_name'], 'temperature': 0.0, 'timeout': 100, 'stop': None}
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			return ChatAnthropic(**kwargs)
 		case 'google':
-			kwargs = {'model': config['model_name'], 'temperature': temperature, 'max_tokens': max_tokens}
+			kwargs = {'model': config['model_name'], 'temperature': 0.0}
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			return ChatGoogleGenerativeAI(**kwargs)
 		case 'openai_compatible':
-			kwargs = {
-				'model': config['model_name'],
-				'base_url': config['base_url'],
-				'temperature': temperature,
-				'max_tokens': max_tokens,
-			}
+			kwargs = {'model': config['model_name'], 'base_url': config['base_url'], 'temperature': 0.0}
 			if api_key_secret:
 				kwargs['api_key'] = api_key_secret
 			elif config.get('base_url'):
