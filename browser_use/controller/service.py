@@ -102,7 +102,7 @@ class Controller(Generic[Context]):
 					is_done=True,
 					success=params.success,
 					extracted_content=json.dumps(output_dict),
-					memory=f'Task completed. Success Status: {params.success}',
+					long_term_memory=f'Task completed. Success Status: {params.success}',
 				)
 		else:
 
@@ -138,7 +138,11 @@ class Controller(Generic[Context]):
 				attachments = [str(file_system.get_dir() / file_name) for file_name in attachments]
 
 				return ActionResult(
-					is_done=True, success=params.success, extracted_content=user_message, memory=memory, attachments=attachments
+					is_done=True,
+					success=params.success,
+					extracted_content=user_message,
+					long_term_memory=memory,
+					attachments=attachments,
 				)
 
 		# Basic Navigation Actions
@@ -158,7 +162,9 @@ class Controller(Generic[Context]):
 
 			msg = f'🔍  Searched for "{params.query}" in Google'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f"Searched Google for '{params.query}'")
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f"Searched Google for '{params.query}'"
+			)
 
 		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction)
 		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
@@ -171,7 +177,7 @@ class Controller(Generic[Context]):
 					page = await browser_session.create_new_tab(params.url)
 				msg = f'Navigated to {params.url}'
 				logger.info(f'🔗  {msg}')
-				return ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors
@@ -188,7 +194,7 @@ class Controller(Generic[Context]):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
 					return ActionResult(
-						success=False, error=site_unavailable_msg, include_in_memory=True, memory=site_unavailable_msg
+						success=False, error=site_unavailable_msg, include_in_memory=True, long_term_memory=site_unavailable_msg
 					)
 				else:
 					# Re-raise non-network errors
@@ -199,7 +205,7 @@ class Controller(Generic[Context]):
 			await browser_session.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory='Navigated back')
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory='Navigated back')
 
 		# wait for x seconds
 		@self.registry.action('Wait for x seconds default 3')
@@ -207,7 +213,7 @@ class Controller(Generic[Context]):
 			msg = f'🕒  Waiting for {seconds} seconds'
 			logger.info(msg)
 			await asyncio.sleep(seconds)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Waited for {seconds} seconds')
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {seconds} seconds')
 
 		# Element Interaction Actions
 		@self.registry.action('Click element by index', param_model=ClickElementAction)
@@ -228,7 +234,7 @@ class Controller(Generic[Context]):
 					# Return informative message with the new state instead of error
 					max_index = max(selector_map.keys()) if selector_map else -1
 					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.'
-					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, memory=msg)
+					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
@@ -237,7 +243,7 @@ class Controller(Generic[Context]):
 			if await browser_session.find_file_upload_element_by_index(params.index) is not None:
 				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, success=False, memory=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
 
 			msg = None
 
@@ -256,7 +262,9 @@ class Controller(Generic[Context]):
 					msg += f' - {new_tab_msg}'
 					logger.info(new_tab_msg)
 					await browser_session.switch_to_tab(-1)
-				return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Clicked element {params.index}')
+				return ActionResult(
+					extracted_content=msg, include_in_memory=True, long_term_memory=f'Clicked element {params.index}'
+				)
 			except Exception as e:
 				error_msg = str(e)
 				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
@@ -288,7 +296,9 @@ class Controller(Generic[Context]):
 			logger.info(msg)
 			logger.debug(f'Element xpath: {element_node.xpath}')
 			return ActionResult(
-				extracted_content=msg, include_in_memory=True, memory=f"Input '{params.text}' into element {params.index}."
+				extracted_content=msg,
+				include_in_memory=True,
+				long_term_memory=f"Input '{params.text}' into element {params.index}.",
 			)
 
 		# Save PDF
@@ -302,7 +312,9 @@ class Controller(Generic[Context]):
 			await page.pdf(path=sanitized_filename, format='A4', print_background=False)
 			msg = f'Saving page with URL {page.url} as PDF to ./{sanitized_filename}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Saved PDF to {sanitized_filename}')
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Saved PDF to {sanitized_filename}'
+			)
 
 		# Tab Management Actions
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
@@ -316,7 +328,9 @@ class Controller(Generic[Context]):
 				pass
 			msg = f'🔄  Switched to tab #{params.page_id} with url {page.url}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Switched to tab {params.page_id}')
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Switched to tab {params.page_id}'
+			)
 
 		@self.registry.action('Open a specific url in new tab', param_model=OpenTabAction)
 		async def open_tab(params: OpenTabAction, browser_session: BrowserSession):
@@ -324,7 +338,9 @@ class Controller(Generic[Context]):
 			tab_idx = browser_session.tabs.index(page)
 			msg = f'🔗  Opened new tab #{tab_idx} with url {params.url}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Opened new tab with URL {params.url}')
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Opened new tab with URL {params.url}'
+			)
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
@@ -339,7 +355,7 @@ class Controller(Generic[Context]):
 			return ActionResult(
 				extracted_content=msg,
 				include_in_memory=True,
-				memory=f'Closed tab {params.page_id} with url {url}, now focused on tab {new_page_idx} with url {new_page.url}.',
+				long_term_memory=f'Closed tab {params.page_id} with url {url}, now focused on tab {new_page_idx} with url {new_page.url}.',
 			)
 
 		# Content Actions
@@ -424,8 +440,8 @@ Explain the content of the page and that the requested information is not availa
 				return ActionResult(
 					extracted_content=extracted_content,
 					include_in_memory=False,
-					update_read_state=True,
-					memory=memory,
+					update_only_read_state=True,
+					long_term_memory=memory,
 				)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
@@ -453,7 +469,10 @@ Explain the content of the page and that the requested information is not availa
 			msg = '\n'.join(lines)
 			logger.info(msg)
 			return ActionResult(
-				extracted_content=msg, include_in_memory=False, memory='Retrieved accessibility tree', update_read_state=True
+				extracted_content=msg,
+				include_in_memory=False,
+				long_term_memory='Retrieved accessibility tree',
+				update_only_read_state=True,
 			)
 
 		@self.registry.action(
@@ -487,7 +506,9 @@ Explain the content of the page and that the requested information is not availa
 			amount_str = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍 Scrolled down the page by {amount_str}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Scrolled down the page by {amount_str}')
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled down the page by {amount_str}'
+			)
 
 		@self.registry.action(
 			'Scroll up the page by pixel amount - if none is given, scroll one page',
@@ -515,7 +536,9 @@ Explain the content of the page and that the requested information is not availa
 			amount_str = f'{params.amount} pixels' if params.amount is not None else 'one page'
 			msg = f'🔍 Scrolled up the page by {amount_str}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Scrolled up the page by{amount_str}')
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled up the page by{amount_str}'
+			)
 
 		# send keys
 		@self.registry.action(
@@ -538,7 +561,7 @@ Explain the content of the page and that the requested information is not availa
 					raise e
 			msg = f'⌨️  Sent keys: {params.keys}'
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Sent keys: {params.keys}')
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
 
 		@self.registry.action(
 			description='If you dont find something which you want to interact with, scroll to it',
@@ -566,7 +589,9 @@ Explain the content of the page and that the requested information is not availa
 							await asyncio.sleep(0.5)  # Wait for scroll to complete
 							msg = f'🔍  Scrolled to text: {text}'
 							logger.info(msg)
-							return ActionResult(extracted_content=msg, include_in_memory=True, memory=f'Scrolled to text: {text}')
+							return ActionResult(
+								extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}'
+							)
 
 					except Exception as e:
 						logger.debug(f'Locator attempt failed: {str(e)}')
@@ -575,7 +600,9 @@ Explain the content of the page and that the requested information is not availa
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
 				return ActionResult(
-					extracted_content=msg, include_in_memory=True, memory=f"Tried scrolling to text '{text}' but it was not found"
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
 			except Exception as e:
@@ -644,13 +671,15 @@ Explain the content of the page and that the requested information is not availa
 					return ActionResult(
 						extracted_content=msg,
 						include_in_memory=True,
-						memory=f'Found dropdown options for index {index}.',
-						update_read_state=True,
+						long_term_memory=f'Found dropdown options for index {index}.',
+						update_only_read_state=True,
 					)
 				else:
 					msg = 'No options found in any frame for dropdown'
 					logger.info(msg)
-					return ActionResult(extracted_content=msg, include_in_memory=True, memory='No dropdown options found')
+					return ActionResult(
+						extracted_content=msg, include_in_memory=True, long_term_memory='No dropdown options found'
+					)
 
 			except Exception as e:
 				logger.error(f'Failed to get dropdown options: {str(e)}')
@@ -675,7 +704,7 @@ Explain the content of the page and that the requested information is not availa
 			if dom_element.tag_name != 'select':
 				logger.error(f'Element is not a select! Tag: {dom_element.tag_name}, Attributes: {dom_element.attributes}')
 				msg = f'Cannot select option: Element with index {index} is a {dom_element.tag_name}, not a select'
-				return ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 
 			logger.debug(f"Attempting to select '{text}' using xpath: {dom_element.xpath}")
 			logger.debug(f'Element attributes: {dom_element.attributes}')
@@ -736,7 +765,9 @@ Explain the content of the page and that the requested information is not availa
 							msg = f'selected option {text} with value {selected_option_values}'
 							logger.info(msg + f' in frame {frame_index}')
 
-							return ActionResult(extracted_content=msg, include_in_memory=True, memory=f"Selected option '{text}'")
+							return ActionResult(
+								extracted_content=msg, include_in_memory=True, long_term_memory=f"Selected option '{text}'"
+							)
 
 					except Exception as frame_e:
 						logger.error(f'Frame {frame_index} attempt failed: {str(frame_e)}')
@@ -747,7 +778,7 @@ Explain the content of the page and that the requested information is not availa
 
 				msg = f"Could not select option '{text}' in any frame"
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 
 			except Exception as e:
 				msg = f'Selection failed: {str(e)}'
@@ -959,7 +990,7 @@ Explain the content of the page and that the requested information is not availa
 					msg = f'🖱️ Dragged from ({source_x}, {source_y}) to ({target_x}, {target_y})'
 
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 
 			except Exception as e:
 				error_msg = f'Failed to perform drag and drop: {str(e)}'
@@ -976,7 +1007,10 @@ Explain the content of the page and that the requested information is not availa
 
 			extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
 			return ActionResult(
-				extracted_content=extracted_tsv, include_in_memory=True, memory='Retrieved sheet contents', update_read_state=True
+				extracted_content=extracted_tsv,
+				include_in_memory=True,
+				long_term_memory='Retrieved sheet contents',
+				update_only_read_state=True,
 			)
 
 		@self.registry.action('Google Sheets: Get the contents of a cell or range of cells', domains=['https://docs.google.com'])
@@ -991,8 +1025,8 @@ Explain the content of the page and that the requested information is not availa
 			return ActionResult(
 				extracted_content=extracted_tsv,
 				include_in_memory=True,
-				memory=f'Retrieved contents from {cell_or_range}',
-				update_read_state=True,
+				long_term_memory=f'Retrieved contents from {cell_or_range}',
+				update_only_read_state=True,
 			)
 
 		@self.registry.action(
@@ -1013,7 +1047,7 @@ Explain the content of the page and that the requested information is not availa
 			return ActionResult(
 				extracted_content=f'Updated cells: {cell_or_range} = {new_contents_tsv}',
 				include_in_memory=False,
-				memory=f'Updated cells {cell_or_range} with {new_contents_tsv}',
+				long_term_memory=f'Updated cells {cell_or_range} with {new_contents_tsv}',
 			)
 
 		@self.registry.action('Google Sheets: Clear whatever cells are currently selected', domains=['https://docs.google.com'])
@@ -1026,7 +1060,7 @@ Explain the content of the page and that the requested information is not availa
 			return ActionResult(
 				extracted_content=f'Cleared cells: {cell_or_range}',
 				include_in_memory=False,
-				memory=f'Cleared cells {cell_or_range}',
+				long_term_memory=f'Cleared cells {cell_or_range}',
 			)
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
@@ -1047,7 +1081,7 @@ Explain the content of the page and that the requested information is not availa
 			return ActionResult(
 				extracted_content=f'Selected cells: {cell_or_range}',
 				include_in_memory=False,
-				memory=f'Selected cells {cell_or_range}',
+				long_term_memory=f'Selected cells {cell_or_range}',
 			)
 
 		@self.registry.action(
@@ -1059,7 +1093,9 @@ Explain the content of the page and that the requested information is not availa
 			await page.keyboard.press('Enter')  # make sure to commit the input so it doesn't get overwritten by the next action
 			await page.keyboard.press('ArrowUp')
 			return ActionResult(
-				extracted_content=f'Inputted text {text}', include_in_memory=False, memory=f"Inputted text '{text}' into cell"
+				extracted_content=f'Inputted text {text}',
+				include_in_memory=False,
+				long_term_memory=f"Inputted text '{text}' into cell",
 			)
 
 	# Register ---------------------------------------------------------------

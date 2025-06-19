@@ -104,14 +104,26 @@ class AgentStepInfo:
 class ActionResult(BaseModel):
 	"""Result of executing an action"""
 
+	# For done action
 	is_done: bool | None = False
 	success: bool | None = None
-	extracted_content: str | None = None
+
+	# Error handling - always include in long term memory
 	error: str | None = None
-	include_in_memory: bool = False  # whether to include in past messages as context or not
-	memory: str | None = None  # Memory of this action
-	update_read_state: bool = False  # Whether the extracted content should be used to update the read_state
+
+	# Files
 	attachments: list[str] | None = None  # Files to display in the done message
+
+	# Always include in long term memory
+	long_term_memory: str | None = None  # Memory of this action
+
+	# if update_only_read_state is True we add the extracted_content to the agent context only once for the next step
+	# if update_only_read_state is False we add the extracted_content to the agent long term memory if no long_term_memory is provided
+	extracted_content: str | None = None
+	update_only_read_state: bool = False  # Whether the extracted content should be used to update the read_state
+
+	# Deprecated
+	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory
 
 	@model_validator(mode='after')
 	def validate_success_requires_done(self):

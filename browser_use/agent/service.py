@@ -494,13 +494,13 @@ class Agent(Generic[Context]):
 		async def write_file(file_name: str, content: str):
 			result = await self.file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, memory=result)
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
 		@self.controller.registry.action('Append content to file_name in file system')
 		async def append_file(file_name: str, content: str):
 			result = await self.file_system.append_file(file_name, content)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, memory=result)
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
 		@self.controller.registry.action('Read file_name from file system')
 		async def read_file(file_name: str):
@@ -512,7 +512,9 @@ class Agent(Generic[Context]):
 				display_result = result
 			logger.info(f'💾 {display_result}')
 			memory = result.split('\n')[-1]
-			return ActionResult(extracted_content=result, include_in_memory=True, memory=memory, update_read_state=True)
+			return ActionResult(
+				extracted_content=result, include_in_memory=True, long_term_memory=memory, update_only_read_state=True
+			)
 
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
@@ -1635,7 +1637,7 @@ class Agent(Generic[Context]):
 				if orig_target_hash != new_target_hash:
 					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True, memory=msg))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg))
 					break
 
 				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
@@ -1643,7 +1645,7 @@ class Agent(Generic[Context]):
 					# next action requires index but there are new elements on the page
 					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True, memory=msg))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg))
 					break
 
 			try:
@@ -1723,7 +1725,7 @@ class Agent(Generic[Context]):
 		if not is_valid:
 			self.logger.info(f'❌ Validator decision: {parsed.reason}')
 			msg = f'The output is not yet correct. {parsed.reason}.'
-			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True, memory=msg)]
+			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)]
 		else:
 			self.logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid

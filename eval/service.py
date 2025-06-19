@@ -464,11 +464,11 @@ def create_controller_with_serp_search():
 			# Convert to string for the agent
 			serp_data_str = json.dumps(serp_data)
 
-			return ActionResult(extracted_content=serp_data_str, include_in_memory=False)
+			return ActionResult(extracted_content=serp_data_str, include_in_memory=False, update_only_read_state=True)
 
 		except Exception as e:
 			logger.error(f'Error in SERP search: {type(e).__name__}: {e}')
-			return ActionResult(extracted_content=f'Search error: {str(e)}', include_in_memory=False)
+			return ActionResult(error=f'Search error: {str(e)}')
 
 	return controller
 
