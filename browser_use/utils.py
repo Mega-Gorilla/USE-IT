@@ -14,6 +14,9 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# Browser Use configuration directory
+BROWSER_USE_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
+
 # Global flag to prevent duplicate exit messages
 _exiting = False
 
