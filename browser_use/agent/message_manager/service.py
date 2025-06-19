@@ -381,14 +381,14 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 
 		action_results = ''
 		for idx, action_result in enumerate(result):
-			if action_result.update_only_read_state and action_result.extracted_content:
+			if action_result.include_extracted_content_only_once and action_result.extracted_content:
 				self.read_state_description += action_result.extracted_content + '\n'
 				logger.debug(f'Added extracted_content to read_state_description: {action_result.extracted_content}')
 
 			if action_result.long_term_memory:
 				action_results += f'Action {idx + 1} Result: {action_result.long_term_memory}\n'
 				logger.debug(f'Added long_term_memory to action_results: {action_result.long_term_memory}')
-			elif action_result.extracted_content and not action_result.update_only_read_state:
+			elif action_result.extracted_content and not action_result.include_extracted_content_only_once:
 				action_results += f'Action {idx + 1} Result: {action_result.extracted_content}\n'
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 

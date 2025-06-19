@@ -120,7 +120,7 @@ class ActionResult(BaseModel):
 	# if update_only_read_state is True we add the extracted_content to the agent context only once for the next step
 	# if update_only_read_state is False we add the extracted_content to the agent long term memory if no long_term_memory is provided
 	extracted_content: str | None = None
-	update_only_read_state: bool = False  # Whether the extracted content should be used to update the read_state
+	include_extracted_content_only_once: bool = False  # Whether the extracted content should be used to update the read_state
 
 	# Deprecated
 	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory

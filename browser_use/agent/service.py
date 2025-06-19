@@ -513,7 +513,10 @@ class Agent(Generic[Context]):
 			logger.info(f'💾 {display_result}')
 			memory = result.split('\n')[-1]
 			return ActionResult(
-				extracted_content=result, include_in_memory=True, long_term_memory=memory, update_only_read_state=True
+				extracted_content=result,
+				include_in_memory=True,
+				long_term_memory=memory,
+				include_extracted_content_only_once=True,
 			)
 
 	def _set_message_context(self) -> str | None:

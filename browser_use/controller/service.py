@@ -435,12 +435,18 @@ Explain the content of the page and that the requested information is not availa
 				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
 				output_text = output.content
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
-				memory = f'Extracted content from {page.url} for query "{query}"'
+
+				# if content is small include it to memory
+				if len(extracted_content) < 1000:
+					memory = extracted_content
+					include_extracted_content_only_once = False
+				else:
+					memory = f'Extracted content from {page.url} for query "{query}"'
+					include_extracted_content_only_once = True
 				logger.info(f'📄 {memory}')
 				return ActionResult(
 					extracted_content=extracted_content,
-					include_in_memory=False,
-					update_only_read_state=True,
+					include_extracted_content_only_once=include_extracted_content_only_once,
 					long_term_memory=memory,
 				)
 			except Exception as e:
@@ -472,7 +478,7 @@ Explain the content of the page and that the requested information is not availa
 				extracted_content=msg,
 				include_in_memory=False,
 				long_term_memory='Retrieved accessibility tree',
-				update_only_read_state=True,
+				include_extracted_content_only_once=True,
 			)
 
 		@self.registry.action(
@@ -672,7 +678,7 @@ Explain the content of the page and that the requested information is not availa
 						extracted_content=msg,
 						include_in_memory=True,
 						long_term_memory=f'Found dropdown options for index {index}.',
-						update_only_read_state=True,
+						include_extracted_content_only_once=True,
 					)
 				else:
 					msg = 'No options found in any frame for dropdown'
@@ -1010,7 +1016,7 @@ Explain the content of the page and that the requested information is not availa
 				extracted_content=extracted_tsv,
 				include_in_memory=True,
 				long_term_memory='Retrieved sheet contents',
-				update_only_read_state=True,
+				include_extracted_content_only_once=True,
 			)
 
 		@self.registry.action('Google Sheets: Get the contents of a cell or range of cells', domains=['https://docs.google.com'])
@@ -1026,7 +1032,7 @@ Explain the content of the page and that the requested information is not availa
 				extracted_content=extracted_tsv,
 				include_in_memory=True,
 				long_term_memory=f'Retrieved contents from {cell_or_range}',
-				update_only_read_state=True,
+				include_extracted_content_only_once=True,
 			)
 
 		@self.registry.action(
