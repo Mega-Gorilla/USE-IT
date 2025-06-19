@@ -14,13 +14,13 @@ import asyncio
 import logging
 
 import pytest
-from playwright.async_api import Page
 from pydantic import Field
 from pytest_httpserver import HTTPServer
 from pytest_httpserver.httpserver import HandlerType
 
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
+from browser_use.browser.types import Page
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.registry.views import ActionModel as BaseActionModel
 from browser_use.controller.views import (
@@ -745,7 +745,7 @@ class TestValidationRules:
 		registry = Registry()
 
 		# Using 'page' with str type should error
-		with pytest.raises(ValueError, match='conflicts with special argument.*page: Page'):
+		with pytest.raises(ValueError, match=rf'conflicts with special argument.*page: {repr(Page)}'):
 
 			@registry.action('Navigate')
 			async def navigate_to_page(page: str, browser_session: BrowserSession):
@@ -919,7 +919,7 @@ class TestErrorMessages:
 			error_msg = str(e)
 			assert 'page: str' in error_msg
 			assert 'conflicts' in error_msg
-			assert 'page: Page' in error_msg  # Show expected type
+			assert f'page: {repr(Page)}' in error_msg  # Show expected type
 			assert 'bad' in error_msg.lower()  # Show function name
 
 
@@ -992,6 +992,23 @@ class TestParameterOrdering:
 		# Verify the action was properly registered
 		assert action.name == 'extract_content'
 		assert action.description == 'Extract content from page'
+
+	async def test_page_error_retry(self, registry, browser_session):
+		"""Test that page errors trigger retry with fresh page"""
+		call_count = 0
+
+		@registry.action('Flaky page action', param_model=SimpleParams)
+		async def flaky_action(params: SimpleParams, page: Page):
+			nonlocal call_count
+			call_count += 1
+			if call_count == 1:
+				raise RuntimeError('page closed')
+			return ActionResult(extracted_content=f'Success on attempt {call_count}')
+
+		# Should retry once and succeed
+		result = await registry.execute_action('flaky_action', {'value': 'test'}, browser_session=browser_session)
+		assert 'Success on attempt 2' in result.extracted_content
+		assert call_count == 2
 
 
 class TestParamsModelArgsAndKwargs:

@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.2.7"
+version = "0.3.0"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -38,6 +38,7 @@ dependencies = [
     "screeninfo>=0.8.1; platform_system != 'darwin'",
     "typing-extensions>=4.12.2",
     "uuid7>=0.1.0",
+    "authlib>=1.6.0",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -74,6 +75,13 @@ all = [
     "browser-use[memory,cli,examples]",
 ]
 
+# will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
+# [tool.uv.sources]
+# bubus = { path = "../bubus", editable = true }
+
+# [tool.uv.workspace]
+# members = ["../bubus"]  # assume parent dir contains bubus repo cloned next to browser-use repo
+
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
 
@@ -87,7 +95,7 @@ build-backend = "hatchling.build"
 
 
 [tool.codespell]
-ignore-words-list = "bu,wit,dont,cant,wont,re-use,re-used,re-using,re-usable,thats,doesnt"
+ignore-words-list = "bu,wit,dont,cant,wont,re-use,re-used,re-using,re-usable,thats,doesnt,doubleclick"
 skip = "*.json"
 
 [tool.ruff]
@@ -163,6 +171,6 @@ dev-dependencies = [
     "codespell>=2.4.1",
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
-    # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-xdist>=3.7.0"
+    # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
 ]
