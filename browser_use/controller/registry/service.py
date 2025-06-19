@@ -353,7 +353,20 @@ class Registry(Generic[Context]):
 
 			# All functions are now normalized to accept kwargs only
 			# Call with params and unpacked special context
-			return await action.function(params=validated_params, **special_context)
+			try:
+				return await action.function(params=validated_params, **special_context)
+			except Exception as e:
+				# Retry once if it's a page error
+				if 'page' in str(e) and browser_session and 'page' in special_context:
+					logger.warning(f'Page error in {action_name}, retrying with fresh page')
+					special_context['page'] = await browser_session.get_current_page()
+					try:
+						return await action.function(params=validated_params, **special_context)
+					except Exception:
+						raise RuntimeError(
+							f'Action {action_name} failed: The page may have been closed or navigated away during execution'
+						) from e
+				raise
 
 		except ValueError as e:
 			# Preserve ValueError messages from validation
