@@ -408,7 +408,12 @@ Only use this for extracting info from a single product/article page, not for en
 					+ content[-max_chars // 2 :]
 				)
 
-			prompt = 'You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If the query is vague, does not make sense for the page, or the information is not available, explain the content of the page and state that the information is not available. Respond in JSON format.\nQuery: {query}\n Website:\n{page}'
+			prompt = """You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If 
+1. The query is vague
+2. Does not make sense for the page
+3. Some/all of the information is not available
+
+Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
 			template = PromptTemplate(input_variables=['query', 'page'], template=prompt)
 			try:
 				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
