@@ -1224,6 +1224,7 @@ class Agent(Generic[Context]):
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
 			raw_msg = response['raw']
+			parsing_error = response.get('parsing_error')
 			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
 				# Convert tool calls to AgentOutput format
 
@@ -1244,6 +1245,9 @@ class Agent(Generic[Context]):
 				action = {tool_call_name: tool_call_args}
 
 				parsed = self.AgentOutput(current_state=AgentBrain(**current_state), action=[self.ActionModel(**action)])
+				# throw error if there is not 1 action in the parsed
+				if len(parsed.action) == 0:
+					raise ValueError(f'Could not parse response. {parsing_error} tried to parse {response["raw"]} to {parsed}')
 			else:
 				parsed = None
 		else:
