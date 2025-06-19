@@ -52,13 +52,11 @@ def temp_config_dir():
 		import browser_use.sync.auth
 		import browser_use.utils
 
-		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = temp_dir
 		browser_use.utils.BROWSER_USE_CONFIG_DIR = temp_dir
 
 		yield temp_dir
 
 		# Restore original
-		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = original
 		browser_use.utils.BROWSER_USE_CONFIG_DIR = original
 
 
@@ -523,7 +521,8 @@ class TestCloudSyncService:
 		)
 
 		# Mock WAL file
-		wal_path = Path(tempfile.mktemp(suffix='.jsonl'))
+		with tempfile.NamedTemporaryFile(suffix='.jsonl', delete=False) as temp_file:
+			wal_path = Path(temp_file.name)
 
 		# Write test events
 		events = [

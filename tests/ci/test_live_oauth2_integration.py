@@ -135,7 +135,7 @@ async def test_live_oauth2_integration(temp_browser_profile):
 		logger.info(f'📊 Agent session ID: {cloud_sync.session_id}')
 		logger.info(f'🌐 Check session at: {backend_url}/agent/{cloud_sync.session_id}')
 
-	await asyncio.sleep(60000)
+	# Test completed - removed excessive sleep
 
 
 @pytest.mark.skipif(not os.getenv('RUN_LIVE_TESTS'), reason='Live integration tests only run when RUN_LIVE_TESTS=1 is set')
@@ -187,7 +187,7 @@ async def test_live_cloud_sync_events():
 	if cloud_sync.session_id:
 		logger.info(f'📊 Session ID: {cloud_sync.session_id}')
 
-	await asyncio.sleep(60000)
+	# Test completed - removed excessive sleep
 
 
 if __name__ == '__main__':
