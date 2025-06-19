@@ -7,13 +7,13 @@ from typing import Generic, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
-from playwright.async_api import ElementHandle, Page
 
 # from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
+from browser_use.browser.types import ElementHandle, Page
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -212,6 +212,7 @@ class Controller(Generic[Context]):
 			msg = None
 
 			try:
+				assert element_node is not None, f'Element with index {params.index} does not exist'
 				download_path = await browser_session._click_element_node(element_node)
 				if download_path:
 					msg = f'💾  Downloaded file to {download_path}'
@@ -248,6 +249,7 @@ class Controller(Generic[Context]):
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
+			assert element_node is not None, f'Element with index {params.index} does not exist'
 			await browser_session._input_text_element_node(element_node, params.text)
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'
@@ -1012,7 +1014,7 @@ Only use this for extracting info from a single product/article page, not for en
 		browser_session: BrowserSession,
 		#
 		page_extraction_llm: BaseChatModel | None = None,
-		sensitive_data: dict[str, str] | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		file_system: FileSystem | None = None,
 		#
