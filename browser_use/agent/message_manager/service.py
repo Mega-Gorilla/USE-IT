@@ -209,7 +209,7 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = ''
+		self.agent_history_description = 'Agent initialized.\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		# Only initialize messages if state is empty
@@ -242,27 +242,16 @@ class MessageManager:
 				{
 					'name': 'AgentOutput',
 					'args': {
-						'current_state': {
-							'thinking': """
-**Understanding the Current State and History:**
-- I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
-
-**Evaluating the Previous Action:**
-- My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
-
-**Preparing what goes into my memory:**
-- I need to capture the key repositories I've identified so far.
-
-**Planning my Next Action:**
-- Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md. This will help me track which repositories I've visited, what information I've collected, and ensure I don't miss any important repositories. The todo.md should include all visible repositories and a systematic approach to processing them. 
-- {INSERT REASONING ON WRITING TODO.MD HERE}
-- After writing todo.md, I can also create a github.md file to accumulate the information I've collected. Let me put only a title as I haven't collected any information yet.
-- These writing actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information.
+						'thinking': """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
+My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
+I need to capture the key repositories I've identified so far into my memory and into a file.
+Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
+After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
+The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information.
 """,
-							'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
-							'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-							'next_goal': 'Create todo.md checklist to track progress and github.md file for collecting information and click on bytedance/UI-TARS-desktop.',
-						},
+						'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
+						'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
+						'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
 						'action': [
 							{
 								'write_file': {
@@ -287,8 +276,6 @@ class MessageManager:
 									'path': 'github.md',
 									'content': """
 # Github Repositories:
-- bytedance/UI-TARS-desktop
-- ray-project/kuberay
 """,
 								}
 							},
@@ -398,7 +385,8 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 
 		# Handle case where model_output is None (e.g., parsing failed)
 		if model_output is None:
-			self.agent_history_description += f"""## Step {step_number}
+			if isinstance(step_number, int) and step_number > 0:
+				self.agent_history_description += f"""## Step {step_number}
 No model output (parsing failed)
 {action_results}
 """
