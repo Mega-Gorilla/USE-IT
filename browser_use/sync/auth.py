@@ -264,14 +264,10 @@ class DeviceAuthClient:
 			verification_uri_complete = device_auth['verification_uri_complete'].replace(self.base_url, frontend_url)
 
 			if show_instructions:
-				logger.info('\n' + '=' * 60)
-				logger.info('🔐 Browser Use Cloud Authentication')
-				logger.info('=' * 60)
-				logger.info(f'\n1. Visit: {verification_uri_complete}')
-				logger.info(f'2. Or go to: {verification_uri}')
-				logger.info(f'   and enter code: {device_auth["user_code"]}')
-				logger.info(f'\n⏱️  This code expires in {device_auth["expires_in"] // 60} minutes')
-				logger.info('\n' + '=' * 60 + '\n')
+				logger.info('\n\n' + '─' * 70)
+				logger.info('🌐  View the details of this run in Browser Use Cloud:')
+				logger.info(f'    👉  {verification_uri_complete}')
+				logger.info('─' * 70 + '\n')
 
 			# Poll for token
 			token_data = await self.poll_for_token(
@@ -287,12 +283,18 @@ class DeviceAuthClient:
 				self.auth_config.save_to_file()
 
 				if show_instructions:
-					logger.info('✅ Authentication successful!')
+					logger.info('✅  Authentication successful! Cloud sync is now enabled.')
 
 				return True
 
 		except Exception as e:
-			logger.debug(f'Authentication failed: {e}')
+			# Log the error details for debugging
+			if hasattr(e, 'response'):
+				logger.debug(
+					f'Failed to get pre-auth token for cloud sync: HTTP {e.response.status_code} - {e.response.text[:200]}'
+				)
+			else:
+				logger.debug(f'Failed to get pre-auth token for cloud sync: {type(e).__name__}: {e}')
 
 		if show_instructions:
 			logger.info('❌ Authentication failed or timed out')
