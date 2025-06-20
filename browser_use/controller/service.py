@@ -155,9 +155,11 @@ class Controller(Generic[Context]):
 
 			page = await browser_session.get_current_page()
 			if page.url.strip('/') == 'https://www.google.com':
-				await page.goto(search_url)
-				await page.wait_for_load_state()
+				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
+				# This ensures URL validation against allowed_domains is performed
+				await browser_session.navigate_to(search_url)
 			else:
+				# create_new_tab already includes proper URL validation
 				page = await browser_session.create_new_tab(search_url)
 
 			msg = f'🔍  Searched for "{params.query}" in Google'
@@ -169,15 +171,12 @@ class Controller(Generic[Context]):
 		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction)
 		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
 			try:
-				page = await browser_session.get_current_page()
-				if page:
-					await page.goto(params.url)
-					await page.wait_for_load_state()
-				else:
-					page = await browser_session.create_new_tab(params.url)
+				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
+				# This ensures URL validation against allowed_domains is performed
+				await browser_session.navigate_to(params.url)
 				msg = f'Navigated to {params.url}'
 				logger.info(f'🔗  {msg}')
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
+				return ActionResult(extracted_content=msg)
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors
@@ -197,7 +196,7 @@ class Controller(Generic[Context]):
 						success=False, error=site_unavailable_msg, include_in_memory=True, long_term_memory=site_unavailable_msg
 					)
 				else:
-					# Re-raise non-network errors
+					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
 					raise
 
 		@self.registry.action('Go back', param_model=NoParamsAction)

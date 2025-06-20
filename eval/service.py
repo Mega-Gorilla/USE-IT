@@ -291,7 +291,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic.types import SecretStr
 
-from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Controller
+from browser_use import ActionResult, Agent, BrowserSession, Controller
 from browser_use.agent.memory import MemoryConfig
 from browser_use.agent.views import AgentHistoryList
 
@@ -1075,15 +1075,11 @@ async def load_existing_result(task_folder: Path) -> dict:
 
 async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	"""Setup browser session for the task"""
-	logger.debug(f'Browser setup: Creating unique user data directory for task {task.task_id}')
-	# Create unique user data directory
-	base_user_data_dir = Path(BrowserProfile().user_data_dir).parent
-	unique_user_data_dir = base_user_data_dir / f'task_{task.task_id}'
-	unique_user_data_dir.mkdir(parents=True, exist_ok=True)
-
 	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
+
+	# Use incognito mode (user_data_dir=None) for evaluations to avoid state pollution
 	browser_session = BrowserSession(
-		user_data_dir=str(unique_user_data_dir),
+		user_data_dir=None,  # Incognito mode - no persistent state
 		headless=headless,
 		chromium_sandbox=False,  # running in docker
 		# higher timeouts = higher success rates on long tail of slow sites or if on a slow CI server
