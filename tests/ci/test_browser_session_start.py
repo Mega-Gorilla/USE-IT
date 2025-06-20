@@ -580,7 +580,7 @@ class TestBrowserSessionReusePatterns:
 			# Return a valid JSON response that completes the task
 			response.content = """
 			{
-				"thinking": null,
+				"thinking": "null",
 				"evaluation_previous_goal": "Starting the task",
 				"memory": "Task started",
 				"next_goal": "Complete the task",
@@ -730,7 +730,7 @@ class TestBrowserSessionReusePatterns:
 			tab_creation_action = (
 				"""
 			{
-				"thinking": null,
+				"thinking": "null",
 				"evaluation_previous_goal": "Starting the task",
 				"memory": "Need to create a new tab",
 				"next_goal": "Create a new tab to work in",
@@ -748,7 +748,7 @@ class TestBrowserSessionReusePatterns:
 
 			done_action = """
 			{
-				"thinking": null,
+				"thinking": "null",
 				"evaluation_previous_goal": "Tab created",
 				"memory": "Task completed in new tab",
 				"next_goal": "Complete the task",

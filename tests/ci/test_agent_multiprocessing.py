@@ -49,7 +49,7 @@ def run_agent_in_subprocess_module(task_description):
 
 		response_content = """
 		{
-			"thinking": null,
+			"thinking": "null",
 			"evaluation_previous_goal": "Starting the task",
 			"memory": "Task completed",
 			"next_goal": "Complete the task",
@@ -363,7 +363,7 @@ class TestParallelism:
 		# Create action sequences - each agent creates a new tab
 		tab_action = """
 		{
-			"thinking": null,
+			"thinking": "null",
 			"evaluation_previous_goal": "Starting task",
 			"memory": "Need new tab",
 			"next_goal": "Create new tab",
@@ -379,7 +379,7 @@ class TestParallelism:
 
 		done_action = """
 		{
-			"thinking": null,
+			"thinking": "null",
 			"evaluation_previous_goal": "Tab created",
 			"memory": "Task done",
 			"next_goal": "Complete",
