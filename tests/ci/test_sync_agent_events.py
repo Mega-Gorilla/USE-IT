@@ -57,11 +57,10 @@ def mock_llm():
 
 	# Create the JSON response that the agent would parse
 	json_response = {
-		'current_state': {
-			'evaluation_previous_goal': 'Starting task',
-			'memory': 'New task to complete',
-			'next_goal': 'Complete the test task',
-		},
+		'thinking': 'null',
+		'evaluation_previous_goal': 'Starting task',
+		'memory': 'New task to complete',
+		'next_goal': 'Complete the test task',
 		'action': [{'done': {'success': True, 'text': 'Test completed successfully'}}],
 	}
 

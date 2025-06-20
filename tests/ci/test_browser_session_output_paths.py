@@ -54,11 +54,10 @@ def interactive_llm(httpserver_url):
 		# First action: Navigate to the page
 		f"""
 		{{
-			"current_state": {{
-				"evaluation_previous_goal": "Starting the task",
-				"memory": "Need to navigate to the test page",
-				"next_goal": "Navigate to the URL"
-			}},
+			"thinking": null,
+			"evaluation_previous_goal": "Starting the task",
+			"memory": "Need to navigate to the test page",
+			"next_goal": "Navigate to the URL",
 			"action": [
 				{{
 					"go_to_url": {{
@@ -71,11 +70,10 @@ def interactive_llm(httpserver_url):
 		# Second action: Click in the search box
 		"""
 		{
-			"current_state": {
-				"evaluation_previous_goal": "Successfully navigated to the page",
-				"memory": "Page loaded, can see search box and submit button",
-				"next_goal": "Click on the search box to focus it"
-			},
+			"thinking": null,
+			"evaluation_previous_goal": "Successfully navigated to the page",
+			"memory": "Page loaded, can see search box and submit button",
+			"next_goal": "Click on the search box to focus it",
 			"action": [
 				{
 					"click_element_by_index": {
@@ -88,11 +86,10 @@ def interactive_llm(httpserver_url):
 		# Third action: Type text in the search box
 		"""
 		{
-			"current_state": {
-				"evaluation_previous_goal": "Clicked on search box",
-				"memory": "Search box is focused and ready for input",
-				"next_goal": "Type 'test' in the search box"
-			},
+			"thinking": null,
+			"evaluation_previous_goal": "Clicked on search box",
+			"memory": "Search box is focused and ready for input",
+			"next_goal": "Type 'test' in the search box",
 			"action": [
 				{
 					"input_text": {
@@ -106,11 +103,10 @@ def interactive_llm(httpserver_url):
 		# Fourth action: Click submit button
 		"""
 		{
-			"current_state": {
-				"evaluation_previous_goal": "Typed 'test' in search box",
-				"memory": "Text 'test' has been entered successfully",
-				"next_goal": "Click the submit button to complete the task"
-			},
+			"thinking": null,
+			"evaluation_previous_goal": "Typed 'test' in search box",
+			"memory": "Text 'test' has been entered successfully",
+			"next_goal": "Click the submit button to complete the task",
 			"action": [
 				{
 					"click_element_by_index": {
