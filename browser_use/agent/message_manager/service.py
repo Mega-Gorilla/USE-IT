@@ -380,26 +380,27 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 		step_number = step_info.step_number
 
 		action_results = ''
+		result_len = len(result)
 		for idx, action_result in enumerate(result):
 			if action_result.include_extracted_content_only_once and action_result.extracted_content:
 				self.read_state_description += action_result.extracted_content + '\n'
 				logger.debug(f'Added extracted_content to read_state_description: {action_result.extracted_content}')
 
 			if action_result.long_term_memory:
-				action_results += f'Action {idx + 1} Result: {action_result.long_term_memory}\n'
+				action_results += f'Action {idx + 1}/{result_len} response: {action_result.long_term_memory}\n'
 				logger.debug(f'Added long_term_memory to action_results: {action_result.long_term_memory}')
 			elif action_result.extracted_content and not action_result.include_extracted_content_only_once:
-				action_results += f'Action {idx + 1} Result: {action_result.extracted_content}\n'
+				action_results += f'Action {idx + 1}/{result_len} response: {action_result.extracted_content}\n'
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 
 			if action_result.error:
-				action_results += f'Action {idx + 1} Error: {action_result.error[:200]}\n'
+				action_results += f'Action {idx + 1}/{result_len} response: {action_result.error[:200]}\n'
 				logger.debug(f'Added error to action_results: {action_result.error[:200]}')
 
 		self.agent_history_description += f"""## Step {step_number}
-Evaluation: {model_output.current_state.evaluation_previous_goal}
-Memory: {model_output.current_state.memory}
-Next goal: {model_output.current_state.next_goal}
+Step evaluation: {model_output.current_state.evaluation_previous_goal}
+Step memory: {model_output.current_state.memory}
+Step goal: {model_output.current_state.next_goal}
 {action_results}
 """
 		if self.read_state_description == self.read_state_initialization:
