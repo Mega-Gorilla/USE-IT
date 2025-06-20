@@ -190,9 +190,13 @@ You must ALWAYS respond with a valid JSON in this exact format:
     "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
     "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
     "next_goal": "State the next immediate goal and the action to achieve it, in one clear sentence."
-  }}
+  }},
   "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]
 }}
+
+IMPORTANT: Note that at the TOP LEVEL is:
+1. "current_state" - contains thinking, evaluation, memory, and next_goal
+2. "action" - contains the list of actions to execute
 
 Action list should NEVER be empty.
 </output>
