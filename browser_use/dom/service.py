@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from importlib import resources
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse

@@ -13,7 +13,7 @@ classifiers = [
 dependencies = [
     "aiofiles>=24.1.0",
     "anyio>=4.9.0",
-    "bubus>=1.0.2",
+    "bubus>=1.1.0",
     "faiss-cpu>=1.11.0",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
@@ -79,8 +79,6 @@ all = [
 # [tool.uv.sources]
 # bubus = { path = "../bubus", editable = true }
 
-# [tool.uv.workspace]
-# members = ["../bubus"]  # assume parent dir contains bubus repo cloned next to browser-use repo
 
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
