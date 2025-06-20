@@ -24,7 +24,6 @@ dependencies = [
     "langchain-ollama==0.3.3",
     "langchain-openai==0.3.21",
     "langchain>=0.3.25",
-    "lmnr[all]>=0.6.10",
     "markdownify==1.1.0",
     "mem0ai>=0.1.106",
     "patchright>=1.52.5",
@@ -94,7 +93,7 @@ build-backend = "hatchling.build"
 
 
 [tool.codespell]
-ignore-words-list = "bu,wit,dont,cant,wont,re-use,re-used,re-using,re-usable,thats,doesnt"
+ignore-words-list = "bu,wit,dont,cant,wont,re-use,re-used,re-using,re-usable,thats,doesnt,doubleclick"
 skip = "*.json"
 
 [tool.ruff]

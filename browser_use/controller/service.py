@@ -7,13 +7,13 @@ from typing import Generic, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import PromptTemplate
-from playwright.async_api import ElementHandle, Page
 
 # from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
+from browser_use.browser.types import ElementHandle, Page
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -87,9 +87,11 @@ class Controller(Generic[Context]):
 
 			page = await browser_session.get_current_page()
 			if page.url.strip('/') == 'https://www.google.com':
-				await page.goto(search_url)
-				await page.wait_for_load_state()
+				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
+				# This ensures URL validation against allowed_domains is performed
+				await browser_session.navigate_to(search_url)
 			else:
+				# create_new_tab already includes proper URL validation
 				page = await browser_session.create_new_tab(search_url)
 
 			msg = f'🔍  Searched for "{params.query}" in Google'
@@ -99,12 +101,9 @@ class Controller(Generic[Context]):
 		@self.registry.action('Navigate to URL in the current tab', param_model=GoToUrlAction)
 		async def go_to_url(params: GoToUrlAction, browser_session: BrowserSession):
 			try:
-				page = await browser_session.get_current_page()
-				if page:
-					await page.goto(params.url)
-					await page.wait_for_load_state()
-				else:
-					page = await browser_session.create_new_tab(params.url)
+				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
+				# This ensures URL validation against allowed_domains is performed
+				await browser_session.navigate_to(params.url)
 				msg = f'🔗  Navigated to {params.url}'
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
@@ -125,7 +124,7 @@ class Controller(Generic[Context]):
 					logger.warning(site_unavailable_msg)
 					return ActionResult(success=False, error=site_unavailable_msg, include_in_memory=True)
 				else:
-					# Re-raise non-network errors
+					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
 					raise
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
@@ -179,6 +178,7 @@ class Controller(Generic[Context]):
 			msg = None
 
 			try:
+				assert element_node is not None, f'Element with index {params.index} does not exist'
 				download_path = await browser_session._click_element_node(element_node)
 				if download_path:
 					msg = f'💾  Downloaded file to {download_path}'
@@ -215,6 +215,7 @@ class Controller(Generic[Context]):
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
+			assert element_node is not None, f'Element with index {params.index} does not exist'
 			await browser_session._input_text_element_node(element_node, params.text)
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'
@@ -925,7 +926,7 @@ class Controller(Generic[Context]):
 		browser_session: BrowserSession,
 		#
 		page_extraction_llm: BaseChatModel | None = None,
-		sensitive_data: dict[str, str] | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		#
 		context: Context | None = None,
