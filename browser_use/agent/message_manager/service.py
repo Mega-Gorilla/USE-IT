@@ -394,8 +394,8 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 
 			if action_result.error:
-				action_results += f'Action {idx + 1}/{result_len} response: {action_result.error[:200]}\n'
-				logger.debug(f'Added error to action_results: {action_result.error[:200]}')
+				action_results += f'Action {idx + 1}/{result_len} response: {action_result.error[:200]}...\n'
+				logger.debug(f'Added error to action_results: {action_result.error[:200]}...')
 
 		self.agent_history_description += f"""## Step {step_number}
 Step evaluation: {model_output.current_state.evaluation_previous_goal}
