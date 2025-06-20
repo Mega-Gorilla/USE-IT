@@ -50,7 +50,6 @@ from browser_use.agent.message_manager.utils import (
 from browser_use.agent.prompts import AgentMessagePrompt, PlannerPrompt, SystemPrompt
 from browser_use.agent.views import (
 	ActionResult,
-	AgentBrain,
 	AgentError,
 	AgentHistory,
 	AgentHistoryList,
@@ -1238,27 +1237,15 @@ class Agent(Generic[Context]):
 			parsing_error = response.get('parsing_error')
 			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
 				# Convert tool calls to AgentOutput format
-
 				tool_call = raw_msg.tool_calls[0]  # Take first tool call
-
-				# Create current state
-				tool_call_name = tool_call['name']
 				tool_call_args = tool_call['args']
+				parsed = self.AgentOutput(**tool_call_args)
 
-				current_state = {
-					'page_summary': 'Processing tool call',
-					'evaluation_previous_goal': 'Executing action',
-					'memory': 'Using tool call',
-					'next_goal': f'Execute {tool_call_name}',
-				}
-
-				# Create action from tool call
-				action = {tool_call_name: tool_call_args}
-
-				parsed = self.AgentOutput(current_state=AgentBrain(**current_state), action=[self.ActionModel(**action)])
-				# throw error if there is not 1 action in the parsed
-				if len(parsed.action) == 0:
+				try:
+					action = parsed.action[0].model_dump(exclude_unset=True)
+				except Exception as e:
 					raise ValueError(f'Could not parse response. {parsing_error} tried to parse {response["raw"]} to {parsed}')
+
 			else:
 				parsed = None
 		else:
