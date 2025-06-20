@@ -25,7 +25,7 @@ def create_mock_llm(actions=None):
 	# Default done action
 	default_done_action = """
 	{
-		"thinking": null,
+		"thinking": "null",
 		"evaluation_previous_goal": "Successfully completed the task",
 		"memory": "Task completed",
 		"next_goal": "Task completed",
