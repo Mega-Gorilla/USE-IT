@@ -371,13 +371,12 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 	) -> None:
 		"""Update the agent history description"""
 
-		if None in [model_output, result, step_info]:
-			return
+		if result is None:
+			result = []
+		step_number = step_info.step_number if step_info else 'unknown'
 
 		self.read_state_initialization = 'This is displayed only **one time**, save this information if you need it later.\n'
 		self.read_state_description = self.read_state_initialization
-
-		step_number = step_info.step_number
 
 		action_results = ''
 		result_len = len(result)
@@ -394,15 +393,23 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 
 			if action_result.error:
-				action_results += f'Action {idx + 1}/{result_len} response: {action_result.error[:200]}...\n'
-				logger.debug(f'Added error to action_results: {action_result.error[:200]}...')
+				action_results += f'Action {idx + 1}/{result_len} response: {action_result.error[:200]}\n'
+				logger.debug(f'Added error to action_results: {action_result.error[:200]}')
 
-		self.agent_history_description += f"""## Step {step_number}
+		# Handle case where model_output is None (e.g., parsing failed)
+		if model_output is None:
+			self.agent_history_description += f"""## Step {step_number}
+No model output (parsing failed)
+{action_results}
+"""
+		else:
+			self.agent_history_description += f"""## Step {step_number}
 Step evaluation: {model_output.current_state.evaluation_previous_goal}
 Step memory: {model_output.current_state.memory}
 Step goal: {model_output.current_state.next_goal}
 {action_results}
 """
+
 		if self.read_state_description == self.read_state_initialization:
 			self.read_state_description = ''
 		else:
