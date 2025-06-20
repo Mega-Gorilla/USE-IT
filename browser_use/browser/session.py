@@ -1480,7 +1480,8 @@ class BrowserSession(BaseModel):
 		"""
 		page = await self.get_current_page()
 		try:
-			script = """
+			await page.evaluate(
+				"""
                 try {
                     // Remove the highlight container and all its contents
                     const container = document.getElementById('playwright-highlight-container');
@@ -1497,13 +1498,7 @@ class BrowserSession(BaseModel):
                     console.error('Failed to remove highlights:', e);
                 }
                 """
-
-			await page.evaluate(script)
-
-			for iframe in page.frames:
-				if iframe.url and iframe.url != page.url and not iframe.url.startswith('data:'):
-					await iframe.evaluate(script)
-
+			)
 		except Exception as e:
 			self.logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
 			# Don't raise the error since this is not critical functionality
