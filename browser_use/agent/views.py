@@ -152,38 +152,34 @@ class StepMetadata(BaseModel):
 
 
 class AgentBrain(BaseModel):
-	thinking: str | None = None
+	thinking: str
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
 
 
 class AgentOutput(BaseModel):
-	"""
-	Output model for LLM, i.e. what we are expecting in LLM structured output in response to our prompt.
-	{
-		current_state: AgentBrain({
-			thinking: "I think I should click on the link at index 127, then open that new tab",
-			evaluation_previous_goal: "we did ok, team",
-			memory: "filled in xyz into page, still need to do xyz...",
-			next_goal: "click on the link at index 127, then open that new tab"
-		}),
-		"action": [
-			ActionModel({action_name: "click_element_by_index", action_params: {index: 127}}),
-			ActionModel({action_name: "switch_to_tab", action_params: {page_id: 3}}),
-			... other multi-action steps ...
-		],
-	}
-	"""
-
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
-	current_state: AgentBrain
+	thinking: str
+	evaluation_previous_goal: str
+	memory: str
+	next_goal: str
 	action: list[ActionModel] = Field(
 		...,
 		description='List of actions to execute',
 		json_schema_extra={'min_items': 1},  # Ensure at least one action is provided
 	)
+
+	@property
+	def current_state(self) -> AgentBrain:
+		"""For backward compatibility - returns an AgentBrain with the flattened properties"""
+		return AgentBrain(
+			thinking=self.thinking,
+			evaluation_previous_goal=self.evaluation_previous_goal,
+			memory=self.memory,
+			next_goal=self.next_goal,
+		)
 
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
@@ -231,7 +227,10 @@ class AgentHistory(BaseModel):
 		if self.model_output:
 			action_dump = [action.model_dump(exclude_none=True) for action in self.model_output.action]
 			model_output_dump = {
-				'current_state': self.model_output.current_state.model_dump(),
+				'thinking': self.model_output.thinking,
+				'evaluation_previous_goal': self.model_output.evaluation_previous_goal,
+				'memory': self.model_output.memory,
+				'next_goal': self.model_output.next_goal,
 				'action': action_dump,  # This preserves the actual action data
 			}
 
