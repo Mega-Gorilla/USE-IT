@@ -47,48 +47,53 @@ class CloudSync:
 			await self._send_event(event_data)
 
 		except Exception as e:
-			logger.warning(f'Failed to send event to cloud: {e}')
+			logger.error(f'Failed to send event to cloud: {e}', exc_info=True)
 
 	def _prepare_event_data(self, event: BaseEvent) -> dict:
 		"""Prepare event data for cloud API"""
 		# Get user_id from auth client or use temp ID
 		user_id = self.auth_client.user_id if self.auth_client else TEMP_USER_ID
 
-		# Update event with user_id
-		event_dict = event.model_dump(mode='json')  # Use JSON mode to handle datetime serialization
-		event_dict['user_id'] = user_id
+		# Set user_id directly on event (mutating the event)
+		# Use setattr to handle cases where user_id might not be a defined field
+		if hasattr(event, 'user_id') or hasattr(event, '__dict__'):
+			event.user_id = user_id
+		else:
+			logger.debug(f'Could not set user_id on event type {type(event).__name__}')
 
-		# Prepare API request format
-		return {
-			'event_type': event.event_type,
-			'event_id': event_dict.get('event_id', event_dict.get('id', '')),
-			'event_at': event_dict.get('event_at', event_dict.get('created_at', '')),
-			'event_schema': f'{event.__class__.__name__}@1.0',
-			'data': event_dict,
-		}
+		# Return event directly as dict
+		return event.model_dump(mode='json')
 
 	async def _send_event(self, event_data: dict) -> None:
 		"""Send event to cloud API"""
-		headers = {}
+		try:
+			headers = {}
 
-		# Add auth headers if available
-		if self.auth_client:
-			headers.update(self.auth_client.get_headers())
+			# Add auth headers if available
+			if self.auth_client:
+				headers.update(self.auth_client.get_headers())
 
-		# Send event
-		async with httpx.AsyncClient() as client:
-			response = await client.post(
-				f'{self.base_url.rstrip("/")}/api/v1/events/',
-				json={'events': [event_data]},
-				headers=headers,
-				timeout=10.0,
-			)
+			# Send event (batch format with direct BaseEvent serialization)
+			async with httpx.AsyncClient() as client:
+				response = await client.post(
+					f'{self.base_url.rstrip("/")}/api/v1/events/',
+					json={'events': [event_data]},
+					headers=headers,
+					timeout=10.0,
+				)
 
-			if response.status_code == 401 and self.auth_client and not self.auth_client.is_authenticated:
-				# Store event for retry after auth
-				self.pending_events.append(event_data)
-			else:
-				response.raise_for_status()
+				if response.status_code == 401 and self.auth_client and not self.auth_client.is_authenticated:
+					# Store event for retry after auth
+					self.pending_events.append(event_data)
+				elif response.status_code >= 400:
+					# Log error but don't raise - we want to fail silently
+					logger.warning(f'Failed to send event to cloud: HTTP {response.status_code} - {response.text[:200]}')
+		except httpx.TimeoutException:
+			logger.warning('Event send timed out after 10 seconds')
+		except httpx.ConnectError:
+			logger.warning('Failed to connect to cloud service')
+		except Exception as e:
+			logger.warning(f'Unexpected error sending event: {e}')
 
 	async def _background_auth(self, agent_session_id: str) -> None:
 		"""Run authentication in background"""
@@ -117,7 +122,7 @@ class CloudSync:
 		# Update user_id in pending events
 		user_id = self.auth_client.user_id
 		for event_data in self.pending_events:
-			event_data['data']['user_id'] = user_id
+			event_data['user_id'] = user_id
 
 		# Send all pending events
 		for event_data in self.pending_events:
@@ -161,22 +166,6 @@ class CloudSync:
 		"""Wait for authentication to complete if in progress"""
 		if self.auth_task and not self.auth_task.done():
 			await self.auth_task
-
-	async def send_event(self, event_type: str, event_data: dict, event_schema: str) -> None:
-		"""Send a single event to the cloud - convenience method for tests"""
-		# Create a dynamic subclass that includes the custom event data
-		from pydantic import ConfigDict, Field
-
-		etype = event_type
-
-		class CustomEvent(BaseEvent):
-			model_config = ConfigDict(
-				extra='allow', arbitrary_types_allowed=True, validate_assignment=True, validate_default=True
-			)
-			event_type: str = Field(default=etype, frozen=True)
-
-		CustomEvent.__name__ = etype
-		await self.handle_event(CustomEvent(**event_data))
 
 	async def authenticate(self, show_instructions: bool = True) -> bool:
 		"""Authenticate with the cloud service"""

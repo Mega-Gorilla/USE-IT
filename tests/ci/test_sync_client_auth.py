@@ -388,9 +388,9 @@ class TestCloudSync:
 		assert len(json_data['events']) == 1
 		event = json_data['events'][0]
 		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['data']['user_id'] == 'test-user-123'
-		assert event['data']['task'] == 'Test task'
-		assert event['data']['status'] == 'running'
+		assert event['user_id'] == 'test-user-123'
+		assert event['task'] == 'Test task'
+		assert event['status'] == 'running'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event before authentication."""
@@ -439,9 +439,9 @@ class TestCloudSync:
 		assert len(json_data['events']) == 1
 		event = json_data['events'][0]
 		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['data']['user_id'] == TEMP_USER_ID
-		assert event['data']['task'] == 'Test task'
-		assert event['data']['status'] == 'running'
+		assert event['user_id'] == TEMP_USER_ID
+		assert event['task'] == 'Test task'
+		assert event['status'] == 'running'
 
 	async def test_authenticate_and_resend(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test authentication flow with pre-auth event resending."""
@@ -486,8 +486,8 @@ class TestCloudSync:
 
 		# Event should be in pending_events since we got 401
 		assert len(service.pending_events) == 1
-		assert service.pending_events[0]['data']['task'] == 'Pre-auth task'
-		assert service.pending_events[0]['data']['user_id'] == TEMP_USER_ID
+		assert service.pending_events[0]['task'] == 'Pre-auth task'
+		assert service.pending_events[0]['user_id'] == TEMP_USER_ID
 
 		# Now authenticate the auth client
 		auth.auth_config.api_token = 'test-api-key'
@@ -504,11 +504,11 @@ class TestCloudSync:
 
 		# Check first request was unauthenticated
 		assert 'Authorization' not in requests[0]['headers']
-		assert requests[0]['json']['events'][0]['data']['user_id'] == TEMP_USER_ID
+		assert requests[0]['json']['events'][0]['user_id'] == TEMP_USER_ID
 
 		# Check second request was authenticated with updated user_id
 		assert requests[1]['headers']['Authorization'] == 'Bearer test-api-key'
-		assert requests[1]['json']['events'][0]['data']['user_id'] == 'test-user-123'
+		assert requests[1]['json']['events'][0]['user_id'] == 'test-user-123'
 
 	async def test_error_handling(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test error handling during event sending."""
