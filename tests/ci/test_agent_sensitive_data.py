@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
 from browser_use.agent.views import MessageManagerState
 from browser_use.controller.registry.service import Registry
+from browser_use.filesystem.file_system import FileSystem
 from browser_use.utils import match_url_with_domain_pattern
 
 
@@ -21,11 +22,18 @@ def registry():
 
 @pytest.fixture
 def message_manager():
+	import os
+	import tempfile
+	import uuid
+
+	base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
+	file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
 	return MessageManager(
 		task='Test task',
 		system_message=SystemMessage(content='System message'),
 		settings=MessageManagerSettings(),
 		state=MessageManagerState(),
+		file_system=FileSystem(file_system_path),
 	)
 
 

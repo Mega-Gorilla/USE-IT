@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage
 from pytest_httpserver import HTTPServer
 
 from browser_use.agent.cloud_events import (
+	MAX_TASK_LENGTH,
 	CreateAgentOutputFileEvent,
 	CreateAgentSessionEvent,
 	CreateAgentStepEvent,
@@ -503,10 +504,10 @@ class TestEventValidation:
 	def test_max_string_length_validation(self):
 		"""Test that string fields enforce max length"""
 		# Create event with very long task
-		long_task = 'x' * 10000  # Longer than MAX_TASK_LENGTH (5000)
+		long_task = 'x' * (2 * MAX_TASK_LENGTH)  # Longer than MAX_TASK_LENGTH
 
 		# Should raise validation error for string too long
-		with pytest.raises(ValueError, match='String should have at most 5000 characters'):
+		with pytest.raises(ValueError, match=f'String should have at most {MAX_TASK_LENGTH} characters'):
 			CreateAgentTaskEvent(
 				user_id='test',
 				agent_session_id='0683fb03-c5da-79c9-8000-d3a39c47c659',

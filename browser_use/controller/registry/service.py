@@ -19,6 +19,7 @@ from browser_use.controller.registry.views import (
 	RegisteredAction,
 	SpecialActionParameters,
 )
+from browser_use.filesystem.file_system import FileSystem
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import (
 	ControllerRegisteredFunctionsTelemetryEvent,
@@ -54,6 +55,7 @@ class Registry(Generic[Context]):
 			'page_extraction_llm': BaseChatModel,
 			'available_file_paths': list,
 			'has_sensitive_data': bool,
+			'file_system': FileSystem,
 		}
 
 	def _normalize_action_function_signature(
@@ -197,6 +199,8 @@ class Registry(Generic[Context]):
 								raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
 							elif param.name == 'page_extraction_llm':
 								raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+							elif param.name == 'file_system':
+								raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
 							elif param.name == 'page':
 								raise ValueError(f'Action {func.__name__} requires page but none provided.')
 							else:
@@ -210,6 +214,8 @@ class Registry(Generic[Context]):
 							raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
 						elif param.name == 'page_extraction_llm':
 							raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+						elif param.name == 'file_system':
+							raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
 						elif param.name == 'page':
 							raise ValueError(f'Action {func.__name__} requires page but none provided.')
 						else:
@@ -305,6 +311,7 @@ class Registry(Generic[Context]):
 		params: dict,
 		browser_session: BrowserSession | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
+		file_system: FileSystem | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		#
@@ -342,6 +349,7 @@ class Registry(Generic[Context]):
 				'page_extraction_llm': page_extraction_llm,
 				'available_file_paths': available_file_paths,
 				'has_sensitive_data': action_name == 'input_text' and bool(sensitive_data),
+				'file_system': file_system,
 			}
 
 			# Handle async page parameter if needed

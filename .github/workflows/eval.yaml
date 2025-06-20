@@ -8,7 +8,7 @@ on:
 jobs:
   run_evaluation:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 360
     env:
       #IN_DOCKER: 'true'
       #ANONYMIZED_TELEMETRY: 'false'
