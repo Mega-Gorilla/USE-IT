@@ -47,7 +47,7 @@ class CloudSync:
 			await self._send_event(event_data)
 
 		except Exception as e:
-			logger.error(f'Failed to send event to cloud: {e}', exc_info=True)
+			logger.error(f'Failed to handle {event.event_type} event: {type(e).__name__}: {e}', exc_info=True)
 
 	def _prepare_event_data(self, event: BaseEvent) -> dict:
 		"""Prepare event data for cloud API"""
@@ -89,11 +89,13 @@ class CloudSync:
 					# Log error but don't raise - we want to fail silently
 					logger.warning(f'Failed to send event to cloud: HTTP {response.status_code} - {response.text[:200]}')
 		except httpx.TimeoutException:
-			logger.warning('Event send timed out after 10 seconds')
-		except httpx.ConnectError:
-			logger.warning('Failed to connect to cloud service')
+			logger.warning(f'Event send timed out after 10 seconds - event_type={event_data.get("event_type", "unknown")}')
+		except httpx.ConnectError as e:
+			logger.warning(f'Failed to connect to cloud service at {self.base_url}: {e}')
+		except httpx.HTTPError as e:
+			logger.warning(f'HTTP error sending event: {type(e).__name__}: {e}')
 		except Exception as e:
-			logger.warning(f'Unexpected error sending event: {e}')
+			logger.warning(f'Unexpected error sending {event_data.get("event_type", "unknown")} event: {type(e).__name__}: {e}')
 
 	async def _background_auth(self, agent_session_id: str) -> None:
 		"""Run authentication in background"""

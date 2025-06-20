@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from bubus import BaseEvent
 from pytest_httpserver import HTTPServer
 
-from browser_use.agent.cloud_events import CreateAgentTaskEvent
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
 from browser_use.sync.service import CloudSync
 
@@ -110,7 +110,7 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
 
 		# Send event
-		await authenticated_sync.handle_event(CreateAgentTaskEvent(task='Test task', priority='high'))
+		await authenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task', priority='high'))
 
 		# Verify forwarding
 		assert len(requests) == 1
@@ -130,7 +130,7 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json({'error': 'unauthorized'}, status=401)
 
 		# Send event
-		await unauthenticated_sync.handle_event(CreateAgentTaskEvent(task='Queued task'))
+		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Queued task'))
 
 		# Event should be queued
 		assert len(unauthenticated_sync.pending_events) == 1
@@ -152,7 +152,7 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
 
 		# Send event without user_id
-		await unauthenticated_sync.handle_event(CreateAgentTaskEvent(task='Pre-auth task'))
+		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Pre-auth task'))
 
 		# Verify temp user ID was injected
 		assert len(requests) == 1
@@ -222,7 +222,7 @@ class TestCloudSyncRetryLogic:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Internal Server Error', status=500)
 
 		# Should not raise exception
-		await sync_with_auth.handle_event(CreateAgentTaskEvent(task='Task during outage'))
+		await sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Task during outage'))
 
 		# Events should not be queued for 500 errors (only 401)
 		assert len(sync_with_auth.pending_events) == 0
@@ -233,7 +233,7 @@ class TestCloudSyncRetryLogic:
 		sync_with_auth.base_url = 'http://localhost:99999'  # Invalid port
 
 		# Should not raise exception
-		await sync_with_auth.handle_event(CreateAgentTaskEvent(task='Task during network error'))
+		await sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Task during network error'))
 
 		# Should handle gracefully without crashing
 
@@ -254,7 +254,7 @@ class TestCloudSyncRetryLogic:
 		# Send multiple events concurrently
 		tasks = []
 		for i in range(5):
-			task = sync_with_auth.handle_event(CreateAgentTaskEvent(task=f'Concurrent task {i}'))
+			task = sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Concurrent task {i}'))
 			tasks.append(task)
 
 		await asyncio.gather(*tasks)
@@ -305,7 +305,7 @@ class TestCloudSyncBackendCommunication:
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
-		await service.handle_event(CreateAgentTaskEvent(task='Format validation test'))
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Format validation test'))
 
 		assert len(requests) == 1
 
@@ -334,7 +334,7 @@ class TestCloudSyncBackendCommunication:
 		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
-		await service.handle_event(CreateAgentTaskEvent(task='Auth header test'))
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Auth header test'))
 
 		# Check auth header was included
 		assert len(requests) == 1
@@ -346,7 +346,7 @@ class TestCloudSyncBackendCommunication:
 		requests.clear()
 		service.auth_client = DeviceAuthClient(base_url=httpserver.url_for(''))  # No credentials
 
-		await service.handle_event(CreateAgentTaskEvent(task='No auth test'))
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='No auth test'))
 
 		# Check no auth header
 		assert len(requests) == 1
@@ -368,11 +368,10 @@ class TestCloudSyncErrorHandling:
 		sync_service.base_url = 'http://10.255.255.1'  # Non-routable IP for timeout
 
 		# Should not raise exception
-		await sync_service.handle_event(CreateAgentTaskEvent(task='Timeout test'))
+		await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Timeout test'))
 
 	async def test_malformed_event_handling(self, httpserver: HTTPServer, sync_service):
 		"""Test handling of events that can't be serialized."""
-		from bubus import BaseEvent
 
 		class BadEvent(BaseEvent):
 			"""Event that will fail to serialize."""
@@ -395,7 +394,7 @@ class TestCloudSyncErrorHandling:
 			)
 
 			# Should not raise exception
-			await sync_service.handle_event(CreateAgentTaskEvent(task=f'Error {status_code} test'))
+			await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Error {status_code} test'))
 
 	async def test_invalid_response_handling(self, httpserver: HTTPServer, sync_service):
 		"""Test handling of invalid server responses."""
@@ -403,11 +402,10 @@ class TestCloudSyncErrorHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Not JSON', status=200)
 
 		# Should not raise exception
-		await sync_service.handle_event(CreateAgentTaskEvent(task='Invalid response test'))
+		await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Invalid response test'))
 
 	async def test_event_with_restricted_attributes(self, httpserver: HTTPServer, sync_service):
 		"""Test handling events that don't allow user_id attribute."""
-		from bubus import BaseEvent
 		from pydantic import ConfigDict
 
 		class RestrictedEvent(BaseEvent):
@@ -448,7 +446,7 @@ class TestCloudSyncErrorHandling:
 		# Send 10 events concurrently
 		tasks = []
 		for i in range(10):
-			task = sync_service.handle_event(CreateAgentTaskEvent(task=f'Concurrent error test {i}'))
+			task = sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Concurrent error test {i}'))
 			tasks.append(task)
 
 		# All should complete without raising
