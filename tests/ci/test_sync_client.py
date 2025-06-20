@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from bubus import BaseEvent
 from pytest_httpserver import HTTPServer
 
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
@@ -109,11 +110,7 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
 
 		# Send event
-		await authenticated_sync.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task', 'priority': 'high'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await authenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task', priority='high'))
 
 		# Verify forwarding
 		assert len(requests) == 1
@@ -122,10 +119,10 @@ class TestCloudSyncEventHandling:
 
 		event = event_batch['events'][0]
 		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['data']['user_id'] == 'test-user-123'
+		assert event['user_id'] == 'test-user-123'
 		# BaseEvent creates event_type attribute, plus our custom data as attributes
-		assert event['data']['task'] == 'Test task'
-		assert event['data']['priority'] == 'high'
+		assert event['task'] == 'Test task'
+		assert event['priority'] == 'high'
 
 	async def test_event_queueing_unauthenticated(self, httpserver: HTTPServer, unauthenticated_sync):
 		"""Test event queueing when unauthenticated."""
@@ -133,18 +130,14 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json({'error': 'unauthorized'}, status=401)
 
 		# Send event
-		await unauthenticated_sync.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Queued task'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Queued task'))
 
 		# Event should be queued
 		assert len(unauthenticated_sync.pending_events) == 1
 		queued_event = unauthenticated_sync.pending_events[0]
 		assert queued_event['event_type'] == 'CreateAgentTaskEvent'
-		assert queued_event['data']['user_id'] == TEMP_USER_ID
-		assert queued_event['data']['task'] == 'Queued task'
+		assert queued_event['user_id'] == TEMP_USER_ID
+		assert queued_event['task'] == 'Queued task'
 
 	async def test_event_user_id_injection_pre_auth(self, httpserver: HTTPServer, unauthenticated_sync):
 		"""Test that temp user ID is injected for pre-auth events."""
@@ -159,16 +152,12 @@ class TestCloudSyncEventHandling:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
 
 		# Send event without user_id
-		await unauthenticated_sync.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Pre-auth task'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Pre-auth task'))
 
 		# Verify temp user ID was injected
 		assert len(requests) == 1
 		event = requests[0]['events'][0]
-		assert event['data']['user_id'] == TEMP_USER_ID
+		assert event['user_id'] == TEMP_USER_ID
 
 
 class TestCloudSyncRetryLogic:
@@ -203,11 +192,13 @@ class TestCloudSyncRetryLogic:
 			[
 				{
 					'event_type': 'CreateAgentTaskEvent',
-					'data': {'task': 'Pending task 1', 'user_id': TEMP_USER_ID},
+					'task': 'Pending task 1',
+					'user_id': TEMP_USER_ID,
 				},
 				{
 					'event_type': 'CreateAgentTaskEvent',
-					'data': {'task': 'Pending task 2', 'user_id': TEMP_USER_ID},
+					'task': 'Pending task 2',
+					'user_id': TEMP_USER_ID,
 				},
 			]
 		)
@@ -219,8 +210,8 @@ class TestCloudSyncRetryLogic:
 		assert len(requests) == 2
 		for i, request in enumerate(requests):
 			event = request['events'][0]
-			assert event['data']['user_id'] == 'test-user-123'  # Updated from temp ID
-			assert f'Pending task {i + 1}' == event['data']['task']
+			assert event['user_id'] == 'test-user-123'  # Updated from temp ID
+			assert f'Pending task {i + 1}' == event['task']
 
 		# Pending events should be cleared
 		assert len(sync_with_auth.pending_events) == 0
@@ -231,11 +222,7 @@ class TestCloudSyncRetryLogic:
 		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Internal Server Error', status=500)
 
 		# Should not raise exception
-		await sync_with_auth.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Task during outage'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Task during outage'))
 
 		# Events should not be queued for 500 errors (only 401)
 		assert len(sync_with_auth.pending_events) == 0
@@ -246,11 +233,7 @@ class TestCloudSyncRetryLogic:
 		sync_with_auth.base_url = 'http://localhost:99999'  # Invalid port
 
 		# Should not raise exception
-		await sync_with_auth.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Task during network error'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Task during network error'))
 
 		# Should handle gracefully without crashing
 
@@ -271,11 +254,7 @@ class TestCloudSyncRetryLogic:
 		# Send multiple events concurrently
 		tasks = []
 		for i in range(5):
-			task = sync_with_auth.send_event(
-				event_type='CreateAgentTaskEvent',
-				event_data={'task': f'Concurrent task {i}'},
-				event_schema='AgentTaskModel@1.0',
-			)
+			task = sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Concurrent task {i}'))
 			tasks.append(task)
 
 		await asyncio.gather(*tasks)
@@ -283,7 +262,7 @@ class TestCloudSyncRetryLogic:
 		# All events should be sent
 		assert len(requests) == 5
 		# Just verify all events have task data - order may vary due to concurrency
-		task_values = [req['events'][0]['data']['task'] for req in requests]
+		task_values = [req['events'][0]['task'] for req in requests]
 		expected_tasks = [f'Concurrent task {i}' for i in range(5)]
 		assert sorted(task_values) == sorted(expected_tasks)
 
@@ -326,11 +305,7 @@ class TestCloudSyncBackendCommunication:
 		service.auth_client = auth
 		service.session_id = 'test-session-id'
 
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Format validation test'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Format validation test'))
 
 		assert len(requests) == 1
 
@@ -359,11 +334,7 @@ class TestCloudSyncBackendCommunication:
 		service = CloudSync(base_url=httpserver.url_for(''), enable_auth=True)
 		service.auth_client = auth
 
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Auth header test'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Auth header test'))
 
 		# Check auth header was included
 		assert len(requests) == 1
@@ -375,13 +346,111 @@ class TestCloudSyncBackendCommunication:
 		requests.clear()
 		service.auth_client = DeviceAuthClient(base_url=httpserver.url_for(''))  # No credentials
 
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'No auth test'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='No auth test'))
 
 		# Check no auth header
 		assert len(requests) == 1
 		headers = requests[0]['headers']
 		assert 'Authorization' not in headers
+
+
+class TestCloudSyncErrorHandling:
+	"""Test CloudSync error handling doesn't crash the agent."""
+
+	@pytest.fixture
+	def sync_service(self, httpserver: HTTPServer, temp_config_dir):
+		"""Create CloudSync service."""
+		return CloudSync(base_url=httpserver.url_for(''), enable_auth=False)
+
+	async def test_timeout_error_handling(self, sync_service):
+		"""Test that timeout errors are handled gracefully."""
+		# Use a URL that will timeout
+		sync_service.base_url = 'http://10.255.255.1'  # Non-routable IP for timeout
+
+		# Should not raise exception
+		await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Timeout test'))
+
+	async def test_malformed_event_handling(self, httpserver: HTTPServer, sync_service):
+		"""Test handling of events that can't be serialized."""
+
+		class BadEvent(BaseEvent):
+			"""Event that will fail to serialize."""
+
+			event_type: str = 'BadEvent'
+
+			def model_dump(self, **kwargs):
+				raise ValueError('Serialization failed')
+
+		# Should not raise exception
+		await sync_service.handle_event(BadEvent())
+
+	async def test_http_error_responses(self, httpserver: HTTPServer, sync_service):
+		"""Test various HTTP error responses don't crash the service."""
+		error_codes = [400, 403, 404, 429, 500, 502, 503]
+
+		for status_code in error_codes:
+			httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json(
+				{'error': f'Test error {status_code}'}, status=status_code
+			)
+
+			# Should not raise exception
+			await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Error {status_code} test'))
+
+	async def test_invalid_response_handling(self, httpserver: HTTPServer, sync_service):
+		"""Test handling of invalid server responses."""
+		# Return invalid JSON
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Not JSON', status=200)
+
+		# Should not raise exception
+		await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Invalid response test'))
+
+	async def test_event_with_restricted_attributes(self, httpserver: HTTPServer, sync_service):
+		"""Test handling events that don't allow user_id attribute."""
+		from pydantic import ConfigDict
+
+		class RestrictedEvent(BaseEvent):
+			"""Event that doesn't allow extra attributes."""
+
+			model_config = ConfigDict(extra='forbid')
+			event_type: str = 'RestrictedEvent'
+			data: str = 'test'
+
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json({'processed': 1}, status=200)
+
+		# Should not raise exception - will log debug message about not being able to set user_id
+		await sync_service.handle_event(RestrictedEvent())
+
+	async def test_concurrent_error_resilience(self, httpserver: HTTPServer, sync_service):
+		"""Test that concurrent errors don't affect other events."""
+		import asyncio
+
+		successful_requests = []
+		request_count = 0
+
+		def handler(request):
+			nonlocal request_count
+			request_count += 1
+			# Every 3rd request fails
+			if request_count % 3 == 0:
+				from werkzeug.wrappers import Response
+
+				return Response('Server Error', status=500)
+			else:
+				successful_requests.append(request.get_json())
+				from werkzeug.wrappers import Response
+
+				return Response('{"processed": 1}', status=200, mimetype='application/json')
+
+		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(handler)
+
+		# Send 10 events concurrently
+		tasks = []
+		for i in range(10):
+			task = sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Concurrent error test {i}'))
+			tasks.append(task)
+
+		# All should complete without raising
+		await asyncio.gather(*tasks)
+
+		# ~7 should succeed (10 total, ~3 fail)
+		assert len(successful_requests) >= 6

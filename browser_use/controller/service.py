@@ -174,9 +174,9 @@ class Controller(Generic[Context]):
 				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
 				# This ensures URL validation against allowed_domains is performed
 				await browser_session.navigate_to(params.url)
-				msg = f'Navigated to {params.url}'
-				logger.info(f'🔗  {msg}')
-				return ActionResult(extracted_content=msg)
+				msg = f'🔗  Navigated to {params.url}'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True)
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors

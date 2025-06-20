@@ -17,6 +17,8 @@ from pytest_httpserver import HTTPServer
 # Load environment variables before any imports
 load_dotenv()
 
+from bubus import BaseEvent
+
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
 from browser_use.sync.service import CloudSync
 
@@ -370,11 +372,7 @@ class TestCloudSync:
 			'status': 'running',
 		}
 
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data=event_data,
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', **event_data))
 
 		# Check request was made
 		assert len(requests) == 1
@@ -388,9 +386,9 @@ class TestCloudSync:
 		assert len(json_data['events']) == 1
 		event = json_data['events'][0]
 		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['data']['user_id'] == 'test-user-123'
-		assert event['data']['task'] == 'Test task'
-		assert event['data']['status'] == 'running'
+		assert event['user_id'] == 'test-user-123'
+		assert event['task'] == 'Test task'
+		assert event['status'] == 'running'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event before authentication."""
@@ -423,11 +421,7 @@ class TestCloudSync:
 			'status': 'running',
 		}
 
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data=event_data,
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', **event_data))
 
 		# Check request was made without auth header
 		assert len(requests) == 1
@@ -439,9 +433,9 @@ class TestCloudSync:
 		assert len(json_data['events']) == 1
 		event = json_data['events'][0]
 		assert event['event_type'] == 'CreateAgentTaskEvent'
-		assert event['data']['user_id'] == TEMP_USER_ID
-		assert event['data']['task'] == 'Test task'
-		assert event['data']['status'] == 'running'
+		assert event['user_id'] == TEMP_USER_ID
+		assert event['task'] == 'Test task'
+		assert event['status'] == 'running'
 
 	async def test_authenticate_and_resend(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test authentication flow with pre-auth event resending."""
@@ -478,16 +472,12 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send pre-auth event (should get 401 and be queued)
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Pre-auth task'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Pre-auth task'))
 
 		# Event should be in pending_events since we got 401
 		assert len(service.pending_events) == 1
-		assert service.pending_events[0]['data']['task'] == 'Pre-auth task'
-		assert service.pending_events[0]['data']['user_id'] == TEMP_USER_ID
+		assert service.pending_events[0]['task'] == 'Pre-auth task'
+		assert service.pending_events[0]['user_id'] == TEMP_USER_ID
 
 		# Now authenticate the auth client
 		auth.auth_config.api_token = 'test-api-key'
@@ -504,11 +494,11 @@ class TestCloudSync:
 
 		# Check first request was unauthenticated
 		assert 'Authorization' not in requests[0]['headers']
-		assert requests[0]['json']['events'][0]['data']['user_id'] == TEMP_USER_ID
+		assert requests[0]['json']['events'][0]['user_id'] == TEMP_USER_ID
 
 		# Check second request was authenticated with updated user_id
 		assert requests[1]['headers']['Authorization'] == 'Bearer test-api-key'
-		assert requests[1]['json']['events'][0]['data']['user_id'] == 'test-user-123'
+		assert requests[1]['json']['events'][0]['user_id'] == 'test-user-123'
 
 	async def test_error_handling(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test error handling during event sending."""
@@ -525,11 +515,7 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send event - should not raise exception but handle gracefully
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task'))
 
 		# Should handle error gracefully without crashing
 
@@ -668,11 +654,7 @@ class TestIntegration:
 		service.session_id = 'test-session-id'
 
 		# Send pre-auth event
-		await service.send_event(
-			event_type='CreateAgentSessionEvent',
-			event_data={'started_at': datetime.utcnow().isoformat()},
-			event_schema='AgentSessionModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentSessionEvent', started_at=datetime.utcnow().isoformat()))
 
 		# Authenticate
 		authenticated = await service.authenticate(show_instructions=False)
@@ -682,11 +664,7 @@ class TestIntegration:
 		assert service.auth_client.user_id == 'test-user-123'
 
 		# Send authenticated event
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Authenticated task'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Authenticated task'))
 
 		# Verify auth was saved
 		auth_file = temp_config_dir / 'cloud_auth.json'
@@ -748,11 +726,7 @@ class TestAuthResilience:
 		service.auth_client = auth
 
 		# Send event - should not raise exception even though token is expired
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task after token expiry'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task after token expiry'))
 
 		# Agent should continue functioning despite sync failure
 		assert True  # No exception raised
@@ -784,11 +758,7 @@ class TestAuthResilience:
 		).respond_with_json({'processed': 1, 'failed': 0})
 
 		# Should be able to send events without auth (pre-auth mode)
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task without auth'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task without auth'))
 
 	async def test_server_downtime_resilience(self, httpserver: HTTPServer, http_client, temp_config_dir):
 		"""Test that server downtime doesn't break the agent."""
@@ -807,11 +777,7 @@ class TestAuthResilience:
 
 		# Should be able to send events even when server is down
 		# They will be queued locally
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task during server downtime'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task during server downtime'))
 
 	async def test_excessive_event_queue_handling(self, httpserver: HTTPServer, http_client, temp_config_dir):
 		"""Test that excessive event queuing doesn't break the agent."""
@@ -824,11 +790,7 @@ class TestAuthResilience:
 
 		# Send many events while server is down (no responses configured)
 		for i in range(100):
-			await service.send_event(
-				event_type='CreateAgentTaskEvent',
-				event_data={'task': f'Test task {i}'},
-				event_schema='AgentTaskModel@1.0',
-			)
+			await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Test task {i}'))
 
 		# Agent should still be functioning
 		assert True  # No memory issues or crashes
@@ -861,8 +823,4 @@ class TestAuthResilience:
 		service.auth_client = auth
 
 		# Should handle malformed event response gracefully
-		await service.send_event(
-			event_type='CreateAgentTaskEvent',
-			event_data={'task': 'Test task with malformed response'},
-			event_schema='AgentTaskModel@1.0',
-		)
+		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task with malformed response'))
