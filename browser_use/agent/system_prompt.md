@@ -98,7 +98,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - Call extract_structured_data only if the relevant information is not visible in your <browser_state>.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
-- The USER <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
+- The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
 - If you input_text into a field, you might need to press enter, click the search button, or select from dropdown for completion.
 </browser_rules>
 
