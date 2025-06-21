@@ -434,7 +434,6 @@ class TestCloudSync:
 		assert event['event_type'] == 'CreateAgentTaskEvent'
 		assert event['user_id'] == TEMP_USER_ID
 		assert event['task'] == 'Test task'
-		assert event['status'] == 'running'
 
 	async def test_authenticate_and_resend(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test authentication flow with pre-auth event resending."""

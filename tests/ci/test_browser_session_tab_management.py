@@ -114,7 +114,7 @@ class TestTabManagement:
 
 		# close all existing tabs
 		if browser_session.browser_context:
-			for page in browser_session.browser_context.pages:
+			for page in browser_session.browser_context.pages:  # type: ignore
 				await page.close()
 
 		await asyncio.sleep(0.5)

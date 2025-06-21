@@ -372,10 +372,8 @@ async def test_assumption_9_pydantic_private_attrs(browser_session, controller, 
 			f'8. Extracted has _cached_browser_state_summary attr: {hasattr(extracted_browser_session, "_cached_browser_state_summary") if extracted_browser_session else False}'
 		)
 
-		if hasattr(extracted_browser_session, '_cached_browser_state_summary'):
-			print(
-				f'9. Extracted _cached_browser_state_summary value: {extracted_browser_session._cached_browser_state_summary if extracted_browser_session else None}'
-			)
+		if extracted_browser_session and hasattr(extracted_browser_session, '_cached_browser_state_summary'):
+			print(f'9. Extracted _cached_browser_state_summary value: {extracted_browser_session._cached_browser_state_summary}')
 
 
 @pytest.mark.asyncio
@@ -406,7 +404,7 @@ async def test_assumption_7_cache_gets_cleared(browser_session, controller, http
 
 		cache_exists = browser_session._cached_browser_state_summary is not None
 		if cache_exists and browser_session._cached_browser_state_summary:
-			cache_size = len(browser_session._cached_browser_state_summary.selector_map)
+			cache_size = len(browser_session._cached_browser_state_summary.selector_map)  # type: ignore
 		else:
 			cache_size = 0
 		return ActionResult(
@@ -420,7 +418,7 @@ async def test_assumption_7_cache_gets_cleared(browser_session, controller, http
 
 		cache_exists = browser_session._cached_browser_state_summary is not None
 		if cache_exists and browser_session._cached_browser_state_summary:
-			cache_size = len(browser_session._cached_browser_state_summary.selector_map)
+			cache_size = len(browser_session._cached_browser_state_summary.selector_map)  # type: ignore
 		else:
 			cache_size = 0
 		return ActionResult(
