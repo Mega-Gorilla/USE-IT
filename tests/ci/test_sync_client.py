@@ -21,23 +21,9 @@ def temp_config_dir():
 		temp_dir = Path(tmpdir) / '.config' / 'browseruse'
 		temp_dir.mkdir(parents=True, exist_ok=True)
 
-		# Temporarily replace the config dir
-		import browser_use.sync.auth
-		import browser_use.utils
-
-		original_auth = getattr(browser_use.sync.auth, 'BROWSER_USE_CONFIG_DIR', None)
-		original_utils = getattr(browser_use.utils, 'BROWSER_USE_CONFIG_DIR', None)
-
-		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = temp_dir
-		browser_use.utils.BROWSER_USE_CONFIG_DIR = temp_dir
+		os.environ['BROWSER_USE_CONFIG_DIR'] = str(temp_dir)
 
 		yield temp_dir
-
-		# Restore original
-		if original_auth:
-			browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = original_auth
-		if original_utils:
-			browser_use.utils.BROWSER_USE_CONFIG_DIR = original_utils
 
 
 @pytest.fixture
@@ -107,7 +93,7 @@ class TestCloudSyncEventHandling:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Send event
 		await authenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task', priority='high'))
@@ -127,7 +113,7 @@ class TestCloudSyncEventHandling:
 	async def test_event_queueing_unauthenticated(self, httpserver: HTTPServer, unauthenticated_sync):
 		"""Test event queueing when unauthenticated."""
 		# Server returns 401
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json({'error': 'unauthorized'}, status=401)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_json({'error': 'unauthorized'}, status=401)
 
 		# Send event
 		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Queued task'))
@@ -149,7 +135,7 @@ class TestCloudSyncEventHandling:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Send event without user_id
 		await unauthenticated_sync.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Pre-auth task'))
@@ -185,7 +171,7 @@ class TestCloudSyncRetryLogic:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Manually add pending events (simulating 401 scenario)
 		sync_with_auth.pending_events.extend(
@@ -219,7 +205,7 @@ class TestCloudSyncRetryLogic:
 	async def test_backend_error_resilience(self, httpserver: HTTPServer, sync_with_auth):
 		"""Test resilience to backend errors."""
 		# Server returns 500 error
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Internal Server Error', status=500)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_data('Internal Server Error', status=500)
 
 		# Should not raise exception
 		await sync_with_auth.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Task during outage'))
@@ -249,7 +235,7 @@ class TestCloudSyncRetryLogic:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Send multiple events concurrently
 		tasks = []
@@ -294,7 +280,7 @@ class TestCloudSyncBackendCommunication:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create authenticated service
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -324,7 +310,7 @@ class TestCloudSyncBackendCommunication:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Test authenticated request
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -389,7 +375,7 @@ class TestCloudSyncErrorHandling:
 		error_codes = [400, 403, 404, 429, 500, 502, 503]
 
 		for status_code in error_codes:
-			httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json(
+			httpserver.expect_request('/api/v1/events', method='POST').respond_with_json(
 				{'error': f'Test error {status_code}'}, status=status_code
 			)
 
@@ -399,7 +385,7 @@ class TestCloudSyncErrorHandling:
 	async def test_invalid_response_handling(self, httpserver: HTTPServer, sync_service):
 		"""Test handling of invalid server responses."""
 		# Return invalid JSON
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Not JSON', status=200)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_data('Not JSON', status=200)
 
 		# Should not raise exception
 		await sync_service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Invalid response test'))
@@ -415,7 +401,7 @@ class TestCloudSyncErrorHandling:
 			event_type: str = 'RestrictedEvent'
 			data: str = 'test'
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_json({'processed': 1}, status=200)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_json({'processed': 1}, status=200)
 
 		# Should not raise exception - will log debug message about not being able to set user_id
 		await sync_service.handle_event(RestrictedEvent())
@@ -441,7 +427,7 @@ class TestCloudSyncErrorHandling:
 
 				return Response('{"processed": 1}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(handler)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(handler)
 
 		# Send 10 events concurrently
 		tasks = []

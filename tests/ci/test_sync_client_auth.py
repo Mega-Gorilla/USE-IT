@@ -59,23 +59,23 @@ async def http_client(httpserver: HTTPServer):
 class TestDeviceAuthClient:
 	"""Test DeviceAuthClient class."""
 
-	async def test_init_creates_config_dir(self, temp_config_dir):
+	async def test_init_creates_config_dir(self, temp_config_dir, test_base_url):
 		"""Test that initialization creates config directory."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 		assert temp_config_dir.exists()
 		assert (temp_config_dir / 'cloud_auth.json').exists() is False
 
-	async def test_load_credentials_no_file(self, temp_config_dir):
+	async def test_load_credentials_no_file(self, temp_config_dir, test_base_url):
 		"""Test loading credentials when file doesn't exist."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 		# When no file exists, auth_config should have no token/user_id
 		assert auth.auth_config.api_token is None
 		assert auth.auth_config.user_id is None
 		assert not auth.is_authenticated
 
-	async def test_save_and_load_credentials(self, temp_config_dir):
+	async def test_save_and_load_credentials(self, temp_config_dir, test_base_url):
 		"""Test saving and loading credentials."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 
 		# Update auth config and save
 		auth.auth_config.api_token = 'test-key-123'
@@ -84,7 +84,7 @@ class TestDeviceAuthClient:
 		auth.auth_config.save_to_file()
 
 		# Load in a new instance
-		auth2 = DeviceAuthClient()
+		auth2 = DeviceAuthClient(base_url=test_base_url)
 		assert auth2.auth_config.api_token == 'test-key-123'
 		assert auth2.auth_config.user_id == 'test-user-123'
 		assert auth2.is_authenticated
@@ -94,9 +94,9 @@ class TestDeviceAuthClient:
 		stat = (temp_config_dir / 'cloud_auth.json').stat()
 		assert oct(stat.st_mode)[-3:] == '600'
 
-	async def test_is_authenticated(self, temp_config_dir):
+	async def test_is_authenticated(self, temp_config_dir, test_base_url):
 		"""Test authentication status check."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 
 		# Not authenticated initially
 		assert auth.is_authenticated is False
@@ -107,12 +107,12 @@ class TestDeviceAuthClient:
 		auth.auth_config.save_to_file()
 
 		# Reload to verify persistence
-		auth2 = DeviceAuthClient()
+		auth2 = DeviceAuthClient(base_url=test_base_url)
 		assert auth2.is_authenticated is True
 
-	async def test_get_credentials(self, temp_config_dir):
+	async def test_get_credentials(self, temp_config_dir, test_base_url):
 		"""Test getting credentials."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 
 		# No credentials initially
 		assert auth.api_token is None
@@ -299,9 +299,9 @@ class TestDeviceAuthClient:
 		assert result is None  # Should timeout and return None
 		assert not auth.is_authenticated
 
-	async def test_logout(self, temp_config_dir):
+	async def test_logout(self, temp_config_dir, test_base_url):
 		"""Test logout functionality."""
-		auth = DeviceAuthClient()
+		auth = DeviceAuthClient(base_url=test_base_url)
 
 		# Save credentials directly using auth_config
 		auth.auth_config.api_token = 'test-key'
@@ -319,7 +319,7 @@ class TestDeviceAuthClient:
 		assert (temp_config_dir / 'cloud_auth.json').exists()
 
 		# Verify the file contains empty credentials
-		auth2 = DeviceAuthClient()
+		auth2 = DeviceAuthClient(base_url=test_base_url)
 		assert auth2.auth_config.api_token is None
 		assert auth2.auth_config.user_id is None
 
@@ -327,14 +327,14 @@ class TestDeviceAuthClient:
 class TestCloudSync:
 	"""Test CloudSync class."""
 
-	async def test_init(self, temp_config_dir):
+	async def test_init(self, temp_config_dir, test_base_url):
 		"""Test CloudSync initialization."""
 		service = CloudSync(
-			base_url='https://cloud.browser-use.com',
+			base_url=test_base_url,
 			enable_auth=True,
 		)
 
-		assert service.base_url == 'https://cloud.browser-use.com'
+		assert service.base_url == test_base_url
 		assert service.enable_auth is True
 		assert service.auth_client is not None
 		assert isinstance(service.auth_client, DeviceAuthClient)
@@ -355,7 +355,7 @@ class TestCloudSync:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create authenticated service
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -405,7 +405,7 @@ class TestCloudSync:
 
 			return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(capture_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(capture_request)
 
 		# Create unauthenticated service
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -461,7 +461,7 @@ class TestCloudSync:
 				# Subsequent requests: success
 				return Response('{"processed": 1, "failed": 0}', status=200, mimetype='application/json')
 
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_handler(handle_events_request)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_handler(handle_events_request)
 
 		# Create service with unauthenticated auth client
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -503,7 +503,7 @@ class TestCloudSync:
 	async def test_error_handling(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test error handling during event sending."""
 		# Set up server to return 500 error
-		httpserver.expect_request('/api/v1/events/', method='POST').respond_with_data('Internal Server Error', status=500)
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_data('Internal Server Error', status=500)
 
 		# Create service with real auth
 		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
@@ -645,7 +645,7 @@ class TestIntegration:
 
 		# Set up events endpoint
 		httpserver.expect_request(
-			'/api/v1/events/',
+			'/api/v1/events',
 			method='POST',
 		).respond_with_json({'processed': 1, 'failed': 0})
 
@@ -715,7 +715,7 @@ class TestAuthResilience:
 
 		# Now simulate token expiry by returning 401 errors
 		httpserver.expect_request(
-			'/api/v1/events/',
+			'/api/v1/events',
 			method='POST',
 		).respond_with_json({'error': 'unauthorized', 'detail': 'Token expired'}, status=401)
 
@@ -753,7 +753,7 @@ class TestAuthResilience:
 
 		# Set up events endpoint to handle unauthenticated requests
 		httpserver.expect_request(
-			'/api/v1/events/',
+			'/api/v1/events',
 			method='POST',
 		).respond_with_json({'processed': 1, 'failed': 0})
 
@@ -813,7 +813,7 @@ class TestAuthResilience:
 
 		# Set up another malformed response for events
 		httpserver.expect_request(
-			'/api/v1/events/',
+			'/api/v1/events',
 			method='POST',
 		).respond_with_data('malformed response', status=500)
 
