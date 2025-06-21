@@ -1271,7 +1271,7 @@ async def load_existing_result(task_folder: Path) -> dict:
 	return existing_result
 
 
-async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
+async def setup_browser_session(task: Task, headless: bool, highlight_elements: bool = True) -> BrowserSession:
 	"""Setup browser session for the task"""
 	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
 
@@ -1280,6 +1280,7 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 		user_data_dir=None,  # Incognito mode - no persistent state
 		headless=headless,
 		chromium_sandbox=False,  # running in docker
+		highlight_elements=highlight_elements,  # Control element highlighting (passed to profile)
 		# higher timeouts = higher success rates on long tail of slow sites or if on a slow CI server
 		# timeout=60_000,
 		# default_timeout=60_000,
@@ -1411,6 +1412,7 @@ async def run_task_with_semaphore(
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
 	include_result: bool = False,
+	highlight_elements: bool = True,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -1498,7 +1500,7 @@ async def run_task_with_semaphore(
 					try:
 						logger.info(f'Task {task.task_id}: Browser setup starting.')
 						browser_session = await run_stage(
-							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
+							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
 						)
 						task_result.stage_completed(Stage.SETUP_BROWSER)
 						logger.info(f'Task {task.task_id}: Browser session started successfully.')
@@ -1731,6 +1733,7 @@ async def run_multiple_tasks(
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
 	include_result: bool = False,
+	highlight_elements: bool = True,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1807,6 +1810,7 @@ async def run_multiple_tasks(
 					planner_llm=planner_llm,
 					planner_interval=planner_interval,
 					include_result=include_result,
+					highlight_elements=highlight_elements,
 				)
 				for task in tasks_to_run
 			),
@@ -2081,6 +2085,7 @@ async def run_evaluation_pipeline(
 	planner_interval: int = 1,
 	include_result: bool = False,
 	laminar_eval_id: str | None = None,
+	highlight_elements: bool = True,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -2130,6 +2135,7 @@ async def run_evaluation_pipeline(
 		planner_llm=planner_llm,
 		planner_interval=planner_interval,
 		include_result=include_result,
+		highlight_elements=highlight_elements,
 	)
 
 
@@ -2183,6 +2189,13 @@ if __name__ == '__main__':
 		'--include-result',
 		action='store_true',
 		help='Include result flag (functionality to be implemented)',
+	)
+	parser.add_argument(
+		'--no-highlight-elements',
+		action='store_false',
+		dest='highlight_elements',
+		default=True,
+		help='Disable highlighting of interactive elements on the page (highlighting is enabled by default)',
 	)
 	parser.add_argument(
 		'--laminar-eval-id',
@@ -2417,6 +2430,7 @@ if __name__ == '__main__':
 				planner_interval=args.planner_interval,
 				include_result=args.include_result,
 				laminar_eval_id=args.laminar_eval_id,
+				highlight_elements=args.highlight_elements,
 			)
 		)
 
