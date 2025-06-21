@@ -194,7 +194,7 @@ class TestBrowserSessionCookies:
 		profile = BrowserProfile(
 			headless=True,
 			user_data_dir=None,
-			cookies_file='./test_cookies.json',  # Relative path
+			cookies_file=Path('./test_cookies.json'),  # Relative path
 			downloads_path=browser_profile_with_cookies.downloads_path,
 		)
 

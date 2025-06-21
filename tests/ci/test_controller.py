@@ -8,6 +8,7 @@ from pytest_httpserver import HTTPServer
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
+from browser_use.browser.profile import BrowserProfile
 from browser_use.controller.service import Controller
 from browser_use.controller.views import (
 	ClickElementAction,
@@ -79,9 +80,10 @@ def base_url(http_server):
 async def browser_session():
 	"""Create and provide a Browser instance with security disabled."""
 	browser_session = BrowserSession(
-		# browser_profile=BrowserProfile(),
-		headless=True,
-		user_data_dir=None,
+		browser_profile=BrowserProfile(
+			headless=True,
+			user_data_dir=None,
+		)
 	)
 	await browser_session.start()
 	yield browser_session

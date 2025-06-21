@@ -569,14 +569,16 @@ def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
 
 	# Handle Groq BadRequestError with failed_generation
 	if (
-		GroqBadRequestError
+		GroqBadRequestError is not None
 		and isinstance(e, GroqBadRequestError)
 		and hasattr(e, 'body')
-		and e.body
-		and 'error' in e.body
-		and 'failed_generation' in e.body['error']
+		and e.body  # type: ignore[attr-defined]
+		and isinstance(e.body, dict)  # type: ignore[attr-defined]
+		and 'error' in e.body  # type: ignore[attr-defined]
+		and isinstance(e.body['error'], dict)  # type: ignore[attr-defined,index]
+		and 'failed_generation' in e.body['error']  # type: ignore[attr-defined,index]
 	):
-		raw = e.body['error']['failed_generation']  # type: ignore
+		raw = e.body['error']['failed_generation']  # type: ignore[attr-defined,index]
 		response = {'raw': raw, 'parsed': None}
 		parsed = None
 		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')

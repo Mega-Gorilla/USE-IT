@@ -549,8 +549,9 @@ class BrowserUseApp(App):
 
 	def on_input_key_up(self, event: events.Key) -> None:
 		"""Handle up arrow key in the input field."""
-		# Check if event is from the input field
-		if not hasattr(event, 'input') or event.input.id != 'task-input':
+		# For textual key events, we need to check focus manually
+		input_field = self.query_one('#task-input', Input)
+		if not input_field.has_focus:
 			return
 
 		# Only process if we have history
@@ -571,8 +572,9 @@ class BrowserUseApp(App):
 
 	def on_input_key_down(self, event: events.Key) -> None:
 		"""Handle down arrow key in the input field."""
-		# Check if event is from the input field
-		if not hasattr(event, 'input') or event.input.id != 'task-input':
+		# For textual key events, we need to check focus manually
+		input_field = self.query_one('#task-input', Input)
+		if not input_field.has_focus:
 			return
 
 		# Only process if we have history
@@ -811,8 +813,12 @@ class BrowserUseApp(App):
 					# Get the last step metadata to show the most recent LLM response time
 				if num_steps > 0 and self.agent.state.history.history[-1].metadata:
 					last_step = self.agent.state.history.history[-1]
-					step_duration = last_step.metadata.duration_seconds
-					step_tokens = last_step.metadata.input_tokens
+					if last_step.metadata:
+						step_duration = last_step.metadata.duration_seconds
+						step_tokens = last_step.metadata.input_tokens
+					else:
+						step_duration = 0
+						step_tokens = 0
 
 					if step_tokens > 0:
 						tokens_per_second = step_tokens / step_duration if step_duration > 0 else 0
@@ -943,7 +949,7 @@ class BrowserUseApp(App):
 						tasks_info.write('')
 
 			# If agent is actively running, show a status indicator
-			if hasattr(self.agent, 'running') and self.agent.running:
+			if hasattr(self.agent, 'running') and getattr(self.agent, 'running', False):
 				tasks_info.write('[yellow]Agent is actively working[blink]...[/][/]')
 			elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
 				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
@@ -978,10 +984,12 @@ class BrowserUseApp(App):
 		rich_log.clear()
 
 		if self.agent is None:
+			if not self.llm:
+				raise RuntimeError('LLM not initialized')
 			self.agent = Agent(
 				task=task,
 				llm=self.llm,
-				controller=self.controller if self.controller else None,
+				controller=self.controller if self.controller else Controller(),
 				browser_session=self.browser_session,
 				source='cli',
 				**agent_settings.model_dump(),

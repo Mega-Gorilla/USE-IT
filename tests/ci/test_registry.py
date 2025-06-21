@@ -20,6 +20,7 @@ from pytest_httpserver.httpserver import HandlerType
 
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
+from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.types import Page
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.registry.views import ActionModel as BaseActionModel
@@ -96,8 +97,10 @@ def registry():
 async def browser_session(base_url):
 	"""Create a real BrowserSession for testing"""
 	browser_session = BrowserSession(
-		headless=True,
-		user_data_dir=None,
+		browser_profile=BrowserProfile(
+			headless=True,
+			user_data_dir=None,
+		)
 	)
 	await browser_session.start()
 	await browser_session.create_new_tab(f'{base_url}/test')

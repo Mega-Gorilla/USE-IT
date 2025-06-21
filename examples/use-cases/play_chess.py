@@ -16,7 +16,7 @@ load_dotenv()
 import asyncio
 import logging
 
-import chess
+import chess  # type: ignore
 from bs4 import BeautifulSoup
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field

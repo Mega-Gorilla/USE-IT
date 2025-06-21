@@ -46,7 +46,7 @@ def b64_to_png(b64_string: str, output_file):
 import json
 from pathlib import Path
 
-import prettyprinter
+import prettyprinter  # type: ignore
 from fastapi import FastAPI, Request
 
 prettyprinter.install_extras()
@@ -124,7 +124,7 @@ load_dotenv()
 
 import requests
 from langchain_openai import ChatOpenAI
-from pyobjtojson import obj_to_json
+from pyobjtojson import obj_to_json  # type: ignore
 
 from browser_use import Agent
 

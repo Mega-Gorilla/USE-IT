@@ -3,11 +3,10 @@ Systematic debugging of the selector map issue.
 Test each assumption step by step to isolate the problem.
 """
 
-import os
-
 import pytest
 
 from browser_use.browser import BrowserSession
+from browser_use.browser.profile import BrowserProfile
 from browser_use.controller.service import Controller
 
 
@@ -62,9 +61,10 @@ def httpserver(make_httpserver):
 async def browser_session():
 	"""Create a real browser session for testing."""
 	session = BrowserSession(
-		executable_path=os.getenv('BROWSER_PATH'),
-		user_data_dir=None,  # Use temporary profile
-		headless=True,
+		browser_profile=BrowserProfile(
+			user_data_dir=None,  # Use temporary profile
+			headless=True,
+		)
 	)
 	async with session:
 		yield session
