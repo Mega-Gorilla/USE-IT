@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 import asyncio
 import json
 import logging

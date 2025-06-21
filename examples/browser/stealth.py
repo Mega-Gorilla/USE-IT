@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 import asyncio
 import os
 import shutil

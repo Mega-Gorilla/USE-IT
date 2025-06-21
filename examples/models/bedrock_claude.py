@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """
 Automated news analysis and sentiment scoring using Bedrock.
 
