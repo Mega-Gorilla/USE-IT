@@ -2079,26 +2079,25 @@ async def run_evaluation_pipeline(
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
 	include_result: bool = False,
+	laminar_eval_id: str | None = None,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
 	"""
-	# --- Create Laminar Evaluation ---
-	logger.info('Creating Laminar evaluation...')
+	# --- Use provided Laminar Evaluation ID or skip tracking ---
 	lmnr_run_id = None
 	laminar_eval_link = None
-	try:
-		lmnr_run_id = await laminar_client.evals.create_evaluation(
-			group_name=test_case,  # Dataset name
-			name=user_message if user_message else f'{test_case} Evaluation',  # Eval name (dev message)
-		)
+
+	if laminar_eval_id:
+		# Use existing evaluation ID provided from frontend
+		lmnr_run_id = laminar_eval_id
 		project_id = 'f07da4a9-b7de-488a-91e3-e17c5f6d676a'
 		laminar_eval_link = f'https://www.lmnr.ai/project/{project_id}/evaluations/{lmnr_run_id}'
-		logger.info(f'📊 Laminar evaluation created: {laminar_eval_link}')
-
-	except Exception as e:
-		logger.error(f'Failed to create Laminar evaluation: {type(e).__name__}: {e}')
-		logger.warning('⚠️ Continuing without Laminar evaluation tracking...')
+		logger.info(f'📊 Using provided Laminar evaluation ID: {lmnr_run_id}')
+		logger.info(f'📊 Laminar evaluation link: {laminar_eval_link}')
+	else:
+		# No Laminar evaluation ID provided, skip tracking
+		logger.info('📊 No Laminar evaluation ID provided, skipping Laminar tracking')
 	# -------------------------
 
 	# Update run data with Laminar link
@@ -2184,6 +2183,13 @@ if __name__ == '__main__':
 		action='store_true',
 		help='Include result flag (functionality to be implemented)',
 	)
+	parser.add_argument(
+		'--laminar-eval-id',
+		type=str,
+		default=None,
+		help='Existing Laminar evaluation ID to use (if not provided, a new evaluation will be created)',
+	)
+
 	args = parser.parse_args()
 
 	# Set up logging - Make sure logger is configured before use in fetch function
@@ -2409,6 +2415,7 @@ if __name__ == '__main__':
 				planner_llm=planner_llm,
 				planner_interval=args.planner_interval,
 				include_result=args.include_result,
+				laminar_eval_id=args.laminar_eval_id,
 			)
 		)
 
