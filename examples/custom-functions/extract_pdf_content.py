@@ -15,7 +15,6 @@ load_dotenv()
 
 import asyncio
 import logging
-from typing import Any
 
 from langchain_openai import ChatOpenAI
 from mistralai import Mistral  # type: ignore
@@ -44,7 +43,7 @@ class PdfExtractParams(BaseModel):
 	'Extract PDF Text',
 	param_model=PdfExtractParams,
 )
-def extract_mistral_ocr(params: PdfExtractParams, browser: BrowserContext) -> dict[str, Any]:
+def extract_mistral_ocr(params: PdfExtractParams, browser: BrowserContext) -> ActionResult:
 	"""
 	Process a PDF URL using Mistral OCR API and return the OCR response.
 

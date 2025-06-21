@@ -491,7 +491,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic.types import SecretStr
 
-from browser_use import ActionResult, Agent, BrowserSession, Controller
+from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Controller
 from browser_use.agent.memory import MemoryConfig
 from browser_use.agent.views import AgentHistoryList
 
@@ -1279,7 +1279,7 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
 
 	# Use incognito mode (user_data_dir=None) for evaluations to avoid state pollution
-	browser_session = BrowserSession(
+	profile = BrowserProfile(
 		user_data_dir=None,  # Incognito mode - no persistent state
 		headless=headless,
 		chromium_sandbox=False,  # running in docker
@@ -1292,6 +1292,8 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 		# wait_between_actions=0.5,
 		# ignore_https_errors=True,  # some eval tasks have http:// or broken https sites in them
 	)
+
+	browser_session = BrowserSession(browser_profile=profile)
 
 	# Start browser session
 	logger.debug(f'Browser setup: Starting browser session for task {task.task_id}')
@@ -1307,7 +1309,7 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 	return browser_session
 
 
-@observe(name='executor', span_type='EXECUTOR')
+@observe(name='executor', span_type='EXECUTOR')  # type: ignore[arg-type]
 async def run_agent_with_browser(
 	browser_session: BrowserSession,
 	task: Task,
@@ -1350,7 +1352,7 @@ async def run_agent_with_browser(
 	return agent.state.history
 
 
-@observe(name='evaluate_task_result', span_type='EVALUATOR')
+@observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
 async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path) -> dict:
 	"""Evaluate the task result"""
 	return await judge_task_result(eval_model, task_folder, score_threshold=3)
@@ -1391,7 +1393,7 @@ def determine_current_stage(completed_stages: set) -> Stage:
 		return Stage.LOAD_EXISTING  # Default starting stage
 
 
-@observe(name='evaluation', span_type='EVALUATION')
+@observe(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,

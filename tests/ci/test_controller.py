@@ -115,6 +115,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert f'Navigated to {base_url}/page1' in result.extracted_content
 
 		# Verify the current page URL
@@ -142,6 +143,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Scrolled down' in result.extracted_content
 
 		# Create scroll up action
@@ -155,6 +157,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Scrolled up' in result.extracted_content
 
 	async def test_registry_actions(self, controller, browser_session):
@@ -210,6 +213,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Custom action executed with: test_value on' in result.extracted_content
 		assert f'{base_url}/page1' in result.extracted_content
 
@@ -264,6 +268,7 @@ class TestControllerIntegration:
 			result = await controller.act(InputTextActionModel(**input_action), browser_session)
 			# If successful, verify the result
 			assert isinstance(result, ActionResult)
+			assert result.extracted_content is not None
 			assert 'Input' in result.extracted_content
 		except Exception as e:
 			# If it fails due to DOM issues, that's expected in a test environment
@@ -355,6 +360,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Navigated back' in result.extracted_content
 
 		# Add another delay to allow the navigation to complete
@@ -477,6 +483,7 @@ class TestControllerIntegration:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
 		assert 'Searched for "Python web automation" in Google' in result.extracted_content
 
 		# For our test purposes, we just verify we're on some URL
@@ -510,6 +517,7 @@ class TestControllerIntegration:
 
 			# Verify the result
 			assert isinstance(result, ActionResult)
+			assert result.extracted_content is not None
 			assert success_done_message in result.extracted_content
 			assert result.success is True
 			assert result.is_done is True
@@ -525,6 +533,7 @@ class TestControllerIntegration:
 
 			# Verify the result
 			assert isinstance(result, ActionResult)
+			assert result.extracted_content is not None
 			assert failed_done_message in result.extracted_content
 			assert result.success is False
 			assert result.is_done is True
@@ -738,6 +747,7 @@ class TestControllerIntegration:
 		# Step 5: Verify the controller action result
 		assert result.error is None, f'Drag operation failed with error: {result.error}'
 		assert result.is_done is False
+		assert result.extracted_content is not None
 		assert '🖱️ Dragged from' in result.extracted_content
 
 		# Step 6: Verify the element was moved by checking its new parent
@@ -1040,6 +1050,7 @@ class TestControllerIntegration:
 		assert isinstance(result, ActionResult)
 
 		# Core logic validation: Verify all options are returned
+		assert result.extracted_content is not None
 		for option in expected_options[1:]:  # Skip the placeholder option
 			assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
 
@@ -1137,6 +1148,7 @@ class TestControllerIntegration:
 		assert isinstance(result, ActionResult)
 
 		# Core logic validation: Verify selection was successful
+		assert result.extracted_content is not None
 		assert 'selected option' in result.extracted_content.lower()
 		assert 'Second Option' in result.extracted_content
 
@@ -1239,6 +1251,7 @@ class TestControllerIntegration:
 		assert result.error is None, f'Expected no error but got: {result.error}'
 
 		# Core logic validation: Verify click was successful
+		assert result.extracted_content is not None
 		assert f'Clicked button with index {button_index}' in result.extracted_content, (
 			f'Expected click confirmation in result content, got: {result.extracted_content}'
 		)
