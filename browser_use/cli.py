@@ -44,7 +44,6 @@ from browser_use.logging_config import addLoggingLevel
 from browser_use.utils import (
 	ANTHROPIC_API_KEY,
 	BROWSER_USE_CONFIG_FILE,
-	BROWSER_USE_LOGGING_LEVEL,
 	BROWSER_USE_PROFILES_DIR,
 	DEEPSEEK_API_KEY,
 	GOOGLE_API_KEY,
@@ -447,7 +446,7 @@ class BrowserUseApp(App):
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
-        log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'result').lower()
+		log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'result').lower()
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
