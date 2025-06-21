@@ -447,7 +447,7 @@ class BrowserUseApp(App):
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
-		log_type = BROWSER_USE_LOGGING_LEVEL if BROWSER_USE_LOGGING_LEVEL != 'info' else 'result'
+        log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'result').lower()
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
