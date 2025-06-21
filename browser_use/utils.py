@@ -36,8 +36,8 @@ except ImportError:
 BROWSER_USE_LOGGING_LEVEL = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
 ANONYMIZED_TELEMETRY = os.getenv('ANONYMIZED_TELEMETRY', 'true').lower()[:1] in 'ty1'
 BROWSER_USE_CLOUD_SYNC = os.getenv('BROWSER_USE_CLOUD_SYNC', str(ANONYMIZED_TELEMETRY)).lower()[0] in 'ty1'
-BROWSER_USE_CLOUD_URL = os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browseruse.com')  # or http://localhost:8000
-BROWSER_USE_CLOUD_UI_URL = os.getenv('BROWSER_USE_CLOUD_UI_URL', 'https://cloud.browseruse.com')  # or http://localhost:3000
+BROWSER_USE_CLOUD_URL = os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com')  # or http://localhost:8000
+BROWSER_USE_CLOUD_UI_URL = os.getenv('BROWSER_USE_CLOUD_UI_URL', '')  # or http://localhost:3000
 assert '://' in BROWSER_USE_CLOUD_URL and '://' in BROWSER_USE_CLOUD_UI_URL, (
 	'BROWSER_USE_CLOUD_URL and BROWSER_USE_CLOUD_UI_URL must be valid URLs'
 )

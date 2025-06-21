@@ -59,23 +59,23 @@ async def http_client(httpserver: HTTPServer):
 class TestDeviceAuthClient:
 	"""Test DeviceAuthClient class."""
 
-	async def test_init_creates_config_dir(self, temp_config_dir, test_base_url):
+	async def test_init_creates_config_dir(self, temp_config_dir, httpserver):
 		"""Test that initialization creates config directory."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		assert temp_config_dir.exists()
 		assert (temp_config_dir / 'cloud_auth.json').exists() is False
 
-	async def test_load_credentials_no_file(self, temp_config_dir, test_base_url):
+	async def test_load_credentials_no_file(self, temp_config_dir, httpserver):
 		"""Test loading credentials when file doesn't exist."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 		# When no file exists, auth_config should have no token/user_id
 		assert auth.auth_config.api_token is None
 		assert auth.auth_config.user_id is None
 		assert not auth.is_authenticated
 
-	async def test_save_and_load_credentials(self, temp_config_dir, test_base_url):
+	async def test_save_and_load_credentials(self, temp_config_dir, httpserver):
 		"""Test saving and loading credentials."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 
 		# Update auth config and save
 		auth.auth_config.api_token = 'test-key-123'
@@ -84,7 +84,7 @@ class TestDeviceAuthClient:
 		auth.auth_config.save_to_file()
 
 		# Load in a new instance
-		auth2 = DeviceAuthClient(base_url=test_base_url)
+		auth2 = DeviceAuthClient(base_url=httpserver.url_for(''))
 		assert auth2.auth_config.api_token == 'test-key-123'
 		assert auth2.auth_config.user_id == 'test-user-123'
 		assert auth2.is_authenticated
@@ -94,9 +94,9 @@ class TestDeviceAuthClient:
 		stat = (temp_config_dir / 'cloud_auth.json').stat()
 		assert oct(stat.st_mode)[-3:] == '600'
 
-	async def test_is_authenticated(self, temp_config_dir, test_base_url):
+	async def test_is_authenticated(self, temp_config_dir, httpserver):
 		"""Test authentication status check."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 
 		# Not authenticated initially
 		assert auth.is_authenticated is False
@@ -107,12 +107,12 @@ class TestDeviceAuthClient:
 		auth.auth_config.save_to_file()
 
 		# Reload to verify persistence
-		auth2 = DeviceAuthClient(base_url=test_base_url)
+		auth2 = DeviceAuthClient(base_url=httpserver.url_for(''))
 		assert auth2.is_authenticated is True
 
-	async def test_get_credentials(self, temp_config_dir, test_base_url):
+	async def test_get_credentials(self, temp_config_dir, httpserver):
 		"""Test getting credentials."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 
 		# No credentials initially
 		assert auth.api_token is None
@@ -299,9 +299,9 @@ class TestDeviceAuthClient:
 		assert result is None  # Should timeout and return None
 		assert not auth.is_authenticated
 
-	async def test_logout(self, temp_config_dir, test_base_url):
+	async def test_logout(self, temp_config_dir, httpserver):
 		"""Test logout functionality."""
-		auth = DeviceAuthClient(base_url=test_base_url)
+		auth = DeviceAuthClient(base_url=httpserver.url_for(''))
 
 		# Save credentials directly using auth_config
 		auth.auth_config.api_token = 'test-key'
@@ -319,7 +319,7 @@ class TestDeviceAuthClient:
 		assert (temp_config_dir / 'cloud_auth.json').exists()
 
 		# Verify the file contains empty credentials
-		auth2 = DeviceAuthClient(base_url=test_base_url)
+		auth2 = DeviceAuthClient(base_url=httpserver.url_for(''))
 		assert auth2.auth_config.api_token is None
 		assert auth2.auth_config.user_id is None
 
@@ -327,14 +327,14 @@ class TestDeviceAuthClient:
 class TestCloudSync:
 	"""Test CloudSync class."""
 
-	async def test_init(self, temp_config_dir, test_base_url):
+	async def test_init(self, temp_config_dir, httpserver):
 		"""Test CloudSync initialization."""
 		service = CloudSync(
-			base_url=test_base_url,
+			base_url=httpserver.url_for(''),
 			enable_auth=True,
 		)
 
-		assert service.base_url == test_base_url
+		assert service.base_url == httpserver.url_for('')
 		assert service.enable_auth is True
 		assert service.auth_client is not None
 		assert isinstance(service.auth_client, DeviceAuthClient)
@@ -476,8 +476,8 @@ class TestCloudSync:
 
 		# Event should be in pending_events since we got 401
 		assert len(service.pending_events) == 1
-		assert service.pending_events[0]['task'] == 'Pre-auth task'
-		assert service.pending_events[0]['user_id'] == TEMP_USER_ID
+		assert service.pending_events[0].task == 'Pre-auth task'
+		assert service.pending_events[0].user_id == TEMP_USER_ID
 
 		# Now authenticate the auth client
 		auth.auth_config.api_token = 'test-api-key'

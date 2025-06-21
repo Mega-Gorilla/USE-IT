@@ -88,7 +88,7 @@ class CloudSync:
 	async def _background_auth(self, agent_session_id: str) -> None:
 		"""Run authentication in background"""
 		assert self.auth_client, 'enable_auth=True must be set before calling CloudSync_background_auth()'
-
+		assert self.session_id, 'session_id must be set before calling CloudSync._background_auth() can fire'
 		try:
 			# Run authentication
 			success = await self.auth_client.authenticate(

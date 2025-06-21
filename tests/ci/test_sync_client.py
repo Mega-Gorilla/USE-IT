@@ -3,7 +3,6 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -38,26 +37,23 @@ class TestCloudSyncInit:
 
 	async def test_init_with_auth_enabled(self, temp_config_dir):
 		"""Test CloudSync initialization with auth enabled."""
-		# Set test environment variable
-		with patch.dict(os.environ, {'BROWSER_USE_CLOUD_URL': 'http://localhost:8000'}):
-			service = CloudSync(enable_auth=True)
+		service = CloudSync(enable_auth=True, base_url='http://localhost:8000')
 
-			assert service.base_url == 'http://localhost:8000'
-			assert service.enable_auth is True
-			assert service.auth_client is not None
-			assert isinstance(service.auth_client, DeviceAuthClient)
-			assert service.pending_events == []
-			assert service.session_id is None
+		assert service.base_url == 'http://localhost:8000'
+		assert service.enable_auth is True
+		assert service.auth_client is not None
+		assert isinstance(service.auth_client, DeviceAuthClient)
+		assert service.pending_events == []
+		assert service.session_id is None
 
 	async def test_init_with_auth_disabled(self, temp_config_dir):
 		"""Test CloudSync initialization with auth disabled."""
-		with patch.dict(os.environ, {'BROWSER_USE_CLOUD_URL': 'http://localhost:8000'}):
-			service = CloudSync(enable_auth=False)
+		service = CloudSync(enable_auth=False, base_url='http://localhost:8000')
 
-			assert service.base_url == 'http://localhost:8000'
-			assert service.enable_auth is False
-			assert service.auth_client is None
-			assert service.pending_events == []
+		assert service.base_url == 'http://localhost:8000'
+		assert service.enable_auth is False
+		assert service.auth_client is None
+		assert service.pending_events == []
 
 
 class TestCloudSyncEventHandling:
@@ -121,9 +117,9 @@ class TestCloudSyncEventHandling:
 		# Event should be queued
 		assert len(unauthenticated_sync.pending_events) == 1
 		queued_event = unauthenticated_sync.pending_events[0]
-		assert queued_event['event_type'] == 'CreateAgentTaskEvent'
-		assert queued_event['user_id'] == TEMP_USER_ID
-		assert queued_event['task'] == 'Queued task'
+		assert queued_event.event_type == 'CreateAgentTaskEvent'
+		assert queued_event.user_id == TEMP_USER_ID
+		assert queued_event.task == 'Queued task'
 
 	async def test_event_user_id_injection_pre_auth(self, httpserver: HTTPServer, unauthenticated_sync):
 		"""Test that temp user ID is injected for pre-auth events."""
@@ -176,16 +172,8 @@ class TestCloudSyncRetryLogic:
 		# Manually add pending events (simulating 401 scenario)
 		sync_with_auth.pending_events.extend(
 			[
-				{
-					'event_type': 'CreateAgentTaskEvent',
-					'task': 'Pending task 1',
-					'user_id': TEMP_USER_ID,
-				},
-				{
-					'event_type': 'CreateAgentTaskEvent',
-					'task': 'Pending task 2',
-					'user_id': TEMP_USER_ID,
-				},
+				BaseEvent(event_type='CreateAgentTaskEvent', task='Pending task 1', user_id=TEMP_USER_ID),
+				BaseEvent(event_type='CreateAgentTaskEvent', task='Pending task 2', user_id=TEMP_USER_ID),
 			]
 		)
 
@@ -272,7 +260,7 @@ class TestCloudSyncBackendCommunication:
 			assert len(data['events']) == 1
 
 			event = data['events'][0]
-			required_fields = ['event_type', 'event_id', 'event_at', 'event_schema', 'data']
+			required_fields = ['event_type', 'event_id', 'event_created_at', 'event_schema', 'user_id']
 			for field in required_fields:
 				assert field in event, f'Missing required field: {field}'
 

@@ -70,6 +70,7 @@ from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
 	BROWSER_USE_CLOUD_SYNC,
+	BROWSER_USE_CONFIG_DIR,
 	SKIP_LLM_API_KEY_VERIFICATION,
 	_log_pretty_path,
 	get_browser_use_version,
@@ -437,10 +438,8 @@ class Agent(Generic[Context]):
 		self.telemetry = ProductTelemetry()
 
 		# Event bus with WAL persistence
-		# Default to ~/.config/browseruse/events/{agent_task_id}.jsonl
-		from browser_use.utils import BROWSER_USE_CONFIG_DIR
-
-		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.task_id}.jsonl'
+		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
+		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service

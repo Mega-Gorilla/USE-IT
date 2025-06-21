@@ -124,8 +124,8 @@ class DeviceAuthClient:
 	async def poll_for_token(
 		self,
 		device_code: str,
-		interval: int = 5,
-		timeout: int = 1800,
+		interval: float = 3.0,
+		timeout: float = 1800.0,
 	) -> dict | None:
 		"""
 		Poll for the access token.
