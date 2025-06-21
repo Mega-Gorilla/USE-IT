@@ -17,6 +17,15 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
+# from lmnr.sdk.decorators import observe
+from bubus import EventBus
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, ValidationError
+from uuid_extensions import uuid7str
+
 from browser_use.agent.cloud_events import (
 	CreateAgentOutputFileEvent,
 	CreateAgentSessionEvent,
@@ -24,20 +33,6 @@ from browser_use.agent.cloud_events import (
 	CreateAgentTaskEvent,
 	UpdateAgentTaskEvent,
 )
-
-load_dotenv()
-
-# from lmnr.sdk.decorators import observe
-from bubus import EventBus
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import (
-	BaseMessage,
-	HumanMessage,
-	SystemMessage,
-)
-from pydantic import BaseModel, ValidationError
-from uuid_extensions import uuid7str
-
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
@@ -70,6 +65,7 @@ from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
 from browser_use.exceptions import LLMException
 from browser_use.filesystem.file_system import FileSystem
+from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
@@ -184,6 +180,7 @@ class Agent(Generic[Context]):
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
+		cloud_sync: CloudSync | None = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -447,14 +444,9 @@ class Agent(Generic[Context]):
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service
-		# Default to the same value as ANONYMIZED_TELEMETRY
-		anonymized_telemetry = os.getenv('ANONYMIZED_TELEMETRY', 'true')
-		cloud_sync_default = 'false' if anonymized_telemetry.lower()[0] not in 'ty1' else 'true'
-		self.enable_cloud_sync = os.environ.get('BROWSER_USE_CLOUD_SYNC', cloud_sync_default).lower()[0] in 'ty1'
-		if self.enable_cloud_sync:
-			from browser_use.sync import CloudSync
-
-			self.cloud_sync = CloudSync()
+		self.enable_cloud_sync = BROWSER_USE_CLOUD_SYNC
+		if self.enable_cloud_sync or cloud_sync is not None:
+			self.cloud_sync = cloud_sync or CloudSync()
 			# Register cloud sync handler
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 
