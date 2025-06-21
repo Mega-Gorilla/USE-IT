@@ -1282,7 +1282,8 @@ class BrowserSession(BaseModel):
 					# fallback to javascript resize if cdp setWindowBounds fails
 					await page.evaluate(
 						"""(width, height) => {window.resizeTo(width, height)}""",
-						**self.browser_profile.window_size,
+						self.browser_profile.window_size['width'],
+						self.browser_profile.window_size['height'],
 					)
 					return
 				except Exception:
