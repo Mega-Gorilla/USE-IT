@@ -164,7 +164,7 @@ async def start_resource_monitoring(interval: int = 30):
 		"""Background monitoring loop"""
 		logger.info(f'Starting resource monitoring (interval: {interval}s)')
 		try:
-			while not _resource_monitor_stop_event.is_set():
+			while _resource_monitor_stop_event is not None and not _resource_monitor_stop_event.is_set():
 				try:
 					log_system_resources('MONITOR')
 
@@ -186,7 +186,10 @@ async def start_resource_monitoring(interval: int = 30):
 					logger.error(f'Error in resource monitoring: {type(e).__name__}: {e}')
 
 				try:
-					await asyncio.wait_for(_resource_monitor_stop_event.wait(), timeout=interval)
+					if _resource_monitor_stop_event is not None:
+						await asyncio.wait_for(_resource_monitor_stop_event.wait(), timeout=interval)
+					else:
+						await asyncio.sleep(interval)
 					break  # Event was set, exit loop
 				except TimeoutError:
 					continue  # Timeout reached, continue monitoring
