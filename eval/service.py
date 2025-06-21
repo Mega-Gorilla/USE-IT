@@ -1362,7 +1362,7 @@ async def cleanup_browser_safe(browser_session: BrowserSession):
 	"""Safe browser cleanup with timeout"""
 	try:
 		logger.debug('Browser cleanup: Starting close operation for session')
-		await asyncio.wait_for(browser_session.close(), timeout=30)
+		await asyncio.wait_for(browser_session.kill(), timeout=30)
 		logger.debug('Browser cleanup: Close operation completed successfully')
 	except TimeoutError:
 		logger.warning('Browser cleanup: Timed out after 30 seconds')

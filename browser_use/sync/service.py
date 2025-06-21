@@ -76,7 +76,7 @@ class CloudSync:
 			# Send event (batch format with direct BaseEvent serialization)
 			async with httpx.AsyncClient() as client:
 				response = await client.post(
-					f'{self.base_url.rstrip("/")}/api/v1/events/',
+					f'{self.base_url.rstrip("/")}/api/v1/events',
 					json={'events': [event_data]},
 					headers=headers,
 					timeout=10.0,

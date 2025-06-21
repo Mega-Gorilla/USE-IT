@@ -739,10 +739,18 @@ class BrowserSession(BaseModel):
 		assert chrome_process.is_running(), 'Chrome process is not running'
 		args = chrome_process.cmdline()
 		debug_port = next((arg for arg in args if arg.startswith('--remote-debugging-port=')), '').split('=')[-1].strip()
-		assert debug_port, (
-			f'Could not find --remote-debugging-port=... to connect to in browser launch args: browser_pid={self.browser_pid} {args}'
-		)
-		# we could automatically relaunch the browser process with that arg added here, but they may have tabs open they dont want to lose
+		if not debug_port:
+			# provided pid is unusable, it's either not running or doesnt have an open debug port we can connect to
+			if '--remote-debugging-pipe' in args:
+				self.logger.error(
+					f'❌ Found --remote-debugging-pipe in browser launch args for browser_pid={self.browser_pid} but it was started by a different BrowserSession, cannot connect to it'
+				)
+			else:
+				self.logger.error(
+					f'❌ Could not find --remote-debugging-port=... to connect to in browser launch args for browser_pid={self.browser_pid}: {" ".join(args)}'
+				)
+			return
+
 		self.cdp_url = self.cdp_url or f'http://localhost:{debug_port}/'
 		self.logger.info(f'🌎 Connecting to existing local browser process: browser_pid={self.browser_pid} on {self.cdp_url}')
 		assert self.playwright is not None, 'playwright instance is None'
