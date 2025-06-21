@@ -26,7 +26,7 @@ except ImportError:
 	OpenAIBadRequestError = None
 
 try:
-	from groq import BadRequestError as GroqBadRequestError
+	from groq import BadRequestError as GroqBadRequestError  # type: ignore[import-not-found]
 except ImportError:
 	GroqBadRequestError = None
 
@@ -558,10 +558,10 @@ def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
 		OpenAIBadRequestError
 		and isinstance(e, OpenAIBadRequestError)
 		and hasattr(e, 'body')
-		and e.body
-		and 'failed_generation' in e.body
+		and e.body  # type: ignore[attr-defined]
+		and 'failed_generation' in e.body  # type: ignore[operator]
 	):
-		raw = e.body['failed_generation']
+		raw = e.body['failed_generation']  # type: ignore[index]
 		response = {'raw': raw, 'parsed': None}
 		parsed = None
 		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')

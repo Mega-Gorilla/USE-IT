@@ -31,12 +31,17 @@ def is_model_without_tool_support(model_name: str) -> bool:
 def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 	"""Extract JSON from model output, handling both plain JSON and code-block-wrapped JSON."""
 	try:
+		# Extract string content from BaseMessage if needed
+		content_str: str
 		if isinstance(content, BaseMessage):
 			# for langchain_core.messages.BaseMessage
-			content = content.content
-		# Ensure content is a string
-		if isinstance(content, list):
-			content = str(content[0]) if content else ''
+			msg_content = content.content
+			if isinstance(msg_content, list):
+				content_str = str(msg_content[0]) if msg_content else ''
+			else:
+				content_str = msg_content
+		else:
+			content_str = content
 		# If content is wrapped in code blocks, extract just the JSON part
 		if '```' in content:
 			# Find the JSON content between code blocks

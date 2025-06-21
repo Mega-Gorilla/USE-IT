@@ -115,6 +115,8 @@ skip-magic-trailing-comma = false
 
 [tool.pyright]
 typeCheckingMode = "basic"
+exclude = ["tests/old/", ".venv/", ".git/", "node_mo"]
+
 
 [tool.hatch.build]
 include = [
@@ -123,6 +125,7 @@ include = [
     "!browser_use/**/tests.py",
     "browser_use/agent/system_prompt.md",
     "browser_use/dom/buildDomTree.js",
+    "!tests/**/*.py",
 ]
 
 [tool.pytest.ini_options]
