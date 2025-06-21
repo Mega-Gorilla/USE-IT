@@ -13,7 +13,7 @@ from langchain_core.messages import (
 )
 from pydantic import BaseModel
 
-from browser_use.agent.message_manager.views import MessageMetadata
+from browser_use.agent.message_manager.views import ManagedMessage, MessageMetadata
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo, MessageManagerState
 from browser_use.browser.views import BrowserStateSummary
@@ -109,7 +109,7 @@ def _log_extract_message_content(message: BaseMessage, is_last_message: bool, me
 		cleaned_content = _log_clean_whitespace(str(message.content))
 
 		# Handle AIMessages with tool calls
-		if hasattr(message, 'tool_calls') and message.tool_calls and not cleaned_content:
+		if isinstance(message, AIMessage) and hasattr(message, 'tool_calls') and message.tool_calls and not cleaned_content:
 			tool_call = message.tool_calls[0]
 			tool_name = tool_call.get('name', 'unknown')
 
@@ -117,7 +117,7 @@ def _log_extract_message_content(message: BaseMessage, is_last_message: bool, me
 				# Skip formatting for init example messages
 				if metadata and metadata.message_type == 'init':
 					return '[Example AgentOutput]'
-				content = _log_format_agent_output_content(tool_call)
+				content = _log_format_agent_output_content(dict(tool_call))  # Convert ToolCall to dict
 			else:
 				content = f'[TOOL: {tool_name}]'
 		else:
@@ -141,9 +141,12 @@ def _log_format_message_line(
 		lines = []
 
 		# Get emoji and token info
-		message_type = message_with_metadata.message.__class__.__name__
-		emoji = _log_get_message_emoji(message_type)
-		token_str = str(message_with_metadata.metadata.tokens).rjust(4)
+		if isinstance(message_with_metadata, ManagedMessage):
+			message_type = message_with_metadata.message.__class__.__name__
+			emoji = _log_get_message_emoji(message_type)
+			token_str = str(message_with_metadata.metadata.tokens).rjust(4)
+		else:
+			return ['❓[   ?]: [Invalid message format]']
 		prefix = f'{emoji}[{token_str}]: '
 
 		# Calculate available width (emoji=2 visual cols + [token]: =8 chars)

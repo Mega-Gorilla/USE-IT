@@ -75,7 +75,7 @@ class AgentMessagePrompt:
 		sensitive_data: str | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
-		self.file_system: 'FileSystem' | None = file_system
+		self.file_system: 'FileSystem | None' = file_system
 		self.agent_history_description: str | None = agent_history_description
 		self.read_state_description: str | None = read_state_description
 		self.task: str | None = task
@@ -143,7 +143,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
 		step_info_description += f'Current date and time: {time_str}'
 
-		todo_contents = self.file_system.get_todo_contents()
+		todo_contents = self.file_system.get_todo_contents() if self.file_system else ''
 		if not len(todo_contents):
 			todo_contents = '[Current todo.md is empty, fill it with your plan when applicable]'
 
@@ -152,7 +152,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 {self.task}
 </user_request>
 <file_system>
-{self.file_system.describe()}
+{self.file_system.describe() if self.file_system else 'No file system available'}
 </file_system>
 <todo_contents>
 {todo_contents}
@@ -165,10 +165,18 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		return agent_state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
-		state_description = '<agent_history>\n' + self.agent_history_description.strip('\n') + '\n</agent_history>\n'
+		state_description = (
+			'<agent_history>\n'
+			+ (self.agent_history_description.strip('\n') if self.agent_history_description else '')
+			+ '\n</agent_history>\n'
+		)
 		state_description += '<agent_state>\n' + self._get_agent_state_description().strip('\n') + '\n</agent_state>\n'
 		state_description += '<browser_state>\n' + self._get_browser_state_description().strip('\n') + '\n</browser_state>\n'
-		state_description += '<read_state>\n' + self.read_state_description.strip('\n') + '\n</read_state>\n'
+		state_description += (
+			'<read_state>\n'
+			+ (self.read_state_description.strip('\n') if self.read_state_description else '')
+			+ '\n</read_state>\n'
+		)
 		if self.page_filtered_actions:
 			state_description += 'For this page, these additional actions are available:\n'
 			state_description += self.page_filtered_actions + '\n'

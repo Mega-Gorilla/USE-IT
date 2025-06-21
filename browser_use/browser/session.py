@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
+from browser_use.config import CONFIG
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
@@ -44,10 +45,6 @@ from browser_use.dom.clickable_element_processor.service import ClickableElement
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_execution_async, time_execution_sync
-
-# Check if running in Docker
-IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
-
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
@@ -578,56 +575,6 @@ class BrowserSession(BaseModel):
 			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 			return GLOBAL_PLAYWRIGHT_API_OBJECT
 
-	def _kill_child_processes(self) -> None:
-		"""Kill any child processes that might be related to the browser"""
-
-		if not self.browser_profile.keep_alive and self.browser_pid:
-			try:
-				browser_proc = psutil.Process(self.browser_pid)
-				try:
-					browser_proc.terminate()
-					browser_proc.wait(
-						timeout=5
-					)  # wait up to 5 seconds for the process to exit cleanly and commit its user_data_dir changes
-				except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
-					pass
-
-				# Kill all child processes first (recursive)
-				for child in browser_proc.children(recursive=True):
-					try:
-						# self.logger.debug(f'Force killing child process: {child.pid} ({child.name()})')
-						child.kill()
-					except (psutil.NoSuchProcess, psutil.AccessDenied):
-						pass
-
-				# Kill the main browser process
-				# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
-				browser_proc.kill()
-			except psutil.NoSuchProcess:
-				pass
-			except Exception as e:
-				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
-
-	@staticmethod
-	async def _start_global_playwright_subprocess(is_stealth: bool) -> PlaywrightOrPatchright:
-		"""Create and return a new playwright or patchright node.js subprocess / API connector"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
-
-		try:
-			current_loop = asyncio.get_running_loop()
-		except RuntimeError:
-			current_loop = None
-
-		if is_stealth:
-			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
-			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
-			return GLOBAL_PATCHRIGHT_API_OBJECT
-		else:
-			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
-			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
-			return GLOBAL_PLAYWRIGHT_API_OBJECT
-
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
@@ -1079,7 +1026,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'  # type: ignore
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
@@ -1098,15 +1045,15 @@ class BrowserSession(BaseModel):
 			old_foreground = self.human_current_page
 			assert self.browser_context is not None, 'BrowserContext object is not set'
 			assert old_foreground is not None, 'Old foreground page is not set'
-			old_tab_idx = self.browser_context.pages.index(old_foreground)
+			old_tab_idx = self.browser_context.pages.index(old_foreground)  # type: ignore
 			self.human_current_page = new_page
-			new_tab_idx = self.browser_context.pages.index(new_page)
+			new_tab_idx = self.browser_context.pages.index(new_page)  # type: ignore
 
 			# Log before and after for debugging
 			old_url = old_foreground and old_foreground.url or 'about:blank'
 			new_url = new_page and new_page.url or 'about:blank'
 			agent_url = self.agent_current_page and self.agent_current_page.url or 'about:blank'
-			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)
+			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)  # type: ignore
 			if old_url != new_url:
 				self.logger.info(
 					f'👁️ Foregound tab changed by human from [{old_tab_idx}]{_log_pretty_url(old_url)} '
@@ -1175,7 +1122,7 @@ class BrowserSession(BaseModel):
 				await page.evaluate(update_tab_focus_script)
 				# self.logger.debug(f'👁️ Added visibility listener to existing tab: {page.url}')
 			except Exception as e:
-				page_idx = self.browser_context.pages.index(page)
+				page_idx = self.browser_context.pages.index(page)  # type: ignore
 				self.logger.debug(
 					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
 				)
@@ -1266,7 +1213,7 @@ class BrowserSession(BaseModel):
 
 			# cdp api: https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setWindowBounds
 			try:
-				cdp_session = await page.context.new_cdp_session(page)
+				cdp_session = await page.context.new_cdp_session(page)  # type: ignore
 				window_id_result = await cdp_session.send('Browser.getWindowForTarget')
 				await cdp_session.send(
 					'Browser.setWindowBounds',
@@ -1285,7 +1232,7 @@ class BrowserSession(BaseModel):
 					# fallback to javascript resize if cdp setWindowBounds fails
 					await page.evaluate(
 						"""(width, height) => {window.resizeTo(width, height)}""",
-						**self.browser_profile.window_size,
+						[self.browser_profile.window_size['width'], self.browser_profile.window_size['height']],
 					)
 					return
 				except Exception:
@@ -3229,7 +3176,7 @@ class BrowserSession(BaseModel):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
-		if os.environ.get('IS_IN_EVALS', 'false').lower()[0] in 'ty1':
+		if CONFIG.IS_IN_EVALS:
 			# dont bother wasting CPU showing animations during evals
 			return
 
