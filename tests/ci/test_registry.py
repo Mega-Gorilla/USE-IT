@@ -711,7 +711,7 @@ class TestType2Pattern:
 		registry = Registry()
 
 		@registry.action('Scroll page')
-		async def scroll_page(direction: str = 'down', amount: int = 100, browser_session: BrowserSession | None = None):
+		async def scroll_page(direction: str = 'down', amount: int = 100, browser_session: BrowserSession = None):  # type: ignore
 			return ActionResult(extracted_content=f'Scrolled {direction} by {amount}')
 
 		action = registry.registry.actions['scroll_page']
@@ -878,8 +878,8 @@ class TestParamsModelGeneration:
 			query: str,
 			max_results: int,
 			include_images: bool = True,
-			page: Page | None = None,
-			browser_session: BrowserSession | None = None,
+			page: Page = None,  # type: ignore
+			browser_session: BrowserSession = None,  # type: ignore
 		):
 			return ActionResult()
 
@@ -901,7 +901,11 @@ class TestParamsModelGeneration:
 
 		@registry.action('Typed action')
 		async def typed_action(
-			count: int, rate: float, enabled: bool, name: str | None = None, browser_session: BrowserSession | None = None
+			count: int,
+			rate: float,
+			enabled: bool,
+			name: str | None = None,
+			browser_session: BrowserSession = None,  # type: ignore
 		):
 			return ActionResult()
 
@@ -970,7 +974,7 @@ class TestParameterOrdering:
 			second: int,
 			page: Page,
 			third: bool = True,
-			page_extraction_llm: BaseChatModel | None = None,
+			page_extraction_llm: BaseChatModel = None,  # type: ignore
 		):
 			return ActionResult()
 
@@ -1103,7 +1107,7 @@ class TestParamsModelArgsAndKwargs:
 		# Model that includes browser_session
 		class ModelWithBrowser(ActionModel):
 			value: str = Field(description='Test value')
-			browser_session: BrowserSession | None = None
+			browser_session: BrowserSession = None  # type: ignore
 
 		# Create a custom param model for select_cell_or_range
 		class CellRangeParams(ActionModel):
