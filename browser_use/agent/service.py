@@ -447,7 +447,10 @@ class Agent(Generic[Context]):
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service
-		self.enable_cloud_sync = os.environ.get('BROWSERUSE_CLOUD_SYNC', 'true').lower()[0] in 'ty1'
+		# Default to the same value as ANONYMIZED_TELEMETRY
+		anonymized_telemetry = os.getenv('ANONYMIZED_TELEMETRY', 'true')
+		cloud_sync_default = 'false' if anonymized_telemetry.lower()[0] not in 'ty1' else 'true'
+		self.enable_cloud_sync = os.environ.get('BROWSER_USE_CLOUD_SYNC', cloud_sync_default).lower()[0] in 'ty1'
 		if self.enable_cloud_sync:
 			from browser_use.sync import CloudSync
 
