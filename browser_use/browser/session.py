@@ -778,12 +778,12 @@ class BrowserSession(BaseModel):
 				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
 				try:
 					assert self.playwright is not None, 'playwright instance is None'
-					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						self.browser = self.browser or await self.playwright.chromium.launch(
 							**self.browser_profile.kwargs_for_launch().model_dump()
 						)
 					# self.logger.debug('🌎 Launching new incognito context in browser')
-					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						self.browser_context = await self.browser.new_context(
 							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
 						)
@@ -796,11 +796,11 @@ class BrowserSession(BaseModel):
 					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
 					# Retry the operation with the new playwright instance
 					assert self.playwright is not None, 'playwright instance is None'
-					async with asyncio.timeout(10):
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						self.browser = await self.playwright.chromium.launch(
 							**self.browser_profile.kwargs_for_launch().model_dump()
 						)
-					async with asyncio.timeout(10):
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						self.browser_context = await self.browser.new_context(
 							**self.browser_profile.kwargs_for_new_context().model_dump()
 						)
@@ -820,7 +820,7 @@ class BrowserSession(BaseModel):
 
 				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
 				try:
-					async with asyncio.timeout(10):  # Reduced timeout from 30s to 10s
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						try:
 							assert self.playwright is not None, 'playwright instance is None'
 							self.browser_context = await self.playwright.chromium.launch_persistent_context(
@@ -838,7 +838,7 @@ class BrowserSession(BaseModel):
 					# Force recreation of the playwright object
 					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
 					# Retry the operation with the new playwright instance
-					async with asyncio.timeout(10):
+					async with asyncio.timeout(self.browser_profile.timeout / 1000):
 						assert self.playwright is not None, 'playwright instance is None'
 						self.browser_context = await self.playwright.chromium.launch_persistent_context(
 							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
