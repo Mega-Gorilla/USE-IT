@@ -575,56 +575,6 @@ class BrowserSession(BaseModel):
 			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 			return GLOBAL_PLAYWRIGHT_API_OBJECT
 
-	def _kill_child_processes(self) -> None:
-		"""Kill any child processes that might be related to the browser"""
-
-		if not self.browser_profile.keep_alive and self.browser_pid:
-			try:
-				browser_proc = psutil.Process(self.browser_pid)
-				try:
-					browser_proc.terminate()
-					browser_proc.wait(
-						timeout=5
-					)  # wait up to 5 seconds for the process to exit cleanly and commit its user_data_dir changes
-				except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
-					pass
-
-				# Kill all child processes first (recursive)
-				for child in browser_proc.children(recursive=True):
-					try:
-						# self.logger.debug(f'Force killing child process: {child.pid} ({child.name()})')
-						child.kill()
-					except (psutil.NoSuchProcess, psutil.AccessDenied):
-						pass
-
-				# Kill the main browser process
-				# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
-				browser_proc.kill()
-			except psutil.NoSuchProcess:
-				pass
-			except Exception as e:
-				self.logger.warning(f'Error force-killing browser in BrowserSession.__del__: {type(e).__name__}: {e}')
-
-	@staticmethod
-	async def _start_global_playwright_subprocess(is_stealth: bool) -> PlaywrightOrPatchright:
-		"""Create and return a new playwright or patchright node.js subprocess / API connector"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
-
-		try:
-			current_loop = asyncio.get_running_loop()
-		except RuntimeError:
-			current_loop = None
-
-		if is_stealth:
-			GLOBAL_PATCHRIGHT_API_OBJECT = await async_patchright().start()
-			GLOBAL_PATCHRIGHT_EVENT_LOOP = current_loop
-			return GLOBAL_PATCHRIGHT_API_OBJECT
-		else:
-			GLOBAL_PLAYWRIGHT_API_OBJECT = await async_playwright().start()
-			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
-			return GLOBAL_PLAYWRIGHT_API_OBJECT
-
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
@@ -1282,8 +1232,7 @@ class BrowserSession(BaseModel):
 					# fallback to javascript resize if cdp setWindowBounds fails
 					await page.evaluate(
 						"""(width, height) => {window.resizeTo(width, height)}""",
-						self.browser_profile.window_size['width'],
-						self.browser_profile.window_size['height'],
+						[self.browser_profile.window_size['width'], self.browser_profile.window_size['height']],
 					)
 					return
 				except Exception:

@@ -290,9 +290,13 @@ class DeviceAuthClient:
 		except Exception as e:
 			# Log the error details for debugging
 			if hasattr(e, 'response'):
-				logger.debug(
-					f'Failed to get pre-auth token for cloud sync: HTTP {e.response.status_code} - {e.response.text[:200]}'
-				)
+				response = getattr(e, 'response')
+				if hasattr(response, 'status_code') and hasattr(response, 'text'):
+					logger.debug(
+						f'Failed to get pre-auth token for cloud sync: HTTP {response.status_code} - {response.text[:200]}'
+					)
+				else:
+					logger.debug(f'Failed to get pre-auth token for cloud sync: {type(e).__name__}: {e}')
 			else:
 				logger.debug(f'Failed to get pre-auth token for cloud sync: {type(e).__name__}: {e}')
 

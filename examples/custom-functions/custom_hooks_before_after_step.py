@@ -148,14 +148,13 @@ async def record_activity(agent_obj):
 	extracted_content_json_last_elem = None
 
 	print('--- ON_STEP_START HOOK ---')
-	website_html: str = await agent_obj.browser_context.get_page_html()
-	website_screenshot: str = await agent_obj.browser_context.take_screenshot()
+	website_html = await agent_obj.browser_context.get_page_html()
+	website_screenshot = await agent_obj.browser_context.take_screenshot()
 
 	print('--> History:')
-	if hasattr(agent_obj, 'state'):
-		history = agent_obj.state.history
-	else:
-		history = None
+	# Assert agent has state to satisfy type checker
+	assert hasattr(agent_obj, 'state'), 'Agent must have state attribute'
+	history = agent_obj.state.history
 
 	model_thoughts = obj_to_json(obj=history.model_thoughts(), check_circular=False)
 

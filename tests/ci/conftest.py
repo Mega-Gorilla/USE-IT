@@ -24,7 +24,7 @@ os.environ['SKIP_LLM_API_KEY_VERIFICATION'] = 'true'
 from bubus import BaseEvent
 
 from browser_use import Agent
-from browser_use.browser import BrowserSession
+from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.sync.service import CloudSync
 
 
@@ -147,9 +147,11 @@ def create_mock_llm(actions=None):
 async def browser_session():
 	"""Create a real browser session for testing"""
 	session = BrowserSession(
-		headless=True,
-		user_data_dir=None,  # Use temporary directory
-		keep_alive=True,
+		browser_profile=BrowserProfile(
+			headless=True,
+			user_data_dir=None,  # Use temporary directory
+			keep_alive=True,
+		)
 	)
 	await session.start()
 	yield session

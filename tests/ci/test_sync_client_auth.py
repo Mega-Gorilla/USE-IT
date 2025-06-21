@@ -16,8 +16,8 @@ from pytest_httpserver import HTTPServer
 # Load environment variables before any imports
 load_dotenv()
 
-from bubus import BaseEvent
 
+from browser_use.agent.cloud_events import CreateAgentSessionEvent, CreateAgentTaskEvent
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
 from browser_use.sync.service import CloudSync
 
@@ -355,12 +355,11 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send event
-		event_data = {
-			'task': 'Test task',
-			'status': 'running',
-		}
-
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', **event_data))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session', llm_model='test-model', task='Test task', user_id='test-user-123'
+			)
+		)
 
 		# Check request was made
 		assert len(requests) == 1
@@ -404,12 +403,9 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send event
-		event_data = {
-			'task': 'Test task',
-			'status': 'running',
-		}
-
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', **event_data))
+		await service.handle_event(
+			CreateAgentTaskEvent(agent_session_id='test-session', llm_model='test-model', task='Test task', user_id=TEMP_USER_ID)
+		)
 
 		# Check request was made without auth header
 		assert len(requests) == 1
@@ -460,7 +456,11 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send pre-auth event (should get 401 and be queued)
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Pre-auth task'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session', llm_model='test-model', task='Pre-auth task', user_id=TEMP_USER_ID
+			)
+		)
 
 		# Event should be in pending_events since we got 401
 		assert len(service.pending_events) == 1
@@ -503,7 +503,11 @@ class TestCloudSync:
 		service.session_id = 'test-session-id'
 
 		# Send event - should not raise exception but handle gracefully
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session', llm_model='test-model', task='Test task', user_id='test-user-123'
+			)
+		)
 
 		# Should handle error gracefully without crashing
 
@@ -640,7 +644,14 @@ class TestIntegration:
 		service.session_id = 'test-session-id'
 
 		# Send pre-auth event
-		await service.handle_event(BaseEvent(event_type='CreateAgentSessionEvent', started_at=datetime.utcnow().isoformat()))
+		await service.handle_event(
+			CreateAgentSessionEvent(
+				user_id=TEMP_USER_ID,
+				browser_session_id='test-browser-session',
+				browser_session_live_url='http://example.com/live',
+				browser_session_cdp_url='ws://example.com/cdp',
+			)
+		)
 
 		# Authenticate
 		authenticated = await service.authenticate(show_instructions=False)
@@ -650,7 +661,11 @@ class TestIntegration:
 		assert service.auth_client.user_id == 'test-user-123'
 
 		# Send authenticated event
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Authenticated task'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session', llm_model='test-model', task='Authenticated task', user_id='test-user-123'
+			)
+		)
 
 		# Verify auth was saved
 		auth_file = temp_config_dir / 'cloud_auth.json'
@@ -712,7 +727,14 @@ class TestAuthResilience:
 		service.auth_client = auth
 
 		# Send event - should not raise exception even though token is expired
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task after token expiry'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task after token expiry',
+				user_id='test-user-123',
+			)
+		)
 
 		# Agent should continue functioning despite sync failure
 		assert True  # No exception raised
@@ -744,7 +766,11 @@ class TestAuthResilience:
 		).respond_with_json({'processed': 1, 'failed': 0})
 
 		# Should be able to send events without auth (pre-auth mode)
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task without auth'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session', llm_model='test-model', task='Test task without auth', user_id=''
+			)
+		)
 
 	async def test_server_downtime_resilience(self, httpserver: HTTPServer, http_client, temp_config_dir):
 		"""Test that server downtime doesn't break the agent."""
@@ -763,7 +789,14 @@ class TestAuthResilience:
 
 		# Should be able to send events even when server is down
 		# They will be queued locally
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task during server downtime'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task during server downtime',
+				user_id='test-user-123',
+			)
+		)
 
 	async def test_excessive_event_queue_handling(self, httpserver: HTTPServer, http_client, temp_config_dir):
 		"""Test that excessive event queuing doesn't break the agent."""
@@ -776,7 +809,11 @@ class TestAuthResilience:
 
 		# Send many events while server is down (no responses configured)
 		for i in range(100):
-			await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task=f'Test task {i}'))
+			await service.handle_event(
+				CreateAgentTaskEvent(
+					agent_session_id='test-session', llm_model='test-model', task=f'Test task {i}', user_id='test-user-123'
+				)
+			)
 
 		# Agent should still be functioning
 		assert True  # No memory issues or crashes
@@ -809,4 +846,11 @@ class TestAuthResilience:
 		service.auth_client = auth
 
 		# Should handle malformed event response gracefully
-		await service.handle_event(BaseEvent(event_type='CreateAgentTaskEvent', task='Test task with malformed response'))
+		await service.handle_event(
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task with malformed response',
+				user_id='test-user-123',
+			)
+		)

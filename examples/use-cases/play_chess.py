@@ -64,7 +64,7 @@ def parse_transform(style: str) -> tuple[float, float] | None:
 		return x_px_str, y_px_str
 	except Exception as e:
 		logger.error(f'Error parsing transform style: {e}')
-		return None, None
+		return None, 0.0
 
 
 def algebraic_to_pixels(square: str, square_size: float) -> tuple[str, str]:
@@ -164,10 +164,10 @@ async def get_current_board_info(page) -> tuple[str | None, float]:
 		square_size = await calculate_square_size(page)
 	except Exception as e:
 		logger.error(f'Error (get_info): Could not read cg-board: {e}')
-		return None, None
+		return None, 0.0
 
 	if not board_html or not square_size:
-		return None, None
+		return None, 0.0
 
 	soup = BeautifulSoup(board_html, 'html.parser')
 	pieces = soup.find_all('piece')
@@ -186,7 +186,7 @@ async def get_current_board_info(page) -> tuple[str | None, float]:
 					logger.error(f'Error: {ve}')
 
 	if not board_state or not square_size:
-		return None, None
+		return None, 0.0
 
 	fen_board = create_fen_board(board_state)
 	full_fen = f'{fen_board} w KQkq - 0 1'
