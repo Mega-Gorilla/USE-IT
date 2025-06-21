@@ -80,7 +80,7 @@ def require_initialization(func):
 
 			if not self.agent_current_page or self.agent_current_page.is_closed():
 				self.agent_current_page = (
-					self.browser_context.pages[0] if (self.browser_context and self.browser_context.pages) else None
+					self.browser_context.pages[0] if (self.browser_context and len(self.browser_context.pages) > 0) else None
 				)
 
 			if not self.agent_current_page or self.agent_current_page.is_closed():
@@ -423,7 +423,8 @@ class BrowserSession(BaseModel):
 				if self.browser_pid:
 					try:
 						proc = psutil.Process(pid=self.browser_pid)
-						executable_path = proc.cmdline()[0]
+						cmdline = proc.cmdline()
+						executable_path = cmdline[0] if cmdline else 'unknown'
 						self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
 						# Add timeout for process termination
 						try:
@@ -436,6 +437,8 @@ class BrowserSession(BaseModel):
 								f'⏱️ Process did not terminate gracefully, force killing browser_pid={self.browser_pid}'
 							)
 							proc.kill()  # Force kill if terminate didn't work
+						self.browser_pid = None
+					except psutil.NoSuchProcess:
 						self.browser_pid = None
 					except Exception as e:
 						if 'NoSuchProcess' not in type(e).__name__:
@@ -898,8 +901,11 @@ class BrowserSession(BaseModel):
 
 		if new_chrome_procs and not self.browser_pid:
 			self.browser_pid = new_chrome_procs[0].pid
-			self.logger.info(f' ↳ Spawned browser_pid={self.browser_pid} {_log_pretty_path(new_chrome_procs[0].cmdline()[0])}')
-			self.logger.debug(' '.join(new_chrome_procs[0].cmdline()))  # print the entire launch command for debugging
+			cmdline = new_chrome_procs[0].cmdline()
+			executable_path = cmdline[0] if cmdline else 'unknown'
+			self.logger.info(f' ↳ Spawned browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
+			if cmdline:
+				self.logger.debug(' '.join(cmdline))  # print the entire launch command for debugging
 			self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
 
 		if self.browser:
@@ -1600,6 +1606,8 @@ class BrowserSession(BaseModel):
 			page = await self.get_current_page()
 		else:
 			# otherwise close the tab at the given index
+			if tab_index >= len(pages) or tab_index < 0:
+				raise IndexError(f'Tab index {tab_index} out of range. Available tabs: {len(pages)}')
 			page = pages[tab_index]
 
 		await page.close()
