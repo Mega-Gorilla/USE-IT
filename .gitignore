@@ -10,7 +10,7 @@ __pycache__/
 ~/
 
 # Virtual Environments
-.venv
+.venv*
 venv/
 
 # IDEs
@@ -28,6 +28,7 @@ dist/
 *.json
 *.jsonl
 *.log
+*.bak
 
 # Secrets and sensitive files
 secrets.env

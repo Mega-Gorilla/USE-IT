@@ -163,7 +163,7 @@ class DOMElementNode(DOMBaseNode):
 				if node.highlight_index is not None:
 					next_depth += 1
 
-					text = node.get_all_text_till_next_clickable_element()
+					text = node.get_all_text_till_next_clickable_element(max_depth=1)
 					attributes_html_str = ''
 					if include_attributes:
 						attributes_to_include = {
@@ -223,15 +223,20 @@ class DOMElementNode(DOMBaseNode):
 			elif isinstance(node, DOMTextNode):
 				# Add text only if it doesn't have a highlighted parent
 				if (
-					not node.has_parent_with_highlight_index()
-					and node.parent
-					and node.parent.is_visible
-					and node.parent.is_top_element
+					node.parent.highlight_index is None and node.parent and node.parent.is_visible and node.parent.is_top_element
 				):  # and node.is_parent_top_element()
 					formatted_text.append(f'{depth_str}{node.text}')
 
 		process_node(self, 0)
 		return '\n'.join(formatted_text)
+
+	def is_iframe_element(self, url: str, name: str | None = None, id: str | None = None) -> bool:
+		return (
+			self.tag_name.lower() == 'iframe'
+			and self.attributes.get('src') == url
+			and (name is None or self.attributes.get('name') == name)
+			and (id is None or self.attributes.get('id') == id)
+		)
 
 
 SelectorMap = dict[int, DOMElementNode]

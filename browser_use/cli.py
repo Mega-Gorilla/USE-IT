@@ -26,8 +26,6 @@ import langchain_anthropic
 import langchain_google_genai
 import langchain_openai
 
-# from patchright.async_api import async_playwright
-
 try:
 	import readline
 
@@ -48,7 +46,7 @@ from browser_use.logging_config import addLoggingLevel
 USER_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
 USER_CONFIG_FILE = USER_CONFIG_DIR / 'config.json'
 CHROME_PROFILES_DIR = USER_CONFIG_DIR / 'profiles'
-USER_DATA_DIR = CHROME_PROFILES_DIR / 'default'
+USER_DATA_DIR = CHROME_PROFILES_DIR / 'cli'
 
 # Default User settings
 MAX_HISTORY_LENGTH = 100
@@ -160,6 +158,12 @@ def update_config_with_click_args(config: dict[str, Any], ctx: click.Context) ->
 		config['browser']['window_width'] = ctx.params['window_width']
 	if ctx.params.get('window_height'):
 		config['browser']['window_height'] = ctx.params['window_height']
+	if ctx.params.get('user_data_dir'):
+		config['browser']['user_data_dir'] = ctx.params['user_data_dir']
+	if ctx.params.get('profile_directory'):
+		config['browser']['profile_directory'] = ctx.params['profile_directory']
+	if ctx.params.get('cdp_url'):
+		config['browser']['cdp_url'] = ctx.params['cdp_url']
 
 	return config
 
@@ -441,8 +445,8 @@ class BrowserUseApp(App):
 
 		class BrowserUseFormatter(logging.Formatter):
 			def format(self, record):
-				if isinstance(record.name, str) and record.name.startswith('browser_use.'):
-					record.name = record.name.split('.')[-2]
+				# if isinstance(record.name, str) and record.name.startswith('browser_use.'):
+				# 	record.name = record.name.split('.')[-2]
 				return super().format(record)
 
 		# Set up the formatter based on log type
@@ -749,7 +753,7 @@ class BrowserUseApp(App):
 						timestamp = int(time.time())
 						current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
 						browser_info.write(f'Last updated: [dim]{current_time}[/]')
-					except Exception as e:
+					except Exception:
 						pass
 
 					# Show the agent's current page URL if available
@@ -978,6 +982,7 @@ class BrowserUseApp(App):
 				llm=self.llm,
 				controller=self.controller,
 				browser_session=self.browser_session,
+				source='cli',
 				**agent_settings.model_dump(),
 			)
 			# Update our browser_session reference to point to the agent's
@@ -1169,12 +1174,12 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 		# Get agent settings from config
 		agent_settings = AgentSettings.model_validate(config.get('agent', {}))
 
-		# Create browser session with headless=True and no user_data_dir
+		# Create browser session with config parameters
+		browser_config = config.get('browser', {})
 		browser_session = BrowserSession(
-			headless=False,
-			# user_data_dir=None,
-			# playwright=(await async_playwright().start()),
-			# channel=BrowserChannel.CHROME,
+			stealth=True,
+			user_data_dir=USER_DATA_DIR,
+			**browser_config,
 		)
 
 		# Create and run agent
@@ -1182,8 +1187,8 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 			task=prompt,
 			llm=llm,
 			browser_session=browser_session,
+			source='cli',
 			**agent_settings.model_dump(),
-			# Run the agent
 		)
 
 		await agent.run()
@@ -1235,9 +1240,9 @@ async def textual_interface(config: dict[str, Any]):
 
 		# Create BrowserSession directly with config parameters
 		browser_session = BrowserSession(
+			stealth=True,
+			user_data_dir=USER_DATA_DIR,
 			**browser_config,
-			# playwright=(await async_playwright().start()),
-			# channel=BrowserChannel.CHROME,
 		)
 		logger.debug('BrowserSession initialized successfully')
 
@@ -1314,10 +1319,25 @@ async def textual_interface(config: dict[str, Any]):
 @click.option('--headless', is_flag=True, help='Run browser in headless mode', default=None)
 @click.option('--window-width', type=int, help='Browser window width')
 @click.option('--window-height', type=int, help='Browser window height')
+@click.option(
+	'--user-data-dir', type=str, help='Path to Chrome user data directory (e.g., ~/Library/Application Support/Google/Chrome)'
+)
+@click.option('--profile-directory', type=str, help='Chrome profile directory name (e.g., "Default", "Profile 1")')
+@click.option('--cdp-url', type=str, help='Connect to existing Chrome via CDP URL (e.g., http://localhost:9222)')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.pass_context
 def main(ctx: click.Context, debug: bool = False, **kwargs):
-	"""Browser-Use Interactive TUI or Command Line Executor"""
+	"""Browser-Use Interactive TUI or Command Line Executor
+
+	Use --user-data-dir to specify a local Chrome profile directory.
+	Common Chrome profile locations:
+	  macOS: ~/Library/Application Support/Google/Chrome
+	  Linux: ~/.config/google-chrome
+	  Windows: %LOCALAPPDATA%\\Google\\Chrome\\User Data
+
+	Use --profile-directory to specify which profile within the user data directory.
+	Examples: "Default", "Profile 1", "Profile 2", etc.
+	"""
 
 	if kwargs['version']:
 		from importlib.metadata import version

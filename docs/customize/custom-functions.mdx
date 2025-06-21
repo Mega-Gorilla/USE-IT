@@ -5,10 +5,13 @@ icon: "function"
 ---
 
 Custom actions are functions *you* provide, that are added to our [default actions](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py) the agent can use to accomplish tasks.
-Action functions can request [arbitrary parameters](#action-parameters-via-pydantic-model) that the LLM has to come up with + a fixed set of [framework-provided arguments](#framework-provided-parameters) for browser APIs/`Agent(context)`/etc.
+Action functions can request [arbitrary parameters](#action-parameters-via-pydantic-model) that the LLM has to come up with + a fixed set of [framework-provided arguments](#framework-provided-parameters) for browser APIs / `Agent(context=...)` / etc.
 
-By default, the Browser Use Agent uses the built-in set of actions (`open_tab`, `scroll_down`, `extract_content`, [and more](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py)), 
-but you can extend it to implement custom or optimized behavior.
+<Note>
+  Our default set of actions is already quite powerful, the built-in `Controller` provides basics like `open_tab`, `scroll_down`, `extract_content`, [and more](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py).
+</Note>
+
+It's easy to add your own actions to implement additional custom behaviors, integrations with other apps, or performance optimizations.
 
 For examples of custom actions (e.g. uploading files, asking a human-in-the-loop for help, drawing a polygon with the mouse, and more), see [examples/custom-functions](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions).
 
@@ -18,35 +21,29 @@ For examples of custom actions (e.g. uploading files, asking a human-in-the-loop
 To register your own custom functions (which can be `sync` or `async`), decorate them with the `@controller.action(...)` decorator. This saves them into the `controller.registry`.
 
 ```python
-from pydantic import BaseModel
 from browser_use import Controller, ActionResult
 
 controller = Controller()
 
-@controller.action('Ask human for help with a question', domains=['https://hard.example.com'])   # pass allowed_domains= or page_filter= to limit actions to certain pages
+@controller.action('Ask human for help with a question', domains=['example.com'])   # pass allowed_domains= or page_filter= to limit actions to certain pages
 def ask_human(question: str) -> ActionResult:
-    answer = input(f'\n{question}\nInput: ')
-    return ActionResult(extracted_content=answer, include_in_memory=True)
+    answer = input(f'{question} > ')
+    return ActionResult(extracted_content=f'The human responded with: {answer}', include_in_memory=True)
 ```
 
-<Note>
-  Our default `Controller` has all the basic functionality you might need to interact with
-  the browser already implemented. We provide a default set of common actions, e.g. `new_tab`, `extract_content`, etc.
-</Note>
-
 ```python
-# pass controller to the agent to use it
+# Then pass your controller to the agent to use it
 agent = Agent(
-    task=task,
+    task='...',
     llm=llm,
     controller=controller,
 )
 ```
 
 <Note>
-  Keep the function name and description short and concise:
+  Keep your action function names and descriptions short and concise:
   - The LLM chooses between actions to run solely based on the function name and description
-  - The LLM decides the params to pass to the action based on the argument names and type signatures
+  - The LLM decides how to fill action params based on their names, type hints, & defaults
 </Note>
 
 ---
@@ -55,9 +52,10 @@ agent = Agent(
 
 Browser Use supports two patterns for defining action parameters: normal function arguments, or a Pydantic model.
 
-### Action Parameters via Function Arguments
+### Function Arguments
 
-For simple actions that don't need default values, you can define the action parameters directly as arguments to the function.
+For simple actions that don't need default values, you can define the action parameters directly as arguments to the function. This one takes a single string argument, `css_selector`.
+When the LLM calls an action, it sees its argument names & types, and will provide values that fit.
 
 ```python
 @controller.action('Click element')
@@ -68,30 +66,39 @@ def click_element(css_selector: str, page: Page) -> ActionResult:
     return ActionResult(extracted_content=f"Clicked element {css_selector}")
 ```
 
-### Action Parameters via Pydantic Model
+### Pydantic Model
 
-You can define a pydantic model for the parameters your action expects.
-This allows you to use optional parameters, default values, `Annotated[...]` types with custom validation, and other features offered by pydantic.
+You can define a pydantic model for the parameters your action expects by setting a `@controller.action(..., param_model=MyParams)`.
+This allows you to use optional parameters, default values, `Annotated[...]` types with custom validation, field descriptions, and other features offered by pydantic.
 
-When the agent calls calls your agent function, an instance of your model
-with the values filled by the LLM will be passed as the first argument `params` to your action function.
+When the agent calls calls your agent function, an instance of your model with the values filled by the LLM will be passed as the argument named `params` to your action function.
 
 Using a pydantic model is helpful because it allows more flexibility and power to enforce the schema of the values the LLM should provide.
+The LLM gets the entire pydantic JSON schema for your `param_model`, it will see the function name & description + individual field names, types, descriptions, and default values.
 
 
 ```python
+from typing import Annotated
+from pydantic import BaseModel, AfterValidator
+from browser_use import ActionResult
+
 class MyParams(BaseModel):
     field1: int
     field2: str = 'default value'
+    field3: Annotated[str, AfterValidator(lambda s: s.lower())]  # example: enforce always lowercase
+    field4: str = Field(default='abc', description='Detailed description for the LLM')
 
 @controller.action('My action', param_model=MyParams)
-def my_action(params: MyParams, browser_session: BrowserSession) -> ActionResult:
-    await (await browser_session.get_current_page()).keyboard.type(params.field2)
-    return ActionResult(extracted_content=f"Processed #{params.field1}")
+def my_action(params: MyParams, page: Page) -> ActionResult:
+    await page.keyboard.type(params.field2)
+    return ActionResult(extracted_content=f"Inputted {params} on {page.url}")
 ```
 
 Any special framework-provided arguments (e.g. `page`) will be passed as separate positional arguments after `params`.
 
+<Important>
+To use a `BaseModel` the arg *must* be called `params`. Action function args are matched and filled like named arguments; arg order doesn't matter but names and types do.
+</Important>
 
 ### Framework-Provided Parameters
 
@@ -106,7 +113,7 @@ For example, actions that need to run playwright code to interact with the brows
 - `available_file_paths: list[str]` - List of available file paths for upload / processing
 - `has_sensitive_data: bool` - Whether the action content contains sensitive data markers (check this to avoid logging sensitive data to terminal by accident)
 
-#### Example: Custom action that uses the current `page`
+#### Example: Action uses the current `page`
 
 ```python
 from playwright.async_api import Page
@@ -120,7 +127,7 @@ async def input_text_into_page(text: str, page: Page) -> ActionResult:
     return ActionResult(extracted_content='Website opened')
 ```
 
-#### Example: Custom action that uses the `browser_context`
+#### Example: Action uses the `browser_context`
 
 ```python
 from browser_use import BrowserSession, Controller, ActionResult
@@ -159,23 +166,19 @@ async def open_website(url: str, browser_session: BrowserSession) -> ActionResul
         await some_other_action(params=OtherAction(abc=123), page=page)  # ✅ allowed: params=model & special kwargs
     ```
 
-```python3
-# Pattern 1: Use Pydantic model for defaults + special params
+```python
+# Using Pydantic Model to define action params (recommended)
 class PinCodeParams(BaseModel):
     code: int
-    retries: int = 3
+    retries: int = 3                                               # ✅ supports optional/defaults
 
 @controller.action('...', param_model=PinCodeParams)
-async def input_pin_code(params: PinCodeParams, page: Page): ...   # ✅ recommended
+async def input_pin_code(params: PinCodeParams, page: Page): ...   # ✅ special params at the end
 
-# Pattern 2: Simple actions without defaults
-async def input_pin_code(code: int, retries: int, page: Page): ... # ✅ all params required
-
-# Pattern 2: Actions with defaults CANNOT use special params
-async def wait(seconds: int = 3): ... # ✅ no special params needed
-
-# This is a Python SyntaxError - non-default after default
-async def input_pin_code(code: int, retries: int=3, page: Page): ... # ❌ Python SyntaxError!
+# Using function arguments to define action params
+async def input_pin_code(code: int, retries: int, page: Page): ... # ✅ params first, special params second, no defaults
+async def input_pin_code(code: int, retries: int=3): ...           # ✅ defaults ok only if no special params needed
+async def input_pin_code(code: int, retries: int=3, page: Page): ... # ❌ Python SyntaxError! not allowed
 ```
 
 

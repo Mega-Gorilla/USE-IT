@@ -7,7 +7,9 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from threading import Thread
@@ -15,18 +17,26 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
-from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
+from browser_use.agent.cloud_events import (
+	CreateAgentOutputFileEvent,
+	CreateAgentSessionEvent,
+	CreateAgentStepEvent,
+	CreateAgentTaskEvent,
+	UpdateAgentTaskEvent,
+)
 
 load_dotenv()
 
+# from lmnr.sdk.decorators import observe
+from bubus import EventBus
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
 	BaseMessage,
 	HumanMessage,
 	SystemMessage,
 )
-from playwright.async_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ValidationError
+from uuid_extensions import uuid7str
 
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
@@ -52,40 +62,47 @@ from browser_use.agent.views import (
 	ToolCallingMethod,
 )
 from browser_use.browser import BrowserProfile, BrowserSession
-
-# from lmnr.sdk.decorators import observe
+from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
+from browser_use.browser.types import Browser, BrowserContext, Page
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.history_tree_processor.service import (
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
+from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
 from browser_use.exceptions import LLMException
+from browser_use.filesystem.file_system import FileSystem
 from browser_use.telemetry.service import ProductTelemetry
-from browser_use.telemetry.views import (
-	AgentTelemetryEvent,
+from browser_use.telemetry.views import AgentTelemetryEvent
+from browser_use.utils import (
+	_log_pretty_path,
+	get_browser_use_version,
+	handle_llm_error,
+	time_execution_async,
+	time_execution_sync,
 )
-from browser_use.utils import time_execution_async, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
 SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
-def log_response(response: AgentOutput, registry=None) -> None:
+def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	"""Utility function to log the model's response."""
 
-	if 'Success' in response.current_state.evaluation_previous_goal:
+	# Use module logger if no logger provided
+	if logger is None:
+		logger = logging.getLogger(__name__)
+
+	if 'success' in response.current_state.evaluation_previous_goal.lower():
 		emoji = '👍'
-	elif 'Failed' in response.current_state.evaluation_previous_goal:
+	elif 'failure' in response.current_state.evaluation_previous_goal.lower():
 		emoji = '⚠️'
 	else:
-		emoji = '❓'
+		emoji = '❔'
 
+	logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
-	logger.info(f'🎯 Next goal: {response.current_state.next_goal}')
+	logger.info(f'🎯 Next goal: {response.current_state.next_goal}\n')
 
 
 Context = TypeVar('Context')
@@ -94,14 +111,17 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 
 
 class Agent(Generic[Context]):
-	@time_execution_sync('--init (agent)')
+	browser_session: BrowserSession | None = None
+	_logger: logging.Logger | None = None
+
+	@time_execution_sync('--init')
 	def __init__(
 		self,
 		task: str,
 		llm: BaseChatModel,
 		# Optional parameters
 		page: Page | None = None,
-		browser: Browser | None = None,
+		browser: Browser | BrowserSession | None = None,
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
@@ -124,7 +144,7 @@ class Agent(Generic[Context]):
 		# Agent settings
 		use_vision: bool = True,
 		use_vision_for_planner: bool = False,
-		save_conversation_path: str | None = None,
+		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
 		retry_delay: int = 10,
@@ -146,8 +166,11 @@ class Agent(Generic[Context]):
 			'alt',
 			'aria-expanded',
 			'data-date-format',
+			'checked',
+			'data-state',
+			'aria-checked',
 		],
-		max_actions_per_step: int = 10,
+		max_actions_per_step: int = 1,
 		tool_calling_method: ToolCallingMethod | None = 'auto',
 		page_extraction_llm: BaseChatModel | None = None,
 		planner_llm: BaseChatModel | None = None,
@@ -156,13 +179,21 @@ class Agent(Generic[Context]):
 		extend_planner_system_message: str | None = None,
 		injected_agent_state: AgentState | None = None,
 		context: Context | None = None,
-		save_playwright_script_path: str | None = None,
 		enable_memory: bool = True,
 		memory_config: MemoryConfig | None = None,
 		source: str | None = None,
+		file_system_path: str | None = None,
+		task_id: str | None = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
+
+		self.id = task_id or uuid7str()
+		self.task_id: str = self.id
+		self.session_id: str = uuid7str()
+
+		# Create instance-specific logger
+		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-3:]}]')
 
 		# Core components
 		self.task = task
@@ -191,7 +222,6 @@ class Agent(Generic[Context]):
 			planner_llm=planner_llm,
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
-			save_playwright_script_path=save_playwright_script_path,
 			extend_planner_system_message=extend_planner_system_message,
 		)
 
@@ -201,6 +231,9 @@ class Agent(Generic[Context]):
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
+
+		# Initialize file system
+		self._set_file_system(file_system_path)
 
 		# Action setup
 		self._setup_action_models()
@@ -215,22 +248,24 @@ class Agent(Generic[Context]):
 
 		# Handle users trying to use use_vision=True with DeepSeek models
 		if 'deepseek' in self.model_name.lower():
-			logger.warning('⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision=False for now...')
+			self.logger.warning('⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
 		if 'deepseek' in (self.planner_model_name or '').lower():
-			logger.warning(
+			self.logger.warning(
 				'⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision_for_planner=False for now...'
 			)
 			self.settings.use_vision_for_planner = False
 		# Handle users trying to use use_vision=True with XAI models
 		if 'grok' in self.model_name.lower():
-			logger.warning('⚠️ XAI models do not support use_vision=True yet. Setting use_vision=False for now...')
+			self.logger.warning('⚠️ XAI models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
 		if 'grok' in (self.planner_model_name or '').lower():
-			logger.warning('⚠️ XAI models do not support use_vision=True yet. Setting use_vision_for_planner=False for now...')
+			self.logger.warning(
+				'⚠️ XAI models do not support use_vision=True yet. Setting use_vision_for_planner=False for now...'
+			)
 			self.settings.use_vision_for_planner = False
 
-		logger.info(
+		self.logger.info(
 			f'🧠 Starting a browser-use agent {self.version} with base_model={self.model_name}'
 			f'{" +tools" if self.tool_calling_method == "function_calling" else ""}'
 			f'{" +rawtools" if self.tool_calling_method == "raw" else ""}'
@@ -240,6 +275,7 @@ class Agent(Generic[Context]):
 			f'{f" planner_model={self.planner_model_name}" if self.planner_model_name else ""}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
 			f'{" +vision" if self.settings.use_vision_for_planner else ""} '
+			f'{" +file_system" if self.file_system else ""}'
 		)
 
 		# Initialize available actions for system prompt (only non-filtered actions)
@@ -258,6 +294,7 @@ class Agent(Generic[Context]):
 				override_system_message=override_system_message,
 				extend_system_message=extend_system_message,
 			).get_system_message(),
+			file_system=self.file_system,
 			settings=MessageManagerSettings(
 				max_input_tokens=self.settings.max_input_tokens,
 				include_attributes=self.settings.include_attributes,
@@ -277,13 +314,16 @@ class Agent(Generic[Context]):
 					config=self.memory_config,
 				)
 			except ImportError:
-				logger.warning(
+				self.logger.warning(
 					'⚠️ Agent(enable_memory=True) is set but missing some required packages, install and re-run to use memory features: pip install browser-use[memory]'
 				)
 				self.memory = None
 				self.enable_memory = False
 		else:
 			self.memory = None
+
+		if isinstance(browser, BrowserSession):
+			browser_session = browser_session or browser
 
 		browser_context = page.context if page else browser_context
 		# assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
@@ -295,19 +335,34 @@ class Agent(Generic[Context]):
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 
 		if browser_session:
-			# always copy sessions that are passed in to avoid conflicting with other agents sharing the same session
+			# Check if user is trying to reuse an uninitialized session
+			if browser_session.browser_profile.keep_alive and not browser_session.initialized:
+				self.logger.error(
+					'❌ Passed a BrowserSession with keep_alive=True that is not initialized. '
+					'Call await browser_session.start() before passing it to Agent() to reuse the same browser. '
+					'Otherwise, each agent will launch its own browser instance.'
+				)
+				raise ValueError(
+					'BrowserSession with keep_alive=True must be initialized before passing to Agent. '
+					'Call: await browser_session.start()'
+				)
+
+			# always copy sessions that are passed in to avoid agents overwriting each other's agent_current_page and human_current_page by accident
 			self.browser_session = browser_session.model_copy(
-				update={
-					'agent_current_page': None,
-					'human_current_page': None,
-				},
+				# update={
+				# 	'agent_current_page': None,   # dont reset these, let the next agent start on the same page as the last agent
+				# 	'human_current_page': None,
+				# },
 			)
 		else:
+			if browser is not None:
+				assert isinstance(browser, Browser), 'Browser is not set up'
 			self.browser_session = BrowserSession(
 				browser_profile=browser_profile,
 				browser=browser,
 				browser_context=browser_context,
-				page=page,
+				agent_current_page=page,
+				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
 
 		if self.sensitive_data:
@@ -316,7 +371,7 @@ class Agent(Generic[Context]):
 
 			# If no allowed_domains are configured, show a security warning
 			if not self.browser_profile.allowed_domains:
-				logger.error(
+				self.logger.error(
 					'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
 					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
 					'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
@@ -332,7 +387,9 @@ class Agent(Generic[Context]):
 						sys.exit(0)
 				else:
 					pass  # no point waiting if we're not in an interactive shell
-				logger.warning('‼️ Continuing with insecure settings for now... but this will become a hard error in the future!')
+				self.logger.warning(
+					'‼️ Continuing with insecure settings for now... but this will become a hard error in the future!'
+				)
 
 			# If we're using domain-specific credentials, validate domain patterns
 			elif has_domain_specific_credentials:
@@ -366,7 +423,7 @@ class Agent(Generic[Context]):
 							break
 
 					if not is_allowed:
-						logger.warning(
+						self.logger.warning(
 							f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
 							f'   This may be a security risk as credentials could be used on unintended domains.'
 						)
@@ -382,22 +439,98 @@ class Agent(Generic[Context]):
 		# Telemetry
 		self.telemetry = ProductTelemetry()
 
+		# Event bus with WAL persistence
+		# Default to ~/.config/browseruse/events/{agent_task_id}.jsonl
+		from browser_use.utils import BROWSER_USE_CONFIG_DIR
+
+		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.task_id}.jsonl'
+		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
+
+		# Cloud sync service
+		# Default to the same value as ANONYMIZED_TELEMETRY
+		anonymized_telemetry = os.getenv('ANONYMIZED_TELEMETRY', 'true')
+		cloud_sync_default = 'false' if anonymized_telemetry.lower()[0] not in 'ty1' else 'true'
+		self.enable_cloud_sync = os.environ.get('BROWSER_USE_CLOUD_SYNC', cloud_sync_default).lower()[0] in 'ty1'
+		if self.enable_cloud_sync:
+			from browser_use.sync import CloudSync
+
+			self.cloud_sync = CloudSync()
+			# Register cloud sync handler
+			self.eventbus.on('*', self.cloud_sync.handle_event)
+
 		if self.settings.save_conversation_path:
-			logger.info(f'Saving conversation to {self.settings.save_conversation_path}')
+			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
+			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
 	@property
+	def logger(self) -> logging.Logger:
+		"""Get instance-specific logger with task ID in the name"""
+
+		_browser_session_id = self.browser_session.id if self.browser_session else self.id
+		_current_page_id = str(id(self.browser_session and self.browser_session.agent_current_page))[-2:]
+		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]}.{_current_page_id}')
+
+	@property
 	def browser(self) -> Browser:
+		assert self.browser_session is not None, 'BrowserSession is not set up'
+		assert self.browser_session.browser is not None, 'Browser is not set up'
 		return self.browser_session.browser
 
 	@property
 	def browser_context(self) -> BrowserContext:
+		assert self.browser_session is not None, 'BrowserSession is not set up'
+		assert self.browser_session.browser_context is not None, 'BrowserContext is not set up'
 		return self.browser_session.browser_context
 
 	@property
 	def browser_profile(self) -> BrowserProfile:
+		assert self.browser_session is not None, 'BrowserSession is not set up'
 		return self.browser_session.browser_profile
+
+	def _set_file_system(self, file_system_path: str | None = None) -> None:
+		# Initialize file system
+		if file_system_path:
+			self.file_system = FileSystem(file_system_path)
+			self.file_system_path = file_system_path
+		else:
+			# create a temporary file system
+			base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
+			self.file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
+			self.file_system = FileSystem(self.file_system_path)
+
+		logger.info(f'💾 File system path: {self.file_system_path}')
+
+		# if file system is set, add actions to the controller
+		@self.controller.registry.action('Write content to file_name in file system, use only .md or .txt extensions.')
+		async def write_file(file_name: str, content: str):
+			result = await self.file_system.write_file(file_name, content)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+
+		@self.controller.registry.action('Append content to file_name in file system')
+		async def append_file(file_name: str, content: str):
+			result = await self.file_system.append_file(file_name, content)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+
+		@self.controller.registry.action('Read file_name from file system')
+		async def read_file(file_name: str):
+			result = await self.file_system.read_file(file_name)
+			max_len = 50
+			if len(result) > max_len:
+				display_result = result[:max_len] + '\n...'
+			else:
+				display_result = result
+			logger.info(f'💾 {display_result}')
+			memory = result.split('\n')[-1]
+			return ActionResult(
+				extracted_content=result,
+				include_in_memory=True,
+				long_term_memory=memory,
+				include_extracted_content_only_once=True,
+			)
 
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
@@ -410,45 +543,24 @@ class Agent(Generic[Context]):
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
+		# Use the helper function for version detection
+		version = get_browser_use_version()
+
+		# Determine source
 		try:
 			package_root = Path(__file__).parent.parent.parent
-			pyproject_path = package_root / 'pyproject.toml'
-
-			# Try to read version from pyproject.toml
-			if pyproject_path.exists():
-				import re
-
-				with open(pyproject_path) as f:
-					content = f.read()
-					match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
-					if match:
-						version = f'v{match.group(1)}'
-					else:
-						# Fallback to importlib if regex doesn't find version
-						from importlib.metadata import version as get_version
-
-						version = f'v{get_version("browser-use")}'
-			else:
-				# If pyproject.toml doesn't exist, try getting version from pip
-				from importlib.metadata import version as get_version
-
-				version = f'v{get_version("browser-use")}'
-
-			# Determine source
 			repo_files = ['.git', 'README.md', 'docs', 'examples']
 			if all(Path(package_root / file).exists() for file in repo_files):
 				source = 'git'
 			else:
 				source = 'pip'
-
 		except Exception as e:
-			logger.debug(f'Error getting version: {e}')
-			version = 'vunknown'
+			self.logger.debug(f'Error determining source: {e}')
 			source = 'unknown'
 
 		if source_override is not None:
 			source = source_override
-		logger.debug(f'Version: {version}, Source: {source}')
+		# self.logger.debug(f'Version: {version}, Source: {source}')  # moved later to _log_agent_run so that people are more likely to include it in copy-pasted support ticket logs
 		self.version = version
 		self.source = source
 
@@ -483,7 +595,7 @@ class Agent(Generic[Context]):
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
 		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 
-	def _test_tool_calling_method(self, method: str) -> bool:
+	def _test_tool_calling_method(self, method: str | None) -> bool:
 		"""Test if a specific tool calling method works with the current LLM."""
 		try:
 			# Test configuration
@@ -500,7 +612,7 @@ class Agent(Generic[Context]):
 				Cleans and validates a raw JSON response string against an expected answer.
 				"""
 				content = getattr(response, 'content', '').strip()
-				# logger.debug(f'Raw response content: {content}')
+				# self.logger.debug(f'Raw response content: {content}')
 
 				# Remove surrounding markdown code blocks if present
 				if content.startswith('```json') and content.endswith('```'):
@@ -514,19 +626,19 @@ class Agent(Generic[Context]):
 					answer = str(result.get('answer', '')).strip().lower().strip(' .')
 
 					if expected_answer.lower() not in answer:
-						logger.debug(f"🛠️ Tool calling method {method} failed: expected '{expected_answer}', got '{answer}'")
+						self.logger.debug(f"🛠️ Tool calling method {method} failed: expected '{expected_answer}', got '{answer}'")
 						return False
 
 					return True
 
 				except (json.JSONDecodeError, AttributeError, TypeError) as e:
-					logger.debug(f'🛠️ Tool calling method {method} failed: Failed to parse JSON content: {e}')
+					self.logger.debug(f'🛠️ Tool calling method {method} failed: Failed to parse JSON content: {e}')
 					return False
 
-			if method == 'raw':
+			if method == 'raw' or method == 'json_mode':
 				# For raw mode, test JSON response format
 				test_prompt = f"""{CAPITAL_QUESTION}
-					Respond with a JSON object like: {{"answer": "city_name_in_lowercase"}}"""
+					Respond with a json object like: {{"answer": "city_name_in_lowercase"}}"""
 
 				response = self.llm.invoke([test_prompt])
 				# Basic validation of response
@@ -542,7 +654,7 @@ class Agent(Generic[Context]):
 				response = structured_llm.invoke([HumanMessage(content=CAPITAL_QUESTION)])
 
 				if not response:
-					logger.debug(f'🛠️ Tool calling method {method} failed: empty response')
+					self.logger.debug(f'🛠️ Tool calling method {method} failed: empty response')
 					return False
 
 				def extract_parsed(response: Any) -> CapitalResponse | None:
@@ -553,16 +665,16 @@ class Agent(Generic[Context]):
 				parsed = extract_parsed(response)
 
 				if not isinstance(parsed, CapitalResponse):
-					logger.debug(f'🛠️ Tool calling method {method} failed: LLM responded with invalid JSON')
+					self.logger.debug(f'🛠️ Tool calling method {method} failed: LLM responded with invalid JSON')
 					return False
 
 				if EXPECTED_ANSWER not in parsed.answer.lower():
-					logger.debug(f'🛠️ Tool calling method {method} failed: LLM failed to answer test question correctly')
+					self.logger.debug(f'🛠️ Tool calling method {method} failed: LLM failed to answer test question correctly')
 					return False
 				return True
 
 		except Exception as e:
-			logger.debug(f"🛠️ Tool calling method '{method}' test failed: {type(e).__name__}: {str(e)}")
+			self.logger.debug(f"🛠️ Tool calling method '{method}' test failed: {type(e).__name__}: {str(e)}")
 			return False
 
 	async def _test_tool_calling_method_async(self, method: str) -> tuple[str, bool]:
@@ -623,23 +735,26 @@ class Agent(Generic[Context]):
 
 			# Process results in order of preference
 			for i, method in enumerate(methods_to_try):
-				if isinstance(results[i], tuple) and results[i][1]:  # (method, success)
-					self.llm._verified_api_keys = True
-					self.llm._verified_tool_calling_method = method  # Cache on LLM instance
+				if not isinstance(results, list):
+					continue
+				ith_result = results[i]
+				if isinstance(ith_result, tuple) and ith_result[1]:  # (method, success)
+					setattr(self.llm, '_verified_api_keys', True)
+					setattr(self.llm, '_verified_tool_calling_method', method)  # Cache on LLM instance
 					elapsed = time.time() - start_time
-					logger.debug(f'🛠️ Tested LLM in parallel and chose tool calling method: [{method}] in {elapsed:.2f}s')
+					self.logger.debug(f'🛠️ Tested LLM in parallel and chose tool calling method: [{method}] in {elapsed:.2f}s')
 					return method
 
 		except Exception as e:
-			logger.debug(f'Parallel testing failed: {e}, falling back to sequential')
+			self.logger.debug(f'Parallel testing failed: {e}, falling back to sequential')
 			# Fall back to sequential testing
 			for method in methods_to_try:
 				if self._test_tool_calling_method(method):
 					# if we found the method which means api is verified.
-					self.llm._verified_api_keys = True
-					self.llm._verified_tool_calling_method = method  # Cache on LLM instance
+					setattr(self.llm, '_verified_api_keys', True)
+					setattr(self.llm, '_verified_tool_calling_method', method)  # Cache on LLM instance
 					elapsed = time.time() - start_time
-					logger.debug(f'🛠️ Tested LLM and chose tool calling method: [{method}] in {elapsed:.2f}s')
+					self.logger.debug(f'🛠️ Tested LLM and chose tool calling method: [{method}] in {elapsed:.2f}s')
 					return method
 
 		# If we get here, no methods worked
@@ -653,6 +768,12 @@ class Agent(Generic[Context]):
 		# OpenAI models
 		if self.chat_model_library == 'ChatOpenAI':
 			if any(m in model_lower for m in ['gpt-4', 'gpt-3.5']):
+				return 'function_calling'
+			if any(m in model_lower for m in ['llama-4', 'llama-3']):
+				return 'function_calling'
+
+		elif self.chat_model_library == 'ChatGroq':
+			if any(m in model_lower for m in ['llama-4', 'llama-3']):
 				return 'function_calling'
 
 		# Azure OpenAI models
@@ -700,8 +821,8 @@ class Agent(Generic[Context]):
 		if self.settings.tool_calling_method != 'auto':
 			# Skip test if already verified
 			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
-				self.llm._verified_api_keys = True
-				self.llm._verified_tool_calling_method = self.settings.tool_calling_method
+				setattr(self.llm, '_verified_api_keys', True)
+				setattr(self.llm, '_verified_tool_calling_method', self.settings.tool_calling_method)
 				return self.settings.tool_calling_method
 
 			if not self._test_tool_calling_method(self.settings.tool_calling_method):
@@ -713,47 +834,51 @@ class Agent(Generic[Context]):
 						f"Configured tool calling method '{self.settings.tool_calling_method}' "
 						'is not supported by the current LLM.'
 					)
-			self.llm._verified_tool_calling_method = self.settings.tool_calling_method
+			setattr(self.llm, '_verified_tool_calling_method', self.settings.tool_calling_method)
 			return self.settings.tool_calling_method
 
 		# Check if we already have a cached method on this LLM instance
 		if hasattr(self.llm, '_verified_tool_calling_method'):
-			logger.debug(
-				f'🛠️ Using cached tool calling method for {self.chat_model_library}/{self.model_name}: [{self.llm._verified_tool_calling_method}]'
+			self.logger.debug(
+				f'🛠️ Using cached tool calling method for {self.chat_model_library}/{self.model_name}: [{getattr(self.llm, "_verified_tool_calling_method")}]'
 			)
-			return self.llm._verified_tool_calling_method
+			return getattr(self.llm, '_verified_tool_calling_method')
 
 		# Try fast path for known model/library combinations
 		known_method = self._get_known_tool_calling_method()
 		if known_method is not None:
 			# Trust known combinations without testing if verification is already done or skipped
 			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
-				self.llm._verified_api_keys = True
-				self.llm._verified_tool_calling_method = known_method  # Cache on LLM instance
-				logger.debug(
+				setattr(self.llm, '_verified_api_keys', True)
+				setattr(self.llm, '_verified_tool_calling_method', known_method)  # Cache on LLM instance
+				self.logger.debug(
 					f'🛠️ Using known tool calling method for {self.chat_model_library}/{self.model_name}: [{known_method}] (skipped test)'
 				)
-				return known_method
+				return known_method  # type: ignore
 
 			start_time = time.time()
 			# Verify the known method works
 			if self._test_tool_calling_method(known_method):
-				self.llm._verified_api_keys = True
-				self.llm._verified_tool_calling_method = known_method  # Cache on LLM instance
+				setattr(self.llm, '_verified_api_keys', True)
+				setattr(self.llm, '_verified_tool_calling_method', known_method)  # Cache on LLM instance
 				elapsed = time.time() - start_time
-				logger.debug(
+				self.logger.debug(
 					f'🛠️ Using known tool calling method for {self.chat_model_library}/{self.model_name}: [{known_method}] in {elapsed:.2f}s'
 				)
-				return known_method
+				return known_method  # type: ignore
 			# If known method fails, fall back to detection
-			logger.debug(
+			self.logger.debug(
 				f'Known method {known_method} failed for {self.chat_model_library}/{self.model_name}, falling back to detection'
 			)
 
 		# Auto-detect the best method
-		return self._detect_best_tool_calling_method()
+		return self._detect_best_tool_calling_method()  # type: ignore
 
 	def add_new_task(self, new_task: str) -> None:
+		"""Add a new task to the agent, keeping the same task_id as tasks are continuous"""
+		# Simply delegate to message manager - no need for new task_id or events
+		# The task continues with new instructions, it doesn't end and start a new one
+		self.task = new_task
 		self._message_manager.add_new_task(new_task)
 
 	async def _raise_if_stopped_or_paused(self) -> None:
@@ -764,11 +889,11 @@ class Agent(Generic[Context]):
 				raise InterruptedError
 
 		if self.state.stopped or self.state.paused:
-			# logger.debug('Agent paused after getting state')
+			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
 	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
-	@time_execution_async('--step (agent)')
+	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
 		browser_state_summary = None
@@ -778,6 +903,7 @@ class Agent(Generic[Context]):
 		tokens = 0
 
 		try:
+			assert self.browser_session is not None, 'BrowserSession is not set up'
 			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
 
@@ -819,9 +945,12 @@ class Agent(Generic[Context]):
 
 			self._message_manager.add_state_message(
 				browser_state_summary=browser_state_summary,
+				model_output=self.state.last_model_output,
 				result=self.state.last_result,
 				step_info=step_info,
 				use_vision=self.settings.use_vision,
+				page_filtered_actions=page_filtered_actions if page_filtered_actions else None,
+				sensitive_data=self.sensitive_data,
 			)
 
 			# Run planner at specified intervals if planner is configured
@@ -836,7 +965,7 @@ class Agent(Generic[Context]):
 				msg += '\nIf the task is not yet fully finished as requested by the user, set success in "done" to false! E.g. if not all steps are fully completed.'
 				msg += '\nIf the task is fully finished, set success in "done" to true.'
 				msg += '\nInclude everything you found out for the ultimate task in the done text.'
-				logger.info('Last step finishing up')
+				self.logger.info('Last step finishing up')
 				self._message_manager._add_message_with_tokens(HumanMessage(content=msg))
 				self.AgentOutput = self.DoneAgentOutput
 
@@ -850,7 +979,7 @@ class Agent(Generic[Context]):
 					or not isinstance(model_output.action, list)
 					or all(action.model_dump() == {} for action in model_output.action)
 				):
-					logger.warning('Model returned empty action. Retrying...')
+					self.logger.warning('Model returned empty action. Retrying...')
 
 					clarification_message = HumanMessage(
 						content='You forgot to return an action. Please respond only with a valid JSON action according to the expected format.'
@@ -860,12 +989,15 @@ class Agent(Generic[Context]):
 					model_output = await self.get_next_action(retry_messages)
 
 					if not model_output.action or all(action.model_dump() == {} for action in model_output.action):
-						logger.warning('Model still returned empty after retry. Inserting safe noop action.')
-						action_instance = self.ActionModel(
-							done={
+						self.logger.warning('Model still returned empty after retry. Inserting safe noop action.')
+						action_instance = self.ActionModel()
+						setattr(
+							action_instance,
+							'done',
+							{
 								'success': False,
 								'text': 'No next action returned by LLM!',
-							}
+							},
 						)
 						model_output.action = [action_instance]
 
@@ -880,15 +1012,18 @@ class Agent(Generic[Context]):
 					else:
 						self.register_new_step_callback(browser_state_summary, model_output, self.state.n_steps)
 				if self.settings.save_conversation_path:
-					target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
-					save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
+					# Treat save_conversation_path as a directory (consistent with other recording paths)
+					conversation_dir = Path(self.settings.save_conversation_path)
+					conversation_filename = f'conversation_{self.id}_{self.state.n_steps}.txt'
+					target = conversation_dir / conversation_filename
+					await save_conversation(input_messages, model_output, target, self.settings.save_conversation_path_encoding)
 
 				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
 
 				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
-				self._message_manager.add_model_output(model_output)
+				# self._message_manager.add_model_output(model_output)
 			except asyncio.CancelledError:
 				# Task was cancelled due to Ctrl+C
 				self._message_manager._remove_last_state_message()
@@ -905,24 +1040,29 @@ class Agent(Generic[Context]):
 			result: list[ActionResult] = await self.multi_act(model_output.action)
 
 			self.state.last_result = result
+			self.state.last_model_output = model_output
 
 			if len(result) > 0 and result[-1].is_done:
-				logger.info(f'📄 Result: {result[-1].extracted_content}')
+				self.logger.info(f'📄 Result: {result[-1].extracted_content}')
+				if result[-1].attachments:
+					self.logger.info('📎 Click links below to access the attachments:')
+					for file_path in result[-1].attachments:
+						self.logger.info(f'👉 {file_path}')
 
 			self.state.consecutive_failures = 0
 
 		except InterruptedError:
-			# logger.debug('Agent paused')
+			# self.logger.debug('Agent paused')
 			self.state.last_result = [
 				ActionResult(
-					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=False
+					error='The agent was paused mid-step - the last action might need to be repeated', include_in_memory=True
 				)
 			]
 			return
 		except asyncio.CancelledError:
 			# Directly handle the case where the step is cancelled at a higher level
-			# logger.debug('Task cancelled - agent was paused with Ctrl+C')
-			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=False)]
+			# self.logger.debug('Task cancelled - agent was paused with Ctrl+C')
+			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=True)]
 			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
@@ -945,30 +1085,45 @@ class Agent(Generic[Context]):
 			# Log step completion summary
 			self._log_step_completion_summary(step_start_time, result)
 
+			# Emit both step created and executed events
+			if browser_state_summary and model_output:
+				# Extract key step data for the event
+				actions_data = []
+				if model_output.action:
+					for action in model_output.action:
+						action_dict = action.model_dump() if hasattr(action, 'model_dump') else {}
+						actions_data.append(action_dict)
+
+				# Emit CreateAgentStepEvent
+				step_event = CreateAgentStepEvent.from_agent_step(self, model_output, result, actions_data, browser_state_summary)
+				self.eventbus.dispatch(step_event)
+
 	@time_execution_async('--handle_step_error (agent)')
 	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
-		include_trace = logger.isEnabledFor(logging.DEBUG)
+		include_trace = self.logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 		self.state.consecutive_failures += 1
 
 		if 'Browser closed' in error_msg:
-			logger.error('❌  Browser is closed or disconnected, unable to proceed')
-			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=False)]
+			self.logger.error('❌  Browser is closed or disconnected, unable to proceed')
+			return [ActionResult(error='Browser closed or disconnected, unable to proceed', include_in_memory=True)]
 
 		if isinstance(error, (ValidationError, ValueError)):
-			logger.error(f'{prefix}{error_msg}')
+			self.logger.error(f'{prefix}{error_msg}')
 			if 'Max token limit reached' in error_msg:
 				# cut tokens from history
 				self._message_manager.settings.max_input_tokens = self.settings.max_input_tokens - 500
-				logger.info(
+				self.logger.info(
 					f'Cutting tokens from history - new max input tokens: {self._message_manager.settings.max_input_tokens}'
 				)
 				self._message_manager.cut_messages()
-			elif 'Could not parse response' in error_msg:
-				# give model a hint how output should look like
-				error_msg += '\n\nReturn a valid JSON object with the required fields.'
+		elif 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
+			# give model a hint how output should look like
+			logger.debug(f'Tool calling method: {self.tool_calling_method} with model: {self.model_name} failed')
+			error_msg += '\n\nReturn a valid JSON object with the required fields.'
+			logger.error(f'{prefix}{error_msg}')
 
 		else:
 			from anthropic import RateLimitError as AnthropicRateLimitError
@@ -982,11 +1137,11 @@ class Agent(Generic[Context]):
 				AnthropicRateLimitError,  # Anthropic
 			)
 
-			if isinstance(error, RATE_LIMIT_ERRORS):
+			if isinstance(error, RATE_LIMIT_ERRORS) or 'on tokens per minute (TPM): Limit' in error_msg:
 				logger.warning(f'{prefix}{error_msg}')
 				await asyncio.sleep(self.settings.retry_delay)
 			else:
-				logger.error(f'{prefix}{error_msg}')
+				self.logger.error(f'{prefix}{error_msg}')
 
 		return [ActionResult(error=error_msg, include_in_memory=True)]
 
@@ -1034,7 +1189,7 @@ class Agent(Generic[Context]):
 		else:
 			return input_messages
 
-	@time_execution_async('--get_next_action (agent)')
+	@time_execution_async('--get_next_action')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 		input_messages = self._convert_input_messages(input_messages)
@@ -1042,11 +1197,14 @@ class Agent(Generic[Context]):
 		if self.tool_calling_method == 'raw':
 			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			try:
-				output = self.llm.invoke(input_messages)
+				output = await self.llm.ainvoke(input_messages)
 				response = {'raw': output, 'parsed': None}
 			except Exception as e:
-				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'LLM API call failed') from e
+				self.logger.error(f'Failed to invoke model: {str(e)}')
+				# Extract status code if available (e.g., from HTTP exceptions)
+				status_code = getattr(e, 'status_code', None) or getattr(e, 'code', None) or 500
+				error_msg = f'LLM API call failed: {type(e).__name__}: {str(e)}'
+				raise LLMException(status_code, error_msg) from e
 			# TODO: currently invoke does not return reasoning_content, we should override invoke
 			output.content = self._remove_think_tags(str(output.content))
 			try:
@@ -1055,7 +1213,7 @@ class Agent(Generic[Context]):
 				response['parsed'] = parsed
 			except (ValueError, ValidationError) as e:
 				logger.warning(f'Failed to parse model output: {output} {str(e)}')
-				raise ValueError('Could not parse response.')
+				raise ValueError('Could not parse response.' + str(e))
 
 		elif self.tool_calling_method is None:
 			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
@@ -1064,37 +1222,33 @@ class Agent(Generic[Context]):
 				parsed: AgentOutput | None = response['parsed']
 
 			except Exception as e:
-				logger.error(f'Failed to invoke model: {str(e)}')
-				raise LLMException(401, 'LLM API call failed') from e
+				response, raw = handle_llm_error(e)
 
 		else:
-			self._log_llm_call_info(input_messages, self.tool_calling_method)
-			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			try:
+				self._log_llm_call_info(input_messages, self.tool_calling_method)
+				structured_llm = self.llm.with_structured_output(
+					self.AgentOutput, include_raw=True, method=self.tool_calling_method
+				)
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+			except Exception as e:
+				response, raw = handle_llm_error(e)
 
 		# Handle tool call responses
 		if response.get('parsing_error') and 'raw' in response:
 			raw_msg = response['raw']
+			parsing_error = response.get('parsing_error')
 			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
 				# Convert tool calls to AgentOutput format
-
 				tool_call = raw_msg.tool_calls[0]  # Take first tool call
-
-				# Create current state
-				tool_call_name = tool_call['name']
 				tool_call_args = tool_call['args']
+				parsed = self.AgentOutput(**tool_call_args)
 
-				current_state = {
-					'page_summary': 'Processing tool call',
-					'evaluation_previous_goal': 'Executing action',
-					'memory': 'Using tool call',
-					'next_goal': f'Execute {tool_call_name}',
-				}
+				try:
+					action = parsed.action[0].model_dump(exclude_unset=True)
+				except Exception as e:
+					raise ValueError(f'Could not parse response. {parsing_error} tried to parse {response["raw"]} to {parsed}')
 
-				# Create action from tool call
-				action = {tool_call_name: tool_call_args}
-
-				parsed = self.AgentOutput(current_state=current_state, action=[self.ActionModel(**action)])
 			else:
 				parsed = None
 		else:
@@ -1102,39 +1256,39 @@ class Agent(Generic[Context]):
 
 		if not parsed:
 			try:
-				parsed_json = extract_json_from_model_output(response['raw'].content)
+				parsed_json = extract_json_from_model_output(response['raw'])
 				parsed = self.AgentOutput(**parsed_json)
 			except Exception as e:
-				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
-				raise ValueError('Could not parse response.')
+				logger.warning(f'Failed to parse model output: {response["raw"]} {str(e)}')
+				raise ValueError(f'Could not parse response. {str(e)}')
 
 		# cut the number of actions to max_actions_per_step if needed
 		if len(parsed.action) > self.settings.max_actions_per_step:
 			parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
 		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
-			log_response(parsed, self.controller.registry.registry)
+			log_response(parsed, self.controller.registry.registry, self.logger)
 
 		self._log_next_action_summary(parsed)
 		return parsed
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
-		logger.info(f'🚀 Starting task: {self.task}')
+		self.logger.info(f'🚀 Starting task: {self.task}')
 
-		logger.debug(f'Version: {self.version}, Source: {self.source}')
+		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
 	def _log_step_context(self, current_page, browser_state_summary) -> None:
 		"""Log step context information"""
 		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
 		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
-		logger.info(
+		self.logger.info(
 			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
 		)
 
 	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
 		"""Log a comprehensive summary of the next action(s)"""
-		if not (logger.isEnabledFor(logging.DEBUG) and parsed.action):
+		if not (self.logger.isEnabledFor(logging.DEBUG) and parsed.action):
 			return
 
 		action_count = len(parsed.action)
@@ -1159,20 +1313,21 @@ class Agent(Generic[Context]):
 						param_summary.append(f'url="{value}"')
 					elif key == 'success':
 						param_summary.append(f'success={value}')
-					elif isinstance(value, (str, int, bool)) and len(str(value)) < 20:
-						param_summary.append(f'{key}={value}')
+					elif isinstance(value, (str, int, bool)):
+						val_str = str(value)[:30] + '...' if len(str(value)) > 30 else str(value)
+						param_summary.append(f'{key}={val_str}')
 
 			param_str = f'({", ".join(param_summary)})' if param_summary else ''
 			action_details.append(f'{action_name}{param_str}')
 
 		# Create summary based on single vs multi-action
 		if action_count == 1:
-			logger.info(f'⚡️ Decided next action: {action_name}{param_str}')
+			self.logger.info(f'☝️ Decided next action: {action_name}{param_str}')
 		else:
-			summary_lines = [f'⚡️ Decided next {action_count} multi-actions:']
+			summary_lines = [f'✌️ Decided next {action_count} multi-actions:']
 			for i, detail in enumerate(action_details):
 				summary_lines.append(f'          {i + 1}. {detail}')
-			logger.info('\n'.join(summary_lines))
+			self.logger.info('\n'.join(summary_lines))
 
 	def _log_step_completion_summary(self, step_start_time: float, result: list[ActionResult]) -> None:
 		"""Log step completion summary with action count, timing, and success/failure stats"""
@@ -1192,7 +1347,7 @@ class Agent(Generic[Context]):
 		status_parts = [part for part in [success_indicator, failure_indicator] if part]
 		status_str = ' | '.join(status_parts) if status_parts else '✅ 0'
 
-		logger.info(f'📍 Step {self.state.n_steps}: Ran {action_count} actions in {step_duration:.2f}s: {status_str}')
+		self.logger.info(f'📍 Step {self.state.n_steps}: Ran {action_count} actions in {step_duration:.2f}s: {status_str}')
 
 	def _log_llm_call_info(self, input_messages: list[BaseMessage], method: str) -> None:
 		"""Log comprehensive information about the LLM call being made"""
@@ -1222,7 +1377,7 @@ class Agent(Generic[Context]):
 
 		term_width = shutil.get_terminal_size((80, 20)).columns
 		print('=' * term_width)
-		logger.info(
+		self.logger.info(
 			f'🧠 LLM call => {self.chat_model_library} [✉️ {message_count} msg, ~{current_tokens} tk, {total_chars} char{image_status}] {output_format}{tool_info}'
 		)
 
@@ -1295,7 +1450,7 @@ class Agent(Generic[Context]):
 		return False, False
 
 	# @observe(name='agent.run', ignore_output=True)
-	@time_execution_async('--run (agent)')
+	@time_execution_async('--run')
 	async def run(
 		self, max_steps: int = 100, on_step_start: AgentHookFunc | None = None, on_step_end: AgentHookFunc | None = None
 	) -> AgentHistoryList:
@@ -1328,6 +1483,16 @@ class Agent(Generic[Context]):
 		try:
 			self._log_agent_run()
 
+			# Initialize timing for session and task
+			self._session_start_time = time.time()
+			self._task_start_time = self._session_start_time  # Initialize task start time
+
+			# Emit CreateAgentSessionEvent at the START of run()
+			self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
+
+			# Emit CreateAgentTaskEvent at the START of run()
+			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
+
 			# Execute initial actions if provided
 			if self.initial_actions:
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
@@ -1341,13 +1506,13 @@ class Agent(Generic[Context]):
 
 				# Check if we should stop due to too many failures
 				if self.state.consecutive_failures >= self.settings.max_failures:
-					logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
+					self.logger.error(f'❌ Stopping due to {self.settings.max_failures} consecutive failures')
 					agent_run_error = f'Stopped due to {self.settings.max_failures} consecutive failures'
 					break
 
 				# Check control flags before each step
 				if self.state.stopped:
-					logger.info('🛑 Agent stopped')
+					self.logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
 					break
 
@@ -1372,6 +1537,8 @@ class Agent(Generic[Context]):
 							continue
 
 					await self.log_completion()
+
+					# Task completed
 					break
 			else:
 				agent_run_error = 'Failed to complete task in maximum steps'
@@ -1391,18 +1558,18 @@ class Agent(Generic[Context]):
 					)
 				)
 
-				logger.info(f'❌ {agent_run_error}')
+				self.logger.info(f'❌ {agent_run_error}')
 
 			return self.state.history
 
 		except KeyboardInterrupt:
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
-			logger.info('Got KeyboardInterrupt during execution, returning current history')
+			self.logger.info('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
 			return self.state.history
 
 		except Exception as e:
-			logger.error(f'Agent run failed with exception: {e}', exc_info=True)
+			self.logger.error(f'Agent run failed with exception: {e}', exc_info=True)
 			agent_run_error = str(e)
 			raise e
 
@@ -1414,36 +1581,38 @@ class Agent(Generic[Context]):
 				try:
 					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
 				except Exception as log_e:  # Catch potential errors during logging itself
-					logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
+					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
 				# ADDED: Info message when custom telemetry for SIGINT was already logged
-				logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
+				self.logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
-			if self.settings.save_playwright_script_path:
-				logger.info(
-					f'Agent run finished. Attempting to save Playwright script to: {self.settings.save_playwright_script_path}'
-				)
-				try:
-					# Extract sensitive data keys if sensitive_data is provided
-					keys = list(self.sensitive_data.keys()) if self.sensitive_data else None
-					# Pass browser and context config to the saving method
-					self.state.history.save_as_playwright_script(
-						self.settings.save_playwright_script_path,
-						sensitive_data_keys=keys,
-						browser_profile=self.browser_session.browser_profile,
-					)
-				except Exception as script_gen_err:
-					# Log any error during script generation/saving
-					logger.error(f'Failed to save Playwright script: {script_gen_err}', exc_info=True)
+			# NOTE: CreateAgentSessionEvent and CreateAgentTaskEvent are now emitted at the START of run()
+			# to match backend requirements for CREATE events to be fired when entities are created,
+			# not when they are completed
 
-			await self.close()
+			# Emit UpdateAgentTaskEvent at the END of run() with final task state
+			self.eventbus.dispatch(UpdateAgentTaskEvent.from_agent(self))
 
+			# Generate GIF if needed before stopping event bus
 			if self.settings.generate_gif:
 				output_path: str = 'agent_history.gif'
 				if isinstance(self.settings.generate_gif, str):
 					output_path = self.settings.generate_gif
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
+
+				# Emit output file generated event for GIF
+				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
+				self.eventbus.dispatch(output_event)
+
+			# Wait for cloud auth to complete if in progress
+			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
+				await self.cloud_sync.wait_for_auth()
+
+			# Stop the event bus gracefully, waiting for all events to be processed
+			await self.eventbus.stop(timeout=5.0)
+
+			await self.close()
 
 	# @observe(name='controller.multi_act')
 	@time_execution_async('--multi_act')
@@ -1455,12 +1624,19 @@ class Agent(Generic[Context]):
 		"""Execute multiple actions"""
 		results = []
 
+		assert self.browser_session is not None, 'BrowserSession is not set up'
 		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
 		await self.browser_session.remove_highlights()
 
 		for i, action in enumerate(actions):
+			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
+			if i > 0 and action.model_dump(exclude_unset=True).get('done') is not None:
+				msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
+				logger.info(msg)
+				break
+
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 				new_selector_map = new_browser_state_summary.selector_map
@@ -1473,15 +1649,15 @@ class Agent(Generic[Context]):
 				if orig_target_hash != new_target_hash:
 					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg))
 					break
 
 				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
 				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
 					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}'
+					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
 					logger.info(msg)
-					results.append(ActionResult(extracted_content=msg, include_in_memory=True))
+					results.append(ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg))
 					break
 
 			try:
@@ -1490,6 +1666,7 @@ class Agent(Generic[Context]):
 				result = await self.controller.act(
 					action=action,
 					browser_session=self.browser_session,
+					file_system=self.file_system,
 					page_extraction_llm=self.settings.page_extraction_llm,
 					sensitive_data=self.sensitive_data,
 					available_file_paths=self.settings.available_file_paths,
@@ -1501,7 +1678,8 @@ class Agent(Generic[Context]):
 				# Get action name from the action model
 				action_data = action.model_dump(exclude_unset=True)
 				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
-				logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}')
+				action_params = getattr(action, action_name, '')
+				self.logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}({action_params})')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
@@ -1510,7 +1688,7 @@ class Agent(Generic[Context]):
 
 			except asyncio.CancelledError:
 				# Gracefully handle task cancellation
-				logger.info(f'Action {i + 1} was cancelled due to Ctrl+C')
+				self.logger.info(f'Action {i + 1} was cancelled due to Ctrl+C')
 				if not results:
 					# Add a result for the cancelled action
 					results.append(ActionResult(error='The action was cancelled due to Ctrl+C', include_in_memory=True))
@@ -1531,7 +1709,7 @@ class Agent(Generic[Context]):
 			f' example: {{"is_valid": false, "reason": "The user wanted to search for "cat photos", but the agent searched for "dog photos" instead."}}'
 		)
 
-		if self.browser_context:
+		if self.browser_context and self.browser_session:
 			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 			assert browser_state_summary
 			content = AgentMessagePrompt(
@@ -1557,22 +1735,22 @@ class Agent(Generic[Context]):
 		parsed: ValidationResult = response['parsed']
 		is_valid = parsed.is_valid
 		if not is_valid:
-			logger.info(f'❌ Validator decision: {parsed.reason}')
+			self.logger.info(f'❌ Validator decision: {parsed.reason}')
 			msg = f'The output is not yet correct. {parsed.reason}.'
-			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True)]
+			self.state.last_result = [ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)]
 		else:
-			logger.info(f'✅ Validator decision: {parsed.reason}')
+			self.logger.info(f'✅ Validator decision: {parsed.reason}')
 		return is_valid
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
 		if self.state.history.is_successful():
-			logger.info('✅ Task completed successfully')
+			self.logger.info('✅ Task completed successfully')
 		else:
-			logger.info('❌ Task completed without success')
+			self.logger.info('❌ Task completed without success')
 
 		total_tokens = self.state.history.total_input_tokens()
-		logger.debug(f'📝 Total input tokens used (approximate): {total_tokens}')
+		self.logger.debug(f'💲 Total input tokens used (approximate): {total_tokens}')
 
 		if self.register_done_callback:
 			if inspect.iscoroutinefunction(self.register_done_callback):
@@ -1608,14 +1786,14 @@ class Agent(Generic[Context]):
 
 		for i, history_item in enumerate(history.history):
 			goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
-			logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
+			self.logger.info(f'Replaying step {i + 1}/{len(history.history)}: goal: {goal}')
 
 			if (
 				not history_item.model_output
 				or not history_item.model_output.action
 				or history_item.model_output.action == [None]
 			):
-				logger.warning(f'Step {i + 1}: No action to replay, skipping')
+				self.logger.warning(f'Step {i + 1}: No action to replay, skipping')
 				results.append(ActionResult(error='No action to replay'))
 				continue
 
@@ -1630,18 +1808,19 @@ class Agent(Generic[Context]):
 					retry_count += 1
 					if retry_count == max_retries:
 						error_msg = f'Step {i + 1} failed after {max_retries} attempts: {str(e)}'
-						logger.error(error_msg)
+						self.logger.error(error_msg)
 						if not skip_failures:
 							results.append(ActionResult(error=error_msg))
 							raise RuntimeError(error_msg)
 					else:
-						logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
+						self.logger.warning(f'Step {i + 1} failed (attempt {retry_count}/{max_retries}), retrying...')
 						await asyncio.sleep(delay_between_actions)
 
 		return results
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
+		assert self.browser_session is not None, 'BrowserSession is not set up'
 		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
@@ -1685,7 +1864,7 @@ class Agent(Generic[Context]):
 		old_index = action.get_index()
 		if old_index != current_element.highlight_index:
 			action.set_index(current_element.highlight_index)
-			logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
+			self.logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
 
 		return action
 
@@ -1719,6 +1898,8 @@ class Agent(Generic[Context]):
 		self.state.paused = True
 		self._external_pause_event.clear()
 
+		# Task paused
+
 		# The signal handler will handle the asyncio pause logic for us
 		# No need to duplicate the code here
 
@@ -1729,21 +1910,26 @@ class Agent(Generic[Context]):
 		self.state.paused = False
 		self._external_pause_event.set()
 
+		# Task resumed
+
 		# The signal handler should have already reset the flags
 		# through its reset() method when called from run()
 
 		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
 		# so we need to restart the browser if user wants to continue
+		# the _init() method exists, even through its shows a linter error
 		if self.browser:
-			logger.info('🌎 Restarting/reconnecting to browser...')
+			self.logger.info('🌎 Restarting/reconnecting to browser...')
 			loop = asyncio.get_event_loop()
-			loop.create_task(self.browser._init())
+			loop.create_task(self.browser._init())  # type: ignore
 			loop.create_task(asyncio.sleep(5))
 
 	def stop(self) -> None:
 		"""Stop the agent"""
-		logger.info('⏹️ Agent stopping')
+		self.logger.info('⏹️ Agent stopping')
 		self.state.stopped = True
+
+		# Task stopped
 
 	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[ActionModel]:
 		"""Convert dictionary-based actions to ActionModel instances"""
@@ -1767,7 +1953,7 @@ class Agent(Generic[Context]):
 
 		return converted_actions
 
-	def _verify_and_setup_llm(self) -> bool:
+	def _verify_and_setup_llm(self):
 		"""
 		Verify that the LLM API keys are setup and the LLM API is responding properly.
 		Also handles tool calling method detection if in auto mode.
@@ -1776,7 +1962,7 @@ class Agent(Generic[Context]):
 
 		# Skip verification if already done
 		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
-			self.llm._verified_api_keys = True
+			setattr(self.llm, '_verified_api_keys', True)
 			return True
 
 	async def _run_planner(self) -> str | None:
@@ -1786,6 +1972,7 @@ class Agent(Generic[Context]):
 			return None
 
 		# Get current state to filter actions by page
+		assert self.browser_session is not None, 'BrowserSession is not set up'
 		page = await self.browser_session.get_current_page()
 
 		# Get all standard actions (no filter) and page-specific actions
@@ -1827,8 +2014,11 @@ class Agent(Generic[Context]):
 		try:
 			response = await self.settings.planner_llm.ainvoke(planner_messages)
 		except Exception as e:
-			logger.error(f'Failed to invoke planner: {str(e)}')
-			raise LLMException(401, 'LLM API call failed') from e
+			self.logger.error(f'Failed to invoke planner: {str(e)}')
+			# Extract status code if available (e.g., from HTTP exceptions)
+			status_code = getattr(e, 'status_code', None) or getattr(e, 'code', None) or 500
+			error_msg = f'Planner LLM API call failed: {type(e).__name__}: {str(e)}'
+			raise LLMException(status_code, error_msg) from e
 
 		plan = str(response.content)
 		# if deepseek-reasoner, remove think tags
@@ -1838,12 +2028,12 @@ class Agent(Generic[Context]):
 			plan = self._remove_think_tags(plan)
 		try:
 			plan_json = json.loads(plan)
-			logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
+			self.logger.info(f'Planning Analysis:\n{json.dumps(plan_json, indent=4)}')
 		except json.JSONDecodeError:
-			logger.info(f'Planning Analysis:\n{plan}')
+			self.logger.info(f'Planning Analysis:\n{plan}')
 		except Exception as e:
-			logger.debug(f'Error parsing planning analysis: {e}')
-			logger.info(f'Plan: {plan}')
+			self.logger.debug(f'Error parsing planning analysis: {e}')
+			self.logger.info(f'Plan: {plan}')
 
 		return plan
 
@@ -1855,13 +2045,14 @@ class Agent(Generic[Context]):
 		"""Close all resources"""
 		try:
 			# First close browser resources
+			assert self.browser_session is not None, 'BrowserSession is not set up'
 			await self.browser_session.stop()
 
 			# Force garbage collection
 			gc.collect()
 
 		except Exception as e:
-			logger.error(f'Error during cleanup: {e}')
+			self.logger.error(f'Error during cleanup: {e}')
 
 	async def _update_action_models_for_page(self, page) -> None:
 		"""Update action models with page-specific actions"""

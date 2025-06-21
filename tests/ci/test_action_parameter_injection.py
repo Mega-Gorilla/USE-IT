@@ -11,7 +11,7 @@ from browser_use.dom.views import DOMElementNode
 class TestBrowserContext:
 	"""Tests for browser context functionality using real browser instances."""
 
-	@pytest.fixture(scope='module')
+	@pytest.fixture(scope='session')
 	def http_server(self):
 		"""Create and provide a test HTTP server that serves static content."""
 		server = HTTPServer()
@@ -49,12 +49,12 @@ class TestBrowserContext:
 		yield server
 		server.stop()
 
-	@pytest.fixture
+	@pytest.fixture(scope='session')
 	def base_url(self, http_server):
 		"""Return the base URL for the test HTTP server."""
 		return f'http://{http_server.host}:{http_server.port}'
 
-	@pytest.fixture
+	@pytest.fixture(scope='module')
 	async def browser_session(self):
 		"""Create and provide a BrowserSession instance with security disabled."""
 		browser_session = BrowserSession(
@@ -72,7 +72,7 @@ class TestBrowserContext:
 		the allowed domains configuration.
 		"""
 		# Scenario 1: allowed_domains is None, any URL should be allowed.
-		config1 = BrowserProfile(allowed_domains=None)
+		config1 = BrowserProfile(allowed_domains=None, headless=True, user_data_dir=None)
 		context1 = BrowserSession(browser_profile=config1)
 		assert context1._is_url_allowed('http://anydomain.com') is True
 		assert context1._is_url_allowed('https://anotherdomain.org/path') is True
@@ -80,7 +80,7 @@ class TestBrowserContext:
 		# Scenario 2: allowed_domains is provided.
 		# Note: match_url_with_domain_pattern defaults to https:// scheme when none is specified
 		allowed = ['https://example.com', 'http://example.com', 'http://*.mysite.org', 'https://*.mysite.org']
-		config2 = BrowserProfile(allowed_domains=allowed)
+		config2 = BrowserProfile(allowed_domains=allowed, headless=True, user_data_dir=None)
 		context2 = BrowserSession(browser_profile=config2)
 
 		# URL exactly matching
@@ -324,3 +324,59 @@ class TestBrowserContext:
 			"document.querySelector('h1').hasAttribute('browser-user-highlight-id')"
 		)
 		assert not attribute_exists, 'browser-user-highlight-id attribute should be removed'
+
+	@pytest.mark.asyncio
+	async def test_custom_action_with_no_arguments(self, browser_session, base_url):
+		"""Test that custom actions with no arguments are handled correctly"""
+		from browser_use.agent.views import ActionResult
+		from browser_use.controller.registry.service import Registry
+
+		# Create a registry
+		registry = Registry()
+
+		# Register a custom action with no arguments
+		@registry.action('Some custom action with no args')
+		def simple_action():
+			return ActionResult(extracted_content='return some result')
+
+		# Navigate to a test page
+		await browser_session.navigate(f'{base_url}/')
+
+		# Execute the action
+		result = await registry.execute_action('simple_action', {})
+
+		# Verify the result
+		assert isinstance(result, ActionResult)
+		assert result.extracted_content == 'return some result'
+
+		# Test that the action model is created correctly
+		action_model = registry.create_action_model()
+
+		# The action should be in the model fields
+		assert 'simple_action' in action_model.model_fields
+
+		# Create an instance with the simple_action
+		action_instance = action_model(simple_action={})
+
+		# Test that model_dump works correctly
+		dumped = action_instance.model_dump(exclude_unset=True)
+		assert 'simple_action' in dumped
+		assert dumped['simple_action'] == {}
+
+		# Test async version as well
+		@registry.action('Async custom action with no args')
+		async def async_simple_action():
+			return ActionResult(extracted_content='async result')
+
+		result = await registry.execute_action('async_simple_action', {})
+		assert result.extracted_content == 'async result'
+
+		# Test with special parameters but no regular arguments
+		@registry.action('Action with only special params')
+		async def special_params_only(browser_session):
+			page = await browser_session.get_current_page()
+			return ActionResult(extracted_content=f'Page URL: {page.url}')
+
+		result = await registry.execute_action('special_params_only', {}, browser_session=browser_session)
+		assert 'Page URL:' in result.extracted_content
+		assert base_url in result.extracted_content

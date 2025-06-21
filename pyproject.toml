@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.2.4"
+version = "0.3.1"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -11,34 +11,35 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "aiofiles>=24.1.0",
     "anyio>=4.9.0",
-    "httpx>=0.27.2",
-    "pydantic>=2.10.4,<2.11.0",
+    "bubus>=1.1.0",
+    "faiss-cpu>=1.11.0",
+    "google-api-core>=2.25.0",
+    "httpx>=0.28.1",
+    "langchain-anthropic==0.3.15",
+    "langchain-core==0.3.64",
+    "langchain-deepseek>=0.1.3",
+    "langchain-google-genai==2.1.5",
+    "langchain-ollama==0.3.3",
+    "langchain-openai==0.3.21",
+    "langchain>=0.3.25",
+    "markdownify==1.1.0",
+    "mem0ai>=0.1.106",
+    "patchright>=1.52.5",
+    "playwright>=1.52.0",
+    "posthog>=3.7.0",
+    "psutil>=7.0.0",
+    "pydantic>=2.11.5",
+    "pyobjc>=11.0; platform_system == 'darwin'",
+    "pyperclip>=1.9.0",
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
-    "posthog>=3.7.0",
-    "playwright>=1.52.0",
-    "markdownify==1.1.0",
-    "langchain-core==0.3.49",
-    "langchain-openai==0.3.11",
-    "langchain-anthropic==0.3.3",
-    "langchain-ollama==0.3.0",
-    "langchain-google-genai==2.1.2",
-    "langchain-deepseek>=0.1.3",
-    "langchain>=0.3.21",
-    "langchain-aws>=0.2.11",
-    "google-api-core>=2.24.0",
-    "pyperclip>=1.9.0",
-    "pyobjc>=11.0; platform_system == 'darwin'",
     "screeninfo>=0.8.1; platform_system != 'darwin'",
     "typing-extensions>=4.12.2",
-    "psutil>=7.0.0",
-    "faiss-cpu>=1.9.0",
-    "mem0ai==0.1.93",
     "uuid7>=0.1.0",
-    "patchright>=1.52.4",
+    "authlib>=1.6.0",
 ]
-# pydantic: >2.11 introduces many pydantic deprecation warnings until langchain-core upgrades their pydantic support lets keep it on 2.10
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
 # pyobjc: only used to get screen resolution on macOS
@@ -62,13 +63,22 @@ cli = [
 examples = [
     # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py
     "botocore>=1.37.23",
+    "langchain-aws>=0.2.24",
     "imgcat>=0.6.0",
     "stagehand-py>=0.3.6",
     "browserbase>=0.4.0",
 ]
+eval = [
+    "lmnr[all]>=0.6.11",
+]
 all = [
     "browser-use[memory,cli,examples]",
 ]
+
+# will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
+# [tool.uv.sources]
+# bubus = { path = "../bubus", editable = true }
+
 
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
@@ -83,7 +93,7 @@ build-backend = "hatchling.build"
 
 
 [tool.codespell]
-ignore-words-list = "bu,wit,dont,cant,wont"
+ignore-words-list = "bu,wit,dont,cant,wont,re-use,re-used,re-using,re-usable,thats,doesnt,doubleclick"
 skip = "*.json"
 
 [tool.ruff]
@@ -117,8 +127,8 @@ include = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "module"
-asyncio_default_test_loop_scope = "module"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 markers = [
     "slow: marks tests as slow (deselect with `-m 'not slow'`)",
     "integration: marks tests as integration tests",
@@ -136,8 +146,11 @@ filterwarnings = [
     "ignore::pytest.PytestDeprecationWarning",
     "ignore::DeprecationWarning",
 ]
-log_level = "INFO"
+log_level = "DEBUG"
 
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.uv]
 dev-dependencies = [
@@ -145,7 +158,7 @@ dev-dependencies = [
     "tokencost>=0.1.16",
     "build>=1.2.2",
     "pytest>=8.3.5",
-    "pytest-asyncio>=0.24.0",
+    "pytest-asyncio>=1.0.0",
     "pytest-httpserver>=1.0.8",
     "fastapi>=0.115.8",
     "inngest>=0.4.19",
@@ -156,4 +169,6 @@ dev-dependencies = [
     "codespell>=2.4.1",
     "pyright>=1.1.399",
     "ty>=0.0.1a1",
+    "pytest-xdist>=3.7.0"
+    # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
 ]

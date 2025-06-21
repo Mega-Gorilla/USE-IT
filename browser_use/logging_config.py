@@ -77,8 +77,8 @@ def setup_logging():
 
 	class BrowserUseFormatter(logging.Formatter):
 		def format(self, record):
-			if isinstance(record.name, str) and record.name.startswith('browser_use.'):
-				record.name = record.name.split('.')[-2]
+			# if isinstance(record.name, str) and record.name.startswith('browser_use.'):
+			# 	record.name = record.name.split('.')[-2]
 			return super().format(record)
 
 	# Setup single handler for all loggers
@@ -132,8 +132,11 @@ def setup_logging():
 		'mem0.vector_stores.faiss',
 		'mem0.vector_stores',
 		'mem0.memory',
+		'groq',
 	]
 	for logger_name in third_party_loggers:
 		third_party = logging.getLogger(logger_name)
 		third_party.setLevel(logging.ERROR)
 		third_party.propagate = False
+
+	return logger

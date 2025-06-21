@@ -6,12 +6,26 @@ import signal
 import time
 from collections.abc import Callable, Coroutine
 from fnmatch import fnmatch
-from functools import wraps
+from functools import cache, wraps
+from pathlib import Path
 from sys import stderr
 from typing import Any, ParamSpec, TypeVar
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# Import error types - these may need to be adjusted based on actual import paths
+try:
+	from openai import BadRequestError as OpenAIBadRequestError
+except ImportError:
+	OpenAIBadRequestError = None
+
+try:
+	from groq import BadRequestError as GroqBadRequestError
+except ImportError:
+	GroqBadRequestError = None
+# Browser Use configuration directory
+BROWSER_USE_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
 
 # Global flag to prevent duplicate exit messages
 _exiting = False
@@ -41,7 +55,7 @@ class SignalHandler:
 		resume_callback: Callable[[], None] | None = None,
 		custom_exit_callback: Callable[[], None] | None = None,
 		exit_on_second_int: bool = True,
-		interruptible_task_patterns: list[str] = None,
+		interruptible_task_patterns: list[str] | None = None,
 	):
 		"""
 		Initialize the signal handler.
@@ -192,7 +206,7 @@ class SignalHandler:
 				self._handle_second_ctrl_c()
 
 		# Mark that Ctrl+C was pressed
-		self.loop.ctrl_c_pressed = True
+		setattr(self.loop, 'ctrl_c_pressed', True)
 
 		# Cancel current tasks that should be interruptible - this is crucial for immediate pausing
 		self._cancel_interruptible_tasks()
@@ -298,9 +312,9 @@ class SignalHandler:
 		"""Reset state after resuming."""
 		# Clear the flags
 		if hasattr(self.loop, 'ctrl_c_pressed'):
-			self.loop.ctrl_c_pressed = False
+			setattr(self.loop, 'ctrl_c_pressed', False)
 		if hasattr(self.loop, 'waiting_for_input'):
-			self.loop.waiting_for_input = False
+			setattr(self.loop, 'waiting_for_input', False)
 
 
 def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -312,6 +326,15 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 			execution_time = time.time() - start_time
 			# Only log if execution takes more than 0.25 seconds
 			if execution_time > 0.25:
+				self_has_logger = args and getattr(args[0], 'logger', None)
+				if self_has_logger:
+					logger = getattr(args[0], 'logger')
+				elif 'agent' in kwargs:
+					logger = getattr(kwargs['agent'], 'logger')
+				elif 'browser_session' in kwargs:
+					logger = getattr(kwargs['browser_session'], 'logger')
+				else:
+					logger = logging.getLogger(__name__)
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -332,6 +355,15 @@ def time_execution_async(
 			# Only log if execution takes more than 0.25 seconds to avoid spamming the logs
 			# you can lower this threshold locally when you're doing dev work to performance optimize stuff
 			if execution_time > 0.25:
+				self_has_logger = args and getattr(args[0], 'logger', None)
+				if self_has_logger:
+					logger = getattr(args[0], 'logger')
+				elif 'agent' in kwargs:
+					logger = getattr(kwargs['agent'], 'logger')
+				elif 'browser_session' in kwargs:
+					logger = getattr(kwargs['browser_session'], 'logger')
+				else:
+					logger = logging.getLogger(__name__)
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -477,3 +509,136 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 		logger = logging.getLogger(__name__)
 		logger.error(f'⛔️ Error matching URL {url} with pattern {domain_pattern}: {type(e).__name__}: {e}')
 		return False
+
+
+def merge_dicts(a: dict, b: dict, path: tuple[str, ...] = ()):
+	for key in b:
+		if key in a:
+			if isinstance(a[key], dict) and isinstance(b[key], dict):
+				merge_dicts(a[key], b[key], path + (str(key),))
+			elif isinstance(a[key], list) and isinstance(b[key], list):
+				a[key] = a[key] + b[key]
+			elif a[key] != b[key]:
+				raise Exception('Conflict at ' + '.'.join(path + (str(key),)))
+		else:
+			a[key] = b[key]
+	return a
+
+
+class LLMException(Exception):
+	"""Custom exception for LLM-related errors."""
+
+	def __init__(self, code: int, message: str):
+		self.code = code
+		self.message = message
+		super().__init__(message)
+
+
+def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
+	"""
+	Handle LLM API errors and extract failed generation data when available.
+
+	Args:
+	    e: The exception that occurred during LLM API call
+
+	Returns:
+	    Tuple containing:
+	    - response: Dict with 'raw' and 'parsed' keys
+	    - parsed: Parsed data (None if extraction was needed)
+
+	Raises:
+	    LLMException: If the error is not a recognized type with failed generation data
+	"""
+	# Handle OpenAI BadRequestError with failed_generation
+	if (
+		OpenAIBadRequestError
+		and isinstance(e, OpenAIBadRequestError)
+		and hasattr(e, 'body')
+		and e.body
+		and 'failed_generation' in e.body
+	):
+		raw = e.body['failed_generation']
+		response = {'raw': raw, 'parsed': None}
+		parsed = None
+		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
+		return response, parsed
+
+	# Handle Groq BadRequestError with failed_generation
+	if (
+		GroqBadRequestError
+		and isinstance(e, GroqBadRequestError)
+		and hasattr(e, 'body')
+		and e.body
+		and 'error' in e.body
+		and 'failed_generation' in e.body['error']
+	):
+		raw = e.body['error']['failed_generation']  # type: ignore
+		response = {'raw': raw, 'parsed': None}
+		parsed = None
+		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
+		return response, parsed
+
+	# If it's not a recognized error type, log and raise
+	logger.error(f'Failed to invoke model: {str(e)}')
+	raise LLMException(401, 'LLM API call failed' + str(e)) from e
+
+
+@cache
+def get_browser_use_version() -> str:
+	"""Get the browser-use package version using the same logic as Agent._set_browser_use_version_and_source"""
+	try:
+		package_root = Path(__file__).parent.parent
+		pyproject_path = package_root / 'pyproject.toml'
+
+		# Try to read version from pyproject.toml
+		if pyproject_path.exists():
+			import re
+
+			with open(pyproject_path, encoding='utf-8') as f:
+				content = f.read()
+				match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+				if match:
+					version = f'{match.group(1)}'
+					os.environ['LIBRARY_VERSION'] = version
+					return version
+
+		# If pyproject.toml doesn't exist, try getting version from pip
+		from importlib.metadata import version as get_version
+
+		version = str(get_version('browser-use'))
+		os.environ['LIBRARY_VERSION'] = version
+		return version
+
+	except Exception as e:
+		logger.debug(f'Error detecting browser-use version: {type(e).__name__}: {e}')
+		return 'unknown'
+
+
+def _log_pretty_path(path: str | Path | None) -> str:
+	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
+
+	if not path or not str(path).strip():
+		return ''  # always falsy in -> falsy out so it can be used in ternaries
+
+	# dont print anything thats not a path
+	if not isinstance(path, (str, Path)):
+		# no other types are safe to just str(path) and log to terminal unless we know what they are
+		# e.g. what if we get storage_date=dict | Path and the dict version could contain real cookies
+		return f'<{type(path).__name__}>'
+
+	# replace home dir and cwd with ~ and .
+	pretty_path = str(path).replace(str(Path.home()), '~').replace(str(Path.cwd().resolve()), '.')
+
+	# wrap in quotes if it contains spaces
+	if pretty_path.strip() and ' ' in pretty_path:
+		pretty_path = f'"{pretty_path}"'
+
+	return pretty_path
+
+
+def _log_pretty_url(s: str, max_len: int | None = 22) -> str:
+	"""Truncate/pretty-print a URL with a maximum length, removing the protocol and www. prefix"""
+	s = s.replace('https://', '').replace('http://', '').replace('www.', '')
+	if max_len is not None and len(s) > max_len:
+		return s[:max_len] + '…'
+	return s
