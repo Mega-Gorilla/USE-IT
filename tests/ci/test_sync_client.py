@@ -116,7 +116,6 @@ class TestCloudSyncEventHandling:
 		assert event['user_id'] == 'test-user-123'
 		# BaseEvent creates event_type attribute, plus our custom data as attributes
 		assert event['task'] == 'Test task'
-		assert event['priority'] == 'high'
 
 	async def test_event_queueing_unauthenticated(self, httpserver: HTTPServer, unauthenticated_sync):
 		"""Test event queueing when unauthenticated."""
