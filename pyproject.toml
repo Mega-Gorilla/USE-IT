@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.3.1"
+version = "0.3.2"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -13,7 +13,7 @@ classifiers = [
 dependencies = [
     "aiofiles>=24.1.0",
     "anyio>=4.9.0",
-    "bubus>=1.1.0",
+    "bubus>=1.1.2",
     "faiss-cpu>=1.11.0",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
@@ -114,7 +114,7 @@ docstring-code-line-length = 140
 skip-magic-trailing-comma = false
 
 [tool.pyright]
-typeCheckingMode = "off"
+typeCheckingMode = "basic"
 
 [tool.hatch.build]
 include = [
