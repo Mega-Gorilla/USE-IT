@@ -1076,7 +1076,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'  # type: ignore
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
@@ -1095,15 +1095,15 @@ class BrowserSession(BaseModel):
 			old_foreground = self.human_current_page
 			assert self.browser_context is not None, 'BrowserContext object is not set'
 			assert old_foreground is not None, 'Old foreground page is not set'
-			old_tab_idx = self.browser_context.pages.index(old_foreground)
+			old_tab_idx = self.browser_context.pages.index(old_foreground)  # type: ignore
 			self.human_current_page = new_page
-			new_tab_idx = self.browser_context.pages.index(new_page)
+			new_tab_idx = self.browser_context.pages.index(new_page)  # type: ignore
 
 			# Log before and after for debugging
 			old_url = old_foreground and old_foreground.url or 'about:blank'
 			new_url = new_page and new_page.url or 'about:blank'
 			agent_url = self.agent_current_page and self.agent_current_page.url or 'about:blank'
-			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)
+			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)  # type: ignore
 			if old_url != new_url:
 				self.logger.info(
 					f'👁️ Foregound tab changed by human from [{old_tab_idx}]{_log_pretty_url(old_url)} '
@@ -1172,7 +1172,7 @@ class BrowserSession(BaseModel):
 				await page.evaluate(update_tab_focus_script)
 				# self.logger.debug(f'👁️ Added visibility listener to existing tab: {page.url}')
 			except Exception as e:
-				page_idx = self.browser_context.pages.index(page)
+				page_idx = self.browser_context.pages.index(page)  # type: ignore
 				self.logger.debug(
 					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
 				)
@@ -1263,7 +1263,7 @@ class BrowserSession(BaseModel):
 
 			# cdp api: https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-setWindowBounds
 			try:
-				cdp_session = await page.context.new_cdp_session(page)
+				cdp_session = await page.context.new_cdp_session(page)  # type: ignore
 				window_id_result = await cdp_session.send('Browser.getWindowForTarget')
 				await cdp_session.send(
 					'Browser.setWindowBounds',

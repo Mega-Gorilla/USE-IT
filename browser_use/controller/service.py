@@ -502,7 +502,7 @@ Explain the content of the page and that the requested information is not availa
 				dy = dy_result
 
 			try:
-				await browser_session._scroll_container(dy)
+				await browser_session._scroll_container(cast(int, dy))
 			except Exception as e:
 				# Hard fallback: always works on root scroller
 				await page.evaluate('(y) => window.scrollBy(0, y)', dy)
@@ -530,7 +530,7 @@ Explain the content of the page and that the requested information is not availa
 				)
 				if action_result:
 					return action_result
-				dy = -(dy_result)
+				dy = -(dy_result or 0)
 
 			try:
 				await browser_session._scroll_container(dy)

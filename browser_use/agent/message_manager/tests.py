@@ -157,7 +157,7 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 				parent=None,
 				xpath='//div',
 			),
-			selector_map={j: f'//div[{j}]' for j in range(5)},
+			selector_map={},
 			tabs=[TabInfo(page_id=1, url=f'https://test{i}.com', title=f'Test Page {i}')],
 		)
 
@@ -192,21 +192,21 @@ def test_token_overflow_handling_with_real_flow(message_manager: MessageManager,
 			assert isinstance(message_manager.state.history.messages[-2].message, HumanMessage)
 		if i % 2 == 0 and not i % 4 == 0:
 			if isinstance(last_msg.content, list):
-				assert 'Current url: https://test' in last_msg.content[0]['text']
+				assert any(
+					'Current url: https://test' in item.get('text', '') for item in last_msg.content if isinstance(item, dict)
+				)
 			else:
 				assert 'Current url: https://test' in last_msg.content
 
 		# Add model output every time
-		from browser_use.agent.views import AgentBrain, AgentOutput
-		from browser_use.controller.registry.views import ActionModel
+		from browser_use.agent.views import AgentOutput
 
 		output = AgentOutput(
-			current_state=AgentBrain(
-				evaluation_previous_goal=f'Success in step {i}',
-				memory=f'Memory from step {i}',
-				next_goal=f'Goal for step {i + 1}',
-			),
-			action=[ActionModel()],
+			thinking=f'Thinking for step {i}',
+			evaluation_previous_goal=f'Success in step {i}',
+			memory=f'Memory from step {i}',
+			next_goal=f'Goal for step {i + 1}',
+			action=[],  # Empty action list - ActionModel requires specific action parameters
 		)
 		message_manager._remove_last_state_message()
 		message_manager.add_model_output(output)

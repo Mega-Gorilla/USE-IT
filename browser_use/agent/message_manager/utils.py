@@ -34,6 +34,9 @@ def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 		if isinstance(content, BaseMessage):
 			# for langchain_core.messages.BaseMessage
 			content = content.content
+		# Ensure content is a string
+		if isinstance(content, list):
+			content = str(content[0]) if content else ''
 		# If content is wrapped in code blocks, extract just the JSON part
 		if '```' in content:
 			# Find the JSON content between code blocks

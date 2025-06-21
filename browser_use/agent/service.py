@@ -1703,7 +1703,7 @@ class Agent(Generic[Context]):
 			assert browser_state_summary
 			content = AgentMessagePrompt(
 				browser_state_summary=browser_state_summary,
-				result=self.state.last_result,
+				file_system=self.file_system,
 				include_attributes=self.settings.include_attributes,
 			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message(self.settings.use_vision)]

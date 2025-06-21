@@ -195,6 +195,9 @@ class CreateAgentTaskEvent(BaseEvent):
 			done_output=None,
 			started_at=datetime.fromtimestamp(agent._task_start_time, tz=timezone.utc),
 			finished_at=None,
+			user_feedback_type=None,
+			user_comment=None,
+			gif_url=None,
 		)
 
 
