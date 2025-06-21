@@ -73,6 +73,8 @@ from browser_use.filesystem.file_system import FileSystem
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
+	BROWSER_USE_CLOUD_SYNC,
+	SKIP_LLM_API_KEY_VERIFICATION,
 	_log_pretty_path,
 	get_browser_use_version,
 	handle_llm_error,
@@ -81,8 +83,6 @@ from browser_use.utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
 def log_response(response: AgentOutput, registry=None, logger=None) -> None:

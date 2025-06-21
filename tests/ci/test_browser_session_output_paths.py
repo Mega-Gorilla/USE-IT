@@ -10,7 +10,7 @@ import pytest
 
 from browser_use import Agent, AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
-from tests.ci.mocks import create_mock_llm
+from tests.ci.conftest import create_mock_llm
 
 
 @pytest.fixture

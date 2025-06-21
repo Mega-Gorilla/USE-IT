@@ -23,7 +23,7 @@ from langchain_core.messages import AIMessage
 from browser_use import Agent, setup_logging
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.types import async_playwright
-from tests.ci.mocks import create_mock_llm
+from tests.ci.conftest import create_mock_llm
 
 # Set up test logging
 setup_logging()

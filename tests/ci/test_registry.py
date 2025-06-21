@@ -29,7 +29,7 @@ from browser_use.controller.views import (
 	NoParamsAction,
 	SearchGoogleAction,
 )
-from tests.ci.mocks import create_mock_llm
+from tests.ci.conftest import create_mock_llm
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

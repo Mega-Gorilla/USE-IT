@@ -1,10 +1,11 @@
 import logging
-import os
 import sys
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from browser_use.utils import BROWSER_USE_LOGGING_LEVEL
 
 
 def addLoggingLevel(levelName, levelNum, methodName=None):
@@ -65,7 +66,7 @@ def setup_logging():
 	except AttributeError:
 		pass  # Level already exists, which is fine
 
-	log_type = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
+	log_type = BROWSER_USE_LOGGING_LEVEL
 
 	# Check if handlers are already set up
 	if logging.getLogger().hasHandlers():

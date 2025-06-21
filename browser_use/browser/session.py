@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
-from browser_use.utils import _log_pretty_path, _log_pretty_url
+from browser_use.utils import IS_IN_EVALS, _log_pretty_path, _log_pretty_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
@@ -44,10 +44,6 @@ from browser_use.dom.clickable_element_processor.service import ClickableElement
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_execution_async, time_execution_sync
-
-# Check if running in Docker
-IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
-
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
@@ -3229,7 +3225,7 @@ class BrowserSession(BaseModel):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
-		if os.environ.get('IS_IN_EVALS', 'false').lower()[0] in 'ty1':
+		if IS_IN_EVALS:
 			# dont bother wasting CPU showing animations during evals
 			return
 

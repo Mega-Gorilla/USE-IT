@@ -5,13 +5,13 @@ Cloud sync service for sending events to the Browser Use cloud.
 import asyncio
 import json
 import logging
-import os
 
 import anyio
 import httpx
 from bubus import BaseEvent
 
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
+from browser_use.utils import BROWSER_USE_CLOUD_URL, BROWSER_USE_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class CloudSync:
 
 	def __init__(self, base_url: str | None = None, enable_auth: bool = True):
 		# Backend API URL for all API requests - can be passed directly or defaults to env var
-		self.base_url = base_url or os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com')
+		self.base_url = base_url or BROWSER_USE_CLOUD_URL
 		self.enable_auth = enable_auth
 		self.auth_client = DeviceAuthClient(base_url=self.base_url) if enable_auth else None
 		self.pending_events: list[dict] = []

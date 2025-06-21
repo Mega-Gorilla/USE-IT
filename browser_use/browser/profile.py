@@ -1,4 +1,3 @@
-import os
 import sys
 from collections.abc import Iterable
 from enum import Enum
@@ -12,9 +11,8 @@ from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field,
 from uuid_extensions import uuid7str
 
 from browser_use.browser.types import ClientCertificate, Geolocation, HttpCredentials, ProxySettings, ViewportSize
-from browser_use.utils import _log_pretty_path, logger
+from browser_use.utils import BROWSER_USE_DEFAULT_USER_DATA_DIR, IN_DOCKER, _log_pretty_path, logger
 
-IN_DOCKER = os.environ.get('IN_DOCKER', 'false').lower()[0] in 'ty1'
 CHROME_DEBUG_PORT = 9242  # use a non-default port to avoid conflicts with other tools / devs using 9222
 CHROME_DISABLED_COMPONENTS = [
 	# Playwright defaults: https://github.com/microsoft/playwright/blob/41008eeddd020e2dee1c540f7c0cdfa337e99637/packages/playwright-core/src/server/chromium/chromiumSwitches.ts#L76
@@ -286,9 +284,8 @@ class BrowserChannel(str, Enum):
 	MSEDGE_CANARY = 'msedge-canary'
 
 
-BROWSERUSE_CONFIG_DIR = Path('~/.config/browseruse').expanduser().resolve()
-BROWSERUSE_PROFILES_DIR = BROWSERUSE_CONFIG_DIR / 'profiles'
-BROWSERUSE_CHROMIUM_USER_DATA_DIR = BROWSERUSE_PROFILES_DIR / 'default'
+# Using constants from central location in browser_use.utils
+# BROWSER_USE_DEFAULT_USER_DATA_DIR is imported from utils
 BROWSERUSE_DEFAULT_CHANNEL = BrowserChannel.CHROMIUM
 
 
@@ -519,7 +516,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
 
 	# Required parameter specific to launch_persistent_context, but can be None to use incognito temp dir
-	user_data_dir: str | Path | None = BROWSERUSE_CHROMIUM_USER_DATA_DIR
+	user_data_dir: str | Path | None = BROWSER_USE_DEFAULT_USER_DATA_DIR
 
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
@@ -647,7 +644,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		is_not_using_default_chromium = self.executable_path or self.channel not in (BROWSERUSE_DEFAULT_CHANNEL, None)
-		if self.user_data_dir == BROWSERUSE_CHROMIUM_USER_DATA_DIR and is_not_using_default_chromium:
+		if self.user_data_dir == BROWSER_USE_DEFAULT_USER_DATA_DIR and is_not_using_default_chromium:
 			alternate_name = (
 				Path(self.executable_path).name.lower().replace(' ', '-')
 				if self.executable_path
