@@ -85,7 +85,7 @@ def create_twitter_agent(config: TwitterConfig) -> Agent:
 	full_message = f'@{config.target_user} {config.message}'
 
 	# Create the agent with detailed instructions
-	return Agent(
+	agent = Agent(
 		task=f"""Navigate to Twitter and create a post and reply to a tweet.
 
         Here are the specific steps:
@@ -111,6 +111,7 @@ def create_twitter_agent(config: TwitterConfig) -> Agent:
 		controller=controller,
 		browser_session=browser_session,
 	)
+	return agent
 
 
 async def post_tweet(agent: Agent):

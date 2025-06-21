@@ -95,7 +95,14 @@ class TestCloudSyncEventHandling:
 		# Send event
 		await authenticated_sync.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Test task', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -119,7 +126,14 @@ class TestCloudSyncEventHandling:
 		# Send event
 		await unauthenticated_sync.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Queued task', user_id=TEMP_USER_ID
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Queued task',
+				user_id=TEMP_USER_ID,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -145,7 +159,14 @@ class TestCloudSyncEventHandling:
 		# Send event without user_id
 		await unauthenticated_sync.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Pre-auth task', user_id=TEMP_USER_ID
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Pre-auth task',
+				user_id=TEMP_USER_ID,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -186,10 +207,24 @@ class TestCloudSyncRetryLogic:
 		sync_with_auth.pending_events.extend(
 			[
 				CreateAgentTaskEvent(
-					agent_session_id='test-session', llm_model='test-model', task='Pending task 1', user_id=TEMP_USER_ID
+					agent_session_id='test-session',
+					llm_model='test-model',
+					task='Pending task 1',
+					user_id=TEMP_USER_ID,
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				),
 				CreateAgentTaskEvent(
-					agent_session_id='test-session', llm_model='test-model', task='Pending task 2', user_id=TEMP_USER_ID
+					agent_session_id='test-session',
+					llm_model='test-model',
+					task='Pending task 2',
+					user_id=TEMP_USER_ID,
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				),
 			]
 		)
@@ -215,7 +250,14 @@ class TestCloudSyncRetryLogic:
 		# Should not raise exception
 		await sync_with_auth.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Task during outage', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Task during outage',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -230,7 +272,14 @@ class TestCloudSyncRetryLogic:
 		# Should not raise exception
 		await sync_with_auth.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Task during network error', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Task during network error',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -255,7 +304,14 @@ class TestCloudSyncRetryLogic:
 		for i in range(5):
 			task = sync_with_auth.handle_event(
 				CreateAgentTaskEvent(
-					agent_session_id='test-session', llm_model='test-model', task=f'Concurrent task {i}', user_id='test-user-123'
+					agent_session_id='test-session',
+					llm_model='test-model',
+					task=f'Concurrent task {i}',
+					user_id='test-user-123',
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				)
 			)
 			tasks.append(task)
@@ -310,7 +366,14 @@ class TestCloudSyncBackendCommunication:
 
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Format validation test', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Format validation test',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -343,7 +406,14 @@ class TestCloudSyncBackendCommunication:
 
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Auth header test', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Auth header test',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -358,7 +428,16 @@ class TestCloudSyncBackendCommunication:
 		service.auth_client = DeviceAuthClient(base_url=httpserver.url_for(''))  # No credentials
 
 		await service.handle_event(
-			CreateAgentTaskEvent(agent_session_id='test-session', llm_model='test-model', task='No auth test', user_id='')
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='No auth test',
+				user_id='',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+			)
 		)
 
 		# Check no auth header
@@ -383,7 +462,14 @@ class TestCloudSyncErrorHandling:
 		# Should not raise exception
 		await sync_service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Timeout test', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Timeout test',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -417,6 +503,10 @@ class TestCloudSyncErrorHandling:
 					llm_model='test-model',
 					task=f'Error {status_code} test',
 					user_id='test-user-123',
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				)
 			)
 
@@ -428,7 +518,14 @@ class TestCloudSyncErrorHandling:
 		# Should not raise exception
 		await sync_service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Invalid response test', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Invalid response test',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -480,6 +577,10 @@ class TestCloudSyncErrorHandling:
 					llm_model='test-model',
 					task=f'Concurrent error test {i}',
 					user_id='test-user-123',
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				)
 			)
 			tasks.append(task)

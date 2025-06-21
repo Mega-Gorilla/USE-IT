@@ -174,7 +174,7 @@ if __name__ == '__main__':
 	if sys.platform.startswith('win'):
 		# WindowsProactorEventLoopPolicy is only available on Windows
 		try:
-			asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+			asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())  # type: ignore
 		except AttributeError:
 			pass  # Not on Windows, ignore
 	asyncio.run(main())

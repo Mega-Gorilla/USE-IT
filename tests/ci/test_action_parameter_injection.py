@@ -357,7 +357,7 @@ class TestBrowserContext:
 		assert 'simple_action' in action_model.model_fields
 
 		# Create an instance with the simple_action
-		action_instance = action_model(simple_action={})
+		action_instance = action_model(simple_action={})  # type: ignore[call-arg]
 
 		# Test that model_dump works correctly
 		dumped = action_instance.model_dump(exclude_unset=True)

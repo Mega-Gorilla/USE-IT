@@ -124,7 +124,11 @@ async def example_no_viewport_option():
 
 
 def validate_window_size(configured: dict[str, Any], actual: dict[str, Any]) -> None:
-	"""Compare configured window size with actual size and report differences"""
+	"""Compare configured window size with actual size and report differences.
+
+	Raises:
+		Exception: If the window size difference exceeds tolerance
+	"""
 	# Allow for small differences due to browser chrome, scrollbars, etc.
 	width_diff = abs(configured['width'] - actual['width'])
 	height_diff = abs(configured['height'] - actual['height'])
@@ -138,6 +142,8 @@ def validate_window_size(configured: dict[str, Any], actual: dict[str, Any]) -> 
 		raise Exception('Window size validation failed')
 	else:
 		print('✅ Window size validation passed: actual size matches configured size within tolerance')
+
+	return None
 
 
 async def main():

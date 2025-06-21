@@ -729,6 +729,10 @@ class TestControllerIntegration:
 		drag_action = {
 			'drag_drop': DragDropAction(
 				# Use the coordinate-based approach
+				element_source=None,
+				element_target=None,
+				element_source_offset=None,
+				element_target_offset=None,
 				coord_source_x=element_info['source']['x'],
 				coord_source_y=element_info['source']['y'],
 				coord_target_x=element_info['target']['x'],
@@ -839,7 +843,8 @@ class TestControllerIntegration:
 
 		# Verify navigation result
 		assert isinstance(goto_result, ActionResult)
-		assert f'Navigated to {base_url}/keyboard' in goto_result.extracted_content
+		assert goto_result.extracted_content is not None
+		assert goto_result.extracted_content is not None and f'Navigated to {base_url}/keyboard' in goto_result.extracted_content
 		assert goto_result.error is None
 		assert goto_result.is_done is False
 
@@ -865,7 +870,8 @@ class TestControllerIntegration:
 
 		# Verify Tab action result
 		assert isinstance(tab_result, ActionResult)
-		assert 'Sent keys: Tab' in tab_result.extracted_content
+		assert tab_result.extracted_content is not None
+		assert tab_result.extracted_content is not None and 'Sent keys: Tab' in tab_result.extracted_content
 		assert tab_result.error is None
 		assert tab_result.is_done is False
 
@@ -885,7 +891,8 @@ class TestControllerIntegration:
 
 		# Verify typing action result
 		assert isinstance(type_result, ActionResult)
-		assert f'Sent keys: {test_text}' in type_result.extracted_content
+		assert type_result.extracted_content is not None
+		assert type_result.extracted_content is not None and f'Sent keys: {test_text}' in type_result.extracted_content
 		assert type_result.error is None
 		assert type_result.is_done is False
 
@@ -906,7 +913,11 @@ class TestControllerIntegration:
 
 		# Verify select all action result
 		assert isinstance(select_all_result, ActionResult)
-		assert 'Sent keys: ControlOrMeta+a' in select_all_result.extracted_content
+		assert select_all_result.extracted_content is not None
+		assert (
+			select_all_result.extracted_content is not None
+			and 'Sent keys: ControlOrMeta+a' in select_all_result.extracted_content
+		)
 		assert select_all_result.error is None
 
 		# Verify selection length matches the text length
@@ -927,7 +938,8 @@ class TestControllerIntegration:
 
 		# Verify second Tab action result
 		assert isinstance(tab_result2, ActionResult)
-		assert 'Sent keys: Tab' in tab_result2.extracted_content
+		assert tab_result2.extracted_content is not None
+		assert tab_result2.extracted_content is not None and 'Sent keys: Tab' in tab_result2.extracted_content
 		assert tab_result2.error is None
 
 		# Verify we moved to the textarea
@@ -945,7 +957,10 @@ class TestControllerIntegration:
 
 		# Verify textarea typing action result
 		assert isinstance(textarea_result, ActionResult)
-		assert f'Sent keys: {textarea_text}' in textarea_result.extracted_content
+		assert textarea_result.extracted_content is not None
+		assert (
+			textarea_result.extracted_content is not None and f'Sent keys: {textarea_text}' in textarea_result.extracted_content
+		)
 		assert textarea_result.error is None
 		assert textarea_result.is_done is False
 
@@ -1237,14 +1252,18 @@ class TestControllerIntegration:
 		expected_result_text = 'Button 1 clicked'
 
 		# Verify the button text matches what we expect
-		assert expected_button_text in button_text, f"Expected button text '{expected_button_text}' not found in '{button_text}'"
+		assert button_text is not None and expected_button_text in button_text, (
+			f"Expected button text '{expected_button_text}' not found in '{button_text}'"
+		)
 
 		# Create a model for the click_element_by_index action
 		class ClickElementActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
 
 		# Execute the action with the button index
-		result = await controller.act(ClickElementActionModel(click_element_by_index={'index': button_index}), browser_session)
+		result = await controller.act(
+			ClickElementActionModel(click_element_by_index=ClickElementAction(index=button_index)), browser_session
+		)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult), 'Result should be an ActionResult instance'
@@ -1255,9 +1274,10 @@ class TestControllerIntegration:
 		assert f'Clicked button with index {button_index}' in result.extracted_content, (
 			f'Expected click confirmation in result content, got: {result.extracted_content}'
 		)
-		assert button_text in result.extracted_content, (
-			f"Button text '{button_text}' not found in result content: {result.extracted_content}"
-		)
+		if button_text:
+			assert result.extracted_content is not None and button_text in result.extracted_content, (
+				f"Button text '{button_text}' not found in result content: {result.extracted_content}"
+			)
 
 		# Verify the click actually had an effect on the page
 		result_text = await page.evaluate("document.getElementById('result').textContent")

@@ -17,9 +17,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import boto3
+import boto3  # type: ignore
 from botocore.config import Config
-from langchain_aws import ChatBedrockConverse
+from langchain_aws import ChatBedrockConverse  # type: ignore
 
 from browser_use import Agent
 from browser_use.browser import BrowserProfile, BrowserSession

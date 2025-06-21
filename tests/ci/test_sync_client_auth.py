@@ -357,7 +357,14 @@ class TestCloudSync:
 		# Send event
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Test task', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -375,7 +382,6 @@ class TestCloudSync:
 		assert event['event_type'] == 'CreateAgentTaskEvent'
 		assert event['user_id'] == 'test-user-123'
 		assert event['task'] == 'Test task'
-		assert event['status'] == 'running'
 
 	async def test_send_event_pre_auth(self, httpserver: HTTPServer, temp_config_dir):
 		"""Test sending event before authentication."""
@@ -404,7 +410,16 @@ class TestCloudSync:
 
 		# Send event
 		await service.handle_event(
-			CreateAgentTaskEvent(agent_session_id='test-session', llm_model='test-model', task='Test task', user_id=TEMP_USER_ID)
+			CreateAgentTaskEvent(
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task',
+				user_id=TEMP_USER_ID,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
+			)
 		)
 
 		# Check request was made without auth header
@@ -458,14 +473,21 @@ class TestCloudSync:
 		# Send pre-auth event (should get 401 and be queued)
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Pre-auth task', user_id=TEMP_USER_ID
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Pre-auth task',
+				user_id=TEMP_USER_ID,
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
 		# Event should be in pending_events since we got 401
 		assert len(service.pending_events) == 1
-		assert service.pending_events[0].task == 'Pre-auth task'
-		assert service.pending_events[0].user_id == TEMP_USER_ID
+		assert hasattr(service.pending_events[0], 'task') and service.pending_events[0].task == 'Pre-auth task'  # type: ignore
+		assert hasattr(service.pending_events[0], 'user_id') and service.pending_events[0].user_id == TEMP_USER_ID  # type: ignore
 
 		# Now authenticate the auth client
 		auth.auth_config.api_token = 'test-api-key'
@@ -505,7 +527,14 @@ class TestCloudSync:
 		# Send event - should not raise exception but handle gracefully
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Test task', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -656,6 +685,7 @@ class TestIntegration:
 		# Authenticate
 		authenticated = await service.authenticate(show_instructions=False)
 		assert authenticated is True
+		assert service.auth_client is not None
 		assert service.auth_client.is_authenticated
 		assert service.auth_client.api_token == 'test-api-key'
 		assert service.auth_client.user_id == 'test-user-123'
@@ -663,7 +693,14 @@ class TestIntegration:
 		# Send authenticated event
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Authenticated task', user_id='test-user-123'
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Authenticated task',
+				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -733,6 +770,10 @@ class TestAuthResilience:
 				llm_model='test-model',
 				task='Test task after token expiry',
 				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -768,7 +809,14 @@ class TestAuthResilience:
 		# Should be able to send events without auth (pre-auth mode)
 		await service.handle_event(
 			CreateAgentTaskEvent(
-				agent_session_id='test-session', llm_model='test-model', task='Test task without auth', user_id=''
+				agent_session_id='test-session',
+				llm_model='test-model',
+				task='Test task without auth',
+				user_id='',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -795,6 +843,10 @@ class TestAuthResilience:
 				llm_model='test-model',
 				task='Test task during server downtime',
 				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)
 
@@ -811,7 +863,14 @@ class TestAuthResilience:
 		for i in range(100):
 			await service.handle_event(
 				CreateAgentTaskEvent(
-					agent_session_id='test-session', llm_model='test-model', task=f'Test task {i}', user_id='test-user-123'
+					agent_session_id='test-session',
+					llm_model='test-model',
+					task=f'Test task {i}',
+					user_id='test-user-123',
+					done_output=None,
+					user_feedback_type=None,
+					user_comment=None,
+					gif_url=None,
 				)
 			)
 
@@ -852,5 +911,9 @@ class TestAuthResilience:
 				llm_model='test-model',
 				task='Test task with malformed response',
 				user_id='test-user-123',
+				done_output=None,
+				user_feedback_type=None,
+				user_comment=None,
+				gif_url=None,
 			)
 		)

@@ -356,7 +356,9 @@ async def test_assumption_9_pydantic_private_attrs(browser_session, controller, 
 	# Check the browser_session that comes out of the model
 	extracted_browser_session = special_params.browser_session
 	print(f'5. Extracted browser_session ID: {id(extracted_browser_session)}')
-	print(f'6. Extracted browser_session cache: {extracted_browser_session._cached_browser_state_summary is not None}')
+	print(
+		f'6. Extracted browser_session cache: {extracted_browser_session._cached_browser_state_summary is not None if extracted_browser_session else False}'
+	)
 
 	# Check if they're the same object
 	if id(browser_session) == id(extracted_browser_session):
@@ -367,11 +369,13 @@ async def test_assumption_9_pydantic_private_attrs(browser_session, controller, 
 		# Check if private attributes were preserved
 		print(f'7. Original has _cached_browser_state_summary attr: {hasattr(browser_session, "_cached_browser_state_summary")}')
 		print(
-			f'8. Extracted has _cached_browser_state_summary attr: {hasattr(extracted_browser_session, "_cached_browser_state_summary")}'
+			f'8. Extracted has _cached_browser_state_summary attr: {hasattr(extracted_browser_session, "_cached_browser_state_summary") if extracted_browser_session else False}'
 		)
 
 		if hasattr(extracted_browser_session, '_cached_browser_state_summary'):
-			print(f'9. Extracted _cached_browser_state_summary value: {extracted_browser_session._cached_browser_state_summary}')
+			print(
+				f'9. Extracted _cached_browser_state_summary value: {extracted_browser_session._cached_browser_state_summary if extracted_browser_session else None}'
+			)
 
 
 @pytest.mark.asyncio
@@ -401,7 +405,7 @@ async def test_assumption_7_cache_gets_cleared(browser_session, controller, http
 		from browser_use import ActionResult
 
 		cache_exists = browser_session._cached_browser_state_summary is not None
-		if cache_exists:
+		if cache_exists and browser_session._cached_browser_state_summary:
 			cache_size = len(browser_session._cached_browser_state_summary.selector_map)
 		else:
 			cache_size = 0
@@ -415,7 +419,7 @@ async def test_assumption_7_cache_gets_cleared(browser_session, controller, http
 		from browser_use import ActionResult
 
 		cache_exists = browser_session._cached_browser_state_summary is not None
-		if cache_exists:
+		if cache_exists and browser_session._cached_browser_state_summary:
 			cache_size = len(browser_session._cached_browser_state_summary.selector_map)
 		else:
 			cache_size = 0

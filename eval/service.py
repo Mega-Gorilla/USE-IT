@@ -49,6 +49,7 @@ import signal
 import sys
 import threading
 import time
+from uuid import UUID
 
 import anyio
 import psutil
@@ -1397,8 +1398,8 @@ def determine_current_stage(completed_stages: set) -> Stage:
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,
-	lmnr_run_id: str,
-	laminar_eval_link: str,
+	lmnr_run_id: str | None,
+	laminar_eval_link: str | None,
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
@@ -1441,7 +1442,7 @@ async def run_task_with_semaphore(
 			if lmnr_run_id:
 				try:
 					datapoint_id = await laminar_client.evals.create_datapoint(
-						eval_id=lmnr_run_id,
+						eval_id=UUID(lmnr_run_id),
 						data={
 							'task_id': task.task_id,
 							'confirmed_task': task.confirmed_task,
@@ -1575,7 +1576,7 @@ async def run_task_with_semaphore(
 
 						if lmnr_run_id and datapoint_id:
 							await laminar_client.evals.update_datapoint(
-								eval_id=lmnr_run_id,
+								eval_id=UUID(lmnr_run_id),
 								datapoint_id=datapoint_id,
 								scores={
 									'accuracy': evaluation['score'],
@@ -1591,7 +1592,9 @@ async def run_task_with_semaphore(
 					logger.info(f'Task {task.task_id}: Saving result to server.')
 					await run_stage(
 						Stage.SAVE_SERVER,
-						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						lambda: asyncio.to_thread(
+							save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+						),
 						timeout=60,
 					)
 					task_result.stage_completed(Stage.SAVE_SERVER)
@@ -1613,7 +1616,9 @@ async def run_task_with_semaphore(
 					logger.info(f'Task {task.task_id}: Attempting server save after timeout.')
 					await run_stage(
 						Stage.SAVE_SERVER,
-						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						lambda: asyncio.to_thread(
+							save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+						),
 						timeout=30,  # Shorter timeout for emergency save
 					)
 					task_result.stage_completed(Stage.SAVE_SERVER)
@@ -1630,7 +1635,9 @@ async def run_task_with_semaphore(
 					logger.info(f'Task {task.task_id}: Attempting server save after cancellation.')
 					await run_stage(
 						Stage.SAVE_SERVER,
-						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						lambda: asyncio.to_thread(
+							save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+						),
 						timeout=30,  # Shorter timeout for emergency save
 					)
 					task_result.stage_completed(Stage.SAVE_SERVER)
@@ -1647,7 +1654,9 @@ async def run_task_with_semaphore(
 					logger.info(f'Task {task.task_id}: Attempting server save after critical error.')
 					await run_stage(
 						Stage.SAVE_SERVER,
-						lambda: asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload),
+						lambda: asyncio.to_thread(
+							save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+						),
 						timeout=30,  # Shorter timeout for emergency save
 					)
 					task_result.stage_completed(Stage.SAVE_SERVER)
@@ -1677,7 +1686,9 @@ async def run_task_with_semaphore(
 			# Try emergency server save
 			try:
 				logger.info(f'Task {task.task_id}: Attempting emergency server save after initialization error.')
-				await asyncio.to_thread(save_result_to_server, convex_url, secret_key, task_result.server_payload)
+				await asyncio.to_thread(
+					save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+				)
 			except Exception as save_e:
 				logger.error(f'Task {task.task_id}: Emergency server save after initialization error failed: {str(save_e)}')
 
@@ -1716,8 +1727,8 @@ async def run_multiple_tasks(
 	tasks: list[Task],
 	llm: BaseChatModel,
 	run_id: str,
-	lmnr_run_id: str,
-	laminar_eval_link: str,
+	lmnr_run_id: str | None,
+	laminar_eval_link: str | None,
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
@@ -1858,7 +1869,7 @@ async def run_multiple_tasks(
 			failed_tasks += 1
 		else:
 			processed_results.append(result)
-			if result.get('success', False):
+			if isinstance(result, dict) and result.get('success', False):
 				successful_tasks += 1
 			else:
 				failed_tasks += 1
@@ -1959,7 +1970,7 @@ def get_git_info():
 
 
 # Helper function to start a new run on the server
-def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_run_id: str = None):
+def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_run_id: str | None = None):
 	"""Sends a request to start a new evaluation run and returns the run ID."""
 	if not convex_url or not secret_key:
 		logger.error('Error: Convex URL or Secret Key not provided for starting run.')

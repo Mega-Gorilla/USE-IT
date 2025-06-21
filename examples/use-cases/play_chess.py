@@ -64,7 +64,7 @@ def parse_transform(style: str) -> tuple[float, float] | None:
 		return x_px_str, y_px_str
 	except Exception as e:
 		logger.error(f'Error parsing transform style: {e}')
-		return None, 0.0
+		return None
 
 
 def algebraic_to_pixels(square: str, square_size: float) -> tuple[str, str]:
@@ -107,9 +107,12 @@ async def calculate_square_size(page) -> float | None:
 			raise ValueError('No pieces found.')
 		x_coords: set[float] = set()
 		for piece in pieces:
-			style = piece.get('style')
+			if hasattr(piece, 'get'):
+				style = piece.get('style')  # type: ignore
+			else:
+				continue
 			if style:
-				coords = parse_transform(style)
+				coords = parse_transform(style)  # type: ignore
 				if coords:
 					x_coords.add(coords[0])
 
@@ -151,7 +154,7 @@ def create_fen_board(board_state: dict) -> str:
 	return fen
 
 
-async def get_current_board_info(page) -> tuple[str | None, float]:
+async def get_current_board_info(page) -> tuple[str | None, float | None]:
 	"""Reads the current board HTML and returns FEN string and square size."""
 	board_state = {}
 	board_html = ''
@@ -164,29 +167,31 @@ async def get_current_board_info(page) -> tuple[str | None, float]:
 		square_size = await calculate_square_size(page)
 	except Exception as e:
 		logger.error(f'Error (get_info): Could not read cg-board: {e}')
-		return None, 0.0
+		return None, None
 
 	if not board_html or not square_size:
-		return None, 0.0
+		return None, None
 
 	soup = BeautifulSoup(board_html, 'html.parser')
 	pieces = soup.find_all('piece')
 	for piece in pieces:
-		style = piece.get('style')
-		class_ = piece.get('class')
+		if not hasattr(piece, 'get'):
+			continue
+		style = piece.get('style')  # type: ignore
+		class_ = piece.get('class')  # type: ignore
 
 		if style and class_:
-			coords = parse_transform(style)
+			coords = parse_transform(style)  # type: ignore
 			if coords:
 				x_px, y_px = coords
 				try:
 					square = pixels_to_algebraic(x_px, y_px, square_size)
-					board_state[square] = get_piece_symbol(class_)
+					board_state[square] = get_piece_symbol(class_)  # type: ignore
 				except ValueError as ve:
 					logger.error(f'Error: {ve}')
 
 	if not board_state or not square_size:
-		return None, 0.0
+		return None, None
 
 	fen_board = create_fen_board(board_state)
 	full_fen = f'{fen_board} w KQkq - 0 1'
@@ -257,7 +262,7 @@ async def play_move(params: PlayMoveParams, browser: BrowserContext):
 
 	try:
 		current_fen, square_size = await get_current_board_info(page)
-		if not current_fen or not square_size:
+		if not current_fen or square_size is None:
 			return ActionResult(extracted_content='Failed to get current FEN or square size to play move.')
 
 		board = chess.Board(current_fen)

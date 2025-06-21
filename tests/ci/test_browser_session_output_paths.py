@@ -217,13 +217,11 @@ class TestBrowserProfileRecordings:
 		video_dir = test_dir / f'videos_{context_type}_{alias}'
 		user_data_dir = None if context_type == 'incognito' else str(test_dir / 'user_data')
 
-		# Create profile without the alias first
-		browser_profile = BrowserProfile(headless=True, disable_security=True, user_data_dir=user_data_dir)
-
-		# Set the appropriate alias dynamically
-		setattr(browser_profile, alias, str(video_dir))
-
-		browser_session = BrowserSession(browser_profile=browser_profile)
+		# Create profile with dynamic alias
+		profile_kwargs = {'headless': True, 'disable_security': True, 'user_data_dir': user_data_dir, alias: str(video_dir)}
+		browser_session = BrowserSession(
+			browser_profile=BrowserProfile(**profile_kwargs)  # type: ignore
+		)
 		await browser_session.start()
 		try:
 			await browser_session.navigate(httpserver_url)
@@ -259,13 +257,14 @@ class TestBrowserProfileRecordings:
 		har_path = test_dir / f'network_{context_type}_{alias}.har'
 		user_data_dir = None if context_type == 'incognito' else str(test_dir / f'user_data_har_{alias}')
 
-		# Create profile without the alias first
-		browser_profile = BrowserProfile(headless=True, disable_security=True, user_data_dir=user_data_dir)
-
-		# Set the appropriate alias dynamically
-		setattr(browser_profile, alias, str(har_path))
-
-		browser_session = BrowserSession(browser_profile=browser_profile)
+		browser_session = BrowserSession(
+			browser_profile=BrowserProfile(
+				headless=True,
+				disable_security=True,
+				user_data_dir=user_data_dir,
+				**{alias: str(har_path)},  # type: ignore
+			)
+		)
 		await browser_session.start()
 		try:
 			await browser_session.navigate(httpserver_url)
@@ -312,7 +311,7 @@ class TestBrowserProfileRecordings:
 		if alias == 'trace_path':
 			browser_session.browser_profile.traces_dir = str(trace_dir)
 		else:
-			setattr(browser_session.browser_profile, alias, str(trace_dir))
+			setattr(browser_session.browser_profile, alias, str(trace_dir))  # type: ignore
 
 		await browser_session.start()
 		try:

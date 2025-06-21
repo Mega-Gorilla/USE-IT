@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Third-party imports
-import gradio as gr
+import gradio as gr  # type: ignore
 from langchain_openai import ChatOpenAI
 from rich.console import Console
 from rich.panel import Panel
@@ -52,6 +52,8 @@ def parse_agent_history(history_str: str) -> None:
 			console.print(panel)
 			console.print()
 
+	return None
+
 
 async def run_browser_task(
 	task: str,
@@ -70,8 +72,8 @@ async def run_browser_task(
 			llm=ChatOpenAI(model='gpt-4o'),
 		)
 		result = await agent.run()
-		#  TODO: The result cloud be parsed better
-		return result
+		#  TODO: The result could be parsed better
+		return str(result)
 	except Exception as e:
 		return f'Error: {str(e)}'
 

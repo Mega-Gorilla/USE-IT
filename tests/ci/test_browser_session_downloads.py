@@ -40,7 +40,7 @@ async def test_download_detection_timing(test_server, tmp_path):
 	browser_with_downloads = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=True,
-			downloads_dir=str(tmp_path / 'downloads'),
+			downloads_path=str(tmp_path / 'downloads'),
 			user_data_dir=None,
 		)
 	)
@@ -77,7 +77,7 @@ async def test_download_detection_timing(test_server, tmp_path):
 	browser_no_downloads = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=True,
-			downloads_dir=None,
+			downloads_path=None,
 			user_data_dir=None,
 		)
 	)
