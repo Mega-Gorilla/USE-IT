@@ -2191,9 +2191,11 @@ if __name__ == '__main__':
 		help='Include result flag (functionality to be implemented)',
 	)
 	parser.add_argument(
-		'--highlight-elements',
-		action='store_true',
-		help='Highlight interactive elements on the page for better visibility',
+		'--no-highlight-elements',
+		action='store_false',
+		dest='highlight_elements',
+		default=True,
+		help='Disable highlighting of interactive elements on the page (highlighting is enabled by default)',
 	)
 	parser.add_argument(
 		'--laminar-eval-id',
