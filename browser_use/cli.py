@@ -40,24 +40,16 @@ os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'result'
 from browser_use import Agent, Controller
 from browser_use.agent.views import AgentSettings
 from browser_use.browser import BrowserSession
+from browser_use.config import CONFIG
 from browser_use.logging_config import addLoggingLevel
-from browser_use.utils import (
-	ANTHROPIC_API_KEY,
-	BROWSER_USE_CONFIG_FILE,
-	BROWSER_USE_PROFILES_DIR,
-	DEEPSEEK_API_KEY,
-	GOOGLE_API_KEY,
-	GROK_API_KEY,
-	OPENAI_API_KEY,
-)
 
-USER_DATA_DIR = BROWSER_USE_PROFILES_DIR / 'cli'
+USER_DATA_DIR = CONFIG.BROWSER_USE_PROFILES_DIR / 'cli'
 
 # Default User settings
 MAX_HISTORY_LENGTH = 100
 
 # Ensure directories exist
-BROWSER_USE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+CONFIG.BROWSER_USE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -95,11 +87,11 @@ def get_default_config() -> dict[str, Any]:
 			'name': None,
 			'temperature': 0.0,
 			'api_keys': {
-				'OPENAI_API_KEY': OPENAI_API_KEY,
-				'ANTHROPIC_API_KEY': ANTHROPIC_API_KEY,
-				'GOOGLE_API_KEY': GOOGLE_API_KEY,
-				'DEEPSEEK_API_KEY': DEEPSEEK_API_KEY,
-				'GROK_API_KEY': GROK_API_KEY,
+				'OPENAI_API_KEY': CONFIG.OPENAI_API_KEY,
+				'ANTHROPIC_API_KEY': CONFIG.ANTHROPIC_API_KEY,
+				'GOOGLE_API_KEY': CONFIG.GOOGLE_API_KEY,
+				'DEEPSEEK_API_KEY': CONFIG.DEEPSEEK_API_KEY,
+				'GROK_API_KEY': CONFIG.GROK_API_KEY,
 			},
 		},
 		'agent': {},  # AgentSettings will use defaults
@@ -114,14 +106,14 @@ def get_default_config() -> dict[str, Any]:
 
 def load_user_config() -> dict[str, Any]:
 	"""Load user configuration from file."""
-	if not BROWSER_USE_CONFIG_FILE.exists():
+	if not CONFIG.BROWSER_USE_CONFIG_FILE.exists():
 		# Create default config
 		config = get_default_config()
 		save_user_config(config)
 		return config
 
 	try:
-		with open(BROWSER_USE_CONFIG_FILE) as f:
+		with open(CONFIG.BROWSER_USE_CONFIG_FILE) as f:
 			data = json.load(f)
 			# Ensure data is a dictionary, not a list
 			if isinstance(data, list):
@@ -142,7 +134,7 @@ def save_user_config(config: dict[str, Any]) -> None:
 		if len(config['command_history']) > MAX_HISTORY_LENGTH:
 			config['command_history'] = config['command_history'][-MAX_HISTORY_LENGTH:]
 
-	with open(BROWSER_USE_CONFIG_FILE, 'w') as f:
+	with open(CONFIG.BROWSER_USE_CONFIG_FILE, 'w') as f:
 		json.dump(config, f, indent=2)
 
 
@@ -191,36 +183,36 @@ def get_llm(config: dict[str, Any]):
 	temperature = config.get('model', {}).get('temperature', 0.0)
 
 	# Set environment variables if they're in the config but not in the environment
-	if api_keys.get('openai') and not OPENAI_API_KEY:
+	if api_keys.get('openai') and not CONFIG.OPENAI_API_KEY:
 		os.environ['OPENAI_API_KEY'] = api_keys['openai']
-	if api_keys.get('anthropic') and not ANTHROPIC_API_KEY:
+	if api_keys.get('anthropic') and not CONFIG.ANTHROPIC_API_KEY:
 		os.environ['ANTHROPIC_API_KEY'] = api_keys['anthropic']
-	if api_keys.get('google') and not GOOGLE_API_KEY:
+	if api_keys.get('google') and not CONFIG.GOOGLE_API_KEY:
 		os.environ['GOOGLE_API_KEY'] = api_keys['google']
 
 	if model_name:
 		if model_name.startswith('gpt'):
-			if not OPENAI_API_KEY:
+			if not CONFIG.OPENAI_API_KEY:
 				print('⚠️  OpenAI API key not found. Please update your config or set OPENAI_API_KEY environment variable.')
 				sys.exit(1)
 			return langchain_openai.ChatOpenAI(model=model_name, temperature=temperature)
 		elif model_name.startswith('claude'):
-			if not ANTHROPIC_API_KEY:
+			if not CONFIG.ANTHROPIC_API_KEY:
 				print('⚠️  Anthropic API key not found. Please update your config or set ANTHROPIC_API_KEY environment variable.')
 				sys.exit(1)
 			return langchain_anthropic.ChatAnthropic(model=model_name, temperature=temperature)
 		elif model_name.startswith('gemini'):
-			if not GOOGLE_API_KEY:
+			if not CONFIG.GOOGLE_API_KEY:
 				print('⚠️  Google API key not found. Please update your config or set GOOGLE_API_KEY environment variable.')
 				sys.exit(1)
 			return langchain_google_genai.ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
 
 	# Auto-detect based on available API keys
-	if OPENAI_API_KEY:
+	if CONFIG.OPENAI_API_KEY:
 		return langchain_openai.ChatOpenAI(model='gpt-4o', temperature=temperature)
-	elif ANTHROPIC_API_KEY:
+	elif CONFIG.ANTHROPIC_API_KEY:
 		return langchain_anthropic.ChatAnthropic(model='claude-3.5-sonnet-exp', temperature=temperature)
-	elif GOOGLE_API_KEY:
+	elif CONFIG.GOOGLE_API_KEY:
 		return langchain_google_genai.ChatGoogleGenerativeAI(model='gemini-2.0-flash-lite', temperature=temperature)
 	else:
 		print(
@@ -1136,7 +1128,7 @@ class BrowserUseApp(App):
 
 			# Paths panel
 			yield Static(
-				f' ⚙️  Settings & history saved to:    {str(BROWSER_USE_CONFIG_FILE.resolve()).replace(str(Path.home()), "~")}\n'
+				f' ⚙️  Settings & history saved to:    {str(CONFIG.BROWSER_USE_CONFIG_FILE.resolve()).replace(str(Path.home()), "~")}\n'
 				f' 📁 Outputs & recordings saved to:  {str(Path(".").resolve()).replace(str(Path.home()), "~")}',
 				id='paths-panel',
 				markup=True,
@@ -1380,7 +1372,7 @@ def main(ctx: click.Context, debug: bool = False, **kwargs):
 	logger.debug('Loading user configuration...')
 	try:
 		config = load_user_config()
-		logger.debug(f'User configuration loaded from {BROWSER_USE_CONFIG_FILE}')
+		logger.debug(f'User configuration loaded from {CONFIG.BROWSER_USE_CONFIG_FILE}')
 	except Exception as e:
 		logger.error(f'Error loading user configuration: {str(e)}', exc_info=True)
 		print(f'Error loading configuration: {str(e)}')

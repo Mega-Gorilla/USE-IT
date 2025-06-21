@@ -12,7 +12,6 @@ from sys import stderr
 from typing import Any, ParamSpec, TypeVar
 from urllib.parse import urlparse
 
-import psutil
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,78 +29,6 @@ try:
 	from groq import BadRequestError as GroqBadRequestError
 except ImportError:
 	GroqBadRequestError = None
-
-
-# User configuration
-BROWSER_USE_LOGGING_LEVEL = os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
-ANONYMIZED_TELEMETRY = os.getenv('ANONYMIZED_TELEMETRY', 'true').lower()[:1] in 'ty1'
-BROWSER_USE_CLOUD_SYNC = os.getenv('BROWSER_USE_CLOUD_SYNC', str(ANONYMIZED_TELEMETRY)).lower()[0] in 'ty1'
-BROWSER_USE_CLOUD_URL = os.getenv('BROWSER_USE_CLOUD_URL', 'https://cloud.browser-use.com')  # or http://localhost:8000
-BROWSER_USE_CLOUD_UI_URL = os.getenv('BROWSER_USE_CLOUD_UI_URL', '')  # or http://localhost:3000
-assert '://' in BROWSER_USE_CLOUD_URL and '://' in BROWSER_USE_CLOUD_UI_URL, (
-	'BROWSER_USE_CLOUD_URL and BROWSER_USE_CLOUD_UI_URL must be valid URLs'
-)
-
-# Path configuration
-XDG_CACHE_HOME = Path(os.getenv('XDG_CACHE_HOME', '~/.cache')).expanduser().resolve()
-XDG_CONFIG_HOME = Path(os.getenv('XDG_CONFIG_HOME', '~/.config')).expanduser().resolve()  # ~/.config
-BROWSER_USE_CONFIG_DIR = (
-	Path(os.getenv('BROWSER_USE_CONFIG_DIR', XDG_CONFIG_HOME / 'browseruse')).expanduser().resolve()
-)  # ~/.config/browseruse
-BROWSER_USE_CONFIG_FILE = BROWSER_USE_CONFIG_DIR / 'config.json'
-BROWSER_USE_PROFILES_DIR = BROWSER_USE_CONFIG_DIR / 'profiles'
-BROWSER_USE_DEFAULT_USER_DATA_DIR = BROWSER_USE_PROFILES_DIR / 'default'
-
-# Create directories if they don't exist
-BROWSER_USE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-BROWSER_USE_PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-
-# LLM API key configuration
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
-DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
-GROK_API_KEY = os.getenv('GROK_API_KEY', '')
-NOVITA_API_KEY = os.getenv('NOVITA_API_KEY', '')
-AZURE_OPENAI_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT', '')
-AZURE_OPENAI_KEY = os.getenv('AZURE_OPENAI_KEY', '')
-SKIP_LLM_API_KEY_VERIFICATION = os.getenv('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
-
-# Runtime hints
-IN_DOCKER = os.getenv('IN_DOCKER', 'false').lower()[0] in 'ty1'
-IS_IN_EVALS = os.getenv('IS_IN_EVALS', 'false').lower()[0] in 'ty1'
-WIN_FONT_DIR = os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts')
-
-
-@cache
-def is_running_in_docker() -> bool:
-	"""Detect if we are running in a docker container, for the purpose of optimizing chrome launch flags (dev shm usage, gpu settings, etc.)"""
-	try:
-		if Path('/.dockerenv').exists() or 'docker' in Path('/proc/1/cgroup').read_text().lower():
-			return True
-	except Exception:
-		pass
-
-	try:
-		# if init proc (PID 1) looks like uvicorn/python/uv/etc. then we're in Docker
-		# if init proc (PID 1) looks like bash/systemd/init/etc. then we're probably NOT in Docker
-		init_cmd = ' '.join(psutil.Process(1).cmdline())
-		if ('py' in init_cmd) or ('uv' in init_cmd) or ('app' in init_cmd):
-			return True
-	except Exception:
-		pass
-
-	try:
-		# if less than 10 total running procs, then we're almost certainly in a container
-		if len(psutil.pids()) < 10:
-			return True
-	except Exception:
-		pass
-
-	return False
-
-
-IN_DOCKER = IN_DOCKER or is_running_in_docker()
 
 
 # Global flag to prevent duplicate exit messages

@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
-from browser_use.utils import IS_IN_EVALS, _log_pretty_path, _log_pretty_url
+from browser_use.config import CONFIG
+from browser_use.utils import _log_pretty_path, _log_pretty_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
@@ -3225,7 +3226,7 @@ class BrowserSession(BaseModel):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
-		if IS_IN_EVALS:
+		if CONFIG.IS_IN_EVALS:
 			# dont bother wasting CPU showing animations during evals
 			return
 

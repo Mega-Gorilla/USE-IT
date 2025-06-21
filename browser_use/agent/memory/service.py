@@ -15,7 +15,8 @@ from langchain_core.messages.utils import convert_to_openai_messages
 from browser_use.agent.memory.views import MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.message_manager.views import ManagedMessage, MessageMetadata
-from browser_use.utils import ANONYMIZED_TELEMETRY, time_execution_sync
+from browser_use.config import CONFIG
+from browser_use.utils import time_execution_sync
 
 
 class Memory:
@@ -65,7 +66,7 @@ class Memory:
 		# Check for required packages
 		try:
 			# also disable mem0's telemetry when ANONYMIZED_TELEMETRY=False
-			if not ANONYMIZED_TELEMETRY:
+			if not CONFIG.ANONYMIZED_TELEMETRY:
 				os.environ['MEM0_TELEMETRY'] = 'False'
 			from mem0 import Memory as Mem0Memory
 		except ImportError:

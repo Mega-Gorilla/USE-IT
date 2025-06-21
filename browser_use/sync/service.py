@@ -10,8 +10,8 @@ import anyio
 import httpx
 from bubus import BaseEvent
 
+from browser_use.config import CONFIG
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
-from browser_use.utils import BROWSER_USE_CLOUD_URL, BROWSER_USE_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class CloudSync:
 
 	def __init__(self, base_url: str | None = None, enable_auth: bool = True):
 		# Backend API URL for all API requests - can be passed directly or defaults to env var
-		self.base_url = base_url or BROWSER_USE_CLOUD_URL
+		self.base_url = base_url or CONFIG.BROWSER_USE_CLOUD_URL
 		self.enable_auth = enable_auth
 		self.auth_client = DeviceAuthClient(base_url=self.base_url) if enable_auth else None
 		self.pending_events: list[BaseEvent] = []
@@ -125,7 +125,7 @@ class CloudSync:
 		try:
 			assert self.auth_client, 'Cloud sync must be authenticated to update WAL user ID'
 
-			wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{session_id}.jsonl'
+			wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{session_id}.jsonl'
 			if not await anyio.Path(wal_path).exists():
 				raise FileNotFoundError(
 					f'CloudSync failed to update saved event user_ids after auth: Agent EventBus WAL file not found: {wal_path}'

@@ -60,6 +60,7 @@ from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.types import Browser, BrowserContext, Page
 from browser_use.browser.views import BrowserStateSummary
+from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
@@ -69,9 +70,6 @@ from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
-	BROWSER_USE_CLOUD_SYNC,
-	BROWSER_USE_CONFIG_DIR,
-	SKIP_LLM_API_KEY_VERIFICATION,
 	_log_pretty_path,
 	get_browser_use_version,
 	handle_llm_error,
@@ -439,11 +437,11 @@ class Agent(Generic[Context]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
-		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
+		wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service
-		self.enable_cloud_sync = BROWSER_USE_CLOUD_SYNC
+		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
 		if self.enable_cloud_sync or cloud_sync is not None:
 			self.cloud_sync = cloud_sync or CloudSync()
 			# Register cloud sync handler
@@ -811,7 +809,7 @@ class Agent(Generic[Context]):
 		# If a specific method is set, use it
 		if self.settings.tool_calling_method != 'auto':
 			# Skip test if already verified
-			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+			if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 				setattr(self.llm, '_verified_api_keys', True)
 				setattr(self.llm, '_verified_tool_calling_method', self.settings.tool_calling_method)
 				return self.settings.tool_calling_method
@@ -839,7 +837,7 @@ class Agent(Generic[Context]):
 		known_method = self._get_known_tool_calling_method()
 		if known_method is not None:
 			# Trust known combinations without testing if verification is already done or skipped
-			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+			if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 				setattr(self.llm, '_verified_api_keys', True)
 				setattr(self.llm, '_verified_tool_calling_method', known_method)  # Cache on LLM instance
 				self.logger.debug(
@@ -1952,7 +1950,7 @@ class Agent(Generic[Context]):
 		self.tool_calling_method = self._set_tool_calling_method()
 
 		# Skip verification if already done
-		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+		if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 			setattr(self.llm, '_verified_api_keys', True)
 			return True
 
