@@ -62,7 +62,9 @@ class Config:
 	@property
 	def BROWSER_USE_CLOUD_UI_URL(self) -> str:
 		url = os.getenv('BROWSER_USE_CLOUD_UI_URL', '')
-		assert '://' in url, 'BROWSER_USE_CLOUD_UI_URL must be a valid URL'
+		# Allow empty string as default, only validate if set
+		if url and '://' not in url:
+			raise AssertionError('BROWSER_USE_CLOUD_UI_URL must be a valid URL if set')
 		return url
 
 	# Path configuration

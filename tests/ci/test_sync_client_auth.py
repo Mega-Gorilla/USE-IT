@@ -6,7 +6,6 @@ import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import anyio
 import httpx
@@ -22,31 +21,20 @@ from bubus import BaseEvent
 from browser_use.sync.auth import TEMP_USER_ID, DeviceAuthClient
 from browser_use.sync.service import CloudSync
 
-# Define config dir for tests
-# BROWSER_USE_CONFIG_DIR = Path.home() / ".config" / "browseruse"
-BROWSER_USE_CONFIG_DIR = Path(tempfile.mkdtemp()) / '.config' / 'browseruse'
+# Define config dir for tests - not needed anymore since we'll use env vars
 
 
 @pytest.fixture
-def temp_config_dir():
+def temp_config_dir(monkeypatch):
 	"""Create temporary config directory."""
 	with tempfile.TemporaryDirectory() as tmpdir:
 		temp_dir = Path(tmpdir) / '.config' / 'browseruse'
 		temp_dir.mkdir(parents=True, exist_ok=True)
 
-		# Temporarily replace the config dir
-		original = BROWSER_USE_CONFIG_DIR
-		import browser_use.sync.auth
-		import browser_use.utils
-
-		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = temp_dir
-		browser_use.utils.BROWSER_USE_CONFIG_DIR = temp_dir
+		# Use monkeypatch to set the environment variable
+		monkeypatch.setenv('BROWSER_USE_CONFIG_DIR', str(temp_dir))
 
 		yield temp_dir
-
-		# Restore original
-		browser_use.sync.auth.BROWSER_USE_CONFIG_DIR = original
-		browser_use.utils.BROWSER_USE_CONFIG_DIR = original
 
 
 @pytest.fixture
@@ -561,10 +549,8 @@ class TestCloudSync:
 		content = '\n'.join(json.dumps(event) for event in events) + '\n'
 		await anyio.Path(wal_path).write_text(content)
 
-		# Patch BROWSER_USE_CONFIG_DIR to point to our temp directory
-		with patch('browser_use.utils.BROWSER_USE_CONFIG_DIR', temp_config_dir):
-			# Call the method under test
-			await service._update_wal_user_ids(service.session_id)
+		# Call the method under test (temp_config_dir fixture already sets the env var)
+		await service._update_wal_user_ids(service.session_id)
 
 		# Read back the updated file and verify changes
 		content = await anyio.Path(wal_path).read_text()
