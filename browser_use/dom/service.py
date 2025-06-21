@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 if TYPE_CHECKING:
 	from browser_use.browser.types import Page
 
-from dataclasses import dataclass
 
 from browser_use.dom.views import (
 	DOMBaseNode,
