@@ -611,7 +611,10 @@ class TaskResult:
 			)
 
 		# Ensure all data in payload is JSON serializable
-		return make_json_serializable(payload)
+		serialized_payload = make_json_serializable(payload)
+		# Type assertion since we know payload is a dict and make_json_serializable preserves dict structure
+		assert isinstance(serialized_payload, dict), 'Payload serialization should preserve dict structure'
+		return serialized_payload
 
 	def get_local_status(self) -> dict[str, Any]:
 		"""Get local status summary"""
@@ -886,7 +889,7 @@ def clean_action_dict(action_dict: dict) -> dict:
 	return {k: clean_action_dict(v) if isinstance(v, dict) else v for k, v in action_dict.items() if v is not None}
 
 
-def make_json_serializable(obj):
+def make_json_serializable(obj: Any) -> Any:
 	"""
 	Convert objects to JSON-serializable types.
 	Handles common non-serializable types like enums, custom objects, etc.
