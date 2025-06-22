@@ -596,16 +596,25 @@ class TaskResult:
 			eval_data = self.stage_data.get(Stage.EVALUATE, {})
 
 			# Handle comprehensive judge evaluation
-			comp_eval = eval_data.get('comprehensive_evaluation')
+			comp_eval = eval_data.get('comprehensive_evaluation') or eval_data.get('comprehensive_judge')
 			if comp_eval:
+				# Convert enum lists to string lists for database storage
+				task_categories = comp_eval.get('task_categories', [])
+				if task_categories and hasattr(task_categories[0], 'value'):
+					task_categories = [cat.value for cat in task_categories]
+
+				error_categories = comp_eval.get('error_categories', [])
+				if error_categories and hasattr(error_categories[0], 'value'):
+					error_categories = [err.value for err in error_categories]
+
 				payload.update(
 					{
 						'comprehensiveJudgeEvaluationSummary': comp_eval.get('task_summary'),
 						'comprehensiveJudgeEvaluationReasoning': comp_eval.get('reasoning'),
 						'comprehensiveJudgeEvaluationPassed': comp_eval.get('passed'),
 						'comprehensiveJudgeEvaluationScore': comp_eval.get('final_score'),
-						'comprehensiveJudgeEvaluationCategories': comp_eval.get('task_categories', []),
-						'comprehensiveJudgeEvaluationErrors': comp_eval.get('error_categories', []),
+						'comprehensiveJudgeEvaluationCategories': task_categories,
+						'comprehensiveJudgeEvaluationErrors': error_categories,
 						'comprehensiveJudgeEvaluationTips': comp_eval.get('improvement_tips', []),
 						'comprehensiveJudgeEvaluationScores': comp_eval.get('scores'),
 						'comprehensiveJudgeEvaluationFull': comp_eval,  # Include full comprehensive eval data
