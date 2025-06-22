@@ -278,7 +278,7 @@ class Controller(Generic[Context]):
 					return ActionResult(error=error_msg, success=False)
 
 		@self.registry.action(
-			'Input text into a input interactive element',
+			'Click and input text into a input interactive element',
 			param_model=InputTextAction,
 		)
 		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
