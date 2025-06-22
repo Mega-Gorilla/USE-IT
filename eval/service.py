@@ -494,7 +494,7 @@ import requests
 from dotenv import load_dotenv
 
 # Import the new comprehensive judge system
-from .judge_system import evaluate_task_with_comprehensive_judge
+from judge_system import evaluate_task_with_comprehensive_judge
 
 
 class Stage(Enum):
