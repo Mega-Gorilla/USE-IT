@@ -194,6 +194,7 @@ jobs:
           [[ "${{ github.event.client_payload.script_args.validate_output }}" == "true" ]] && CMD_ARGS+=("--validate-output")
           [[ "${{ github.event.client_payload.script_args.include_result }}" == "true" ]] && CMD_ARGS+=("--include-result")
           [[ "${{ github.event.client_payload.script_args.highlight_elements }}" == "false" ]] && CMD_ARGS+=("--no-highlight-elements")
+          [[ "${{ github.event.client_payload.script_args.use_mind2web_judge }}" == "true" ]] && CMD_ARGS+=("--use-mind2web-judge")
 
           # Add optional string parameters
           [[ -n "$USER_MESSAGE" ]] && CMD_ARGS+=("--user-message" "$USER_MESSAGE")
