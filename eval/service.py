@@ -610,7 +610,8 @@ class TaskResult:
 				}
 			)
 
-		return payload
+		# Ensure all data in payload is JSON serializable
+		return make_json_serializable(payload)
 
 	def get_local_status(self) -> dict[str, Any]:
 		"""Get local status summary"""
@@ -883,6 +884,27 @@ def get_llm(model_name: str):
 
 def clean_action_dict(action_dict: dict) -> dict:
 	return {k: clean_action_dict(v) if isinstance(v, dict) else v for k, v in action_dict.items() if v is not None}
+
+
+def make_json_serializable(obj):
+	"""
+	Convert objects to JSON-serializable types.
+	Handles common non-serializable types like enums, custom objects, etc.
+	"""
+	if obj is None:
+		return None
+	elif isinstance(obj, (str, int, float, bool)):
+		return obj
+	elif isinstance(obj, dict):
+		return {k: make_json_serializable(v) for k, v in obj.items()}
+	elif isinstance(obj, (list, tuple)):
+		return [make_json_serializable(item) for item in obj]
+	elif hasattr(obj, 'value'):  # Handle enums
+		return obj.value
+	elif hasattr(obj, '__dict__'):  # Handle custom objects
+		return str(obj)
+	else:
+		return str(obj)
 
 
 async def reformat_agent_history(
