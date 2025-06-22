@@ -2891,10 +2891,6 @@ class BrowserSession(BaseModel):
 		Handles different types of input fields and ensures proper element state before input.
 		"""
 		try:
-			# Highlight before typing
-			# if element_node.highlight_index is not None:
-			# 	await self._update_state(focus_element=element_node.highlight_index)
-
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
@@ -2909,6 +2905,18 @@ class BrowserSession(BaseModel):
 			except Exception:
 				pass
 
+			# let's first try to click and type
+			try:
+				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
+				await element_handle.click()
+				await asyncio.sleep(0.1)  # Increased sleep time
+				page = await self.get_current_page()
+				await page.keyboard.type(text)
+				return
+			except Exception as e:
+				self.logger.debug(f'Input text with click and type failed, trying element handle method: {e}')
+				pass
+
 			# Get element properties to determine input method
 			tag_handle = await element_handle.get_property('tagName')
 			tag_name = (await tag_handle.json_value()).lower()
@@ -2919,25 +2927,15 @@ class BrowserSession(BaseModel):
 			readonly = await readonly_handle.json_value() if readonly_handle else False
 			disabled = await disabled_handle.json_value() if disabled_handle else False
 
-			# always click the element first to make sure it's in the focus
-			await element_handle.click()
-			await asyncio.sleep(0.1)
-
 			try:
 				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
 					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
 					await element_handle.type(text, delay=5)
 				else:
 					await element_handle.fill(text)
-			except Exception:
-				# last resort fallback, assume it's already focused after we clicked on it,
-				# just simulate keypresses on the entire page
-				try:
-					page = await self.get_current_page()
-					await page.keyboard.type(text)
-				except Exception as fallback_error:
-					# If we can't even get the current page, re-raise with a clear error
-					raise BrowserError(f'Failed to input text into element: {element_node.xpath}') from fallback_error
+			except Exception as e:
+				self.logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
+				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
 
 		except Exception as e:
 			# Get current page URL safely for error message
