@@ -302,7 +302,12 @@ Analyze this execution and respond with the exact JSON structure requested."""
 		response = await asyncio.to_thread(model.invoke, messages)
 
 		# Parse the JSON response
-		response_text = response.content.strip()
+		# Handle both string and list content types
+		if isinstance(response.content, list):
+			response_text = str(response.content[0]) if response.content else ''
+		else:
+			response_text = str(response.content)
+		response_text = response_text.strip()
 
 		# Try to extract JSON if wrapped in markdown
 		if '```json' in response_text:
@@ -438,6 +443,9 @@ async def judge_with_retry(
 				return create_fallback_result(task, str(e))
 			logger.warning(f'Judge attempt {attempt + 1} failed, retrying: {e}')
 			await asyncio.sleep(2**attempt)
+
+	# Fallback return (should never reach here given the logic above, but ensures type safety)
+	return create_fallback_result(task, 'Max retries exceeded without proper error handling')
 
 
 def get_example_json_structure() -> dict:
