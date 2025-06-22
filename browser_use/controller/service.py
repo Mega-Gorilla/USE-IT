@@ -287,7 +287,12 @@ class Controller(Generic[Context]):
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			assert element_node is not None, f'Element with index {params.index} does not exist'
-			await browser_session._input_text_element_node(element_node, params.text)
+			try:
+				await browser_session._input_text_element_node(element_node, params.text)
+			except Exception:
+				msg = f'Failed to input text into element {params.index}.'
+				return ActionResult(error=msg)
+
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'
 			else:
