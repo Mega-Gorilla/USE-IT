@@ -19,10 +19,11 @@ import base64
 import io
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from PIL import Image
@@ -468,4 +469,79 @@ def get_example_json_structure() -> dict:
 	}
 
 
+def _read_result_file(result_file: Path) -> dict[str, Any]:
+	"""Helper function to read result file synchronously."""
+	with open(result_file) as f:
+		return json.load(f)
+
+
+def _write_result_file(result_file: Path, result_data: dict[str, Any]) -> None:
+	"""Helper function to write result file synchronously."""
+	with open(result_file, 'w') as f:
+		f.write(json.dumps(result_data, indent=2, default=str))
+
+
 # Integration helper function
+async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseChatModel, max_images: int = 10) -> dict[str, Any]:
+	"""
+	Evaluate a task result using the comprehensive judge system.
+
+	Returns a dictionary with both the old format for compatibility
+	and the new comprehensive analysis.
+	"""
+	result_file = task_folder / 'result.json'
+	if not result_file.exists():
+		return {
+			'task_id': task_folder.name,
+			'comprehensive_judge': None,
+			'error': 'No result.json found',
+		}
+
+	try:
+		# Load existing result using async wrapper
+		result_data = await asyncio.to_thread(_read_result_file, result_file)
+
+		# Check if comprehensive judge result already exists
+		if result_data.get('comprehensive_judge_evaluation'):
+			return {
+				'task_id': task_folder.name,
+				'comprehensive_judge': result_data['comprehensive_judge_evaluation'],
+				'error': None,
+			}
+
+		# Extract data for evaluation
+		task = result_data.get('task', 'Unknown task')
+		complete_history = result_data.get('complete_history', [])
+		final_result = result_data.get('final_result_response', '')
+		screenshot_paths = result_data.get('screenshot_paths', [])
+
+		# Run comprehensive evaluation
+		judge_result = await judge_with_retry(
+			task=task,
+			complete_history=complete_history,
+			final_result=final_result,
+			screenshot_paths=screenshot_paths,
+			model=model,
+			max_images=max_images,
+		)
+
+		# Convert to dict for storage
+		judge_dict = asdict(judge_result)
+
+		# Save back to result file using async wrapper
+		result_data['comprehensive_judge_evaluation'] = judge_dict
+		await asyncio.to_thread(_write_result_file, result_file, result_data)
+
+		return {
+			'task_id': task_folder.name,
+			'comprehensive_judge': judge_dict,
+			'error': None,
+		}
+
+	except Exception as e:
+		logger.error(f'Comprehensive judge evaluation failed for {task_folder.name}: {e}')
+		return {
+			'task_id': task_folder.name,
+			'comprehensive_judge': None,
+			'error': str(e),
+		}

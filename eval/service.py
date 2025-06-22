@@ -494,7 +494,7 @@ import requests
 from dotenv import load_dotenv
 
 # Import the new comprehensive judge system
-from judge_system import evaluate_task_with_comprehensive_judge
+from .judge_system import evaluate_task_with_comprehensive_judge
 
 
 class Stage(Enum):
@@ -520,12 +520,12 @@ class TaskResult:
 	confirmed_task: str
 	task: Any
 	max_steps: int
-	laminar_link: str = None
+	laminar_link: str | None = None
 	completed_stages: set[Stage] = field(default_factory=set)
 	stage_data: dict[Stage, Any] = field(default_factory=dict)
 	errors: list = field(default_factory=list)
 	cancelled: bool = False
-	critical_error: str = None
+	critical_error: str | None = None
 	server_save_failed: bool = False
 
 	def stage_completed(self, stage: Stage, data: Any = None):
@@ -2086,7 +2086,7 @@ async def run_evaluation_pipeline(
 	# -------------------------
 
 	# Update run data with Laminar link
-	run_data_update = {'laminarEvalLink': laminar_eval_link}
+	# run_data_update = {'laminarEvalLink': laminar_eval_link}
 	# TODO: Update the run data on the server with the Laminar link if needed
 
 	# Run the tasks
