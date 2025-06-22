@@ -502,7 +502,8 @@ except ImportError:
 	logger.warning('Comprehensive judge system not available. Only Mind2Web judge will be available.')
 	COMPREHENSIVE_JUDGE_AVAILABLE = False
 
-	def evaluate_task_with_comprehensive_judge(*args, **kwargs):
+	async def evaluate_task_with_comprehensive_judge(*args, **kwargs) -> dict[str, Any]:
+		"""Fallback function when comprehensive judge system is not available"""
 		raise ImportError('Comprehensive judge system not available')
 
 
@@ -570,7 +571,7 @@ class TaskResult:
 			'cancelled': self.cancelled,
 			'critical_error': self.critical_error,
 			'server_save_failed': self.server_save_failed,
-			'laminar_link': self.laminar_link,
+			'laminarTaskLink': self.laminar_link,
 		}
 
 		# Add task execution data if available
