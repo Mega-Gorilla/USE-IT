@@ -482,11 +482,157 @@ import http.client
 import json
 import os
 import subprocess
+from dataclasses import dataclass, field
 from datetime import datetime
+
+# Define Stage enum and related classes for the pipeline
+from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
+
+# Import the new comprehensive judge system
+from .judge_system import evaluate_task_with_comprehensive_judge
+
+
+class Stage(Enum):
+	LOAD_EXISTING = 'load_existing'
+	SETUP_BROWSER = 'setup_browser'
+	RUN_AGENT = 'run_agent'
+	FORMAT_HISTORY = 'format_history'
+	EVALUATE = 'evaluate'
+	SAVE_SERVER = 'save_server'
+
+
+@dataclass
+class StageError:
+	stage: Stage
+	error_type: str
+	message: str
+
+
+@dataclass
+class TaskResult:
+	task_id: str
+	run_id: str
+	confirmed_task: str
+	task: Any
+	max_steps: int
+	laminar_link: str | None = None
+	completed_stages: set[Stage] = field(default_factory=set)
+	stage_data: dict[Stage, Any] = field(default_factory=dict)
+	errors: list = field(default_factory=list)
+	cancelled: bool = False
+	critical_error: str | None = None
+	server_save_failed: bool = False
+
+	def stage_completed(self, stage: Stage, data: Any = None):
+		self.completed_stages.add(stage)
+		if data is not None:
+			self.stage_data[stage] = data
+
+	def stage_failed(self, stage: Stage, error: StageError):
+		self.errors.append(error)
+
+	def mark_cancelled(self):
+		self.cancelled = True
+
+	def mark_critical_error(self, error: str):
+		self.critical_error = error
+
+	def mark_server_save_failed(self, error: str):
+		self.server_save_failed = True
+		self.errors.append(StageError(Stage.SAVE_SERVER, 'server_save', error))
+
+	def has_execution_data(self) -> bool:
+		return Stage.RUN_AGENT in self.completed_stages or Stage.FORMAT_HISTORY in self.completed_stages
+
+	@property
+	def server_payload(self) -> dict[str, Any]:
+		"""Generate payload for server submission"""
+		payload = {
+			'taskId': self.task_id,
+			'runId': self.run_id,
+			'task': self.confirmed_task,
+			'completed_stages': [stage.value for stage in self.completed_stages],
+			'has_errors': len(self.errors) > 0,
+			'cancelled': self.cancelled,
+			'critical_error': self.critical_error,
+			'server_save_failed': self.server_save_failed,
+			'laminar_link': self.laminar_link,
+		}
+
+		# Add task execution data if available
+		if Stage.FORMAT_HISTORY in self.completed_stages:
+			format_data = self.stage_data.get(Stage.FORMAT_HISTORY, {})
+			payload.update(
+				{
+					'actionHistory': format_data.get('action_history', []),
+					'finalResultResponse': format_data.get('final_result_response', ''),
+					'selfReportCompleted': format_data.get('self_report_completed', False),
+					'selfReportSuccess': format_data.get('self_report_success', False),
+					'taskDuration': format_data.get('task_duration'),
+					'steps': format_data.get('steps'),
+					'maxSteps': self.max_steps,
+					'tokensUsed': format_data.get('tokensUsed'),
+				}
+			)
+
+		# Add evaluation data if available
+		if Stage.EVALUATE in self.completed_stages:
+			eval_data = self.stage_data.get(Stage.EVALUATE, {})
+
+			# Handle comprehensive judge evaluation
+			comp_eval = eval_data.get('comprehensive_evaluation')
+			if comp_eval:
+				payload.update(
+					{
+						'comprehensiveJudgeEvaluationSummary': comp_eval.get('task_summary'),
+						'comprehensiveJudgeEvaluationReasoning': comp_eval.get('reasoning'),
+						'comprehensiveJudgeEvaluationPassed': comp_eval.get('passed'),
+						'comprehensiveJudgeEvaluationScore': comp_eval.get('final_score'),
+						'comprehensiveJudgeEvaluationCategories': comp_eval.get('task_categories', []),
+						'comprehensiveJudgeEvaluationErrors': comp_eval.get('error_categories', []),
+						'comprehensiveJudgeEvaluationTips': comp_eval.get('improvement_tips', []),
+						'comprehensiveJudgeEvaluationScores': comp_eval.get('scores'),
+					}
+				)
+
+			# Handle legacy Mind2Web evaluation (for compatibility)
+			payload.update(
+				{
+					'onlineMind2WebEvaluationJudgement': eval_data.get('judgement'),
+					'onlineMind2WebEvaluationError': eval_data.get('error'),
+					'onlineMind2WebEvaluationSuccess': eval_data.get('success', False),
+					'onlineMind2WebEvaluationScore': eval_data.get('score', 0.0),
+				}
+			)
+
+		return payload
+
+	def get_local_status(self) -> dict[str, Any]:
+		"""Get local status summary"""
+		success = (
+			Stage.EVALUATE in self.completed_stages
+			and not self.cancelled
+			and self.critical_error is None
+			and len([e for e in self.errors if e.error_type == 'exception']) == 0
+		)
+		return {
+			'task_id': self.task_id,
+			'success': success,
+			'error': self.critical_error or (self.errors[0].message if self.errors else None),
+			'completed_stages': [stage.value for stage in self.completed_stages],
+		}
+
+
+def calculate_local_summary():
+	"""Calculate summary of local evaluation results (stub implementation)"""
+	return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'Local summary calculation not implemented'}
+
+
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -906,12 +1052,16 @@ class Task:
 		return self.__str__()
 
 
-async def judge_task_result(model, task_folder: Path, score_threshold: float = 3) -> dict:
+async def judge_task_result(model, task_folder: Path, score_threshold: float = 3, use_mind2web: bool = False) -> dict:
 	"""
-	Judge a single task result based on the success value of the final action.
+	Judge a single task result using the comprehensive judge system by default,
+	with optional fallback to the original Online_Mind2Web evaluation.
 
 	Args:
+	    model: The model to use for evaluation
 	    task_folder: Path to the task result folder
+	    score_threshold: Score threshold for image filtering (used only for Mind2Web)
+	    use_mind2web: If True, use the original Online_Mind2Web evaluation instead
 
 	Returns:
 	    Dictionary containing judgment results
@@ -924,51 +1074,127 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 		async with await anyio.open_file(result_file) as f:
 			result = json.loads(await f.read())
 
-		# If a Online_Mind2Web_evaluation is already saved, we can skip the eval
-		if result.get('Online_Mind2Web_evaluation'):
-			return result.get('Online_Mind2Web_evaluation')
+		# Check if we should use the original Mind2Web evaluation
+		if use_mind2web:
+			logger.info(f'Task {task_folder.name}: Using original Online_Mind2Web evaluation')
 
-		# Get the screenshot paths, task description, and action history
-		screenshot_paths = result.get('screenshot_paths', [])
-		task_description = result.get('task')
-		action_history = result.get('action_history', [])
+			# If a Online_Mind2Web_evaluation is already saved, we can skip the eval
+			if result.get('Online_Mind2Web_evaluation'):
+				return result.get('Online_Mind2Web_evaluation')
 
-		# Use the retry wrapper for evaluation
-		try:
-			# Await the async function directly instead of using asyncio.run()
-			eval_result = await Online_Mind2Web_eval_with_retry(
-				task_description, action_history, screenshot_paths, model, score_threshold
-			)
+			# Get the screenshot paths, task description, and action history
+			screenshot_paths = result.get('screenshot_paths', [])
+			task_description = result.get('task')
+			action_history = result.get('action_history', [])
 
-			if eval_result is None:
-				raise Exception('Evaluation failed after all retries')
+			# Use the retry wrapper for evaluation
+			try:
+				# Await the async function directly instead of using asyncio.run()
+				eval_result = await Online_Mind2Web_eval_with_retry(
+					task_description, action_history, screenshot_paths, model, score_threshold
+				)
 
-			messages, text, system_msg, record, key_points = eval_result
+				if eval_result is None:
+					raise Exception('Evaluation failed after all retries')
 
-			# Final steps to get judgement - run invoke in a thread
-			judgement_msg = await asyncio.to_thread(model.invoke, messages)
-			judgement = judgement_msg.content
+				messages, text, system_msg, record, key_points = eval_result
 
-			if 'success' in judgement.lower().split('status:')[1]:  # This is the official criteria for success
-				evaluation = {'task_id': task_folder.name, 'judgement': judgement, 'success': True, 'error': None, 'score': 1.0}
-			else:  # This is the official criteria for failure
-				evaluation = {'task_id': task_folder.name, 'judgement': judgement, 'success': False, 'error': None, 'score': 0.0}
+				# Final steps to get judgement - run invoke in a thread
+				judgement_msg = await asyncio.to_thread(model.invoke, messages)
+				judgement = judgement_msg.content
 
-			# Save the Online_Mind2Web_evaluation into the result.json file
-			result['Online_Mind2Web_evaluation'] = evaluation
-			async with await anyio.open_file(result_file, 'w') as f:
-				await f.write(json.dumps(result, indent=2))
+				if 'success' in judgement.lower().split('status:')[1]:  # This is the official criteria for success
+					evaluation = {
+						'task_id': task_folder.name,
+						'judgement': judgement,
+						'success': True,
+						'error': None,
+						'score': 1.0,
+					}
+				else:  # This is the official criteria for failure
+					evaluation = {
+						'task_id': task_folder.name,
+						'judgement': judgement,
+						'success': False,
+						'error': None,
+						'score': 0.0,
+					}
 
-			return evaluation
+				# Save the Online_Mind2Web_evaluation into the result.json file
+				result['Online_Mind2Web_evaluation'] = evaluation
+				async with await anyio.open_file(result_file, 'w') as f:
+					await f.write(json.dumps(result, indent=2))
 
-		except Exception as err:
-			return {
-				'task_id': task_folder.name,
-				'judgement': None,
-				'success': False,
-				'error': f'{type(err).__name__}: {err}',
-				'score': 0.0,
-			}
+				return evaluation
+
+			except Exception as err:
+				return {
+					'task_id': task_folder.name,
+					'judgement': None,
+					'success': False,
+					'error': f'{type(err).__name__}: {err}',
+					'score': 0.0,
+				}
+
+		else:
+			# Use the new comprehensive judge system (default)
+			logger.info(f'Task {task_folder.name}: Using comprehensive judge evaluation')
+
+			# Check if comprehensive judge result already exists
+			if result.get('comprehensive_judge_evaluation'):
+				existing_eval = result['comprehensive_judge_evaluation']
+				return {
+					'task_id': task_folder.name,
+					'judgement': existing_eval.get('reasoning', 'Comprehensive evaluation completed'),
+					'success': existing_eval.get('passed', False),
+					'error': None,
+					'score': existing_eval.get('final_score', 0) / 100.0,  # Convert to 0-1 scale
+					'comprehensive_evaluation': existing_eval,
+				}
+
+			try:
+				# Run comprehensive judge evaluation
+				comprehensive_result = await evaluate_task_with_comprehensive_judge(
+					task_folder=task_folder, model=model, max_images=10
+				)
+
+				if comprehensive_result.get('error'):
+					return {
+						'task_id': task_folder.name,
+						'judgement': None,
+						'success': False,
+						'error': comprehensive_result['error'],
+						'score': 0.0,
+					}
+
+				comp_eval = comprehensive_result.get('comprehensive_judge')
+				if comp_eval:
+					return {
+						'task_id': task_folder.name,
+						'judgement': comp_eval.get('reasoning', 'Comprehensive evaluation completed'),
+						'success': comp_eval.get('passed', False),
+						'error': None,
+						'score': comp_eval.get('final_score', 0) / 100.0,  # Convert to 0-1 scale
+						'comprehensive_evaluation': comp_eval,
+					}
+				else:
+					return {
+						'task_id': task_folder.name,
+						'judgement': None,
+						'success': False,
+						'error': 'Comprehensive judge failed to return results',
+						'score': 0.0,
+					}
+
+			except Exception as err:
+				logger.error(f'Comprehensive judge evaluation failed for {task_folder.name}: {err}')
+				return {
+					'task_id': task_folder.name,
+					'judgement': None,
+					'success': False,
+					'error': f'Comprehensive judge error: {type(err).__name__}: {err}',
+					'score': 0.0,
+				}
 
 	except Exception as err:
 		return {
@@ -978,275 +1204,6 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 			'error': f'{type(err).__name__}: {err}',
 			'score': 0.0,
 		}
-
-
-def calculate_local_summary(results_dir: str | None = None) -> dict:
-	"""
-	Calculates a summary of task results by reading the saved result.json files.
-	Does not make any network requests.
-	"""
-	if results_dir is None:
-		results_dir = 'saved_trajectories'
-
-	path = Path(results_dir)
-	if not path.is_dir():
-		logger.warning(f'Results directory {results_dir} does not exist')
-		return {
-			'timestamp': datetime.now().isoformat(),
-			'total_tasks': 0,
-			'successful_tasks': 0,
-			'failed_tasks': 0,
-			'success_rate': 0,
-			'average_score': 0,
-		}
-
-	# Collect all task folders
-	task_folders = [f for f in path.iterdir() if f.is_dir()]
-	total_tasks = len(task_folders)
-	successful_tasks = 0
-	total_score = 0.0
-	results_with_score = 0
-
-	for folder in task_folders:
-		result_file = folder / 'result.json'
-		if result_file.exists():
-			try:
-				with open(result_file) as f:
-					result_data = json.load(f)
-
-				# Look for evaluation data
-				evaluation = result_data.get('Online_Mind2Web_evaluation', {})
-				if evaluation:
-					if evaluation.get('success', False):
-						successful_tasks += 1
-
-					score = evaluation.get('score', 0.0)
-					if score > 0:
-						total_score += score
-						results_with_score += 1
-			except Exception as e:
-				logger.error(f'Error reading result file {result_file}: {type(e).__name__}: {e}')
-
-	# Calculate statistics
-	failed_tasks = total_tasks - successful_tasks
-	success_rate = successful_tasks / total_tasks if total_tasks > 0 else 0
-	average_score = total_score / results_with_score if results_with_score > 0 else 0
-
-	return {
-		'timestamp': datetime.now().isoformat(),
-		'total_tasks': total_tasks,
-		'successful_tasks': successful_tasks,
-		'failed_tasks': failed_tasks,
-		'success_rate': success_rate,
-		'average_score': average_score,
-	}
-
-
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any
-
-
-class Stage(Enum):
-	LOAD_EXISTING = 'load_existing'
-	SETUP_BROWSER = 'setup_browser'
-	RUN_AGENT = 'run_agent'
-	FORMAT_HISTORY = 'format_history'
-	EVALUATE = 'evaluate'
-	SAVE_SERVER = 'save_server'
-
-
-@dataclass
-class StageError(Exception):
-	stage: Stage
-	error_type: str  # "timeout", "cancelled", "exception"
-	message: str
-
-
-class TaskResult:
-	"""Simplified task state tracker with auto-updating server payload"""
-
-	def __init__(
-		self,
-		task_id: str,
-		run_id: str,
-		task_description: str,
-		task: Task,
-		max_steps: int,
-		laminar_task_link: str | None = None,
-	):
-		self.task_id = task_id
-		self.completed_stages = set()
-		self.stage_data = {}  # Store actual results from each stage
-		self.failed_stages = {}  # Store errors from failed stages
-		self.local_error = None
-
-		# Initialize server payload with defaults
-		self.server_payload = {
-			'runId': run_id,
-			'taskId': task_id,
-			'task': task_description,
-			'taskWebsite': task.website,
-			'taskReferenceLength': task.reference_length,
-			'taskLevel': task.level,
-			'taskClusterId': task.cluster_id,
-			'actionHistory': [],
-			'finalResultResponse': 'None',
-			'selfReportCompleted': False,
-			'selfReportSuccess': None,
-			'browserCrash': False,
-			'browserCrashReason': None,
-			'onlineMind2WebEvaluationJudgement': 'Not Attempted',
-			'onlineMind2WebEvaluationError': None,
-			'onlineMind2WebEvaluationSuccess': False,
-			'onlineMind2WebEvaluationScore': 0.0,
-			'completeHistory': [],
-			'maxSteps': max_steps,
-			'tokensUsed': 0,
-			'taskDuration': None,
-			'steps': 0,
-			'laminarTaskLink': laminar_task_link,  # Add field for task-specific Laminar link
-		}
-
-	def stage_completed(self, stage: Stage, data: Any = None):
-		"""Mark stage as completed and update server payload"""
-		self.completed_stages.add(stage)
-		if data is not None:
-			self.stage_data[stage] = data
-		self._auto_update_payload()
-
-	def stage_failed(self, stage: Stage, error: StageError):
-		"""Mark stage as failed and update server payload"""
-		self.failed_stages[stage] = error
-		self._auto_update_payload()
-
-	def has_execution_data(self) -> bool:
-		"""Check if we have execution data from either loading existing or completing execution"""
-		return Stage.LOAD_EXISTING in self.completed_stages or Stage.FORMAT_HISTORY in self.completed_stages
-
-	def execution_succeeded(self) -> bool:
-		"""Check if execution pipeline succeeded"""
-		return (
-			Stage.LOAD_EXISTING in self.completed_stages or Stage.FORMAT_HISTORY in self.completed_stages
-		) and not self._has_execution_failures()
-
-	def _has_execution_failures(self) -> bool:
-		"""Check if any execution-related stages failed"""
-		execution_stages = {Stage.SETUP_BROWSER, Stage.RUN_AGENT, Stage.FORMAT_HISTORY}
-		return any(stage in self.failed_stages for stage in execution_stages)
-
-	def _auto_update_payload(self):
-		"""Automatically update server_payload based on current state"""
-		# Update execution data if available
-		if Stage.LOAD_EXISTING in self.completed_stages:
-			existing_data = self.stage_data[Stage.LOAD_EXISTING]
-			self.server_payload.update(
-				{
-					'actionHistory': existing_data.get('action_history', []),
-					'finalResultResponse': existing_data.get('final_result_response', 'None'),
-					'selfReportCompleted': existing_data.get('self_report_completed', False),
-					'selfReportSuccess': existing_data.get('self_report_success', None),
-					'completeHistory': existing_data.get('complete_history', []),
-					'taskDuration': existing_data.get('task_duration'),
-					'steps': existing_data.get('steps', 0),
-					'tokensUsed': existing_data.get('tokensUsed', 0),
-				}
-			)
-		elif Stage.FORMAT_HISTORY in self.completed_stages:
-			formatted_data = self.stage_data[Stage.FORMAT_HISTORY]
-			self.server_payload.update(
-				{
-					'actionHistory': formatted_data.get('action_history', []),
-					'finalResultResponse': formatted_data.get('final_result_response', 'None'),
-					'selfReportCompleted': formatted_data.get('self_report_completed', False),
-					'selfReportSuccess': formatted_data.get('self_report_success', None),
-					'completeHistory': formatted_data.get('complete_history', []),
-					'taskDuration': formatted_data.get('task_duration'),
-					'steps': formatted_data.get('steps', 0),
-					'tokensUsed': formatted_data.get('tokensUsed', 0),
-				}
-			)
-
-		# Update evaluation data if available
-		if Stage.EVALUATE in self.completed_stages:
-			eval_data = self.stage_data[Stage.EVALUATE]
-			judgement = eval_data.get('judgement')
-			self.server_payload.update(
-				{
-					'onlineMind2WebEvaluationJudgement': judgement if judgement is not None else 'None',
-					'onlineMind2WebEvaluationError': eval_data.get('error'),
-					'onlineMind2WebEvaluationSuccess': eval_data.get('success', False),
-					'onlineMind2WebEvaluationScore': eval_data.get('score', 0.0),
-				}
-			)
-
-		# Update failure states
-		self._update_failure_states()
-
-	def _update_failure_states(self):
-		"""Update server payload based on failed stages"""
-		# Check for browser/execution failures
-		for stage, error in self.failed_stages.items():
-			if stage in {Stage.SETUP_BROWSER, Stage.RUN_AGENT}:
-				self.server_payload['browserCrash'] = True
-				if error.error_type == 'timeout':
-					self.server_payload['browserCrashReason'] = f'{stage.value} timed out: {error.message}'
-				elif error.error_type == 'cancelled':
-					self.server_payload['browserCrashReason'] = f'{stage.value} was cancelled: {error.message}'
-				else:
-					self.server_payload['browserCrashReason'] = f'{stage.value} failed: {error.message}'
-
-			# Update evaluation failures
-			elif stage == Stage.EVALUATE:
-				if error.error_type == 'timeout':
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Timed Out'
-					self.server_payload['onlineMind2WebEvaluationError'] = 'Evaluation process timed out'
-				elif error.error_type == 'cancelled':
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Cancelled'
-					self.server_payload['onlineMind2WebEvaluationError'] = 'Evaluation was cancelled'
-				else:
-					self.server_payload['onlineMind2WebEvaluationJudgement'] = 'Evaluation Process Error'
-					self.server_payload['onlineMind2WebEvaluationError'] = f'Evaluation Error: {error.message}'
-
-	def mark_cancelled(self):
-		"""Mark task as cancelled"""
-		self.server_payload.update(
-			{
-				'finalResultResponse': 'Task was cancelled',
-				'onlineMind2WebEvaluationJudgement': 'Task Cancelled',
-				'onlineMind2WebEvaluationError': 'Task was cancelled',
-				'onlineMind2WebEvaluationSuccess': False,
-				'onlineMind2WebEvaluationScore': 0.0,
-			}
-		)
-		self.local_error = 'Task cancelled'
-
-	def mark_critical_error(self, error_msg: str):
-		"""Mark task as having critical error"""
-		self.server_payload.update(
-			{
-				'finalResultResponse': f'Critical Error: {error_msg}',
-				'onlineMind2WebEvaluationJudgement': 'Critical System Error',
-				'onlineMind2WebEvaluationError': f'Critical flow error: {error_msg}',
-				'onlineMind2WebEvaluationSuccess': False,
-				'onlineMind2WebEvaluationScore': 0.0,
-			}
-		)
-		self.local_error = f'Critical flow error: {error_msg}'
-
-	def mark_server_save_failed(self, error_msg: str):
-		"""Mark server save as failed"""
-		if self.local_error:
-			self.local_error += f'; Server save failed: {error_msg}'
-		else:
-			self.local_error = f'Server save failed: {error_msg}'
-
-	def get_local_status(self) -> dict:
-		"""Return local processing status"""
-		success = self.execution_succeeded() and (
-			Stage.EVALUATE in self.completed_stages or not self.has_execution_data() or Stage.EVALUATE in self.failed_stages
-		)
-		return {'task_id': self.task_id, 'success': success and not self.local_error, 'error': self.local_error}
 
 
 async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
@@ -1357,9 +1314,9 @@ async def run_agent_with_browser(
 
 
 @observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
-async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path) -> dict:
+async def evaluate_task_result(eval_model: BaseChatModel, task_folder: Path, use_mind2web: bool = False) -> dict:
 	"""Evaluate the task result"""
-	return await judge_task_result(eval_model, task_folder, score_threshold=3)
+	return await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
 
 
 def save_result_to_server(convex_url: str, secret_key: str, payload: dict) -> bool:
@@ -1421,6 +1378,7 @@ async def run_task_with_semaphore(
 	planner_interval: int = 1,
 	include_result: bool = False,
 	highlight_elements: bool = True,
+	use_mind2web_judge: bool = False,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -1573,7 +1531,7 @@ async def run_task_with_semaphore(
 					try:
 						logger.info(f'Task {task.task_id}: Evaluation starting.')
 						evaluation = await run_stage(
-							Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder), timeout=300
+							Stage.EVALUATE, lambda: evaluate_task_result(eval_model, task_folder, use_mind2web_judge), timeout=300
 						)
 						task_result.stage_completed(Stage.EVALUATE, evaluation)
 						logger.info(f'Task {task.task_id}: Evaluation completed.')
@@ -1752,6 +1710,7 @@ async def run_multiple_tasks(
 	planner_interval: int = 1,
 	include_result: bool = False,
 	highlight_elements: bool = True,
+	use_mind2web_judge: bool = False,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1829,6 +1788,7 @@ async def run_multiple_tasks(
 					planner_interval=planner_interval,
 					include_result=include_result,
 					highlight_elements=highlight_elements,
+					use_mind2web_judge=use_mind2web_judge,
 				)
 				for task in tasks_to_run
 			),
@@ -2104,6 +2064,7 @@ async def run_evaluation_pipeline(
 	include_result: bool = False,
 	laminar_eval_id: str | None = None,
 	highlight_elements: bool = True,
+	use_mind2web_judge: bool = False,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -2125,7 +2086,7 @@ async def run_evaluation_pipeline(
 	# -------------------------
 
 	# Update run data with Laminar link
-	run_data_update = {'laminarEvalLink': laminar_eval_link}
+	# run_data_update = {'laminarEvalLink': laminar_eval_link}
 	# TODO: Update the run data on the server with the Laminar link if needed
 
 	# Run the tasks
@@ -2154,6 +2115,7 @@ async def run_evaluation_pipeline(
 		planner_interval=planner_interval,
 		include_result=include_result,
 		highlight_elements=highlight_elements,
+		use_mind2web_judge=use_mind2web_judge,
 	)
 
 
@@ -2221,6 +2183,7 @@ if __name__ == '__main__':
 		default=None,
 		help='Existing Laminar evaluation ID to use (if not provided, a new evaluation will be created)',
 	)
+	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
 
 	args = parser.parse_args()
 
@@ -2449,6 +2412,7 @@ if __name__ == '__main__':
 				include_result=args.include_result,
 				laminar_eval_id=args.laminar_eval_id,
 				highlight_elements=args.highlight_elements,
+				use_mind2web_judge=args.use_mind2web_judge,
 			)
 		)
 
