@@ -493,8 +493,17 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
-# Import the new comprehensive judge system
-from judge_system import evaluate_task_with_comprehensive_judge
+# Import the new comprehensive judge system (conditional import for backwards compatibility)
+try:
+	from judge_system import evaluate_task_with_comprehensive_judge
+
+	COMPREHENSIVE_JUDGE_AVAILABLE = True
+except ImportError:
+	logger.warning('Comprehensive judge system not available. Only Mind2Web judge will be available.')
+	COMPREHENSIVE_JUDGE_AVAILABLE = False
+
+	def evaluate_task_with_comprehensive_judge(*args, **kwargs):
+		raise ImportError('Comprehensive judge system not available')
 
 
 class Stage(Enum):
@@ -577,6 +586,7 @@ class TaskResult:
 					'steps': format_data.get('steps'),
 					'maxSteps': self.max_steps,
 					'tokensUsed': format_data.get('tokensUsed'),
+					'completeHistory': format_data.get('complete_history', []),  # Add complete step history
 				}
 			)
 
@@ -597,6 +607,7 @@ class TaskResult:
 						'comprehensiveJudgeEvaluationErrors': comp_eval.get('error_categories', []),
 						'comprehensiveJudgeEvaluationTips': comp_eval.get('improvement_tips', []),
 						'comprehensiveJudgeEvaluationScores': comp_eval.get('scores'),
+						'comprehensiveJudgeEvaluationFull': comp_eval,  # Include full comprehensive eval data
 					}
 				)
 
@@ -632,9 +643,66 @@ class TaskResult:
 		}
 
 
-def calculate_local_summary():
-	"""Calculate summary of local evaluation results (stub implementation)"""
-	return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'Local summary calculation not implemented'}
+def calculate_local_summary(results_dir: str = 'saved_trajectories'):
+	"""Calculate summary of local evaluation results"""
+	try:
+		results_path = Path(results_dir)
+		if not results_path.exists():
+			return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'No results directory found'}
+
+		# Find all task result folders
+		task_folders = [f for f in results_path.iterdir() if f.is_dir() and (f / 'result.json').exists()]
+
+		if not task_folders:
+			return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'No task results found'}
+
+		total_tasks = len(task_folders)
+		successful_tasks = 0
+		total_score = 0.0
+
+		for task_folder in task_folders:
+			result_file = task_folder / 'result.json'
+			try:
+				with open(result_file) as f:
+					result_data = json.load(f)
+
+				# Check for evaluation results
+				evaluation_success = False
+				task_score = 0.0
+
+				# Check comprehensive judge evaluation
+				comp_eval = result_data.get('comprehensive_judge_evaluation')
+				if comp_eval:
+					evaluation_success = comp_eval.get('passed', False)
+					task_score = comp_eval.get('final_score', 0) / 100.0
+				else:
+					# Check Mind2Web evaluation
+					mind2web_eval = result_data.get('Online_Mind2Web_evaluation')
+					if mind2web_eval:
+						evaluation_success = mind2web_eval.get('success', False)
+						task_score = mind2web_eval.get('score', 0.0)
+
+				if evaluation_success:
+					successful_tasks += 1
+				total_score += task_score
+
+			except Exception as e:
+				logger.warning(f'Failed to read result for {task_folder.name}: {e}')
+
+		success_rate = successful_tasks / total_tasks if total_tasks > 0 else 0.0
+		average_score = total_score / total_tasks if total_tasks > 0 else 0.0
+
+		return {
+			'total_tasks': total_tasks,
+			'success_rate': success_rate,
+			'average_score': average_score,
+			'successful_tasks': successful_tasks,
+			'message': f'Processed {total_tasks} tasks successfully',
+		}
+
+	except Exception as e:
+		logger.error(f'Failed to calculate local summary: {e}')
+		return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': f'Error: {str(e)}'}
 
 
 from langchain_anthropic import ChatAnthropic
@@ -1164,6 +1232,11 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 		else:
 			# Use the new comprehensive judge system (default)
 			logger.info(f'Task {task_folder.name}: Using comprehensive judge evaluation')
+
+			# Check if comprehensive judge is available
+			if not COMPREHENSIVE_JUDGE_AVAILABLE:
+				logger.warning(f'Task {task_folder.name}: Comprehensive judge not available, falling back to Mind2Web')
+				return await judge_task_result(model, task_folder, score_threshold, use_mind2web=True)
 
 			# Check if comprehensive judge result already exists
 			if result.get('comprehensive_judge_evaluation'):
