@@ -2935,8 +2935,7 @@ class BrowserSession(BaseModel):
 					await element_handle.fill(text)
 			except Exception as e:
 				self.logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
-
-			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
+				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
 
 		except Exception as e:
 			# Get current page URL safely for error message
