@@ -36,7 +36,7 @@ class SystemPrompt:
 		"""Load the prompt template from the markdown file."""
 		try:
 			# This works both in development and when installed as a package
-			with importlib.resources.files('browser_use.agent').joinpath('system_prompt.md').open('r') as f:
+			with importlib.resources.files('browser_use.agent').joinpath('system_prompt.md').open('r', encoding='utf-8') as f:
 				self.prompt_template = f.read()
 		except Exception as e:
 			raise RuntimeError(f'Failed to load system prompt template: {e}')
