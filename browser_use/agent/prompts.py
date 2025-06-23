@@ -165,7 +165,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 
 		agent_state += f'<step_info>\n{step_info_description}\n</step_info>\n'
 		if self.available_file_paths:
-			agent_state += f'<available_file_paths>\n{self.available_file_paths}\n</available_file_paths>\n'
+			agent_state += '<available_file_paths>\n' + '\n'.join(self.available_file_paths) + '\n</available_file_paths>\n'
 		return agent_state
 
 	def get_user_message(self, use_vision: bool = True) -> HumanMessage:
