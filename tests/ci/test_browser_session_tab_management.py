@@ -345,7 +345,7 @@ class TestTabManagement:
 
 		async def close_context():
 			await barrier.wait()
-			await browser_session.browser_context.browser.close()
+			await browser_session.browser_context.close()
 			assert browser_session.is_connected() is False
 			return 'closed'
 
