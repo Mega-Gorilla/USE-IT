@@ -413,9 +413,10 @@ class BrowserSession(BaseModel):
 						except TimeoutError:
 							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
 					except Exception as e:
-						self.logger.warning(
-							f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
-						)
+						if 'browser has been closed' not in str(e):
+							self.logger.warning(
+								f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
+							)
 					finally:
 						# Always clear references to ensure a fresh start next time
 						self.browser_context = None
@@ -1282,8 +1283,10 @@ class BrowserSession(BaseModel):
 
 		# Check if the browser_context itself is closed/unusable
 		try:
-			_ = self.browser_context.pages
-			return True
+			# TODO: figure out a better synchronous test for whether browser_context is usable
+			# this is a hacky workaround for the fact that playwright's browser_context has no is_connected() method
+			# and browser_context.browser is None when we launch with a persistent context (basically always)
+			return bool(self.browser_context.pages)
 		except Exception:
 			return False
 

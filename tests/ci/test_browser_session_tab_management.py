@@ -364,10 +364,10 @@ class TestTabManagement:
 			return f'connected: {connected}'
 
 		# Run all operations concurrently
-		results = await asyncio.gather(close_context(), access_pages(), check_connection(), return_exceptions=True)
+		results = list(await asyncio.gather(close_context(), access_pages(), check_connection(), return_exceptions=True))
 
 		# All operations should complete without crashes
-		assert all(not isinstance(r, Exception) for r in results)
+		assert results and all(not isinstance(r, Exception) for r in results)
 		assert 'closed' in results
 
 		await browser_session.kill()
