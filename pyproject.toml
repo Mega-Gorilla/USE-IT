@@ -52,7 +52,8 @@ dependencies = [
 [project.optional-dependencies]
 memory = [
     # sentence-transformers: depends on pytorch, which does not support python 3.13 yet
-    "faiss-cpu>=1.11.0",
+    # faiss-cpu: >= 1.11.0 breaks on some macOS hosts, make sure to test before upgrading
+    "faiss-cpu>=1.10.0",
     "sentence-transformers>=4.0.2",
 ]
 cli = [
