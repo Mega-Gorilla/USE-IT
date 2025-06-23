@@ -643,6 +643,7 @@ class BrowserSession(BaseModel):
 					task._log_destroy_pending = False  # type: ignore
 			except Exception:
 				pass
+			self.playwright = None
 
 		atexit.register(shudown_playwright)
 
