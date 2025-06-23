@@ -119,7 +119,6 @@ class JudgeResult:
 
 	# Metadata
 	evaluation_timestamp: str
-	confidence_level: int  # How confident the judge is (1-100)
 
 
 def encode_image(image_path: str) -> str:
@@ -236,8 +235,21 @@ Your task is to comprehensively analyze the agent's execution and provide struct
 - Content & Understanding: misunderstood_task, format_error, content_parsing_error
 - Enhanced: navigation_confusion, form_filling_error, modal_handling, iframe_issues, browser_crashes, impossible_task, missing_information
 
+
 **TASK CATEGORIES TO CONSIDER:**
 extraction, interaction, login, research, shopping, booking, comparison, qa_testing, form_filling, navigation, search, filtering, content_creation, file_operations, multi_step_workflow
+- You can use multiple categories for the same task.
+- You can also add other categories if they fit better.
+
+**TASK CLARITY SCORE:**
+- is the task very clear step by step like a recipe (high score) or very vague and uncertain (low score)
+
+**IMPROVEMENT TIPS:**
+- Think how to get this task done better. Create actionable tips - but they should be understandable for a developer who does not know the task.
+- These tips will be avg across many tasks and then the most common / problemetic will be used to improve the browser-use agent.
+- In browser-use we convert websites to text so that the agent can understand it. In there we mark interactive elements with [index] and then the agent can chose to interact with them and we click then the actual css selector. Sometimes this conversion is not perfect.
+- After the agent takes an action it gets the new state and its previous thinking, and outputs the next action. Which we then execute again.
+- So we can improve the agent system prompt, input context, tool calls to interact with the browser, or our extraction layer to convert the website to text.
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
@@ -252,8 +264,8 @@ Respond with EXACTLY this JSON structure (no additional text):
 
 {
     "task_summary": "One sentence summary of what the task was trying to accomplish",
-    "task_clarity_score": 85,
     "task_categories": ["category1", "category2"],
+    "task_clarity_score": 85,
     "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment",
     "error_categories": ["error1", "error2"],
     "scores": {
@@ -264,15 +276,14 @@ Respond with EXACTLY this JSON structure (no additional text):
         "task_satisfaction": 70
     },
     "final_score": 75,
-    "improvement_tips": [
-        "Specific actionable improvement 1",
-        "Specific actionable improvement 2"
-    ],
     "critical_issues": [
         "Critical issue that must be fixed 1",
         "Critical issue that must be fixed 2"
     ],
-    "confidence_level": 90
+    "improvement_tips": [
+        "Specific actionable improvement 1",
+        "Specific actionable improvement 2"
+    ]
 }"""
 
 	user_prompt = f"""**TASK:** {task_truncated}
@@ -383,7 +394,6 @@ def parse_judge_response(result_dict: dict, task: str) -> JudgeResult:
 			improvement_tips=result_dict.get('improvement_tips', []),
 			critical_issues=result_dict.get('critical_issues', []),
 			evaluation_timestamp=datetime.now().isoformat(),
-			confidence_level=result_dict.get('confidence_level', 75),
 		)
 
 	except Exception as e:
@@ -411,7 +421,6 @@ def create_fallback_result(task: str, error_msg: str) -> JudgeResult:
 		improvement_tips=['Fix evaluation system'],
 		critical_issues=[f'Evaluation system failure: {error_msg}'],
 		evaluation_timestamp=datetime.now().isoformat(),
-		confidence_level=0,
 	)
 
 
@@ -464,16 +473,15 @@ def get_example_json_structure() -> dict:
 			'task_satisfaction': 70,
 		},
 		'final_score': 75,
+		'critical_issues': [
+			'Missing wait for dynamic content to load',
+			'No fallback strategy when primary selectors fail',
+		],
 		'improvement_tips': [
 			'Implement better wait strategies for dynamic content',
 			'Add retry logic for element detection',
 			'Improve error handling for async loading',
 		],
-		'critical_issues': [
-			'Missing wait for dynamic content to load',
-			'No fallback strategy when primary selectors fail',
-		],
-		'confidence_level': 90,
 	}
 
 
