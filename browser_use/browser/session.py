@@ -353,7 +353,7 @@ class BrowserSession(BaseModel):
 			async with self._start_lock:
 				# save cookies to disk if cookies_file or storage_state is configured
 				# but only if the browser context is still connected
-				if await self.is_connected():
+				if self.browser_context:
 					try:
 						await asyncio.wait_for(self.save_storage_state(), timeout=5)
 					except Exception as e:
@@ -1278,7 +1278,7 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.keep_alive is None:
 			self.browser_profile.keep_alive = keep_alive
 
-	async def is_connected(self) -> bool:
+	async def is_connected(self, restart: bool = True) -> bool:
 		"""
 		Check if the browser session has valid, connected browser and context objects.
 		Returns False if any of the following conditions are met:
@@ -1286,6 +1286,10 @@ class BrowserSession(BaseModel):
 		- Browser exists but is disconnected
 		- Browser_context's browser exists but is disconnected
 		- Browser_context itself is closed/unusable
+
+		Args:
+			restart: If True, will attempt to create a new tab if no pages exist (valid contexts must always have at least one page open).
+			        If False, will only check connection status without side effects.
 		"""
 		if not self.browser_context:
 			return False
@@ -1300,9 +1304,11 @@ class BrowserSession(BaseModel):
 			# and browser_context.browser is None when we launch with a persistent context (basically always)
 			if self.browser_context.pages:
 				return True
-			else:
+			elif restart:
 				await self.create_new_tab()
 				return True
+			else:
+				return False
 		except Exception:
 			return False
 
