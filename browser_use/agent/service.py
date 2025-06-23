@@ -15,6 +15,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any, Generic, TypeVar
 
+import anyio
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -506,8 +507,14 @@ class Agent(Generic[Context]):
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
 		@self.controller.registry.action('Read file_name from file system')
-		async def read_file(file_name: str):
-			result = await self.file_system.read_file(file_name)
+		async def read_file(file_name: str, available_file_paths: list[str]):
+			if file_name in available_file_paths:
+				async with await anyio.open_file(file_name, 'r') as f:
+					content = await f.read()
+					result = f'Read from file {file_name}.\n<content>\n{content}\n</content>'
+			else:
+				result = await self.file_system.read_file(file_name)
+
 			MAX_MEMORY_SIZE = 1000
 			if len(result) > MAX_MEMORY_SIZE:
 				lines = result.splitlines()
