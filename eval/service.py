@@ -613,6 +613,7 @@ class TaskResult:
 						'comprehensiveJudgeEvaluationCategories': task_categories,
 						'comprehensiveJudgeEvaluationErrors': error_categories,
 						'comprehensiveJudgeEvaluationTips': comp_eval.get('improvement_tips', []),
+						'comprehensiveJudgeEvaluationCriticalIssues': comp_eval.get('critical_issues', []),
 						'comprehensiveJudgeEvaluationScores': comp_eval.get('scores'),
 						'comprehensiveJudgeEvaluationFull': comp_eval,  # Include full comprehensive eval data
 					}
