@@ -953,3 +953,41 @@ class TestBrowserSessionReusePatterns:
 			await window1.kill()
 			await window2.kill()
 			auth_json_path.unlink(missing_ok=True)
+
+	async def test_browser_shutdown_isolated(self):
+		"""Test that browser shutdown doesnt affect other browser_sessions"""
+		from browser_use import BrowserSession
+
+		browser_session1 = BrowserSession(
+			browser_profile=BrowserProfile(
+				user_data_dir=None,
+				headless=True,
+				keep_alive=True,  # Keep the browser alive for reuse
+			),
+		)
+		browser_session2 = BrowserSession(
+			browser_profile=BrowserProfile(
+				user_data_dir=None,
+				headless=True,
+				keep_alive=True,  # Keep the browser alive for reuse
+			),
+		)
+		await browser_session1.start()
+		await browser_session2.start()
+
+		assert browser_session1.is_connected()
+		assert browser_session2.is_connected()
+		assert browser_session1.browser_context != browser_session2.browser_context
+
+		await browser_session1.create_new_tab('chrome://version')
+		await browser_session2.create_new_tab('chrome://settings')
+
+		await browser_session2.kill()
+
+		# ensure that the browser_session1 is still connected and unaffected by the kill of browser_session2
+		assert browser_session1.is_connected()
+		assert browser_session1.browser_context is not None
+		await browser_session1.create_new_tab('chrome://settings')
+		await browser_session1.browser_context.pages[0].evaluate('alert(1)')
+
+		await browser_session1.kill()
