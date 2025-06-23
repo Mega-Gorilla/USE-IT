@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+import tempfile
 
 import pytest
 
@@ -572,53 +573,6 @@ class TestBrowserSessionStart:
 
 class TestBrowserSessionReusePatterns:
 	"""Tests for all browser re-use patterns documented in docs/customize/real-browser.mdx"""
-
-	@pytest.fixture(scope='module')
-	def mock_llm(self):
-		"""Mock LLM for agent tests"""
-		from unittest.mock import MagicMock
-
-		from langchain_core.language_models.chat_models import BaseChatModel
-
-		# Create a MagicMock that supports dictionary-style access
-		mock = MagicMock(spec=BaseChatModel)
-
-		# Skip verification by setting these attributes
-		mock._verified_api_keys = True
-		mock._verified_tool_calling_method = 'raw'
-		mock.model_name = 'mock-llm'
-
-		# Mock the invoke method to return a proper response
-		def mock_invoke(*args, **kwargs):
-			response = MagicMock()
-			# Return a valid JSON response that completes the task
-			response.content = """
-			{
-				"thinking": "null",
-				"evaluation_previous_goal": "Starting the task",
-				"memory": "Task started",
-				"next_goal": "Complete the task",
-				"action": [
-					{
-						"done": {
-							"text": "Task completed successfully",
-							"success": true
-						}
-					}
-				]
-			}
-			"""
-			return response
-
-		mock.invoke = mock_invoke
-
-		# Create an async version of the mock_invoke
-		async def mock_ainvoke(*args, **kwargs):
-			return mock_invoke(*args, **kwargs)
-
-		mock.ainvoke = mock_ainvoke
-
-		return mock
 
 	async def test_sequential_agents_same_profile_different_browser(self, mock_llm):
 		"""Test Sequential Agents, Same Profile, Different Browser pattern"""

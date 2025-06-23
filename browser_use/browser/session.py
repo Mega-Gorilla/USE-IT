@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import base64
 import json
 import logging
@@ -259,13 +260,13 @@ class BrowserSession(BaseModel):
 		"""
 		Starts the browser session by either connecting to an existing browser or launching a new one.
 		Precedence order for launching/connecting:
-		        1. page=Page playwright object, will use its page.context as browser_context
-		        2. browser_context=PlaywrightBrowserContext object, will use its browser
-		        3. browser=PlaywrightBrowser object, will use its first available context
-		        4. browser_pid=int, will connect to a local chromium-based browser via pid
-		        5. wss_url=str, will connect to a remote playwright browser server via WSS
-		        6. cdp_url=str, will connect to a remote chromium-based browser via CDP
-		        7. playwright=Playwright object, will use its chromium instance to launch a new browser
+			1. page=Page playwright object, will use its page.context as browser_context
+			2. browser_context=PlaywrightBrowserContext object, will use its browser
+			3. browser=PlaywrightBrowser object, will use its first available context
+			4. browser_pid=int, will connect to a local chromium-based browser via pid
+			5. wss_url=str, will connect to a remote playwright browser server via WSS
+			6. cdp_url=str, will connect to a remote chromium-based browser via CDP
+			7. playwright=Playwright object, will use its chromium instance to launch a new browser
 		"""
 
 		# if we're already initialized and the connection is still valid, return the existing session state and start from scratch
@@ -629,6 +630,21 @@ class BrowserSession(BaseModel):
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed a persistent user_data_dir=...')
 			if self.browser_profile.headless or not self.browser_profile.no_viewport:
 				self.logger.info(' 🪄 For maximum stealth, BrowserSession(...) should be passed headless=False & viewport=None')
+
+		# register a shutdown hook to stop the shared global playwright node.js client when the program exits (if an event loop is still running)
+		def shudown_playwright():
+			if not self.playwright:
+				return
+			try:
+				loop = asyncio.get_running_loop()
+				self.logger.debug('🛑 Shutting down shared global playwright node.js client')
+				task = loop.create_task(self.playwright.stop())
+				if hasattr(task, '_log_destroy_pending'):
+					task._log_destroy_pending = False  # type: ignore
+			except Exception:
+				pass
+
+		atexit.register(shudown_playwright)
 
 	async def setup_browser_via_passed_objects(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
