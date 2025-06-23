@@ -45,7 +45,6 @@ import gc
 import io
 import logging
 import re
-import shutil
 import signal
 import sys
 import threading
@@ -483,7 +482,6 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime
 
 # Define Stage enum and related classes for the pipeline
 from enum import Enum
@@ -508,7 +506,6 @@ except ImportError:
 
 
 class Stage(Enum):
-	LOAD_EXISTING = 'load_existing'
 	SETUP_BROWSER = 'setup_browser'
 	RUN_AGENT = 'run_agent'
 	FORMAT_HISTORY = 'format_history'
@@ -651,68 +648,6 @@ class TaskResult:
 			'error': self.critical_error or (self.errors[0].message if self.errors else None),
 			'completed_stages': [stage.value for stage in self.completed_stages],
 		}
-
-
-def calculate_local_summary(results_dir: str = 'saved_trajectories'):
-	"""Calculate summary of local evaluation results"""
-	try:
-		results_path = Path(results_dir)
-		if not results_path.exists():
-			return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'No results directory found'}
-
-		# Find all task result folders
-		task_folders = [f for f in results_path.iterdir() if f.is_dir() and (f / 'result.json').exists()]
-
-		if not task_folders:
-			return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': 'No task results found'}
-
-		total_tasks = len(task_folders)
-		successful_tasks = 0
-		total_score = 0.0
-
-		for task_folder in task_folders:
-			result_file = task_folder / 'result.json'
-			try:
-				with open(result_file) as f:
-					result_data = json.load(f)
-
-				# Check for evaluation results
-				evaluation_success = False
-				task_score = 0.0
-
-				# Check comprehensive judge evaluation
-				comp_eval = result_data.get('comprehensive_judge_evaluation')
-				if comp_eval:
-					evaluation_success = comp_eval.get('passed', False)
-					task_score = comp_eval.get('final_score', 0) / 100.0
-				else:
-					# Check Mind2Web evaluation
-					mind2web_eval = result_data.get('Online_Mind2Web_evaluation')
-					if mind2web_eval:
-						evaluation_success = mind2web_eval.get('success', False)
-						task_score = mind2web_eval.get('score', 0.0)
-
-				if evaluation_success:
-					successful_tasks += 1
-				total_score += task_score
-
-			except Exception as e:
-				logger.warning(f'Failed to read result for {task_folder.name}: {e}')
-
-		success_rate = successful_tasks / total_tasks if total_tasks > 0 else 0.0
-		average_score = total_score / total_tasks if total_tasks > 0 else 0.0
-
-		return {
-			'total_tasks': total_tasks,
-			'success_rate': success_rate,
-			'average_score': average_score,
-			'successful_tasks': successful_tasks,
-			'message': f'Processed {total_tasks} tasks successfully',
-		}
-
-	except Exception as e:
-		logger.error(f'Failed to calculate local summary: {e}')
-		return {'total_tasks': 0, 'success_rate': 0.0, 'average_score': 0.0, 'message': f'Error: {str(e)}'}
 
 
 from langchain_anthropic import ChatAnthropic
@@ -1321,26 +1256,6 @@ async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
 	return await stage_func()
 
 
-async def load_existing_result(task_folder: Path) -> dict:
-	"""Load existing result if available"""
-	result_file = task_folder / 'result.json'
-	if not result_file.exists():
-		raise FileNotFoundError('No existing result found')
-
-	async with await anyio.open_file(result_file) as f:
-		existing_result = json.loads(await f.read())
-
-	# Check if evaluation is also present
-	existing_eval = existing_result.get('Online_Mind2Web_evaluation')
-	if existing_eval:
-		existing_result['has_evaluation'] = True
-		existing_result['evaluation_data'] = existing_eval
-	else:
-		existing_result['has_evaluation'] = False
-
-	return existing_result
-
-
 async def setup_browser_session(task: Task, headless: bool, highlight_elements: bool = True) -> BrowserSession:
 	"""Setup browser session for the task"""
 	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
@@ -1456,10 +1371,8 @@ def determine_current_stage(completed_stages: set) -> Stage:
 		return Stage.RUN_AGENT
 	elif Stage.SETUP_BROWSER in completed_stages:
 		return Stage.SETUP_BROWSER
-	elif Stage.LOAD_EXISTING in completed_stages:
-		return Stage.LOAD_EXISTING
 	else:
-		return Stage.LOAD_EXISTING  # Default starting stage
+		return Stage.SETUP_BROWSER  # Default starting stage
 
 
 @observe(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
@@ -1476,7 +1389,6 @@ async def run_task_with_semaphore(
 	headless: bool,
 	use_vision: bool,
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
-	fresh_start: bool = True,
 	use_serp: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
@@ -1553,88 +1465,73 @@ async def run_task_with_semaphore(
 
 			logger.info(f'Task {task.task_id}: Starting execution pipeline.')
 			try:
-				# Stage 1: Try to load existing result
+				agent_history = None  # Initialize to track agent execution
+
+				# Stage 1: Setup browser
 				try:
-					existing_data = await run_stage(Stage.LOAD_EXISTING, lambda: load_existing_result(task_folder))
-					task_result.stage_completed(Stage.LOAD_EXISTING, existing_data)
+					logger.info(f'Task {task.task_id}: Browser setup starting.')
+					browser_session = await run_stage(
+						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
+					)
+					task_result.stage_completed(Stage.SETUP_BROWSER)
+					logger.info(f'Task {task.task_id}: Browser session started successfully.')
+				except Exception as e:
+					error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
+					task_result.stage_failed(Stage.SETUP_BROWSER, error)
+					logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+					# Continue to server save instead of early return
 
-					# If evaluation is also present, mark it as completed
-					if existing_data.get('has_evaluation'):
-						task_result.stage_completed(Stage.EVALUATE, existing_data['evaluation_data'])
-
-					logger.info(f'Task {task.task_id}: Successfully loaded existing result. Skipping execution.')
-
-				except Exception:
-					# No existing result, need to execute full pipeline
-					logger.info(f'Task {task.task_id}: No existing result found. Starting execution pipeline.')
-
-					agent_history = None  # Initialize to track agent execution
-
-					# Stage 2: Setup browser
+				# Stage 2: Run agent
+				if browser_session:  # Only run agent if browser setup succeeded
 					try:
-						logger.info(f'Task {task.task_id}: Browser setup starting.')
-						browser_session = await run_stage(
-							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
+						logger.info(f'Task {task.task_id}: Agent run starting.')
+
+						agent_history = await run_stage(
+							Stage.RUN_AGENT,
+							lambda: run_agent_with_browser(
+								browser_session,
+								task,
+								llm,
+								max_steps_per_task,
+								use_vision,
+								use_serp,
+								enable_memory,
+								memory_interval,
+								max_actions_per_step,
+								validate_output,
+								planner_llm,
+								planner_interval,
+							),
+							timeout=1000,
 						)
-						task_result.stage_completed(Stage.SETUP_BROWSER)
-						logger.info(f'Task {task.task_id}: Browser session started successfully.')
+
+						task_result.stage_completed(Stage.RUN_AGENT)
+						logger.info(f'Task {task.task_id}: Agent run completed.')
 					except Exception as e:
-						error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
-						task_result.stage_failed(Stage.SETUP_BROWSER, error)
-						logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+						error = StageError(Stage.RUN_AGENT, 'exception', str(e))
+						task_result.stage_failed(Stage.RUN_AGENT, error)
+						logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
 						# Continue to server save instead of early return
 
-					# Stage 3: Run agent
-					if browser_session:  # Only run agent if browser setup succeeded
-						try:
-							logger.info(f'Task {task.task_id}: Agent run starting.')
+				# Stage 3: Format history
+				if agent_history is not None:  # Only format if agent ran successfully
+					try:
+						logger.info(f'Task {task.task_id}: History formatting starting.')
+						formatted_data = await run_stage(
+							Stage.FORMAT_HISTORY,
+							lambda: reformat_agent_history(
+								agent_history, task.task_id, run_id, task.confirmed_task, include_result=include_result
+							),
+						)
+						task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
+						logger.info(f'Task {task.task_id}: Agent history formatted.')
+					except Exception as e:
+						error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
+						task_result.stage_failed(Stage.FORMAT_HISTORY, error)
+						logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
+						# Continue to server save instead of early return
 
-							agent_history = await run_stage(
-								Stage.RUN_AGENT,
-								lambda: run_agent_with_browser(
-									browser_session,
-									task,
-									llm,
-									max_steps_per_task,
-									use_vision,
-									use_serp,
-									enable_memory,
-									memory_interval,
-									max_actions_per_step,
-									validate_output,
-									planner_llm,
-									planner_interval,
-								),
-								timeout=600,
-							)
-
-							task_result.stage_completed(Stage.RUN_AGENT)
-							logger.info(f'Task {task.task_id}: Agent run completed.')
-						except Exception as e:
-							error = StageError(Stage.RUN_AGENT, 'exception', str(e))
-							task_result.stage_failed(Stage.RUN_AGENT, error)
-							logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
-							# Continue to server save instead of early return
-
-					# Stage 4: Format history
-					if agent_history is not None:  # Only format if agent ran successfully
-						try:
-							logger.info(f'Task {task.task_id}: History formatting starting.')
-							formatted_data = await run_stage(
-								Stage.FORMAT_HISTORY,
-								lambda: reformat_agent_history(
-									agent_history, task.task_id, run_id, task.confirmed_task, include_result=include_result
-								),
-							)
-							task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-							logger.info(f'Task {task.task_id}: Agent history formatted.')
-						except Exception as e:
-							error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
-							task_result.stage_failed(Stage.FORMAT_HISTORY, error)
-							logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
-							# Continue to server save instead of early return
-
-				# Stage 5: Evaluate (if we have execution data and no existing evaluation)
+				# Stage 4: Evaluate (if we have execution data and no existing evaluation)
 				if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
 					try:
 						logger.info(f'Task {task.task_id}: Evaluation starting.')
@@ -1657,7 +1554,7 @@ async def run_task_with_semaphore(
 						task_result.stage_failed(Stage.EVALUATE, error)
 						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
 
-				# Stage 6: Save to server (always attempt)
+				# Stage 5: Save to server (always attempt)
 				try:
 					logger.info(f'Task {task.task_id}: Saving result to server.')
 					await run_stage(
@@ -1808,7 +1705,6 @@ async def run_multiple_tasks(
 	end_index: int | None = None,
 	headless: bool = False,
 	use_vision: bool = True,
-	fresh_start: bool = True,
 	use_serp: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
@@ -1886,7 +1782,6 @@ async def run_multiple_tasks(
 					headless=headless,
 					use_vision=use_vision,
 					semaphore_runs=semaphore_runs,  # Pass the semaphore
-					fresh_start=fresh_start,
 					use_serp=use_serp,
 					enable_memory=enable_memory,
 					memory_interval=memory_interval,
@@ -1951,16 +1846,9 @@ async def run_multiple_tasks(
 	logger.info(f'📊 FINAL RESULTS: {len(tasks_to_run)} tasks completed. Success: {successful_tasks}, Failed: {failed_tasks}')
 	logger.info(f'📈 Success rate: {successful_tasks / len(tasks_to_run) * 100:.1f}%')
 
-	# After all tasks are complete, calculate a local summary
-	logger.info('📋 All tasks completed. Calculating result summary...')
-	summary = calculate_local_summary()
+	logger.info('📋 All tasks completed.')
 
-	# Log the summary statistics
-	logger.info(f'📊 Completed {summary["total_tasks"]} tasks')
-	logger.info(f'📈 Success rate: {summary["success_rate"]:.2%}')
-	logger.info(f'⭐ Average score: {summary["average_score"]:.2f}')
-
-	return {'task_results': processed_results, 'summary': summary}
+	return {'task_results': processed_results}
 
 
 # Helper function to fetch tasks from the server
@@ -2161,7 +2049,6 @@ async def run_evaluation_pipeline(
 	end_index: int | None = None,
 	headless: bool = False,
 	use_vision: bool = True,
-	fresh_start: bool = True,
 	use_serp: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
@@ -2213,7 +2100,6 @@ async def run_evaluation_pipeline(
 		end_index=end_index,
 		headless=headless,
 		use_vision=use_vision,
-		fresh_start=fresh_start,
 		use_serp=use_serp,
 		enable_memory=enable_memory,
 		memory_interval=memory_interval,
@@ -2234,7 +2120,7 @@ if __name__ == '__main__':
 	parser.add_argument('--start', type=int, default=0, help='Start index')
 	parser.add_argument('--end', type=int, default=None, help='End index (exclusive)')
 	parser.add_argument('--headless', action='store_true', help='Run in headless mode')
-	parser.add_argument('--evaluate-only', action='store_true', help='Only evaluate existing results without running new tasks')
+
 	parser.add_argument(
 		'--model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for the agent'
 	)
@@ -2242,12 +2128,7 @@ if __name__ == '__main__':
 		'--eval-model', type=str, default='gpt-4o', choices=list(SUPPORTED_MODELS.keys()), help='Model to use for evaluation'
 	)
 	parser.add_argument('--no-vision', action='store_true', help='Disable vision capabilities in the agent')
-	parser.add_argument(
-		'--fresh-start',
-		type=lambda x: (str(x).lower() == 'true'),
-		default=True,
-		help='Clear saved_trajectories before starting. Set to False to keep existing trajectories (default: True)',
-	)
+
 	parser.add_argument('--user-message', type=str, default='', help='User message to include in the run')
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
 	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
@@ -2299,196 +2180,153 @@ if __name__ == '__main__':
 	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 	logger = logging.getLogger(__name__)  # Define logger for the module
 
-	if args.evaluate_only:
-		# Just evaluate existing results
-		logger.info('Evaluating existing results...')
-		summary = calculate_local_summary()
+	logger.info('Running tasks...')
+	# Run tasks and evaluate
+	load_dotenv()
 
-		# Save evaluation results
-		timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-		eval_file = f'saved_trajectories/evaluation_summary_{timestamp}.json'
-		with open(eval_file, 'w') as f:
-			json.dump(summary, f, indent=2)
+	# --- Fetch Tasks from Server ---
+	CONVEX_URL = os.getenv('EVALUATION_TOOL_URL')
+	SECRET_KEY = os.getenv('EVALUATION_TOOL_SECRET_KEY')
 
-		logger.info(f'Evaluation complete. Success rate: {summary["success_rate"]:.2%}')
-		logger.info(f'Average score: {summary["average_score"]:.2f}')
-		logger.info(f'Full results saved to {eval_file}')
+	if not CONVEX_URL or not SECRET_KEY:
+		logger.error('Error: EVALUATION_TOOL_URL or EVALUATION_TOOL_SECRET_KEY environment variables not set.')
+		exit(1)  # Exit if config is missing
 
+	logger.info(f"Attempting to fetch task list '{args.test_case}' from server...")
+	fetched_task_data = fetch_tasks_from_server(CONVEX_URL, SECRET_KEY, args.test_case)
+
+	if fetched_task_data is None:
+		logger.error('Failed to fetch tasks from the server. Exiting.')
+		exit(1)  # Exit if fetch fails
+
+	try:
+		tasks = [Task(**task_data) for task_data in fetched_task_data]
+		logger.info(f'Successfully loaded {len(tasks)} tasks from the server.')
+	except (TypeError, ValueError) as e:
+		logger.error(
+			f'Error creating Task objects from fetched data. Ensure the data structure includes required fields (task_id, confirmed_task). Known optional fields: website, reference_length, level, cluster_id, login_cookie, login_type, category. Any additional fields will be accepted dynamically. Error: {type(e).__name__}: {e}'
+		)
+		logger.error(f'First item in fetched data: {fetched_task_data[0] if fetched_task_data else "None"}')
+		exit(1)
+	# -----------------------------
+
+	# --- Start Run on Server (with optional existing Run ID) ---
+	if args.run_id:
+		logger.info(f'Initializing existing run ID: {args.run_id} with git info...')
 	else:
-		logger.info('Running tasks...')
-		# Run tasks and evaluate
-		load_dotenv()
+		logger.info('Attempting to start a new run on the server...')
 
-		# --- Clear trajectories if fresh_start is True ---
-		results_dir_path = Path('saved_trajectories')
-		if args.fresh_start:
-			logger.info(f'--fresh-start is True. Clearing {results_dir_path}...')
-			if results_dir_path.exists():
-				try:
-					shutil.rmtree(results_dir_path)
-					logger.info(f'Successfully removed {results_dir_path}.')
-				except OSError as e:
-					logger.error(f'Error removing directory {results_dir_path}: {type(e).__name__}: {e}')
-					# Decide if you want to exit or continue
-					# exit(1) # Uncomment to exit on error
-			else:
-				logger.info(f'{results_dir_path} does not exist, no need to clear.')
+	git_info = get_git_info()
 
-			# Recreate the directory
-			try:
-				results_dir_path.mkdir(parents=True, exist_ok=True)
-				logger.info(f'Recreated directory {results_dir_path}.')
-			except OSError as e:
-				logger.error(f'Error creating directory {results_dir_path}: {type(e).__name__}: {e}')
-				# exit(1) # Uncomment to exit on error
+	# Collect additional data from args to store with the run
+	additional_run_data = {
+		'max_steps': args.max_steps,
+		'parallel_runs': args.parallel_runs,
+		'start_index': args.start,
+		'end_index': args.end,
+		'headless': args.headless,
+		'use_vision': not args.no_vision,
+		'task_source': args.test_case,
+		'llm_judge': args.eval_model,
+		'use_serp': args.use_serp,
+		'enable_memory': args.enable_memory,
+		'memory_interval': args.memory_interval,
+		'max_actions_per_step': args.max_actions_per_step,
+		'validate_output': args.validate_output,
+		'planner_model': args.planner_model,
+		'planner_interval': args.planner_interval,
+		'include_result': args.include_result,
+	}
+
+	run_data = {
+		'model': args.model,
+		'gitBranch': git_info['branch'],
+		'gitCommitHash': git_info['hash'],
+		'gitCommitTimestamp': git_info['timestamp'],
+		'gitRepo': git_info['repo'],
+		'userMessage': args.user_message,
+		'evalGroup': args.eval_group,
+		'developerId': args.developer_id,
+		'totalTasks': len(tasks) - args.start if args.end is None else args.end - args.start,
+		'testCaseName': args.test_case,
+		'additionalData': additional_run_data,
+		'laminarEvalLink': None,  # Will be updated after evaluation creation
+	}
+
+	run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
+
+	if not run_id:
+		logger.error('Failed to start/initialize run on the server. Exiting.')
+		exit(1)
+
+	logger.info(f'Successfully obtained run ID: {run_id}. Proceeding with tasks...')
+
+	# Log search mode being used
+	if args.use_serp:
+		if SERPER_API_KEY:
+			logger.info('🔍 Using SERP search (Serper API) instead of Google search')
 		else:
-			logger.info('--fresh-start is False. Existing trajectories in saved_trajectories will be kept.')
-		# -------------------------------------------------
+			logger.warning('⚠️ --use-serp flag provided but SERPER_API_KEY not set. Search will fail!')
+	else:
+		logger.info('🔍 Using default Google search')
 
-		# --- Fetch Tasks from Server ---
-		CONVEX_URL = os.getenv('EVALUATION_TOOL_URL')
-		SECRET_KEY = os.getenv('EVALUATION_TOOL_SECRET_KEY')
+	# Log memory configuration
+	if args.enable_memory:
+		logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
+	else:
+		logger.info('🧠 Memory disabled')
 
-		if not CONVEX_URL or not SECRET_KEY:
-			logger.error('Error: EVALUATION_TOOL_URL or EVALUATION_TOOL_SECRET_KEY environment variables not set.')
-			exit(1)  # Exit if config is missing
+	# Log other agent configuration
+	logger.info(f'🎯 Max actions per step: {args.max_actions_per_step}')
 
-		logger.info(f"Attempting to fetch task list '{args.test_case}' from server...")
-		fetched_task_data = fetch_tasks_from_server(CONVEX_URL, SECRET_KEY, args.test_case)
+	if args.validate_output:
+		logger.info('✅ Output validation enabled')
+	else:
+		logger.info('✅ Output validation disabled')
 
-		if fetched_task_data is None:
-			logger.error('Failed to fetch tasks from the server. Exiting.')
-			exit(1)  # Exit if fetch fails
+	if args.planner_model:
+		logger.info(f'🗺️ Planner enabled: {args.planner_model} (interval={args.planner_interval} steps)')
+	else:
+		logger.info('🗺️ Planner disabled')
+	# -------------------------
 
+	# --- Get LLMs ---
+	logger.info(f'Instantiating agent LLM: {args.model}')
+	try:
+		# Get the selected LLM for the agent
+		llm = get_llm(args.model)
+		logger.info('Agent LLM instantiated successfully.')
+	except Exception as e:
+		logger.error(f'Failed to instantiate agent LLM ({args.model}): {type(e).__name__}: {e}', exc_info=True)
+		exit(1)
+
+	logger.info(f'Instantiating evaluation LLM: {args.eval_model}')
+	try:
+		eval_model = get_llm(args.eval_model)
+		logger.info(f'Evaluation LLM ({args.eval_model}) instantiated successfully.')
+	except Exception as e:
+		logger.error(
+			f'Failed to instantiate evaluation LLM ({args.eval_model}): {type(e).__name__}: {e}. Make sure required API keys are set.',
+			exc_info=True,
+		)
+		exit(1)
+
+	# Get planner LLM if specified
+	planner_llm = None
+	if args.planner_model:
+		logger.info(f'Instantiating planner LLM: {args.planner_model}')
 		try:
-			tasks = [Task(**task_data) for task_data in fetched_task_data]
-			logger.info(f'Successfully loaded {len(tasks)} tasks from the server.')
-		except (TypeError, ValueError) as e:
-			logger.error(
-				f'Error creating Task objects from fetched data. Ensure the data structure includes required fields (task_id, confirmed_task). Known optional fields: website, reference_length, level, cluster_id, login_cookie, login_type, category. Any additional fields will be accepted dynamically. Error: {type(e).__name__}: {e}'
-			)
-			logger.error(f'First item in fetched data: {fetched_task_data[0] if fetched_task_data else "None"}')
-			exit(1)
-		# -----------------------------
-
-		# --- Start Run on Server (with optional existing Run ID) ---
-		if args.run_id:
-			logger.info(f'Initializing existing run ID: {args.run_id} with git info...')
-		else:
-			logger.info('Attempting to start a new run on the server...')
-
-		git_info = get_git_info()
-
-		# Collect additional data from args to store with the run
-		additional_run_data = {
-			'max_steps': args.max_steps,
-			'parallel_runs': args.parallel_runs,
-			'start_index': args.start,
-			'end_index': args.end,
-			'headless': args.headless,
-			'use_vision': not args.no_vision,
-			'task_source': args.test_case,
-			'llm_judge': args.eval_model,
-			'fresh_start': args.fresh_start,
-			'use_serp': args.use_serp,
-			'enable_memory': args.enable_memory,
-			'memory_interval': args.memory_interval,
-			'max_actions_per_step': args.max_actions_per_step,
-			'validate_output': args.validate_output,
-			'planner_model': args.planner_model,
-			'planner_interval': args.planner_interval,
-			'include_result': args.include_result,
-		}
-
-		run_data = {
-			'model': args.model,
-			'gitBranch': git_info['branch'],
-			'gitCommitHash': git_info['hash'],
-			'gitCommitTimestamp': git_info['timestamp'],
-			'gitRepo': git_info['repo'],
-			'userMessage': args.user_message,
-			'evalGroup': args.eval_group,
-			'developerId': args.developer_id,
-			'totalTasks': len(tasks) - args.start if args.end is None else args.end - args.start,
-			'testCaseName': args.test_case,
-			'additionalData': additional_run_data,
-			'laminarEvalLink': None,  # Will be updated after evaluation creation
-		}
-
-		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
-
-		if not run_id:
-			logger.error('Failed to start/initialize run on the server. Exiting.')
-			exit(1)
-
-		logger.info(f'Successfully obtained run ID: {run_id}. Proceeding with tasks...')
-
-		# Log search mode being used
-		if args.use_serp:
-			if SERPER_API_KEY:
-				logger.info('🔍 Using SERP search (Serper API) instead of Google search')
-			else:
-				logger.warning('⚠️ --use-serp flag provided but SERPER_API_KEY not set. Search will fail!')
-		else:
-			logger.info('🔍 Using default Google search')
-
-		# Log memory configuration
-		if args.enable_memory:
-			logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
-		else:
-			logger.info('🧠 Memory disabled')
-
-		# Log other agent configuration
-		logger.info(f'🎯 Max actions per step: {args.max_actions_per_step}')
-
-		if args.validate_output:
-			logger.info('✅ Output validation enabled')
-		else:
-			logger.info('✅ Output validation disabled')
-
-		if args.planner_model:
-			logger.info(f'🗺️ Planner enabled: {args.planner_model} (interval={args.planner_interval} steps)')
-		else:
-			logger.info('🗺️ Planner disabled')
-		# -------------------------
-
-		# --- Get LLMs ---
-		logger.info(f'Instantiating agent LLM: {args.model}')
-		try:
-			# Get the selected LLM for the agent
-			llm = get_llm(args.model)
-			logger.info('Agent LLM instantiated successfully.')
-		except Exception as e:
-			logger.error(f'Failed to instantiate agent LLM ({args.model}): {type(e).__name__}: {e}', exc_info=True)
-			exit(1)
-
-		logger.info(f'Instantiating evaluation LLM: {args.eval_model}')
-		try:
-			eval_model = get_llm(args.eval_model)
-			logger.info(f'Evaluation LLM ({args.eval_model}) instantiated successfully.')
+			planner_llm = get_llm(args.planner_model)
+			logger.info(f'Planner LLM ({args.planner_model}) instantiated successfully.')
 		except Exception as e:
 			logger.error(
-				f'Failed to instantiate evaluation LLM ({args.eval_model}): {type(e).__name__}: {e}. Make sure required API keys are set.',
+				f'Failed to instantiate planner LLM ({args.planner_model}): {type(e).__name__}: {e}. Make sure required API keys are set.',
 				exc_info=True,
 			)
 			exit(1)
+	# -----------------
 
-		# Get planner LLM if specified
-		planner_llm = None
-		if args.planner_model:
-			logger.info(f'Instantiating planner LLM: {args.planner_model}')
-			try:
-				planner_llm = get_llm(args.planner_model)
-				logger.info(f'Planner LLM ({args.planner_model}) instantiated successfully.')
-			except Exception as e:
-				logger.error(
-					f'Failed to instantiate planner LLM ({args.planner_model}): {type(e).__name__}: {e}. Make sure required API keys are set.',
-					exc_info=True,
-				)
-				exit(1)
-		# -----------------
-
-		# Log initial system state
+	# Log initial system state
 	logger.info('🔧 EVALUATION STARTUP')
 	log_system_resources('STARTUP')
 
@@ -2509,7 +2347,6 @@ if __name__ == '__main__':
 				end_index=args.end,
 				headless=args.headless,
 				use_vision=not args.no_vision,
-				fresh_start=args.fresh_start,
 				use_serp=args.use_serp,
 				enable_memory=args.enable_memory,
 				memory_interval=args.memory_interval,
@@ -2536,20 +2373,4 @@ if __name__ == '__main__':
 		log_system_resources('FAILED_COMPLETION')
 		raise
 
-	logger.info('Task completed. Saving results...')
-	# Save results
-	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-	results_file = f'saved_trajectories/eval_results_{timestamp}.json'
-
-	# Convert results to JSON-serializable format
-	serializable_results = {'summary': results['summary']}
-
-	with open(results_file, 'w') as f:
-		json.dump(serializable_results, f, indent=2)
-
-	# Print summary
-	summary = results['summary']
-	logger.info(f'Completed {summary["total_tasks"]} tasks.')
-	logger.info(f'Success rate: {summary["success_rate"]:.2%}')
-	logger.info(f'Average score: {summary["average_score"]:.2f}')
-	logger.info(f'Results saved to {results_file}')
+	logger.info('✅ All tasks completed successfully.')
