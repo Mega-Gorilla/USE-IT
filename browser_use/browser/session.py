@@ -1423,7 +1423,7 @@ class BrowserSession(BaseModel):
 				self.agent_current_page = first_available_tab
 				self.human_current_page = first_available_tab
 			else:
-				# if all tabs are closed, open a new one
+				# if all tabs are closed, open a new one, never allow a context with 0 tabs
 				new_tab = await self.create_new_tab()
 				self.agent_current_page = new_tab
 				self.human_current_page = new_tab
@@ -3016,9 +3016,9 @@ class BrowserSession(BaseModel):
 		except Exception:
 			self.initialized = False
 
-		if not self.initialized or not self.is_connected():
+		if not self.initialized or not self.browser_context:
 			# If we were initialized but lost connection, reset state first to avoid infinite loops
-			if self.initialized and not self.is_connected():
+			if self.initialized and not self.browser_context:
 				self.logger.warning(
 					f'💔 Browser {self._connection_str} disconnected while trying to create a new tab, reconnecting...'
 				)

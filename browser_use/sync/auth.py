@@ -293,7 +293,7 @@ class DeviceAuthClient:
 				response = getattr(e, 'response')
 				if hasattr(response, 'status_code') and hasattr(response, 'text'):
 					logger.debug(
-						f'Failed to get pre-auth token for cloud sync: HTTP {response.status_code} - {response.text[:200]}'
+						f'Failed to get pre-auth token for cloud sync: HTTP {response.request.url} {response.status_code} - {response.text}'
 					)
 				else:
 					logger.debug(f'Failed to get pre-auth token for cloud sync: {type(e).__name__}: {e}')

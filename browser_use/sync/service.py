@@ -76,7 +76,7 @@ class CloudSync:
 				elif response.status_code >= 400:
 					# Log error but don't raise - we want to fail silently
 					logger.warning(
-						f'Failed to send event to cloud: POST {response.request.url} {response.status_code} - {response.text[:200]}'
+						f'Failed to send event to cloud: POST {response.request.url} {response.status_code} - {response.text}'
 					)
 		except httpx.TimeoutException:
 			logger.warning(f'⚠️ Event send timed out after 10 seconds: {event}')
