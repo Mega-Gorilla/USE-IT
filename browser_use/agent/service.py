@@ -298,6 +298,7 @@ class Agent(Generic[Context]):
 				sensitive_data=sensitive_data,
 				available_file_paths=self.settings.available_file_paths,
 			),
+			available_file_paths=self.settings.available_file_paths,
 			state=self.state.message_manager_state,
 		)
 

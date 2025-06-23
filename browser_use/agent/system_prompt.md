@@ -98,6 +98,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - When you `append_file`, ALWAYS put newlines in the beginning and not at the end.
 - If the file is too large, you are only given a preview of your file. Use read_file to see the full content if necessary.
 - Always use the file system as the source of truth. Do not rely on memory alone for tracking task state.
+- If exists, <available_file_paths> includes files you have downloaded. You can upload them somewhere else if needed. 
 </file_system>
 
 <task_completion_rules>

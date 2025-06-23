@@ -204,6 +204,7 @@ class MessageManager:
 		task: str,
 		system_message: SystemMessage,
 		file_system: FileSystem,
+		available_file_paths: list[str] | None = None,
 		settings: MessageManagerSettings = MessageManagerSettings(),
 		state: MessageManagerState = MessageManagerState(),
 	):
@@ -215,6 +216,7 @@ class MessageManager:
 		self.agent_history_description = '<system>Agent initialized</system>\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
+		self.available_file_paths = available_file_paths
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
 			self._init_messages()
@@ -343,12 +345,6 @@ My next action is to click on the iPhone link at index [4] to navigate to Apple'
 		# self._add_message_with_tokens(example_tool_call_2, message_type='init')
 		# self.add_tool_message(content='Clicked on index [4]. </example_2>', message_type='init')
 
-		if self.settings.available_file_paths:
-			filepaths_msg = HumanMessage(
-				content=f'<available_file_paths>Here are file paths you can use: {self.settings.available_file_paths}</available_file_paths>'
-			)
-			self._add_message_with_tokens(filepaths_msg, message_type='init')
-
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
 		self.agent_history_description += f'\n<system>User updated USER REQUEST to: {new_task}</system>\n'
@@ -456,6 +452,7 @@ Next Goal: {model_output.current_state.next_goal}
 			step_info=step_info,
 			page_filtered_actions=page_filtered_actions,
 			sensitive_data=self.sensitive_data_description,
+			available_file_paths=self.available_file_paths,
 		).get_user_message(use_vision)
 		self._add_message_with_tokens(state_message)
 
