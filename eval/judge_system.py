@@ -250,6 +250,7 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 - In browser-use we convert websites to text so that the agent can understand it. In there we mark interactive elements with [index] and then the agent can chose to interact with them and we click then the actual css selector. Sometimes this conversion is not perfect.
 - After the agent takes an action it gets the new state and its previous thinking, and outputs the next action. Which we then execute again.
 - So we can improve the agent system prompt, input context, tool calls to interact with the browser, or our extraction layer to convert the website to text.
+- always first mention the error this would fix and then the improvement tip.
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
@@ -478,9 +479,9 @@ def get_example_json_structure() -> dict:
 			'No fallback strategy when primary selectors fail',
 		],
 		'improvement_tips': [
-			'Implement better wait strategies for dynamic content',
-			'Add retry logic for element detection',
-			'Improve error handling for async loading',
+			'Browser not loaded: Implement better wait strategies for dynamic content',
+			'Element not found: Add retry logic for element detection',
+			'No error message: Improve error handling for the tool click element',
 		],
 	}
 
