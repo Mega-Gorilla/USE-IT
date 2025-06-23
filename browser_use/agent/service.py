@@ -507,13 +507,19 @@ class Agent(Generic[Context]):
 		@self.controller.registry.action('Read file_name from file system')
 		async def read_file(file_name: str):
 			result = await self.file_system.read_file(file_name)
-			max_len = 50
-			if len(result) > max_len:
-				display_result = result[:max_len] + '\n...'
+			MAX_MEMORY_SIZE = 1000
+			if len(result) > MAX_MEMORY_SIZE:
+				lines = result.splitlines()
+				display = ''
+				for line in lines:
+					if len(display) + len(line) < MAX_MEMORY_SIZE:
+						display += line + '\n'
+					else:
+						break
+				memory = f'{display}{len(lines) - len(display)} more lines...'
 			else:
-				display_result = result
-			logger.info(f'💾 {display_result}')
-			memory = result.split('\n')[-1]
+				memory = result
+			logger.info(f'💾 {memory}')
 			return ActionResult(
 				extracted_content=result,
 				include_in_memory=True,
