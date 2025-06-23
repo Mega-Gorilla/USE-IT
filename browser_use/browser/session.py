@@ -3092,6 +3092,23 @@ class BrowserSession(BaseModel):
 		element_handle = await self.get_locate_element(selector_map[index])
 		return element_handle
 
+	async def is_file_input_by_index(self, index: int) -> bool:
+		try:
+			selector_map = await self.get_selector_map()
+			node = selector_map[index]
+			return self.is_file_input(node)
+		except Exception as e:
+			self.logger.debug(f'❌ Error in is_file_input(index={index}): {type(e).__name__}: {e}')
+			return False
+
+	@staticmethod
+	def is_file_input(node: DOMElementNode) -> bool:
+		return (
+			isinstance(node, DOMElementNode)
+			and getattr(node, 'tag_name', '').lower() == 'input'
+			and node.attributes.get('type', '').lower() == 'file'
+		)
+
 	@require_initialization
 	async def find_file_upload_element_by_index(
 		self, index: int, max_height: int = 3, max_descendant_depth: int = 3
@@ -3111,17 +3128,10 @@ class BrowserSession(BaseModel):
 
 			candidate_element = selector_map[index]
 
-			def is_file_input(node: DOMElementNode) -> bool:
-				return (
-					isinstance(node, DOMElementNode)
-					and getattr(node, 'tag_name', '').lower() == 'input'
-					and node.attributes.get('type', '').lower() == 'file'
-				)
-
 			def find_file_input_in_descendants(node: DOMElementNode, depth: int) -> DOMElementNode | None:
 				if depth < 0 or not isinstance(node, DOMElementNode):
 					return None
-				if is_file_input(node):
+				if self.is_file_input(node):
 					return node
 				for child in getattr(node, 'children', []):
 					result = find_file_input_in_descendants(child, depth - 1)
@@ -3132,7 +3142,7 @@ class BrowserSession(BaseModel):
 			current = candidate_element
 			for _ in range(max_height + 1):  # include the candidate itself
 				# 1. Check the current node itself
-				if is_file_input(current):
+				if self.is_file_input(current):
 					return current
 				# 2. Check all descendants of the current node
 				result = find_file_input_in_descendants(current, max_descendant_depth)
@@ -3144,7 +3154,7 @@ class BrowserSession(BaseModel):
 					for sibling in getattr(parent, 'children', []):
 						if sibling is current:
 							continue
-						if is_file_input(sibling):
+						if self.is_file_input(sibling):
 							return sibling
 						result = find_file_input_in_descendants(sibling, max_descendant_depth)
 						if result:
