@@ -996,7 +996,7 @@ class TestBrowserSessionReusePatterns:
 		# ensure all are connected and usable
 		new_tab_tasks = []
 		for browser_session in browser_sessions:
-			assert browser_session.is_connected()
+			assert await browser_session.is_connected()
 			assert browser_session.browser_context is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 		await asyncio.gather(*new_tab_tasks)
@@ -1012,7 +1012,7 @@ class TestBrowserSessionReusePatterns:
 		new_tab_tasks = []
 		screenshot_tasks = []
 		for browser_session in filter(bool, browser_sessions):
-			assert browser_session.is_connected()
+			assert await browser_session.is_connected()
 			assert browser_session.browser_context is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 			screenshot_tasks.append(browser_session.take_screenshot())
