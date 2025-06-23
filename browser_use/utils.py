@@ -12,6 +12,11 @@ from sys import stderr
 from typing import Any, ParamSpec, TypeVar
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
 logger = logging.getLogger(__name__)
 
 # Import error types - these may need to be adjusted based on actual import paths
@@ -21,11 +26,10 @@ except ImportError:
 	OpenAIBadRequestError = None
 
 try:
-	from groq import BadRequestError as GroqBadRequestError
+	from groq import BadRequestError as GroqBadRequestError  # type: ignore[import-not-found]
 except ImportError:
 	GroqBadRequestError = None
-# Browser Use configuration directory
-BROWSER_USE_CONFIG_DIR = Path.home() / '.config' / 'browseruse'
+
 
 # Global flag to prevent duplicate exit messages
 _exiting = False
@@ -539,25 +543,25 @@ def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
 	Handle LLM API errors and extract failed generation data when available.
 
 	Args:
-	    e: The exception that occurred during LLM API call
+		e: The exception that occurred during LLM API call
 
 	Returns:
-	    Tuple containing:
-	    - response: Dict with 'raw' and 'parsed' keys
-	    - parsed: Parsed data (None if extraction was needed)
+		Tuple containing:
+		- response: Dict with 'raw' and 'parsed' keys
+		- parsed: Parsed data (None if extraction was needed)
 
 	Raises:
-	    LLMException: If the error is not a recognized type with failed generation data
+		LLMException: If the error is not a recognized type with failed generation data
 	"""
 	# Handle OpenAI BadRequestError with failed_generation
 	if (
 		OpenAIBadRequestError
 		and isinstance(e, OpenAIBadRequestError)
 		and hasattr(e, 'body')
-		and e.body
-		and 'failed_generation' in e.body
+		and e.body  # type: ignore[attr-defined]
+		and 'failed_generation' in e.body  # type: ignore[operator]
 	):
-		raw = e.body['failed_generation']
+		raw = e.body['failed_generation']  # type: ignore[index]
 		response = {'raw': raw, 'parsed': None}
 		parsed = None
 		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
@@ -565,14 +569,16 @@ def handle_llm_error(e: Exception) -> tuple[dict[str, Any], Any | None]:
 
 	# Handle Groq BadRequestError with failed_generation
 	if (
-		GroqBadRequestError
+		GroqBadRequestError is not None
 		and isinstance(e, GroqBadRequestError)
 		and hasattr(e, 'body')
-		and e.body
-		and 'error' in e.body
-		and 'failed_generation' in e.body['error']
+		and e.body  # type: ignore[attr-defined]
+		and isinstance(e.body, dict)  # type: ignore[attr-defined]
+		and 'error' in e.body  # type: ignore[attr-defined]
+		and isinstance(e.body['error'], dict)  # type: ignore[attr-defined,index]
+		and 'failed_generation' in e.body['error']  # type: ignore[attr-defined,index]
 	):
-		raw = e.body['error']['failed_generation']  # type: ignore
+		raw = e.body['error']['failed_generation']  # type: ignore[attr-defined,index]
 		response = {'raw': raw, 'parsed': None}
 		parsed = None
 		logger.debug(f'Failed to do tool call, trying to parse raw response: {raw}')
@@ -599,7 +605,7 @@ def get_browser_use_version() -> str:
 				match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
 				if match:
 					version = f'{match.group(1)}'
-					os.environ['LIBRARY_VERSION'] = version
+					os.environ['LIBRARY_VERSION'] = version  # used by bubus event_schema so all Event schemas include versioning
 					return version
 
 		# If pyproject.toml doesn't exist, try getting version from pip

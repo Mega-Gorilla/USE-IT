@@ -17,6 +17,15 @@ from typing import Any, Generic, TypeVar
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
+# from lmnr.sdk.decorators import observe
+from bubus import EventBus
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, ValidationError
+from uuid_extensions import uuid7str
+
 from browser_use.agent.cloud_events import (
 	CreateAgentOutputFileEvent,
 	CreateAgentSessionEvent,
@@ -24,20 +33,6 @@ from browser_use.agent.cloud_events import (
 	CreateAgentTaskEvent,
 	UpdateAgentTaskEvent,
 )
-
-load_dotenv()
-
-# from lmnr.sdk.decorators import observe
-from bubus import EventBus
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import (
-	BaseMessage,
-	HumanMessage,
-	SystemMessage,
-)
-from pydantic import BaseModel, ValidationError
-from uuid_extensions import uuid7str
-
 from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
@@ -65,11 +60,13 @@ from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.types import Browser, BrowserContext, Page
 from browser_use.browser.views import BrowserStateSummary
+from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement, HistoryTreeProcessor
 from browser_use.exceptions import LLMException
 from browser_use.filesystem.file_system import FileSystem
+from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
@@ -81,8 +78,6 @@ from browser_use.utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-SKIP_LLM_API_KEY_VERIFICATION = os.environ.get('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[0] in 'ty1'
 
 
 def log_response(response: AgentOutput, registry=None, logger=None) -> None:
@@ -184,6 +179,7 @@ class Agent(Generic[Context]):
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
+		cloud_sync: CloudSync | None = None,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -304,6 +300,7 @@ class Agent(Generic[Context]):
 				sensitive_data=sensitive_data,
 				available_file_paths=self.settings.available_file_paths,
 			),
+			available_file_paths=self.settings.available_file_paths,
 			state=self.state.message_manager_state,
 		)
 
@@ -442,18 +439,14 @@ class Agent(Generic[Context]):
 		self.telemetry = ProductTelemetry()
 
 		# Event bus with WAL persistence
-		# Default to ~/.config/browseruse/events/{agent_task_id}.jsonl
-		from browser_use.utils import BROWSER_USE_CONFIG_DIR
-
-		wal_path = BROWSER_USE_CONFIG_DIR / 'events' / f'{self.task_id}.jsonl'
+		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
+		wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
 		self.eventbus = EventBus(name='Agent', wal_path=wal_path)
 
 		# Cloud sync service
-		self.enable_cloud_sync = os.environ.get('BROWSERUSE_CLOUD_SYNC', 'true').lower()[0] in 'ty1'
-		if self.enable_cloud_sync:
-			from browser_use.sync import CloudSync
-
-			self.cloud_sync = CloudSync()
+		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
+		if self.enable_cloud_sync or cloud_sync is not None:
+			self.cloud_sync = cloud_sync or CloudSync()
 			# Register cloud sync handler
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 
@@ -500,36 +493,6 @@ class Agent(Generic[Context]):
 			self.file_system = FileSystem(self.file_system_path)
 
 		logger.info(f'💾 File system path: {self.file_system_path}')
-
-		# if file system is set, add actions to the controller
-		@self.controller.registry.action('Write content to file_name in file system, use only .md or .txt extensions.')
-		async def write_file(file_name: str, content: str):
-			result = await self.file_system.write_file(file_name, content)
-			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
-
-		@self.controller.registry.action('Append content to file_name in file system')
-		async def append_file(file_name: str, content: str):
-			result = await self.file_system.append_file(file_name, content)
-			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
-
-		@self.controller.registry.action('Read file_name from file system')
-		async def read_file(file_name: str):
-			result = await self.file_system.read_file(file_name)
-			max_len = 50
-			if len(result) > max_len:
-				display_result = result[:max_len] + '\n...'
-			else:
-				display_result = result
-			logger.info(f'💾 {display_result}')
-			memory = result.split('\n')[-1]
-			return ActionResult(
-				extracted_content=result,
-				include_in_memory=True,
-				long_term_memory=memory,
-				include_extracted_content_only_once=True,
-			)
 
 	def _set_message_context(self) -> str | None:
 		if self.tool_calling_method == 'raw':
@@ -819,7 +782,7 @@ class Agent(Generic[Context]):
 		# If a specific method is set, use it
 		if self.settings.tool_calling_method != 'auto':
 			# Skip test if already verified
-			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+			if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 				setattr(self.llm, '_verified_api_keys', True)
 				setattr(self.llm, '_verified_tool_calling_method', self.settings.tool_calling_method)
 				return self.settings.tool_calling_method
@@ -847,7 +810,7 @@ class Agent(Generic[Context]):
 		known_method = self._get_known_tool_calling_method()
 		if known_method is not None:
 			# Trust known combinations without testing if verification is already done or skipped
-			if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+			if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 				setattr(self.llm, '_verified_api_keys', True)
 				setattr(self.llm, '_verified_tool_calling_method', known_method)  # Cache on LLM instance
 				self.logger.debug(
@@ -1713,7 +1676,7 @@ class Agent(Generic[Context]):
 			assert browser_state_summary
 			content = AgentMessagePrompt(
 				browser_state_summary=browser_state_summary,
-				result=self.state.last_result,
+				file_system=self.file_system,
 				include_attributes=self.settings.include_attributes,
 			)
 			msg = [SystemMessage(content=system_msg), content.get_user_message(self.settings.use_vision)]
@@ -1960,7 +1923,7 @@ class Agent(Generic[Context]):
 		self.tool_calling_method = self._set_tool_calling_method()
 
 		# Skip verification if already done
-		if getattr(self.llm, '_verified_api_keys', None) is True or SKIP_LLM_API_KEY_VERIFICATION:
+		if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
 			setattr(self.llm, '_verified_api_keys', True)
 			return True
 

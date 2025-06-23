@@ -31,42 +31,50 @@ def is_model_without_tool_support(model_name: str) -> bool:
 def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 	"""Extract JSON from model output, handling both plain JSON and code-block-wrapped JSON."""
 	try:
+		# Extract string content from BaseMessage if needed
+		content_str: str
 		if isinstance(content, BaseMessage):
 			# for langchain_core.messages.BaseMessage
-			content = content.content
+			msg_content = content.content
+			if isinstance(msg_content, list):
+				content_str = str(msg_content[0]) if msg_content else ''
+			else:
+				content_str = msg_content
+		else:
+			content_str = content
 		# If content is wrapped in code blocks, extract just the JSON part
-		if '```' in content:
+		if '```' in content_str:
 			# Find the JSON content between code blocks
-			content = content.split('```')[1]
+			content_str = content_str.split('```')[1]
 			# Remove language identifier if present (e.g., 'json\n')
-			if '\n' in content:
-				content = content.split('\n', 1)[1]
+			if '\n' in content_str:
+				content_str = content_str.split('\n', 1)[1]
 
 		# remove html-like tags before the first { and after the last }
 		# This handles cases like <|header_start|>assistant<|header_end|> and <function=AgentOutput>
 		# Only remove content before { if content doesn't already start with {
-		if not content.strip().startswith('{'):
-			content = re.sub(r'^.*?(?=\{)', '', content, flags=re.DOTALL)
+		if not content_str.strip().startswith('{'):
+			content_str = re.sub(r'^.*?(?=\{)', '', content_str, flags=re.DOTALL)
 
 		# Remove common HTML-like tags and patterns at the end, but be more conservative
 		# Look for patterns like </function>, <|header_start|>, etc. after the JSON
-		content = re.sub(r'\}(\s*<[^>]*>.*?$)', '}', content, flags=re.DOTALL)
-		content = re.sub(r'\}(\s*<\|[^|]*\|>.*?$)', '}', content, flags=re.DOTALL)
+		content_str = re.sub(r'\}(\s*<[^>]*>.*?$)', '}', content_str, flags=re.DOTALL)
+		content_str = re.sub(r'\}(\s*<\|[^|]*\|>.*?$)', '}', content_str, flags=re.DOTALL)
 
 		# Handle extra characters after the JSON, including stray braces
 		# Find the position of the last } that would close the main JSON object
-		content = content.strip()
+		content_str = content_str.strip()
 
-		if content.endswith('}'):
+		if content_str.endswith('}'):
 			# Try to parse and see if we get valid JSON
 			try:
-				json.loads(content)
+				json.loads(content_str)
 			except json.JSONDecodeError:
 				# If parsing fails, try to find the correct end of the JSON
 				# by counting braces and removing anything after the balanced JSON
 				brace_count = 0
 				last_valid_pos = -1
-				for i, char in enumerate(content):
+				for i, char in enumerate(content_str):
 					if char == '{':
 						brace_count += 1
 					elif char == '}':
@@ -76,14 +84,14 @@ def extract_json_from_model_output(content: str | BaseMessage) -> dict:
 							break
 
 				if last_valid_pos > 0:
-					content = content[:last_valid_pos]
+					content_str = content_str[:last_valid_pos]
 
 		# Fix control characters in JSON strings before parsing
 		# This handles cases where literal control characters appear in JSON values
-		content = _fix_control_characters_in_json(content)
+		content_str = _fix_control_characters_in_json(content_str)
 
 		# Parse the cleaned content
-		result_dict = json.loads(content)
+		result_dict = json.loads(content_str)
 
 		# if the key "function" and parameter key like "params"/"args"/"kwargs"/"parameters" are present, the final result is the value of the parameter key
 		if 'function' in result_dict:
