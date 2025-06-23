@@ -12,8 +12,8 @@ Tests cover:
 import asyncio
 import json
 import logging
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -665,7 +665,6 @@ class TestBrowserSessionReusePatterns:
 
 	async def test_parallel_agents_same_browser_multiple_tabs(self, httpserver):
 		"""Test Parallel Agents, Same Browser, Multiple Tabs pattern"""
-		import tempfile
 
 		from browser_use import Agent, BrowserSession
 
@@ -843,7 +842,6 @@ class TestBrowserSessionReusePatterns:
 
 	async def test_parallel_agents_same_profile_different_browsers(self, mock_llm):
 		"""Test Parallel Agents, Same Profile, Different Browsers pattern (recommended)"""
-		import tempfile
 
 		from browser_use import Agent
 		from browser_use.browser import BrowserProfile, BrowserSession
@@ -945,3 +943,83 @@ class TestBrowserSessionReusePatterns:
 		await browser_session1.browser_context.pages[0].evaluate('alert(1)')
 
 		await browser_session1.kill()
+
+	async def test_many_parallel_browser_sessions(self):
+		"""Test spawning 20 parallel browser_sessions with different settings and ensure they all work"""
+		from browser_use import BrowserSession
+
+		browser_sessions = []
+
+		for i in range(5):
+			browser_sessions.append(
+				BrowserSession(
+					browser_profile=BrowserProfile(
+						user_data_dir=None,
+						headless=True,
+						keep_alive=True,
+					),
+				)
+			)
+		for i in range(5):
+			browser_sessions.append(
+				BrowserSession(
+					browser_profile=BrowserProfile(
+						user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+						headless=True,
+						keep_alive=True,
+					),
+				)
+			)
+		for i in range(5):
+			browser_sessions.append(
+				BrowserSession(
+					browser_profile=BrowserProfile(
+						user_data_dir=None,
+						headless=True,
+						keep_alive=False,
+					),
+				)
+			)
+		for i in range(5):
+			browser_sessions.append(
+				BrowserSession(
+					browser_profile=BrowserProfile(
+						user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+						headless=True,
+						keep_alive=False,
+					),
+				)
+			)
+
+		await asyncio.gather(*[browser_session.start() for browser_session in browser_sessions])
+
+		# ensure all are connected and usable
+		new_tab_tasks = []
+		for browser_session in browser_sessions:
+			assert browser_session.is_connected()
+			assert browser_session.browser_context is not None
+			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+		await asyncio.gather(*new_tab_tasks)
+
+		# kill every 3rd browser_session
+		kill_tasks = []
+		for i in range(0, len(browser_sessions), 3):
+			kill_tasks.append(browser_sessions[i].kill())
+			browser_sessions[i] = None
+		await asyncio.gather(*kill_tasks)
+
+		# ensure the remaining browser_sessions are still connected and usable
+		new_tab_tasks = []
+		screenshot_tasks = []
+		for browser_session in filter(bool, browser_sessions):
+			assert browser_session.is_connected()
+			assert browser_session.browser_context is not None
+			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+			screenshot_tasks.append(browser_session.take_screenshot())
+		await asyncio.gather(*new_tab_tasks)
+		await asyncio.gather(*screenshot_tasks)
+
+		kill_tasks = []
+		for browser_session in filter(bool, browser_sessions):
+			kill_tasks.append(browser_session.kill())
+		await asyncio.gather(*kill_tasks)
