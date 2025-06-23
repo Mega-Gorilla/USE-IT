@@ -183,8 +183,7 @@ class FileSystem:
 				description += f'{end_preview}\n'
 				description += '</content>\n</file>\n'
 
-			except Exception as e:
-				raise e
+			except Exception:
 				description += f'<file>\n{f.name} - [error reading file]\n</file>\n\n'
 
 		return description.strip('\n')
