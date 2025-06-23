@@ -276,7 +276,7 @@ class BrowserSession(BaseModel):
 		async with asyncio.timeout(60):  # 60 second overall timeout for entire launching process to avoid deadlocks
 			async with self._start_lock:  # prevent parallel calls to start() / stop() / save_storage_state() from clashing
 				if self.initialized:
-					if self.is_connected():
+					if await self.is_connected():
 						return self
 					else:
 						next_step = (
@@ -353,7 +353,7 @@ class BrowserSession(BaseModel):
 			async with self._start_lock:
 				# save cookies to disk if cookies_file or storage_state is configured
 				# but only if the browser context is still connected
-				if self.is_connected():
+				if await self.is_connected():
 					try:
 						await asyncio.wait_for(self.save_storage_state(), timeout=5)
 					except Exception as e:
@@ -1278,7 +1278,7 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.keep_alive is None:
 			self.browser_profile.keep_alive = keep_alive
 
-	def is_connected(self) -> bool:
+	async def is_connected(self) -> bool:
 		"""
 		Check if the browser session has valid, connected browser and context objects.
 		Returns False if any of the following conditions are met:
@@ -1298,7 +1298,11 @@ class BrowserSession(BaseModel):
 			# TODO: figure out a better synchronous test for whether browser_context is usable
 			# this is a hacky workaround for the fact that playwright's browser_context has no is_connected() method
 			# and browser_context.browser is None when we launch with a persistent context (basically always)
-			return bool(self.browser_context.pages)
+			if self.browser_context.pages:
+				return True
+			else:
+				await self.create_new_tab()
+				return True
 		except Exception:
 			return False
 
