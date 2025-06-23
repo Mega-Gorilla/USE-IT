@@ -174,9 +174,10 @@ class Controller(Generic[Context]):
 				# SECURITY FIX: Use browser_session.navigate_to() instead of direct page.goto()
 				# This ensures URL validation against allowed_domains is performed
 				await browser_session.navigate_to(params.url)
-				msg = f'🔗  Navigated to {params.url}'
+				memory = f'Navigated to {params.url}'
+				msg = f'🔗 {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				error_msg = str(e)
 				# Check for network-related errors
@@ -372,6 +373,7 @@ Only use this for extracting info from a single product/article page, not for en
 			query: str,
 			page: Page,
 			page_extraction_llm: BaseChatModel,
+			file_system: FileSystem,
 		):
 			from functools import partial
 
@@ -439,13 +441,24 @@ Explain the content of the page and that the requested information is not availa
 				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
 				output_text = output.content
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
-
 				# if content is small include it to memory
-				if len(extracted_content) < 1000:
+				MAX_MEMORY_SIZE = 600
+				if len(extracted_content) < MAX_MEMORY_SIZE:
 					memory = extracted_content
 					include_extracted_content_only_once = False
 				else:
-					memory = f'Extracted content from {page.url} for query "{query}"'
+					# find lines until MAX_MEMORY_SIZE
+					lines = extracted_content.splitlines()
+					display = ''
+					display_lines_count = 0
+					for line in lines:
+						if len(display) + len(line) < MAX_MEMORY_SIZE:
+							display += line + '\n'
+							display_lines_count += 1
+						else:
+							break
+					save_result = await file_system.save_extracted_content(extracted_content)
+					memory = f'Extracted content from {page.url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
 					include_extracted_content_only_once = True
 				logger.info(f'📄 {memory}')
 				return ActionResult(
