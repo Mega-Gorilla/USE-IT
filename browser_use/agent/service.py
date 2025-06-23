@@ -187,6 +187,8 @@ class Agent(Generic[Context]):
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
+		if available_file_paths is None:
+			available_file_paths = []
 
 		self.id = task_id or uuid7str()
 		self.task_id: str = self.id
