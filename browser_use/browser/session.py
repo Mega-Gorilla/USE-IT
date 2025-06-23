@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass
 from functools import wraps
@@ -446,6 +448,12 @@ class BrowserSession(BaseModel):
 								f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}'
 							)
 
+				# if the user_data_dir is a temporary one, delete it
+				if self.browser_profile.user_data_dir and Path(self.browser_profile.user_data_dir).name.startswith(
+					'browseruse-tmp'
+				):
+					shutil.rmtree(self.browser_profile.user_data_dir, ignore_errors=True)
+
 				self._reset_connection_state()
 				# self.logger.debug('🛑 Shutdown complete.')
 
@@ -685,6 +693,7 @@ class BrowserSession(BaseModel):
 		if not self.browser_pid:
 			return  # no browser_pid provided, nothing to do
 
+		# check that browser_pid process is running, otherwise we cannot connect to it
 		try:
 			chrome_process = psutil.Process(pid=self.browser_pid)
 			if not chrome_process.is_running():
@@ -695,8 +704,11 @@ class BrowserSession(BaseModel):
 			self.logger.warning(f'Chrome process with pid={self.browser_pid} not found')
 			return
 		except Exception as e:
+			self.browser_pid = None
 			self.logger.warning(f'Error accessing chrome process with pid={self.browser_pid}: {type(e).__name__}: {e}')
 			return
+
+		# check that browser_pid process is exposing a debug port we can connect to, otherwise we cannot connect to it
 		debug_port = next((arg for arg in args if arg.startswith('--remote-debugging-port=')), '').split('=')[-1].strip()
 		if not debug_port:
 			# provided pid is unusable, it's either not running or doesnt have an open debug port we can connect to
@@ -708,6 +720,7 @@ class BrowserSession(BaseModel):
 				self.logger.error(
 					f'❌ Could not find --remote-debugging-port=... to connect to in browser launch args for browser_pid={self.browser_pid}: {" ".join(args)}'
 				)
+			self.browser_pid = None
 			return
 
 		self.cdp_url = self.cdp_url or f'http://localhost:{debug_port}/'
@@ -782,112 +795,86 @@ class BrowserSession(BaseModel):
 				f'{str(type(self.playwright).__module__).split(".")[0]}:{self.browser_profile.channel.name.lower()} keep_alive={self.browser_profile.keep_alive or False} '
 				f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
 			)
+
+			# if no user_data_dir is provided, generate a unique one for this temporary browser_context (will be used to uniquely identify the browser_pid later)
 			if not self.browser_profile.user_data_dir:
 				# self.logger.debug('🌎 Launching local browser in incognito mode')
-				# if no user_data_dir is provided, launch an incognito context with no persistent user_data_dir
-				try:
-					assert self.playwright is not None, 'playwright instance is None'
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
-						self.browser = self.browser or await self.playwright.chromium.launch(
-							**self.browser_profile.kwargs_for_launch().model_dump()
-						)
-					# self.logger.debug('🌎 Launching new incognito context in browser')
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
-						self.browser_context = await self.browser.new_context(
-							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
-						)
-				except TimeoutError:
-					self.logger.warning(
-						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
-						'Recreating playwright instance and retrying...'
-					)
-					# Force recreation of the playwright object
-					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
-					# Retry the operation with the new playwright instance
-					assert self.playwright is not None, 'playwright instance is None'
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
-						self.browser = await self.playwright.chromium.launch(
-							**self.browser_profile.kwargs_for_launch().model_dump()
-						)
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
-						self.browser_context = await self.browser.new_context(
-							**self.browser_profile.kwargs_for_new_context().model_dump()
-						)
-				# self.logger.debug('🌎 Created new incognito context in browser')
-			else:
-				# user data dir was provided, prepare it for use
-				self.prepare_user_data_dir()
+				# if no user_data_dir is provided, generate a unique one for this temporary browser_context (will be used to uniquely identify the browser_pid later)
+				self.browser_profile.user_data_dir = self.browser_profile.user_data_dir or Path(
+					tempfile.mkdtemp(prefix='browseruse-tmp-')
+				)
 
-				# search for potentially conflicting local processes running on the same user_data_dir
-				for proc in psutil.process_iter(['pid', 'cmdline']):
-					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-						self.logger.error(
-							f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
-							f'already running with the same user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
-						)
-						break
+			# user data dir was provided, prepare it for use
+			self.prepare_user_data_dir()
 
-				# if a user_data_dir is provided, launch a persistent context with that user_data_dir
-				try:
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
-						try:
-							assert self.playwright is not None, 'playwright instance is None'
-							self.browser_context = await self.playwright.chromium.launch_persistent_context(
-								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
-							)
-						except Exception as e:
-							# Re-raise if not a timeout
-							if not isinstance(e, asyncio.TimeoutError):
-								raise
-				except TimeoutError:
-					self.logger.warning(
-						'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
-						'Recreating playwright instance and retrying...'
+			# search for potentially conflicting local processes running on the same user_data_dir
+			for proc in psutil.process_iter(['pid', 'cmdline']):
+				if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
+					self.logger.error(
+						f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
+						f'already running with the same user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
 					)
-					# Force recreation of the playwright object
-					self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
-					# Retry the operation with the new playwright instance
-					async with asyncio.timeout(self.browser_profile.timeout / 1000):
+					break
+
+			# if a user_data_dir is provided, launch a persistent context with that user_data_dir
+			try:
+				async with asyncio.timeout(self.browser_profile.timeout / 1000):
+					try:
 						assert self.playwright is not None, 'playwright instance is None'
 						self.browser_context = await self.playwright.chromium.launch_persistent_context(
-							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
 						)
-				except Exception as e:
-					# show a nice logger hint explaining what went wrong with the user_data_dir
-					# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
-					user_data_dir_chrome_version = '???'
-					test_browser_version = '???'
-					try:
-						# user_data_dir is corrupted or unreadable because it was migrated to a newer version of chrome than we are running with
-						user_data_dir_chrome_version = (
-							(Path(self.browser_profile.user_data_dir) / 'Last Version').read_text().strip()
-						)
-					except Exception:
-						pass  # let the logger below handle it
-					try:
-						assert self.playwright is not None, 'playwright instance is None'
-						test_browser = await self.playwright.chromium.launch(headless=True)
-						test_browser_version = test_browser.version
-						await test_browser.close()
-					except Exception:
-						pass
+					except Exception as e:
+						# Re-raise if not a timeout
+						if not isinstance(e, asyncio.TimeoutError):
+							raise
+			except TimeoutError:
+				self.logger.warning(
+					'Browser operation timed out. This may indicate the playwright instance is invalid due to event loop changes. '
+					'Recreating playwright instance and retrying...'
+				)
+				# Force recreation of the playwright object
+				self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
+				# Retry the operation with the new playwright instance
+				async with asyncio.timeout(self.browser_profile.timeout / 1000):
+					assert self.playwright is not None, 'playwright instance is None'
+					self.browser_context = await self.playwright.chromium.launch_persistent_context(
+						**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+					)
+			except Exception as e:
+				# show a nice logger hint explaining what went wrong with the user_data_dir
+				# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
+				user_data_dir_chrome_version = '???'
+				test_browser_version = '???'
+				try:
+					# user_data_dir is corrupted or unreadable because it was migrated to a newer version of chrome than we are running with
+					user_data_dir_chrome_version = (Path(self.browser_profile.user_data_dir) / 'Last Version').read_text().strip()
+				except Exception:
+					pass  # let the logger below handle it
+				try:
+					assert self.playwright is not None, 'playwright instance is None'
+					test_browser = await self.playwright.chromium.launch(headless=True)
+					test_browser_version = test_browser.version
+					await test_browser.close()
+				except Exception:
+					pass
 
-					# failed to parse extensions == most common error text when user_data_dir is corrupted / has an unusable schema
-					reason = 'due to bad' if 'Failed parsing extensions' in str(e) else 'for unknown reason with'
-					driver = str(type(self.playwright).__module__).split('.')[0].lower()
-					browser_channel = (
-						Path(self.browser_profile.executable_path).name.replace(' ', '-').replace('.exe', '').lower()
-						if self.browser_profile.executable_path
-						else (self.browser_profile.channel or BROWSERUSE_DEFAULT_CHANNEL).name.lower()
-					)
-					self.logger.error(
-						f'❌ Launching new local browser {driver}:{browser_channel} (v{test_browser_version}) failed!'
-						f'\n\tFailed {reason} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (created with v{user_data_dir_chrome_version})'
-						'\n\tTry using a different browser version/channel or delete the user_data_dir to start over with a fresh profile.'
-						'\n\t(can happen if different versions of Chrome/Chromium/Brave/etc. tried to share one dir)'
-						f'\n\n{type(e).__name__} {e}'
-					)
-					raise
+				# failed to parse extensions == most common error text when user_data_dir is corrupted / has an unusable schema
+				reason = 'due to bad' if 'Failed parsing extensions' in str(e) else 'for unknown reason with'
+				driver = str(type(self.playwright).__module__).split('.')[0].lower()
+				browser_channel = (
+					Path(self.browser_profile.executable_path).name.replace(' ', '-').replace('.exe', '').lower()
+					if self.browser_profile.executable_path
+					else (self.browser_profile.channel or BROWSERUSE_DEFAULT_CHANNEL).name.lower()
+				)
+				self.logger.error(
+					f'❌ Launching new local browser {driver}:{browser_channel} (v{test_browser_version}) failed!'
+					f'\n\tFailed {reason} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (created with v{user_data_dir_chrome_version})'
+					'\n\tTry using a different browser version/channel or delete the user_data_dir to start over with a fresh profile.'
+					'\n\t(can happen if different versions of Chrome/Chromium/Brave/etc. tried to share one dir)'
+					f'\n\n{type(e).__name__} {e}'
+				)
+				raise
 
 		# Only restore browser from context if it's connected, otherwise keep it None to force new launch
 		browser_from_context = self.browser_context and self.browser_context.browser
@@ -901,7 +888,15 @@ class BrowserSession(BaseModel):
 			child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
 			new_child_pids = child_pids_after_launch - child_pids_before_launch
 			new_child_procs = [psutil.Process(pid) for pid in new_child_pids]
-			new_chrome_procs = [proc for proc in new_child_procs if 'Helper' not in proc.name() and proc.status() == 'running']
+			new_chrome_procs = [
+				proc
+				for proc in new_child_procs
+				if 'Helper' not in proc.name()
+				and proc.status() == 'running'
+				and proc.cmdline()[0] == self.browser_profile.executable_path  # require executable to match
+				and f'--user-data-dir={self.browser_profile.user_data_dir}'
+				in ' '.join(proc.cmdline())  # require --user-data-dir to match
+			]
 		except Exception as e:
 			self.logger.debug(
 				f'❌ Error trying to find child chrome processes after launching new browser: {type(e).__name__}: {e}'
@@ -909,6 +904,9 @@ class BrowserSession(BaseModel):
 			new_chrome_procs = []
 
 		if new_chrome_procs and not self.browser_pid:
+			# look through the discovered new chrome processes to uniquely identify the one that *we* launched,
+			# match using unique user_data_dir
+
 			try:
 				self.browser_pid = new_chrome_procs[0].pid
 				cmdline = new_chrome_procs[0].cmdline()

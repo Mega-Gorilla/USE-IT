@@ -485,8 +485,7 @@ class TestBrowserSessionStart:
 			await session.stop()
 			# Browser should still be connected
 			assert session.initialized is True
-			assert session.browser is not None
-			assert session.browser.is_connected()
+			assert session.browser_context and session.browser_context.pages[0]
 
 		finally:
 			await session.kill()
