@@ -168,14 +168,14 @@ class FileSystem(BaseModel):
 		'txt': TxtFile,
 	}
 
-	def __init__(self, dir_path: str, **kwargs):
+	def __init__(self, dir_path: str, _restore_mode: bool = False, **kwargs):
 		# Handle the Path conversion before calling super().__init__
 		base_dir = Path(dir_path)
 		base_dir.mkdir(parents=True, exist_ok=True)
 
 		# Create and use a dedicated subfolder for all operations
 		data_dir = base_dir / 'browseruse_agent_data'
-		if data_dir.exists():
+		if data_dir.exists() and not _restore_mode:
 			raise ValueError(
 				'File system directory already exists - stopping for safety purposes. Please delete it first if you want to use this directory.'
 			)
@@ -183,8 +183,9 @@ class FileSystem(BaseModel):
 
 		super().__init__(base_dir=data_dir, **kwargs)
 
-		# Initialize default files
-		self._create_default_files()
+		# Initialize default files only if not in restore mode
+		if not _restore_mode:
+			self._create_default_files()
 
 	def _create_default_files(self) -> None:
 		"""Create default results and todo files"""
@@ -410,36 +411,27 @@ class FileSystem(BaseModel):
 
 	@classmethod
 	def from_state(cls, state: FileSystemState) -> 'FileSystem':
-		"""Restore file system from serializable state"""
-		# Create instance with proper Pydantic initialization
-		instance = cls.__new__(cls)
-		instance.__dict__.update(
-			{
-				'base_dir': Path(state.base_dir),
-				'files': {},
-				'extracted_content_count': state.extracted_content_count,
-				'_file_types': {
-					'md': MarkdownFile,
-					'txt': TxtFile,
-				},
-			}
-		)
+		"""Restore file system from serializable state using direct initialization"""
+		# Get the parent directory (state.base_dir points to browseruse_agent_data folder)
+		base_dir = Path(state.base_dir)
+		parent_dir = str(base_dir.parent)
 
-		# Initialize Pydantic fields properly
-		instance.__pydantic_fields_set__ = {'base_dir', 'files', 'extracted_content_count'}
+		# Use constructor in restore mode (bypasses safety checks and default file creation)
+		instance = cls(parent_dir, _restore_mode=True, extracted_content_count=state.extracted_content_count)
 
-		# Restore files
+		# Restore files from state
+		type_mapping = {
+			'MarkdownFile': MarkdownFile,
+			'TxtFile': TxtFile,
+		}
+
 		for full_filename, file_data in state.files.items():
 			file_type = file_data['type']
-
-			# Map type names to classes
-			type_mapping = {
-				'MarkdownFile': MarkdownFile,
-				'TxtFile': TxtFile,
-			}
-
 			file_class = type_mapping.get(file_type, TxtFile)
 			file_obj = file_class(**file_data['data'])
-			instance.files[full_filename] = file_obj  # Use full filename as key
+			instance.files[full_filename] = file_obj
+
+			# Write the restored file to disk
+			instance._sync_file_to_disk(file_obj)
 
 		return instance

@@ -403,6 +403,219 @@ class TestSerialization:
 			print(f'\n📋 ORIGINAL FILE SYSTEM:\n{original_description}')
 			print(f'\n📋 RESTORED FILE SYSTEM:\n{restored_description}')
 
+	async def test_from_state_disk_persistence(self):
+		"""Test that from_state actually writes files to disk"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create original filesystem
+			fs1 = FileSystem(temp_dir)
+			await fs1.write_file('test.md', '# Test Content\n\nThis is test content')
+			await fs1.write_file('data.txt', 'Plain text data')
+
+			# Get state and restore
+			state = fs1.get_state()
+			fs2 = FileSystem.from_state(state)
+
+			# Verify files exist on disk in the restored filesystem
+			test_md_path = fs2.get_dir() / 'test.md'
+			data_txt_path = fs2.get_dir() / 'data.txt'
+
+			assert test_md_path.exists(), 'test.md should exist on disk after restoration'
+			assert data_txt_path.exists(), 'data.txt should exist on disk after restoration'
+
+			# Verify content on disk matches
+			disk_md_content = test_md_path.read_text()
+			disk_txt_content = data_txt_path.read_text()
+
+			assert '# Test Content' in disk_md_content
+			assert 'Plain text data' in disk_txt_content
+
+			print('\n📋 DISK PERSISTENCE TEST:')
+			print(f'test.md exists: {test_md_path.exists()}')
+			print(f'data.txt exists: {data_txt_path.exists()}')
+			print(f'Disk content matches memory: {disk_md_content == fs2.files["test.md"].content}')
+
+	async def test_from_state_functional_after_restoration(self):
+		"""Test that restored filesystem is fully functional"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create original filesystem
+			fs1 = FileSystem(temp_dir)
+			await fs1.write_file('original.md', 'Original content')
+
+			# Get state and restore
+			state = fs1.get_state()
+			fs2 = FileSystem.from_state(state)
+
+			# Test all operations work on restored filesystem
+			# 1. Read existing file
+			read_result = await fs2.read_file('original.md')
+			assert 'Original content' in read_result
+
+			# 2. Write new file
+			write_result = await fs2.write_file('new.txt', 'New content after restoration')
+			assert 'successfully' in write_result.lower()
+
+			# 3. Append to existing file
+			append_result = await fs2.append_file('original.md', '\nAppended after restoration')
+			assert 'successfully' in append_result.lower()
+
+			# 4. List files includes new file
+			file_list = fs2.list_files()
+			assert 'new.txt' in file_list
+
+			# 5. Describe works
+			description = fs2.describe()
+			assert 'original.md' in description
+			assert 'new.txt' in description
+
+			print('\n📋 FUNCTIONALITY TEST AFTER RESTORATION:')
+			print(f'Files: {file_list}')
+			print(f'Description includes new content: {"Appended after restoration" in description}')
+
+	async def test_from_state_with_empty_filesystem(self):
+		"""Test restoration of an empty filesystem"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create filesystem and clear default files
+			fs1 = FileSystem(temp_dir)
+			fs1.files.clear()  # Remove default files
+
+			# Get state and restore
+			state = fs1.get_state()
+			fs2 = FileSystem.from_state(state)
+
+			# Should have no files
+			assert len(fs2.files) == 0
+			assert fs2.list_files() == []
+
+			# Should still be functional
+			write_result = await fs2.write_file('first.md', 'First file in restored empty system')
+			assert 'successfully' in write_result.lower()
+			assert len(fs2.files) == 1
+
+	async def test_from_state_extracted_content_counter(self):
+		"""Test that extracted content counter is preserved"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create filesystem and add extracted content
+			fs1 = FileSystem(temp_dir)
+			await fs1.save_extracted_content('Content 1')
+			await fs1.save_extracted_content('Content 2')
+			await fs1.save_extracted_content('Content 3')
+
+			assert fs1.extracted_content_count == 3
+
+			# Get state and restore
+			state = fs1.get_state()
+			fs2 = FileSystem.from_state(state)
+
+			# Counter should be preserved
+			assert fs2.extracted_content_count == 3
+
+			# Next extracted content should use correct number
+			await fs2.save_extracted_content('Content 4')
+			assert fs2.extracted_content_count == 4
+			assert 'extracted_content_3.md' in fs2.files
+
+	async def test_from_state_with_complex_content(self):
+		"""Test restoration with complex file content"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create filesystem with complex content
+			fs1 = FileSystem(temp_dir)
+
+			complex_md = """# Complex Markdown File
+
+## Section 1
+This is a complex markdown file with:
+- Lists
+- **Bold text**
+- `Code snippets`
+
+### Subsection
+More content here.
+
+## Section 2
+Final section with special characters: àáâãäå ñ ü ß"""
+
+			complex_txt = """Line 1 with special chars: ~!@#$%^&*()_+
+Line 2 with unicode: 你好世界
+Line 3 with emojis: 🚀🎉📋
+Line 4 with quotes: "double" and 'single'
+Line 5 with backslashes: \\path\\to\\file"""
+
+			await fs1.write_file('complex.md', complex_md)
+			await fs1.write_file('complex.txt', complex_txt)
+
+			# Get state and restore
+			state = fs1.get_state()
+			fs2 = FileSystem.from_state(state)
+
+			# Verify complex content is preserved
+			restored_md = await fs2.read_file('complex.md')
+			restored_txt = await fs2.read_file('complex.txt')
+
+			assert 'Complex Markdown File' in restored_md
+			assert '你好世界' in restored_txt
+			assert '🚀🎉📋' in restored_txt
+			assert '\\path\\to\\file' in restored_txt
+
+			print('\n📋 COMPLEX CONTENT TEST:')
+			print(f'Special characters preserved: {"àáâãäå" in restored_md}')
+			print(f'Unicode preserved: {"你好世界" in restored_txt}')
+			print(f'Emojis preserved: {"🚀🎉📋" in restored_txt}')
+
+	async def test_from_state_directory_structure(self):
+		"""Test that from_state creates proper directory structure"""
+		with tempfile.TemporaryDirectory() as temp_dir:
+			# Create original filesystem
+			fs1 = FileSystem(temp_dir)
+			await fs1.write_file('test.md', 'content')
+
+			# Get state
+			state = fs1.get_state()
+
+			# Verify state has correct path
+			assert 'browseruse_agent_data' in state.base_dir
+
+			# Restore to different location
+			with tempfile.TemporaryDirectory() as new_temp_dir:
+				# Modify state to point to new location
+				new_state = FileSystemState(
+					files=state.files,
+					base_dir=str(Path(new_temp_dir) / 'browseruse_agent_data'),
+					extracted_content_count=state.extracted_content_count,
+				)
+
+				fs2 = FileSystem.from_state(new_state)
+
+				# Verify directory structure
+				assert fs2.get_dir().exists()
+				assert 'browseruse_agent_data' in str(fs2.get_dir())
+				assert fs2.get_dir() != fs1.get_dir()  # Different locations
+
+				# Verify file exists in new location
+				test_file_path = fs2.get_dir() / 'test.md'
+				assert test_file_path.exists()
+
+				print('\n📋 DIRECTORY STRUCTURE TEST:')
+				print(f'Original dir: {fs1.get_dir()}')
+				print(f'Restored dir: {fs2.get_dir()}')
+				print(f'File exists in new location: {test_file_path.exists()}')
+
+	def test_from_state_error_handling(self):
+		"""Test error handling in from_state method"""
+		# Test with invalid file type in state
+		invalid_state = FileSystemState(
+			files={'invalid.md': {'type': 'NonExistentFileType', 'data': {'name': 'invalid', 'content': 'test'}}},
+			base_dir='/tmp/test_invalid',
+			extracted_content_count=0,
+		)
+
+		# Should fallback to TxtFile for unknown types
+		fs = FileSystem.from_state(invalid_state)
+		assert 'invalid.md' in fs.files
+		assert isinstance(fs.files['invalid.md'], TxtFile)  # Should fallback to TxtFile
+
+		print('\n📋 ERROR HANDLING TEST:')
+		print(f'Unknown file type handled gracefully: {type(fs.files["invalid.md"]).__name__}')
+
 
 class TestDisplayFunctionality:
 	"""Test file system display functionality with various file sizes and content"""
