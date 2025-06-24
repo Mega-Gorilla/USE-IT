@@ -192,7 +192,10 @@ class AgentOutput(BaseModel):
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
-			thinking=(type(None), Field(default=None, exclude=True)),  # Exclude thinking from schema
+			thinking=(
+				type(None),  # type: ignore
+				Field(default=None, exclude=True),
+			),  # Exclude thinking from schema
 			action=(
 				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
