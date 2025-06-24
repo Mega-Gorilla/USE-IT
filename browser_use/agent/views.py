@@ -4,7 +4,7 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, TYPE_CHECKING
+from typing import Any
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -187,29 +187,18 @@ class AgentOutput(BaseModel):
 	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type['AgentOutput']:
 		"""Extend actions with custom actions and exclude thinking field"""
 
-		# Create a base model without thinking
+		# Create a base model without thinking, but inheriting from AgentOutput
+		# Override only the fields we need to change
 		model_ = create_model(
-			'AgentOutputNoThinking',
-			evaluation_previous_goal=(
-				str,
-				Field(
-					..., description='One-sentence analysis of your last action. Clearly state success, failure, or uncertain.'
-				),
-			),
-			memory=(str, Field(..., description='1-3 sentences of specific memory of this step and overall progress.')),
-			next_goal=(
-				str,
-				Field(..., description='State the next immediate goals and actions to achieve it, in one clear sentence.'),
-			),
+			'AgentOutput',
+			__base__=AgentOutput,
+			thinking=(type(None), Field(default=None, exclude=True)),  # Exclude thinking from schema
 			action=(
 				List[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
 		)
-
-		# Set the model config
-		model_.model_config = AgentOutput.model_config
 
 		# Add the current_state property with proper typing
 		def current_state_property(self: Any) -> AgentBrain:
@@ -222,7 +211,7 @@ class AgentOutput(BaseModel):
 			)
 
 		model_.current_state = property(current_state_property)
-		model_.__doc__ = 'AgentOutput model with custom actions and no thinking field'
+		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
 
