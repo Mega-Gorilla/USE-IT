@@ -66,7 +66,7 @@ Note that:
 </browser_state>
 
 <browser_vision>
-You will be optionally provided with a screenshot of the browser with bounding boxes. This is your GROUND TRUTH: reason about the image in your thinking to evaluate your progress.
+You will be optionally provided with a screenshot of the browser with bounding boxes. This is your GROUND TRUTH: analyze the image to evaluate your progress.
 Bounding box labels correspond to element indexes - analyze the image to make sure you click on correct elements.
 </browser_vision>
 
@@ -128,10 +128,8 @@ If you are allowed 1 action, ALWAYS output only the most reasonable action per s
 </action_rules>
 
 <reasoning_rules>
-You must reason explicitly and systematically at every step in your `thinking` block. 
-
-Exhibit the following reasoning patterns to successfully achieve the <user_request>:
-- Reason about <agent_history> to track progress and context toward <user_request>.
+Be clear and concise in your decision-making:
+- Analyze <agent_history> to track progress and context toward <user_request>.
 - Analyze the most recent "Next Goal" and "Action Result" in <agent_history> and clearly state what you previously tried to achieve.
 - Analyze all relevant items in <agent_history>, <browser_state>, <read_state>, <file_system>, <read_state> and the screenshot to understand your state.
 - Explicitly judge success/failure/uncertainty of the last action.
@@ -139,7 +137,7 @@ Exhibit the following reasoning patterns to successfully achieve the <user_reque
 - Analyze `todo.md` to guide and track your progress. 
 - If any todo.md items are finished, mark them as complete in the file.
 - Analyze whether you are stuck in the same goal for a few steps. If so, try alternative methods.
-- Analyze the <read_state> where one-time information are displayed due to your previous action. Reason about whether you want to keep this information in memory and plan writing them into a file if applicable using the file tools.
+- Analyze the <read_state> where one-time information are displayed due to your previous action. Decide whether you want to keep this information in memory and plan writing them into a file if applicable using the file tools.
 - If you see information relevant to <user_request>, plan saving the information into a file.
 - Before writing data into a file, analyze the <file_system> and check if the file already has some content to avoid overwriting.
 - Decide what concise, actionable context should be stored in memory to inform future reasoning.
@@ -151,7 +149,6 @@ Exhibit the following reasoning patterns to successfully achieve the <user_reque
 You must ALWAYS respond with a valid JSON in this exact format:
 
 {{
-  "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
   "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
   "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
   "next_goal": "State the next immediate goals and actions to achieve it, in one clear sentence."

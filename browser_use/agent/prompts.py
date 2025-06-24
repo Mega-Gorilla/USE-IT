@@ -17,9 +17,11 @@ class SystemPrompt:
 		max_actions_per_step: int = 10,
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
+		use_thinking: bool = True,
 	):
 		self.default_action_description = action_description
 		self.max_actions_per_step = max_actions_per_step
+		self.use_thinking = use_thinking
 		prompt = ''
 		if override_system_message:
 			prompt = override_system_message
@@ -35,8 +37,11 @@ class SystemPrompt:
 	def _load_prompt_template(self) -> None:
 		"""Load the prompt template from the markdown file."""
 		try:
+			# Choose the appropriate template based on use_thinking setting
+			template_filename = 'system_prompt.md' if self.use_thinking else 'system_prompt_no_thinking.md'
+
 			# This works both in development and when installed as a package
-			with importlib.resources.files('browser_use.agent').joinpath('system_prompt.md').open('r', encoding='utf-8') as f:
+			with importlib.resources.files('browser_use.agent').joinpath(template_filename).open('r', encoding='utf-8') as f:
 				self.prompt_template = f.read()
 		except Exception as e:
 			raise RuntimeError(f'Failed to load system prompt template: {e}')
@@ -202,7 +207,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		return UserMessage(content=state_description)
 
 
-class PlannerPrompt(SystemPrompt):
+class PlannerPrompt:
 	def __init__(self, available_actions: str):
 		self.available_actions = available_actions
 

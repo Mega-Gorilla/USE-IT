@@ -50,6 +50,7 @@ class AgentSettings(BaseModel):
 		'aria-expanded',
 	]
 	max_actions_per_step: int = 10
+	use_thinking: bool = True
 
 	page_extraction_llm: BaseChatModel | None = None
 	planner_llm: BaseChatModel | None = None
@@ -137,7 +138,7 @@ class StepMetadata(BaseModel):
 
 
 class AgentBrain(BaseModel):
-	thinking: str
+	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
@@ -146,7 +147,7 @@ class AgentBrain(BaseModel):
 class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
-	thinking: str
+	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
@@ -169,15 +170,39 @@ class AgentOutput(BaseModel):
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions"""
+
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
 			action=(
-				list[custom_actions],
+				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
 		)
+		model_.__doc__ = 'AgentOutput model with custom actions'
+		return model_
+
+	@staticmethod
+	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions and exclude thinking field"""
+
+		# Create a base model without thinking, but inheriting from AgentOutput
+		# Override only the fields we need to change
+		model_ = create_model(
+			'AgentOutput',
+			__base__=AgentOutput,
+			thinking=(
+				type(None),  # type: ignore
+				Field(default=None, exclude=True),
+			),  # Exclude thinking from schema
+			action=(
+				list[custom_actions],  # type: ignore
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutput.__module__,
+		)
+
 		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
@@ -212,12 +237,14 @@ class AgentHistory(BaseModel):
 		if self.model_output:
 			action_dump = [action.model_dump(exclude_none=True) for action in self.model_output.action]
 			model_output_dump = {
-				'thinking': self.model_output.thinking,
 				'evaluation_previous_goal': self.model_output.evaluation_previous_goal,
 				'memory': self.model_output.memory,
 				'next_goal': self.model_output.next_goal,
 				'action': action_dump,  # This preserves the actual action data
 			}
+			# Only include thinking if it's present
+			if self.model_output.thinking is not None:
+				model_output_dump['thinking'] = self.model_output.thinking
 
 		return {
 			'model_output': model_output_dump,
