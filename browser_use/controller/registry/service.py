@@ -525,19 +525,33 @@ class Registry(Generic[Context]):
 		if not individual_action_models:
 			return create_model('EmptyActionModel', __base__=ActionModel)
 
-		# Create proper Union type for OpenAI structured outputs
+		# Create proper Union type that maintains ActionModel interface
 		if len(individual_action_models) == 1:
 			# If only one action, return it directly (no Union needed)
 			result_model = individual_action_models[0]
 		else:
-			# Create a Union type using RootModel
+			# Create a Union type using RootModel that properly delegates ActionModel methods
 			union_type = Union[tuple(individual_action_models)]
 
-			# Create a RootModel that represents the Union
 			class ActionModelUnion(RootModel[union_type]):  # type: ignore
-				"""Union of all available action models"""
+				"""Union of all available action models that maintains ActionModel interface"""
 
-				pass
+				def get_index(self) -> int | None:
+					"""Delegate get_index to the underlying action model"""
+					if hasattr(self.root, 'get_index'):
+						return self.root.get_index()
+					return None
+
+				def set_index(self, index: int):
+					"""Delegate set_index to the underlying action model"""
+					if hasattr(self.root, 'set_index'):
+						self.root.set_index(index)
+
+				def model_dump(self, **kwargs):
+					"""Delegate model_dump to the underlying action model"""
+					if hasattr(self.root, 'model_dump'):
+						return self.root.model_dump(**kwargs)
+					return super().model_dump(**kwargs)
 
 			# Set the name for better debugging
 			ActionModelUnion.__name__ = 'ActionModel'
