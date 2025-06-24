@@ -158,15 +158,16 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 	is already included in the final_result.
 	"""
 	# Check if last step contains a 'done' action
-	history_to_process = complete_history.copy()
-	if complete_history:
-		last_step = complete_history[-1]
-		if last_step.get('result'):
-			for result in last_step['result']:
-				if isinstance(result, dict) and result.get('is_done'):
-					# Exclude the last step since it's a 'done' action
-					history_to_process = complete_history[:-1]
-					break
+	# history_to_process = complete_history.copy()
+	# if complete_history:
+	# 	last_step = complete_history[-1]
+	# 	if last_step.get('result'):
+	# 		for result in last_step['result']:
+	# 			if isinstance(result, dict) and result.get('is_done'):
+	# 				# Exclude the last step since it's a 'done' action
+	# 				history_to_process = complete_history[:-1]
+	# 				break
+	history_to_process = complete_history
 
 	steps = []
 	for i, step in enumerate(history_to_process):
