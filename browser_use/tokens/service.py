@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import aiofiles
-import aiofiles.os
 import httpx
 from dotenv import load_dotenv
 
