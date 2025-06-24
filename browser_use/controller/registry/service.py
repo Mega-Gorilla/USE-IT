@@ -5,10 +5,9 @@ import logging
 import re
 from collections.abc import Callable
 from inspect import Parameter, iscoroutinefunction, signature
-from types import UnionType
 from typing import Any, Generic, Optional, TypeVar, Union, get_args, get_origin
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, RootModel, create_model
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.types import Page
@@ -40,7 +39,7 @@ class Registry(Generic[Context]):
 		self.telemetry = ProductTelemetry()
 		self.exclude_actions = exclude_actions if exclude_actions is not None else []
 
-	def _get_special_param_types(self) -> dict[str, type | UnionType | None]:
+	def _get_special_param_types(self) -> dict[str, type | None]:
 		"""Get the expected types for special parameters from SpecialActionParameters"""
 		# Manually define the expected types to avoid issues with Optional handling.
 		# we should try to reduce this list to 0 if possible, give as few standardized objects to all the actions
@@ -474,7 +473,13 @@ class Registry(Generic[Context]):
 
 	# @time_execution_sync('--create_action_model')
 	def create_action_model(self, include_actions: list[str] | None = None, page=None) -> type[ActionModel]:
-		"""Creates a Pydantic model from registered actions, used by LLM APIs that support tool calling & enforce a schema"""
+		"""Creates a Union of individual action models from registered actions,
+		used by LLM APIs that support tool calling & enforce a schema.
+
+		Each action model contains only the specific action being used,
+		rather than all actions with most set to None.
+		"""
+		from typing import Union
 
 		# Filter actions based on page if provided:
 		#   if page is None, only include actions with no filters
@@ -499,13 +504,46 @@ class Registry(Generic[Context]):
 			if domain_is_allowed and page_is_allowed:
 				available_actions[name] = action
 
-		fields = {
-			name: (
-				Optional[action.param_model],
-				Field(default=None, description=action.description),
+		# Create individual action models for each action
+		individual_action_models = []
+
+		for name, action in available_actions.items():
+			# Create an individual model for each action that contains only one field
+			individual_model = create_model(
+				f'{name.title().replace("_", "")}ActionModel',
+				__base__=ActionModel,
+				**{
+					name: (
+						action.param_model,
+						Field(description=action.description),
+					)
+				},
 			)
-			for name, action in available_actions.items()
-		}
+			individual_action_models.append(individual_model)
+
+		# If no actions available, return empty ActionModel
+		if not individual_action_models:
+			return create_model('EmptyActionModel', __base__=ActionModel)
+
+		# Create proper Union type for OpenAI structured outputs
+		if len(individual_action_models) == 1:
+			# If only one action, return it directly (no Union needed)
+			result_model = individual_action_models[0]
+		else:
+			# Create a Union type using RootModel
+			union_type = Union[tuple(individual_action_models)]
+
+			# Create a RootModel that represents the Union
+			class ActionModelUnion(RootModel[union_type]):  # type: ignore
+				"""Union of all available action models"""
+
+				pass
+
+			# Set the name for better debugging
+			ActionModelUnion.__name__ = 'ActionModel'
+			ActionModelUnion.__qualname__ = 'ActionModel'
+
+			result_model = ActionModelUnion
 
 		self.telemetry.capture(
 			ControllerRegisteredFunctionsTelemetryEvent(
@@ -516,7 +554,7 @@ class Registry(Generic[Context]):
 			)
 		)
 
-		return create_model('ActionModel', __base__=ActionModel, **fields)  # type:ignore
+		return result_model  # type:ignore
 
 	def get_prompt_description(self, page=None) -> str:
 		"""Get a description of all actions for the prompt
