@@ -241,7 +241,11 @@ class Controller(Generic[Context]):
 
 			# if element has file uploader then dont click
 			# Check if element is actually a file input (not just contains file-related keywords)
-			if element_node and element_node.tag_name.lower() == 'input' and element_node.attributes.get('type', '').lower() == 'file':
+			if (
+				element_node
+				and element_node.tag_name.lower() == 'input'
+				and element_node.attributes.get('type', '').lower() == 'file'
+			):
 				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
