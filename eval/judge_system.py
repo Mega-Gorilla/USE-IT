@@ -1,6 +1,50 @@
 """
 @file purpose: Comprehensive judge system for evaluating browser-use agent runs with detailed structured feedback.
 
+BROWSER-USE AGENT ARCHITECTURE CONTEXT:
+=============================================
+
+The browser-use agent operates in an iterative loop where each step receives:
+
+1. AGENT HISTORY: Chronological event stream with previous actions and results
+2. AGENT STATE: User request, file system state, todo.md contents, step info
+3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format
+4. BROWSER VISION: Screenshot with bounding boxes around interactive elements
+5. READ STATE: Temporary data from extract_structured_data or read_file actions
+
+AGENT INTERACTION MODEL:
+- Elements are presented as [index]<type>text</type> where only [index] elements are interactive
+- Hierarchical structure with \t indentation shows parent-child HTML relationships
+- New elements since last step marked with asterisks (*)
+- Agent can only interact with explicitly provided numeric indexes
+- Max N actions per step (configurable), browser actions interrupt sequences
+
+AGENT OUTPUT FORMAT (always JSON):
+- thinking: Structured reasoning following specific patterns
+- evaluation_previous_goal: Assessment of last action success/failure
+- memory: Progress tracking (1-3 sentences)
+- next_goal: Clear statement of immediate objectives
+- action: List of actions to execute sequentially
+
+EXPECTED AGENT BEHAVIORS:
+- Uses todo.md for multi-step task planning and progress tracking
+- Saves findings to results.md for user output
+- Reasons explicitly about browser state, history, and progress
+- Handles page changes, scrolling, form interactions systematically
+- Uses extract_structured_data when needed information isn't in browser_state
+- Opens new tabs for research rather than reusing current tab
+- Calls done action only when task complete or impossible to continue
+
+COMMON FAILURE PATTERNS TO DETECT:
+- Using non-existent element indexes or clicking wrong elements
+- Not adapting when page state changes after actions
+- Poor planning evidenced by empty or stale todo.md
+- Repetitive actions without progress (loops/stuck patterns)
+- Not saving important findings to files
+- Missing or ignoring available interactive elements
+- Not handling modals, dropdowns, or dynamic content properly
+- Premature task completion or incorrect success reporting
+
 This system provides multi-dimensional evaluation of agent performance including:
 - Task analysis and categorization
 - Trajectory quality assessment
@@ -42,21 +86,15 @@ logger = logging.getLogger(__name__)
 
 class ErrorCategory(Enum):
 	# Access & Authentication
-	BLOCKED_ACCESS = 'blocked_access'
 	CAPTCHA_CHALLENGE = 'captcha_challenge'
 	LOGIN_REQUIRED = 'login_required'
 	RATE_LIMITED = 'rate_limited'
-
-	# Tool & Action Failures
-	TOOL_MISUSE = 'tool_misuse'
 	INVALID_PARAMETERS = 'invalid_parameters'
-	ACTION_SEQUENCE_ERROR = 'action_sequence_error'
 
 	# Agent Behavior Issues
 	INFINITE_LOOP = 'infinite_loop'
-	STUCK_PATTERN = 'stuck_pattern'
 	POOR_PLANNING = 'poor_planning'
-	CONTEXT_LOSS = 'context_loss'
+	CONTEXT_LOSS = 'missing_context'
 
 	# Browser & Technical
 	ELEMENT_NOT_FOUND = 'element_not_found'
@@ -77,6 +115,12 @@ class ErrorCategory(Enum):
 	BROWSER_CRASHES = 'browser_crashes'
 	IMPOSSIBLE_TASK = 'impossible_task'
 	MISSING_INFORMATION = 'missing_information'
+
+	# Browser-Use Specific Categories
+	INVALID_ELEMENT_INDEX = 'invalid_element_index'  # Using non-existent [index] values
+	FILE_SYSTEM_MISUSE = 'file_system_misuse'  # Not saving results or tracking progress
+	ACTION_SEQUENCE_INTERRUPTION = 'action_sequence_interruption'  # Not handling interrupted sequences
+	EXTRACT_DATA_MISUSE = 'extract_data_misuse'  # Wrong usage of extract_structured_data
 
 
 class TaskCategory(Enum):
@@ -285,28 +329,30 @@ async def comprehensive_judge(
 				encoded_images.append(ContentPartImageParam(image_url=ImageURL(url=f'data:image/jpeg;base64,{encoded_img}')))
 
 	# Construct the evaluation prompt
-	system_prompt = """You are an expert judge evaluating browser automation agent performance. 
+	system_prompt = """You are an expert judge evaluating browser-use agent performance.
 
-Your task is to comprehensively analyze the agent's execution and provide structured feedback.
+**AGENT ARCHITECTURE UNDERSTANDING:**
+The browser-use agent to evaluate operates in iterative loops receiving structured input:
+- We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot)
+- Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)
+- Agent outputs JSON with thinking, evaluation, memory, next_goal, and actions
+- Actions can be interrupted when browser state changes
 
 **EVALUATION CRITERIA:**
 
-1. **Task Analysis**: Understand what the user wanted to accomplish
-2. **Trajectory Quality**: How human-like and efficient was the solution path?
-3. **Tool Usage**: How effectively were browser automation tools used?
-4. **Agent Reasoning**: Quality of decision-making and problem-solving
-5. **Browser Handling**: How well were browser issues handled?
-6. **Final Outcome**: Did the task satisfy the user's intent?
+1. **Task Analysis**: Understand the user intent - Is the user satisfied with the answer?
+2. **Tool Usage**: How well did the tools work?
+3. **Agent Reasoning**: Quality of decision-making and problem-solving  
+4. **Browser Handling**: How well did the navigation and browser interaction work?
+5. **Final Outcome**: How was the output presented?
 
-**ERROR CATEGORIES TO CONSIDER:**
-- Access & Authentication: blocked_access, captcha_challenge, login_required, rate_limited
-- Tool & Action Failures: tool_misuse, invalid_parameters, action_sequence_error
-- Agent Behavior: infinite_loop, stuck_pattern, poor_planning, context_loss
-- Browser & Technical: element_not_found, click_failure, load_timeout, javascript_error
-- Content & Understanding: misunderstood_task, format_error, content_parsing_error
-- Enhanced: navigation_confusion, form_filling_error, modal_handling, iframe_issues, browser_crashes, impossible_task, missing_information
+**BROWSER-USE SPECIFIC EVALUATION FOCUS:**
+- State Adaptation: Did agent adapt when page changed after actions?
+- Planning Quality: Evidence of good todo.md usage for multi-step tasks
+- Progress Tracking: Appropriate use of file system
+- Action Sequencing: Logical action ordering respecting browser state changes
 
-
+{error_categories}
 **TASK CATEGORIES TO CONSIDER:**
 extraction, interaction, login, research, shopping, booking, comparison, qa_testing, form_filling, navigation, search, filtering, content_creation, file_operations, multi_step_workflow
 - You can use multiple categories for the same task.
@@ -315,13 +361,15 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 **TASK CLARITY SCORE:**
 - is the task very clear step by step like a recipe (high score) or very vague and uncertain (low score)
 
+**CRITICAL ISSUES:**
+- What's the core thing why the task failed? - What are the most important things to fix?
+
 **IMPROVEMENT TIPS:**
-- Think how to get this task done better. Create actionable tips - but they should be understandable for a developer who does not know the task.
-- These tips will be avg across many tasks and then the most common / problemetic will be used to improve the browser-use agent.
-- In browser-use we convert websites to text so that the agent can understand it. In there we mark interactive elements with [index] and then the agent can chose to interact with them and we click then the actual css selector. Sometimes this conversion is not perfect.
-- After the agent takes an action it gets the new state and its previous thinking, and outputs the next action. Which we then execute again.
-- So we can improve the agent system prompt, input context, tool calls to interact with the browser, or our extraction layer to convert the website to text.
-- always first mention the error this would fix and then the improvement tip.
+- Create actionable tips for browser-use agent developers to fix common issues
+- Tips will be aggregated across tasks to identify the most problematic patterns
+- Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
+- Consider improvements to: system prompt, element indexing, input state representation, action handling, tools,
+-Always mention the error pattern first, then the specific improvement suggestion
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
