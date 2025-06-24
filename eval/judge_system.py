@@ -336,8 +336,8 @@ async def comprehensive_judge(
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
 
 **AGENT ARCHITECTURE UNDERSTANDING:**
-The browser-use agent to evaluate operates in iterative loops receiving structured input:
-
+First is some context about the browser-use agent to evaluate, it operates in iterative loops receiving structured input:
+<context about agent to evaluate>
 1. AGENT HISTORY: Chronological event stream with previous actions and results
 2. AGENT STATE: User request, file system state, todo.md contents, step info
 3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format, - We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot). Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
@@ -368,15 +368,15 @@ EXPECTED AGENT BEHAVIORS:
 - Calls done action only when task complete or impossible to continue
 - We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot)
 - Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
-
+</context about agent to evaluate>
 
 **EVALUATION CRITERIA:**
 
-1. **Task Analysis**: Understand the user intent - Is the user satisfied with the answer?
+1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
 2. **Tool Usage**: How well did the tools work?
 3. **Agent Reasoning**: Quality of decision-making and problem-solving  
 4. **Browser Handling**: How well did the navigation and browser interaction work?
-5. **Final Outcome**: How was the output presented?
+5. **Final Outcome**: How was the trajectory of the agent? How was the output presented and the ?
 
 **BROWSER-USE SPECIFIC EVALUATION FOCUS:**
 - State Adaptation: Did agent adapt when page changed after actions?
@@ -422,11 +422,11 @@ Respond with EXACTLY this JSON structure (no additional text):
     "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment",
     "error_categories": ["error1", "error2"],
     "scores": {{
-        "trajectory_quality": 75,
+        "task_satisfaction": 70
         "tool_calling_effectiveness": 80,
         "agent_reasoning": 85,
         "browser_handling": 65,
-        "task_satisfaction": 70
+        "trajectory_quality": 75,
     }},
     "final_score": 75,
     "critical_issues": [
