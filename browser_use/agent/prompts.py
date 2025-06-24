@@ -207,7 +207,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		return UserMessage(content=state_description)
 
 
-class PlannerPrompt(SystemPrompt):
+class PlannerPrompt:
 	def __init__(self, available_actions: str):
 		self.available_actions = available_actions
 
