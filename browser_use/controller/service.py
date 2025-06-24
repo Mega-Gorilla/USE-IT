@@ -257,14 +257,15 @@ class Controller(Generic[Context]):
 					emoji = '🖱️'
 					msg = f'Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
 
-				logger.info(f'{emoji} {msg}')
+				log = f'{emoji} {msg}'
+				logger.info(log)
 				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(browser_session.tabs) > initial_pages:
 					new_tab_msg = 'New tab opened - switching to it'
 					msg += f' - {new_tab_msg}'
 					logger.info(new_tab_msg)
 					await browser_session.switch_to_tab(-1)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
+				return ActionResult(extracted_content=log, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
 				error_msg = str(e)
 				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
