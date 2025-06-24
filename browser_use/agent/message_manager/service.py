@@ -120,7 +120,7 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = '<s>Agent initialized</s>\n'
+		self.agent_history_description = '<s>Agent initialized</system>\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		self.available_file_paths = available_file_paths
@@ -158,27 +158,13 @@ The file system actions do not change the browser state, so I can also click on 
 							{
 								'write_file': {
 									'path': 'todo.md',
-									'content': """
-# Interesting Github Repositories in Explore Section
-
-## Tasks
-- [ ] Initialize a tracking file for GitHub repositories called github.md
-- [ ] Visit each Github repository and find their description
-- [ ] Visit bytedance/UI-TARS-desktop
-- [ ] Visit ray-project/kuberay
-- [ ] Check for additional Github repositories by scrolling down
-- [ ] Compile all results in the requested format
-- [ ] Validate that I have not missed anything in the page
-- [ ] Report final results to user
-""".strip('\n'),
+									'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
 								}
 							},
 							{
 								'write_file': {
 									'path': 'github.md',
-									'content': """
-# Github Repositories:
-""",
+									'content': '# Github Repositories:\n',
 								}
 							},
 							{
@@ -202,27 +188,13 @@ The file system actions do not change the browser state, so I can also click on 
 							{
 								'write_file': {
 									'path': 'todo.md',
-									'content': """
-# Interesting Github Repositories in Explore Section
-
-## Tasks
-- [ ] Initialize a tracking file for GitHub repositories called github.md
-- [ ] Visit each Github repository and find their description
-- [ ] Visit bytedance/UI-TARS-desktop
-- [ ] Visit ray-project/kuberay
-- [ ] Check for additional Github repositories by scrolling down
-- [ ] Compile all results in the requested format
-- [ ] Validate that I have not missed anything in the page
-- [ ] Report final results to user
-""".strip('\n'),
+									'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
 								}
 							},
 							{
 								'write_file': {
 									'path': 'github.md',
-									'content': """
-# Github Repositories:
-""",
+									'content': '# Github Repositories:\n',
 								}
 							},
 							{

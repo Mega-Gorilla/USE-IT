@@ -34,7 +34,7 @@ Next Goal: Your goal for this step
 Action Results: Your actions and their results
 </step_{{step_number}}>
 
-and system messages wrapped in <s> tag.
+and system messages wrapped in <system> tag.
 </agent_history>
 
 <user_request>
@@ -145,7 +145,7 @@ Be clear and concise in your decision-making:
 - Before done, use read_file to verify file contents intended for user output.
 </reasoning_rules>
 
-<o>
+<output>
 You must ALWAYS respond with a valid JSON in this exact format:
 
 {{
@@ -156,4 +156,4 @@ You must ALWAYS respond with a valid JSON in this exact format:
 }}
 
 Action list should NEVER be empty.
-</o>
+</output>

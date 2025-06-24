@@ -1311,6 +1311,20 @@ class Agent(Generic[Context]):
 					)
 					break
 
+				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
+				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
+					# next action requires index but there are new elements on the page
+					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
+					logger.info(msg)
+					results.append(
+						ActionResult(
+							extracted_content=msg,
+							include_in_memory=True,
+							long_term_memory=msg,
+						)
+					)
+					break
+
 			try:
 				await self._raise_if_stopped_or_paused()
 
