@@ -74,20 +74,6 @@ class OpenAIMessageSerializer:
 		return serialized_parts
 
 	@staticmethod
-	def _serialize_tool_content(
-		content: str | list[ContentPartTextParam],
-	) -> str | list[ChatCompletionContentPartTextParam]:
-		"""Serialize content for tool messages (text only)."""
-		if isinstance(content, str):
-			return content
-
-		serialized_parts: list[ChatCompletionContentPartTextParam] = []
-		for part in content:
-			if part.type == 'text':
-				serialized_parts.append(OpenAIMessageSerializer._serialize_content_part_text(part))
-		return serialized_parts
-
-	@staticmethod
 	def _serialize_assistant_content(
 		content: str | list[ContentPartTextParam | ContentPartRefusalParam] | None,
 	) -> str | list[ChatCompletionContentPartTextParam | ChatCompletionContentPartRefusalParam] | None:
