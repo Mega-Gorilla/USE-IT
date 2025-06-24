@@ -661,12 +661,15 @@ Explain the content of the page and that the requested information is not availa
 			if len(result) > MAX_MEMORY_SIZE:
 				lines = result.splitlines()
 				display = ''
+				lines_count = 0
 				for line in lines:
 					if len(display) + len(line) < MAX_MEMORY_SIZE:
 						display += line + '\n'
+						lines_count += 1
 					else:
 						break
-				memory = f'{display}{len(lines) - len(display)} more lines...'
+				remaining_lines = len(lines) - lines_count
+				memory = f'{display}{remaining_lines} more lines...' if remaining_lines > 0 else display
 			else:
 				memory = result
 			logger.info(f'💾 {memory}')
