@@ -6,7 +6,6 @@ import random
 from lmnr import Laminar
 from PIL import Image, ImageDraw, ImageFont
 
-from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.google.serializer import GoogleMessageSerializer
 from browser_use.llm.messages import (
@@ -17,7 +16,6 @@ from browser_use.llm.messages import (
 	SystemMessage,
 	UserMessage,
 )
-from browser_use.llm.openai.chat import ChatOpenAI
 
 Laminar.initialize()
 
@@ -58,8 +56,6 @@ async def test_gemini_image_vision():
 
 	# Create the LLM
 	llm = ChatGoogle(model='gemini-2.0-flash-exp')
-	llm = ChatAnthropic('claude-3-5-sonnet-latest')
-	llm = ChatOpenAI(model='gpt-4.1')
 
 	# Create a random image with text
 	image_data_url = create_random_text_image('Hello Gemini! Can you see this text?')
