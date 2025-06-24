@@ -328,15 +328,47 @@ async def comprehensive_judge(
 			if encoded_img:
 				encoded_images.append(ContentPartImageParam(image_url=ImageURL(url=f'data:image/jpeg;base64,{encoded_img}')))
 
+	# Build error categories dynamically from enum
+	error_categories_text = '**ERROR CATEGORIES TO CONSIDER:**\n'
+	error_categories_text += ', '.join([category.value for category in ErrorCategory])
+
 	# Construct the evaluation prompt
-	system_prompt = """You are an expert judge evaluating browser-use agent performance.
+	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
 
 **AGENT ARCHITECTURE UNDERSTANDING:**
 The browser-use agent to evaluate operates in iterative loops receiving structured input:
+
+1. AGENT HISTORY: Chronological event stream with previous actions and results
+2. AGENT STATE: User request, file system state, todo.md contents, step info
+3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format, - We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot). Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
+4. BROWSER VISION: Screenshot with bounding boxes around interactive elements
+5. READ STATE: Temporary data from extract_structured_data or read_file actions
+
+AGENT INTERACTION MODEL:
+- Elements are presented as [index]<type>text</type> where only [index] elements are interactive
+- Hierarchical structure with \t indentation shows parent-child HTML relationships
+- New elements since last step marked with asterisks (*)
+- Agent can only interact with explicitly provided numeric indexes
+- Max N actions per step (configurable), browser actions interrupt sequences
+
+AGENT OUTPUT FORMAT (always JSON):
+- thinking: Structured reasoning following specific patterns
+- evaluation_previous_goal: Assessment of last action success/failure
+- memory: Progress tracking (1-3 sentences)
+- next_goal: Clear statement of immediate objectives
+- action: List of actions to execute sequentially
+
+EXPECTED AGENT BEHAVIORS:
+- Uses todo.md for multi-step task planning and progress tracking
+- Saves findings to results.md for user output
+- Reasons explicitly about browser state, history, and progress
+- Handles page changes, scrolling, form interactions systematically
+- Uses extract_structured_data when needed information isn't in browser_state
+- Opens new tabs for research rather than reusing current tab
+- Calls done action only when task complete or impossible to continue
 - We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot)
-- Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)
-- Agent outputs JSON with thinking, evaluation, memory, next_goal, and actions
-- Actions can be interrupted when browser state changes
+- Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
+
 
 **EVALUATION CRITERIA:**
 
@@ -352,7 +384,8 @@ The browser-use agent to evaluate operates in iterative loops receiving structur
 - Progress Tracking: Appropriate use of file system
 - Action Sequencing: Logical action ordering respecting browser state changes
 
-{error_categories}
+{error_categories_text}
+
 **TASK CATEGORIES TO CONSIDER:**
 extraction, interaction, login, research, shopping, booking, comparison, qa_testing, form_filling, navigation, search, filtering, content_creation, file_operations, multi_step_workflow
 - You can use multiple categories for the same task.
@@ -382,19 +415,19 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 
 Respond with EXACTLY this JSON structure (no additional text):
 
-{
+{{
     "task_summary": "One sentence summary of what the task was trying to accomplish",
     "task_categories": ["category1", "category2"],
     "task_clarity_score": 85,
     "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment",
     "error_categories": ["error1", "error2"],
-    "scores": {
+    "scores": {{
         "trajectory_quality": 75,
         "tool_calling_effectiveness": 80,
         "agent_reasoning": 85,
         "browser_handling": 65,
         "task_satisfaction": 70
-    },
+    }},
     "final_score": 75,
     "critical_issues": [
         "Critical issue that must be fixed 1",
@@ -404,7 +437,7 @@ Respond with EXACTLY this JSON structure (no additional text):
         "Specific actionable improvement 1",
         "Specific actionable improvement 2"
     ]
-}"""
+}}"""
 
 	user_prompt = f"""**TASK:** {task_truncated}
 
