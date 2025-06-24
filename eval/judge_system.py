@@ -136,16 +136,31 @@ def encode_image(image_path: str) -> str:
 
 
 def truncate_text(text: str, max_length: int) -> str:
-	"""Truncate text to maximum length with ellipsis."""
+	"""Truncate text to maximum length with eval system indicator."""
 	if len(text) <= max_length:
 		return text
-	return text[: max_length - 3] + '...'
+	return text[: max_length - 23] + '...[cut for eval]...'
 
 
 def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
-	"""Extract and format agent steps, limiting each to 2000 characters."""
+	"""Extract and format agent steps, limiting each to 2000 characters.
+
+	Excludes the last step if it contains a 'done' action, since that content
+	is already included in the final_result.
+	"""
+	# Check if last step contains a 'done' action
+	history_to_process = complete_history.copy()
+	if complete_history:
+		last_step = complete_history[-1]
+		if last_step.get('result'):
+			for result in last_step['result']:
+				if isinstance(result, dict) and result.get('is_done'):
+					# Exclude the last step since it's a 'done' action
+					history_to_process = complete_history[:-1]
+					break
+
 	steps = []
-	for i, step in enumerate(complete_history):
+	for i, step in enumerate(history_to_process):
 		step_text = f'Step {i + 1}:\n'
 
 		# Add model output if available
@@ -171,8 +186,11 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 		if step.get('state', {}).get('url'):
 			step_text += f'URL: {step["state"]["url"]}\n'
 
-		# Truncate to 2000 characters
-		steps.append(truncate_text(step_text, 2000))
+		# Truncate to 2000 characters, with eval system indicator if truncated
+		if len(step_text) > 2000:
+			step_text = step_text[:1997] + '...[cut for eval]...'
+
+		steps.append(step_text)
 
 	return steps
 
