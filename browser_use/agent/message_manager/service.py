@@ -414,8 +414,8 @@ Next Goal: {model_output.current_state.next_goal}
 
 		if placeholders:
 			placeholder_list = sorted(list(placeholders))
-			info = f'<sensitive_data>Here are placeholders for sensitive data: {placeholder_list}\n'
-			info += 'To use them, write <secret>the placeholder name</secret></sensitive_data>'
+			info = f'Here are placeholders for sensitive data:\n{placeholder_list}\n'
+			info += 'To use them, write <secret>the placeholder name</secret>'
 			return info
 
 		return ''
