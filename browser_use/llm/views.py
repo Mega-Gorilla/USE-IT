@@ -1,8 +1,8 @@
-from typing import TypeVar
+from typing import Generic, TypeVar, Union
 
 from pydantic import BaseModel
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar('T', bound=Union[BaseModel, str])
 
 
 class ChatInvokeUsage(BaseModel):
@@ -23,7 +23,7 @@ class ChatInvokeUsage(BaseModel):
 	"""The number of tokens in the image. Google only (prompt tokens is the text tokens + image tokens in that case)"""
 
 
-class ChatInvokeCompletion[T: BaseModel | str](BaseModel):
+class ChatInvokeCompletion(BaseModel, Generic[T]):
 	"""
 	Response from a chat model invocation.
 	"""
