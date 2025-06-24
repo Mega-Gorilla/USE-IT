@@ -251,20 +251,20 @@ class Controller(Generic[Context]):
 				assert element_node is not None, f'Element with index {params.index} does not exist'
 				download_path = await browser_session._click_element_node(element_node)
 				if download_path:
-					msg = f'💾  Downloaded file to {download_path}'
+					emoji = '💾'
+					msg = f'Downloaded file to {download_path}'
 				else:
-					msg = f'🖱️  Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+					emoji = '🖱️'
+					msg = f'Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
 
-				logger.info(msg)
+				logger.info(f'{emoji} {msg}')
 				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(browser_session.tabs) > initial_pages:
 					new_tab_msg = 'New tab opened - switching to it'
 					msg += f' - {new_tab_msg}'
 					logger.info(new_tab_msg)
 					await browser_session.switch_to_tab(-1)
-				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f'Clicked element {params.index}'
-				)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
 				error_msg = str(e)
 				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
