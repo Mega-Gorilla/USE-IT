@@ -875,7 +875,7 @@ def get_llm(model_name: str):
 				kwargs['api_key'] = api_key
 			return ChatOpenAI(**kwargs)
 		case 'anthropic':
-			kwargs = {'model_name': config['model_name'], 'temperature': 0.0, 'timeout': 100, 'stop': None}
+			kwargs = {'model': config['model_name'], 'temperature': 0.0, 'timeout': 100, 'stop': None}
 			if api_key:
 				kwargs['api_key'] = api_key
 			return ChatAnthropic(**kwargs)
