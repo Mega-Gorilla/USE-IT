@@ -345,12 +345,12 @@ class TokenCost:
 
 	def _format_tokens(self, tokens: int) -> str:
 		"""Format token count with k suffix for thousands"""
-		if tokens >= 1000:
-			return f'{tokens / 1000:.1f}k'
-		if tokens >= 1000000:
-			return f'{tokens / 1000000:.1f}M'
 		if tokens >= 1000000000:
 			return f'{tokens / 1000000000:.1f}B'
+		if tokens >= 1000000:
+			return f'{tokens / 1000000:.1f}M'
+		if tokens >= 1000:
+			return f'{tokens / 1000:.1f}k'
 		return str(tokens)
 
 	async def log_usage_summary(self) -> None:
