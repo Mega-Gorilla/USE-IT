@@ -309,9 +309,11 @@ Next Goal: {model_output.current_state.next_goal}
 			else:
 				# Old format: {key: value}
 				placeholders.add(key)
+
 		if placeholders:
-			info = f'Here are placeholders for sensitive data: {list(placeholders)}'
-			info += '\nTo use them, write <secret>the placeholder name</secret>'
+			placeholder_list = sorted(list(placeholders))
+			info = f'Here are placeholders for sensitive data:\n{placeholder_list}\n'
+			info += 'To use them, write <secret>the placeholder name</secret>'
 			return info
 
 		return ''

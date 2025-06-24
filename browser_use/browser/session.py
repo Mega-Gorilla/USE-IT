@@ -212,6 +212,7 @@ class BrowserSession(BaseModel):
 	_start_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 	_tab_visibility_callback: Any = PrivateAttr(default=None)
 	_logger: logging.Logger | None = PrivateAttr(default=None)
+	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -1542,10 +1543,15 @@ class BrowserSession(BaseModel):
 						download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
 						await download.save_as(download_path)
 						self.logger.info(f'⬇️ Downloaded file to: {download_path}')
+
+						# Track the downloaded file in the session
+						self._downloaded_files.append(download_path)
+						self.logger.info(f'📁 Added download to session tracking (total: {len(self._downloaded_files)} files)')
+
 						return download_path
 					except Exception:
 						# If no download is triggered, treat as normal click
-						# self.logger.debug('No download triggered within timeout. Checking navigation...')
+						self.logger.debug('No download triggered within timeout. Checking navigation...')
 						try:
 							await page.wait_for_load_state()
 						except Exception as e:
@@ -1874,6 +1880,17 @@ class BrowserSession(BaseModel):
 		Old name for the new load_storage_state() function.
 		"""
 		await self.load_storage_state(*args, **kwargs)
+
+	@property
+	def downloaded_files(self) -> list[str]:
+		"""
+		Get list of all files downloaded during this browser session.
+
+		Returns:
+		    list[str]: List of absolute file paths to downloaded files
+		"""
+		self.logger.debug(f'📁 Retrieved {len(self._downloaded_files)} downloaded files from session tracking')
+		return self._downloaded_files.copy()
 
 	# @property
 	# def browser_extension_pages(self) -> list[Page]:
