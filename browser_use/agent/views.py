@@ -4,7 +4,7 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, List, TYPE_CHECKING
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -170,11 +170,12 @@ class AgentOutput(BaseModel):
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions"""
+		
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
 			action=(
-				list[custom_actions],
+				List[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
@@ -183,12 +184,12 @@ class AgentOutput(BaseModel):
 		return model_
 
 	@staticmethod
-	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type['AgentOutput']:
 		"""Extend actions with custom actions and exclude thinking field"""
 
 		# Create a base model without thinking
 		model_ = create_model(
-			'AgentOutput',
+			'AgentOutputNoThinking',
 			evaluation_previous_goal=(
 				str,
 				Field(
@@ -201,15 +202,17 @@ class AgentOutput(BaseModel):
 				Field(..., description='State the next immediate goals and actions to achieve it, in one clear sentence.'),
 			),
 			action=(
-				list[custom_actions],
+				List[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
-			__config__=AgentOutput.model_config,
 		)
 
-		# Add the current_state property
-		def current_state_property(self) -> AgentBrain:
+		# Set the model config
+		model_.model_config = AgentOutput.model_config
+
+		# Add the current_state property with proper typing
+		def current_state_property(self: Any) -> AgentBrain:
 			"""For backward compatibility - returns an AgentBrain with the flattened properties"""
 			return AgentBrain(
 				thinking=None,

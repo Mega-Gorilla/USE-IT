@@ -290,7 +290,7 @@ Next Goal: {model_output.current_state.next_goal}
 			return ''
 
 		# Collect placeholders for sensitive data
-		placeholders = set()
+		placeholders: set[str] = set()
 
 		for key, value in sensitive_data.items():
 			if isinstance(value, dict):
