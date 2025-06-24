@@ -50,6 +50,7 @@ class AgentSettings(BaseModel):
 		'aria-expanded',
 	]
 	max_actions_per_step: int = 10
+	use_thinking: bool = True
 
 	page_extraction_llm: BaseChatModel | None = None
 	planner_llm: BaseChatModel | None = None
@@ -137,7 +138,7 @@ class StepMetadata(BaseModel):
 
 
 class AgentBrain(BaseModel):
-	thinking: str
+	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
@@ -146,7 +147,7 @@ class AgentBrain(BaseModel):
 class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
-	thinking: str
+	thinking: str | None = None
 	evaluation_previous_goal: str
 	memory: str
 	next_goal: str
@@ -181,6 +182,38 @@ class AgentOutput(BaseModel):
 		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
+	@staticmethod
+	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions and exclude thinking field"""
+		
+		# Create a base model without thinking
+		model_ = create_model(
+			'AgentOutputNoThinking',
+			evaluation_previous_goal=(str, Field(..., description='One-sentence analysis of your last action. Clearly state success, failure, or uncertain.')),
+			memory=(str, Field(..., description='1-3 sentences of specific memory of this step and overall progress.')),
+			next_goal=(str, Field(..., description='State the next immediate goals and actions to achieve it, in one clear sentence.')),
+			action=(
+				list[custom_actions],
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutput.__module__,
+			__config__=AgentOutput.model_config,
+		)
+		
+		# Add the current_state property
+		def current_state_property(self) -> AgentBrain:
+			"""For backward compatibility - returns an AgentBrain with the flattened properties"""
+			return AgentBrain(
+				thinking=None,
+				evaluation_previous_goal=self.evaluation_previous_goal,
+				memory=self.memory,
+				next_goal=self.next_goal,
+			)
+		
+		model_.current_state = property(current_state_property)
+		model_.__doc__ = 'AgentOutput model with custom actions and no thinking field'
+		return model_
+
 
 class AgentHistory(BaseModel):
 	"""History item for agent actions"""
@@ -212,12 +245,14 @@ class AgentHistory(BaseModel):
 		if self.model_output:
 			action_dump = [action.model_dump(exclude_none=True) for action in self.model_output.action]
 			model_output_dump = {
-				'thinking': self.model_output.thinking,
 				'evaluation_previous_goal': self.model_output.evaluation_previous_goal,
 				'memory': self.model_output.memory,
 				'next_goal': self.model_output.next_goal,
 				'action': action_dump,  # This preserves the actual action data
 			}
+			# Only include thinking if it's present
+			if self.model_output.thinking is not None:
+				model_output_dump['thinking'] = self.model_output.thinking
 
 		return {
 			'model_output': model_output_dump,

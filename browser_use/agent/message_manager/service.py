@@ -113,16 +113,18 @@ class MessageManager:
 		available_file_paths: list[str] | None = None,
 		settings: MessageManagerSettings = MessageManagerSettings(),
 		state: MessageManagerState = MessageManagerState(),
+		use_thinking: bool = True,
 	):
 		self.task = task
 		self.settings = settings
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = '<system>Agent initialized</system>\n'
+		self.agent_history_description = '<s>Agent initialized</s>\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		self.available_file_paths = available_file_paths
+		self.use_thinking = use_thinking
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
 			self._init_messages()
@@ -137,24 +139,26 @@ class MessageManager:
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_type(placeholder_message, message_type='init')
 
-		example_tool_call_1 = AssistantMessage(
-			content=json.dumps(
-				{
-					'thinking': """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
+		if self.use_thinking:
+			# Example with thinking field
+			example_tool_call_1 = AssistantMessage(
+				content=json.dumps(
+					{
+						'thinking': """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
 My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
 I need to capture the key repositories I've identified so far into my memory and into a file.
 Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
 After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
 The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information.
 """,
-					'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
-					'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-					'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
-					'action': [
-						{
-							'write_file': {
-								'path': 'todo.md',
-								'content': """
+						'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
+						'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
+						'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
+						'action': [
+							{
+								'write_file': {
+									'path': 'todo.md',
+									'content': """
 # Interesting Github Repositories in Explore Section
 
 ## Tasks
@@ -167,25 +171,70 @@ The file system actions do not change the browser state, so I can also click on 
 - [ ] Validate that I have not missed anything in the page
 - [ ] Report final results to user
 """.strip('\n'),
-							}
-						},
-						{
-							'write_file': {
-								'path': 'github.md',
-								'content': """
+								}
+							},
+							{
+								'write_file': {
+									'path': 'github.md',
+									'content': """
 # Github Repositories:
 """,
-							}
-						},
-						{
-							'click_element_by_index': {
-								'index': 4,
-							}
-						},
-					],
-				}
+								}
+							},
+							{
+								'click_element_by_index': {
+									'index': 4,
+								}
+							},
+						],
+					}
+				)
 			)
-		)
+		else:
+			# Example without thinking field
+			example_tool_call_1 = AssistantMessage(
+				content=json.dumps(
+					{
+						'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
+						'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
+						'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
+						'action': [
+							{
+								'write_file': {
+									'path': 'todo.md',
+									'content': """
+# Interesting Github Repositories in Explore Section
+
+## Tasks
+- [ ] Initialize a tracking file for GitHub repositories called github.md
+- [ ] Visit each Github repository and find their description
+- [ ] Visit bytedance/UI-TARS-desktop
+- [ ] Visit ray-project/kuberay
+- [ ] Check for additional Github repositories by scrolling down
+- [ ] Compile all results in the requested format
+- [ ] Validate that I have not missed anything in the page
+- [ ] Report final results to user
+""".strip('\n'),
+								}
+							},
+							{
+								'write_file': {
+									'path': 'github.md',
+									'content': """
+# Github Repositories:
+""",
+								}
+							},
+							{
+								'click_element_by_index': {
+									'index': 4,
+								}
+							},
+						],
+					}
+				)
+			)
+
 		self._add_message_with_type(example_tool_call_1, message_type='init')
 		self._add_message_with_type(
 			UserMessage(

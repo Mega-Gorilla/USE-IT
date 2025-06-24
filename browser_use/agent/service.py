@@ -94,7 +94,9 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	else:
 		emoji = '❔'
 
-	logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
+	# Only log thinking if it's present
+	if response.current_state.thinking:
+		logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
 	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
 	logger.info(f'🧠 Memory: {response.current_state.memory}')
 	logger.info(f'🎯 Next goal: {response.current_state.next_goal}\n')
@@ -165,6 +167,7 @@ class Agent(Generic[Context]):
 			'aria-checked',
 		],
 		max_actions_per_step: int = 1,
+		use_thinking: bool = True,
 		page_extraction_llm: BaseChatModel | None = None,
 		planner_llm: BaseChatModel | None = None,
 		planner_interval: int = 1,  # Run planner every N steps
@@ -217,6 +220,7 @@ class Agent(Generic[Context]):
 			planner_interval=planner_interval,
 			is_planner_reasoning=is_planner_reasoning,
 			extend_planner_system_message=extend_planner_system_message,
+			use_thinking=use_thinking,
 		)
 
 		# Token cost service
@@ -288,6 +292,7 @@ class Agent(Generic[Context]):
 				max_actions_per_step=self.settings.max_actions_per_step,
 				override_system_message=override_system_message,
 				extend_system_message=extend_system_message,
+				use_thinking=self.settings.use_thinking,
 			).get_system_message(),
 			file_system=self.file_system,
 			settings=MessageManagerSettings(
@@ -298,6 +303,7 @@ class Agent(Generic[Context]):
 			),
 			available_file_paths=self.settings.available_file_paths,
 			state=self.state.message_manager_state,
+			use_thinking=self.settings.use_thinking,
 		)
 
 		# TODO: FIX MEMORY
@@ -605,11 +611,17 @@ class Agent(Generic[Context]):
 		# Initially only include actions with no filters
 		self.ActionModel = self.controller.registry.create_action_model()
 		# Create output model with the dynamic actions
-		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+		if self.settings.use_thinking:
+			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+		else:
+			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
 		# used to force the done action when max_steps is reached
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
-		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+		if self.settings.use_thinking:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+		else:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
 
 	def add_new_task(self, new_task: str) -> None:
 		"""Add a new task to the agent, keeping the same task_id as tasks are continuous"""
@@ -1299,20 +1311,6 @@ class Agent(Generic[Context]):
 					)
 					break
 
-				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
-					logger.info(msg)
-					results.append(
-						ActionResult(
-							extracted_content=msg,
-							include_in_memory=True,
-							long_term_memory=msg,
-						)
-					)
-					break
-
 			try:
 				await self._raise_if_stopped_or_paused()
 
@@ -1665,8 +1663,14 @@ class Agent(Generic[Context]):
 		# Create new action model with current page's filtered actions
 		self.ActionModel = self.controller.registry.create_action_model(page=page)
 		# Update output model with the new actions
-		self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+		if self.settings.use_thinking:
+			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+		else:
+			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
 		# Update done action model too
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'], page=page)
-		self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+		if self.settings.use_thinking:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+		else:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
