@@ -170,12 +170,12 @@ class AgentOutput(BaseModel):
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions"""
-		
+
 		model_ = create_model(
 			'AgentOutput',
 			__base__=AgentOutput,
 			action=(
-				List[custom_actions],  # type: ignore
+				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
@@ -184,7 +184,7 @@ class AgentOutput(BaseModel):
 		return model_
 
 	@staticmethod
-	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type['AgentOutput']:
+	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions and exclude thinking field"""
 
 		# Create a base model without thinking, but inheriting from AgentOutput
@@ -194,7 +194,7 @@ class AgentOutput(BaseModel):
 			__base__=AgentOutput,
 			thinking=(type(None), Field(default=None, exclude=True)),  # Exclude thinking from schema
 			action=(
-				List[custom_actions],  # type: ignore
+				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutput.__module__,
