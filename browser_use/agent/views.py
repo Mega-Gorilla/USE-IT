@@ -203,17 +203,6 @@ class AgentOutput(BaseModel):
 			__module__=AgentOutput.__module__,
 		)
 
-		# Add the current_state property with proper typing
-		def current_state_property(self: Any) -> AgentBrain:
-			"""For backward compatibility - returns an AgentBrain with the flattened properties"""
-			return AgentBrain(
-				thinking=None,
-				evaluation_previous_goal=self.evaluation_previous_goal,
-				memory=self.memory,
-				next_goal=self.next_goal,
-			)
-
-		model_.current_state = property(current_state_property)
 		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
