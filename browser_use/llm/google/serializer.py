@@ -85,10 +85,6 @@ class GoogleMessageSerializer:
 						# Decode base64 to bytes
 						image_bytes = base64.b64decode(data)
 
-						# Save the image to a file
-						with open('tmp/image.png', 'wb') as f:
-							f.write(image_bytes)
-
 						# Add image part
 						image_part = Part.from_bytes(data=image_bytes, mime_type='image/png')
 
