@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 from browser_use.config import CONFIG
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
+from .utils import normalize_url
+
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
 import anyio
@@ -1661,10 +1663,14 @@ class BrowserSession(BaseModel):
 	# --- Page navigation ---
 	@require_initialization
 	async def navigate(self, url: str) -> None:
+		# Add https:// if there's no protocol
+
+		normalized_url = normalize_url(url)
+
 		if self.agent_current_page:
-			await self.agent_current_page.goto(url, wait_until='domcontentloaded')
+			await self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded')
 		else:
-			await self.create_new_tab(url)
+			await self.create_new_tab(normalized_url)
 
 	@require_initialization
 	async def refresh(self) -> None:
@@ -2185,11 +2191,16 @@ class BrowserSession(BaseModel):
 
 	async def navigate_to(self, url: str):
 		"""Navigate the agent's current tab to a URL"""
-		if not self._is_url_allowed(url):
-			raise BrowserError(f'Navigation to non-allowed URL: {url}')
+
+		# Add https:// if there's no protocol
+
+		normalized_url = normalize_url(url)
+
+		if not self._is_url_allowed(normalized_url):
+			raise BrowserError(f'Navigation to non-allowed URL: {normalized_url}')
 
 		page = await self.get_current_page()
-		await page.goto(url)
+		await page.goto(normalized_url)
 		try:
 			await page.wait_for_load_state()
 		except Exception as e:
@@ -3034,8 +3045,13 @@ class BrowserSession(BaseModel):
 	async def create_new_tab(self, url: str | None = None) -> Page:
 		"""Create a new tab and optionally navigate to a URL"""
 
-		if url and not self._is_url_allowed(url):
-			raise BrowserError(f'Cannot create new tab with non-allowed URL: {url}')
+		# Add https:// if there's no protocol
+		normalized_url = url
+		if url:
+			normalized_url = normalize_url(url)
+
+			if not self._is_url_allowed(normalized_url):
+				raise BrowserError(f'Cannot create new tab with non-allowed URL: {normalized_url}')
 
 		try:
 			assert self.browser_context is not None, 'Browser context is not set'
@@ -3073,12 +3089,12 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.viewport:
 			await new_page.set_viewport_size(self.browser_profile.viewport)
 
-		if url:
+		if normalized_url:
 			try:
-				await new_page.goto(url, wait_until='domcontentloaded')
+				await new_page.goto(normalized_url, wait_until='domcontentloaded')
 				await self._wait_for_page_and_frames_load(timeout_overwrite=1)
 			except Exception as e:
-				self.logger.error(f'❌ Error navigating to {url}: {type(e).__name__}: {e} (proceeding anyway...)')
+				self.logger.error(f'❌ Error navigating to {normalized_url}: {type(e).__name__}: {e} (proceeding anyway...)')
 
 		assert self.human_current_page is not None
 		assert self.agent_current_page is not None
