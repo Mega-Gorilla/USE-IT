@@ -6,10 +6,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.prompts import PromptTemplate
-
-# from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -32,6 +28,8 @@ from browser_use.controller.views import (
 	SwitchTabAction,
 )
 from browser_use.filesystem.file_system import FileSystem
+from browser_use.llm.base import BaseChatModel
+from browser_use.llm.messages import UserMessage
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -201,7 +199,7 @@ class Controller(Generic[Context]):
 					raise
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
-		async def go_back(params: NoParamsAction, browser_session: BrowserSession):
+		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			await browser_session.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
@@ -438,11 +436,12 @@ Only use this for extracting info from a single product/article page, not for en
 3. Some/all of the information is not available
 
 Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
-			template = PromptTemplate(input_variables=['query', 'page'], template=prompt)
 			try:
-				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
-				output_text = output.content
-				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
+				formatted_prompt = prompt.format(query=query, page=content)
+				response = await page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)])
+
+				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+
 				# if content is small include it to memory
 				MAX_MEMORY_SIZE = 600
 				if len(extracted_content) < MAX_MEMORY_SIZE:
