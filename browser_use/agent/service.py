@@ -9,7 +9,6 @@ import shutil
 import sys
 import tempfile
 import time
-import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from threading import Thread
@@ -453,6 +452,13 @@ class Agent(Generic[Context]):
 		if self.settings.save_conversation_path:
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
 			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
+
+		# Initialize download tracking
+		self.has_downloads_path = self.browser_session.browser_profile.downloads_path is not None
+		if self.has_downloads_path:
+			self._last_known_downloads: list[str] = []
+			self.logger.info('📁 Initialized download tracking for agent')
+
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
 
@@ -481,15 +487,37 @@ class Agent(Generic[Context]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		return self.browser_session.browser_profile
 
+	def _update_available_file_paths(self, downloads: list[str]) -> None:
+		"""Update available_file_paths with downloaded files."""
+		if not self.has_downloads_path:
+			return
+
+		current_files = set(self.settings.available_file_paths or [])
+		new_files = set(downloads) - current_files
+
+		if new_files:
+			self.settings.available_file_paths = list(current_files | new_files)
+			# Update message manager with new file paths
+			self._message_manager.settings.available_file_paths = self.settings.available_file_paths
+			self._message_manager.available_file_paths = self.settings.available_file_paths
+
+			self.logger.info(
+				f'📁 Added {len(new_files)} downloaded files to available_file_paths (total: {len(self.settings.available_file_paths)} files)'
+			)
+			for file_path in new_files:
+				self.logger.info(f'📄 New file available: {file_path}')
+		else:
+			self.logger.info(f'📁 No new downloads detected (tracking {len(current_files)} files)')
+
 	def _set_file_system(self, file_system_path: str | None = None) -> None:
 		# Initialize file system
 		if file_system_path:
 			self.file_system = FileSystem(file_system_path)
 			self.file_system_path = file_system_path
 		else:
-			# create a temporary file system
+			# create a temporary file system using agent ID
 			base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
-			self.file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
+			self.file_system_path = os.path.join(base_tmp, f'browser_use_agent_{self.id}')
 			self.file_system = FileSystem(self.file_system_path)
 
 		logger.info(f'💾 File system path: {self.file_system_path}')
@@ -1003,6 +1031,16 @@ class Agent(Generic[Context]):
 
 			self.state.last_result = result
 			self.state.last_model_output = model_output
+
+			# Check for new downloads after executing actions
+			if self.has_downloads_path:
+				try:
+					current_downloads = self.browser_session.downloaded_files
+					if current_downloads != self._last_known_downloads:
+						self._update_available_file_paths(current_downloads)
+						self._last_known_downloads = current_downloads
+				except Exception as e:
+					self.logger.debug(f'📁 Failed to check for new downloads: {type(e).__name__}: {e}')
 
 			if len(result) > 0 and result[-1].is_done:
 				self.logger.info(f'📄 Result: {result[-1].extracted_content}')
