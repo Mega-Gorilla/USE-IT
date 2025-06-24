@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 from browser_use.config import CONFIG
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
+from .utils import normalize_url
+
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
 import anyio
@@ -1662,9 +1664,8 @@ class BrowserSession(BaseModel):
 	@require_initialization
 	async def navigate(self, url: str) -> None:
 		# Add https:// if there's no protocol
-		normalized_url = url.strip()
-		if '://' not in normalized_url:
-			normalized_url = f'https://{normalized_url}'
+
+		normalized_url = normalize_url(url)
 
 		if self.agent_current_page:
 			await self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded')
@@ -2192,9 +2193,8 @@ class BrowserSession(BaseModel):
 		"""Navigate the agent's current tab to a URL"""
 
 		# Add https:// if there's no protocol
-		normalized_url = url.strip()
-		if '://' not in normalized_url:
-			normalized_url = f'https://{normalized_url}'
+
+		normalized_url = normalize_url(url)
 
 		if not self._is_url_allowed(normalized_url):
 			raise BrowserError(f'Navigation to non-allowed URL: {normalized_url}')
@@ -3048,9 +3048,7 @@ class BrowserSession(BaseModel):
 		# Add https:// if there's no protocol
 		normalized_url = url
 		if url:
-			normalized_url = url.strip()
-			if '://' not in normalized_url:
-				normalized_url = f'https://{normalized_url}'
+			normalized_url = normalize_url(url)
 
 			if not self._is_url_allowed(normalized_url):
 				raise BrowserError(f'Cannot create new tab with non-allowed URL: {normalized_url}')
