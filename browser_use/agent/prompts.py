@@ -39,7 +39,7 @@ class SystemPrompt:
 		try:
 			# Choose the appropriate template based on use_thinking setting
 			template_filename = 'system_prompt.md' if self.use_thinking else 'system_prompt_no_thinking.md'
-			
+
 			# This works both in development and when installed as a package
 			with importlib.resources.files('browser_use.agent').joinpath(template_filename).open('r', encoding='utf-8') as f:
 				self.prompt_template = f.read()

@@ -120,7 +120,7 @@ class MessageManager:
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = '<s>Agent initialized</system>\n'
+		self.agent_history_description = '<s>Agent initialized</s>\n'
 		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		self.available_file_paths = available_file_paths
@@ -167,7 +167,9 @@ class MessageManager:
 
 		# Add thinking field only if use_thinking is True
 		if self.use_thinking:
-			example_content['thinking'] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
+			example_content[
+				'thinking'
+			] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
 My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
 I need to capture the key repositories I've identified so far into my memory and into a file.
 Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.

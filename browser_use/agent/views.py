@@ -185,13 +185,21 @@ class AgentOutput(BaseModel):
 	@staticmethod
 	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions and exclude thinking field"""
-		
+
 		# Create a base model without thinking
 		model_ = create_model(
-			'AgentOutputNoThinking',
-			evaluation_previous_goal=(str, Field(..., description='One-sentence analysis of your last action. Clearly state success, failure, or uncertain.')),
+			'AgentOutput',
+			evaluation_previous_goal=(
+				str,
+				Field(
+					..., description='One-sentence analysis of your last action. Clearly state success, failure, or uncertain.'
+				),
+			),
 			memory=(str, Field(..., description='1-3 sentences of specific memory of this step and overall progress.')),
-			next_goal=(str, Field(..., description='State the next immediate goals and actions to achieve it, in one clear sentence.')),
+			next_goal=(
+				str,
+				Field(..., description='State the next immediate goals and actions to achieve it, in one clear sentence.'),
+			),
 			action=(
 				list[custom_actions],
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
@@ -199,7 +207,7 @@ class AgentOutput(BaseModel):
 			__module__=AgentOutput.__module__,
 			__config__=AgentOutput.model_config,
 		)
-		
+
 		# Add the current_state property
 		def current_state_property(self) -> AgentBrain:
 			"""For backward compatibility - returns an AgentBrain with the flattened properties"""
@@ -209,7 +217,7 @@ class AgentOutput(BaseModel):
 				memory=self.memory,
 				next_goal=self.next_goal,
 			)
-		
+
 		model_.current_state = property(current_state_property)
 		model_.__doc__ = 'AgentOutput model with custom actions and no thinking field'
 		return model_
