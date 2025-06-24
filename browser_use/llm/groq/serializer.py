@@ -72,19 +72,19 @@ class GroqMessageSerializer:
 	@staticmethod
 	def _serialize_assistant_content(
 		content: str | list[ContentPartTextParam | ContentPartRefusalParam] | None,
-	) -> str | list[ChatCompletionContentPartTextParam] | None:
+	) -> str | None:
 		"""Serialize content for assistant messages (text and refusal allowed)."""
 		if content is None:
 			return None
 		if isinstance(content, str):
 			return content
 
-		serialized_parts: list[ChatCompletionContentPartTextParam] = []
+		serialized_parts: list[str] = []
 		for part in content:
 			if part.type == 'text':
-				serialized_parts.append(GroqMessageSerializer._serialize_content_part_text(part))
+				serialized_parts.append(GroqMessageSerializer._serialize_content_part_text(part)['text'])
 
-		return serialized_parts
+		return '\n'.join(serialized_parts)
 
 	@staticmethod
 	def _serialize_tool_call(tool_call: ToolCall) -> ChatCompletionMessageToolCallParam:
