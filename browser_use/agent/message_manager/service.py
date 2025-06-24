@@ -229,12 +229,6 @@ class MessageManager:
 			context_message = HumanMessage(content='<task_context>' + self.settings.message_context + '</task_context>')
 			self._add_message_with_tokens(context_message, message_type='init')
 
-		if self.settings.sensitive_data:
-			info = f'<sensitive_data>Here are placeholders for sensitive data: {list(self.settings.sensitive_data.keys())}'
-			info += '\nTo use them, write <secret>the placeholder name</secret> </sensitive_data>'
-			info_message = HumanMessage(content=info)
-			self._add_message_with_tokens(info_message, message_type='init')
-
 		placeholder_message = HumanMessage(
 			content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.'
 		)
@@ -417,9 +411,11 @@ Next Goal: {model_output.current_state.next_goal}
 			else:
 				# Old format: {key: value}
 				placeholders.add(key)
+
 		if placeholders:
-			info = f'Here are placeholders for sensitive data: {list(placeholders)}'
-			info += '\nTo use them, write <secret>the placeholder name</secret>'
+			placeholder_list = sorted(list(placeholders))
+			info = f'<sensitive_data>Here are placeholders for sensitive data: {placeholder_list}\n'
+			info += 'To use them, write <secret>the placeholder name</secret></sensitive_data>'
 			return info
 
 		return ''
