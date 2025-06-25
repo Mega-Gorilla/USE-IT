@@ -122,7 +122,7 @@ class Controller(Generic[Context]):
 					for file_name in params.files_to_display:
 						if file_name == 'todo.md':
 							continue
-						file_content = file_system.read_file(file_name)
+						file_content = file_system.display_file(file_name)
 						if file_content:
 							attachments.append(file_name)
 

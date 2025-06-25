@@ -174,6 +174,17 @@ class FileSystem:
 		"""List all files in the system"""
 		return [file_obj.full_name for file_obj in self.files.values()]
 
+	def display_file(self, full_filename: str) -> str:
+		"""Display file content using file-specific display method"""
+		if not self._is_valid_filename(full_filename):
+			return None
+
+		file_obj = self.get_file(full_filename)
+		if not file_obj:
+			return None
+
+		return file_obj.read()
+
 	def read_file(self, full_filename: str) -> str:
 		"""Read file content using file-specific read method and return appropriate message to LLM"""
 		if not self._is_valid_filename(full_filename):
@@ -208,9 +219,8 @@ class FileSystem:
 				self.files[full_filename] = file_obj  # Use full filename as key
 
 			# Use file-specific write method
-			result = await file_obj.write(content, self.data_dir)
-
-			return result
+			await file_obj.write(content, self.data_dir)
+			return f'Data written to file {full_filename} successfully.'
 		except FileSystemError as e:
 			return str(e)
 		except Exception as e:
@@ -226,8 +236,8 @@ class FileSystem:
 			return f"File '{full_filename}' not found."
 
 		try:
-			result = await file_obj.append(content, self.data_dir)
-			return result
+			await file_obj.append(content, self.data_dir)
+			return f'Data appended to file {full_filename} successfully.'
 		except FileSystemError as e:
 			return str(e)
 		except Exception as e:
@@ -237,10 +247,10 @@ class FileSystem:
 		"""Save extracted content to a numbered file"""
 		extracted_filename = f'extracted_content_{self.extracted_content_count}.md'
 		file_obj = MarkdownFile(name=extracted_filename[:-3])
-		result = await file_obj.write(content, self.data_dir)
+		await file_obj.write(content, self.data_dir)
 		self.files[extracted_filename] = file_obj
 		self.extracted_content_count += 1
-		return result
+		return f'Extracted content saved to file {extracted_filename} successfully.'
 
 	def describe(self) -> str:
 		"""List all files with their content information using file-specific display methods"""
