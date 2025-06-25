@@ -31,7 +31,7 @@ EXPECTED AGENT BEHAVIORS:
 - Saves findings to results.md for user output
 - Reasons explicitly about browser state, history, and progress
 - Handles page changes, scrolling, form interactions systematically
-- Uses extract_structured_data when needed information isn't in browser_state
+- Uses extract_structured_data or scrollwhen needed information isn't in the step view
 - Opens new tabs for research rather than reusing current tab
 - Calls done action only when task complete or impossible to continue
 
@@ -101,9 +101,6 @@ class ErrorCategory(Enum):
 	LOAD_TIMEOUT = 'load_timeout'
 	JAVASCRIPT_ERROR = 'javascript_error'
 
-	# Content & Understanding
-	MISUNDERSTOOD_TASK = 'misunderstood_task'
-
 	CONTENT_PARSING_ERROR = 'content_parsing_error'
 
 	# Enhanced Detection Categories
@@ -120,7 +117,8 @@ class ErrorCategory(Enum):
 	EXTRACT_DATA_MISUSE = 'extract_data_misuse'  # Wrong usage of extract_structured_data
 
 	# Output & Task Completion Issues
-	WRONG_OUTPUT_FORMAT = 'partial_output'
+	PARTIAL_OUTPUT = 'partial_output'
+	WRONG_OUTPUT_FORMAT = 'wrong_output_format'
 
 
 class TaskCategory(Enum):
@@ -188,11 +186,14 @@ def encode_image(image_path: str) -> str:
 		return ''
 
 
-def truncate_text(text: str, max_length: int) -> str:
+def truncate_text(text: str, max_length: int, from_beginning: bool = False) -> str:
 	"""Truncate text to maximum length with eval system indicator."""
 	if len(text) <= max_length:
 		return text
-	return text[: max_length - 23] + '...[cut for eval]...'
+	if from_beginning:
+		return '...[cut for eval]' + text[-max_length + 23 :]
+	else:
+		return text[: max_length - 23] + '...[cut for eval]...'
 
 
 def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
@@ -304,17 +305,28 @@ async def comprehensive_judge(
 	task: str,
 	complete_history: list[dict],
 	final_result: str,
+	last_message: str,
 	screenshot_paths: list[str],
 	model: BaseChatModel,
 	max_images: int = 10,
 ) -> JudgeResult:
 	"""
 	Comprehensive judge that evaluates browser-use agent runs with detailed structured feedback.
+
+	Args:
+		task: The original task description
+		complete_history: Full execution history with steps and results
+		final_result: The final result returned to the user
+		last_message: The agent's final message/output before completion
+		screenshot_paths: List of screenshot file paths from execution
+		model: The LLM model to use for evaluation
+		max_images: Maximum number of images to include in evaluation
 	"""
 
 	# Prepare inputs with length limits
 	task_truncated = truncate_text(task, 40000)
 	final_result_truncated = truncate_text(final_result or 'No final result', 40000)
+	last_message_truncated = truncate_text(last_message or 'No last message', 40000, from_beginning=True)
 	agent_steps = prepare_agent_steps(complete_history)
 
 	# Select and filter images
@@ -347,14 +359,16 @@ The browser-use agent operates in iterative loops receiving structured input:
 
 **CRITICAL: BROWSER STATE CONTAINS READABLE TEXT**
 - The DOM is converted to text with indexed interactive elements: [index]<type>text content</type>
-- Agent can READ TEXT CONTENT directly from browser_state without needing extract_structured_data
+- Agent has access to browser_state at every step without needing extract_structured_data
 - extract_structured_data is only needed for complex parsing or when browser_state text is insufficient
+- extract_structured_data gets the markdown of the entire page and not just the visible part
+- Instead of extract_structured_data the agent can also scroll to get more information and update the browser_state
 - Hierarchical structure with \t indentation shows parent-child HTML relationships
 - New elements since last step marked with asterisks (*)
+- The browser_state is the ground truth, but can be improved if information is missing
 
 **AGENT INTERACTION MODEL:**
-- Agent can only interact with explicitly provided numeric indexes [index]
-- Agent can READ all text content visible in browser_state structure
+- Agent can only interact with explicitly provided numeric indexes [index] (example is in the last message)
 - Max N actions per step (configurable), browser actions interrupt sequences
 
 **AGENT OUTPUT FORMAT (always JSON):**
@@ -365,8 +379,8 @@ The browser-use agent operates in iterative loops receiving structured input:
 - action: List of actions to execute sequentially
 
 **EXPECTED AGENT BEHAVIORS:**
-- READS text content directly from structured browser_state when information is visible
-- Uses extract_structured_data ONLY when browser_state text is insufficient or complex parsing needed
+- READS text content directly from structured browser_state when information is visible without extract_structured_data
+- Uses extract_structured_data when browser_state text is insufficient - an example of browser_state is in the last message.
 - Follows task output format requirements precisely (direct output vs file writing)
 - Uses todo.md for multi-step task planning and progress tracking
 - Saves findings to results.md when the task is long or the user asks for it
@@ -377,18 +391,12 @@ The browser-use agent operates in iterative loops receiving structured input:
 - If the agent needs to repeat the same extraction over and over, has a good trajectory, but hits the max step limit its still very good
 
 **EVALUATION CRITERIA:**
-
 1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
-2. **Tool Usage**: How well did the tools work?
-3. **Agent Reasoning**: Quality of decision-making and problem-solving  
+2. **Tool Usage**: How well did the tools work? - How does the trajectory of the agent look like?
+3. **Agent Reasoning**: Quality of decision-making and problem-solving - good todo.md usage for tasks above 20 steps?
 4. **Browser Handling**: How well did the navigation and browser interaction work?
-5. **Final Outcome**: How was the trajectory of the agent? How was the output presented and the ?
+5. **Final Output**: How does the output presented is it exactly what the user asked for?
 
-**BROWSER-USE SPECIFIC EVALUATION FOCUS:**
-- Data Extraction: Did agent properly read information from browser_state text structure?
-- State Adaptation: Did agent adapt when page changed after actions?
-- Planning Quality: Evidence of good todo.md usage for multi-step tasks
-- Action Sequencing: Logical action ordering respecting browser state changes
 
 {error_categories_text}
 
@@ -404,12 +412,14 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 - What's the core thing why the task failed? - What are the most important things to fix?
 
 **IMPROVEMENT TIPS:**
-- Create actionable tips for browser-use agent developers to fix common issues
+- Create actionable tips for browser-use agent developers to fix common issues 
+- Make the tips easy understandable for a developer without the specific task context
 - Tips will be aggregated across tasks to identify the most problematic patterns
 - Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
 - Consider improvements to: system prompt,DOM input state representation, action handling, tools
-- Always mention the error pattern first, then the specific improvement suggestion
-
+- Always mention the error pattern first, then the specific improvement suggestion. Like Login_error on sheets.google.com: build a login function for google sheets
+- If errors are related to specific websites please meention the link in the improvement tips 
+- Can the output be presented better - sometimes the agent does not output exactly what the user asked for
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
@@ -420,13 +430,16 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 
 **PASS THRESHOLD: 70%**
 
+**IMPORTANT: DO NOT EVALUATE FOR HALLUCINATION**
+The agent has access at every step to browser_state so it has more information than you can see. If the agent states something as fact or provides specific data, assume it is correct. Focus on evaluating trajectory quality, tool usage, and task completion rather than data accuracy.
+
 Respond with EXACTLY this JSON structure (no additional text):
 
 {{
     "task_summary": "One sentence summary of what the task was trying to accomplish",
     "task_categories": ["category1", "category2"],
     "task_clarity_score": 85,
-    "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment",
+    "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment, output quality, user satisfaction",
     "error_categories": ["error1", "error2"],
     "scores": {{
         "task_satisfaction": 70
@@ -441,8 +454,8 @@ Respond with EXACTLY this JSON structure (no additional text):
         "Critical issue that must be fixed 2"
     ],
     "improvement_tips": [
-        "Specific actionable improvement 1",
-        "Specific actionable improvement 2"
+        "Error pattern: Specific actionable improvement 1",
+        "Error pattern: Specific actionable improvement 2"
     ]
 }}"""
 
@@ -451,13 +464,16 @@ Respond with EXACTLY this JSON structure (no additional text):
 **AGENT EXECUTION STEPS:**
 {chr(10).join(agent_steps)}
 
+**AGENT'S LAST MESSAGE:**
+{last_message_truncated}
+
 **FINAL RESULT:**
 {final_result_truncated}
 
 **TOTAL STEPS:** {len(complete_history)}
 **SCREENSHOTS PROVIDED:** {len(selected_images)}
 
-Analyze this execution and respond with the exact JSON structure requested."""
+Evaluate this execution and respond with the exact JSON structure requested."""
 
 	# Build messages
 	content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=user_prompt)]
@@ -585,6 +601,7 @@ async def judge_with_retry(
 	task: str,
 	complete_history: list[dict],
 	final_result: str,
+	last_message: str,
 	screenshot_paths: list[str],
 	model: BaseChatModel,
 	max_retries: int = 3,
@@ -592,6 +609,16 @@ async def judge_with_retry(
 ) -> JudgeResult:
 	"""
 	Judge with retry logic for robustness.
+
+	Args:
+		task: The original task description
+		complete_history: Full execution history with steps and results
+		final_result: The final result returned to the user
+		last_message: The agent's final message/output before completion
+		screenshot_paths: List of screenshot file paths from execution
+		model: The LLM model to use for evaluation
+		max_retries: Maximum number of retry attempts
+		max_images: Maximum number of images to include in evaluation
 	"""
 	for attempt in range(max_retries):
 		try:
@@ -599,6 +626,7 @@ async def judge_with_retry(
 				task,
 				complete_history,
 				final_result,
+				last_message,
 				screenshot_paths,
 				model,
 				max_images,
@@ -686,6 +714,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		task = result_data.get('task', 'Unknown task')
 		complete_history = result_data.get('complete_history', [])
 		final_result = result_data.get('final_result_response', '')
+		last_message = result_data.get('last_message', '')
 		screenshot_paths = result_data.get('screenshot_paths', [])
 
 		# Run comprehensive evaluation
@@ -693,6 +722,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 			task=task,
 			complete_history=complete_history,
 			final_result=final_result,
+			last_message=last_message,
 			screenshot_paths=screenshot_paths,
 			model=model,
 			max_images=max_images,

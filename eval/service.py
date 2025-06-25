@@ -931,6 +931,7 @@ async def reformat_agent_history(
 	task_id: str,
 	run_id: str,
 	task: str,
+	last_message: str,
 	base_path: str = 'saved_trajectories',
 	include_result: bool = False,
 ) -> dict:
@@ -1033,6 +1034,7 @@ async def reformat_agent_history(
 		'action_history': action_history,
 		'screenshot_paths': screenshot_paths,
 		'final_result_response': final_result,
+		'last_message': last_message,
 		'self_report_completed': self_report_completed,
 		'self_report_success': self_report_success,
 		'complete_history': complete_history,
@@ -1316,7 +1318,7 @@ async def run_agent_with_browser(
 	validate_output: bool = False,
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
-) -> AgentHistoryList:
+) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
 	# Create controller, optionally with SERP search
 	controller = create_controller(use_serp=use_serp)
@@ -1340,9 +1342,11 @@ async def run_agent_with_browser(
 		planner_interval=planner_interval,
 		source='eval_platform',
 	)
-
+	# get last message
 	await agent.run(max_steps=max_steps)
-	return agent.state.history
+	last_input_messages = agent.message_manager.last_input_messages
+	last_message = last_input_messages[-1].text
+	return agent.state.history, last_message
 
 
 @observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
@@ -1495,7 +1499,7 @@ async def run_task_with_semaphore(
 					try:
 						logger.info(f'Task {task.task_id}: Agent run starting.')
 
-						agent_history = await run_stage(
+						agent_history, last_message = await run_stage(
 							Stage.RUN_AGENT,
 							lambda: run_agent_with_browser(
 								browser_session,
@@ -1519,7 +1523,8 @@ async def run_task_with_semaphore(
 					except Exception as e:
 						error = StageError(Stage.RUN_AGENT, 'exception', str(e))
 						task_result.stage_failed(Stage.RUN_AGENT, error)
-						logger.error(f'Task {task.task_id}: Agent run failed: {str(e)}')
+						logger.error(f'Task {task.task_id}: Agent run failed: {str(e) + " " + str(e.__traceback__)}')
+
 						# Continue to server save instead of early return
 
 				# Stage 3: Format history
@@ -1529,7 +1534,12 @@ async def run_task_with_semaphore(
 						formatted_data = await run_stage(
 							Stage.FORMAT_HISTORY,
 							lambda: reformat_agent_history(
-								agent_history, task.task_id, run_id, task.confirmed_task, include_result=include_result
+								agent_history,
+								task.task_id,
+								run_id,
+								task.confirmed_task,
+								last_message,
+								include_result=include_result,
 							),
 						)
 						task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
