@@ -133,15 +133,18 @@ class FileSystem:
 		"""Get allowed extensions"""
 		return list(self._file_types.keys())
 
-	def _get_file_type_class(self, extension: str) -> type[BaseFile]:
+	def _get_file_type_class(self, extension: str) -> type[BaseFile] | None:
 		"""Get the appropriate file class for an extension."""
-		return self._file_types.get(extension.lower())
+		return self._file_types.get(extension.lower(), None)
 
 	def _create_default_files(self) -> None:
 		"""Create default results and todo files"""
 		for full_filename in self.default_files:
 			name_without_ext, extension = self._parse_filename(full_filename)
 			file_class = self._get_file_type_class(extension)
+			if not file_class:
+				raise ValueError(f"Error: Invalid file extension '{extension}' for file '{full_filename}'.")
+
 			file_obj = file_class(name=name_without_ext)
 			self.files[full_filename] = file_obj  # Use full filename as key
 			file_obj.sync_to_disk_sync(self.data_dir)
@@ -174,7 +177,7 @@ class FileSystem:
 		"""List all files in the system"""
 		return [file_obj.full_name for file_obj in self.files.values()]
 
-	def display_file(self, full_filename: str) -> str:
+	def display_file(self, full_filename: str) -> str | None:
 		"""Display file content using file-specific display method"""
 		if not self._is_valid_filename(full_filename):
 			return None
@@ -210,6 +213,8 @@ class FileSystem:
 		try:
 			name_without_ext, extension = self._parse_filename(full_filename)
 			file_class = self._get_file_type_class(extension)
+			if not file_class:
+				raise ValueError(f"Error: Invalid file extension '{extension}' for file '{full_filename}'.")
 
 			# Create or get existing file using full filename as key
 			if full_filename in self.files:
