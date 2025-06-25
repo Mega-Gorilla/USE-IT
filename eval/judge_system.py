@@ -120,7 +120,8 @@ class ErrorCategory(Enum):
 	EXTRACT_DATA_MISUSE = 'extract_data_misuse'  # Wrong usage of extract_structured_data
 
 	# Output & Task Completion Issues
-	WRONG_OUTPUT_FORMAT = 'partial_output'
+	PARTIAL_OUTPUT = 'partial_output'
+	WRONG_OUTPUT_FORMAT = 'wrong_output_format'
 
 
 class TaskCategory(Enum):
@@ -379,10 +380,10 @@ The browser-use agent operates in iterative loops receiving structured input:
 **EVALUATION CRITERIA:**
 
 1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
-2. **Tool Usage**: How well did the tools work?
+2. **Tool Usage**: How well did the tools work? - How does the trajectory of the agent look like?
 3. **Agent Reasoning**: Quality of decision-making and problem-solving  
 4. **Browser Handling**: How well did the navigation and browser interaction work?
-5. **Final Outcome**: How was the trajectory of the agent? How was the output presented and the ?
+5. **Final Output**: How does the output presented is it exactly what the user asked for?
 
 **BROWSER-USE SPECIFIC EVALUATION FOCUS:**
 - Data Extraction: Did agent properly read information from browser_state text structure?
@@ -409,7 +410,8 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 - Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
 - Consider improvements to: system prompt,DOM input state representation, action handling, tools
 - Always mention the error pattern first, then the specific improvement suggestion
-
+- If errors happen on specific websites you can mention them so the developer can fix them
+- Can the output be presented better - sometimes the agent does not output exactly what the user asked for
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
