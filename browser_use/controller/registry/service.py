@@ -485,7 +485,7 @@ class Registry(Generic[Context]):
 		#   if page is None, only include actions with no filters
 		#   if page is provided, only include actions that match the page
 
-		available_actions = {}
+		available_actions: dict[str, RegisteredAction] = {}
 		for name, action in self.registry.actions.items():
 			if include_actions is not None and name not in include_actions:
 				continue
@@ -505,7 +505,7 @@ class Registry(Generic[Context]):
 				available_actions[name] = action
 
 		# Create individual action models for each action
-		individual_action_models = []
+		individual_action_models: list[type[BaseModel]] = []
 
 		for name, action in available_actions.items():
 			# Create an individual model for each action that contains only one field
@@ -516,7 +516,7 @@ class Registry(Generic[Context]):
 					name: (
 						action.param_model,
 						Field(description=action.description),
-					)
+					)  # type: ignore
 				},
 			)
 			individual_action_models.append(individual_model)
@@ -529,28 +529,30 @@ class Registry(Generic[Context]):
 		if len(individual_action_models) == 1:
 			# If only one action, return it directly (no Union needed)
 			result_model = individual_action_models[0]
+
+		# Meaning the length is more than 1
 		else:
 			# Create a Union type using RootModel that properly delegates ActionModel methods
-			union_type = Union[tuple(individual_action_models)]
+			union_type = Union[tuple(individual_action_models)]  # type: ignore : Typing doesn't understand that the length is >= 2 (by design)
 
-			class ActionModelUnion(RootModel[union_type]):  # type: ignore
+			class ActionModelUnion(RootModel[union_type]):
 				"""Union of all available action models that maintains ActionModel interface"""
 
 				def get_index(self) -> int | None:
 					"""Delegate get_index to the underlying action model"""
 					if hasattr(self.root, 'get_index'):
-						return self.root.get_index()
+						return self.root.get_index()  # type: ignore
 					return None
 
 				def set_index(self, index: int):
 					"""Delegate set_index to the underlying action model"""
 					if hasattr(self.root, 'set_index'):
-						self.root.set_index(index)
+						self.root.set_index(index)  # type: ignore
 
 				def model_dump(self, **kwargs):
 					"""Delegate model_dump to the underlying action model"""
 					if hasattr(self.root, 'model_dump'):
-						return self.root.model_dump(**kwargs)
+						return self.root.model_dump(**kwargs)  # type: ignore
 					return super().model_dump(**kwargs)
 
 			# Set the name for better debugging
