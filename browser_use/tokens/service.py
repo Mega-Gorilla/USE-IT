@@ -293,7 +293,10 @@ class TokenCost:
 		if not parts:
 			# Fallback to simple display when no cache information available
 			total_tokens_fmt = self._format_tokens(usage.prompt_tokens)
-			parts.append(f'📥 {C_YELLOW}{total_tokens_fmt}{C_RESET}')
+			if self.include_cost and cost and cost.new_prompt_cost > 0:
+				parts.append(f'📥 {C_YELLOW}{total_tokens_fmt} (${cost.new_prompt_cost:.4f}){C_RESET}')
+			else:
+				parts.append(f'📥 {C_YELLOW}{total_tokens_fmt}{C_RESET}')
 
 		return ' + '.join(parts)
 
