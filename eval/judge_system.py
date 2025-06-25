@@ -89,12 +89,11 @@ class ErrorCategory(Enum):
 	CAPTCHA_CHALLENGE = 'captcha_challenge'
 	LOGIN_REQUIRED = 'login_required'
 	RATE_LIMITED = 'rate_limited'
-	INVALID_PARAMETERS = 'invalid_parameters'
 
 	# Agent Behavior Issues
 	INFINITE_LOOP = 'infinite_loop'
 	POOR_PLANNING = 'poor_planning'
-	CONTEXT_LOSS = 'missing_context'
+	CONTEXT_LOSS = 'missing_user_data'
 
 	# Browser & Technical
 	ELEMENT_NOT_FOUND = 'element_not_found'
@@ -104,23 +103,24 @@ class ErrorCategory(Enum):
 
 	# Content & Understanding
 	MISUNDERSTOOD_TASK = 'misunderstood_task'
-	FORMAT_ERROR = 'format_error'
+
 	CONTENT_PARSING_ERROR = 'content_parsing_error'
 
 	# Enhanced Detection Categories
 	NAVIGATION_CONFUSION = 'navigation_confusion'
 	FORM_FILLING_ERROR = 'form_filling_error'
-	MODAL_HANDLING = 'modal_handling'
 	IFRAME_ISSUES = 'iframe_issues'
 	BROWSER_CRASHES = 'browser_crashes'
 	IMPOSSIBLE_TASK = 'impossible_task'
-	MISSING_INFORMATION = 'missing_information'
 
 	# Browser-Use Specific Categories
 	INVALID_ELEMENT_INDEX = 'invalid_element_index'  # Using non-existent [index] values
 	FILE_SYSTEM_MISUSE = 'file_system_misuse'  # Not saving results or tracking progress
-	ACTION_SEQUENCE_INTERRUPTION = 'action_sequence_interruption'  # Not handling interrupted sequences
+
 	EXTRACT_DATA_MISUSE = 'extract_data_misuse'  # Wrong usage of extract_structured_data
+
+	# Output & Task Completion Issues
+	WRONG_OUTPUT_FORMAT = 'partial_output'
 
 
 class TaskCategory(Enum):
@@ -336,39 +336,45 @@ async def comprehensive_judge(
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
 
 **AGENT ARCHITECTURE UNDERSTANDING:**
-First is some context about the browser-use agent to evaluate, it operates in iterative loops receiving structured input:
-<context about agent to evaluate>
+The browser-use agent operates in iterative loops receiving structured input:
+
+**AGENT INPUT (what agent sees each step):**
 1. AGENT HISTORY: Chronological event stream with previous actions and results
-2. AGENT STATE: User request, file system state, todo.md contents, step info
-3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format, - We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot). Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
+2. AGENT STATE: User request, file system state, todo.md contents, step info  
+3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format with hierarchical text structure
 4. BROWSER VISION: Screenshot with bounding boxes around interactive elements
 5. READ STATE: Temporary data from extract_structured_data or read_file actions
 
-AGENT INTERACTION MODEL:
-- Elements are presented as [index]<type>text</type> where only [index] elements are interactive
+**CRITICAL: BROWSER STATE CONTAINS READABLE TEXT**
+- The DOM is converted to text with indexed interactive elements: [index]<type>text content</type>
+- Agent can READ TEXT CONTENT directly from browser_state without needing extract_structured_data
+- extract_structured_data is only needed for complex parsing or when browser_state text is insufficient
 - Hierarchical structure with \t indentation shows parent-child HTML relationships
 - New elements since last step marked with asterisks (*)
-- Agent can only interact with explicitly provided numeric indexes
+
+**AGENT INTERACTION MODEL:**
+- Agent can only interact with explicitly provided numeric indexes [index]
+- Agent can READ all text content visible in browser_state structure
 - Max N actions per step (configurable), browser actions interrupt sequences
 
-AGENT OUTPUT FORMAT (always JSON):
+**AGENT OUTPUT FORMAT (always JSON):**
 - thinking: Structured reasoning following specific patterns
-- evaluation_previous_goal: Assessment of last action success/failure
+- evaluation_previous_goal: Assessment of last action success/failure  
 - memory: Progress tracking (1-3 sentences)
 - next_goal: Clear statement of immediate objectives
 - action: List of actions to execute sequentially
 
-EXPECTED AGENT BEHAVIORS:
+**EXPECTED AGENT BEHAVIORS:**
+- READS text content directly from structured browser_state when information is visible
+- Uses extract_structured_data ONLY when browser_state text is insufficient or complex parsing needed
+- Follows task output format requirements precisely (direct output vs file writing)
 - Uses todo.md for multi-step task planning and progress tracking
-- Saves findings to results.md for user output
+- Saves findings to results.md when the task is long or the user asks for it
 - Reasons explicitly about browser state, history, and progress
 - Handles page changes, scrolling, form interactions systematically
-- Uses extract_structured_data when needed information isn't in browser_state
 - Opens new tabs for research rather than reusing current tab
 - Calls done action only when task complete or impossible to continue
-- We convert the dom of websites to text with which the agent can interact with. (sometimes we miss elements in the conversion - then they are not highlighted in the screenshot)
-- Browser state with indexed interactive elements [index]<type>text</type> (this get internally converted to css selectors)- memory, next_goal, and actions
-</context about agent to evaluate>
+- If the agent needs to repeat the same extraction over and over, has a good trajectory, but hits the max step limit its still very good
 
 **EVALUATION CRITERIA:**
 
@@ -379,9 +385,9 @@ EXPECTED AGENT BEHAVIORS:
 5. **Final Outcome**: How was the trajectory of the agent? How was the output presented and the ?
 
 **BROWSER-USE SPECIFIC EVALUATION FOCUS:**
+- Data Extraction: Did agent properly read information from browser_state text structure?
 - State Adaptation: Did agent adapt when page changed after actions?
 - Planning Quality: Evidence of good todo.md usage for multi-step tasks
-- Progress Tracking: Appropriate use of file system
 - Action Sequencing: Logical action ordering respecting browser state changes
 
 {error_categories_text}
@@ -401,8 +407,9 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 - Create actionable tips for browser-use agent developers to fix common issues
 - Tips will be aggregated across tasks to identify the most problematic patterns
 - Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
-- Consider improvements to: system prompt, element indexing, input state representation, action handling, tools,
--Always mention the error pattern first, then the specific improvement suggestion
+- Consider improvements to: system prompt,DOM input state representation, action handling, tools
+- Always mention the error pattern first, then the specific improvement suggestion
+
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
