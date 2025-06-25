@@ -1340,7 +1340,9 @@ async def run_agent_with_browser(
 		planner_interval=planner_interval,
 		source='eval_platform',
 	)
-
+	# get last message
+	last_input_messages = agent.message_manager.last_input_messages
+	last_message = last_input_messages[-1].text
 	await agent.run(max_steps=max_steps)
 	return agent.state.history
 

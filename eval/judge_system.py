@@ -189,11 +189,14 @@ def encode_image(image_path: str) -> str:
 		return ''
 
 
-def truncate_text(text: str, max_length: int) -> str:
+def truncate_text(text: str, max_length: int, from_beginning: bool = False) -> str:
 	"""Truncate text to maximum length with eval system indicator."""
 	if len(text) <= max_length:
 		return text
-	return text[: max_length - 23] + '...[cut for eval]...'
+	if from_beginning:
+		return '...[cut for eval]' + text[-max_length + 23 :]
+	else:
+		return text[: max_length - 23] + '...[cut for eval]...'
 
 
 def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
@@ -326,7 +329,7 @@ async def comprehensive_judge(
 	# Prepare inputs with length limits
 	task_truncated = truncate_text(task, 40000)
 	final_result_truncated = truncate_text(final_result or 'No final result', 40000)
-	last_message_truncated = truncate_text(last_message or 'No last message', 40000)
+	last_message_truncated = truncate_text(last_message or 'No last message', 40000, from_beginning=True)
 	agent_steps = prepare_agent_steps(complete_history)
 
 	# Select and filter images
