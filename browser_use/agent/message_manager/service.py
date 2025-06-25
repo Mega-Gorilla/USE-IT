@@ -119,7 +119,6 @@ class MessageManager:
 		self.include_attributes = include_attributes or []
 		self.message_context = message_context
 		self.sensitive_data = sensitive_data
-
 		self.last_input_messages = []
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
