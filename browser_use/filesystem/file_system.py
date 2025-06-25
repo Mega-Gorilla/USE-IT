@@ -45,6 +45,10 @@ class BaseFile(BaseModel, ABC):
 	def update_content(self, content: str) -> None:
 		self.content = content
 
+	def sync_to_disk_sync(self, path: Path) -> None:
+		file_path = path / self.full_name
+		file_path.write_text(self.content)
+
 	async def sync_to_disk(self, path: Path) -> None:
 		file_path = path / self.full_name
 		with ThreadPoolExecutor() as executor:
@@ -140,7 +144,7 @@ class FileSystem:
 			file_class = self._get_file_type_class(extension)
 			file_obj = file_class(name=name_without_ext)
 			self.files[full_filename] = file_obj  # Use full filename as key
-			asyncio.run(file_obj.sync_to_disk(self.data_dir))
+			file_obj.sync_to_disk_sync(self.data_dir)
 
 	def _is_valid_filename(self, file_name: str) -> bool:
 		"""Check if filename matches the required pattern: name.extension"""
@@ -232,7 +236,7 @@ class FileSystem:
 	async def save_extracted_content(self, content: str) -> str:
 		"""Save extracted content to a numbered file"""
 		extracted_filename = f'extracted_content_{self.extracted_content_count}.md'
-		file_obj = MarkdownFile(name=extracted_filename)
+		file_obj = MarkdownFile(name=extracted_filename[:-3])
 		result = await file_obj.write(content, self.data_dir)
 		self.files[extracted_filename] = file_obj
 		self.extracted_content_count += 1
@@ -353,7 +357,7 @@ class FileSystem:
 
 			# Add to files dict and sync to disk
 			fs.files[full_filename] = file_obj
-			asyncio.run(file_obj.sync_to_disk(fs.data_dir))
+			file_obj.sync_to_disk_sync(fs.data_dir)
 
 		return fs
 
