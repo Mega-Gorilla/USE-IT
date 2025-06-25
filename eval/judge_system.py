@@ -305,17 +305,28 @@ async def comprehensive_judge(
 	task: str,
 	complete_history: list[dict],
 	final_result: str,
+	last_message: str,
 	screenshot_paths: list[str],
 	model: BaseChatModel,
 	max_images: int = 10,
 ) -> JudgeResult:
 	"""
 	Comprehensive judge that evaluates browser-use agent runs with detailed structured feedback.
+
+	Args:
+		task: The original task description
+		complete_history: Full execution history with steps and results
+		final_result: The final result returned to the user
+		last_message: The agent's final message/output before completion
+		screenshot_paths: List of screenshot file paths from execution
+		model: The LLM model to use for evaluation
+		max_images: Maximum number of images to include in evaluation
 	"""
 
 	# Prepare inputs with length limits
 	task_truncated = truncate_text(task, 40000)
 	final_result_truncated = truncate_text(final_result or 'No final result', 40000)
+	last_message_truncated = truncate_text(last_message or 'No last message', 40000)
 	agent_steps = prepare_agent_steps(complete_history)
 
 	# Select and filter images
@@ -422,6 +433,9 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 
 **PASS THRESHOLD: 70%**
 
+**IMPORTANT: DO NOT EVALUATE FOR HALLUCINATION**
+The agent has access to more information than you can see (browser_state text content, full DOM context, etc.). If the agent states something as fact or provides specific data, assume it is correct and extracted from information available to the agent. Focus on evaluating trajectory quality, tool usage, and task completion rather than data accuracy.
+
 Respond with EXACTLY this JSON structure (no additional text):
 
 {{
@@ -452,6 +466,9 @@ Respond with EXACTLY this JSON structure (no additional text):
 
 **AGENT EXECUTION STEPS:**
 {chr(10).join(agent_steps)}
+
+**AGENT'S LAST MESSAGE:**
+{last_message_truncated}
 
 **FINAL RESULT:**
 {final_result_truncated}
@@ -587,6 +604,7 @@ async def judge_with_retry(
 	task: str,
 	complete_history: list[dict],
 	final_result: str,
+	last_message: str,
 	screenshot_paths: list[str],
 	model: BaseChatModel,
 	max_retries: int = 3,
@@ -594,6 +612,16 @@ async def judge_with_retry(
 ) -> JudgeResult:
 	"""
 	Judge with retry logic for robustness.
+
+	Args:
+		task: The original task description
+		complete_history: Full execution history with steps and results
+		final_result: The final result returned to the user
+		last_message: The agent's final message/output before completion
+		screenshot_paths: List of screenshot file paths from execution
+		model: The LLM model to use for evaluation
+		max_retries: Maximum number of retry attempts
+		max_images: Maximum number of images to include in evaluation
 	"""
 	for attempt in range(max_retries):
 		try:
@@ -601,6 +629,7 @@ async def judge_with_retry(
 				task,
 				complete_history,
 				final_result,
+				last_message,
 				screenshot_paths,
 				model,
 				max_images,
@@ -688,6 +717,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		task = result_data.get('task', 'Unknown task')
 		complete_history = result_data.get('complete_history', [])
 		final_result = result_data.get('final_result_response', '')
+		last_message = result_data.get('last_message', '')
 		screenshot_paths = result_data.get('screenshot_paths', [])
 
 		# Run comprehensive evaluation
@@ -695,6 +725,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 			task=task,
 			complete_history=complete_history,
 			final_result=final_result,
+			last_message=last_message,
 			screenshot_paths=screenshot_paths,
 			model=model,
 			max_images=max_images,
