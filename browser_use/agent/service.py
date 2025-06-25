@@ -36,7 +36,6 @@ from browser_use.agent.gif import create_history_gif
 from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import (
 	MessageManager,
-	MessageManagerSettings,
 )
 from browser_use.agent.message_manager.utils import (
 	save_conversation,
@@ -295,15 +294,13 @@ class Agent(Generic[Context]):
 				use_thinking=self.settings.use_thinking,
 			).get_system_message(),
 			file_system=self.file_system,
-			settings=MessageManagerSettings(
-				include_attributes=self.settings.include_attributes,
-				message_context=self.settings.message_context,
-				sensitive_data=sensitive_data,
-				available_file_paths=self.settings.available_file_paths,
-			),
 			available_file_paths=self.settings.available_file_paths,
 			state=self.state.message_manager_state,
 			use_thinking=self.settings.use_thinking,
+			# Settings that were previously in MessageManagerSettings
+			include_attributes=self.settings.include_attributes,
+			message_context=self.settings.message_context,
+			sensitive_data=sensitive_data,
 		)
 
 		# TODO: FIX MEMORY
@@ -502,7 +499,6 @@ class Agent(Generic[Context]):
 		if new_files:
 			self.settings.available_file_paths = list(current_files | new_files)
 			# Update message manager with new file paths
-			self._message_manager.settings.available_file_paths = self.settings.available_file_paths
 			self._message_manager.available_file_paths = self.settings.available_file_paths
 
 			self.logger.info(
@@ -514,24 +510,54 @@ class Agent(Generic[Context]):
 			self.logger.info(f'📁 No new downloads detected (tracking {len(current_files)} files)')
 
 	def _set_file_system(self, file_system_path: str | None = None) -> None:
-		# Initialize file system
-		if file_system_path:
-			self.file_system = FileSystem(file_system_path)
-			self.file_system_path = file_system_path
-		else:
-			# create a temporary file system using agent ID
-			base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
-			self.file_system_path = os.path.join(base_tmp, f'browser_use_agent_{self.id}')
-			self.file_system = FileSystem(self.file_system_path)
+		# Check for conflicting parameters
+		if self.state.file_system_state and file_system_path:
+			raise ValueError(
+				'Cannot provide both file_system_state (from agent state) and file_system_path. '
+				'Either restore from existing state or create new file system at specified path, not both.'
+			)
+
+		# Check if we should restore from existing state first
+		if self.state.file_system_state:
+			try:
+				# Restore file system from state
+				self.file_system = FileSystem.from_state(self.state.file_system_state)
+				self.file_system_path = str(self.file_system.base_dir.parent)
+				logger.info(f'💾 File system restored from state: {self.file_system_path}')
+				return
+			except Exception as e:
+				logger.warning(f'💾 Failed to restore file system from state: {e}. Creating new file system.')
+				# Fall through to create new file system
+
+		# Initialize new file system
+		try:
+			if file_system_path:
+				self.file_system = FileSystem(file_system_path)
+				self.file_system_path = file_system_path
+			else:
+				# create a temporary file system using agent ID
+				base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
+				self.file_system_path = os.path.join(base_tmp, f'browser_use_agent_{self.id}')
+				self.file_system = FileSystem(self.file_system_path)
+		except Exception as e:
+			logger.error(f'💾 Failed to initialize file system: {e}.')
+			raise e
+
+		# Save file system state to agent state
+		self.state.file_system_state = self.file_system.get_state()
 
 		logger.info(f'💾 File system path: {self.file_system_path}')
 
-		# TODO: move this logic to special registries -> we have methods to combine controllers
-
 		# if file system is set, add actions to the controller
-		@self.controller.registry.action('Write content to file_name in file system, use only .md or .txt extensions.')
+		extensions_allowed = self.file_system.get_allowed_extensions()
+
+		@self.controller.registry.action(
+			f'Write content to file_name in file system. Only use extensions {"|".join(extensions_allowed)}'
+		)
 		async def write_file(file_name: str, content: str):
 			result = await self.file_system.write_file(file_name, content)
+			# Update agent state with new file system state
+			self.state.file_system_state = self.file_system.get_state()
 			logger.info(f'💾 {result}')
 			return ActionResult(
 				extracted_content=result,
@@ -542,6 +568,8 @@ class Agent(Generic[Context]):
 		@self.controller.registry.action('Append content to file_name in file system')
 		async def append_file(file_name: str, content: str):
 			result = await self.file_system.append_file(file_name, content)
+			# Update agent state with new file system state
+			self.state.file_system_state = self.file_system.get_state()
 			logger.info(f'💾 {result}')
 			return ActionResult(
 				extracted_content=result,
@@ -565,6 +593,14 @@ class Agent(Generic[Context]):
 				long_term_memory=memory,
 				include_extracted_content_only_once=True,
 			)
+
+	def save_file_system_state(self) -> None:
+		"""Save current file system state to agent state"""
+		if self.file_system:
+			self.state.file_system_state = self.file_system.get_state()
+		else:
+			logger.error('💾 File system is not set up. Cannot save state.')
+			raise ValueError('File system is not set up. Cannot save state.')
 
 	def _set_message_context(self) -> str | None:
 		return self.settings.message_context
@@ -828,6 +864,9 @@ class Agent(Generic[Context]):
 
 			# Log step completion summary
 			self._log_step_completion_summary(step_start_time, result)
+
+			# Save file system state after step completion
+			self.save_file_system_state()
 
 			# Emit both step created and executed events
 			if browser_state_summary and model_output:
