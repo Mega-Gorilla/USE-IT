@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 import logging
 
-from pydantic import BaseModel
-
 from browser_use.agent.message_manager.views import (
 	MessageMetadata,
 	SupportedMessageTypes,
@@ -96,14 +94,6 @@ def _log_format_message_line(message: BaseMessage, content: str, is_last_message
 # ========== End of Logging Helper Functions ==========
 
 
-class MessageManagerSettings(BaseModel):
-	include_attributes: list[str] = []
-	message_context: str | None = None
-	# Support both old format {key: value} and new format {domain: {key: value}}
-	sensitive_data: dict[str, str | dict[str, str]] | None = None
-	available_file_paths: list[str] | None = None
-
-
 class MessageManager:
 	def __init__(
 		self,
@@ -111,20 +101,24 @@ class MessageManager:
 		system_message: SystemMessage,
 		file_system: FileSystem,
 		available_file_paths: list[str] | None = None,
-		settings: MessageManagerSettings = MessageManagerSettings(),
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
+		include_attributes: list[str] | None = None,
+		message_context: str | None = None,
+		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 	):
 		self.task = task
-		self.settings = settings
 		self.state = state
 		self.system_prompt = system_message
 		self.file_system = file_system
-		self.agent_history_description = '<s>Agent initialized</s>\n'
-		self.read_state_description = ''
 		self.sensitive_data_description = ''
 		self.available_file_paths = available_file_paths
 		self.use_thinking = use_thinking
+
+		# Store settings as direct attributes instead of in a settings object
+		self.include_attributes = include_attributes or []
+		self.message_context = message_context
+		self.sensitive_data = sensitive_data
 		self.last_input_messages = []
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
@@ -186,52 +180,9 @@ The file system actions do not change the browser state, so I can also click on 
 			message_type='init',
 		)
 
-		placeholder_message = UserMessage(content='<example_2>Example thinking and tool call 2:')
-		# self._add_message_with_tokens(placeholder_message, message_type='init')
-
-		# TODO: add this back
-		# 		example_tool_call_2 = AssistantMessage(
-		# 			content=json.dumps(
-		# 				{
-		# 					'name': 'AgentOutput',
-		# 					'args': {
-		# 						'current_state': {
-		# 							'thinking': """I
-		# **Understanding the Current State:**
-		# I am currently on Apple's main homepage, having successfully clicked on an 'Apple' link in the previous step. The page has loaded and I can see the typical Apple website layout with navigation elements. I can see an interactive element at index [4] that is labeled 'iPhone', which indicates this is a navigation link to Apple's iPhone product section.
-
-		# **Evaluating the Previous Action:**
-		# The click on the 'Apple' link was successful and brought me to Apple's homepage as expected. The page loaded properly and I can see the navigation structure including the iPhone link. This confirms that the previous navigation action worked correctly and I'm now in the right place to continue with the iPhone-related task.
-
-		# **Tracking and Planning with todo.md:**
-		# Based on the context, this seems to be part of a larger task involving Apple products. I should be prepared to update my todo.md file if there are multiple iPhone models or other Apple products to investigate. The current goal is to access the iPhone section to see what product information is available.
-
-		# **Writing Intermediate Results:**
-		# Once I reach the iPhone page, I'll need to extract information about different iPhone models, their specifications, prices, or other details. I should accumulate all findings in results.md in a structured format as I collect the information.
-
-		# **Preparing what goes into my memory:**
-		# I need to capture that I'm in the process of navigating to the iPhone section and preparing to collect product information.
-
-		# **Planning my next action:**
-		# My next action is to click on the iPhone link at index [4] to navigate to Apple's iPhone product page. This will give me access to the iPhone lineup and allow me to gather the requested information.
-		# """,
-		# 							'evaluation_previous_goal': 'Clicked Apple link and reached the homepage. Verdict: Success',
-		# 							'memory': 'On Apple homepage with iPhone link at index [4].',
-		# 							'next_goal': 'Click iPhone link.',
-		# 						},
-		# 						'action': [{'click_element_by_index': {'index': 4}}],
-		# 					},
-		# 					'id': str(self.state.tool_id),
-		# 					'type': 'tool_call',
-		# 				},
-		# 			),
-		# 		)
-		# self._add_message_with_tokens(example_tool_call_2, message_type='init')
-		# self.add_tool_message(content='Clicked on index [4]. </example_2>', message_type='init')
-
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
-		self.agent_history_description += f'\n<system>User updated USER REQUEST to: {new_task}</system>\n'
+		self.state.agent_history_description += f'\n<s>User updated <user_request> to: {new_task}</s>\n'
 
 	def _update_agent_history_description(
 		self,
@@ -245,13 +196,13 @@ The file system actions do not change the browser state, so I can also click on 
 			result = []
 		step_number = step_info.step_number if step_info else 'unknown'
 
-		self.read_state_description = ''
+		self.state.read_state_description = ''
 
 		action_results = ''
 		result_len = len(result)
 		for idx, action_result in enumerate(result):
 			if action_result.include_extracted_content_only_once and action_result.extracted_content:
-				self.read_state_description += action_result.extracted_content + '\n'
+				self.state.read_state_description += action_result.extracted_content + '\n'
 				logger.debug(f'Added extracted_content to read_state_description: {action_result.extracted_content}')
 
 			if action_result.long_term_memory:
@@ -272,12 +223,12 @@ The file system actions do not change the browser state, so I can also click on 
 		# Handle case where model_output is None (e.g., parsing failed)
 		if model_output is None:
 			if isinstance(step_number, int) and step_number > 0:
-				self.agent_history_description += f"""<step_{step_number}>
+				self.state.agent_history_description += f"""<step_{step_number}>
 Agent failed to output in the right format.
 </step_{step_number}>
 """
 		else:
-			self.agent_history_description += f"""<step_{step_number}>
+			self.state.agent_history_description += f"""<step_{step_number}>
 Evaluation of Previous Step: {model_output.current_state.evaluation_previous_goal}
 Memory: {model_output.current_state.memory}
 Next Goal: {model_output.current_state.next_goal}
@@ -286,7 +237,7 @@ Next Goal: {model_output.current_state.next_goal}
 """
 
 	def _get_sensitive_data_description(self, current_page_url) -> str:
-		sensitive_data = self.settings.sensitive_data
+		sensitive_data = self.sensitive_data
 		if not sensitive_data:
 			return ''
 
@@ -331,10 +282,10 @@ Next Goal: {model_output.current_state.next_goal}
 		state_message = AgentMessagePrompt(
 			browser_state_summary=browser_state_summary,
 			file_system=self.file_system,
-			agent_history_description=self.agent_history_description,
-			read_state_description=self.read_state_description,
+			agent_history_description=self.state.agent_history_description,
+			read_state_description=self.state.read_state_description,
 			task=self.task,
-			include_attributes=self.settings.include_attributes,
+			include_attributes=self.include_attributes,
 			step_info=step_info,
 			page_filtered_actions=page_filtered_actions,
 			sensitive_data=self.sensitive_data_description,
@@ -407,7 +358,7 @@ Next Goal: {model_output.current_state.next_goal}
 		"""
 
 		# filter out sensitive data from the message
-		if self.settings.sensitive_data:
+		if self.sensitive_data:
 			message = self._filter_sensitive_data(message)
 
 		metadata = MessageMetadata(message_type=message_type)
@@ -418,14 +369,14 @@ Next Goal: {model_output.current_state.next_goal}
 		"""Filter out sensitive data from the message"""
 
 		def replace_sensitive(value: str) -> str:
-			if not self.settings.sensitive_data:
+			if not self.sensitive_data:
 				return value
 
 			# Collect all sensitive values, immediately converting old format to new format
 			sensitive_values: dict[str, str] = {}
 
 			# Process all sensitive data entries
-			for key_or_domain, content in self.settings.sensitive_data.items():
+			for key_or_domain, content in self.sensitive_data.items():
 				if isinstance(content, dict):
 					# Already in new format: {domain: {key: value}}
 					for key, val in content.items():

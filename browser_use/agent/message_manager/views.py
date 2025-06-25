@@ -58,5 +58,7 @@ class MessageManagerState(BaseModel):
 
 	history: MessageHistory = Field(default_factory=MessageHistory)
 	tool_id: int = 1
+	agent_history_description: str = '<s>Agent initialized</s>\n'
+	read_state_description: str = ''
 
 	model_config = ConfigDict(arbitrary_types_allowed=True)

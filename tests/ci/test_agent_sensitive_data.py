@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel, Field
 
-from browser_use.agent.message_manager.service import MessageManager, MessageManagerSettings
+from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.views import MessageManagerState
 from browser_use.controller.registry.service import Registry
 from browser_use.filesystem.file_system import FileSystem
@@ -32,7 +32,6 @@ def message_manager():
 	return MessageManager(
 		task='Test task',
 		system_message=SystemMessage(content='System message'),
-		settings=MessageManagerSettings(),
 		state=MessageManagerState(),
 		file_system=FileSystem(file_system_path),
 	)
@@ -252,12 +251,12 @@ def test_filter_sensitive_data(message_manager):
 	message = UserMessage(content='My username is admin and password is secret123')
 
 	# Case 1: No sensitive data provided
-	message_manager.settings.sensitive_data = None
+	message_manager.sensitive_data = None
 	result = message_manager._filter_sensitive_data(message)
 	assert result.content == 'My username is admin and password is secret123'
 
 	# Case 2: All sensitive data is properly replaced
-	message_manager.settings.sensitive_data = {'username': 'admin', 'password': 'secret123'}
+	message_manager.sensitive_data = {'username': 'admin', 'password': 'secret123'}
 	result = message_manager._filter_sensitive_data(message)
 	assert '<secret>username</secret>' in result.content
 	assert '<secret>password</secret>' in result.content
@@ -269,13 +268,13 @@ def test_filter_sensitive_data(message_manager):
 	assert '<secret>password</secret>' in result.content[0].text
 
 	# Case 4: Test with empty values
-	message_manager.settings.sensitive_data = {'username': 'admin', 'password': ''}
+	message_manager.sensitive_data = {'username': 'admin', 'password': ''}
 	result = message_manager._filter_sensitive_data(message)
 	assert '<secret>username</secret>' in result.content
 	# Only username should be replaced since password is empty
 
 	# Case 5: Test with domain-specific sensitive data format
-	message_manager.settings.sensitive_data = {
+	message_manager.sensitive_data = {
 		'example.com': {'username': 'admin', 'password': 'secret123'},
 		'google.com': {'email': 'user@example.com', 'password': 'google_pass'},
 	}
