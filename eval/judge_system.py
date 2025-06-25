@@ -92,7 +92,6 @@ class ErrorCategory(Enum):
 
 	# Agent Behavior Issues
 	INFINITE_LOOP = 'infinite_loop'
-	POOR_PLANNING = 'poor_planning'
 	CONTEXT_LOSS = 'missing_user_data'
 
 	# Browser & Technical
@@ -224,30 +223,30 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 			if isinstance(model_output, dict):
 				# Format the model output nicely
 				if 'action' in model_output:
-					step_text += f'Actions: {json.dumps(model_output["action"], indent=1)}\n'
-				if 'current_state' in model_output:
-					step_text += f'State: {model_output["current_state"]}\n'
+					step_text += f'Actions: {json.dumps(model_output["action"], indent=1)[:500]}...[cut for eval system]\n'
+				# if 'current_state' in model_output:
+				# step_text += f'State: {model_output["current_state"]}\n'
 
 		# Add results if available
 		if step.get('result'):
 			for j, result in enumerate(step['result']):
 				if isinstance(result, dict):
 					if result.get('extracted_content'):
-						step_text += f'Result {j + 1}: {result["extracted_content"]}\n'
+						step_text += f'Result {j + 1}: {result["extracted_content"][:500]}...[cut for eval system]\n'
 					if result.get('error'):
-						step_text += f'Error {j + 1}: {result["error"]}\n'
-
-		# Add URL info
-		if step.get('state', {}).get('url'):
-			step_text += f'URL: {step["state"]["url"]}\n'
-
-		# Truncate to 2000 characters, with eval system indicator if truncated
-		if len(step_text) > 2000:
-			step_text = step_text[:1997] + '...[cut for eval]...'
+						step_text += f'Error {j + 1}: {result["error"][:500]}...[cut for eval system]\n'
 
 		steps.append(step_text)
 
-	return steps
+	# iterate reversed over steps until you reach 15000 char and return the last part of the steps
+	total_length = 0
+	last_part: list[str] = []
+	for step_text in reversed(steps):
+		total_length += len(step_text)
+		if total_length > 15000:
+			break
+		last_part.append(step_text)
+	return last_part[::-1]
 
 
 def are_images_identical(img_path1: str, img_path2: str) -> bool:
@@ -461,10 +460,10 @@ Respond with EXACTLY this JSON structure (no additional text):
 
 	user_prompt = f"""**TASK:** {task_truncated}
 
-**AGENT EXECUTION STEPS:**
+**AGENT TRAJECTORY:**
 {chr(10).join(agent_steps)}
 
-**AGENT'S LAST MESSAGE:**
+**AGENT'S LAST INPUT MESSAGE:**
 {last_message_truncated}
 
 **FINAL RESULT:**
