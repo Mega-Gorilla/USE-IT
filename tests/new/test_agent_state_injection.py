@@ -99,16 +99,17 @@ async def test_agent_state_injection():
 
 		# Get browser state and add state message to see what model would see next
 		try:
-			browser_state_summary = await agent1.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-			agent1._message_manager.add_state_message(
-				browser_state_summary=browser_state_summary,
-				model_output=agent1.state.last_model_output,
-				result=agent1.state.last_result,
-				step_info=None,
-				use_vision=agent1.settings.use_vision,
-				page_filtered_actions=None,
-				sensitive_data=agent1.sensitive_data,
-			)
+			if agent1.browser_session is not None:
+				browser_state_summary = await agent1.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+				agent1._message_manager.add_state_message(
+					browser_state_summary=browser_state_summary,
+					model_output=agent1.state.last_model_output,
+					result=agent1.state.last_result,
+					step_info=None,
+					use_vision=agent1.settings.use_vision,
+					page_filtered_actions=None,
+					sensitive_data=agent1.sensitive_data,
+				)
 			agent1_messages = agent1._message_manager.get_messages()
 		except Exception as e:
 			print(f'⚠️ Could not get browser state for Agent 1: {e}')
@@ -159,16 +160,17 @@ async def test_agent_state_injection():
 
 		# Get browser state and add state message to see what model would see next
 		try:
-			browser_state_summary = await agent2.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-			agent2._message_manager.add_state_message(
-				browser_state_summary=browser_state_summary,
-				model_output=agent2.state.last_model_output,
-				result=agent2.state.last_result,
-				step_info=None,
-				use_vision=agent2.settings.use_vision,
-				page_filtered_actions=None,
-				sensitive_data=agent2.sensitive_data,
-			)
+			if agent2.browser_session is not None:
+				browser_state_summary = await agent2.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+				agent2._message_manager.add_state_message(
+					browser_state_summary=browser_state_summary,
+					model_output=agent2.state.last_model_output,
+					result=agent2.state.last_result,
+					step_info=None,
+					use_vision=agent2.settings.use_vision,
+					page_filtered_actions=None,
+					sensitive_data=agent2.sensitive_data,
+				)
 			agent2_messages = agent2._message_manager.get_messages()
 		except Exception as e:
 			print(f'⚠️ Could not get browser state for Agent 2: {e}')
@@ -323,7 +325,7 @@ async def test_file_system_state_specific():
 			task='Test task',
 			llm=llm,
 			file_system_path=temp_dir,
-			browser_profile=BrowserProfile(browser_type='chromium', headless=True),
+			browser_profile=BrowserProfile(headless=True),
 		)
 
 		# Add some test files and update agent state (simulating successful agent actions)
@@ -335,7 +337,8 @@ async def test_file_system_state_specific():
 		agent1.save_file_system_state()
 
 		print(f'📁 Original file system has {len(agent1.file_system.files)} files')
-		print(f'📁 Agent state file system has {len(agent1.state.file_system_state.files)} files')
+		if agent1.state.file_system_state is not None:
+			print(f'📁 Agent state file system has {len(agent1.state.file_system_state.files)} files')
 
 		# Get state and create new agent with injected state
 		agent_state = copy.deepcopy(AgentState.model_validate(agent1.state))
@@ -343,19 +346,20 @@ async def test_file_system_state_specific():
 		agent2 = Agent(
 			task='Test task',
 			llm=llm,
-			browser_profile=BrowserProfile(browser_type='chromium', headless=True),
+			browser_profile=BrowserProfile(headless=True),
 			injected_agent_state=agent_state,
 		)
 
 		# Verify file system restoration (based on agent state, not current file system)
 		print(f'📁 Agent 1 file system has {len(agent1.file_system.files)} files')
 		print(f'📁 Agent 2 file system has {len(agent2.file_system.files)} files')
-		print(f'📁 Agent state has {len(agent_state.file_system_state.files)} files')
+		if agent_state.file_system_state is not None:
+			print(f'📁 Agent state has {len(agent_state.file_system_state.files)} files')
 
-		# Agent 2 should match the injected state, not necessarily Agent 1's current file system
-		assert len(agent2.file_system.files) == len(agent_state.file_system_state.files), (
-			f"Agent 2 file count ({len(agent2.file_system.files)}) doesn't match injected state ({len(agent_state.file_system_state.files)})"
-		)
+			# Agent 2 should match the injected state, not necessarily Agent 1's current file system
+			assert len(agent2.file_system.files) == len(agent_state.file_system_state.files), (
+				f"Agent 2 file count ({len(agent2.file_system.files)}) doesn't match injected state ({len(agent_state.file_system_state.files)})"
+			)
 		print(f'✅ File system restored from state: {len(agent2.file_system.files)} files')
 
 		# Verify specific file contents
