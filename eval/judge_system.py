@@ -99,6 +99,7 @@ class ErrorCategory(Enum):
 	CLICK_FAILURE = 'click_failure'
 	LOAD_TIMEOUT = 'load_timeout'
 	JAVASCRIPT_ERROR = 'javascript_error'
+	MAX_STEPS_REACHED = 'max_steps_reached'
 
 	CONTENT_PARSING_ERROR = 'content_parsing_error'
 
