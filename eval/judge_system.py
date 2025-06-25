@@ -412,12 +412,13 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 - What's the core thing why the task failed? - What are the most important things to fix?
 
 **IMPROVEMENT TIPS:**
-- Create actionable tips for browser-use agent developers to fix common issues
+- Create actionable tips for browser-use agent developers to fix common issues 
+- Make the tips easy understandable for a developer without the specific task context
 - Tips will be aggregated across tasks to identify the most problematic patterns
 - Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
 - Consider improvements to: system prompt,DOM input state representation, action handling, tools
-- Always mention the error pattern first, then the specific improvement suggestion
-- If errors happen on specific websites you can mention them so the developer can fix them
+- Always mention the error pattern first, then the specific improvement suggestion. Like Login_error on sheets.google.com: build a login function for google sheets
+- If errors are related to specific websites please meention the link in the improvement tips 
 - Can the output be presented better - sometimes the agent does not output exactly what the user asked for
 
 **SCORING SCALE:**
@@ -453,8 +454,8 @@ Respond with EXACTLY this JSON structure (no additional text):
         "Critical issue that must be fixed 2"
     ],
     "improvement_tips": [
-        "Specific actionable improvement 1",
-        "Specific actionable improvement 2"
+        "Error pattern: Specific actionable improvement 1",
+        "Error pattern: Specific actionable improvement 2"
     ]
 }}"""
 
