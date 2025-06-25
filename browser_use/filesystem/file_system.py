@@ -250,8 +250,9 @@ class FileSystem:
 
 	async def save_extracted_content(self, content: str) -> str:
 		"""Save extracted content to a numbered file"""
-		extracted_filename = f'extracted_content_{self.extracted_content_count}.md'
-		file_obj = MarkdownFile(name=extracted_filename[:-3])
+		initial_filename = f'extracted_content_{self.extracted_content_count}'
+		extracted_filename = f'{initial_filename}.md'
+		file_obj = MarkdownFile(name=initial_filename)
 		await file_obj.write(content, self.data_dir)
 		self.files[extracted_filename] = file_obj
 		self.extracted_content_count += 1
