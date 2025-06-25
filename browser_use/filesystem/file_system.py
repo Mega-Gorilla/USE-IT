@@ -1,5 +1,6 @@
 import asyncio
 import re
+import shutil
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -175,10 +176,9 @@ class FileSystem(BaseModel):
 
 		# Create and use a dedicated subfolder for all operations
 		data_dir = base_dir / 'browseruse_agent_data'
-		if data_dir.exists() and not _restore_mode:
-			raise ValueError(
-				'File system directory already exists - stopping for safety purposes. Please delete it first if you want to use this directory.'
-			)
+		if data_dir.exists():
+			# clean the data directory
+			shutil.rmtree(data_dir)
 		data_dir.mkdir(exist_ok=True)
 
 		super().__init__(base_dir=data_dir, **kwargs)
