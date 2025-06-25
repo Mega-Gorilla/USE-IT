@@ -182,7 +182,7 @@ The file system actions do not change the browser state, so I can also click on 
 
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
-		self.state.agent_history_description += f'\n<system>User updated USER REQUEST to: {new_task}</system>\n'
+		self.state.agent_history_description += f'\n<s>User updated <user_request> to: {new_task}</s>\n'
 
 	def _update_agent_history_description(
 		self,
