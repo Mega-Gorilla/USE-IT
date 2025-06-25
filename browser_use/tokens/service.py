@@ -201,12 +201,12 @@ class TokenCost:
 
 		return entry
 
-	async def _log_non_usage_llm(self, llm: BaseChatModel) -> None:
-		"""Log non-usage to the logger"""
-		C_CYAN = '\033[96m'
-		C_RESET = '\033[0m'
+	# async def _log_non_usage_llm(self, llm: BaseChatModel) -> None:
+	# 	"""Log non-usage to the logger"""
+	# 	C_CYAN = '\033[96m'
+	# 	C_RESET = '\033[0m'
 
-		cost_logger.info(f'🧠 llm : {C_CYAN}{llm.model}{C_RESET} (no usage found)')
+	# 	cost_logger.info(f'🧠 llm : {C_CYAN}{llm.model}{C_RESET} (no usage found)')
 
 	async def _log_usage(self, model: str, usage: TokenUsageEntry) -> None:
 		"""Log usage to the logger"""
@@ -274,8 +274,8 @@ class TokenCost:
 
 				asyncio.create_task(token_cost_service._log_usage(llm.model, usage))
 
-			else:
-				await token_cost_service._log_non_usage_llm(llm)
+			# else:
+			# 	await token_cost_service._log_non_usage_llm(llm)
 
 			return result
 
