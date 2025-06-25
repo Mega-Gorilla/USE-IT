@@ -535,7 +535,7 @@ class Registry(Generic[Context]):
 			# Create a Union type using RootModel that properly delegates ActionModel methods
 			union_type = Union[tuple(individual_action_models)]  # type: ignore : Typing doesn't understand that the length is >= 2 (by design)
 
-			class ActionModelUnion(RootModel[union_type]):
+			class ActionModelUnion(RootModel[union_type]):  # type: ignore
 				"""Union of all available action models that maintains ActionModel interface"""
 
 				def get_index(self) -> int | None:
