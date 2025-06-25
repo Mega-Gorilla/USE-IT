@@ -92,7 +92,6 @@ class ErrorCategory(Enum):
 
 	# Agent Behavior Issues
 	INFINITE_LOOP = 'infinite_loop'
-	POOR_PLANNING = 'poor_planning'
 	CONTEXT_LOSS = 'missing_user_data'
 
 	# Browser & Technical
@@ -224,30 +223,30 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 			if isinstance(model_output, dict):
 				# Format the model output nicely
 				if 'action' in model_output:
-					step_text += f'Actions: {json.dumps(model_output["action"], indent=1)}\n'
-				if 'current_state' in model_output:
-					step_text += f'State: {model_output["current_state"]}\n'
+					step_text += f'Actions: {json.dumps(model_output["action"], indent=1)[:500]}...[cut for eval system]\n'
+				# if 'current_state' in model_output:
+				# step_text += f'State: {model_output["current_state"]}\n'
 
 		# Add results if available
 		if step.get('result'):
 			for j, result in enumerate(step['result']):
 				if isinstance(result, dict):
 					if result.get('extracted_content'):
-						step_text += f'Result {j + 1}: {result["extracted_content"]}\n'
+						step_text += f'Result {j + 1}: {result["extracted_content"][:500]}...[cut for eval system]\n'
 					if result.get('error'):
-						step_text += f'Error {j + 1}: {result["error"]}\n'
-
-		# Add URL info
-		if step.get('state', {}).get('url'):
-			step_text += f'URL: {step["state"]["url"]}\n'
-
-		# Truncate to 2000 characters, with eval system indicator if truncated
-		if len(step_text) > 2000:
-			step_text = step_text[:1997] + '...[cut for eval]...'
+						step_text += f'Error {j + 1}: {result["error"][:500]}...[cut for eval system]\n'
 
 		steps.append(step_text)
 
-	return steps
+	# iterate reversed over steps until you reach 15000 char and return the last part of the steps
+	total_length = 0
+	last_part: list[str] = []
+	for step_text in reversed(steps):
+		total_length += len(step_text)
+		if total_length > 15000:
+			break
+		last_part.append(step_text)
+	return last_part[::-1]
 
 
 def are_images_identical(img_path1: str, img_path2: str) -> bool:
@@ -325,7 +324,7 @@ async def comprehensive_judge(
 
 	# Prepare inputs with length limits
 	task_truncated = truncate_text(task, 40000)
-	final_result_truncated = truncate_text(final_result or 'No final result', 40000)
+	final_result_truncated = truncate_text(final_result or 'No final result', 20000)
 	last_message_truncated = truncate_text(last_message or 'No last message', 40000, from_beginning=True)
 	agent_steps = prepare_agent_steps(complete_history)
 
@@ -341,8 +340,7 @@ async def comprehensive_judge(
 				encoded_images.append(ContentPartImageParam(image_url=ImageURL(url=f'data:image/jpeg;base64,{encoded_img}')))
 
 	# Build error categories dynamically from enum
-	error_categories_text = '**ERROR CATEGORIES TO CONSIDER:**\n'
-	error_categories_text += ', '.join([category.value for category in ErrorCategory])
+	error_categories_text = ', '.join([category.value for category in ErrorCategory])
 
 	# Construct the evaluation prompt
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
@@ -353,23 +351,16 @@ The browser-use agent operates in iterative loops receiving structured input:
 **AGENT INPUT (what agent sees each step):**
 1. AGENT HISTORY: Chronological event stream with previous actions and results
 2. AGENT STATE: User request, file system state, todo.md contents, step info  
-3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format with hierarchical text structure
+3. BROWSER STATE: Current URL, tabs, and interactive elements in indexed format (this represents the css selector of the element), and text of the current viewport
 4. BROWSER VISION: Screenshot with bounding boxes around interactive elements
 5. READ STATE: Temporary data from extract_structured_data or read_file actions
 
 **CRITICAL: BROWSER STATE CONTAINS READABLE TEXT**
 - The DOM is converted to text with indexed interactive elements: [index]<type>text content</type>
-- Agent has access to browser_state at every step without needing extract_structured_data
-- extract_structured_data is only needed for complex parsing or when browser_state text is insufficient
+- Agent sees the browser_state of the current viewport at every step without needing extract_structured_data
 - extract_structured_data gets the markdown of the entire page and not just the visible part
-- Instead of extract_structured_data the agent can also scroll to get more information and update the browser_state
-- Hierarchical structure with \t indentation shows parent-child HTML relationships
-- New elements since last step marked with asterisks (*)
+- Instead of extract_structured_data the agent can also scroll to get more information in the browser_state 
 - The browser_state is the ground truth, but can be improved if information is missing
-
-**AGENT INTERACTION MODEL:**
-- Agent can only interact with explicitly provided numeric indexes [index] (example is in the last message)
-- Max N actions per step (configurable), browser actions interrupt sequences
 
 **AGENT OUTPUT FORMAT (always JSON):**
 - thinking: Structured reasoning following specific patterns
@@ -379,25 +370,22 @@ The browser-use agent operates in iterative loops receiving structured input:
 - action: List of actions to execute sequentially
 
 **EXPECTED AGENT BEHAVIORS:**
-- READS text content directly from structured browser_state when information is visible without extract_structured_data
-- Uses extract_structured_data when browser_state text is insufficient - an example of browser_state is in the last message.
 - Follows task output format requirements precisely (direct output vs file writing)
-- Uses todo.md for multi-step task planning and progress tracking
-- Saves findings to results.md when the task is long or the user asks for it
+- Uses todo.md for long tasks above 20 steps
+- Saves findings to results.md when the task is long multiple things need to be extracted on different pages
 - Reasons explicitly about browser state, history, and progress
-- Handles page changes, scrolling, form interactions systematically
-- Opens new tabs for research rather than reusing current tab
-- Calls done action only when task complete or impossible to continue
-- If the agent needs to repeat the same extraction over and over, has a good trajectory, but hits the max step limit its still very good
+- Calls done action only when task complete or impossible to continue - not too early
+- If the agent needs to repeat the same sub task multiple times & has a good trajectory, but hits the max step limit its still very good and can pass the evaluation
+- Analyse the screenshots. Each interactive element should have exactly one color bounding box. 
 
 **EVALUATION CRITERIA:**
 1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
-2. **Tool Usage**: How well did the tools work? - How does the trajectory of the agent look like?
+2. **Tool Usage**: How well did the tools work? -Do they work as expected?
 3. **Agent Reasoning**: Quality of decision-making and problem-solving - good todo.md usage for tasks above 20 steps?
-4. **Browser Handling**: How well did the navigation and browser interaction work?
+4. **Browser Handling**: How well did the navigation and browser interaction work - are there many blocks or 404s?
 5. **Final Output**: How does the output presented is it exactly what the user asked for?
 
-
+**ERROR CATEGORIES TO CONSIDER:**
 {error_categories_text}
 
 **TASK CATEGORIES TO CONSIDER:**
@@ -413,13 +401,12 @@ extraction, interaction, login, research, shopping, booking, comparison, qa_test
 
 **IMPROVEMENT TIPS:**
 - Create actionable tips for browser-use agent developers to fix common issues 
-- Make the tips easy understandable for a developer without the specific task context
+- Make the tips easy understandable for a developer 
 - Tips will be aggregated across tasks to identify the most problematic patterns
-- Focus on browser-use specific architecture: DOM-to-text conversion, indexed elements, iterative loops
-- Consider improvements to: system prompt,DOM input state representation, action handling, tools
-- Always mention the error pattern first, then the specific improvement suggestion. Like Login_error on sheets.google.com: build a login function for google sheets
-- If errors are related to specific websites please meention the link in the improvement tips 
-- Can the output be presented better - sometimes the agent does not output exactly what the user asked for
+- Consider improvements to: system prompt, browser_state representation, action handling, not working tools, waiting and other error categories,  output format
+- Always mention the error first this would fix, then the specific improvement suggestion. Like Login error on sheets.google.com: build a login function for google sheets
+- If errors are related to specific websites please meention the link in the improvement  
+
 
 **SCORING SCALE:**
 - 90-100: Excellent execution, human-like, minimal issues
@@ -454,17 +441,17 @@ Respond with EXACTLY this JSON structure (no additional text):
         "Critical issue that must be fixed 2"
     ],
     "improvement_tips": [
-        "Error pattern: Specific actionable improvement 1",
-        "Error pattern: Specific actionable improvement 2"
+        "Error1: Specific actionable improvement 1",
+        "Error2: Specific actionable improvement 2"
     ]
 }}"""
 
 	user_prompt = f"""**TASK:** {task_truncated}
 
-**AGENT EXECUTION STEPS:**
+**AGENT TRAJECTORY:**
 {chr(10).join(agent_steps)}
 
-**AGENT'S LAST MESSAGE:**
+**AGENT'S LAST INPUT MESSAGE:**
 {last_message_truncated}
 
 **FINAL RESULT:**
