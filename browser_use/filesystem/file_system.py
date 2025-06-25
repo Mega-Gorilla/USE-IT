@@ -32,7 +32,7 @@ class BaseFile(BaseModel, ABC):
 		"""File extension (e.g. 'txt', 'md')"""
 		pass
 
-	def write_file_content(self, content: str | Any) -> None:
+	def write_file_content(self, content: str) -> None:
 		"""Update internal content (formatted)"""
 		self.update_content(content)
 
@@ -54,7 +54,7 @@ class BaseFile(BaseModel, ABC):
 		with ThreadPoolExecutor() as executor:
 			await asyncio.get_event_loop().run_in_executor(executor, lambda: file_path.write_text(self.content))
 
-	async def write(self, content: str | Any, path: Path) -> None:
+	async def write(self, content: str, path: Path) -> None:
 		self.write_file_content(content)
 		await self.sync_to_disk(path)
 
@@ -191,7 +191,7 @@ class FileSystem:
 		except Exception:
 			return f"Error: Could not read file '{full_filename}'."
 
-	async def write_file(self, full_filename: str, content: str | Any) -> str:
+	async def write_file(self, full_filename: str, content: str) -> str:
 		"""Write content to file using file-specific write method"""
 		if not self._is_valid_filename(full_filename):
 			return INVALID_FILENAME_ERROR_MESSAGE
