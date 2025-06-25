@@ -549,7 +549,11 @@ class Agent(Generic[Context]):
 		logger.info(f'💾 File system path: {self.file_system_path}')
 
 		# if file system is set, add actions to the controller
-		@self.controller.registry.action('Write content to file_name in file system.')
+		extensions_allowed = self.file_system.get_allowed_extensions()
+
+		@self.controller.registry.action(
+			f'Write content to file_name in file system. Only use extensions {"|".join(extensions_allowed)}'
+		)
 		async def write_file(file_name: str, content: str):
 			result = await self.file_system.write_file(file_name, content)
 			# Update agent state with new file system state

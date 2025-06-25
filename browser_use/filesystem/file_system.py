@@ -187,6 +187,10 @@ class FileSystem(BaseModel):
 		if not _restore_mode:
 			self._create_default_files()
 
+	def get_allowed_extensions(self) -> list[str]:
+		"""Get allowed extensions"""
+		return list(self._file_types.keys())
+
 	def _create_default_files(self) -> None:
 		"""Create default results and todo files"""
 		default_files = ['results.md', 'todo.md']
