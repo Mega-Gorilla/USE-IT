@@ -78,7 +78,6 @@ def try_parse_groq_failed_generation(
 		if isinstance(result_dict, list) and len(result_dict) == 1 and isinstance(result_dict[0], dict):
 			result_dict = result_dict[0]
 
-		assert isinstance(result_dict, dict), f'Expected JSON dictionary in response, got JSON {type(result_dict)} instead'
 		logger.debug(f'Successfully parsed model output: {result_dict}')
 		return output_format.model_validate(result_dict)
 
