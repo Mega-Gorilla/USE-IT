@@ -120,6 +120,7 @@ class MessageManager:
 		self.message_context = message_context
 		self.sensitive_data = sensitive_data
 
+		self.last_input_messages = []
 		# Only initialize messages if state is empty
 		if len(self.state.history.messages) == 0:
 			self._init_messages()
@@ -344,8 +345,8 @@ Next Goal: {model_output.current_state.next_goal}
 
 		# Log message history for debugging
 		logger.debug(self._log_history_lines())
-
-		return [m.message for m in self.state.history.messages]
+		self.last_input_messages = [m.message for m in self.state.history.messages]
+		return self.last_input_messages
 
 	def _add_message_with_type(
 		self,
