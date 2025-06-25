@@ -11,16 +11,22 @@ class ChatInvokeUsage(BaseModel):
 	"""
 
 	prompt_tokens: int
-	"""The number of tokens in the prompt."""
+	"""The number of tokens in the prompt (this includes the cached tokens as well. When calculating the cost, subtract the cached tokens from the prompt tokens)"""
+
+	prompt_cached_tokens: int | None
+	"""The number of cached tokens."""
+
+	prompt_cache_creation_tokens: int | None
+	"""Anthropic only: The number of tokens used to create the cache."""
+
+	prompt_image_tokens: int | None
+	"""Google only: The number of tokens in the image (prompt tokens is the text tokens + image tokens in that case)"""
 
 	completion_tokens: int
 	"""The number of tokens in the completion."""
 
 	total_tokens: int
 	"""The total number of tokens in the response."""
-
-	image_tokens: int | None = None
-	"""The number of tokens in the image. Google only (prompt tokens is the text tokens + image tokens in that case)"""
 
 
 class ChatInvokeCompletion(BaseModel, Generic[T]):

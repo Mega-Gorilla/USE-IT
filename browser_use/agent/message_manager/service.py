@@ -129,7 +129,8 @@ class MessageManager:
 		self._add_message_with_type(self.system_prompt, message_type='init')
 
 		placeholder_message = UserMessage(
-			content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.'
+			content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.',
+			cache=True,
 		)
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_type(placeholder_message, message_type='init')
@@ -171,11 +172,12 @@ Since this appears to be a multi-step task involving visiting multiple repositor
 After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
 The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
 
-		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content))
+		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
 		self._add_message_with_type(example_tool_call_1, message_type='init')
 		self._add_message_with_type(
 			UserMessage(
 				content='Data written to todo.md.\nData written to github.md.\nClicked element with index 4.\n</example_1>',
+				cache=True,
 			),
 			message_type='init',
 		)

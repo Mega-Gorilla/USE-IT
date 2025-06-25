@@ -180,6 +180,7 @@ class Agent(Generic[Context]):
 		file_system_path: str | None = None,
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
+		calculate_cost: bool = False,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -220,10 +221,11 @@ class Agent(Generic[Context]):
 			is_planner_reasoning=is_planner_reasoning,
 			extend_planner_system_message=extend_planner_system_message,
 			use_thinking=use_thinking,
+			calculate_cost=calculate_cost,
 		)
 
 		# Token cost service
-		self.token_cost_service = TokenCost()
+		self.token_cost_service = TokenCost(include_cost=calculate_cost)
 		self.token_cost_service.register_llm(llm)
 		self.token_cost_service.register_llm(page_extraction_llm)
 		if self.settings.planner_llm:
@@ -1076,7 +1078,7 @@ class Agent(Generic[Context]):
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
 		"""Sent the agent event for this run to telemetry"""
 
-		total_input_tokens = self.token_cost_service.get_usage_summary(calculate_cost=False).total_prompt_tokens
+		token_summary = self.token_cost_service.get_usage_tokens_for_model(self.llm.model)
 
 		# Prepare action_history data correctly
 		action_history_data = []
@@ -1112,7 +1114,7 @@ class Agent(Generic[Context]):
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
 				steps=self.state.n_steps,
-				total_input_tokens=total_input_tokens,
+				total_input_tokens=token_summary.prompt_tokens,
 				total_duration_seconds=self.state.history.total_duration_seconds(),
 				success=self.state.history.is_successful(),
 				final_result_response=final_result_str,
