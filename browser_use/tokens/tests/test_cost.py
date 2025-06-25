@@ -70,7 +70,7 @@ Only output the country name, no numbers, no punctuation, just the name."""
 	print('\n💰 Cost Summary')
 	print('=' * 80)
 
-	summary = tc.get_usage_summary()
+	summary = await tc.get_usage_summary()
 	print(f'Total calls: {summary.entry_count}')
 	print(f'Total tokens: {summary.total_tokens:,}')
 	print(f'Total cost: ${summary.total_cost:.6f}')

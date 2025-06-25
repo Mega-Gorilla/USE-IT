@@ -95,7 +95,9 @@ class ChatGoogle(BaseChatModel):
 				prompt_tokens=response.usage_metadata.prompt_token_count or 0,
 				completion_tokens=response.usage_metadata.candidates_token_count or 0,
 				total_tokens=response.usage_metadata.total_token_count or 0,
-				image_tokens=image_tokens,
+				prompt_cached_tokens=response.usage_metadata.cached_content_token_count,
+				prompt_cache_creation_tokens=None,
+				prompt_image_tokens=image_tokens,
 			)
 
 		return usage

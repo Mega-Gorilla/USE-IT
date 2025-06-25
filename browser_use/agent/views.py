@@ -58,6 +58,7 @@ class AgentSettings(BaseModel):
 	planner_interval: int = 1  # Run planner every N steps
 	is_planner_reasoning: bool = False  # type: ignore
 	extend_planner_system_message: str | None = None
+	calculate_cost: bool = False
 
 
 class AgentState(BaseModel):

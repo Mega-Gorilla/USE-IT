@@ -93,6 +93,12 @@ class ChatOpenAI(BaseChatModel):
 		usage = (
 			ChatInvokeUsage(
 				prompt_tokens=response.usage.prompt_tokens,
+				prompt_cached_tokens=response.usage.prompt_tokens_details.cached_tokens
+				if response.usage.prompt_tokens_details is not None
+				else None,
+				prompt_cache_creation_tokens=None,
+				prompt_image_tokens=None,
+				# Completion
 				completion_tokens=response.usage.completion_tokens,
 				total_tokens=response.usage.total_tokens,
 			)

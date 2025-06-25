@@ -71,6 +71,9 @@ class ChatGroq(BaseChatModel):
 				prompt_tokens=response.usage.prompt_tokens,
 				completion_tokens=response.usage.completion_tokens,
 				total_tokens=response.usage.total_tokens,
+				prompt_cached_tokens=None,  # Groq doesn't support cached tokens
+				prompt_cache_creation_tokens=None,
+				prompt_image_tokens=None,
 			)
 			if response.usage is not None
 			else None

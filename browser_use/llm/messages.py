@@ -122,9 +122,17 @@ class ToolCall(BaseModel):
 
 
 # region - Message types
+class _MessageBase(BaseModel):
+	"""Base class for all message types"""
+
+	role: Literal['user', 'system', 'assistant']
+
+	cache: bool = False
+	"""Whether to cache this message. This is only applicable when using Anthropic models.
+	"""
 
 
-class UserMessage(BaseModel):
+class UserMessage(_MessageBase):
 	role: Literal['user'] = 'user'
 	"""The role of the messages author, in this case `user`."""
 
@@ -157,7 +165,7 @@ class UserMessage(BaseModel):
 		return f'UserMessage(content={repr(self.text)})'
 
 
-class SystemMessage(BaseModel):
+class SystemMessage(_MessageBase):
 	role: Literal['system'] = 'system'
 	"""The role of the messages author, in this case `system`."""
 
@@ -185,7 +193,7 @@ class SystemMessage(BaseModel):
 		return f'SystemMessage(content={repr(self.text)})'
 
 
-class AssistantMessage(BaseModel):
+class AssistantMessage(_MessageBase):
 	role: Literal['assistant'] = 'assistant'
 	"""The role of the messages author, in this case `assistant`."""
 

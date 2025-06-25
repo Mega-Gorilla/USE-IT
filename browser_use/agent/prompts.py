@@ -32,7 +32,7 @@ class SystemPrompt:
 		if extend_system_message:
 			prompt += f'\n{extend_system_message}'
 
-		self.system_message = SystemMessage(content=prompt)
+		self.system_message = SystemMessage(content=prompt, cache=True)
 
 	def _load_prompt_template(self) -> None:
 		"""Load the prompt template from the markdown file."""
