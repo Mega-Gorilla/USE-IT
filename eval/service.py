@@ -297,8 +297,8 @@ async def identify_key_points(task, model):
 			'content': [{'type': 'text', 'text': text}],
 		},
 	]
-	response = await asyncio.to_thread(model.invoke, messages)
-	return response.content
+	response = await model.ainvoke(messages)
+	return response.completion
 
 
 async def judge_image(task, image_path, key_points, model):
@@ -350,8 +350,8 @@ The snapshot of the web page is shown in the image."""
 			],
 		},
 	]
-	response = await asyncio.to_thread(model.invoke, messages)
-	return response.content
+	response = await model.ainvoke(messages)
+	return response.completion
 
 
 async def Online_Mind2Web_eval(task, last_actions, images_path, model, score_threshold):
@@ -627,7 +627,7 @@ class TaskResult:
 			# Handle legacy Mind2Web evaluation (for compatibility)
 			payload.update(
 				{
-					'onlineMind2WebEvaluationJudgement': eval_data.get('judgement'),
+					'onlineMind2WebEvaluationJudgement': eval_data.get('judgement') or 'No evaluation available',
 					'onlineMind2WebEvaluationError': eval_data.get('error'),
 					'onlineMind2WebEvaluationSuccess': eval_data.get('success', False),
 					'onlineMind2WebEvaluationScore': eval_data.get('score', 0.0),
@@ -1109,7 +1109,13 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 	"""
 	result_file = task_folder / 'result.json'
 	if not result_file.exists():
-		return {'task_id': task_folder.name, 'judgement': None, 'success': False, 'error': 'No result.json found', 'score': 0.0}
+		return {
+			'task_id': task_folder.name,
+			'judgement': 'No result.json found',
+			'success': False,
+			'error': 'No result.json found',
+			'score': 0.0,
+		}
 
 	try:
 		async with await anyio.open_file(result_file) as f:
@@ -1140,9 +1146,9 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 
 				messages, text, system_msg, record, key_points = eval_result
 
-				# Final steps to get judgement - run invoke in a thread
-				judgement_msg = await asyncio.to_thread(model.invoke, messages)
-				judgement = judgement_msg.content
+				# Final steps to get judgement - use async invoke directly
+				judgement_response = await model.ainvoke(messages)
+				judgement = judgement_response.completion
 
 				if 'success' in judgement.lower().split('status:')[1]:  # This is the official criteria for success
 					evaluation = {
@@ -1171,7 +1177,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 			except Exception as err:
 				return {
 					'task_id': task_folder.name,
-					'judgement': None,
+					'judgement': f'Mind2Web evaluation failed: {type(err).__name__}: {err}',
 					'success': False,
 					'error': f'{type(err).__name__}: {err}',
 					'score': 0.0,
@@ -1207,7 +1213,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 				if comprehensive_result.get('error'):
 					return {
 						'task_id': task_folder.name,
-						'judgement': None,
+						'judgement': f'Comprehensive evaluation failed: {comprehensive_result["error"]}',
 						'success': False,
 						'error': comprehensive_result['error'],
 						'score': 0.0,
@@ -1226,7 +1232,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 				else:
 					return {
 						'task_id': task_folder.name,
-						'judgement': None,
+						'judgement': 'Comprehensive judge failed to return results',
 						'success': False,
 						'error': 'Comprehensive judge failed to return results',
 						'score': 0.0,
@@ -1236,7 +1242,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 				logger.error(f'Comprehensive judge evaluation failed for {task_folder.name}: {err}')
 				return {
 					'task_id': task_folder.name,
-					'judgement': None,
+					'judgement': f'Comprehensive judge error: {type(err).__name__}: {err}',
 					'success': False,
 					'error': f'Comprehensive judge error: {type(err).__name__}: {err}',
 					'score': 0.0,
@@ -1245,7 +1251,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 	except Exception as err:
 		return {
 			'task_id': task_folder.name,
-			'judgement': None,
+			'judgement': f'Evaluation failed: {type(err).__name__}: {err}',
 			'success': False,
 			'error': f'{type(err).__name__}: {err}',
 			'score': 0.0,
