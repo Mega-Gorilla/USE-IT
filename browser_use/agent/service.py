@@ -1184,6 +1184,12 @@ class Agent(Generic[Context]):
 				if self.state.history.is_done():
 					await self.log_completion()
 
+					if self.register_done_callback:
+						if inspect.iscoroutinefunction(self.register_done_callback):
+							await self.register_done_callback(self.state.history)
+						else:
+							self.register_done_callback(self.state.history)
+
 					# Task completed
 					break
 			else:
@@ -1369,12 +1375,6 @@ class Agent(Generic[Context]):
 			self.logger.info('✅ Task completed successfully')
 		else:
 			self.logger.info('❌ Task completed without success')
-
-		if self.register_done_callback:
-			if inspect.iscoroutinefunction(self.register_done_callback):
-				await self.register_done_callback(self.state.history)
-			else:
-				self.register_done_callback(self.state.history)
 
 	async def rerun_history(
 		self,
