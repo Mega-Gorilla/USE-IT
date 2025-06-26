@@ -511,3 +511,7 @@ class TestParallelism:
 			await browser.close()
 			await browser_session.kill()
 		await playwright.stop()
+
+
+if __name__ == '__main__':
+	asyncio.run(TestParallelism().test_one_event_loop_with_asyncio_run_and_one_task())
