@@ -3106,7 +3106,9 @@ class BrowserSession(BaseModel):
 		# if there are any unused about:blank tabs after we open a new tab, close them to clean up unused tabs
 		assert self.browser_context is not None, 'Browser context is not set'
 		# hacky way to be sure we only close our own tabs, check the title of the tab for our BrowserSession name
-		title_of_our_setup_tab = f'Start page {str(self.id)[-4:]}'  # set up by self._show_dvd_screensaver_loading_animation()
+		title_of_our_setup_tab = (
+			f'Starting agent {str(self.id)[-4:]}...'  # set up by self._show_dvd_screensaver_loading_animation()
+		)
 		for page in self.browser_context.pages:
 			page_title = await page.title()
 			if page.url == 'about:blank' and page != self.agent_current_page and page_title == title_of_our_setup_tab:
@@ -3273,7 +3275,7 @@ class BrowserSession(BaseModel):
 		# between opening the tab and showing the animation
 		await page.evaluate(
 			"""(browser_session_label) => {
-			const animated_title = `Start page id ${browser_session_label}`;
+			const animated_title = `Starting agent ${browser_session_label}...`;
 			if (document.title === animated_title) {
 				return;      // already run on this tab, dont run again
 			}
