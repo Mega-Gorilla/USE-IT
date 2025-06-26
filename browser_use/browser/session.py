@@ -661,7 +661,7 @@ class BrowserSession(BaseModel):
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
 		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
-		semaphore_timeout=20,  # wait up to 20s for a lock
+		semaphore_timeout=10,  # wait up to 10s for a lock
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
@@ -699,12 +699,12 @@ class BrowserSession(BaseModel):
 	@retry(
 		wait=1,
 		retries=3,
-		timeout=30,
+		timeout=10,
 		semaphore_limit=1,
 		semaphore_name='playwright_global_object',
 		semaphore_scope='global',
 		semaphore_lax=False,
-		semaphore_timeout=10,  # 10s to wait for global playwright object
+		semaphore_timeout=5,  # 5s to wait for global playwright object
 	)
 	async def setup_playwright(self) -> None:
 		"""
