@@ -36,10 +36,11 @@ class CloudSync:
 				self.session_id = str(event.id)  # type: ignore
 
 			# Start authentication flow on first step (after first LLM response)
-			if event.event_type == 'CreateAgentStepEvent' and hasattr(event, 'step'):
-				logger.debug(f'Got CreateAgentStepEvent with step={event.step}')
+			if event.event_type == 'CreateAgentStepEvent' and 'step' in dict(event):
+				step = dict(event)['step']
+				logger.debug(f'Got CreateAgentStepEvent with step={step}')
 				# Only trigger on the first step (step=2 because n_steps is incremented before actions)
-				if event.step == 2 and self.enable_auth and self.auth_client and not self.auth_client.is_authenticated:
+				if step == 2 and self.enable_auth and self.auth_client and not self.auth_client.is_authenticated:
 					if not hasattr(self, 'auth_task') or self.auth_task is None:
 						# Start auth in background
 						if self.session_id:
