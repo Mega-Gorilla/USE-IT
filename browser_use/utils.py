@@ -636,7 +636,7 @@ def retry(
 
 	def decorator(func: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, Coroutine[Any, Any, T]]:
 		@wraps(func)
-		async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+		async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:  # type: ignore[return]
 			# Get or create semaphore if needed
 			semaphore = None
 			semaphore_acquired = False

@@ -25,6 +25,7 @@ os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/micr
 
 import anyio
 import psutil
+from playwright._impl._api_structures import FloatRect, ViewportSize
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
 from uuid_extensions import uuid7str
 
@@ -669,10 +670,7 @@ class BrowserSession(BaseModel):
 		try:
 			return await self._take_screenshot_cdp(
 				page,
-				width=clip['width'] if clip else None,
-				height=clip['height'] if clip else None,
-				x=clip['x'] if clip else None,
-				y=clip['y'] if clip else None,
+				**(clip or {}),
 			)
 		except Exception as e:
 			self.logger.debug(f'⚠️ CDP screenshot with clip failed: {type(e).__name__}: {e}')
@@ -690,7 +688,7 @@ class BrowserSession(BaseModel):
 			full_page=False,
 			scale='css',
 			timeout=self.browser_profile.default_timeout or 30000,
-			clip=clip,
+			clip=FloatRect(**clip) if clip else None,
 			animations='allow',
 			caret='initial',
 		)
@@ -1765,9 +1763,12 @@ class BrowserSession(BaseModel):
 		return await page.title()
 
 	@retry(timeout=20, retries=1, semaphore_limit=1, semaphore_scope='self')
-	async def _set_viewport_size(self, page: Page, viewport: dict[str, int]) -> None:
+	async def _set_viewport_size(self, page: Page, viewport: dict[str, int] | ViewportSize) -> None:
 		"""Set viewport size with timeout protection."""
-		await page.set_viewport_size(viewport)
+		if isinstance(viewport, dict):
+			await page.set_viewport_size(ViewportSize(width=viewport['width'], height=viewport['height']))
+		else:
+			await page.set_viewport_size(viewport)
 
 	@require_initialization
 	async def close_tab(self, tab_index: int | None = None) -> None:
