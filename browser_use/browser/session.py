@@ -516,17 +516,7 @@ class BrowserSession(BaseModel):
 			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 			return GLOBAL_PLAYWRIGHT_API_OBJECT
 
-	@retry(
-		wait=1,
-		retries=3,
-		timeout=30,
-		semaphore_limit=1,
-		semaphore_name='playwright_global_object',
-		semaphore_scope='global',
-		semaphore_lax=False,
-		semaphore_timeout=10,  # 10s to wait for global playwright object
-	)
-	async def _get_or_start_playwright_object(self) -> PlaywrightOrPatchright:
+	async def _unsafe_get_or_start_playwright_object(self) -> PlaywrightOrPatchright:
 		"""Get existing or create new global playwright object with proper locking."""
 		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
 		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
@@ -708,6 +698,16 @@ class BrowserSession(BaseModel):
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
 		return screenshot_b64
 
+	@retry(
+		wait=1,
+		retries=3,
+		timeout=30,
+		semaphore_limit=1,
+		semaphore_name='playwright_global_object',
+		semaphore_scope='global',
+		semaphore_lax=False,
+		semaphore_timeout=10,  # 10s to wait for global playwright object
+	)
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
@@ -724,8 +724,8 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-		# Get or create the global playwright object using our retry-decorated method
-		self.playwright = self.playwright or await self._get_or_start_playwright_object()
+		# Get or create the global playwright object
+		self.playwright = self.playwright or await self._unsafe_get_or_start_playwright_object()
 
 		# Log stealth best-practices warnings if applicable
 		if is_stealth:
