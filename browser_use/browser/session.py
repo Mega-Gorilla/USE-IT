@@ -2574,7 +2574,7 @@ class BrowserSession(BaseModel):
 						scale='css',
 						timeout=10000,
 						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
-						animations='disabled',  # Disable animations in CI to avoid timing issues
+						animations='allow',  # Disable animations in CI to avoid timing issues
 						caret='initial',
 					),
 					timeout=15000,
@@ -2591,7 +2591,7 @@ class BrowserSession(BaseModel):
 						scale='css',
 						timeout=10000,
 						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
-						animations='disabled',
+						animations='allow',
 						caret='initial',
 					),
 					timeout=15000,
