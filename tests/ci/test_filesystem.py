@@ -422,8 +422,12 @@ class TestFileSystem:
 		assert len(fs2.files) == len(fs.files)
 
 		# Verify file contents
-		assert fs2.get_file('results.md').content is not None and fs2.get_file('results.md').content == '# Original Results'
-		assert fs2.get_file('custom.txt').content is not None and fs2.get_file('custom.txt').content == 'Custom content'
+		file_obj = fs2.get_file('results.md')
+		assert file_obj is not None
+		assert file_obj.content == '# Original Results'
+		file_obj = fs2.get_file('custom.txt')
+		assert file_obj is not None
+		assert file_obj.content == 'Custom content'
 		assert (
 			fs2.get_file('extracted_content_0.md').content is not None
 			and fs2.get_file('extracted_content_0.md').content == 'Extracted data'
