@@ -224,7 +224,7 @@ class Controller(Generic[Context]):
 				if params.index not in selector_map:
 					# Return informative message with the new state instead of error
 					max_index = max(selector_map.keys()) if selector_map else -1
-					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.'
+					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices or scroll to see more elements'
 					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
@@ -415,7 +415,7 @@ Only use this for extracting info from a single product/article page, not for en
 					content += iframe_markdown
 
 			# limit to 60000 characters - remove text in the middle this is approx 20000 tokens
-			max_chars = 60000
+			max_chars = 40000
 			if len(content) > max_chars:
 				content = (
 					content[: max_chars // 2]
