@@ -9,7 +9,6 @@ import os
 import re
 import shutil
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
 from functools import wraps
@@ -50,7 +49,7 @@ from browser_use.browser.views import (
 from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
-from browser_use.utils import match_url_with_domain_pattern, merge_dicts, time_execution_async, time_execution_sync
+from browser_use.utils import match_url_with_domain_pattern, merge_dicts, retry, time_execution_async, time_execution_sync
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
@@ -58,10 +57,6 @@ GLOBAL_PLAYWRIGHT_API_OBJECT = None  # never instantiate the playwright API obje
 GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API object more than once per thread
 GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
-# Use a threading lock to protect playwright object creation across all event loops and processes
-GLOBAL_PLAYWRIGHT_THREADING_LOCK = threading.Lock()
-# Limit concurrent screenshots to prevent GPU memory exhaustion during screenshot generation
-GLOBAL_SCREENSHOT_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent screenshots
 
 MAX_SCREENSHOT_HEIGHT = 6000
 
@@ -218,7 +213,6 @@ class BrowserSession(BaseModel):
 
 	_cached_browser_state_summary: BrowserStateSummary | None = PrivateAttr(default=None)
 	_cached_clickable_element_hashes: CachedClickableElementHashes | None = PrivateAttr(default=None)
-	_start_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 	_tab_visibility_callback: Any = PrivateAttr(default=None)
 	_logger: logging.Logger | None = PrivateAttr(default=None)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
@@ -283,54 +277,40 @@ class BrowserSession(BaseModel):
 
 		# Use timeout to prevent indefinite waiting on lock acquisition
 
-		async with asyncio.timeout(60):  # 60 second overall timeout for entire launching process to avoid deadlocks
-			async with self._start_lock:  # prevent parallel calls to start() / stop() / save_storage_state() from clashing
-				if self.initialized:
-					if await self.is_connected():
-						return self
-					else:
-						next_step = (
-							'attempting to re-connect'
-							if self.cdp_url or self.wss_url or self.browser_pid
-							else 'launching a new browser'
-						)
-						self.logger.warning(f'💔 Browser {self._connection_str} has gone away, {next_step}...')
-						# only reset connection state if we expected to be already connected but we're not
-						# avoid calling this on *first* start() as it just immediately clears many
-						# of the params passed in to BrowserSession(...) init, which the .setup_...() methods below expect
-						self._reset_connection_state()
+		# Quick return if already connected
+		if self.initialized and await self.is_connected():
+			return self
 
-				self.initialized = True  # set this first to ensure two parallel calls to start() don't clash with each other
+		# Reset if we were initialized but lost connection
+		if self.initialized:
+			self.logger.warning(f'💔 Browser {self._connection_str} has gone away, attempting to reconnect...')
+			self._reset_connection_state()
 
-				try:
-					# apply last-minute runtime-computed options to the the browser_profile, validate profile, set up folders on disk
-					assert isinstance(self.browser_profile, BrowserProfile)
-					self.browser_profile.detect_display_configuration()  # adjusts config values, must come before launch/connect
-					self.prepare_user_data_dir()  # create/unlock the <user_data_dir>/SingletonLock
+		try:
+			# Setup
+			self.browser_profile.detect_display_configuration()
+			self.prepare_user_data_dir()
 
-					# launch/connect to the browser:
-					# setup playwright library client, Browser, and BrowserContext objects
-					await self.setup_playwright()
-					await self.setup_browser_via_passed_objects()
-					await self.setup_browser_via_browser_pid()
-					await self.setup_browser_via_wss_url()
-					await self.setup_browser_via_cdp_url()
-					await (
-						self.setup_new_browser_context()
-					)  # creates a new context in existing browser or launches a new persistent context
-					assert self.browser_context, f'Failed to connect to or create a new BrowserContext for browser={self.browser}'
+			# Get playwright object (has its own retry/semaphore)
+			await self.setup_playwright()
 
-					# resize the existing pages and set up foreground tab detection
-					await self._setup_viewports()
-					await self._setup_current_page_change_listeners()
-					await self._start_context_tracing()
-				except BaseException:
-					self.initialized = False
-					raise
+			# Try to connect/launch browser (each has appropriate retry logic)
+			await self._connect_or_launch_browser()
 
-		# self.logger.debug(f'🎭 started successfully')
+			# Ensure we have a context
+			assert self.browser_context, f'Failed to create BrowserContext for browser={self.browser}'
 
-		return self
+			# Configure browser
+			await self._setup_viewports()
+			await self._setup_current_page_change_listeners()
+			await self._start_context_tracing()
+
+			self.initialized = True
+			return self
+
+		except BaseException:
+			self.initialized = False
+			raise
 
 	@property
 	def _connection_str(self) -> str:
@@ -356,15 +336,10 @@ class BrowserSession(BaseModel):
 	async def stop(self) -> None:
 		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
-		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
-		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
-		# Use timeout to prevent indefinite waiting on lock acquisition
-
-		# save cookies to disk if cookies_file or storage_state is configured
-		# but only if the browser context is still connected
+		# Save cookies to disk if configured
 		if self.browser_context:
 			try:
-				await asyncio.wait_for(self.save_storage_state(), timeout=5)
+				await self.save_storage_state()
 			except Exception as e:
 				self.logger.warning(f'⚠️ Failed to save auth storage state before stopping: {type(e).__name__}: {e}')
 
@@ -374,101 +349,66 @@ class BrowserSession(BaseModel):
 			)
 			return  # nothing to do if keep_alive=True, leave the browser running
 
-		async with asyncio.timeout(60):  # 60 second timeout for all stop operations
-			async with self._start_lock:
-				if self.browser_context or self.browser:
-					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser or self.browser_context}')
+		if self.browser_context or self.browser:
+			self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser or self.browser_context}')
 
-					# Stop trace recording before closing context
-					if self.browser_profile.traces_dir and self.browser_context is not None:
-						try:
-							traces_path = Path(self.browser_profile.traces_dir)
-							if traces_path.suffix:
-								# Path has extension, use as-is (user specified exact file path)
-								final_trace_path = traces_path
-							else:
-								# Path has no extension, treat as directory and create filename
-								trace_filename = f'BrowserSession_{self.id}.zip'
-								final_trace_path = traces_path / trace_filename
+			# Save trace recording if configured
+			if self.browser_profile.traces_dir and self.browser_context:
+				try:
+					await self._save_trace_recording()
+				except Exception as e:
+					# TargetClosedError is expected when browser has already been closed
+					from browser_use.browser.types import TargetClosedError
 
-							self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
-							async with asyncio.timeout(30):
-								await self.browser_context.tracing.stop(path=str(final_trace_path))
-						except Exception as e:
-							# TargetClosedError is expected when browser has already been closed - don't log as error
-							from browser_use.browser.types import TargetClosedError
+					if isinstance(e, TargetClosedError):
+						self.logger.debug('Browser context already closed, trace may have been saved automatically')
+					else:
+						self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
 
-							if isinstance(e, TargetClosedError):
-								self.logger.debug('Browser context already closed, trace may have been saved automatically')
-							else:
-								self.logger.error(f'❌ Error saving browser context trace: {type(e).__name__}: {e}')
+			# Log video/HAR save operations (saved automatically on close)
+			if self.browser_profile.record_video_dir:
+				self.logger.info(f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...')
+			if self.browser_profile.record_har_path:
+				self.logger.info(f'🎥 Saving HAR file to record_har_path= {self.browser_profile.record_har_path}...')
 
-					# playwright saves these on browser.close() automatically
-					if self.browser_profile.record_video_dir:
-						self.logger.info(
-							f'🎥 Saving video recording to record_video_dir= {self.browser_profile.record_video_dir}...'
-						)
-					if self.browser_profile.record_har_path:
-						self.logger.info(f'🎥 Saving HAR file to record_har_path= {self.browser_profile.record_har_path}...')
+			# Close browser context and browser using retry-decorated methods
+			try:
+				# IMPORTANT: Close context first to ensure HAR/video files are saved
+				await self._close_browser_context()
+				await self._close_browser()
+			except Exception as e:
+				if 'browser has been closed' not in str(e):
+					self.logger.warning(f'❌ Error closing browser: {type(e).__name__}: {e}')
+			finally:
+				# Always clear references to ensure a fresh start next time
+				self.browser_context = None
+				self.browser = None
 
-					try:
-						# Add timeout to prevent hanging on close if context is already closed
-						try:
-							async with asyncio.timeout(45):  # long-ish to give browser time to save video and trace files
-								# IMPORTANT: Close context first to ensure HAR/video files are saved
-								if self.browser_context:
-									await self.browser_context.close()
-									self.browser_context = None  # Prevent duplicate close attempts
-								# Then close browser if we have one
-								if self.browser and self.browser.is_connected():
-									await self.browser.close()
-						except TimeoutError:
-							self.logger.warning('⏱️ Timeout while closing browser/context, has it become unresponsive?')
-					except Exception as e:
-						if 'browser has been closed' not in str(e):
-							self.logger.warning(
-								f'❌ Error closing playwright browser_context={self.browser_context}: {type(e).__name__}: {e}'
-							)
-					finally:
-						# Always clear references to ensure a fresh start next time
-						self.browser_context = None
-						self.browser = None
+		# Kill the chrome subprocess if we started it
+		if self.browser_pid:
+			try:
+				await self._terminate_browser_process()
+			except psutil.NoSuchProcess:
+				self.browser_pid = None
+			except (TimeoutError, psutil.TimeoutExpired):
+				# If graceful termination failed, force kill
+				try:
+					proc = psutil.Process(pid=self.browser_pid)
+					self.logger.warning(f'⏱️ Process did not terminate gracefully, force killing browser_pid={self.browser_pid}')
+					proc.kill()
+				except psutil.NoSuchProcess:
+					pass
+				self.browser_pid = None
+			except Exception as e:
+				if 'NoSuchProcess' not in type(e).__name__:
+					self.logger.debug(f'❌ Error terminating subprocess: {type(e).__name__}: {e}')
+				self.browser_pid = None
 
-				# kill the chrome subprocess if we were the ones that started it
-				if self.browser_pid:
-					try:
-						proc = psutil.Process(pid=self.browser_pid)
-						cmdline = proc.cmdline()
-						executable_path = cmdline[0] if cmdline else 'unknown'
-						self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
-						# Add timeout for process termination
-						try:
-							async with asyncio.timeout(5):  # 5 second timeout
-								proc.terminate()
-								self._kill_child_processes()
-								await asyncio.to_thread(proc.wait, timeout=4)
-						except (TimeoutError, psutil.TimeoutExpired):
-							self.logger.warning(
-								f'⏱️ Process did not terminate gracefully, force killing browser_pid={self.browser_pid}'
-							)
-							proc.kill()  # Force kill if terminate didn't work
-						self.browser_pid = None
-					except psutil.NoSuchProcess:
-						self.browser_pid = None
-					except Exception as e:
-						if 'NoSuchProcess' not in type(e).__name__:
-							self.logger.debug(
-								f'❌ Error terminating subprocess with browser_pid={self.browser_pid}: {type(e).__name__}: {e}'
-							)
+		# Clean up temporary user data directory
+		if self.browser_profile.user_data_dir and Path(self.browser_profile.user_data_dir).name.startswith('browseruse-tmp'):
+			shutil.rmtree(self.browser_profile.user_data_dir, ignore_errors=True)
 
-				# if the user_data_dir is a temporary one, delete it
-				if self.browser_profile.user_data_dir and Path(self.browser_profile.user_data_dir).name.startswith(
-					'browseruse-tmp'
-				):
-					shutil.rmtree(self.browser_profile.user_data_dir, ignore_errors=True)
-
-				self._reset_connection_state()
-				# self.logger.debug('🛑 Shutdown complete.')
+		self._reset_connection_state()
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
@@ -576,16 +516,20 @@ class BrowserSession(BaseModel):
 			GLOBAL_PLAYWRIGHT_EVENT_LOOP = current_loop
 			return GLOBAL_PLAYWRIGHT_API_OBJECT
 
-	async def setup_playwright(self) -> None:
-		"""
-		Set up playwright library client object: usually the result of (await async_playwright().start())
-		Override to customize the set up of the playwright or patchright library object
-		"""
-		global GLOBAL_PLAYWRIGHT_API_OBJECT  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
-		global GLOBAL_PATCHRIGHT_API_OBJECT
-		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
-		global GLOBAL_PATCHRIGHT_EVENT_LOOP
-		global GLOBAL_PLAYWRIGHT_THREADING_LOCK
+	@retry(
+		wait=1,
+		retries=3,
+		timeout=30,
+		semaphore_limit=1,
+		semaphore_name='playwright_global_object',
+		semaphore_scope='global',
+		semaphore_lax=False,
+		semaphore_timeout=10,  # 10s to wait for global playwright object
+	)
+	async def _get_or_start_playwright_object(self) -> PlaywrightOrPatchright:
+		"""Get existing or create new global playwright object with proper locking."""
+		global GLOBAL_PLAYWRIGHT_API_OBJECT, GLOBAL_PATCHRIGHT_API_OBJECT
+		global GLOBAL_PLAYWRIGHT_EVENT_LOOP, GLOBAL_PATCHRIGHT_EVENT_LOOP
 
 		# Get current event loop
 		try:
@@ -593,6 +537,182 @@ class BrowserSession(BaseModel):
 		except RuntimeError:
 			current_loop = None
 
+		is_stealth = self.browser_profile.stealth
+		driver_name = 'patchright' if is_stealth else 'playwright'
+		global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+		global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
+
+		# Check if we need to create or recreate the global object
+		should_recreate = False
+
+		if global_api_object and global_event_loop != current_loop:
+			self.logger.debug(
+				f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
+				'Creating new instance to avoid disconnection when the previous loop closes.'
+			)
+			should_recreate = True
+
+		# Also check if the object exists but is no longer functional
+		if global_api_object and not should_recreate:
+			try:
+				# Try to access the chromium property to verify the object is still valid
+				_ = global_api_object.chromium.executable_path
+			except Exception as e:
+				self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
+				should_recreate = True
+
+		# If we already have a valid object, use it
+		if global_api_object and not should_recreate:
+			return global_api_object
+
+		# Create new playwright object
+		return await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+
+	@retry(wait=1, retries=2, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
+	async def _close_browser_context(self) -> None:
+		"""Close browser context with retry logic."""
+		await self._unsafe_close_browser_context()
+
+	async def _unsafe_close_browser_context(self) -> None:
+		"""Unsafe browser context close logic without retry protection."""
+		if self.browser_context:
+			await self.browser_context.close()
+			self.browser_context = None
+
+	@retry(wait=1, retries=2, timeout=10, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
+	async def _close_browser(self) -> None:
+		"""Close browser instance with retry logic."""
+		await self._unsafe_close_browser()
+
+	async def _unsafe_close_browser(self) -> None:
+		"""Unsafe browser close logic without retry protection."""
+		if self.browser and self.browser.is_connected():
+			await self.browser.close()
+			self.browser = None
+
+	@retry(
+		wait=0.5,
+		retries=3,
+		timeout=5,
+		semaphore_limit=1,
+		semaphore_scope='self',
+		semaphore_lax=True,
+		retry_on=(TimeoutError, psutil.TimeoutExpired),  # Only retry on timeouts, not NoSuchProcess
+	)
+	async def _terminate_browser_process(self) -> None:
+		"""Terminate browser process with retry logic."""
+		await self._unsafe_terminate_browser_process()
+
+	async def _unsafe_terminate_browser_process(self) -> None:
+		"""Unsafe browser process termination without retry protection."""
+		if self.browser_pid:
+			try:
+				proc = psutil.Process(pid=self.browser_pid)
+				cmdline = proc.cmdline()
+				executable_path = cmdline[0] if cmdline else 'unknown'
+				self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
+
+				# Try graceful termination first
+				proc.terminate()
+				self._kill_child_processes()
+				await asyncio.to_thread(proc.wait, timeout=4)
+			except psutil.NoSuchProcess:
+				# Process already gone, that's fine
+				pass
+			finally:
+				self.browser_pid = None
+
+	@retry(wait=0.5, retries=2, timeout=30, semaphore_limit=1, semaphore_scope='self', semaphore_lax=True)
+	async def _save_trace_recording(self) -> None:
+		"""Save browser trace recording."""
+		if self.browser_profile.traces_dir and self.browser_context is not None:
+			traces_path = Path(self.browser_profile.traces_dir)
+			if traces_path.suffix:
+				# Path has extension, use as-is (user specified exact file path)
+				final_trace_path = traces_path
+			else:
+				# Path has no extension, treat as directory and create filename
+				trace_filename = f'BrowserSession_{self.id}.zip'
+				final_trace_path = traces_path / trace_filename
+
+			self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
+			await self.browser_context.tracing.stop(path=str(final_trace_path))
+
+	async def _connect_or_launch_browser(self) -> None:
+		"""Try all connection methods in order of precedence."""
+		# Try connecting via passed objects first
+		await self.setup_browser_via_passed_objects()
+		if self.browser_context:
+			return
+
+		# Try connecting via browser PID
+		await self.setup_browser_via_browser_pid()
+		if self.browser_context:
+			return
+
+		# Try connecting via WSS URL
+		await self.setup_browser_via_wss_url()
+		if self.browser_context:
+			return
+
+		# Try connecting via CDP URL
+		await self.setup_browser_via_cdp_url()
+		if self.browser_context:
+			return
+
+		# Launch new browser as last resort
+		await self.setup_new_browser_context()
+
+	@retry(
+		wait=2,  # wait 2s between each attempt to take a screenshot
+		retries=2,  # try up to 2 times to take the screenshot
+		timeout=35,  # allow up to 35s for each attempt to take a screenshot
+		semaphore_name='screenshot_global',
+		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
+		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
+		semaphore_timeout=20,  # wait up to 20s for a lock
+		semaphore_lax=True,  # proceed anyway if we cant get a lock
+	)
+	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
+		"""Take screenshot using CDP with Playwright fallback, with retry and semaphore protection."""
+		# Try CDP screenshot first with clip (faster)
+		try:
+			return await self._take_screenshot_cdp(
+				page,
+				width=clip['width'] if clip else None,
+				height=clip['height'] if clip else None,
+				x=clip['x'] if clip else None,
+				y=clip['y'] if clip else None,
+			)
+		except Exception as e:
+			self.logger.debug(f'⚠️ CDP screenshot with clip failed: {type(e).__name__}: {e}')
+
+		# Try CDP screenshot without clip (full viewport)
+		try:
+			self.logger.debug('⚠️ Retrying CDP screenshot without clip parameter')
+			return await self._take_screenshot_cdp(page)
+		except Exception as e:
+			self.logger.debug(f'⚠️ CDP screenshot without clip failed: {type(e).__name__}: {e}')
+
+		# Fall back to Playwright screenshot
+		self.logger.debug('⚠️ Falling back to Playwright screenshot')
+		screenshot = await page.screenshot(
+			full_page=False,
+			scale='css',
+			timeout=self.browser_profile.default_timeout or 30000,
+			clip=clip,
+			animations='allow',
+			caret='initial',
+		)
+		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
+		return screenshot_b64
+
+	async def setup_playwright(self) -> None:
+		"""
+		Set up playwright library client object: usually the result of (await async_playwright().start())
+		Override to customize the set up of the playwright or patchright library object
+		"""
 		is_stealth = self.browser_profile.stealth
 
 		# Configure browser channel based on stealth mode
@@ -604,67 +724,8 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-		# Use threading lock to prevent race conditions when creating global playwright object
-		# Check if we need to create the playwright object
-		needs_creation = False
-
-		# Use acquire with timeout to prevent deadlocks
-		if not GLOBAL_PLAYWRIGHT_THREADING_LOCK.acquire(timeout=30):  # 30 second timeout
-			raise TimeoutError('Failed to acquire playwright lock within 30 seconds - potential deadlock detected')
-
-		try:
-			# Re-check global objects inside the lock to avoid race conditions
-			driver_name = 'patchright' if is_stealth else 'playwright'
-			global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
-			global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
-
-			# Check if we need to create or recreate the global object
-			should_recreate = False
-
-			if global_api_object and global_event_loop != current_loop:
-				self.logger.debug(
-					f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
-					'Creating new instance to avoid disconnection when the previous loop closes.'
-				)
-				should_recreate = True
-
-			# Also check if the object exists but is no longer functional
-			if global_api_object and not should_recreate:
-				try:
-					# Try to access the chromium property to verify the object is still valid
-					_ = global_api_object.chromium.executable_path
-				except Exception as e:
-					self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
-					should_recreate = True
-
-			# If we already have a valid object, use it
-			if global_api_object and not should_recreate:
-				self.playwright = self.playwright or global_api_object
-			else:
-				needs_creation = True
-		finally:
-			GLOBAL_PLAYWRIGHT_THREADING_LOCK.release()
-
-		# Create the playwright object outside the lock to avoid blocking other threads
-		if needs_creation:
-			# Use timeout to prevent deadlocks during creation
-			async with asyncio.timeout(30):
-				new_playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
-
-				# Re-acquire lock to update global state
-				if not GLOBAL_PLAYWRIGHT_THREADING_LOCK.acquire(timeout=30):  # 30 second timeout
-					raise TimeoutError('Failed to re-acquire playwright lock within 30 seconds - potential deadlock detected')
-
-				try:
-					# Double-check that another thread didn't create it while we were waiting
-					global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
-					if not global_api_object:
-						self.playwright = new_playwright
-					else:
-						# Another thread created it, use that one
-						self.playwright = global_api_object
-				finally:
-					GLOBAL_PLAYWRIGHT_THREADING_LOCK.release()
+		# Get or create the global playwright object using our retry-decorated method
+		self.playwright = self.playwright or await self._get_or_start_playwright_object()
 
 		# Log stealth best-practices warnings if applicable
 		if is_stealth:
@@ -805,8 +866,23 @@ class BrowserSession(BaseModel):
 		)
 		self._set_browser_keep_alive(True)  # we connected to an existing browser, dont kill it at the end
 
+	@retry(wait=1, retries=2, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
 	async def setup_new_browser_context(self) -> None:
 		"""Launch a new browser and browser_context"""
+		# Double-check after semaphore acquisition to prevent duplicate browser launches
+		if self.browser_context:
+			try:
+				# Check if context is still valid and has pages
+				if self.browser_context.pages and not all(page.is_closed() for page in self.browser_context.pages):
+					self.logger.debug('Browser context already exists after semaphore acquisition, skipping launch')
+					return
+			except Exception:
+				# If we can't check pages, assume context is invalid and continue with launch
+				pass
+		await self._unsafe_setup_new_browser_context()
+
+	async def _unsafe_setup_new_browser_context(self) -> None:
+		"""Unsafe browser context setup without retry protection."""
 		current_process = psutil.Process(os.getpid())
 		child_pids_before_launch = {child.pid for child in current_process.children(recursive=True)}
 
@@ -1672,8 +1748,9 @@ class BrowserSession(BaseModel):
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
 			try:
-				tab_info = TabInfo(page_id=page_id, url=page.url, title=await asyncio.wait_for(page.title(), timeout=1))
-			except TimeoutError:
+				title = await self._get_page_title(page)
+				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
+			except Exception:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
 				# we dont want to try automating those tabs because they will hang the whole script
 				self.logger.debug(f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (ignoring)')
@@ -1681,6 +1758,16 @@ class BrowserSession(BaseModel):
 			tabs_info.append(tab_info)
 
 		return tabs_info
+
+	@retry(timeout=1, retries=0)  # Single attempt with 1s timeout, no retries
+	async def _get_page_title(self, page: Page) -> str:
+		"""Get page title with timeout protection."""
+		return await page.title()
+
+	@retry(timeout=20, retries=1, semaphore_limit=1, semaphore_scope='self')
+	async def _set_viewport_size(self, page: Page, viewport: dict[str, int]) -> None:
+		"""Set viewport size with timeout protection."""
+		await page.set_viewport_size(viewport)
 
 	@require_initialization
 	async def close_tab(self, tab_index: int | None = None) -> None:
@@ -1811,11 +1898,17 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.warning(f'❌ Failed to save cookies to storage_state= {_log_pretty_path(path)}: {type(e).__name__}: {e}')
 
+	@retry(timeout=5, retries=1, semaphore_limit=1, semaphore_scope='self')
 	async def save_storage_state(self, path: Path | None = None) -> None:
 		"""
 		Save cookies to the specified path or the configured cookies_file and/or storage_state.
 		"""
+		await self._unsafe_save_storage_state(path)
 
+	async def _unsafe_save_storage_state(self, path: Path | None = None) -> None:
+		"""
+		Unsafe storage state save logic without retry protection.
+		"""
 		if not (path or self.browser_profile.storage_state or self.browser_profile.cookies_file):
 			return
 
@@ -2516,6 +2609,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
+	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='self')
 	async def _take_screenshot_cdp(
 		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
 	) -> str:
@@ -2523,22 +2617,24 @@ class BrowserSession(BaseModel):
 		Take a screenshot using direct CDP (Chrome DevTools Protocol) calls.
 		Returns base64 encoded screenshot or None if CDP fails.
 		"""
+		return await self._unsafe_take_screenshot_cdp(page, width, height, x, y, scale)
+
+	async def _unsafe_take_screenshot_cdp(
+		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
+	) -> str:
+		"""
+		Unsafe CDP screenshot logic without retry protection.
+		"""
 		cdp_session = None
 		try:
 			# Create CDP session for direct Chrome DevTools Protocol access
-			cdp_session = await asyncio.wait_for(
-				page.context.new_cdp_session(page),  # type: ignore
-				timeout=(self.browser_profile.timeout or 30000) / 1000,
-			)
+			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
 
 			# Use Page.captureScreenshot for direct screenshot without Playwright overhead
 			cdp_params = {'format': 'png', 'clip': {'x': x, 'y': y, 'width': width, 'height': height, 'scale': scale}}
 
 			# Take the screenshot using CDP
-			result = await asyncio.wait_for(
-				cdp_session.send('Page.captureScreenshot', cdp_params),
-				timeout=(self.browser_profile.default_timeout or 30000) / 1000,
-			)
+			result = await cdp_session.send('Page.captureScreenshot', cdp_params)
 
 			# The result already contains base64 encoded data
 			base64_screenshot = result.get('data')
@@ -2612,92 +2708,34 @@ class BrowserSession(BaseModel):
 			try:
 				if original_viewport:
 					# if we're already using a viewport, temporarily expand it to the desired size for the screenshot
-					await asyncio.wait_for(
-						page.set_viewport_size({'width': capped_width, 'height': desired_height}),
-						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
-					)  # intentionally set short because we want this to be noisy if it's slowing us down
+					await self._set_viewport_size(page, {'width': capped_width, 'height': desired_height})
 				else:
 					# In headless mode without viewport, we always need to set one temporarily before taking a screenshot to limit rendering resource usage
-					await asyncio.wait_for(
-						page.set_viewport_size({'width': capped_width, 'height': desired_height}),
-						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
-					)
+					await self._set_viewport_size(page, {'width': capped_width, 'height': desired_height})
 			except Exception as e:
-				self.logger.warning(
-					f'⚠️ Setting up viewport for screenshot took longer than 20s, is the CDP connection laggy or browser machine overloaded? {type(e).__name__}: {e}'
-				)
+				self.logger.error(f'❌ Failed to set up viewport for screenshot: {type(e).__name__}: {e}')
 		except Exception as e:
 			self.logger.error(f'❌ Failed to set up viewport for screenshot: {type(e).__name__}: {e}')
 
-		# Try to acquire semaphore to limit concurrent screenshots, it can easily overwhelm GPU memory on small servers
-		semaphore_acquired = False
-		start_time = asyncio.get_event_loop().time()
+		# Take screenshot using our retry-decorated method
 		try:
-			# Try waiting politely for our turn for 30sec (CDP screenshot calls often fail when too many try to run at once)
-			# screenshot timeouts might be due to underlying CDP issues, a chrome bug, CPU, or GPU memory overload, hard to tell
-			async with asyncio.timeout(30):
-				await GLOBAL_SCREENSHOT_SEMAPHORE.acquire()
-				semaphore_acquired = True
-		except (TimeoutError, Exception) as e:
-			pass
-		elapsed = asyncio.get_event_loop().time() - start_time
-		if elapsed > 15:
-			self.logger.warning(
-				'⚠️ Waiting for other parallel browsers to finish taking their screenshots took longer than 30s, '
-				'proceeding anyway at the risk of CPU/GPU memory exhaustion. This is an indication of system overload / too many concurrent screenshots.'
+			return await self._take_screenshot_hybrid(
+				page,
+				clip={
+					'x': dimensions.get('scrollX', 0),
+					'y': dimensions.get('scrollY', 0),
+					'width': capped_width,
+					'height': capped_height,
+				},
 			)
-
-		try:
-			# Try direct CDP screenshot first (much faster, less overhead compared to Playwright's screenshot() method)
-			try:
-				return await self._take_screenshot_cdp(
-					page,
-					width=capped_width,
-					height=capped_height,
-					x=dimensions.get('scrollX', 0),
-					y=dimensions.get('scrollY', 0),
-				)
-			except Exception as e:
-				self.logger.debug(f'⚠️ CDP screenshot failed: {type(e).__name__}: {e}')
-
-			# Fall back to Playwright screenshot if CDP fails
-			try:
-				# Playwright screenshot is slower, but it's more reliable and can handle more complex pages
-				screenshot = await asyncio.wait_for(
-					page.screenshot(
-						full_page=False,  # never use full_page=True, it crashes the browser on any page larger than ~8000px-16000px depending on VRAM
-						scale='css',
-						timeout=self.browser_profile.default_timeout or 30000,
-						clip={
-							'x': dimensions.get('scrollX', 0),  # take screenshot from the current scroll position
-							'y': dimensions.get('scrollY', 0),
-							'width': capped_width,
-							'height': capped_height,
-						},
-						animations='allow',  # Keep animations running to minimize JS code run by playwright that interferes with the page
-						caret='initial',  # leave caret unmodified to reduce buggy playwright JS tampering with page to apply different caret style
-					),
-					timeout=15000,  # dont trust playwright to enforce its own timeout properly, wrap it in an additional timeout
-				)
-				screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
-				assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
-				return screenshot_b64
-			except Exception as e:
-				self.logger.error(
-					f'❌ Failed to take screenshot, both raw CDP and Playwright methods failed: {type(e).__name__}: {e}'
-				)
-				raise
-
+		except Exception as e:
+			self.logger.error(f'❌ Failed to take screenshot after retries: {type(e).__name__}: {e}')
+			raise
 		finally:
-			if semaphore_acquired:
-				GLOBAL_SCREENSHOT_SEMAPHORE.release()
 			if original_viewport:
 				# Viewport was originally enabled, restore to original dimensions
 				try:
-					await asyncio.wait_for(
-						page.set_viewport_size(original_viewport),
-						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
-					)
+					await self._set_viewport_size(page, original_viewport)
 				except Exception as e:
 					self.logger.warning(
 						f'⚠️ Failed to restore viewport to original size after screenshot: {type(e).__name__}: {e}'
