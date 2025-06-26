@@ -414,7 +414,7 @@ Only use this for extracting info from a single product/article page, not for en
 						iframe_markdown = ''
 					content += iframe_markdown
 
-			# limit to 60000 characters - remove text in the middle this is approx 20000 tokens
+			# limit to 40000 characters - remove text in the middle this is approx 20000 tokens
 			max_chars = 40000
 			if len(content) > max_chars:
 				content = (
