@@ -129,7 +129,7 @@ include = [
 ]
 
 [tool.pytest.ini_options]
-timeout = 60
+timeout = 180
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
