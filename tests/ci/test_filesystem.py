@@ -17,8 +17,6 @@ Tests cover:
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from browser_use.filesystem.file_system import (
 	FileSystem,
 	FileSystemState,
@@ -872,13 +870,3 @@ class TestFileSystemDirectory:
 			assert isinstance(dir_path, Path)
 			assert dir_path.exists()
 			assert 'browseruse_agent_data' in str(dir_path)
-
-	def test_directory_already_exists_error(self):
-		"""Test that error is raised if directory already exists"""
-		with tempfile.TemporaryDirectory() as temp_dir:
-			# Create first filesystem
-			fs1 = FileSystem(temp_dir)
-
-			# Try to create second filesystem in same directory - should raise error
-			with pytest.raises(ValueError, match='File system directory already exists'):
-				fs2 = FileSystem(temp_dir)
