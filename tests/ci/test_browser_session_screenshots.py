@@ -138,3 +138,104 @@ class TestHeadlessScreenshots:
 
 		finally:
 			await browser_session.stop()
+
+	async def test_parallel_screenshots_long_page(self, httpserver):
+		"""Test screenshots in a highly parallel environment with a very long page"""
+		import asyncio
+
+		# Generate a very long page (50,000px+)
+		long_content = []
+		long_content.append('<html><head><title>Very Long Page</title></head>')
+		long_content.append('<body style="margin: 0; padding: 0;">')
+
+		# Add many div elements to create a 50,000px+ long page
+		# Each div is 500px tall, so we need 100+ divs
+		for i in range(120):
+			color = f'rgb({i % 256}, {(i * 2) % 256}, {(i * 3) % 256})'
+			long_content.append(
+				f'<div style="height: 500px; background: {color}; '
+				f'display: flex; align-items: center; justify-content: center; '
+				f'font-size: 48px; color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">'
+				f'Section {i + 1} - Testing Parallel Screenshots'
+				f'</div>'
+			)
+
+		long_content.append('</body></html>')
+		html_content = ''.join(long_content)
+
+		# Set up the test page
+		httpserver.expect_request('/longpage').respond_with_data(
+			html_content,
+			content_type='text/html',
+		)
+		test_url = httpserver.url_for('/longpage')
+
+		# Create 10 browser sessions
+		browser_sessions = []
+		for i in range(10):
+			session = BrowserSession(
+				browser_profile=BrowserProfile(
+					headless=True,
+					user_data_dir=None,
+					keep_alive=False,
+				)
+			)
+			browser_sessions.append(session)
+
+		try:
+			# Start all sessions in parallel
+			print('Starting 10 browser sessions in parallel...')
+			await asyncio.gather(*[session.start() for session in browser_sessions])
+
+			# Navigate all sessions to the long page in parallel
+			print('Navigating all sessions to the long test page...')
+			await asyncio.gather(*[session.navigate(test_url) for session in browser_sessions])
+
+			# Take screenshots from all sessions at the same time
+			print('Taking screenshots from all 10 sessions simultaneously...')
+			screenshot_tasks = [session.take_screenshot(full_page=True) for session in browser_sessions]
+			screenshots = await asyncio.gather(*screenshot_tasks)
+
+			# Verify all screenshots are valid
+			print('Verifying all screenshots...')
+			for i, screenshot in enumerate(screenshots):
+				# Should not be None
+				assert screenshot is not None, f'Session {i} returned None screenshot'
+				assert isinstance(screenshot, str), f'Session {i} screenshot is not a string'
+				assert len(screenshot) > 0, f'Session {i} screenshot is empty'
+
+				# Decode and validate
+				try:
+					screenshot_bytes = base64.b64decode(screenshot)
+				except Exception as e:
+					raise AssertionError(f'Session {i} screenshot is not valid base64: {e}')
+
+				# Verify PNG signature
+				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n'), f'Session {i} screenshot is not a valid PNG'
+
+				# Full page screenshot of 50,000px+ page should be quite large
+				# Typically at least 100KB+ for such a long page
+				assert len(screenshot_bytes) > 50000, (
+					f'Session {i} screenshot too small for a 50,000px+ page: {len(screenshot_bytes)} bytes'
+				)
+
+			print(f'All {len(screenshots)} screenshots validated successfully!')
+
+			# Also test taking regular (viewport) screenshots in parallel
+			print('Taking viewport screenshots from all sessions simultaneously...')
+			viewport_screenshots = await asyncio.gather(
+				*[session.take_screenshot(full_page=False) for session in browser_sessions]
+			)
+
+			# Verify viewport screenshots
+			for i, screenshot in enumerate(viewport_screenshots):
+				assert screenshot is not None, f'Session {i} viewport screenshot is None'
+				screenshot_bytes = base64.b64decode(screenshot)
+				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n')
+				# Viewport screenshots should be smaller than full page
+				assert len(screenshot_bytes) > 5000, f'Session {i} viewport screenshot too small'
+
+		finally:
+			# Kill all sessions in parallel
+			print('Killing all browser sessions...')
+			await asyncio.gather(*[session.kill() for session in browser_sessions])
