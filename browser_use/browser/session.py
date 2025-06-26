@@ -2473,7 +2473,12 @@ class BrowserSession(BaseModel):
 			# 		)
 			# 	)
 
-			screenshot_b64 = await self.take_screenshot()
+			try:
+				screenshot_b64 = await self.take_screenshot()
+			except Exception as e:
+				self.logger.warning(f'Failed to capture screenshot: {type(e).__name__}: {e}')
+				screenshot_b64 = None
+
 			pixels_above, pixels_below = await self.get_scroll_info(page)
 
 			self.browser_state_summary = BrowserStateSummary(
