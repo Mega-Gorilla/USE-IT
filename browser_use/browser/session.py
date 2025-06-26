@@ -2540,11 +2540,12 @@ class BrowserSession(BaseModel):
 
 		# Fallback method: manually expand the viewport and take a screenshot of the entire viewport
 
-		# 1. Get current page dimensions
+		# 1. Get current viewport dimensions (not page dimensions)
 		dimensions = await page.evaluate("""() => {
 			return {
-				width: window.innerWidth,
-				height: window.innerHeight,
+				width: Math.max(window.innerWidth, document.documentElement.clientWidth),
+				height: Math.max(window.innerHeight, document.documentElement.clientHeight),
+				pageHeight: document.documentElement.scrollHeight,
 				devicePixelRatio: window.devicePixelRatio || 1
 			};
 		}""")
@@ -2553,8 +2554,19 @@ class BrowserSession(BaseModel):
 		original_viewport = page.viewport_size
 		viewport_expansion = self.browser_profile.viewport_expansion if self.browser_profile.viewport_expansion else 0
 
+		# Use viewport height, not full page height
 		expanded_width = dimensions['width']  # Keep width unchanged
 		expanded_height = dimensions['height'] + viewport_expansion
+
+		# Limit the height to avoid timeouts on very long pages
+		# Even for full_page=True, we'll take a large but bounded screenshot
+		max_screenshot_height = 6000  # 6k pixels max to prevent timeouts
+		if full_page and dimensions['pageHeight'] > max_screenshot_height:
+			self.logger.warning(
+				f'Page height ({dimensions["pageHeight"]}px) exceeds max screenshot height ({max_screenshot_height}px). '
+				f'Clipping to {max_screenshot_height}px.'
+			)
+		expanded_height = min(expanded_height, max_screenshot_height)
 
 		# 3. Expand the viewport if we are using one
 		if original_viewport:
