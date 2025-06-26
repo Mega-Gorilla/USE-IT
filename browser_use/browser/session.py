@@ -2517,34 +2517,15 @@ class BrowserSession(BaseModel):
 		except Exception:
 			pass
 
-		# 0. Attempt full-page screenshot (sometimes times out for huge pages)
-		if full_page:
-			try:
-				screenshot = await asyncio.wait_for(
-					page.screenshot(
-						full_page=True,
-						scale='css',
-						timeout=10000,
-						animations='allow',
-						caret='initial',
-					),
-					timeout=15000,
-				)
+		# Always use our clipping approach - never pass full_page=True to Playwright
+		# This prevents timeouts on very long pages
 
-				screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
-				return screenshot_b64
-			except Exception as e:
-				self.logger.warning(
-					f'⚠️ Failed to take full-page screenshot after 10s: {type(e).__name__}: {e} trying with height limit instead...'
-				)
-
-		# Fallback method: manually expand the viewport and take a screenshot of the entire viewport
-
-		# 1. Get current page dimensions
+		# 1. Get current viewport and page dimensions
 		dimensions = await page.evaluate("""() => {
 			return {
-				width: window.innerWidth,
-				height: window.innerHeight,
+				width: Math.max(window.innerWidth, document.documentElement.clientWidth),
+				height: Math.max(window.innerHeight, document.documentElement.clientHeight),
+				pageHeight: document.documentElement.scrollHeight,
 				devicePixelRatio: window.devicePixelRatio || 1
 			};
 		}""")
@@ -2554,47 +2535,84 @@ class BrowserSession(BaseModel):
 		viewport_expansion = self.browser_profile.viewport_expansion if self.browser_profile.viewport_expansion else 0
 
 		expanded_width = dimensions['width']  # Keep width unchanged
-		expanded_height = dimensions['height'] + viewport_expansion
+
+		# Calculate height based on full_page parameter
+		max_screenshot_height = 6000  # 6k pixels max to prevent timeouts
+
+		if full_page:
+			# For full page, use the actual page height up to our max limit
+			expanded_height = min(dimensions['pageHeight'], max_screenshot_height)
+
+			if dimensions['pageHeight'] > max_screenshot_height:
+				self.logger.warning(
+					f'Page height ({dimensions["pageHeight"]}px) exceeds max screenshot height ({max_screenshot_height}px). '
+					f'Clipping to {max_screenshot_height}px.'
+				)
+		else:
+			# For viewport screenshot, just use viewport + expansion
+			expanded_height = dimensions['height'] + viewport_expansion
 
 		# 3. Expand the viewport if we are using one
 		if original_viewport:
 			await asyncio.wait_for(
 				page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000
 			)  # intentionally set short because we want this to be noisy if it's slowing us down
+		else:
+			# In headless mode without viewport, we need to set one temporarily
+			await asyncio.wait_for(page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000)
 
 		try:
-			# 4. Take full-viewport screenshot
-			screenshot = await asyncio.wait_for(
-				page.screenshot(
-					full_page=False,
-					scale='css',
-					timeout=10000,
-					clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
-					animations='allow',
-					caret='initial',
-					# animations='disabled',   # these can cause CSP errors on some pages, leading to a red herring "waiting for fonts to load" error
-				),
-				timeout=15000,
-			)
+			# 4. Take screenshot with clipping
+			# Use smaller chunks to avoid memory issues in CI
+			chunk_height = min(expanded_height, 2000)  # Take screenshots in 2000px chunks max
+
+			if expanded_height <= chunk_height:
+				# Small enough to capture in one shot
+				screenshot = await asyncio.wait_for(
+					page.screenshot(
+						full_page=False,
+						scale='css',
+						timeout=10000,
+						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
+						animations='disabled',  # Disable animations in CI to avoid timing issues
+						caret='initial',
+					),
+					timeout=15000,
+				)
+			else:
+				# For very tall screenshots, just take the first chunk
+				# This avoids memory/timeout issues in CI
+				self.logger.warning(
+					f'Screenshot height {expanded_height}px > {chunk_height}px, taking first {chunk_height}px only'
+				)
+				screenshot = await asyncio.wait_for(
+					page.screenshot(
+						full_page=False,
+						scale='css',
+						timeout=10000,
+						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
+						animations='disabled',
+						caret='initial',
+					),
+					timeout=15000,
+				)
 			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
 
 			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 			return screenshot_b64
 		except Exception as e:
-			self.logger.error(f'❌ Failed to take full-page screenshot after 2 tries: {type(e).__name__}: {e}')
+			self.logger.error(f'❌ Failed to take screenshot: {type(e).__name__}: {e}')
 			raise
 
 		finally:
-			# 5. Restore original viewport state if we expanded it
+			# 5. Restore original viewport state
 			if original_viewport:
 				# Viewport was originally enabled, restore to original dimensions
 				await asyncio.wait_for(
 					page.set_viewport_size(original_viewport), timeout=2000
 				)  # intentionally set short because we want this to be noisy if it's slowing us down
-			else:
-				# Viewport was originally disabled, no need to restore it
-				# await page.set_viewport_size(None)  # unfortunately this is not supported by playwright
-				pass
+			# If there was no original viewport, we leave the one we set
+			# (Playwright doesn't support removing viewport once set)
 
 	# region - User Actions
 
