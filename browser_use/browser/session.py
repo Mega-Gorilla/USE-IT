@@ -1705,10 +1705,20 @@ class BrowserSession(BaseModel):
 
 		normalized_url = normalize_url(url)
 
-		if self.agent_current_page:
-			await self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded')
-		else:
-			await self.create_new_tab(normalized_url)
+		try:
+			if self.agent_current_page:
+				await self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded')
+			else:
+				await self.create_new_tab(normalized_url)
+		except Exception as e:
+			if 'timeout' in str(e).lower():
+				self.logger.warning(
+					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {(self.browser_profile.default_navigation_timeout or 30000) / 1000}s, continuing anyway..."
+				)
+				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
+			else:
+				# Re-raise non-timeout errors
+				raise
 
 	@require_initialization
 	async def refresh(self) -> None:
