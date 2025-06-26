@@ -2511,6 +2511,39 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
+	async def _take_screenshot_cdp(self, page: Page, width: int, height: int) -> str | None:
+		"""
+		Take a screenshot using direct CDP (Chrome DevTools Protocol) calls.
+		Returns base64 encoded screenshot or None if CDP fails.
+		"""
+		cdp_session = None
+		try:
+			# Create CDP session for direct Chrome DevTools Protocol access
+			cdp_session = await page.context.new_cdp_session(page)
+
+			# Use Page.captureScreenshot for direct screenshot without Playwright overhead
+			cdp_params = {'format': 'png', 'clip': {'x': 0, 'y': 0, 'width': width, 'height': height, 'scale': 1}}
+
+			# Take the screenshot using CDP
+			result = await asyncio.wait_for(
+				cdp_session.send('Page.captureScreenshot', cdp_params),
+				timeout=10.0,  # 10 second timeout for CDP call
+			)
+
+			# The result already contains base64 encoded data
+			return result.get('data')
+
+		except Exception as e:
+			self.logger.debug(f'CDP screenshot failed: {type(e).__name__}: {e}')
+			return None
+		finally:
+			# Clean up CDP session
+			if cdp_session:
+				try:
+					await cdp_session.detach()
+				except Exception:
+					pass
+
 	@require_initialization
 	@time_execution_async('--take_screenshot')
 	async def take_screenshot(self, full_page: bool = False) -> str:
@@ -2572,41 +2605,35 @@ class BrowserSession(BaseModel):
 			await asyncio.wait_for(page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000)
 
 		try:
-			# 4. Take screenshot with clipping
-			# Use smaller chunks to avoid memory issues in CI
+			# 4. Try CDP screenshot first (faster, less overhead)
 			chunk_height = min(expanded_height, 2000)  # Take screenshots in 2000px chunks max
 
-			if expanded_height <= chunk_height:
-				# Small enough to capture in one shot
-				screenshot = await asyncio.wait_for(
-					page.screenshot(
-						full_page=False,
-						scale='css',
-						timeout=10000,
-						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': expanded_height},
-						animations='allow',  # Disable animations in CI to avoid timing issues
-						caret='initial',
-					),
-					timeout=15000,
-				)
-			else:
-				# For very tall screenshots, just take the first chunk
-				# This avoids memory/timeout issues in CI
+			if expanded_height > chunk_height:
 				self.logger.warning(
 					f'Screenshot height {expanded_height}px > {chunk_height}px, taking first {chunk_height}px only'
 				)
-				screenshot = await asyncio.wait_for(
-					page.screenshot(
-						full_page=False,
-						scale='css',
-						timeout=10000,
-						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
-						animations='allow',
-						caret='initial',
-					),
-					timeout=15000,
-				)
-			# TODO: manually take multiple clipped screenshots to capture the full height and stitch them together?
+
+			# Try direct CDP screenshot first
+			screenshot_b64 = await self._take_screenshot_cdp(page, expanded_width, chunk_height)
+
+			if screenshot_b64:
+				self.logger.debug('Screenshot taken using CDP method')
+				return screenshot_b64
+
+			# Fall back to Playwright screenshot if CDP fails
+			self.logger.debug('Falling back to Playwright screenshot method')
+
+			screenshot = await asyncio.wait_for(
+				page.screenshot(
+					full_page=False,
+					scale='css',
+					timeout=10000,
+					clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
+					animations='allow',  # Keep animations running to minimize processing
+					caret='initial',
+				),
+				timeout=15000,
+			)
 
 			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 			return screenshot_b64
