@@ -13,7 +13,7 @@ classifiers = [
 dependencies = [
     "aiofiles>=24.1.0",
     "anyio>=4.9.0",
-    "bubus>=1.1.2",
+    "bubus>=1.2.2",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
     "markdownify==1.1.0",
@@ -143,7 +143,7 @@ testpaths = [
     "tests"
 ]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-v --strict-markers --tb=short"
+addopts = "-v --strict-markers --tb=short --dist=loadscope"
 log_cli = true
 log_cli_format = "%(levelname)-8s [%(name)s] %(message)s"
 filterwarnings = [
