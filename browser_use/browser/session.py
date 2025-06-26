@@ -60,6 +60,10 @@ GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 # Use a threading lock to protect playwright object creation across all event loops and processes
 GLOBAL_PLAYWRIGHT_THREADING_LOCK = threading.Lock()
+# Limit concurrent screenshots to prevent GPU memory exhaustion during screenshot generation
+GLOBAL_SCREENSHOT_SEMAPHORE = asyncio.Semaphore(3)  # Allow max 3 concurrent screenshots
+
+MAX_SCREENSHOT_HEIGHT = 6000
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
@@ -2519,7 +2523,10 @@ class BrowserSession(BaseModel):
 		cdp_session = None
 		try:
 			# Create CDP session for direct Chrome DevTools Protocol access
-			cdp_session = await page.context.new_cdp_session(page)
+			cdp_session = await asyncio.wait_for(
+				page.context.new_cdp_session(page),  # type: ignore
+				timeout=self.browser_profile.timeout / 1000,  # re-use playwright connection timeout (convert ms to seconds)
+			)
 
 			# Use Page.captureScreenshot for direct screenshot without Playwright overhead
 			cdp_params = {'format': 'png', 'clip': {'x': 0, 'y': 0, 'width': width, 'height': height, 'scale': 1}}
@@ -2527,14 +2534,14 @@ class BrowserSession(BaseModel):
 			# Take the screenshot using CDP
 			result = await asyncio.wait_for(
 				cdp_session.send('Page.captureScreenshot', cdp_params),
-				timeout=10.0,  # 10 second timeout for CDP call
+				timeout=self.browser_profile.default_timeout or 30000,  # 30 second timeout for CDP screenshot call
 			)
 
 			# The result already contains base64 encoded data
 			return result.get('data')
 
 		except Exception as e:
-			self.logger.debug(f'CDP screenshot failed: {type(e).__name__}: {e}')
+			self.logger.debug(f'⚠️ CDP screenshot failed: {type(e).__name__}: {e}')
 			return None
 		finally:
 			# Clean up CDP session
@@ -2552,104 +2559,125 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
-		page = await self.get_current_page()
+		# Acquire semaphore to limit concurrent screenshots with timeout
+		start_time = asyncio.get_event_loop().time()
 		try:
-			await page.wait_for_load_state(
-				timeout=5000,
-			)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
-		except Exception:
-			pass
+			async with asyncio.timeout(60):  # 60 second timeout to prevent deadlock
+				await GLOBAL_SCREENSHOT_SEMAPHORE.acquire()
 
-		# Always use our clipping approach - never pass full_page=True to Playwright
-		# This prevents timeouts on very long pages
-
-		# 1. Get current viewport and page dimensions
-		dimensions = await page.evaluate("""() => {
-			return {
-				width: Math.max(window.innerWidth, document.documentElement.clientWidth),
-				height: Math.max(window.innerHeight, document.documentElement.clientHeight),
-				pageHeight: document.documentElement.scrollHeight,
-				devicePixelRatio: window.devicePixelRatio || 1
-			};
-		}""")
-
-		# 2. Save current viewport state and calculate expanded dimensions
-		original_viewport = page.viewport_size
-		viewport_expansion = self.browser_profile.viewport_expansion if self.browser_profile.viewport_expansion else 0
-
-		expanded_width = dimensions['width']  # Keep width unchanged
-
-		# Calculate height based on full_page parameter
-		max_screenshot_height = 6000  # 6k pixels max to prevent timeouts
-
-		if full_page:
-			# For full page, use the actual page height up to our max limit
-			expanded_height = min(dimensions['pageHeight'], max_screenshot_height)
-
-			if dimensions['pageHeight'] > max_screenshot_height:
-				self.logger.warning(
-					f'Page height ({dimensions["pageHeight"]}px) exceeds max screenshot height ({max_screenshot_height}px). '
-					f'Clipping to {max_screenshot_height}px.'
-				)
-		else:
-			# For viewport screenshot, just use viewport + expansion
-			expanded_height = dimensions['height'] + viewport_expansion
-
-		# 3. Expand the viewport if we are using one
-		if original_viewport:
-			await asyncio.wait_for(
-				page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000
-			)  # intentionally set short because we want this to be noisy if it's slowing us down
-		else:
-			# In headless mode without viewport, we need to set one temporarily
-			await asyncio.wait_for(page.set_viewport_size({'width': expanded_width, 'height': expanded_height}), timeout=2000)
+				# Check if acquisition took too long
+				elapsed = asyncio.get_event_loop().time() - start_time
+				if elapsed > 15:
+					self.logger.warning(
+						f'⚠️ Screenshot semaphore acquisition took {elapsed:.1f}s - '
+						f'system may be under heavy load with {3 - GLOBAL_SCREENSHOT_SEMAPHORE._value} concurrent screenshots'
+					)
+		except TimeoutError:
+			raise TimeoutError('Failed to acquire screenshot semaphore within 60 seconds - too many concurrent screenshots')
 
 		try:
-			# 4. Try CDP screenshot first (faster, less overhead)
-			chunk_height = min(expanded_height, 2000)  # Take screenshots in 2000px chunks max
+			page = await self.get_current_page()
+			try:
+				await page.wait_for_load_state(
+					timeout=5000,
+				)  # page has already loaded by this point, this is extra for previous action animations/frame loads to settle
+			except Exception:
+				pass
 
-			if expanded_height > chunk_height:
-				self.logger.warning(
-					f'Screenshot height {expanded_height}px > {chunk_height}px, taking first {chunk_height}px only'
-				)
+			# Always use our clipping approach - never pass full_page=True to Playwright
+			# This prevents timeouts on very long pages
 
-			# Try direct CDP screenshot first
-			screenshot_b64 = await self._take_screenshot_cdp(page, expanded_width, chunk_height)
+			# 1. Get current viewport and page dimensions
+			dimensions = await page.evaluate("""() => {
+				return {
+					width: Math.max(window.innerWidth, document.documentElement.clientWidth),
+					height: Math.max(window.innerHeight, document.documentElement.clientHeight),
+					pageHeight: document.documentElement.scrollHeight,
+					devicePixelRatio: window.devicePixelRatio || 1
+				};
+			}""")
 
-			if screenshot_b64:
-				self.logger.debug('Screenshot taken using CDP method')
-				return screenshot_b64
+			# 2. Save current viewport state and calculate expanded dimensions
+			original_viewport = page.viewport_size
+			viewport_expansion = self.browser_profile.viewport_expansion if self.browser_profile.viewport_expansion else 0
 
-			# Fall back to Playwright screenshot if CDP fails
-			self.logger.debug('Falling back to Playwright screenshot method')
+			expanded_width = dimensions['width']  # Keep width unchanged
 
-			screenshot = await asyncio.wait_for(
-				page.screenshot(
-					full_page=False,
-					scale='css',
-					timeout=10000,
-					clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
-					animations='allow',  # Keep animations running to minimize processing
-					caret='initial',
-				),
-				timeout=15000,
-			)
+			if full_page:
+				# For full page, use the actual page height up to our max limit
+				expanded_height = min(dimensions['pageHeight'], MAX_SCREENSHOT_HEIGHT)
 
-			screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
-			return screenshot_b64
-		except Exception as e:
-			self.logger.error(f'❌ Failed to take screenshot: {type(e).__name__}: {e}')
-			raise
+				if dimensions['pageHeight'] > MAX_SCREENSHOT_HEIGHT:
+					self.logger.debug(
+						f'📐 Page height {dimensions["pageHeight"]}px exceeds max screenshot height {MAX_SCREENSHOT_HEIGHT}px, '
+						f'Clipping to {MAX_SCREENSHOT_HEIGHT}px.'
+					)
+			else:
+				# For viewport screenshot, just use viewport + expansion
+				expanded_height = dimensions['height'] + viewport_expansion
 
-		finally:
-			# 5. Restore original viewport state
+			# 3. Expand the viewport if we are using one
 			if original_viewport:
-				# Viewport was originally enabled, restore to original dimensions
 				await asyncio.wait_for(
-					page.set_viewport_size(original_viewport), timeout=2000
+					page.set_viewport_size({'width': expanded_width, 'height': expanded_height}),
+					timeout=self.browser_profile.default_timeout or 20000,
 				)  # intentionally set short because we want this to be noisy if it's slowing us down
-			# If there was no original viewport, we leave the one we set
-			# (Playwright doesn't support removing viewport once set)
+			else:
+				# In headless mode without viewport, we need to set one temporarily
+				await asyncio.wait_for(
+					page.set_viewport_size({'width': expanded_width, 'height': expanded_height}),
+					timeout=self.browser_profile.default_timeout or 20000,
+				)
+
+			try:
+				# 4. Try CDP screenshot first (faster, less overhead)
+				chunk_height = min(expanded_height, MAX_SCREENSHOT_HEIGHT)
+
+				if expanded_height > chunk_height:
+					self.logger.debug(
+						f'📐 Screenshot height {expanded_height}px exceeds max {chunk_height}px limit, taking first {chunk_height}px only'
+					)
+
+				# Try direct CDP screenshot first
+				screenshot_b64 = await self._take_screenshot_cdp(page, expanded_width, chunk_height)
+
+				if screenshot_b64:
+					# self.logger.debug('Screenshot taken using CDP method')
+					return screenshot_b64
+
+				# Fall back to Playwright screenshot if CDP fails
+				screenshot = await asyncio.wait_for(
+					page.screenshot(
+						full_page=False,
+						scale='css',
+						timeout=10000,
+						clip={'x': 0, 'y': 0, 'width': expanded_width, 'height': chunk_height},
+						animations='allow',  # Keep animations running to minimize JS code run by playwright that interferes with the page
+						caret='initial',
+					),
+					timeout=15000,
+				)
+
+				screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+				return screenshot_b64
+			except Exception as e:
+				self.logger.error(
+					f'❌ Failed to take screenshot, both raw CDP and Playwright methods failed: {type(e).__name__}: {e}'
+				)
+				raise
+
+			finally:
+				# 5. Restore original viewport state
+				if original_viewport:
+					# Viewport was originally enabled, restore to original dimensions
+					await asyncio.wait_for(
+						page.set_viewport_size(original_viewport), timeout=self.browser_profile.default_timeout or 20000
+					)  # intentionally set short because we want this to be noisy if it's slowing us down
+				# If there was no original viewport, we leave the one we set
+				# (Playwright doesn't support removing viewport once set)
+		finally:
+			# Always release the semaphore
+			GLOBAL_SCREENSHOT_SEMAPHORE.release()
 
 	# region - User Actions
 
