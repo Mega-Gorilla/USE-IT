@@ -359,22 +359,23 @@ class BrowserSession(BaseModel):
 		# trying to launch/kill browsers at the same time is an easy way to trash an entire user_data_dir
 		# it's worth the 1s or 2s of delay in the worst case to avoid race conditions, user_data_dir can be a few GBs
 		# Use timeout to prevent indefinite waiting on lock acquisition
-		async with asyncio.timeout(30):  # 30 second timeout for stop operations
+
+		# save cookies to disk if cookies_file or storage_state is configured
+		# but only if the browser context is still connected
+		if self.browser_context:
+			try:
+				await asyncio.wait_for(self.save_storage_state(), timeout=5)
+			except Exception as e:
+				self.logger.warning(f'⚠️ Failed to save auth storage state before stopping: {type(e).__name__}: {e}')
+
+		if self.browser_profile.keep_alive:
+			self.logger.info(
+				'🕊️ BrowserSession.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
+			)
+			return  # nothing to do if keep_alive=True, leave the browser running
+
+		async with asyncio.timeout(60):  # 60 second timeout for all stop operations
 			async with self._start_lock:
-				# save cookies to disk if cookies_file or storage_state is configured
-				# but only if the browser context is still connected
-				if self.browser_context:
-					try:
-						await asyncio.wait_for(self.save_storage_state(), timeout=5)
-					except Exception as e:
-						self.logger.warning(f'⚠️ Failed to save auth storage state before stopping: {type(e).__name__}: {e}')
-
-				if self.browser_profile.keep_alive:
-					self.logger.info(
-						'🕊️ BrowserSession.stop() called but keep_alive=True, leaving the browser running. Use .kill() to force close.'
-					)
-					return  # nothing to do if keep_alive=True, leave the browser running
-
 				if self.browser_context or self.browser:
 					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser or self.browser_context}')
 
@@ -413,7 +414,7 @@ class BrowserSession(BaseModel):
 					try:
 						# Add timeout to prevent hanging on close if context is already closed
 						try:
-							async with asyncio.timeout(30):  # 30 second timeout for close operation
+							async with asyncio.timeout(45):  # long-ish to give browser time to save video and trace files
 								# IMPORTANT: Close context first to ensure HAR/video files are saved
 								if self.browser_context:
 									await self.browser_context.close()
@@ -2601,10 +2602,10 @@ class BrowserSession(BaseModel):
 				desired_height = dimensions['height'] + viewport_expansion
 
 			capped_height = min(desired_height, MAX_SCREENSHOT_HEIGHT)
-			if desired_height > capped_height:
-				self.logger.debug(
-					f'📐 Expanded viewport {desired_height}px exceeds max {capped_height}px limit for screenshots, taking top {capped_height}px only'
-				)
+			# if desired_height > capped_height:
+			# 	self.logger.debug(
+			# 		f'📐 Page viewport {desired_height}px exceeds max {capped_height}px limit for screenshots, taking top {capped_height}px only'
+			# 	)
 
 			# 3. Expand the viewport if we are using one
 			original_viewport = page.viewport_size
@@ -2613,13 +2614,13 @@ class BrowserSession(BaseModel):
 					# if we're already using a viewport, temporarily expand it to the desired size for the screenshot
 					await asyncio.wait_for(
 						page.set_viewport_size({'width': capped_width, 'height': desired_height}),
-						timeout=self.browser_profile.default_timeout or 20000,
+						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
 					)  # intentionally set short because we want this to be noisy if it's slowing us down
 				else:
 					# In headless mode without viewport, we always need to set one temporarily before taking a screenshot to limit rendering resource usage
 					await asyncio.wait_for(
 						page.set_viewport_size({'width': capped_width, 'height': desired_height}),
-						timeout=self.browser_profile.default_timeout or 20000,
+						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
 					)
 			except Exception as e:
 				self.logger.warning(
@@ -2695,7 +2696,7 @@ class BrowserSession(BaseModel):
 				try:
 					await asyncio.wait_for(
 						page.set_viewport_size(original_viewport),
-						timeout=self.browser_profile.default_timeout or 20000,
+						timeout=(self.browser_profile.default_timeout or 20000) / 1000,  # Convert ms to seconds
 					)
 				except Exception as e:
 					self.logger.warning(
