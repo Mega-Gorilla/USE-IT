@@ -369,7 +369,7 @@ class BrowserSession(BaseModel):
 					return  # nothing to do if keep_alive=True, leave the browser running
 
 				if self.browser_context or self.browser:
-					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser_context or self.browser}')
+					self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser or self.browser_context}')
 
 					# Stop trace recording before closing context
 					if self.browser_profile.traces_dir and self.browser_context is not None:
