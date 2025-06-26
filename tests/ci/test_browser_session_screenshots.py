@@ -236,4 +236,6 @@ class TestHeadlessScreenshots:
 		finally:
 			# Kill all sessions in parallel
 			print('Killing all browser sessions...')
-			await asyncio.gather(*[session.kill() for session in browser_sessions])
+			# Use return_exceptions=True to prevent one failed kill from affecting others
+			# This prevents "Future exception was never retrieved" errors
+			await asyncio.gather(*[session.kill() for session in browser_sessions], return_exceptions=True)

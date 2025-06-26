@@ -2667,7 +2667,7 @@ class BrowserSession(BaseModel):
 					page.screenshot(
 						full_page=False,  # never use full_page=True, it crashes the browser on any page larger than ~8000px-16000px depending on VRAM
 						scale='css',
-						timeout=10000,
+						timeout=self.browser_profile.default_timeout or 30000,
 						clip={
 							'x': dimensions.get('scrollX', 0),  # take screenshot from the current scroll position
 							'y': dimensions.get('scrollY', 0),
