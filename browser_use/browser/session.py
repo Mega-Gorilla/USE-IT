@@ -657,7 +657,7 @@ class BrowserSession(BaseModel):
 	@retry(
 		wait=2,  # wait 2s between each attempt to take a screenshot
 		retries=2,  # try up to 2 times to take the screenshot
-		timeout=20,  # allow up to 20s for each attempt to take a screenshot
+		timeout=35,  # allow up to 35s for each attempt to take a screenshot
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
 		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
