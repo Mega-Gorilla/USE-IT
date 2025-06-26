@@ -1259,7 +1259,8 @@ class Agent(Generic[Context]):
 				await self.cloud_sync.wait_for_auth()
 
 			# Stop the event bus gracefully, waiting for all events to be processed
-			await self.eventbus.stop(timeout=5.0)
+			# Use longer timeout to avoid deadlocks in tests with multiple agents
+			await self.eventbus.stop(timeout=10.0)
 
 			await self.close()
 
