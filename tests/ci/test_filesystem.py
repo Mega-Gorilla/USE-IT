@@ -422,9 +422,12 @@ class TestFileSystem:
 		assert len(fs2.files) == len(fs.files)
 
 		# Verify file contents
-		assert fs2.get_file('results.md').content == '# Original Results'
-		assert fs2.get_file('custom.txt').content == 'Custom content'
-		assert fs2.get_file('extracted_content_0.md').content == 'Extracted data'
+		assert fs2.get_file('results.md').content is not None and fs2.get_file('results.md').content == '# Original Results'
+		assert fs2.get_file('custom.txt').content is not None and fs2.get_file('custom.txt').content == 'Custom content'
+		assert (
+			fs2.get_file('extracted_content_0.md').content is not None
+			and fs2.get_file('extracted_content_0.md').content == 'Extracted data'
+		)
 
 		# Verify files exist on disk
 		assert (fs2.data_dir / 'results.md').exists()
@@ -564,7 +567,9 @@ class TestFileSystemIntegration:
 			assert len(files) == 5  # results.md, todo.md, notes.txt, 2 extracted files
 
 			# Verify content
-			results_content = fs.get_file('results.md').content
+			file_obj = fs.get_file('results.md')
+			assert file_obj is not None
+			results_content = file_obj.content
 			assert '# Test Results' in results_content
 			assert '## Section 1' in results_content
 			assert '## Section 2' in results_content
@@ -579,8 +584,12 @@ class TestFileSystemIntegration:
 
 			# Verify restoration
 			assert len(fs2.files) == 5
-			assert fs2.get_file('results.md').content == results_content
-			assert fs2.get_file('notes.txt').content == 'Important notes:\n- Note 1\n- Note 2'
+			file_obj = fs2.get_file('results.md')
+			assert file_obj is not None
+			assert file_obj.content == results_content
+			file_obj = fs2.get_file('notes.txt')
+			assert file_obj is not None
+			assert file_obj.content == 'Important notes:\n- Note 1\n- Note 2'
 			assert fs2.extracted_content_count == 2
 
 			# Verify files exist on disk
@@ -610,6 +619,8 @@ class TestFileSystemIntegration:
 			assert len(fs.files) == 5
 			for i in range(5):
 				assert f'file_{i}.md' in fs.files
-				assert fs.get_file(f'file_{i}.md').content == f'Content for file {i}'
+				file_obj = fs.get_file(f'file_{i}.md')
+				assert file_obj is not None
+				assert file_obj.content == f'Content for file {i}'
 
 			fs.nuke()
