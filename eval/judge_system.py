@@ -329,11 +329,12 @@ The browser-use agent operates in iterative loops receiving structured input:
 2. **Tool Usage**: How well did the tools work? -Do they work as expected?
 3. **Agent Reasoning**: Quality of decision-making and problem-solving - good todo.md usage for tasks above 20 steps?
 4. **Browser Handling**: How well did the navigation and browser interaction work - are there many blocks or 404s?
-5. **Final Output**: How does the output presented is it exactly what the user asked for?
+5. **Final Output**: How does the output presented is it exactly what the user asked for? If there is no output the score must be low.
 6. If we get blocked by a captcha or if the task is impossible, we should not pass the evaluation. The score must be low.
 7. If the trajectory is bad and tools are used in a stupid way, reduce the score.
 8. If the agent is not able to complete the task, the score must be low.
 9. If the trajectory can be optimized deduct points.
+
 
 **ERROR CATEGORIES TO CONSIDER:**
 {error_categories_text}
