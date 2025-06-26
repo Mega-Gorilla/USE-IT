@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from functools import wraps
@@ -57,7 +58,8 @@ GLOBAL_PLAYWRIGHT_API_OBJECT = None  # never instantiate the playwright API obje
 GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API object more than once per thread
 GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
-GLOBAL_PLAYWRIGHT_LOCK = asyncio.Lock()  # protect concurrent access to global playwright objects
+# Use a threading lock to protect playwright object creation across all event loops and processes
+GLOBAL_PLAYWRIGHT_THREADING_LOCK = threading.Lock()
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
@@ -578,7 +580,7 @@ class BrowserSession(BaseModel):
 		global GLOBAL_PATCHRIGHT_API_OBJECT
 		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
 		global GLOBAL_PATCHRIGHT_EVENT_LOOP
-		global GLOBAL_PLAYWRIGHT_LOCK
+		global GLOBAL_PLAYWRIGHT_THREADING_LOCK
 
 		# Get current event loop
 		try:
@@ -597,38 +599,67 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-		# Use lock with timeout to prevent race conditions when creating global playwright object
-		async with asyncio.timeout(30):  # 30 second timeout to prevent deadlocks
-			async with GLOBAL_PLAYWRIGHT_LOCK:
-				# Re-check global objects inside the lock to avoid race conditions
-				driver_name = 'patchright' if is_stealth else 'playwright'
-				global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
-				global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
+		# Use threading lock to prevent race conditions when creating global playwright object
+		# Check if we need to create the playwright object
+		needs_creation = False
 
-				# Check if we need to create or recreate the global object
-				should_recreate = False
+		# Use acquire with timeout to prevent deadlocks
+		if not GLOBAL_PLAYWRIGHT_THREADING_LOCK.acquire(timeout=30):  # 30 second timeout
+			raise TimeoutError('Failed to acquire playwright lock within 30 seconds - potential deadlock detected')
 
-				if global_api_object and global_event_loop != current_loop:
-					self.logger.debug(
-						f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
-						'Creating new instance to avoid disconnection when the previous loop closes.'
-					)
+		try:
+			# Re-check global objects inside the lock to avoid race conditions
+			driver_name = 'patchright' if is_stealth else 'playwright'
+			global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+			global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
+
+			# Check if we need to create or recreate the global object
+			should_recreate = False
+
+			if global_api_object and global_event_loop != current_loop:
+				self.logger.debug(
+					f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
+					'Creating new instance to avoid disconnection when the previous loop closes.'
+				)
+				should_recreate = True
+
+			# Also check if the object exists but is no longer functional
+			if global_api_object and not should_recreate:
+				try:
+					# Try to access the chromium property to verify the object is still valid
+					_ = global_api_object.chromium.executable_path
+				except Exception as e:
+					self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
 					should_recreate = True
 
-				# Also check if the object exists but is no longer functional
-				if global_api_object and not should_recreate:
-					try:
-						# Try to access the chromium property to verify the object is still valid
-						_ = global_api_object.chromium.executable_path
-					except Exception as e:
-						self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
-						should_recreate = True
+			# If we already have a valid object, use it
+			if global_api_object and not should_recreate:
+				self.playwright = self.playwright or global_api_object
+			else:
+				needs_creation = True
+		finally:
+			GLOBAL_PLAYWRIGHT_THREADING_LOCK.release()
 
-				# Create or recreate the global object if needed
-				if not global_api_object or should_recreate:
-					self.playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
-				else:
-					self.playwright = self.playwright or global_api_object
+		# Create the playwright object outside the lock to avoid blocking other threads
+		if needs_creation:
+			# Use timeout to prevent deadlocks during creation
+			async with asyncio.timeout(30):
+				new_playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+
+				# Re-acquire lock to update global state
+				if not GLOBAL_PLAYWRIGHT_THREADING_LOCK.acquire(timeout=30):  # 30 second timeout
+					raise TimeoutError('Failed to re-acquire playwright lock within 30 seconds - potential deadlock detected')
+
+				try:
+					# Double-check that another thread didn't create it while we were waiting
+					global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+					if not global_api_object:
+						self.playwright = new_playwright
+					else:
+						# Another thread created it, use that one
+						self.playwright = global_api_object
+				finally:
+					GLOBAL_PLAYWRIGHT_THREADING_LOCK.release()
 
 		# Log stealth best-practices warnings if applicable
 		if is_stealth:

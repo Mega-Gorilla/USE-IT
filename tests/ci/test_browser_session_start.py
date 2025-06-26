@@ -978,9 +978,10 @@ class TestBrowserSessionReusePatterns:
 				)
 			)
 
+		print('Starting many parallel browser sessions...')
 		await asyncio.gather(*[browser_session.start() for browser_session in browser_sessions])
 
-		# ensure all are connected and usable
+		print('Ensuring all parallel browser sessions are connected and usable...')
 		new_tab_tasks = []
 		for browser_session in browser_sessions:
 			assert await browser_session.is_connected()
@@ -988,14 +989,14 @@ class TestBrowserSessionReusePatterns:
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 		await asyncio.gather(*new_tab_tasks)
 
-		# kill every 3rd browser_session
+		print('killing every 3rd browser_session to test parallel shutdown')
 		kill_tasks = []
 		for i in range(0, len(browser_sessions), 3):
 			kill_tasks.append(browser_sessions[i].kill())
 			browser_sessions[i] = None
 		await asyncio.gather(*kill_tasks)
 
-		# ensure the remaining browser_sessions are still connected and usable
+		print('ensuring the remaining browser_sessions are still connected and usable')
 		new_tab_tasks = []
 		screenshot_tasks = []
 		for browser_session in filter(bool, browser_sessions):
@@ -1007,6 +1008,7 @@ class TestBrowserSessionReusePatterns:
 		await asyncio.gather(*screenshot_tasks)
 
 		kill_tasks = []
+		print('killing the remaining browser_sessions')
 		for browser_session in filter(bool, browser_sessions):
 			kill_tasks.append(browser_session.kill())
 		await asyncio.gather(*kill_tasks)
