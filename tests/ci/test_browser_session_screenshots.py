@@ -236,4 +236,11 @@ class TestHeadlessScreenshots:
 		finally:
 			# Kill all sessions in parallel
 			print('Killing all browser sessions...')
-			await asyncio.gather(*[session.kill() for session in browser_sessions])
+			# Use return_exceptions=True to prevent one failed kill from affecting others
+			# This prevents "Future exception was never retrieved" errors
+			results = await asyncio.gather(*[session.kill() for session in browser_sessions], return_exceptions=True)
+
+			# Check that no exceptions were raised during cleanup
+			for i, result in enumerate(results):
+				if isinstance(result, Exception):
+					print(f'Warning: Session {i} kill raised exception: {type(result).__name__}: {result}')
