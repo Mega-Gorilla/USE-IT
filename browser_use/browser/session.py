@@ -57,6 +57,7 @@ GLOBAL_PLAYWRIGHT_API_OBJECT = None  # never instantiate the playwright API obje
 GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API object more than once per thread
 GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
+GLOBAL_PLAYWRIGHT_LOCK = asyncio.Lock()  # protect concurrent access to global playwright objects
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
@@ -577,6 +578,7 @@ class BrowserSession(BaseModel):
 		global GLOBAL_PATCHRIGHT_API_OBJECT
 		global GLOBAL_PLAYWRIGHT_EVENT_LOOP  # one per thread, represents a node.js playwright subprocess that relays commands to the browser via CDP
 		global GLOBAL_PATCHRIGHT_EVENT_LOOP
+		global GLOBAL_PLAYWRIGHT_LOCK
 
 		# Get current event loop
 		try:
@@ -595,33 +597,38 @@ class BrowserSession(BaseModel):
 			# use playwright + chromium by default
 			self.browser_profile.channel = self.browser_profile.channel or BrowserChannel.CHROMIUM
 
-		# Check if we're in a different event loop than the one that created the global object
-		should_recreate = False
-		driver_name = 'patchright' if is_stealth else 'playwright'
-		global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
-		global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
-		self.playwright = (
-			self.playwright or global_api_object or await self._start_global_playwright_subprocess(is_stealth=is_stealth)
-		)
+		# Use lock with timeout to prevent race conditions when creating global playwright object
+		async with asyncio.timeout(30):  # 30 second timeout to prevent deadlocks
+			async with GLOBAL_PLAYWRIGHT_LOCK:
+				# Re-check global objects inside the lock to avoid race conditions
+				driver_name = 'patchright' if is_stealth else 'playwright'
+				global_api_object = GLOBAL_PATCHRIGHT_API_OBJECT if is_stealth else GLOBAL_PLAYWRIGHT_API_OBJECT
+				global_event_loop = GLOBAL_PATCHRIGHT_EVENT_LOOP if is_stealth else GLOBAL_PLAYWRIGHT_EVENT_LOOP
 
-		if global_api_object and global_event_loop != current_loop:
-			self.logger.debug(
-				f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
-				'Creating new instance to avoid disconnection when the previous loop closes.'
-			)
-			should_recreate = True
+				# Check if we need to create or recreate the global object
+				should_recreate = False
 
-		# Also check if the object exists but is no longer functional
-		if global_api_object and not should_recreate:
-			try:
-				# Try to access the chromium property to verify the object is still valid
-				_ = global_api_object.chromium.executable_path
-			except Exception as e:
-				self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
-				should_recreate = True
+				if global_api_object and global_event_loop != current_loop:
+					self.logger.debug(
+						f'Detected event loop change. Previous {driver_name} instance was created in a different event loop. '
+						'Creating new instance to avoid disconnection when the previous loop closes.'
+					)
+					should_recreate = True
 
-		if should_recreate:
-			self.playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+				# Also check if the object exists but is no longer functional
+				if global_api_object and not should_recreate:
+					try:
+						# Try to access the chromium property to verify the object is still valid
+						_ = global_api_object.chromium.executable_path
+					except Exception as e:
+						self.logger.debug(f'Detected invalid {driver_name} instance: {type(e).__name__}. Creating new instance.')
+						should_recreate = True
+
+				# Create or recreate the global object if needed
+				if not global_api_object or should_recreate:
+					self.playwright = await self._start_global_playwright_subprocess(is_stealth=is_stealth)
+				else:
+					self.playwright = self.playwright or global_api_object
 
 		# Log stealth best-practices warnings if applicable
 		if is_stealth:
