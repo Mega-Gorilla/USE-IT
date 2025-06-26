@@ -129,6 +129,7 @@ include = [
 ]
 
 [tool.pytest.ini_options]
+timeout = 60
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -184,4 +185,5 @@ dev-dependencies = [
     "pillow>=11.2.1",
     "lmnr[all]>=0.6.13",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
+    "pytest-timeout>=2.4.0",
 ]
