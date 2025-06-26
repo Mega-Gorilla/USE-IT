@@ -428,10 +428,9 @@ class TestFileSystem:
 		file_obj = fs2.get_file('custom.txt')
 		assert file_obj is not None
 		assert file_obj.content == 'Custom content'
-		assert (
-			fs2.get_file('extracted_content_0.md').content is not None
-			and fs2.get_file('extracted_content_0.md').content == 'Extracted data'
-		)
+		file_obj = fs2.get_file('extracted_content_0.md')
+		assert file_obj is not None
+		assert file_obj.content == 'Extracted data'
 
 		# Verify files exist on disk
 		assert (fs2.data_dir / 'results.md').exists()
