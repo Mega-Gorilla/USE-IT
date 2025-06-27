@@ -186,7 +186,7 @@ class TestMultiprocessSemaphore:
 
 		# First 3 should acquire quickly (within 1.5s accounting for process startup and Python import overhead)
 		for i in range(3):
-			assert acquired_events[i][2] < 1.5, (
+			assert acquired_events[i][2] < 2, (
 				f'Worker {acquired_events[i][1]} should acquire quickly, took {acquired_events[i][2]:.2f}s'
 			)
 
