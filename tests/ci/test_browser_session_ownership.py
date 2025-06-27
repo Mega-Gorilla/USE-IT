@@ -55,7 +55,7 @@ class TestBrowserOwnership:
 		)
 		await original_session.start()
 		initial_browser_pid = original_session.browser_pid
-		assert initial_browser_pid is not None
+		assert initial_browser_pid is not None, 'Browser PID should always exist after launch'
 
 		# Create first agent that will copy the session
 		async def run_agent1():

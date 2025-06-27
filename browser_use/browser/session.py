@@ -706,25 +706,8 @@ class BrowserSession(BaseModel):
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
-		"""Take screenshot using CDP with Playwright fallback, with retry and semaphore protection."""
-		# Try CDP screenshot first with clip (faster)
-		try:
-			return await self._take_screenshot_cdp(
-				page,
-				**(clip or {}),
-			)
-		except Exception as e:
-			self.logger.debug(f'⚠️ CDP screenshot with clip failed: {type(e).__name__}: {e}')
-
-		# Try CDP screenshot without clip (full viewport)
-		try:
-			self.logger.debug('⚠️ Retrying CDP screenshot without clip parameter')
-			return await self._take_screenshot_cdp(page)
-		except Exception as e:
-			self.logger.debug(f'⚠️ CDP screenshot without clip failed: {type(e).__name__}: {e}')
-
-		# Fall back to Playwright screenshot
-		self.logger.debug('⚠️ Falling back to Playwright screenshot')
+		"""Take screenshot using Playwright, with retry and semaphore protection."""
+		# Use Playwright screenshot directly
 		screenshot = await page.screenshot(
 			full_page=False,
 			scale='css',
@@ -2682,84 +2665,6 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
-	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='global', semaphore_timeout=15, semaphore_lax=True)
-	async def _take_screenshot_cdp(
-		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
-	) -> str:
-		"""
-		Take a screenshot using direct CDP (Chrome DevTools Protocol) calls.
-		Returns base64 encoded screenshot or None if CDP fails.
-		"""
-		return await self._unsafe_take_screenshot_cdp(page, width, height, x, y, scale)
-
-	async def _unsafe_take_screenshot_cdp(
-		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
-	) -> str:
-		"""
-		Unsafe CDP screenshot logic without retry protection.
-		"""
-		assert self.browser_context is not None, 'Browser context is not set'
-
-		cdp_session = None
-		current_tab_url = page.url
-		try:
-			page = [page for page in self.browser_context.pages if page.url == current_tab_url][0]
-		except Exception as e:
-			self.logger.error(
-				f'❌ Page disappeared while trying to take screenshot, did the tab {_log_pretty_url(current_tab_url)} get closed?: {type(e).__name__}: {e}'
-			)
-			raise
-
-		try:
-			# Check if page is still valid before creating CDP session
-			if page.is_closed():
-				raise RuntimeError('Page is closed, cannot take screenshot')
-
-			# Create CDP session for direct Chrome DevTools Protocol access
-			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
-
-			# Use Page.captureScreenshot for direct screenshot without Playwright overhead
-			cdp_params = {
-				'format': 'png',
-				'clip': {'x': x, 'y': y, 'width': width, 'height': height, 'scale': scale},
-				'optimizeForSpeed': True,
-				'captureBeyondViewport': True,
-				'fromSurface': True,
-			}
-
-			# Take the screenshot using CDP
-			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
-			# Use the internal channel.send method to bypass some of the async wrapper issues
-			result = await cdp_session._impl_obj._channel.send(
-				'send',
-				None,  # timeout_calculator
-				{'method': 'Page.captureScreenshot', 'params': cdp_params},
-			)
-
-			# The result already contains base64 encoded data
-			base64_screenshot = result.get('data')
-			if not base64_screenshot:
-				raise ValueError('CDP Page.captureScreenshot() call returned empty base64')
-			return base64_screenshot
-		except Exception as e:
-			if 'browser has been closed' in str(e).lower():
-				# the dreaded browser crash due to screenshot error, we have to re-initialize the entire browser connection because all page handles are invalidated
-				self.logger.error(
-					f'❌ CDP connection crashed during screenshot of {_log_pretty_url(current_tab_url)}: {type(e).__name__}: {e} (restarting...)'
-				)
-				self._reset_connection_state()
-				await self.start()
-			raise
-		finally:
-			# Clean up CDP session
-			if cdp_session:
-				try:
-					# Use internal method to ensure proper cleanup
-					await cdp_session._impl_obj._channel.send('detach', None, {})
-				except Exception:
-					# Ignore all exceptions during cleanup
-					pass
-
 	@require_initialization
 	@time_execution_async('--take_screenshot')
 	async def take_screenshot(self, full_page: bool = False) -> str:
