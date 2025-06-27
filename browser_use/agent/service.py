@@ -362,6 +362,10 @@ class Agent(Generic[Context]):
 			self.browser_session.browser_context = browser_session.browser_context
 			self.browser_session.agent_current_page = browser_session.agent_current_page
 			self.browser_session.human_current_page = browser_session.human_current_page
+
+			# Keep a reference to the original browser session to prevent it from being garbage collected
+			# This ensures the browser connection stays alive even if this agent goes out of scope
+			self.browser_session._original_browser_session = browser_session
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
