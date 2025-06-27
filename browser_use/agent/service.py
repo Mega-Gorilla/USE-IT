@@ -349,12 +349,19 @@ class Agent(Generic[Context]):
 				)
 
 			# always copy sessions that are passed in to avoid agents overwriting each other's agent_current_page and human_current_page by accident
+			# model_copy() doesn't copy excluded fields, so we need to manually copy them
 			self.browser_session = browser_session.model_copy(
 				# update={
 				# 	'agent_current_page': None,   # dont reset these, let the next agent start on the same page as the last agent
 				# 	'human_current_page': None,
 				# },
 			)
+			# Manually copy over the excluded fields that are needed for browser connection
+			self.browser_session.playwright = browser_session.playwright
+			self.browser_session.browser = browser_session.browser
+			self.browser_session.browser_context = browser_session.browser_context
+			self.browser_session.agent_current_page = browser_session.agent_current_page
+			self.browser_session.human_current_page = browser_session.human_current_page
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
