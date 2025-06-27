@@ -259,7 +259,7 @@ class TestSequentialAgentsReuse:
 			llm=create_mock_llm(agent2_actions),
 			browser_session=browser_session,
 		)
-		await agent2.run(max_steps=1)
+		await agent2.run(max_steps=2)
 
 		# Verify agent2's view - should be on tab 0 (page A)
 		assert agent2.browser_session
@@ -313,7 +313,7 @@ class TestSequentialAgentsReuse:
 				llm=create_mock_llm(agent1_actions),
 				browser_session=browser_session,
 			)
-			await agent1.run(max_steps=1)
+			await agent1.run(max_steps=2)
 			# agent1 goes out of scope here and should be garbage collected
 
 		await run_agent1()
@@ -349,7 +349,7 @@ class TestSequentialAgentsReuse:
 			llm=create_mock_llm(agent2_actions),
 			browser_session=browser_session,
 		)
-		history = await agent2.run(max_steps=1)
+		history = await agent2.run(max_steps=2)
 		assert len(history.history) >= 1
 
 		# Verify screenshot was taken successfully
