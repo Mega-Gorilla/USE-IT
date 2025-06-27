@@ -461,7 +461,13 @@ class BrowserSession(BaseModel):
 		await self.stop(_hint='(context manager exit)')
 
 	def model_copy(self, **kwargs) -> Self:
-		"""Create a copy of this BrowserSession that shares the browser resources but doesn't own them."""
+		"""Create a copy of this BrowserSession that shares the browser resources but doesn't own them.
+
+		This method creates a copy that:
+		- Shares the same browser, browser_context, and playwright objects
+		- Doesn't own the browser resources (won't close them when garbage collected)
+		- Keeps a reference to the original to prevent premature garbage collection
+		"""
 		# Create the copy using the parent class method
 		copy = super().model_copy(**kwargs)
 
@@ -470,6 +476,14 @@ class BrowserSession(BaseModel):
 
 		# Keep a reference to the original to prevent garbage collection
 		copy._original_browser_session = self
+
+		# Manually copy over the excluded fields that are needed for browser connection
+		# These fields are excluded in the model config but need to be shared
+		copy.playwright = self.playwright
+		copy.browser = self.browser
+		copy.browser_context = self.browser_context
+		copy.agent_current_page = self.agent_current_page
+		copy.human_current_page = self.human_current_page
 
 		return copy
 
