@@ -121,7 +121,7 @@ class Agent(Generic[Context]):
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		controller: Controller[Context] = Controller(),
+		controller: Controller[Context] | None = None,
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
@@ -181,6 +181,7 @@ class Agent(Generic[Context]):
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
+		display_files_in_done_text: bool = True,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
@@ -197,7 +198,9 @@ class Agent(Generic[Context]):
 		# Core components
 		self.task = task
 		self.llm = llm
-		self.controller = controller
+		self.controller = (
+			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
+		)
 		self.sensitive_data = sensitive_data
 
 		self.settings = AgentSettings(
@@ -1263,11 +1266,16 @@ class Agent(Generic[Context]):
 				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
 				self.eventbus.dispatch(output_event)
 
-			# Don't block waiting for cloud auth - let it complete in background
-			# The auth_task will continue running even after agent finishes
+			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
 				if self.cloud_sync.auth_task and not self.cloud_sync.auth_task.done():
-					logger.info('Cloud authentication still in progress - continuing in background')
+					try:
+						# Wait up to 1 second for auth to start and print URL
+						await asyncio.wait_for(self.cloud_sync.auth_task, timeout=1.0)
+					except TimeoutError:
+						logger.info('Cloud authentication started - continuing in background')
+					except Exception as e:
+						logger.debug(f'Cloud authentication error: {e}')
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			# Use longer timeout to avoid deadlocks in tests with multiple agents
