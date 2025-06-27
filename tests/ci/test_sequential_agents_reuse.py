@@ -281,7 +281,7 @@ class TestSequentialAgentsReuse:
 		)
 		await browser_session.start()
 
-		# Store initial browser process ID
+		# Store initial browser process ID if available
 		initial_browser_pid = browser_session.browser_pid
 
 		# Create and run first agent in a scope that will be garbage collected
