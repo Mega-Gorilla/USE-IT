@@ -2653,7 +2653,11 @@ class BrowserSession(BaseModel):
 
 			# Take the screenshot using CDP
 			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
-			result = await cdp_session.send('Page.captureScreenshot', cdp_params)
+			# Use the internal _channel.send method to bypass some of the async wrapper issues
+			if hasattr(cdp_session, '_channel'):
+				result = await cdp_session._channel.send('send', None, {'method': 'Page.captureScreenshot', 'params': cdp_params})
+			else:
+				result = await cdp_session.send('Page.captureScreenshot', cdp_params)
 
 			# The result already contains base64 encoded data
 			base64_screenshot = result.get('data')
@@ -2673,8 +2677,13 @@ class BrowserSession(BaseModel):
 			# Clean up CDP session
 			if cdp_session:
 				try:
-					await cdp_session.detach()
+					# Use internal method if available to ensure proper cleanup
+					if hasattr(cdp_session, '_channel') and hasattr(cdp_session._channel, 'send'):
+						await cdp_session._channel.send('detach', None, {})
+					else:
+						await cdp_session.detach()
 				except Exception:
+					# Ignore all exceptions during cleanup
 					pass
 
 	@require_initialization
