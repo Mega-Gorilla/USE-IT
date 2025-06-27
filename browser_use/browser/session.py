@@ -759,7 +759,15 @@ class BrowserSession(BaseModel):
 		"""Override to customize the set up of the connection to an existing browser"""
 
 		# 1. check for a passed Page object, if present, it always takes priority, set browser_context = page.context
-		self.browser_context = (self.agent_current_page and self.agent_current_page.context) or self.browser_context or None
+		if self.agent_current_page:
+			try:
+				# Test if the page is still usable by evaluating simple JS
+				await self.agent_current_page.evaluate('() => true')
+				self.browser_context = self.agent_current_page.context
+			except Exception:
+				# Page is closed or unusable, clear it
+				self.agent_current_page = None
+				self.browser_context = None
 
 		# 2. Check if the current browser connection is valid, if not clear the invalid objects
 		if self.browser_context:
@@ -943,8 +951,21 @@ class BrowserSession(BaseModel):
 							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
 						)
 					except Exception as e:
+						# Check if it's a SingletonLock error
+						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
+							self.logger.warning('⚠️ SingletonLock error detected. Cleaning up and retrying...')
+							# Remove the stale lock file
+							singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
+							if singleton_lock.exists():
+								singleton_lock.unlink()
+							# Wait a moment for cleanup
+							await asyncio.sleep(0.1)
+							# Retry the launch
+							self.browser_context = await self.playwright.chromium.launch_persistent_context(
+								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
+							)
 						# Re-raise if not a timeout
-						if not isinstance(e, asyncio.TimeoutError):
+						elif not isinstance(e, asyncio.TimeoutError):
 							raise
 			except TimeoutError:
 				self.logger.warning(
