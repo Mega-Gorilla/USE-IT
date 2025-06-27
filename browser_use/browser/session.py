@@ -2730,11 +2730,7 @@ class BrowserSession(BaseModel):
 			# Take the screenshot using CDP
 			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
 			# Use the internal channel.send method to bypass some of the async wrapper issues
-			from playwright._impl._helper import locals_to_params
-
-			result = await cdp_session._impl_obj._channel.send(
-				'send', locals_to_params({'method': 'Page.captureScreenshot', 'params': cdp_params})
-			)
+			result = await cdp_session._impl_obj._channel.send('send', {'method': 'Page.captureScreenshot', 'params': cdp_params})
 
 			# The result already contains base64 encoded data
 			base64_screenshot = result.get('data')
@@ -2755,9 +2751,7 @@ class BrowserSession(BaseModel):
 			if cdp_session:
 				try:
 					# Use internal method to ensure proper cleanup
-					from playwright._impl._helper import locals_to_params
-
-					await cdp_session._impl_obj._channel.send('detach', locals_to_params({}))
+					await cdp_session._impl_obj._channel.send('detach', {})
 				except Exception:
 					# Ignore all exceptions during cleanup
 					pass
