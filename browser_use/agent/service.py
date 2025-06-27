@@ -33,7 +33,7 @@ from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
 from browser_use.agent.gif import create_history_gif
-from browser_use.agent.memory import Memory, MemoryConfig
+
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -174,14 +174,21 @@ class Agent(Generic[Context]):
 		extend_planner_system_message: str | None = None,
 		injected_agent_state: AgentState | None = None,
 		context: Context | None = None,
-		enable_memory: bool = False,
-		memory_config: MemoryConfig | None = None,
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
+		**kwargs,
 	):
+		# Check for deprecated memory parameters
+		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
+			raise ValueError(
+				"Memory support has been removed as of version 0.3.2. "
+				"The agent context for memory is significantly improved and no longer requires the old memory system. "
+				"Please remove the 'enable_memory' and 'memory_config' parameters."
+			)
+		
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
@@ -231,9 +238,7 @@ class Agent(Generic[Context]):
 		if self.settings.planner_llm:
 			self.token_cost_service.register_llm(self.settings.planner_llm)
 
-		# Memory settings
-		self.enable_memory = enable_memory
-		self.memory_config = memory_config
+
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -272,7 +277,6 @@ class Agent(Generic[Context]):
 		self.logger.info(
 			f'🧠 Starting a browser-use agent {self.version} with base_model={self.llm.model}'
 			f'{" +vision" if self.settings.use_vision else ""}'
-			f'{" +memory" if self.enable_memory else ""}'
 			f' extraction_model={self.settings.page_extraction_llm.model if self.settings.page_extraction_llm else "Unknown"}'
 			f'{f" planner_model={self.settings.planner_llm.model}" if self.settings.planner_llm else ""}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
@@ -305,23 +309,7 @@ class Agent(Generic[Context]):
 			sensitive_data=sensitive_data,
 		)
 
-		# TODO: FIX MEMORY
-		if self.enable_memory and False:
-			try:
-				# Initialize memory
-				self.memory = Memory(
-					message_manager=self._message_manager,
-					llm=self.llm,
-					config=self.memory_config,
-				)
-			except ImportError:
-				self.logger.warning(
-					'⚠️ Agent(enable_memory=True) is set but missing some required packages, install and re-run to use memory features: pip install browser-use[memory]'
-				)
-				self.memory = None
-				self.enable_memory = False
-		else:
-			self.memory = None
+
 
 		if isinstance(browser, BrowserSession):
 			browser_session = browser_session or browser
@@ -650,9 +638,7 @@ class Agent(Generic[Context]):
 
 			self._log_step_context(current_page, browser_state_summary)
 
-			# generate procedural memory if needed
-			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
-				self.memory.create_procedural_memory(self.state.n_steps)
+
 
 			await self._raise_if_stopped_or_paused()
 
