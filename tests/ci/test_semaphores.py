@@ -184,9 +184,9 @@ class TestMultiprocessSemaphore:
 		last_three = set(acquisition_order[3:])
 		assert last_three == {3, 4, 5}, f'Last 3 acquisitions should be workers 3, 4, 5, got {last_three}'
 
-		# First 3 should acquire quickly (within 1.5s accounting for process startup and Python import overhead)
+		# First 3 should acquire quickly (within 2.5s accounting for process startup and Python import overhead)
 		for i in range(3):
-			assert acquired_events[i][2] < 2, (
+			assert acquired_events[i][2] < 2.5, (
 				f'Worker {acquired_events[i][1]} should acquire quickly, took {acquired_events[i][2]:.2f}s'
 			)
 

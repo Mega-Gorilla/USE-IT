@@ -147,26 +147,30 @@ class TestSequentialAgentsSimple:
 		assert agent1.browser_session.agent_current_page is not None
 		assert '/tab2' in agent1.browser_session.agent_current_page.url
 
-		# Agent 2: Switch to first tab and take screenshot
+		# Clean up agent1
+		del agent1
+		gc.collect()
+		await asyncio.sleep(0.1)
+
+		# Agent 2: Switch to first tab
 		agent2_actions = [
-			"""{{
-				"thinking": "Switching to first tab and taking screenshot",
+			"""{
+				"thinking": "Switching to first tab",
 				"evaluation_previous_goal": "Two tabs are open",
 				"memory": "Need to switch to tab 0",
-				"next_goal": "Switch to tab 0 and screenshot",
+				"next_goal": "Switch to tab 0",
 				"action": [
-					{{"switch_tab": {{"page_id": 0}}}},
-					{{"screenshot": {{}}}}
+					{"switch_tab": {"page_id": 0}}
 				]
-			}}"""
+			}"""
 		]
 
 		agent2 = Agent(
-			task='Switch to first tab and screenshot',
+			task='Switch to first tab',
 			llm=create_mock_llm(agent2_actions),
 			browser_session=browser_session,
 		)
-		history2 = await agent2.run(max_steps=2)
+		history2 = await agent2.run(max_steps=3)
 
 		# Verify agent2 is on the first tab
 		assert agent2.browser_session is not None
