@@ -95,7 +95,7 @@ class TestBrowserOwnership:
 		await asyncio.sleep(0.1)
 
 		# Browser should still be alive because the original session still owns it
-		assert await original_session.is_connected()
+		assert await original_session.is_connected(restart=False)
 		assert original_session.browser_pid == initial_browser_pid
 
 		# Create second agent
@@ -133,14 +133,14 @@ class TestBrowserOwnership:
 		await asyncio.sleep(0.1)
 
 		# Browser should still be alive
-		assert await original_session.is_connected()
+		assert await original_session.is_connected(restart=False)
 		assert original_session.browser_pid == initial_browser_pid
 
 		# Now clean up the original - use kill() since keep_alive=True
 		await original_session.kill()
 
 		# Browser should be disconnected now
-		assert not await original_session.is_connected()
+		assert not await original_session.is_connected(restart=False)
 
 	async def test_shared_browser_recovery_after_disconnect(self, httpserver):
 		"""Test that copied sessions can recover if the shared browser is disconnected."""
