@@ -925,7 +925,7 @@ class TestBrowserSessionReusePatterns:
 
 		browser_sessions = []
 
-		for i in range(5):
+		for i in range(10):
 			browser_sessions.append(
 				BrowserSession(
 					browser_profile=BrowserProfile(
@@ -935,7 +935,7 @@ class TestBrowserSessionReusePatterns:
 					),
 				)
 			)
-		for i in range(5):
+		for i in range(10):
 			browser_sessions.append(
 				BrowserSession(
 					browser_profile=BrowserProfile(
@@ -945,7 +945,7 @@ class TestBrowserSessionReusePatterns:
 					),
 				)
 			)
-		for i in range(5):
+		for i in range(10):
 			browser_sessions.append(
 				BrowserSession(
 					browser_profile=BrowserProfile(
@@ -955,7 +955,7 @@ class TestBrowserSessionReusePatterns:
 					),
 				)
 			)
-		for i in range(5):
+		for i in range(10):
 			browser_sessions.append(
 				BrowserSession(
 					browser_profile=BrowserProfile(
