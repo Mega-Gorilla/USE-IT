@@ -33,7 +33,6 @@ from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
 from browser_use.agent.gif import create_history_gif
-
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -183,12 +182,14 @@ class Agent(Generic[Context]):
 	):
 		# Check for deprecated memory parameters
 		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
-			raise ValueError(
-				"Memory support has been removed as of version 0.3.2. "
-				"The agent context for memory is significantly improved and no longer requires the old memory system. "
+			logger.warning(
+				'Memory support has been removed as of version 0.3.2. '
+				'The agent context for memory is significantly improved and no longer requires the old memory system. '
 				"Please remove the 'enable_memory' and 'memory_config' parameters."
 			)
-		
+			kwargs['enable_memory'] = False
+			kwargs['memory_config'] = None
+
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
@@ -237,8 +238,6 @@ class Agent(Generic[Context]):
 		self.token_cost_service.register_llm(page_extraction_llm)
 		if self.settings.planner_llm:
 			self.token_cost_service.register_llm(self.settings.planner_llm)
-
-
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -308,8 +307,6 @@ class Agent(Generic[Context]):
 			message_context=self.settings.message_context,
 			sensitive_data=sensitive_data,
 		)
-
-
 
 		if isinstance(browser, BrowserSession):
 			browser_session = browser_session or browser
@@ -637,8 +634,6 @@ class Agent(Generic[Context]):
 			current_page = await self.browser_session.get_current_page()
 
 			self._log_step_context(current_page, browser_state_summary)
-
-
 
 			await self._raise_if_stopped_or_paused()
 
