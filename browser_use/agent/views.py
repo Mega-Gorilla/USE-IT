@@ -209,6 +209,80 @@ class AgentOutput(BaseModel):
 		model_.__doc__ = 'AgentOutput model with custom actions'
 		return model_
 
+	@staticmethod
+	def create_ultra_compact_schema(
+		custom_actions: type[ActionModel], keep_titles: bool = True, keep_descriptions: bool = True, max_desc_length: int = 40
+	) -> dict:
+		"""Create compact JSON schema while preserving ALL action definitions.
+
+		Args:
+			custom_actions: The action model type to include
+			keep_titles: Whether to preserve title fields
+			keep_descriptions: Whether to preserve description fields
+			max_desc_length: Maximum description length before truncation
+
+		Returns:
+			Compact JSON schema dict with all action definitions preserved
+		"""
+		# Create the full model first
+		model_ = AgentOutput.type_with_custom_actions(custom_actions)
+		original_schema = model_.model_json_schema()
+
+		def compact_minimize(obj):
+			"""Recursively minimize schema while preserving ALL action definitions"""
+			if isinstance(obj, dict):
+				filtered = {}
+
+				# Only remove truly unnecessary fields - KEEP $defs for action definitions
+				skip_fields = ['additionalProperties']
+
+				for k, v in obj.items():
+					if k in skip_fields:
+						continue
+
+					if k == 'title' and keep_titles:
+						# Keep titles but truncate if very long
+						title = str(v)
+						filtered[k] = title[:30] + '...' if len(title) > 30 else title
+
+					elif k == 'description' and keep_descriptions:
+						# Keep descriptions but truncate
+						desc = str(v)
+						filtered[k] = desc[: max_desc_length - 3] + '...' if len(desc) > max_desc_length else desc
+
+					elif k == '$defs':
+						# PRESERVE $defs - this contains all action definitions
+						filtered[k] = compact_minimize(v)
+
+					elif k == '$ref':
+						# PRESERVE $ref - needed to reference action definitions
+						filtered[k] = v
+
+					elif k == 'anyOf' and isinstance(v, list):
+						# Keep all anyOf items including $ref
+						filtered[k] = [compact_minimize(item) for item in v]
+
+					elif k in ['properties', 'items']:
+						filtered[k] = compact_minimize(v)
+
+					elif k in ['type', 'required', 'minimum', 'maximum', 'minItems', 'maxItems', 'pattern', 'default']:
+						# Keep essential validation fields
+						filtered[k] = v if not isinstance(v, (dict, list)) else compact_minimize(v)
+
+					else:
+						# Recursively process other fields
+						filtered[k] = compact_minimize(v) if isinstance(v, (dict, list)) else v
+
+				return filtered
+
+			elif isinstance(obj, list):
+				return [compact_minimize(item) for item in obj]
+			return obj
+
+		result = compact_minimize(original_schema)
+		# Ensure we return a dict (original_schema is always a dict)
+		return result if isinstance(result, dict) else {}
+
 
 class AgentHistory(BaseModel):
 	"""History item for agent actions"""
