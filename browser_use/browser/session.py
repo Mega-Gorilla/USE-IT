@@ -721,7 +721,7 @@ class BrowserSession(BaseModel):
 		try:
 			screenshot = await page.screenshot(
 				full_page=False,
-				scale='css',
+				# scale='css',
 				timeout=self.browser_profile.default_timeout or 30000,
 				clip=FloatRect(**clip) if clip else None,
 				animations='allow',
@@ -2745,7 +2745,7 @@ class BrowserSession(BaseModel):
 			# 	)
 
 			# 3. Expand the viewport if we are using one
-			original_viewport = page.viewport_size
+			original_viewport = page.viewport_size and self.browser_profile.viewport
 			try:
 				if original_viewport:
 					# if we're already using a viewport, temporarily expand it to the desired size for the screenshot
