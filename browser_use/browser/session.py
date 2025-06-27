@@ -243,18 +243,18 @@ class BrowserSession(BaseModel):
 	def logger(self) -> logging.Logger:
 		"""Get instance-specific logger with session ID in the name"""
 		if self._logger is None:
-			# Create a child logger with the session ID
-			self._logger = logging.getLogger(
-				f'browser_use.BrowserSession🆂 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}'
-			)
+			self._logger = logging.getLogger(f'browser_use.{self}')
 		return self._logger
 
 	def __repr__(self) -> str:
-		return f'BrowserSession🆂 {self.id[-4:]}(profile={self.browser_profile}, {self._connection_str}) ref#={str(id(self))[-2:]}'
+		is_copy = '©' if self._original_browser_session else '1️⃣'
+		return f'BrowserSession🆂 {self.id[-4:]}{is_copy}{str(id(self))[-2:]} ({self._connection_str}, profile={self.browser_profile})'
 
 	def __str__(self) -> str:
-		return f'BrowserSession🆂 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]}'
+		is_copy = '©' if self._original_browser_session else '1️⃣'
+		return f'BrowserSession🆂 {self.id[-4:]}{is_copy}{str(id(self))[-2:]} 🅟 {str(id(self.agent_current_page))[-2:]}'
 
+	# better to force people to get it from the right object, "only one way to do it" is better python
 	# def __getattr__(self, key: str) -> Any:
 	# 	"""
 	# 	fall back to getting any attrs from the underlying self.browser_profile when not defined on self.
