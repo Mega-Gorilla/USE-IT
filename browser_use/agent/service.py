@@ -33,7 +33,6 @@ from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
 from browser_use.agent.gif import create_history_gif
-from browser_use.agent.memory import Memory, MemoryConfig
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -121,7 +120,7 @@ class Agent(Generic[Context]):
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		controller: Controller[Context] = Controller(),
+		controller: Controller[Context] | None = None,
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
@@ -174,14 +173,24 @@ class Agent(Generic[Context]):
 		extend_planner_system_message: str | None = None,
 		injected_agent_state: AgentState | None = None,
 		context: Context | None = None,
-		enable_memory: bool = False,
-		memory_config: MemoryConfig | None = None,
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
+		display_files_in_done_text: bool = True,
+		**kwargs,
 	):
+		# Check for deprecated memory parameters
+		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
+			logger.warning(
+				'Memory support has been removed as of version 0.3.2. '
+				'The agent context for memory is significantly improved and no longer requires the old memory system. '
+				"Please remove the 'enable_memory' and 'memory_config' parameters."
+			)
+			kwargs['enable_memory'] = False
+			kwargs['memory_config'] = None
+
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
@@ -197,7 +206,9 @@ class Agent(Generic[Context]):
 		# Core components
 		self.task = task
 		self.llm = llm
-		self.controller = controller
+		self.controller = (
+			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
+		)
 		self.sensitive_data = sensitive_data
 
 		self.settings = AgentSettings(
@@ -230,10 +241,6 @@ class Agent(Generic[Context]):
 		self.token_cost_service.register_llm(page_extraction_llm)
 		if self.settings.planner_llm:
 			self.token_cost_service.register_llm(self.settings.planner_llm)
-
-		# Memory settings
-		self.enable_memory = enable_memory
-		self.memory_config = memory_config
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -272,7 +279,6 @@ class Agent(Generic[Context]):
 		self.logger.info(
 			f'🧠 Starting a browser-use agent {self.version} with base_model={self.llm.model}'
 			f'{" +vision" if self.settings.use_vision else ""}'
-			f'{" +memory" if self.enable_memory else ""}'
 			f' extraction_model={self.settings.page_extraction_llm.model if self.settings.page_extraction_llm else "Unknown"}'
 			f'{f" planner_model={self.settings.planner_llm.model}" if self.settings.planner_llm else ""}'
 			f'{" +reasoning" if self.settings.is_planner_reasoning else ""}'
@@ -305,24 +311,6 @@ class Agent(Generic[Context]):
 			sensitive_data=sensitive_data,
 		)
 
-		# TODO: FIX MEMORY
-		if self.enable_memory and False:
-			try:
-				# Initialize memory
-				self.memory = Memory(
-					message_manager=self._message_manager,
-					llm=self.llm,
-					config=self.memory_config,
-				)
-			except ImportError:
-				self.logger.warning(
-					'⚠️ Agent(enable_memory=True) is set but missing some required packages, install and re-run to use memory features: pip install browser-use[memory]'
-				)
-				self.memory = None
-				self.enable_memory = False
-		else:
-			self.memory = None
-
 		if isinstance(browser, BrowserSession):
 			browser_session = browser_session or browser
 
@@ -348,13 +336,15 @@ class Agent(Generic[Context]):
 					'Call: await browser_session.start()'
 				)
 
-			# always copy sessions that are passed in to avoid agents overwriting each other's agent_current_page and human_current_page by accident
-			self.browser_session = browser_session.model_copy(
-				# update={
-				# 	'agent_current_page': None,   # dont reset these, let the next agent start on the same page as the last agent
-				# 	'human_current_page': None,
-				# },
-			)
+			# Always copy sessions that are passed in to avoid agents overwriting each other's agent_current_page and human_current_page by accident
+			# The model_copy() method now handles copying all necessary fields and setting up ownership
+			if browser_session._owns_browser_resources:
+				self.browser_session = browser_session
+			else:
+				self.logger.warning(
+					'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
+				)
+				self.browser_session = browser_session.model_copy()
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
@@ -457,6 +447,7 @@ class Agent(Generic[Context]):
 			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
 
 		# Initialize download tracking
+		assert self.browser_session is not None, 'BrowserSession is not set up'
 		self.has_downloads_path = self.browser_session.browser_profile.downloads_path is not None
 		if self.has_downloads_path:
 			self._last_known_downloads: list[str] = []
@@ -471,7 +462,7 @@ class Agent(Generic[Context]):
 
 		_browser_session_id = self.browser_session.id if self.browser_session else self.id
 		_current_page_id = str(id(self.browser_session and self.browser_session.agent_current_page))[-2:]
-		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]}.{_current_page_id}')
+		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]} 🅟 {_current_page_id}')
 
 	@property
 	def browser(self) -> Browser:
@@ -649,10 +640,6 @@ class Agent(Generic[Context]):
 			current_page = await self.browser_session.get_current_page()
 
 			self._log_step_context(current_page, browser_state_summary)
-
-			# generate procedural memory if needed
-			if self.enable_memory and self.memory and self.state.n_steps % self.memory.config.memory_interval == 0:
-				self.memory.create_procedural_memory(self.state.n_steps)
 
 			await self._raise_if_stopped_or_paused()
 
@@ -1260,9 +1247,16 @@ class Agent(Generic[Context]):
 				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
 				self.eventbus.dispatch(output_event)
 
-			# Wait for cloud auth to complete if in progress
+			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
-				await self.cloud_sync.wait_for_auth()
+				if self.cloud_sync.auth_task and not self.cloud_sync.auth_task.done():
+					try:
+						# Wait up to 1 second for auth to start and print URL
+						await asyncio.wait_for(self.cloud_sync.auth_task, timeout=1.0)
+					except TimeoutError:
+						logger.info('Cloud authentication started - continuing in background')
+					except Exception as e:
+						logger.debug(f'Cloud authentication error: {e}')
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			# Use longer timeout to avoid deadlocks in tests with multiple agents

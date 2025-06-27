@@ -657,7 +657,6 @@ class TaskResult:
 
 
 from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Controller
-from browser_use.agent.memory import MemoryConfig
 from browser_use.agent.views import AgentHistoryList
 
 SUPPORTED_MODELS = {
@@ -1323,10 +1322,13 @@ async def run_agent_with_browser(
 	# Create controller, optionally with SERP search
 	controller = create_controller(use_serp=use_serp)
 
-	# Configure memory if enabled
-	memory_config = None
+	# Check for deprecated memory parameters
 	if enable_memory:
-		memory_config = MemoryConfig(agent_id=f'eval_agent_{task.task_id}', memory_interval=memory_interval, llm_instance=llm)
+		raise ValueError(
+			'Memory support has been removed as of version 0.3.2. '
+			'The agent context for memory is significantly improved and no longer requires the old memory system. '
+			"Please remove the 'enable_memory' parameter."
+		)
 
 	agent = Agent(
 		task=task.confirmed_task,
@@ -1334,8 +1336,6 @@ async def run_agent_with_browser(
 		controller=controller,
 		browser_session=browser_session,
 		use_vision=use_vision,
-		enable_memory=enable_memory,
-		memory_config=memory_config,
 		max_actions_per_step=max_actions_per_step,
 		validate_output=validate_output,
 		planner_llm=planner_llm,
@@ -2306,12 +2306,17 @@ if __name__ == '__main__':
 		'laminarEvalLink': None,  # Will be updated after evaluation creation
 	}
 
-	# For single task mode, skip server run creation unless URLs are provided
+	# For single task mode, use provided run ID if available, otherwise skip server run creation
 	if args.task_text:
-		# Single task mode - generate a local run ID (use the task_id we generated earlier)
-		safe_task_id = task_id or 'unknown'
-		run_id = f'local_single_task_{safe_task_id}_{int(time.time())}'
-		logger.info(f'Single task mode: Using local run ID {run_id}')
+		# Single task mode - use provided run_id (from GitHub Actions) or generate local one
+		if args.run_id:
+			run_id = args.run_id
+			logger.info(f'Single task mode: Using provided run ID {run_id}')
+		else:
+			# Fallback for local single task runs without server
+			safe_task_id = task_id or 'unknown'
+			run_id = f'local_single_task_{safe_task_id}_{int(time.time())}'
+			logger.info(f'Single task mode: Using local run ID {run_id}')
 	else:
 		# Multi-task mode - use server
 		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
