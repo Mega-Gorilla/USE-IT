@@ -217,6 +217,7 @@ class BrowserSession(BaseModel):
 	_tab_visibility_callback: Any = PrivateAttr(default=None)
 	_logger: logging.Logger | None = PrivateAttr(default=None)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
+	_original_browser_session: Any = PrivateAttr(default=None)  # Reference to prevent GC of the original session when copied
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -2658,7 +2659,7 @@ class BrowserSession(BaseModel):
 			# Take the screenshot using CDP
 			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
 			# Use the internal channel.send method to bypass some of the async wrapper issues
-			from playwright._impl._cdp_session import locals_to_params
+			from playwright._impl._helper import locals_to_params
 
 			result = await cdp_session._impl_obj._channel.send(
 				'send', locals_to_params({'method': 'Page.captureScreenshot', 'params': cdp_params})
@@ -2683,7 +2684,7 @@ class BrowserSession(BaseModel):
 			if cdp_session:
 				try:
 					# Use internal method to ensure proper cleanup
-					from playwright._impl._cdp_session import locals_to_params
+					from playwright._impl._helper import locals_to_params
 
 					await cdp_session._impl_obj._channel.send('detach', locals_to_params({}))
 				except Exception:
