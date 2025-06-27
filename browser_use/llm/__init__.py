@@ -5,6 +5,8 @@ For easier transition we have
 """
 
 from browser_use.llm.anthropic.chat import ChatAnthropic
+from browser_use.llm.aws.chat_anthropic import ChatAnthropicBedrock
+from browser_use.llm.aws.chat_bedrock import ChatAWSBedrock
 from browser_use.llm.azure.chat import ChatAzureOpenAI
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
@@ -44,6 +46,8 @@ __all__ = [
 	'ChatOpenAI',
 	'ChatGoogle',
 	'ChatAnthropic',
+	'ChatAnthropicBedrock',
+	'ChatAWSBedrock',
 	'ChatGroq',
 	'ChatAzureOpenAI',
 	'ChatOllama',

@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from typing import TypeVar, overload
+from typing import TYPE_CHECKING, TypeVar, overload
 
-from langchain_core.language_models.chat_models import BaseChatModel as LangChainBaseChatModel
-from langchain_core.messages import AIMessage as LangChainAIMessage
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
@@ -10,6 +8,10 @@ from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 from examples.models.langchain.serializer import LangChainMessageSerializer
+
+if TYPE_CHECKING:
+	from langchain_core.language_models.chat_models import BaseChatModel as LangChainBaseChatModel  # type: ignore
+	from langchain_core.messages import AIMessage as LangChainAIMessage  # type: ignore
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -23,7 +25,7 @@ class ChatLangchain(BaseChatModel):
 	"""
 
 	# The LangChain model to wrap
-	chat: LangChainBaseChatModel
+	chat: 'LangChainBaseChatModel'
 
 	@property
 	def model(self) -> str:
@@ -62,7 +64,7 @@ class ChatLangchain(BaseChatModel):
 
 		return self.chat.__class__.__name__
 
-	def _get_usage(self, response: LangChainAIMessage) -> ChatInvokeUsage | None:
+	def _get_usage(self, response: 'LangChainAIMessage') -> ChatInvokeUsage | None:
 		usage = response.usage_metadata
 		if usage is None:
 			return None
@@ -115,7 +117,10 @@ class ChatLangchain(BaseChatModel):
 		try:
 			if output_format is None:
 				# Return string response
-				response: LangChainAIMessage = await self.chat.ainvoke(langchain_messages)  # type: ignore
+				response = await self.chat.ainvoke(langchain_messages)  # type: ignore
+
+				# Import at runtime for isinstance check
+				from langchain_core.messages import AIMessage as LangChainAIMessage  # type: ignore
 
 				if not isinstance(response, LangChainAIMessage):
 					raise ModelProviderError(
@@ -149,7 +154,7 @@ class ChatLangchain(BaseChatModel):
 					)
 				except AttributeError:
 					# Fall back to manual parsing if with_structured_output is not available
-					response: LangChainAIMessage = await self.chat.ainvoke(langchain_messages)  # type: ignore
+					response = await self.chat.ainvoke(langchain_messages)  # type: ignore
 					content = response.content if hasattr(response, 'content') else str(response)
 
 					try:
