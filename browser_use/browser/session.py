@@ -335,7 +335,7 @@ class BrowserSession(BaseModel):
 			else f'browser={driver_name}:{binary_name}'
 		)
 
-	async def stop(self) -> None:
+	async def stop(self, _hint: str = '') -> None:
 		"""Shuts down the BrowserSession, killing the browser process (only works if keep_alive=False)"""
 
 		# Save cookies to disk if configured
@@ -352,7 +352,7 @@ class BrowserSession(BaseModel):
 			return  # nothing to do if keep_alive=True, leave the browser running
 
 		if self.browser_context or self.browser:
-			self.logger.info(f'🛑 Closing {self._connection_str} browser context {self.browser or self.browser_context}')
+			self.logger.info(f'🛑 Closing {self._connection_str} browser context {_hint} {self.browser or self.browser_context}')
 
 			# Save trace recording if configured
 			if self.browser_profile.traces_dir and self.browser_context:
@@ -389,7 +389,7 @@ class BrowserSession(BaseModel):
 		# Kill the chrome subprocess if we started it
 		if self.browser_pid:
 			try:
-				await self._terminate_browser_process()
+				await self._terminate_browser_process(_hint='(stop() called)')
 			except psutil.NoSuchProcess:
 				self.browser_pid = None
 			except (TimeoutError, psutil.TimeoutExpired):
@@ -414,7 +414,7 @@ class BrowserSession(BaseModel):
 
 	async def close(self) -> None:
 		"""Deprecated: Provides backwards-compatibility with old method Browser().close() and playwright BrowserContext.close()"""
-		await self.stop()
+		await self.stop(_hint='(close() called)')
 
 	async def kill(self) -> None:
 		"""Stop the BrowserSession even if keep_alive=True"""
@@ -422,7 +422,7 @@ class BrowserSession(BaseModel):
 		# 	f'⏹️ Browser browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (close() called)'
 		# )
 		self.browser_profile.keep_alive = False
-		await self.stop()
+		await self.stop(_hint='(kill() called)')
 
 		# do not stop self.playwright here as its likely used by other parallel browser_sessions
 		# let it be cleaned up by the garbage collector when no refs use it anymore
@@ -450,25 +450,24 @@ class BrowserSession(BaseModel):
 		# self.logger.debug(
 		# 	f'⏹️ Stopping gracefully browser_pid={self.browser_pid} user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"} keep_alive={self.browser_profile.keep_alive} (context manager exit)'
 		# )
-		await self.stop()
+		await self.stop(_hint='(context manager exit)')
 
 	def __del__(self):
+		profile = getattr(self, 'browser_profile', None)
+		keep_alive = getattr(profile, 'keep_alive', None)
+		user_data_dir = getattr(profile, 'user_data_dir', None)
+		status = '🪓 killing pid={self.browser_pid}...' if self.browser_pid else '☠️'
+		self.logger.debug(
+			f'🗑️ Garbage collected BrowserSession 🆂 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]} keep_alive={keep_alive} {status}'
+		)
 		# Avoid keeping references in __del__ that might prevent garbage collection
 		try:
-			profile = getattr(self, 'browser_profile', None)
-			keep_alive = getattr(profile, 'keep_alive', None)
-			user_data_dir = getattr(profile, 'user_data_dir', None)
-			if self.initialized:
-				self.logger.debug(
-					f'🛑 Stopping (garbage collected BrowserSession 🆂{self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]}) keep_alive={keep_alive} user_data_dir= {_log_pretty_path(user_data_dir) or "<incognito>"}'
-				)
-
-			self._kill_child_processes()
-		except BaseException:
-			# Never let __del__ raise exceptions
+			self._kill_child_processes(_hint='(garbage collected)')
+		except TimeoutError:
+			# Never let __del__ raise Timeout exceptions
 			pass
 
-	def _kill_child_processes(self) -> None:
+	def _kill_child_processes(self, _hint: str = '') -> None:
 		"""Kill any child processes that might be related to the browser"""
 
 		if not self.browser_profile.keep_alive and self.browser_pid:
@@ -479,6 +478,7 @@ class BrowserSession(BaseModel):
 					browser_proc.wait(
 						timeout=5
 					)  # wait up to 5 seconds for the process to exit cleanly and commit its user_data_dir changes
+					self.logger.debug(f' ↳ Killed browser process browser_pid={self.browser_pid} {_hint}')
 				except (psutil.NoSuchProcess, psutil.AccessDenied, TimeoutError):
 					pass
 
@@ -487,12 +487,14 @@ class BrowserSession(BaseModel):
 					try:
 						# self.logger.debug(f'Force killing child process: {child.pid} ({child.name()})')
 						child.kill()
+						self.logger.debug(f' ↳ Killed browser helper process pid={child.pid} {_hint}')
 					except (psutil.NoSuchProcess, psutil.AccessDenied):
 						pass
 
 				# Kill the main browser process
 				# self.logger.debug(f'Force killing browser process: {self.browser_pid}')
 				browser_proc.kill()
+				self.logger.debug(f' ↳ Killed browser process browser_pid={self.browser_pid} {_hint}')
 			except psutil.NoSuchProcess:
 				pass
 			except Exception as e:
@@ -591,22 +593,22 @@ class BrowserSession(BaseModel):
 		semaphore_lax=True,
 		retry_on=(TimeoutError, psutil.TimeoutExpired),  # Only retry on timeouts, not NoSuchProcess
 	)
-	async def _terminate_browser_process(self) -> None:
+	async def _terminate_browser_process(self, _hint: str = '') -> None:
 		"""Terminate browser process with retry logic."""
-		await self._unsafe_terminate_browser_process()
+		await self._unsafe_terminate_browser_process(_hint='(terminate() called)')
 
-	async def _unsafe_terminate_browser_process(self) -> None:
+	async def _unsafe_terminate_browser_process(self, _hint: str = '') -> None:
 		"""Unsafe browser process termination without retry protection."""
 		if self.browser_pid:
 			try:
 				proc = psutil.Process(pid=self.browser_pid)
 				cmdline = proc.cmdline()
 				executable_path = cmdline[0] if cmdline else 'unknown'
-				self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
+				self.logger.info(f' ↳ Killing browser_pid={self.browser_pid} {_log_pretty_path(executable_path)} {_hint}')
 
 				# Try graceful termination first
 				proc.terminate()
-				self._kill_child_processes()
+				self._kill_child_processes(_hint=_hint)
 				await asyncio.to_thread(proc.wait, timeout=4)
 			except psutil.NoSuchProcess:
 				# Process already gone, that's fine
@@ -798,15 +800,15 @@ class BrowserSession(BaseModel):
 		try:
 			chrome_process = psutil.Process(pid=self.browser_pid)
 			if not chrome_process.is_running():
-				self.logger.warning(f'Chrome process with pid={self.browser_pid} is not running')
+				self.logger.warning(f'⚠️ Expected Chrome process with pid={self.browser_pid} is not running')
 				return
 			args = chrome_process.cmdline()
 		except psutil.NoSuchProcess:
-			self.logger.warning(f'Chrome process with pid={self.browser_pid} not found')
+			self.logger.warning(f'⚠️ Expected Chrome process with pid={self.browser_pid} not found, unable to (re-)connect')
 			return
 		except Exception as e:
 			self.browser_pid = None
-			self.logger.warning(f'Error accessing chrome process with pid={self.browser_pid}: {type(e).__name__}: {e}')
+			self.logger.warning(f'⚠️ Error accessing chrome process with pid={self.browser_pid}: {type(e).__name__}: {e}')
 			return
 
 		# check that browser_pid process is exposing a debug port we can connect to, otherwise we cannot connect to it
@@ -1178,7 +1180,7 @@ class BrowserSession(BaseModel):
 		if pages:
 			foreground_page = pages[0]
 			self.logger.debug(
-				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, agent session {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on Tab [{pages.index(foreground_page)}]: {foreground_page.url}'  # type: ignore
+				f'👁️‍🗨️ Found {len(pages)} existing tabs in browser, Agent 🅰 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} will start focused on tab 🄿 [{pages.index(foreground_page)}]: {foreground_page.url}'  # type: ignore
 			)
 		else:
 			foreground_page = await self.browser_context.new_page()
