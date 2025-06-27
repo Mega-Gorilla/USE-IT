@@ -178,8 +178,8 @@ class Agent(Generic[Context]):
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
-		**kwargs,
 		display_files_in_done_text: bool = True,
+		**kwargs,
 	):
 		# Check for deprecated memory parameters
 		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
