@@ -2306,12 +2306,17 @@ if __name__ == '__main__':
 		'laminarEvalLink': None,  # Will be updated after evaluation creation
 	}
 
-	# For single task mode, skip server run creation unless URLs are provided
+	# For single task mode, use provided run ID if available, otherwise skip server run creation
 	if args.task_text:
-		# Single task mode - generate a local run ID (use the task_id we generated earlier)
-		safe_task_id = task_id or 'unknown'
-		run_id = f'local_single_task_{safe_task_id}_{int(time.time())}'
-		logger.info(f'Single task mode: Using local run ID {run_id}')
+		# Single task mode - use provided run_id (from GitHub Actions) or generate local one
+		if args.run_id:
+			run_id = args.run_id
+			logger.info(f'Single task mode: Using provided run ID {run_id}')
+		else:
+			# Fallback for local single task runs without server
+			safe_task_id = task_id or 'unknown'
+			run_id = f'local_single_task_{safe_task_id}_{int(time.time())}'
+			logger.info(f'Single task mode: Using local run ID {run_id}')
 	else:
 		# Multi-task mode - use server
 		run_id = start_new_run(CONVEX_URL, SECRET_KEY, run_data, existing_run_id=args.run_id)
