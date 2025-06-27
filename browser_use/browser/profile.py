@@ -70,14 +70,15 @@ CHROME_HEADLESS_ARGS = [
 ]
 
 CHROME_DOCKER_ARGS = [
+	# '--disable-gpu',    # GPU is actually supported in headless docker mode now, but sometimes useful to test without it
 	'--no-sandbox',
 	'--disable-gpu-sandbox',
 	'--disable-setuid-sandbox',
 	'--disable-dev-shm-usage',
 	'--no-xshm',
 	'--no-zygote',
-	# '--single-process',  # causes "Target page, context or browser has been closed" errors during CDP page.captureScreenshot https://stackoverflow.com/questions/51629151/puppeteer-protocol-error-page-navigate-target-closed
-	'--disable-site-isolation-trials',  # TODO: this might fix screenshots too but could lead to easier bot blocking
+	# '--single-process',  # might be the cause of "Target page, context or browser has been closed" errors during CDP page.captureScreenshot https://stackoverflow.com/questions/51629151/puppeteer-protocol-error-page-navigate-target-closed
+	'--disable-site-isolation-trials',  # lowers RAM use by 10-16% in docker, but could lead to easier bot blocking if pages can detect it?
 ]
 
 

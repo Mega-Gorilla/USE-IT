@@ -59,7 +59,7 @@ GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API obje
 GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 
-MAX_SCREENSHOT_HEIGHT = 6000
+MAX_SCREENSHOT_HEIGHT = 4000
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
@@ -2610,7 +2610,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
-	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='global')
+	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='global', semaphore_timeout=15, semaphore_lax=True)
 	async def _take_screenshot_cdp(
 		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
 	) -> str:
@@ -2626,7 +2626,18 @@ class BrowserSession(BaseModel):
 		"""
 		Unsafe CDP screenshot logic without retry protection.
 		"""
+		assert self.browser_context is not None, 'Browser context is not set'
+
 		cdp_session = None
+		current_tab_url = page.url
+		try:
+			page = [page for page in self.browser_context.pages if page.url == current_tab_url][0]
+		except Exception as e:
+			self.logger.error(
+				f'❌ Page disappeared while trying to take screenshot, did the tab {_log_pretty_url(current_tab_url)} get closed?: {type(e).__name__}: {e}'
+			)
+			raise
+
 		try:
 			# Create CDP session for direct Chrome DevTools Protocol access
 			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
@@ -2649,7 +2660,14 @@ class BrowserSession(BaseModel):
 			if not base64_screenshot:
 				raise ValueError('CDP Page.captureScreenshot() call returned empty base64')
 			return base64_screenshot
-		except Exception:
+		except Exception as e:
+			if 'browser has been closed' in str(e).lower():
+				# the dreaded browser crash due to screenshot error, we have to re-initialize the entire browser connection because all page handles are invalidated
+				self.logger.error(
+					f'❌ CDP connection crashed during screenshot of {_log_pretty_url(current_tab_url)}: {type(e).__name__}: {e} (restarting...)'
+				)
+				self._reset_connection_state()
+				await self.start()
 			raise
 		finally:
 			# Clean up CDP session
