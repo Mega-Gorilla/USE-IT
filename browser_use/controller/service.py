@@ -6,10 +6,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.prompts import PromptTemplate
-
-# from lmnr.sdk.laminar import Laminar
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -32,6 +28,8 @@ from browser_use.controller.views import (
 	SwitchTabAction,
 )
 from browser_use.filesystem.file_system import FileSystem
+from browser_use.llm.base import BaseChatModel
+from browser_use.llm.messages import UserMessage
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -121,19 +119,12 @@ class Controller(Generic[Context]):
 
 				attachments = []
 				if params.files_to_display:
-					file_msg = ''
 					for file_name in params.files_to_display:
 						if file_name == 'todo.md':
 							continue
 						file_content = file_system.display_file(file_name)
 						if file_content:
-							file_msg += f'\n\n{file_name}:\n{file_content}'
 							attachments.append(file_name)
-					if file_msg:
-						user_message += '\n\nAttachments:'
-						user_message += file_msg
-					else:
-						logger.warning('Agent wanted to display files but none were found')
 
 				attachments = [str(file_system.get_dir() / file_name) for file_name in attachments]
 
@@ -201,7 +192,7 @@ class Controller(Generic[Context]):
 					raise
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
-		async def go_back(params: NoParamsAction, browser_session: BrowserSession):
+		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			await browser_session.go_back()
 			msg = '🔙  Navigated back'
 			logger.info(msg)
@@ -233,14 +224,15 @@ class Controller(Generic[Context]):
 				if params.index not in selector_map:
 					# Return informative message with the new state instead of error
 					max_index = max(selector_map.keys()) if selector_map else -1
-					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices.'
+					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices or scroll to see more elements'
 					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
 
 			# if element has file uploader then dont click
-			if await browser_session.is_file_input_by_index(params.index):
+			# Check if element is actually a file input (not just contains file-related keywords)
+			if element_node is not None and browser_session.is_file_input(element_node):
 				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
@@ -251,20 +243,21 @@ class Controller(Generic[Context]):
 				assert element_node is not None, f'Element with index {params.index} does not exist'
 				download_path = await browser_session._click_element_node(element_node)
 				if download_path:
-					msg = f'💾  Downloaded file to {download_path}'
+					emoji = '💾'
+					msg = f'Downloaded file to {download_path}'
 				else:
-					msg = f'🖱️  Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+					emoji = '🖱️'
+					msg = f'Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
 
-				logger.info(msg)
+				logger.info(f'{emoji} {msg}')
 				logger.debug(f'Element xpath: {element_node.xpath}')
 				if len(browser_session.tabs) > initial_pages:
 					new_tab_msg = 'New tab opened - switching to it'
 					msg += f' - {new_tab_msg}'
-					logger.info(new_tab_msg)
+					emoji = '🔗'
+					logger.info(f'{emoji} {new_tab_msg}')
 					await browser_session.switch_to_tab(-1)
-				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f'Clicked element {params.index}'
-				)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
 				error_msg = str(e)
 				if 'Execution context was destroyed' in error_msg or 'Cannot find context with specified id' in error_msg:
@@ -421,8 +414,8 @@ Only use this for extracting info from a single product/article page, not for en
 						iframe_markdown = ''
 					content += iframe_markdown
 
-			# limit to 60000 characters - remove text in the middle this is approx 20000 tokens
-			max_chars = 60000
+			# limit to 40000 characters - remove text in the middle this is approx 20000 tokens
+			max_chars = 40000
 			if len(content) > max_chars:
 				content = (
 					content[: max_chars // 2]
@@ -436,11 +429,12 @@ Only use this for extracting info from a single product/article page, not for en
 3. Some/all of the information is not available
 
 Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
-			template = PromptTemplate(input_variables=['query', 'page'], template=prompt)
 			try:
-				output = await page_extraction_llm.ainvoke(template.format(query=query, page=content))
-				output_text = output.content
-				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{output_text}'
+				formatted_prompt = prompt.format(query=query, page=content)
+				response = await page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)])
+
+				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+
 				# if content is small include it to memory
 				MAX_MEMORY_SIZE = 600
 				if len(extracted_content) < MAX_MEMORY_SIZE:
@@ -655,7 +649,7 @@ Explain the content of the page and that the requested information is not availa
 					content = await f.read()
 					result = f'Read from file {file_name}.\n<content>\n{content}\n</content>'
 			else:
-				result = await file_system.read_file(file_name)
+				result = file_system.read_file(file_name)
 
 			MAX_MEMORY_SIZE = 1000
 			if len(result) > MAX_MEMORY_SIZE:
