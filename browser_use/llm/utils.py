@@ -2,7 +2,7 @@
 Utilities for creating optimized Pydantic schemas for LLM usage.
 """
 
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -24,10 +24,10 @@ def create_optimized_json_schema(model: type[BaseModel]) -> dict[str, Any]:
 	# Extract $defs for reference resolution, then flatten everything
 	defs_lookup = original_schema.get('$defs', {})
 
-	def optimize_schema(obj, defs_lookup=None):
+	def optimize_schema(obj: Any, defs_lookup: dict[str, Any] | None = None) -> Any:
 		"""Apply all optimization techniques including flattening all $ref/$defs"""
 		if isinstance(obj, dict):
-			optimized = {}
+			optimized: dict[str, Any] = {}
 
 			# Skip unnecessary fields AND $defs (we'll inline everything)
 			skip_fields = ['additionalProperties', '$defs']
@@ -44,12 +44,9 @@ def create_optimized_json_schema(model: type[BaseModel]) -> dict[str, Any]:
 				elif key == 'description':
 					optimized[key] = value
 
-				# Add additionalProperties: false for object types (tighten unknown keys)
-				elif key == 'type' and value == 'object':
+				# Handle type field
+				elif key == 'type':
 					optimized[key] = value
-					# Add additionalProperties: false to prevent stray fields
-					if 'additionalProperties' not in obj:
-						optimized['additionalProperties'] = False
 
 				# FLATTEN: Resolve $ref by inlining the actual definition
 				elif key == '$ref' and defs_lookup:
@@ -83,6 +80,10 @@ def create_optimized_json_schema(model: type[BaseModel]) -> dict[str, Any]:
 				else:
 					optimized[key] = optimize_schema(value, defs_lookup) if isinstance(value, (dict, list)) else value
 
+			# CRITICAL: Add additionalProperties: false to ALL objects for OpenAI strict mode
+			if optimized.get('type') == 'object':
+				optimized['additionalProperties'] = False
+
 			return optimized
 
 		elif isinstance(obj, list):
@@ -90,16 +91,38 @@ def create_optimized_json_schema(model: type[BaseModel]) -> dict[str, Any]:
 		return obj
 
 	# Create optimized schema with flattening
-	optimized_schema = optimize_schema(original_schema, defs_lookup)
+	optimized_result = optimize_schema(original_schema, defs_lookup)
 
+	# Ensure we have a dictionary (should always be the case for schema root)
+	if not isinstance(optimized_result, dict):
+		raise ValueError('Optimized schema result is not a dictionary')
+
+	optimized_schema: dict[str, Any] = optimized_result
+
+	# Additional pass to ensure ALL objects have additionalProperties: false
+	def ensure_additional_properties_false(obj: Any) -> None:
+		"""Ensure all objects have additionalProperties: false"""
+		if isinstance(obj, dict):
+			# If it's an object type, ensure additionalProperties is false
+			if obj.get('type') == 'object':
+				obj['additionalProperties'] = False
+
+			# Recursively apply to all values
+			for value in obj.values():
+				if isinstance(value, (dict, list)):
+					ensure_additional_properties_false(value)
+		elif isinstance(obj, list):
+			for item in obj:
+				if isinstance(item, (dict, list)):
+					ensure_additional_properties_false(item)
+
+	ensure_additional_properties_false(optimized_schema)
 	_make_strict_compatible(optimized_schema)
 
-	# Ensure we return a Dict[str, Any] since original_schema is always a dict
-	return cast(dict[str, Any], optimized_schema)
+	return optimized_schema
 
 
-# Ensure strict mode compatibility: ALL properties must be required
-def _make_strict_compatible(schema):
+def _make_strict_compatible(schema: dict[str, Any] | list[Any]) -> None:
 	"""Ensure all properties are required for OpenAI strict mode"""
 	if isinstance(schema, dict):
 		# First recursively apply to nested objects
