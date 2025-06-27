@@ -1422,17 +1422,26 @@ class BrowserSession(BaseModel):
 
 		# Check if the browser_context itself is closed/unusable
 		try:
-			# TODO: figure out a better synchronous test for whether browser_context is usable
-			# this is a hacky workaround for the fact that playwright's browser_context has no is_connected() method
-			# and browser_context.browser is None when we launch with a persistent context (basically always)
+			# The only reliable way to check if a browser context is still valid
+			# is to try to use it. We'll try a simple page.evaluate() call.
 			if self.browser_context.pages:
-				return True
+				# Use the first available page to test the connection
+				test_page = self.browser_context.pages[0]
+				# Try a simple evaluate to check if the connection is alive
+				result = await test_page.evaluate('() => true')
+				return result is True
 			elif restart:
 				await self.create_new_tab()
-				return True
+				# Test the new tab
+				if self.browser_context.pages:
+					test_page = self.browser_context.pages[0]
+					result = await test_page.evaluate('() => true')
+					return result is True
+				return False
 			else:
 				return False
 		except Exception:
+			# Any exception means the context is closed or invalid
 			return False
 
 	def _reset_connection_state(self) -> None:
@@ -3288,6 +3297,7 @@ class BrowserSession(BaseModel):
 			new_page = await self.browser_context.new_page()
 		except Exception:
 			self.initialized = False
+			self.browser_context = None  # Clear the closed context
 
 		if not self.initialized or not self.browser_context:
 			# If we were initialized but lost connection, reset state first to avoid infinite loops
