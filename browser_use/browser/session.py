@@ -2639,6 +2639,10 @@ class BrowserSession(BaseModel):
 			raise
 
 		try:
+			# Check if page is still valid before creating CDP session
+			if page.is_closed():
+				raise RuntimeError('Page is closed, cannot take screenshot')
+
 			# Create CDP session for direct Chrome DevTools Protocol access
 			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
 
@@ -2653,8 +2657,12 @@ class BrowserSession(BaseModel):
 
 			# Take the screenshot using CDP
 			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
-			# Use the internal _channel.send method to bypass some of the async wrapper issues
-			result = await cdp_session._channel.send('send', None, {'method': 'Page.captureScreenshot', 'params': cdp_params})
+			# Use the internal channel.send method to bypass some of the async wrapper issues
+			from playwright._impl._cdp_session import locals_to_params
+
+			result = await cdp_session._impl_obj._channel.send(
+				'send', locals_to_params({'method': 'Page.captureScreenshot', 'params': cdp_params})
+			)
 
 			# The result already contains base64 encoded data
 			base64_screenshot = result.get('data')
@@ -2674,7 +2682,10 @@ class BrowserSession(BaseModel):
 			# Clean up CDP session
 			if cdp_session:
 				try:
-					await cdp_session.detach()
+					# Use internal method to ensure proper cleanup
+					from playwright._impl._cdp_session import locals_to_params
+
+					await cdp_session._impl_obj._channel.send('detach', locals_to_params({}))
 				except Exception:
 					# Ignore all exceptions during cleanup
 					pass
