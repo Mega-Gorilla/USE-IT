@@ -955,12 +955,13 @@ class BrowserSession(BaseModel):
 						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
 							self.logger.warning('⚠️ SingletonLock error detected. Cleaning up and retrying...')
 							# Remove the stale lock file
-							singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
+							singleton_lock = Path(self.browser_profile.user_data_dir) / 'SingletonLock'
 							if singleton_lock.exists():
 								singleton_lock.unlink()
 							# Wait a moment for cleanup
 							await asyncio.sleep(0.1)
 							# Retry the launch
+							assert self.playwright is not None, 'playwright instance is None'
 							self.browser_context = await self.playwright.chromium.launch_persistent_context(
 								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
 							)
