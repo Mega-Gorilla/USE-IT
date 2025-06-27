@@ -38,13 +38,13 @@ class CloudSync:
 			# Start authentication flow on first step (after first LLM response)
 			if event.event_type == 'CreateAgentStepEvent' and 'step' in dict(event):
 				step = dict(event)['step']
-				logger.debug(f'Got CreateAgentStepEvent with step={step}')
+				# logger.debug(f'Got CreateAgentStepEvent with step={step}')
 				# Trigger on the first step (step=2 because n_steps is incremented before actions)
 				if step == 2 and self.enable_auth and self.auth_client:
 					if not hasattr(self, 'auth_task') or self.auth_task is None:
 						# Start auth in background
 						if self.session_id:
-							logger.info('Triggering auth on first step event')
+							# logger.info('Triggering auth on first step event')
 							# Always run auth to show the cloud URL, even if already authenticated
 							self.auth_task = asyncio.create_task(self._background_auth(agent_session_id=self.session_id))
 						else:
@@ -106,7 +106,7 @@ class CloudSync:
 			if self.auth_client.is_authenticated:
 				# Use frontend URL for user-facing links
 				frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
-				session_url = f'{frontend_url.rstrip("/")}/sessions/{agent_session_id}'
+				session_url = f'{frontend_url.rstrip("/")}/agent/{agent_session_id}'
 
 				logger.info('\n\n' + '─' * 70)
 				logger.info('🌐  View the details of this run in Browser Use Cloud:')
@@ -128,7 +128,7 @@ class CloudSync:
 				await self._update_wal_user_ids(agent_session_id)
 
 		except Exception as e:
-			logger.warning(f'Background authentication failed: {e}')
+			logger.debug(f'Cloud sync authentication failed: {e}')
 
 	async def _resend_pending_events(self) -> None:
 		"""Resend events that were queued during auth"""
