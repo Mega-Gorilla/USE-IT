@@ -2730,7 +2730,11 @@ class BrowserSession(BaseModel):
 			# Take the screenshot using CDP
 			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
 			# Use the internal channel.send method to bypass some of the async wrapper issues
-			result = await cdp_session._impl_obj._channel.send('send', {'method': 'Page.captureScreenshot', 'params': cdp_params})
+			result = await cdp_session._impl_obj._channel.send(
+				'send',
+				None,  # timeout_calculator
+				{'method': 'Page.captureScreenshot', 'params': cdp_params},
+			)
 
 			# The result already contains base64 encoded data
 			base64_screenshot = result.get('data')
@@ -2751,7 +2755,7 @@ class BrowserSession(BaseModel):
 			if cdp_session:
 				try:
 					# Use internal method to ensure proper cleanup
-					await cdp_session._impl_obj._channel.send('detach', {})
+					await cdp_session._impl_obj._channel.send('detach', None, {})
 				except Exception:
 					# Ignore all exceptions during cleanup
 					pass
