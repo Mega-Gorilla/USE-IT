@@ -243,15 +243,15 @@ class TestSequentialAgentsReuse:
 
 		# Agent 2 switches back to first tab
 		agent2_actions = [
-			"""{{
+			"""{
 				"thinking": "Switching to first tab",
 				"evaluation_previous_goal": "Two tabs are open",
 				"memory": "Need to switch to tab 0",
 				"next_goal": "Switch to first tab",
 				"action": [
-					{{"switch_tab": {{"page_id": 0}}}}
+					{"switch_tab": {"page_id": 0}}
 				]
-			}}"""
+			}"""
 		]
 
 		agent2 = Agent(

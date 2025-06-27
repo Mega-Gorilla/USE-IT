@@ -709,6 +709,14 @@ class BrowserSession(BaseModel):
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 		# Use Playwright screenshot directly
+
+		assert self.browser_context and self.is_connected(restart=True)
+		try:
+			page = [p for p in self.browser_context.pages if p.url == page.url][0]
+		except Exception:
+			pass
+		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
+
 		screenshot = await page.screenshot(
 			full_page=False,
 			scale='css',
@@ -717,6 +725,7 @@ class BrowserSession(BaseModel):
 			animations='allow',
 			caret='initial',
 		)
+		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
 		return screenshot_b64
