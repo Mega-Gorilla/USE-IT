@@ -45,7 +45,7 @@ class ChatGoogle(BaseChatModel):
 	A wrapper around Google's Gemini chat model using the genai client.
 
 	This class accepts all genai.Client parameters while adding model,
-	temperature, and config_kwargs parameters for the LLM interface.
+	temperature, and config parameters for the LLM interface.
 
 	Args:
 		model: The Gemini model to use
