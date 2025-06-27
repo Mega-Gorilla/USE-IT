@@ -172,7 +172,6 @@ jobs:
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
           TASK_TEXT="${{ github.event.client_payload.script_args.task_text }}"
           TASK_WEBSITE="${{ github.event.client_payload.script_args.task_website }}"
-          BRANCH="${{ github.event.client_payload.script_args.branch }}"
 
           # Build command using array for cleaner construction
           CMD_ARGS=(
@@ -212,7 +211,6 @@ jobs:
           [[ -n "$TASK_ID" ]] && CMD_ARGS+=("--task-id" "$TASK_ID")
           [[ -n "$TASK_TEXT" ]] && CMD_ARGS+=("--task-text" "$TASK_TEXT")
           [[ -n "$TASK_WEBSITE" ]] && CMD_ARGS+=("--task-website" "$TASK_WEBSITE")
-          [[ -n "$BRANCH" ]] && CMD_ARGS+=("--branch" "$BRANCH")
 
           # Convert array to command string with proper escaping
           printf -v CMD_STRING '%q ' "${CMD_ARGS[@]}"

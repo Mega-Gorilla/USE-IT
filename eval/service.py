@@ -2202,9 +2202,6 @@ if __name__ == '__main__':
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
 	parser.add_argument('--task-website', type=str, default=None, help='Task website for single task mode')
-	parser.add_argument(
-		'--branch', type=str, default=None, help='Git branch for single task mode (defaults to current branch if not provided)'
-	)
 	# Keep task-id for backward compatibility but make it optional
 	parser.add_argument('--task-id', type=str, default=None, help='Optional task ID (auto-generated if not provided)')
 
@@ -2217,6 +2214,10 @@ if __name__ == '__main__':
 	logger.info('Running tasks...')
 	# Run tasks and evaluate
 	load_dotenv()
+
+	# --- Load Environment Variables (Always) ---
+	CONVEX_URL = os.getenv('EVALUATION_TOOL_URL') or ''
+	SECRET_KEY = os.getenv('EVALUATION_TOOL_SECRET_KEY') or ''
 
 	# --- Load Tasks (Either Single Task or from Server) ---
 	tasks = []
@@ -2239,9 +2240,6 @@ if __name__ == '__main__':
 
 	else:
 		# Original multi-task mode - fetch from server
-		CONVEX_URL = os.getenv('EVALUATION_TOOL_URL')
-		SECRET_KEY = os.getenv('EVALUATION_TOOL_SECRET_KEY')
-
 		if not CONVEX_URL or not SECRET_KEY:
 			logger.error('Error: EVALUATION_TOOL_URL or EVALUATION_TOOL_SECRET_KEY environment variables not set.')
 			exit(1)  # Exit if config is missing
@@ -2270,16 +2268,8 @@ if __name__ == '__main__':
 	else:
 		logger.info('Attempting to start a new run on the server...')
 
-	# Get git info, with special handling for single task mode
+	# Get git info
 	git_info = get_git_info()
-
-	# For single task mode, allow branch override or use current branch
-	if args.task_text:
-		if args.branch:
-			git_info['branch'] = args.branch
-			logger.info(f'Single task mode: Using specified branch {args.branch}')
-		else:
-			logger.info(f'Single task mode: Using current git branch {git_info["branch"]}')
 
 	# Collect additional data from args to store with the run
 	additional_run_data = {
