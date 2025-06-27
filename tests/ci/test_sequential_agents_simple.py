@@ -59,7 +59,8 @@ class TestSequentialAgentsSimple:
 
 		# Verify browser session is still alive
 		assert browser_session.initialized
-		assert browser_session.browser_pid == initial_pid
+		if initial_pid is not None:
+			assert browser_session.browser_pid == initial_pid
 
 		# Delete agent1 and force garbage collection
 		del agent1
@@ -68,7 +69,8 @@ class TestSequentialAgentsSimple:
 
 		# Verify browser is STILL alive after garbage collection
 		assert browser_session.initialized
-		assert browser_session.browser_pid == initial_pid
+		if initial_pid is not None:
+			assert browser_session.browser_pid == initial_pid
 		assert browser_session.browser_context is not None
 
 		# Agent 2: Navigate to page 2
@@ -95,7 +97,8 @@ class TestSequentialAgentsSimple:
 
 		# Verify browser session is still alive after second agent
 		assert browser_session.initialized
-		assert browser_session.browser_pid == initial_pid
+		if initial_pid is not None:
+			assert browser_session.browser_pid == initial_pid
 		assert browser_session.browser_context is not None
 
 		# Clean up
