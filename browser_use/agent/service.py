@@ -121,10 +121,11 @@ class Agent(Generic[Context]):
 		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		controller: Controller[Context] = Controller(),
+		controller: Controller[Context] | None = None,
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
+		display_files_in_done_text: bool = True,
 		# Cloud Callbacks
 		register_new_step_callback: (
 			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # Sync callback
@@ -197,7 +198,9 @@ class Agent(Generic[Context]):
 		# Core components
 		self.task = task
 		self.llm = llm
-		self.controller = controller
+		self.controller = (
+			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
+		)
 		self.sensitive_data = sensitive_data
 
 		self.settings = AgentSettings(
