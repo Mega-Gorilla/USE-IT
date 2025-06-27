@@ -1263,9 +1263,11 @@ class Agent(Generic[Context]):
 				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
 				self.eventbus.dispatch(output_event)
 
-			# Wait for cloud auth to complete if in progress
+			# Don't block waiting for cloud auth - let it complete in background
+			# The auth_task will continue running even after agent finishes
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
-				await self.cloud_sync.wait_for_auth()
+				if self.cloud_sync.auth_task and not self.cloud_sync.auth_task.done():
+					logger.info('Cloud authentication still in progress - continuing in background')
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			# Use longer timeout to avoid deadlocks in tests with multiple agents

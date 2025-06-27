@@ -710,7 +710,7 @@ class BrowserSession(BaseModel):
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 		# Use Playwright screenshot directly
 
-		assert self.browser_context and self.is_connected(restart=True)
+		assert self.browser_context
 		try:
 			page = [p for p in self.browser_context.pages if p.url == page.url][0]
 		except Exception:

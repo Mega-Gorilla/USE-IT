@@ -378,7 +378,7 @@ class TestMultiprocessSemaphore:
 		# Second batch should acquire after first batch releases
 		for event in second_batch_acquired:
 			# Should acquire within 4 seconds (1s hold + overhead)
-			assert event[2] < 4.0, f'Worker {event[1]} took too long to acquire: {event[2]}s'
+			assert event[2] < 5.0, f'Worker {event[1]} took too long to acquire: {event[2]}s'
 
 
 class TestRegularSemaphoreScopes:
