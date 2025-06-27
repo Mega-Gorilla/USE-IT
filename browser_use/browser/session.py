@@ -484,6 +484,7 @@ class BrowserSession(BaseModel):
 		copy.browser_context = self.browser_context
 		copy.agent_current_page = self.agent_current_page
 		copy.human_current_page = self.human_current_page
+		copy.browser_pid = self.browser_pid
 
 		return copy
 
