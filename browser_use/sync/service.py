@@ -39,12 +39,13 @@ class CloudSync:
 			if event.event_type == 'CreateAgentStepEvent' and 'step' in dict(event):
 				step = dict(event)['step']
 				logger.debug(f'Got CreateAgentStepEvent with step={step}')
-				# Only trigger on the first step (step=2 because n_steps is incremented before actions)
-				if step == 2 and self.enable_auth and self.auth_client and not self.auth_client.is_authenticated:
+				# Trigger on the first step (step=2 because n_steps is incremented before actions)
+				if step == 2 and self.enable_auth and self.auth_client:
 					if not hasattr(self, 'auth_task') or self.auth_task is None:
 						# Start auth in background
 						if self.session_id:
 							logger.info('Triggering auth on first step event')
+							# Always run auth to show the cloud URL, even if already authenticated
 							self.auth_task = asyncio.create_task(self._background_auth(agent_session_id=self.session_id))
 						else:
 							logger.warning('Cannot start auth - session_id not set yet')
@@ -97,11 +98,23 @@ class CloudSync:
 			logger.warning(f'⚠️ Unexpected error sending event {event}: {type(e).__name__}: {e}')
 
 	async def _background_auth(self, agent_session_id: str) -> None:
-		"""Run authentication in background"""
+		"""Run authentication in background or show cloud URL if already authenticated"""
 		assert self.auth_client, 'enable_auth=True must be set before calling CloudSync_background_auth()'
 		assert self.session_id, 'session_id must be set before calling CloudSync._background_auth() can fire'
 		try:
-			# Run authentication
+			# If already authenticated, just show the cloud URL
+			if self.auth_client.is_authenticated:
+				# Use frontend URL for user-facing links
+				frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
+				session_url = f'{frontend_url.rstrip("/")}/sessions/{agent_session_id}'
+
+				logger.info('\n\n' + '─' * 70)
+				logger.info('🌐  View the details of this run in Browser Use Cloud:')
+				logger.info(f'    👉  {session_url}')
+				logger.info('─' * 70 + '\n')
+				return
+
+			# Otherwise run full authentication
 			success = await self.auth_client.authenticate(
 				agent_session_id=agent_session_id,
 				show_instructions=True,

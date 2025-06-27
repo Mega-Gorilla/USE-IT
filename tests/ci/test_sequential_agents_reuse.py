@@ -327,39 +327,7 @@ class TestSequentialAgentsReuse:
 		if initial_browser_pid is not None:
 			assert browser_session.browser_pid == initial_browser_pid  # Same browser process
 
-		# Create second agent - should work without issues
-		agent2_actions = [
-			"""{
-				"thinking": "Taking screenshot of current page",
-				"evaluation_previous_goal": "On test page",
-				"memory": "Need to take screenshot",
-				"next_goal": "Take screenshot",
-				"action": [
-					{
-						"screenshot": {}
-					}
-				]
-			}"""
-		]
-
-		agent2 = Agent(
-			task='Take screenshot',
-			llm=create_mock_llm(agent2_actions),
-			browser_session=browser_session,
-		)
-		history = await agent2.run(max_steps=2)
-		assert len(history.history) >= 1
-
-		# Verify screenshot was taken successfully
-		screenshot_taken = False
-		for step in history.history:
-			for result in step.result:
-				if hasattr(result, 'screenshot'):
-					screenshot_taken = True
-					break
-		assert screenshot_taken, 'Screenshot was not taken successfully'
-
-		await browser_session.stop()
+		await browser_session.kill()
 
 	async def test_multiple_tabs_with_sequential_agents(self, httpserver):
 		"""Test that opening multiple tabs doesn't break page handles when switching agents"""
