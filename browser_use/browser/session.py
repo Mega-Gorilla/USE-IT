@@ -2610,7 +2610,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
-	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='self')
+	@retry(timeout=30, retries=2, semaphore_limit=1, semaphore_scope='global')
 	async def _take_screenshot_cdp(
 		self, page: Page, width: int = 1920, height: int = 2000, x: int = 0, y: int = 0, scale: int = 1
 	) -> str:
@@ -2632,9 +2632,16 @@ class BrowserSession(BaseModel):
 			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
 
 			# Use Page.captureScreenshot for direct screenshot without Playwright overhead
-			cdp_params = {'format': 'png', 'clip': {'x': x, 'y': y, 'width': width, 'height': height, 'scale': scale}}
+			cdp_params = {
+				'format': 'png',
+				'clip': {'x': x, 'y': y, 'width': width, 'height': height, 'scale': scale},
+				'optimizeForSpeed': True,
+				'captureBeyondViewport': True,
+				'fromSurface': True,
+			}
 
 			# Take the screenshot using CDP
+			# https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot
 			result = await cdp_session.send('Page.captureScreenshot', cdp_params)
 
 			# The result already contains base64 encoded data

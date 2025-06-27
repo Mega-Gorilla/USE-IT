@@ -99,6 +99,11 @@ class TestAgentEventLifecycle:
 	async def test_agent_with_gif_generation(self, mock_llm, browser_session, cloud_sync, event_collector, httpserver):
 		"""Test that GIF generation triggers CreateAgentOutputFileEvent"""
 
+		# Setup cloud sync endpoint
+		httpserver.expect_request('/api/v1/events', method='POST').respond_with_json(
+			{'processed': 1, 'failed': 0, 'results': [{'success': True}]}
+		)
+
 		# Setup a test page
 		httpserver.expect_request('/').respond_with_data('<html><body><h1>GIF Test</h1></body></html>', content_type='text/html')
 		await browser_session.navigate(httpserver.url_for('/'))

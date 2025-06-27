@@ -76,12 +76,14 @@ CHROME_DOCKER_ARGS = [
 	'--disable-dev-shm-usage',
 	'--no-xshm',
 	'--no-zygote',
-	'--single-process',
+	# '--single-process',  # causes "Target page, context or browser has been closed" errors during CDP page.captureScreenshot https://stackoverflow.com/questions/51629151/puppeteer-protocol-error-page-navigate-target-closed
+	'--disable-site-isolation-trials',  # TODO: this might fix screenshots too but could lead to easier bot blocking
 ]
 
+
 CHROME_DISABLE_SECURITY_ARGS = [
-	'--disable-web-security',
 	'--disable-site-isolation-trials',
+	'--disable-web-security',
 	'--disable-features=IsolateOrigins,site-per-process',
 	'--allow-running-insecure-content',
 	'--ignore-certificate-errors',
