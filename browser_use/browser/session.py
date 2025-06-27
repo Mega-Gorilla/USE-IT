@@ -1079,9 +1079,13 @@ class BrowserSession(BaseModel):
 		if not new_child_procs:
 			self.logger.debug(f'❌ Failed to find any new child chrome processes after launching new browser: {new_child_pids}')
 			new_chrome_proc = None
+			# Browser PID detection can fail in some environments (e.g. CI, containers)
+			# This is not critical - the browser is still running and usable
+			self.browser_pid = None
 		elif len(new_child_procs) > 1:
 			self.logger.debug(f'❌ Found multiple new child chrome processes after launching new browser: {new_child_procs}')
 			new_chrome_proc = None
+			self.browser_pid = None
 		else:
 			new_chrome_proc = new_child_procs[0]
 
