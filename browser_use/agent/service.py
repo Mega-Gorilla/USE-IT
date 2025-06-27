@@ -350,7 +350,11 @@ class Agent(Generic[Context]):
 
 			# Always copy sessions that are passed in to avoid agents overwriting each other's agent_current_page and human_current_page by accident
 			# The model_copy() method now handles copying all necessary fields and setting up ownership
-			self.browser_session = browser_session.model_copy()
+			if not browser_session._owns_browser_resources:
+				self.logger.warning(
+					'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
+				)
+				self.browser_session = browser_session.model_copy()
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
