@@ -49,12 +49,6 @@ dependencies = [
 # textual: used for terminal UI
 
 [project.optional-dependencies]
-memory = [
-    # sentence-transformers: depends on pytorch, which does not support python 3.13 yet
-    # faiss-cpu: >= 1.11.0 breaks on some macOS hosts, make sure to test before upgrading
-    "faiss-cpu>=1.10.0",
-    "sentence-transformers>=4.0.2",
-]
 cli = [
     "rich>=14.0.0",
     "click>=8.1.8",
@@ -79,7 +73,7 @@ eval = [
     "psutil>=7.0.0",
 ]
 all = [
-    "browser-use[memory,cli,examples,aws]",
+    "browser-use[cli,examples]",
 ]
 
 # will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
