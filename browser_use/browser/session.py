@@ -59,7 +59,7 @@ GLOBAL_PATCHRIGHT_API_OBJECT = None  # never instantiate the patchright API obje
 GLOBAL_PLAYWRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 GLOBAL_PATCHRIGHT_EVENT_LOOP = None  # track which event loop the global objects belong to
 
-MAX_SCREENSHOT_HEIGHT = 4000
+MAX_SCREENSHOT_HEIGHT = 2000
 
 
 def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
