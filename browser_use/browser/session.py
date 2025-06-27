@@ -218,6 +218,7 @@ class BrowserSession(BaseModel):
 	_logger: logging.Logger | None = PrivateAttr(default=None)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 	_original_browser_session: Any = PrivateAttr(default=None)  # Reference to prevent GC of the original session when copied
+	_owns_browser_resources: bool = PrivateAttr(default=True)  # True if this instance owns and should clean up browser resources
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -351,6 +352,13 @@ class BrowserSession(BaseModel):
 			)
 			return  # nothing to do if keep_alive=True, leave the browser running
 
+		# Only the owner can actually stop the browser
+		if not self._owns_browser_resources:
+			self.logger.debug(f'🔗 BrowserSession.stop() called on a copy, not closing shared browser resources {_hint}')
+			# Still reset our references though
+			self._reset_connection_state()
+			return
+
 		if self.browser_context or self.browser:
 			self.logger.info(f'🛑 Closing {self._connection_str} browser context {_hint} {self.browser or self.browser_context}')
 
@@ -452,20 +460,36 @@ class BrowserSession(BaseModel):
 		# )
 		await self.stop(_hint='(context manager exit)')
 
+	def model_copy(self, **kwargs) -> Self:
+		"""Create a copy of this BrowserSession that shares the browser resources but doesn't own them."""
+		# Create the copy using the parent class method
+		copy = super().model_copy(**kwargs)
+
+		# The copy doesn't own the browser resources
+		copy._owns_browser_resources = False
+
+		# Keep a reference to the original to prevent garbage collection
+		copy._original_browser_session = self
+
+		return copy
+
 	def __del__(self):
 		profile = getattr(self, 'browser_profile', None)
 		keep_alive = getattr(profile, 'keep_alive', None)
 		user_data_dir = getattr(profile, 'user_data_dir', None)
-		status = '🪓 killing pid={self.browser_pid}...' if self.browser_pid else '☠️'
+		owns_browser = getattr(self, '_owns_browser_resources', True)
+		status = f'🪓 killing pid={self.browser_pid}...' if (self.browser_pid and owns_browser) else '☠️'
 		self.logger.debug(
-			f'🗑️ Garbage collected BrowserSession 🆂 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]} keep_alive={keep_alive} {status}'
+			f'🗑️ Garbage collected BrowserSession 🆂 {self.id[-4:]}.{str(id(self.agent_current_page))[-2:]} ref #{str(id(self))[-4:]} keep_alive={keep_alive} owns_browser={owns_browser} {status}'
 		)
-		# Avoid keeping references in __del__ that might prevent garbage collection
-		try:
-			self._kill_child_processes(_hint='(garbage collected)')
-		except TimeoutError:
-			# Never let __del__ raise Timeout exceptions
-			pass
+		# Only kill browser processes if this instance owns them
+		if owns_browser:
+			# Avoid keeping references in __del__ that might prevent garbage collection
+			try:
+				self._kill_child_processes(_hint='(garbage collected)')
+			except TimeoutError:
+				# Never let __del__ raise Timeout exceptions
+				pass
 
 	def _kill_child_processes(self, _hint: str = '') -> None:
 		"""Kill any child processes that might be related to the browser"""
