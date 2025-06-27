@@ -17,6 +17,13 @@ from urllib.parse import urlparse
 import portalocker
 from dotenv import load_dotenv
 
+try:
+	import psutil
+
+	PSUTIL_AVAILABLE = True
+except ImportError:
+	PSUTIL_AVAILABLE = False
+
 load_dotenv()
 
 
@@ -606,6 +613,45 @@ MULTIPROCESS_SEMAPHORE_DIR.mkdir(exist_ok=True)
 MULTIPROCESS_SEMAPHORES: dict[str, portalocker.utils.NamedBoundedSemaphore] = {}
 MULTIPROCESS_SEMAPHORE_LOCK = threading.Lock()
 
+# Global overload detection state
+_last_overload_check = 0.0
+_overload_check_interval = 5.0  # Check every 5 seconds
+_active_retry_operations = 0
+_active_operations_lock = threading.Lock()
+
+
+def _check_system_overload() -> tuple[bool, str]:
+	"""Check if system is overloaded and return (is_overloaded, reason)"""
+	if not PSUTIL_AVAILABLE:
+		return False, ''
+
+	try:
+		# Get system stats
+		cpu_percent = psutil.cpu_percent(interval=0.1)
+		memory = psutil.virtual_memory()
+
+		# Check thresholds
+		reasons = []
+		is_overloaded = False
+
+		if cpu_percent > 85:
+			is_overloaded = True
+			reasons.append(f'CPU: {cpu_percent:.1f}%')
+
+		if memory.percent > 85:
+			is_overloaded = True
+			reasons.append(f'Memory: {memory.percent:.1f}%')
+
+		# Check number of concurrent operations
+		with _active_operations_lock:
+			if _active_retry_operations > 30:
+				is_overloaded = True
+				reasons.append(f'Active operations: {_active_retry_operations}')
+
+		return is_overloaded, ', '.join(reasons)
+	except Exception:
+		return False, ''
+
 
 def retry(
 	wait: float = 3,
@@ -752,6 +798,21 @@ def retry(
 							f'proceeding without concurrency limit'
 						)
 
+			# Track active operations
+			global _last_overload_check, _active_retry_operations
+			with _active_operations_lock:
+				_active_retry_operations += 1
+
+			# Check for system overload (rate limited)
+			current_time = time.time()
+			if current_time - _last_overload_check > _overload_check_interval:
+				_last_overload_check = current_time
+				is_overloaded, reason = _check_system_overload()
+				if is_overloaded:
+					logger.warning(
+						f'⚠️  System overload detected: {reason}. Consider reducing concurrent operations to prevent hanging.'
+					)
+
 			# Execute function with retries
 			start_time = time.time()
 			last_exception = None
@@ -791,6 +852,10 @@ def retry(
 							raise
 
 			finally:
+				# Decrement active operations counter
+				with _active_operations_lock:
+					_active_retry_operations = max(0, _active_retry_operations - 1)
+
 				if semaphore_acquired and semaphore:
 					if semaphore_scope == 'multiprocess' and multiprocess_lock:
 						# Release the lock object for portalocker
