@@ -1,0 +1,118 @@
+"""
+Utilities for creating optimized Pydantic schemas for LLM usage.
+"""
+
+from typing import Any, cast
+
+from pydantic import BaseModel
+
+
+def create_optimized_json_schema(model: type[BaseModel]) -> dict[str, Any]:
+	"""
+	Create the most optimized schema by flattening all $ref/$defs while preserving
+	FULL descriptions and ALL action definitions. Also ensures OpenAI strict mode compatibility.
+
+	Args:
+		model: The Pydantic model to optimize
+
+	Returns:
+		Optimized schema with all $refs resolved and strict mode compatibility
+	"""
+	# Generate original schema
+	original_schema = model.model_json_schema()
+
+	# Extract $defs for reference resolution, then flatten everything
+	defs_lookup = original_schema.get('$defs', {})
+
+	def optimize_schema(obj, defs_lookup=None):
+		"""Apply all optimization techniques including flattening all $ref/$defs"""
+		if isinstance(obj, dict):
+			optimized = {}
+
+			# Skip unnecessary fields AND $defs (we'll inline everything)
+			skip_fields = ['additionalProperties', '$defs']
+
+			for key, value in obj.items():
+				if key in skip_fields:
+					continue
+
+				# Skip titles completely
+				if key == 'title':
+					continue
+
+				# Preserve FULL descriptions without truncation
+				elif key == 'description':
+					optimized[key] = value
+
+				# Add additionalProperties: false for object types (tighten unknown keys)
+				elif key == 'type' and value == 'object':
+					optimized[key] = value
+					# Add additionalProperties: false to prevent stray fields
+					if 'additionalProperties' not in obj:
+						optimized['additionalProperties'] = False
+
+				# FLATTEN: Resolve $ref by inlining the actual definition
+				elif key == '$ref' and defs_lookup:
+					ref_path = value.split('/')[-1]  # Get the definition name from "#/$defs/SomeName"
+					if ref_path in defs_lookup:
+						# Get the referenced definition and flatten it
+						referenced_def = defs_lookup[ref_path]
+						flattened_ref = optimize_schema(referenced_def, defs_lookup)
+
+						# IMPORTANT: Preserve any description that was alongside the $ref
+						if isinstance(obj, dict) and 'description' in obj:
+							if isinstance(flattened_ref, dict):
+								flattened_ref = flattened_ref.copy()
+								flattened_ref['description'] = obj['description']
+
+						return flattened_ref
+
+				# Keep all anyOf structures (action unions) and resolve any $refs within
+				elif key == 'anyOf' and isinstance(value, list):
+					optimized[key] = [optimize_schema(item, defs_lookup) for item in value]
+
+				# Recursively optimize nested structures
+				elif key in ['properties', 'items']:
+					optimized[key] = optimize_schema(value, defs_lookup)
+
+				# Keep essential validation fields
+				elif key in ['type', 'required', 'minimum', 'maximum', 'minItems', 'maxItems', 'pattern', 'default']:
+					optimized[key] = value if not isinstance(value, (dict, list)) else optimize_schema(value, defs_lookup)
+
+				# Recursively process all other fields
+				else:
+					optimized[key] = optimize_schema(value, defs_lookup) if isinstance(value, (dict, list)) else value
+
+			return optimized
+
+		elif isinstance(obj, list):
+			return [optimize_schema(item, defs_lookup) for item in obj]
+		return obj
+
+	# Create optimized schema with flattening
+	optimized_schema = optimize_schema(original_schema, defs_lookup)
+
+	_make_strict_compatible(optimized_schema)
+
+	# Ensure we return a Dict[str, Any] since original_schema is always a dict
+	return cast(dict[str, Any], optimized_schema)
+
+
+# Ensure strict mode compatibility: ALL properties must be required
+def _make_strict_compatible(schema):
+	"""Ensure all properties are required for OpenAI strict mode"""
+	if isinstance(schema, dict):
+		# First recursively apply to nested objects
+		for key, value in schema.items():
+			if isinstance(value, (dict, list)) and key != 'required':
+				_make_strict_compatible(value)
+
+		# Then update required for this level
+		if 'properties' in schema and 'type' in schema and schema['type'] == 'object':
+			# Add all properties to required array
+			all_props = list(schema['properties'].keys())
+			schema['required'] = all_props  # Set all properties as required
+
+	elif isinstance(schema, list):
+		for item in schema:
+			_make_strict_compatible(item)
