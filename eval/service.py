@@ -1325,8 +1325,8 @@ async def run_agent_with_browser(
 	# Check for deprecated memory parameters
 	if enable_memory:
 		raise ValueError(
-			"Memory support has been removed as of version 0.3.2. "
-			"The agent context for memory is significantly improved and no longer requires the old memory system. "
+			'Memory support has been removed as of version 0.3.2. '
+			'The agent context for memory is significantly improved and no longer requires the old memory system. '
 			"Please remove the 'enable_memory' parameter."
 		)
 
