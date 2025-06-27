@@ -125,7 +125,6 @@ class Agent(Generic[Context]):
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
-		display_files_in_done_text: bool = True,
 		# Cloud Callbacks
 		register_new_step_callback: (
 			Callable[['BrowserStateSummary', 'AgentOutput', int], None]  # Sync callback
@@ -182,6 +181,7 @@ class Agent(Generic[Context]):
 		task_id: str | None = None,
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
+		display_files_in_done_text: bool = True,
 	):
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
