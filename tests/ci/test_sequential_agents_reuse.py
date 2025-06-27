@@ -331,17 +331,17 @@ class TestSequentialAgentsReuse:
 
 		# Create second agent - should work without issues
 		agent2_actions = [
-			"""{{
+			"""{
 				"thinking": "Taking screenshot of current page",
 				"evaluation_previous_goal": "On test page",
 				"memory": "Need to take screenshot",
 				"next_goal": "Take screenshot",
 				"action": [
-					{{
-						"screenshot": {{}}
-					}}
+					{
+						"screenshot": {}
+					}
 				]
-			}}"""
+			}"""
 		]
 
 		agent2 = Agent(

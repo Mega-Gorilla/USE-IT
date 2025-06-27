@@ -716,15 +716,23 @@ class BrowserSession(BaseModel):
 		except Exception:
 			pass
 		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
+		await page.bring_to_front()
 
-		screenshot = await page.screenshot(
-			full_page=False,
-			scale='css',
-			timeout=self.browser_profile.default_timeout or 30000,
-			clip=FloatRect(**clip) if clip else None,
-			animations='allow',
-			caret='initial',
-		)
+		try:
+			screenshot = await page.screenshot(
+				full_page=False,
+				scale='css',
+				timeout=self.browser_profile.default_timeout or 30000,
+				clip=FloatRect(**clip) if clip else None,
+				animations='allow',
+				caret='initial',
+			)
+		except Exception as err:
+			if 'timeout' in str(err).lower():
+				self.logger.warning('🚨 Screenshot timed out, resetting connection state and restarting browser...')
+				self._reset_connection_state()
+				await self.start()
+			raise err
 		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
@@ -1650,6 +1658,11 @@ class BrowserSession(BaseModel):
 			raise IndexError('Tab index out of range')
 		page = pages[tab_index]
 		self.agent_current_page = page
+
+		# Invalidate cached state since we've switched to a different tab
+		# The cached state contains DOM elements and selector map from the previous tab
+		self._cached_browser_state_summary = None
+		self._cached_clickable_element_hashes = None
 
 		return page
 
@@ -3235,6 +3248,7 @@ class BrowserSession(BaseModel):
 
 		# Update both tab references - agent wants this tab, and it's now in the foreground
 		self.agent_current_page = page
+		await self.agent_current_page.bring_to_front()  # crucial for screenshot to work
 
 		# in order for a human watching to be able to follow along with what the agent is doing
 		# update the human's active tab to match the agent's
@@ -3245,6 +3259,11 @@ class BrowserSession(BaseModel):
 			pass
 
 		self.human_current_page = page
+
+		# Invalidate cached state since we've switched to a different tab
+		# The cached state contains DOM elements and selector map from the previous tab
+		self._cached_browser_state_summary = None
+		self._cached_clickable_element_hashes = None
 
 		try:
 			await page.wait_for_load_state()
