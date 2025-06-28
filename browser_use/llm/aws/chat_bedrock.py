@@ -1,5 +1,3 @@
-# pyright: reportMissingImports=false
-
 import json
 from dataclasses import dataclass
 from os import getenv
@@ -14,8 +12,8 @@ from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 if TYPE_CHECKING:
-	from boto3 import client as AwsClient
-	from boto3.session import Session
+	from boto3 import client as AwsClient  # type: ignore
+	from boto3.session import Session  # type: ignore
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -59,10 +57,10 @@ class ChatAWSBedrock(BaseChatModel):
 	def provider(self) -> str:
 		return 'aws_bedrock'
 
-	def _get_client(self) -> 'AwsClient':
+	def _get_client(self) -> 'AwsClient':  # type: ignore
 		"""Get the AWS Bedrock client."""
 		try:
-			from boto3 import client as AwsClient
+			from boto3 import client as AwsClient  # type: ignore
 		except ImportError:
 			raise ImportError(
 				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
@@ -171,7 +169,7 @@ class ChatAWSBedrock(BaseChatModel):
 			Either a string response or an instance of output_format
 		"""
 		try:
-			from botocore.exceptions import ClientError
+			from botocore.exceptions import ClientError  # type: ignore
 		except ImportError:
 			raise ImportError(
 				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
