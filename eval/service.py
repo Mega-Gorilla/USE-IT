@@ -60,6 +60,7 @@ from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.openai.chat import ChatOpenAI
+from pydantic import BaseModel
 
 MAX_IMAGE = 5
 
@@ -800,9 +801,9 @@ if not SERPER_API_KEY:
 	logger.warning('SERPER_API_KEY is not set. Search functionality will not be available.')
 
 
-def create_controller_with_serp_search():
+def create_controller_with_serp_search(output_model: type[BaseModel] | None = None):
 	"""Create a controller with SERP search instead of Google search"""
-	controller = Controller(exclude_actions=['search_google'])
+	controller = Controller(exclude_actions=['search_google'], output_model=output_model)
 
 	@controller.registry.action('Search the web for a specific query')
 	async def search_web(query: str):
@@ -840,12 +841,12 @@ def create_controller_with_serp_search():
 	return controller
 
 
-def create_controller(use_serp: bool = False):
+def create_controller(use_serp: bool = False, output_model: type[BaseModel] | None = None):
 	"""Create a controller, optionally with SERP search"""
 	if use_serp:
-		return create_controller_with_serp_search()
+		return create_controller_with_serp_search(output_model=output_model)
 	else:
-		return Controller()
+		return Controller(output_model=output_model)
 
 
 def get_llm(model_name: str):
@@ -1073,6 +1074,8 @@ class Task:
 		self.login_type = kwargs.get('login_type', None)
 		self.category = kwargs.get('category', None)
 		self.output_schema = kwargs.get('output_schema', None)  # Add structured output schema support
+		if self.output_schema:
+			self.output_schema = BaseModel.model_validate_json(self.output_schema)
 
 		# Store any additional optional fields
 		known_fields = {'website', 'reference_length', 'level', 'cluster_id', 'login_cookie', 'login_type', 'category', 'output_schema'}
@@ -1321,7 +1324,7 @@ async def run_agent_with_browser(
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
 	# Create controller, optionally with SERP search
-	controller = create_controller(use_serp=use_serp)
+	controller = create_controller(use_serp=use_serp, output_model=task.output_schema)
 
 	# Check for deprecated memory parameters
 	if enable_memory:
@@ -1330,7 +1333,6 @@ async def run_agent_with_browser(
 			'The agent context for memory is significantly improved and no longer requires the old memory system. '
 			"Please remove the 'enable_memory' parameter."
 		)
-
 
 
 	agent = Agent(
