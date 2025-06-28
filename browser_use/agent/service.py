@@ -915,9 +915,7 @@ class Agent(Generic[Context]):
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
-		# Determine output format based on whether we have a structured output schema
-		output_format = self.AgentOutput
-		response = await self.llm.ainvoke(input_messages, output_format=output_format)
+		response = await self.llm.ainvoke(input_messages, output_format=self.AgentOutput)
 		parsed = response.completion
 
 		# cut the number of actions to max_actions_per_step if needed

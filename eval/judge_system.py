@@ -287,8 +287,6 @@ async def comprehensive_judge(
 	# Build error categories dynamically from enum
 	error_categories_text = ', '.join([category.value for category in ErrorCategory])
 
-
-
 	# Construct the evaluation prompt
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
 
@@ -656,8 +654,6 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		final_result = result_data.get('final_result_response', '')
 		last_message = result_data.get('last_message', '')
 		screenshot_paths = result_data.get('screenshot_paths', [])
-		
-
 
 		# Run comprehensive evaluation
 		judge_result = await judge_with_retry(
