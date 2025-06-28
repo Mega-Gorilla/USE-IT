@@ -155,6 +155,13 @@ class ChatLangchain(BaseChatModel):
 				except AttributeError:
 					# Fall back to manual parsing if with_structured_output is not available
 					response = await self.chat.ainvoke(langchain_messages)  # type: ignore
+
+					if not isinstance(response, 'LangChainAIMessage'):
+						raise ModelProviderError(
+							message=f'Response is not an AIMessage: {type(response)}',
+							model=self.name,
+						)
+
 					content = response.content if hasattr(response, 'content') else str(response)
 
 					try:

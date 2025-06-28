@@ -64,7 +64,6 @@ examples = [
     "stagehand-py>=0.3.6",
     "browserbase>=0.4.0",
     "langchain-openai>=0.3.26",
-    "langchain-core>=0.3.0",
 ]
 eval = [
     "lmnr[all]>=0.6.11",
@@ -73,7 +72,7 @@ eval = [
     "psutil>=7.0.0",
 ]
 all = [
-    "browser-use[cli,examples]",
+    "browser-use[cli,examples,aws]",
 ]
 
 # will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
@@ -187,4 +186,6 @@ dev-dependencies = [
     "lmnr[all]>=0.6.13",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-timeout>=2.4.0",
+    "boto3>=1.38.45",
+    "langchain-openai>=0.3.26"
 ]
