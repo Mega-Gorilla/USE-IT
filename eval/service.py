@@ -1087,6 +1087,8 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 		if isinstance(schema, str):
 			schema = json.loads(schema)
 
+		logger.debug(f'Creating Pydantic model from schema: {schema}')
+
 		# Initialize paths for cleanup
 		schema_path = None
 		model_path = None
@@ -1104,12 +1106,13 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 			generate(
 				input_=schema_path,
 				output=model_path,
-				output_model_type=DataModelType.PydanticBaseModel,
+				output_model_type=DataModelType.PydanticV2BaseModel,
 				class_name=model_name,
 			)
 
 			# Read the generated Python code
 			generated_code = model_path.read_text()
+			logger.debug(f'Generated Pydantic model code:\n{generated_code}')
 
 			# Create a module and execute the generated code
 			spec = importlib.util.spec_from_loader(f'dynamic_model_{model_name}', loader=None)
@@ -1123,12 +1126,15 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 
 			# Get the generated model class
 			if hasattr(module, model_name):
-				return getattr(module, model_name)
+				model_class = getattr(module, model_name)
+				logger.debug(f'Successfully created Pydantic model: {model_class}')
+				return model_class
 			else:
 				# Fallback: look for any BaseModel subclass in the module
 				for attr_name in dir(module):
 					attr = getattr(module, attr_name)
 					if isinstance(attr, type) and issubclass(attr, BaseModel) and attr != BaseModel:
+						logger.debug(f'Using fallback model class: {attr}')
 						return attr
 
 				raise ValueError('No Pydantic model class found in generated code')
@@ -1152,7 +1158,7 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 
 		try:
 			# Fallback to basic implementation if datamodel-code-generator is not available
-			from typing import Any
+			from typing import Any, Optional
 
 			from pydantic import create_model
 
@@ -1191,9 +1197,7 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 				if field_name in required_fields:
 					field_definitions[field_name] = (field_type, ...)  # Required field
 				else:
-					from typing import Union
-
-					optional_type = Union[field_type, None]
+					optional_type = Optional[field_type]  # Use Optional instead of Union[T, None]
 					field_definitions[field_name] = (optional_type, None)  # Optional field with default None
 
 			# Create the dynamic model using create_model
