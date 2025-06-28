@@ -1052,6 +1052,82 @@ async def reformat_agent_history(
 	return results
 
 
+def create_pydantic_model_from_schema(schema: dict, model_name: str = "DynamicModel") -> type[BaseModel]:
+	"""
+	Convert JSON schema to Pydantic model class.
+	
+	Args:
+		schema: JSON schema dictionary
+		model_name: Name for the generated model class
+		
+	Returns:
+		Pydantic model class that can be used with Controller(output_model=...)
+	
+	Example:
+		schema = {
+			"type": "object",
+			"properties": {
+				"name": {"type": "string"},
+				"age": {"type": "integer"},
+				"email": {"type": "string"}
+			},
+			"required": ["name", "age"]
+		}
+		PersonModel = create_pydantic_model_from_schema(schema, "Person")
+		controller = Controller(output_model=PersonModel)
+	"""
+	from typing import List, Dict, Any
+	from pydantic import create_model
+	
+	def json_type_to_python_type(json_type: str, format_type: str = None):
+		"""Map JSON schema types to Python types"""
+		from typing import Union
+		if json_type == "string":
+			return str
+		elif json_type == "integer":
+			return int
+		elif json_type == "number":
+			return float
+		elif json_type == "boolean":
+			return bool
+		elif json_type == "array":
+			return List[Any]  # Could be improved to handle item types
+		elif json_type == "object":
+			return Dict[str, Any]  # Could be improved to handle nested objects
+		else:
+			return Any
+	
+	# Handle case where schema might be a string (JSON)
+	if isinstance(schema, str):
+		schema = json.loads(schema)
+	
+	# Extract properties and required fields from schema
+	properties = schema.get("properties", {})
+	required_fields = schema.get("required", [])
+	
+	# Build field definitions for create_model
+	field_definitions = {}
+	
+	for field_name, field_schema in properties.items():
+		field_type = json_type_to_python_type(field_schema.get("type"))
+		
+		# Handle required vs optional fields
+		if field_name in required_fields:
+			field_definitions[field_name] = (field_type, ...)  # Required field
+		else:
+			from typing import Union
+			optional_type = Union[field_type, None]
+			field_definitions[field_name] = (optional_type, None)  # Optional field with default None
+	
+	# Create the dynamic model using create_model
+	try:
+		return create_model(model_name, **field_definitions)
+	except Exception as e:
+		logger.error(f"Failed to create Pydantic model from schema: {e}")
+		logger.error(f"Schema: {schema}")
+		raise ValueError(f"Invalid JSON schema: {e}") from e
+
+
 class Task:
 	def __init__(self, task_id, confirmed_task, **kwargs):
 		# Validate required fields
@@ -1075,7 +1151,13 @@ class Task:
 		self.category = kwargs.get('category', None)
 		self.output_schema = kwargs.get('output_schema', None)  # Add structured output schema support
 		if self.output_schema:
-			self.output_schema = BaseModel.model_validate_json(self.output_schema)
+			# Convert JSON schema to Pydantic model class
+			self.output_model = create_pydantic_model_from_schema(
+				self.output_schema, 
+				f"Task_{self.task_id}_Output"
+			)
+		else:
+			self.output_model = None
 
 		# Store any additional optional fields
 		known_fields = {'website', 'reference_length', 'level', 'cluster_id', 'login_cookie', 'login_type', 'category', 'output_schema'}
@@ -1323,8 +1405,8 @@ async def run_agent_with_browser(
 	planner_interval: int = 1,
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
-	# Create controller, optionally with SERP search
-	controller = create_controller(use_serp=use_serp, output_model=task.output_schema)
+	# Create controller, optionally with SERP search and structured output
+	controller = create_controller(use_serp=use_serp, output_model=task.output_model)
 
 	# Check for deprecated memory parameters
 	if enable_memory:
