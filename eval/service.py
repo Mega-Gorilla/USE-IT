@@ -1054,7 +1054,7 @@ async def reformat_agent_history(
 
 def create_pydantic_model_from_schema(schema: dict, model_name: str = "DynamicModel") -> type[BaseModel]:
 	"""
-	Convert JSON schema to Pydantic model class.
+	Convert JSON schema to Pydantic model class using datamodel-code-generator.
 	
 	Args:
 		schema: JSON schema dictionary
@@ -1076,52 +1076,120 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = "DynamicMo
 		PersonModel = create_pydantic_model_from_schema(schema, "Person")
 		controller = Controller(output_model=PersonModel)
 	"""
-	from typing import List, Dict, Any
-	from pydantic import create_model
-	
-	def json_type_to_python_type(json_type: str, format_type: str = None):
-		"""Map JSON schema types to Python types"""
-		from typing import Union
-		if json_type == "string":
-			return str
-		elif json_type == "integer":
-			return int
-		elif json_type == "number":
-			return float
-		elif json_type == "boolean":
-			return bool
-		elif json_type == "array":
-			return List[Any]  # Could be improved to handle item types
-		elif json_type == "object":
-			return Dict[str, Any]  # Could be improved to handle nested objects
-		else:
-			return Any
-	
-	# Handle case where schema might be a string (JSON)
-	if isinstance(schema, str):
-		schema = json.loads(schema)
-	
-	# Extract properties and required fields from schema
-	properties = schema.get("properties", {})
-	required_fields = schema.get("required", [])
-	
-	# Build field definitions for create_model
-	field_definitions = {}
-	
-	for field_name, field_schema in properties.items():
-		field_type = json_type_to_python_type(field_schema.get("type"))
-		
-		# Handle required vs optional fields
-		if field_name in required_fields:
-			field_definitions[field_name] = (field_type, ...)  # Required field
-		else:
-			from typing import Union
-			optional_type = Union[field_type, None]
-			field_definitions[field_name] = (optional_type, None)  # Optional field with default None
-	
-	# Create the dynamic model using create_model
 	try:
+		from datamodel_code_generator import generate, PythonDataType
+		from datamodel_code_generator.parser.json_schema import JsonSchemaParser
+		import tempfile
+		from pathlib import Path
+		import importlib.util
+		
+		# Handle case where schema might be a string (JSON)
+		if isinstance(schema, str):
+			schema = json.loads(schema)
+		
+		# Create temporary files for input schema and output model
+		with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as schema_file:
+			json.dump(schema, schema_file, indent=2)
+			schema_path = Path(schema_file.name)
+		
+		with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as model_file:
+			model_path = Path(model_file.name)
+		
+		try:
+			# Generate Pydantic model code using datamodel-code-generator
+			generate(
+				input_=schema_path,
+				output=model_path,
+				input_file_type='json_schema',
+				output_model_type=PythonDataType.PydanticV2DataClass,
+				class_name=model_name,
+			)
+			
+			# Read the generated Python code
+			generated_code = model_path.read_text()
+			
+			# Create a module and execute the generated code
+			spec = importlib.util.spec_from_loader(f"dynamic_model_{model_name}", loader=None)
+			if spec is None:
+				raise ValueError("Failed to create module spec")
+			
+			module = importlib.util.module_from_spec(spec)
+			
+			# Execute the generated code in the module's namespace
+			exec(generated_code, module.__dict__)
+			
+			# Get the generated model class
+			if hasattr(module, model_name):
+				return getattr(module, model_name)
+			else:
+				# Fallback: look for any BaseModel subclass in the module
+				for attr_name in dir(module):
+					attr = getattr(module, attr_name)
+					if (isinstance(attr, type) and 
+						issubclass(attr, BaseModel) and 
+						attr != BaseModel):
+						return attr
+				
+				raise ValueError(f"No Pydantic model class found in generated code")
+		
+		finally:
+			# Clean up temporary files
+			try:
+				schema_path.unlink()
+				model_path.unlink()
+			except Exception as cleanup_error:
+				logger.warning(f"Failed to cleanup temporary files: {cleanup_error}")
+	
+	except ImportError as e:
+		logger.error(f"datamodel-code-generator not available: {e}")
+		logger.error("Falling back to basic schema conversion")
+		
+		# Fallback to basic implementation if datamodel-code-generator is not available
+		from typing import List, Dict, Any
+		from pydantic import create_model
+		
+		def json_type_to_python_type(json_type: str):
+			"""Map JSON schema types to Python types"""
+			if json_type == "string":
+				return str
+			elif json_type == "integer":
+				return int
+			elif json_type == "number":
+				return float
+			elif json_type == "boolean":
+				return bool
+			elif json_type == "array":
+				return List[Any]
+			elif json_type == "object":
+				return Dict[str, Any]
+			else:
+				return Any
+		
+		# Handle case where schema might be a string (JSON)
+		if isinstance(schema, str):
+			schema = json.loads(schema)
+		
+		# Extract properties and required fields from schema
+		properties = schema.get("properties", {})
+		required_fields = schema.get("required", [])
+		
+		# Build field definitions for create_model
+		field_definitions = {}
+		
+		for field_name, field_schema in properties.items():
+			field_type = json_type_to_python_type(field_schema.get("type"))
+			
+			# Handle required vs optional fields
+			if field_name in required_fields:
+				field_definitions[field_name] = (field_type, ...)  # Required field
+			else:
+				from typing import Union
+				optional_type = Union[field_type, None]
+				field_definitions[field_name] = (optional_type, None)  # Optional field with default None
+		
+		# Create the dynamic model using create_model
 		return create_model(model_name, **field_definitions)
+	
 	except Exception as e:
 		logger.error(f"Failed to create Pydantic model from schema: {e}")
 		logger.error(f"Schema: {schema}")
