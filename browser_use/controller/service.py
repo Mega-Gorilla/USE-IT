@@ -82,8 +82,8 @@ class Controller(Generic[Context]):
 			class ExtendedOutputModel(BaseModel):  # type: ignore
 				success: bool = True
 				data: output_model  # type: ignore
-			
-			# Rebuild the model to resolve any forward references
+
+			# This is for the eval service if we create the basemodel dynamically
 			ExtendedOutputModel.model_rebuild()
 
 			@self.registry.action(
