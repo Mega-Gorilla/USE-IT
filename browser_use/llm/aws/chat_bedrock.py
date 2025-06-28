@@ -59,7 +59,7 @@ class ChatAWSBedrock(BaseChatModel):
 	def provider(self) -> str:
 		return 'aws_bedrock'
 
-	def _get_client(self) -> AwsClient:
+	def _get_client(self) -> 'AwsClient':
 		"""Get the AWS Bedrock client."""
 		try:
 			from boto3 import client as AwsClient
