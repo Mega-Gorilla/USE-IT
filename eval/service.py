@@ -1072,9 +1072,10 @@ class Task:
 		self.login_cookie = kwargs.get('login_cookie', None)
 		self.login_type = kwargs.get('login_type', None)
 		self.category = kwargs.get('category', None)
+		self.output_schema = kwargs.get('output_schema', None)  # Add structured output schema support
 
 		# Store any additional optional fields
-		known_fields = {'website', 'reference_length', 'level', 'cluster_id', 'login_cookie', 'login_type', 'category'}
+		known_fields = {'website', 'reference_length', 'level', 'cluster_id', 'login_cookie', 'login_type', 'category', 'output_schema'}
 		self.additional_fields = {k: v for k, v in kwargs.items() if k not in known_fields}
 
 		# Make all additional fields accessible as attributes
@@ -1083,7 +1084,7 @@ class Task:
 
 	def __str__(self):
 		# Include main fields and indicate if there are additional fields
-		base_str = f'Task(task_id={self.task_id}, confirmed_task={self.confirmed_task}, website={self.website}, reference_length={self.reference_length}, level={self.level}, cluster_id={self.cluster_id}, login_cookie={self.login_cookie}, login_type={self.login_type}, category={self.category}'
+		base_str = f'Task(task_id={self.task_id}, confirmed_task={self.confirmed_task}, website={self.website}, reference_length={self.reference_length}, level={self.level}, cluster_id={self.cluster_id}, login_cookie={self.login_cookie}, login_type={self.login_type}, category={self.category}, output_schema={self.output_schema}'
 		if self.additional_fields:
 			additional_str = ', '.join(f'{k}={v}' for k, v in self.additional_fields.items())
 			base_str += f', {additional_str}'
@@ -1330,6 +1331,12 @@ async def run_agent_with_browser(
 			"Please remove the 'enable_memory' parameter."
 		)
 
+	# Extract output_schema from task if available
+	output_schema = None
+	if hasattr(task, 'output_schema') and task.output_schema:
+		output_schema = task.output_schema
+		logger.info(f'🎯 Task {task.task_id}: Using structured output schema: {output_schema}')
+
 	agent = Agent(
 		task=task.confirmed_task,
 		llm=llm,
@@ -1340,6 +1347,7 @@ async def run_agent_with_browser(
 		validate_output=validate_output,
 		planner_llm=planner_llm,
 		planner_interval=planner_interval,
+		output_schema=output_schema,  # Pass the structured output schema
 		source='eval_platform',
 	)
 	# get last message

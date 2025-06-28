@@ -253,6 +253,7 @@ async def comprehensive_judge(
 	screenshot_paths: list[str],
 	model: BaseChatModel,
 	max_images: int = 10,
+	output_schema: dict[str, Any] | None = None,
 ) -> JudgeResult:
 	"""
 	Comprehensive judge that evaluates browser-use agent runs with detailed structured feedback.
@@ -265,6 +266,7 @@ async def comprehensive_judge(
 		screenshot_paths: List of screenshot file paths from execution
 		model: The LLM model to use for evaluation
 		max_images: Maximum number of images to include in evaluation
+		output_schema: Structured output schema for validation
 	"""
 
 	# Prepare inputs with length limits
@@ -286,6 +288,23 @@ async def comprehensive_judge(
 
 	# Build error categories dynamically from enum
 	error_categories_text = ', '.join([category.value for category in ErrorCategory])
+
+	# Add structured output validation section if schema is provided
+	structured_output_section = ""
+	if output_schema:
+		structured_output_section = f"""
+
+**STRUCTURED OUTPUT VALIDATION:**
+This task required structured output according to the following schema:
+{json.dumps(output_schema, indent=2)}
+
+When evaluating task completion, you MUST verify that:
+1. The final result contains properly formatted JSON that conforms to the required schema
+2. All required fields are present and have the correct data types
+3. The structured data is meaningful and accurate for the task
+
+If the output schema was provided but the final result doesn't contain valid structured JSON conforming to the schema, this significantly impacts the task satisfaction score.
+"""
 
 	# Construct the evaluation prompt
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
@@ -323,7 +342,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - Calls done action only when task complete or impossible to continue - not too early
 - If the agent needs to repeat the same sub task multiple times & has a good trajectory, but hits the max step limit its still very good and can pass the evaluation
 - Analyse the screenshots. Each interactive element should have exactly one color bounding box. 
-
+{structured_output_section}
 **EVALUATION CRITERIA:**
 1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
 2. **Tool Usage**: How well did the tools work? -Do they work as expected?
@@ -544,6 +563,7 @@ async def judge_with_retry(
 	model: BaseChatModel,
 	max_retries: int = 3,
 	max_images: int = 10,
+	output_schema: dict[str, Any] | None = None,
 ) -> JudgeResult:
 	"""
 	Judge with retry logic for robustness.
@@ -557,6 +577,7 @@ async def judge_with_retry(
 		model: The LLM model to use for evaluation
 		max_retries: Maximum number of retry attempts
 		max_images: Maximum number of images to include in evaluation
+		output_schema: Structured output schema for validation
 	"""
 	for attempt in range(max_retries):
 		try:
@@ -568,6 +589,7 @@ async def judge_with_retry(
 				screenshot_paths,
 				model,
 				max_images,
+				output_schema,
 			)
 		except Exception as e:
 			if attempt == max_retries - 1:
@@ -654,6 +676,13 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		final_result = result_data.get('final_result_response', '')
 		last_message = result_data.get('last_message', '')
 		screenshot_paths = result_data.get('screenshot_paths', [])
+		
+		# Extract output schema if available from task data
+		output_schema = None
+		task_data = result_data.get('task_data', {})
+		if isinstance(task_data, dict) and 'output_schema' in task_data:
+			output_schema = task_data['output_schema']
+			logger.info(f'🎯 Found output schema for task {task_folder.name}: {output_schema}')
 
 		# Run comprehensive evaluation
 		judge_result = await judge_with_retry(
@@ -664,6 +693,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 			screenshot_paths=screenshot_paths,
 			model=model,
 			max_images=max_images,
+			output_schema=output_schema,  # Pass the output schema
 		)
 
 		# Convert to dict for storage
