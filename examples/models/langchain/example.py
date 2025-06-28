@@ -11,7 +11,7 @@ This example demonstrates how to:
 
 import asyncio
 
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI  # pyright: ignore
 from lmnr import Laminar
 
 from browser_use import Agent

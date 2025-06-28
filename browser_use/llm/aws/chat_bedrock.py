@@ -12,9 +12,9 @@ from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 try:
-	from boto3 import client as AwsClient
-	from boto3.session import Session
-	from botocore.exceptions import ClientError
+	from boto3 import client as AwsClient  # pyright: ignore
+	from boto3.session import Session  # pyright: ignore
+	from botocore.exceptions import ClientError  # pyright: ignore
 except ImportError:
 	raise ImportError(
 		'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'

@@ -1,15 +1,15 @@
 import json
 from typing import overload
 
-from langchain_core.messages import (
+from langchain_core.messages import (  # pyright: ignore
 	AIMessage,
 	HumanMessage,
 	SystemMessage,
 )
-from langchain_core.messages import (
+from langchain_core.messages import (  # pyright: ignore
 	ToolCall as LangChainToolCall,
 )
-from langchain_core.messages.base import BaseMessage as LangChainBaseMessage
+from langchain_core.messages.base import BaseMessage as LangChainBaseMessage  # pyright: ignore
 
 from browser_use.llm.messages import (
 	AssistantMessage,

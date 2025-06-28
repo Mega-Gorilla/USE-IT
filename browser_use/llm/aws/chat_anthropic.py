@@ -22,7 +22,7 @@ from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 if TYPE_CHECKING:
-	from boto3.session import Session
+	from boto3.session import Session  # pyright: ignore
 
 
 T = TypeVar('T', bound=BaseModel)
