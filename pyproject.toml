@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.4.0"
+version = "0.4.1"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -124,6 +124,7 @@ include = [
     "!browser_use/**/tests/*.py",
     "!browser_use/**/tests.py",
     "browser_use/agent/system_prompt.md",
+    "browser_use/agent/system_prompt_no_thinking.md",
     "browser_use/dom/buildDomTree.js",
     "!tests/**/*.py",
 ]
