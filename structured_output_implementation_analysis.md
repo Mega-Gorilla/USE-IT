@@ -2,13 +2,13 @@
 
 ## Overview
 
-The structured output functionality has been successfully implemented throughout the browser-use evaluation system, enabling tasks to specify JSON schemas for agent outputs and having the judge system validate conformance to these schemas.
+The structured output functionality implementation in the browser-use evaluation system works by converting JSON schemas from task datasets into Pydantic models that are passed to the Controller. The Controller then creates a custom `done` action that enforces the structured output format. The judge system evaluates the final structured response without needing the original schema.
 
-## Implementation Components Verified
+## Correct Implementation Flow
 
 ### 1. Task Class Enhancement (`eval/service.py`)
 
-✅ **Status: Fully Implemented**
+✅ **Status: Correctly Implemented**
 
 - Added `output_schema` as an optional field in the Task class `__init__` method (line 1074)
 - Properly included in known_fields set for clean handling (line 1077)
@@ -19,147 +19,215 @@ self.output_schema = kwargs.get('output_schema', None)  # Add structured output 
 known_fields = {'website', 'reference_length', 'level', 'cluster_id', 'login_cookie', 'login_type', 'category', 'output_schema'}
 ```
 
-### 2. Agent Configuration Updates
+### 2. Controller Integration (Correct Approach)
 
-✅ **Status: Fully Implemented**
+✅ **Status: Should be implemented in `create_controller` function**
 
-**AgentSettings Class (`browser_use/agent/views.py`):**
-- Added `output_schema: dict[str, Any] | None = None` field (line 54)
+The correct implementation should:
+- Extract `output_schema` from task in `run_agent_with_browser`
+- Convert JSON schema to a Pydantic model
+- Pass the model to `Controller(output_model=PydanticModel)`
+- Controller automatically creates a structured `done` action
 
-**Agent Constructor (`browser_use/agent/service.py`):**
-- Added `output_schema` parameter to Agent `__init__` method (line 168)
-- Properly passed to AgentSettings during initialization (line 236)
+**Example of correct pattern:**
+```python
+# From examples/features/custom_output.py
+class Posts(BaseModel):
+    posts: list[Post]
 
-### 3. Agent Runtime Integration
+controller = Controller(output_model=Posts)
+```
 
-✅ **Status: Fully Implemented**
+### 3. How Controller Handles Structured Output
 
-**Agent Creation (`eval/service.py`):**
-- Extracts output_schema from task in `run_agent_with_browser` function (lines 1333-1337)
-- Passes schema to Agent constructor (line 1349)
-- Includes informative logging when schema is detected
+✅ **Status: Already implemented in Controller class**
 
-**LLM Prompt Injection (`browser_use/agent/service.py`):**
-- Enhanced `get_next_action` method to inject structured output instructions (lines 925-944)
-- Adds schema instructions as UserMessage when output_schema exists
-- Properly formats JSON schema in instructions for the LLM
+When `output_model` is provided to Controller:
+- Creates `ExtendedOutputModel` with success parameter + data field
+- Registers custom `done` action that enforces the structure
+- Returns JSON serialized structured data in `extracted_content`
 
 ```python
-if self.settings.output_schema:
-    self.logger.info(f'🎯 Using structured output schema for final result')
+# From browser_use/controller/service.py lines 77-104
+if output_model is not None:
+    class ExtendedOutputModel(BaseModel):
+        success: bool = True
+        data: output_model
+
+    @self.registry.action(
+        'Complete task - with return text and if the task is finished (success=True)...',
+        param_model=ExtendedOutputModel,
+    )
+    async def done(params: ExtendedOutputModel):
+        output_dict = params.data.model_dump()
+        return ActionResult(
+            is_done=True,
+            success=params.success,
+            extracted_content=json.dumps(output_dict),
+            long_term_memory=f'Task completed. Success Status: {params.success}',
+        )
+```
+
+### 4. Judge System Evaluation
+
+✅ **Status: Correct - No schema needed**
+
+The judge system correctly evaluates the final structured response without needing the original schema:
+- Receives the final JSON output in `final_result`
+- Evaluates whether the output is properly structured and meaningful
+- No need to pass `output_schema` to judge functions
+
+## Required Changes to Complete Implementation
+
+### 1. Modify `create_controller` function
+
+```python
+def create_controller(use_serp: bool = False, output_schema: dict | None = None):
+    """Create a controller, optionally with SERP search and structured output"""
+    if output_schema:
+        # Convert JSON schema to Pydantic model
+        output_model = create_pydantic_model_from_schema(output_schema)
+        controller = Controller(output_model=output_model)
+    else:
+        controller = Controller()
     
-    schema_instruction = f"""
-IMPORTANT: When you use the 'done' action and mark success=True, you MUST include the final result in the exact JSON format specified by this schema:
-
-Output Schema: {json.dumps(self.settings.output_schema, indent=2)}
-
-The final result should be a valid JSON object that conforms to this schema. Include this structured JSON in the 'text' field of the 'done' action.
-"""
+    if use_serp:
+        # Add SERP search action to existing controller
+        add_serp_search_to_controller(controller)
+    
+    return controller
 ```
 
-### 4. Judge System Enhancement (`eval/judge_system.py`)
+### 2. Update `run_agent_with_browser` function
 
-✅ **Status: Fully Implemented**
+```python
+async def run_agent_with_browser(...):
+    # Extract output_schema from task if available
+    output_schema = None
+    if hasattr(task, 'output_schema') and task.output_schema:
+        output_schema = task.output_schema
+        logger.info(f'🎯 Task {task.task_id}: Using structured output schema')
 
-**comprehensive_judge Function:**
-- Added `output_schema` parameter (line 255)
-- Enhanced system prompt with structured output validation section (lines 293-306)
-- Includes detailed schema validation requirements
-
-**judge_with_retry Function:**
-- Added `output_schema` parameter (line 565)
-- Properly passes schema through to comprehensive_judge (line 591)
-
-**Task Evaluation Integration:**
-- `evaluate_task_with_comprehensive_judge` extracts output_schema from task_data (lines 680-684)
-- Passes schema to judge_with_retry function (line 695)
-
-### 5. Structured Output Validation Logic
-
-✅ **Status: Comprehensive Implementation**
-
-The judge system prompt includes robust validation criteria:
-
-```
-**STRUCTURED OUTPUT VALIDATION:**
-This task required structured output according to the following schema:
-{json schema}
-
-When evaluating task completion, you MUST verify that:
-1. The final result contains properly formatted JSON that conforms to the required schema
-2. All required fields are present and have the correct data types
-3. The structured data is meaningful and accurate for the task
-
-If the output schema was provided but the final result doesn't contain valid structured JSON conforming to the schema, this significantly impacts the task satisfaction score.
+    # Create controller with structured output support
+    controller = create_controller(use_serp=use_serp, output_schema=output_schema)
+    
+    agent = Agent(
+        task=task.confirmed_task,
+        llm=llm,
+        controller=controller,  # Pass controller with structured output
+        # ... other parameters
+    )
 ```
 
-### 6. Bug Fixes Verified
+### 3. Schema to Pydantic Conversion Utility
 
-✅ **multi_act Method (`browser_use/agent/service.py`):**
-- The code for checking new elements after page changes is present and functioning (lines 1283-1386)
-- Logic correctly handles element detection and breaks execution when new elements appear
-- No missing code sections found
+Need to implement a utility function to convert JSON schemas to Pydantic models:
 
-## Technical Flow Analysis
+```python
+def create_pydantic_model_from_schema(schema: dict) -> type[BaseModel]:
+    """Convert JSON schema to Pydantic model"""
+    # Implementation needed to dynamically create Pydantic models from JSON schemas
+    pass
+```
+
+## Incorrect Previous Implementation
+
+### ❌ Removed: Agent-level output_schema handling
+- `output_schema` parameter in Agent constructor
+- `output_schema` in AgentSettings
+- Schema injection in `get_next_action` method
+
+### ❌ Removed: Judge system schema validation
+- `output_schema` parameter in judge functions
+- Schema validation prompts in judge system
+- Schema extraction in evaluation functions
+
+## Technical Flow (Corrected)
 
 ### End-to-End Process:
 
-1. **Dataset Loading**: JSON datasets can include `output_schema` field in task definitions
-2. **Task Creation**: Task class properly loads and stores the schema as an attribute
-3. **Agent Initialization**: Schema is extracted from task and passed to Agent constructor
-4. **Agent Settings**: Schema is stored in AgentSettings for runtime access
-5. **Runtime Execution**: When schema exists, agent injects structured output instructions into LLM prompts
-6. **Judge Evaluation**: Judge system receives schema and validates final output against it
-7. **Scoring Impact**: Schema validation affects task satisfaction scoring and pass/fail determination
+1. **Dataset Loading**: JSON datasets include `output_schema` field in task definitions
+2. **Task Creation**: Task class loads and stores the schema as an attribute
+3. **Controller Creation**: Schema is converted to Pydantic model and passed to Controller
+4. **Controller Setup**: Controller creates custom `done` action with structured output enforcement
+5. **Agent Execution**: Agent uses controller with structured `done` action
+6. **Output Generation**: Agent calls structured `done` action, returns JSON in `extracted_content`
+7. **Judge Evaluation**: Judge evaluates final JSON output for quality and correctness
 
 ## Key Features
 
 ### ✅ Backward Compatibility
-- All changes are optional and don't break existing functionality
-- Tasks without output_schema continue to work normally
-
-### ✅ Comprehensive Validation
-- Judge system validates JSON format compliance
-- Checks for required fields and correct data types
-- Evaluates meaningfulness and accuracy of structured data
-
-### ✅ Proper Error Handling
-- Graceful handling when schemas are malformed or missing
-- Fallback behavior when validation fails
-
-### ✅ Logging and Debugging
-- Clear logging when structured output schemas are detected
-- Informative messages throughout the pipeline
-
-## Code Quality Assessment
-
-### Strengths:
-- Clean integration with existing codebase
-- Comprehensive error handling
-- Good separation of concerns
-- Extensive logging for debugging
-
-### Areas of Excellence:
-- The implementation follows the existing code patterns
+- Tasks without output_schema continue to work with standard `done` action
 - No breaking changes to existing functionality
-- Comprehensive validation in the judge system
-- Clear documentation in code comments
 
-## Verification Status
+### ✅ Proper Separation of Concerns
+- Controller handles output structure enforcement
+- Agent focuses on task execution
+- Judge evaluates final output quality
 
-All major components have been successfully implemented and verified:
+### ✅ Leverages Existing Patterns
+- Uses established Controller `output_model` pattern
+- Follows existing examples in codebase
+- Maintains consistency with browser-use architecture
 
-- ✅ Task class enhancement
-- ✅ Agent configuration updates  
-- ✅ Agent runtime integration
-- ✅ Judge system enhancement
-- ✅ Structured output validation
-- ✅ Bug fixes (multi_act method)
-- ✅ End-to-end flow functionality
-- ✅ Backward compatibility maintained
+## Implementation Status
+
+### ✅ Completed Components:
+- Task class enhancement
+- Controller structured output handling (already exists)
+- Judge system evaluation (no changes needed)
+
+### 🔄 Required Components:
+- Modify `create_controller` function to accept `output_schema`
+- Update `run_agent_with_browser` to pass schema to controller
+- Implement JSON schema to Pydantic model conversion utility
+
+### ❌ Removed Incorrect Components:
+- **Agent-level output_schema handling**: Removed `output_schema` parameter from Agent constructor and AgentSettings
+- **Judge system schema validation**: Removed `output_schema` parameters from judge functions and schema validation prompts  
+- **Schema injection in LLM prompts**: Removed schema instruction injection in `get_next_action` method
+
+### ✅ Correctly Implemented Components:
+- **Task class enhancement**: `output_schema` field properly added to Task class in `eval/service.py`
+- **Controller structured output handling**: Already exists in Controller class via `output_model` parameter
+- **Judge system evaluation**: Correctly evaluates final structured response without needing schema
+
+### 🔄 Required Implementation:
+The correct implementation requires:
+
+1. **Convert JSON Schema to Pydantic Model**: Create utility function to dynamically generate Pydantic models from JSON schemas
+2. **Update `create_controller` function**: Accept `output_schema` parameter and convert to Pydantic model for Controller
+3. **Update `run_agent_with_browser`**: Extract schema from task and pass to controller creation
+
+### Implementation Plan:
+
+```python
+# 1. Add schema conversion utility
+def create_pydantic_model_from_schema(schema: dict) -> type[BaseModel]:
+    """Convert JSON schema to Pydantic model dynamically"""
+    # Implementation needed
+
+# 2. Update create_controller function  
+def create_controller(use_serp: bool = False, output_schema: dict | None = None):
+    if output_schema:
+        output_model = create_pydantic_model_from_schema(output_schema)
+        controller = Controller(output_model=output_model)
+    else:
+        controller = Controller()
+    
+    if use_serp:
+        add_serp_search_to_controller(controller)
+    return controller
+
+# 3. Update run_agent_with_browser
+async def run_agent_with_browser(...):
+    output_schema = getattr(task, 'output_schema', None)
+    controller = create_controller(use_serp=use_serp, output_schema=output_schema)
+    agent = Agent(task=task.confirmed_task, llm=llm, controller=controller, ...)
+```
+
+The main remaining work is implementing the JSON schema to Pydantic model conversion utility, which is the core technical challenge for this feature.
 
 ## Conclusion
 
-The structured output functionality has been comprehensively implemented across all required components of the browser-use evaluation system. The implementation is robust, well-integrated, and maintains backward compatibility while providing powerful new capabilities for structured task evaluation.
-
-The code is production-ready and follows established patterns in the codebase. All critical paths have been implemented with proper error handling and logging.
+The structured output functionality should leverage the existing Controller `output_model` pattern rather than implementing custom schema handling in the Agent or Judge systems. This approach is cleaner, follows established patterns, and maintains proper separation of concerns. The main work required is converting JSON schemas to Pydantic models and updating the controller creation flow.

@@ -166,7 +166,6 @@ class Agent(Generic[Context]):
 		],
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
-		output_schema: dict[str, Any] | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		planner_llm: BaseChatModel | None = None,
 		planner_interval: int = 1,  # Run planner every N steps
@@ -234,7 +233,6 @@ class Agent(Generic[Context]):
 			extend_planner_system_message=extend_planner_system_message,
 			use_thinking=use_thinking,
 			calculate_cost=calculate_cost,
-			output_schema=output_schema,
 		)
 
 		# Token cost service
@@ -919,30 +917,7 @@ class Agent(Generic[Context]):
 
 		# Determine output format based on whether we have a structured output schema
 		output_format = self.AgentOutput
-		
-		# If we have a structured output schema, we need to modify the system message 
-		# to include instructions for the structured output
-		modified_messages = input_messages
-		if self.settings.output_schema:
-			self.logger.info(f'🎯 Using structured output schema for final result')
-			
-			# Add structured output instructions to the system message or as a user message
-			schema_instruction = f"""
-IMPORTANT: When you use the 'done' action and mark success=True, you MUST include the final result in the exact JSON format specified by this schema:
-
-Output Schema: {json.dumps(self.settings.output_schema, indent=2)}
-
-The final result should be a valid JSON object that conforms to this schema. Include this structured JSON in the 'text' field of the 'done' action.
-"""
-			
-			# Add the schema instruction as a user message before the last system message
-			from browser_use.llm.messages import UserMessage
-			schema_message = UserMessage(content=schema_instruction)
-			
-			# Insert the schema message before any existing messages
-			modified_messages = [schema_message] + input_messages
-
-		response = await self.llm.ainvoke(modified_messages, output_format=output_format)
+		response = await self.llm.ainvoke(input_messages, output_format=output_format)
 		parsed = response.completion
 
 		# cut the number of actions to max_actions_per_step if needed

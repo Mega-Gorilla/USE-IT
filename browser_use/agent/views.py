@@ -52,7 +52,6 @@ class AgentSettings(BaseModel):
 	]
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
-	output_schema: dict[str, Any] | None = None  # JSON schema for structured output
 
 	page_extraction_llm: BaseChatModel | None = None
 	planner_llm: BaseChatModel | None = None

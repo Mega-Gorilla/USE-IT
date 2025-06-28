@@ -1331,11 +1331,7 @@ async def run_agent_with_browser(
 			"Please remove the 'enable_memory' parameter."
 		)
 
-	# Extract output_schema from task if available
-	output_schema = None
-	if hasattr(task, 'output_schema') and task.output_schema:
-		output_schema = task.output_schema
-		logger.info(f'🎯 Task {task.task_id}: Using structured output schema: {output_schema}')
+
 
 	agent = Agent(
 		task=task.confirmed_task,
@@ -1347,7 +1343,7 @@ async def run_agent_with_browser(
 		validate_output=validate_output,
 		planner_llm=planner_llm,
 		planner_interval=planner_interval,
-		output_schema=output_schema,  # Pass the structured output schema
+
 		source='eval_platform',
 	)
 	# get last message
