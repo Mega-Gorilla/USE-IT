@@ -41,7 +41,9 @@ class UpdateAgentTaskEvent(BaseEvent):
 		return cls(
 			id=str(agent.task_id),
 			user_id='',  # To be filled by cloud handler
-			device_id=agent.cloud_sync.auth_client.device_id,
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			stopped=agent.state.stopped if hasattr(agent.state, 'stopped') else False,
 			paused=agent.state.paused if hasattr(agent.state, 'paused') else False,
 			done_output=done_output,
@@ -100,7 +102,9 @@ class CreateAgentOutputFileEvent(BaseEvent):
 
 		return cls(
 			user_id='',  # To be filled by cloud handler
-			device_id=agent.cloud_sync.auth_client.device_id,
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			task_id=str(agent.task_id),
 			file_name=gif_path.name,
 			file_content=gif_content,  # Base64 encoded
@@ -155,7 +159,9 @@ class CreateAgentStepEvent(BaseEvent):
 
 		return cls(
 			user_id='',  # To be filled by cloud handler
-			device_id=agent.cloud_sync.auth_client.device_id,
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			agent_task_id=str(agent.task_id),
 			step=agent.state.n_steps,
 			evaluation_previous_goal=current_state.evaluation_previous_goal if current_state else '',
@@ -192,7 +198,9 @@ class CreateAgentTaskEvent(BaseEvent):
 		return cls(
 			id=str(agent.task_id),
 			user_id='',  # To be filled by cloud handler
-			device_id=agent.cloud_sync.auth_client.device_id,
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			agent_session_id=str(agent.session_id),
 			task=agent.task,
 			llm_model=agent.llm.model_name,
@@ -228,7 +236,9 @@ class CreateAgentSessionEvent(BaseEvent):
 		return cls(
 			id=str(agent.session_id),
 			user_id='',  # To be filled by cloud handler
-			device_id=agent.cloud_sync.auth_client.device_id,
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			browser_session_id=agent.browser_session.id,
 			browser_session_live_url='',  # To be filled by cloud handler
 			browser_session_cdp_url='',  # To be filled by cloud handler
