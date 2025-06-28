@@ -30,6 +30,7 @@ class SchemaOptimizer:
 			"""Apply all optimization techniques including flattening all $ref/$defs"""
 			if isinstance(obj, dict):
 				optimized: dict[str, Any] = {}
+				flattened_ref: dict[str, Any] | None = None
 
 				# Skip unnecessary fields AND $defs (we'll inline everything)
 				skip_fields = ['additionalProperties', '$defs']
@@ -58,13 +59,7 @@ class SchemaOptimizer:
 							referenced_def = defs_lookup[ref_path]
 							flattened_ref = optimize_schema(referenced_def, defs_lookup)
 
-							# IMPORTANT: Preserve any description that was alongside the $ref
-							if isinstance(obj, dict) and 'description' in obj:
-								if isinstance(flattened_ref, dict):
-									flattened_ref = flattened_ref.copy()
-									flattened_ref['description'] = obj['description']
-
-							return flattened_ref
+							# Don't return immediately - store the flattened ref to merge with siblings
 
 					# Keep all anyOf structures (action unions) and resolve any $refs within
 					elif key == 'anyOf' and isinstance(value, list):
@@ -82,11 +77,27 @@ class SchemaOptimizer:
 					else:
 						optimized[key] = optimize_schema(value, defs_lookup) if isinstance(value, (dict, list)) else value
 
-				# CRITICAL: Add additionalProperties: false to ALL objects for OpenAI strict mode
-				if optimized.get('type') == 'object':
-					optimized['additionalProperties'] = False
+				# If we have a flattened reference, merge it with the optimized properties
+				if flattened_ref is not None and isinstance(flattened_ref, dict):
+					# Start with the flattened reference as the base
+					result = flattened_ref.copy()
 
-				return optimized
+					# Merge in any sibling properties that were processed
+					for key, value in optimized.items():
+						# Preserve descriptions from the original object if they exist
+						if key == 'description' and 'description' not in result:
+							result[key] = value
+						elif key != 'description':  # Don't overwrite description from flattened ref
+							result[key] = value
+
+					return result
+				else:
+					# No $ref, just return the optimized object
+					# CRITICAL: Add additionalProperties: false to ALL objects for OpenAI strict mode
+					if optimized.get('type') == 'object':
+						optimized['additionalProperties'] = False
+
+					return optimized
 
 			elif isinstance(obj, list):
 				return [optimize_schema(item, defs_lookup) for item in obj]
