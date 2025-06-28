@@ -82,6 +82,9 @@ class Controller(Generic[Context]):
 			class ExtendedOutputModel(BaseModel):  # type: ignore
 				success: bool = True
 				data: output_model  # type: ignore
+			
+			# Rebuild the model to resolve any forward references
+			ExtendedOutputModel.model_rebuild()
 
 			@self.registry.action(
 				'Complete task - with return text and if the task is finished (success=True) or not yet completely finished (success=False), because last step is reached',
