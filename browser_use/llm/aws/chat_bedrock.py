@@ -1,7 +1,9 @@
+# pyright: reportMissingImports=false
+
 import json
 from dataclasses import dataclass
 from os import getenv
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from pydantic import BaseModel
 
@@ -11,14 +13,9 @@ from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
-try:
-	from boto3 import client as AwsClient  # pyright: ignore
-	from boto3.session import Session  # pyright: ignore
-	from botocore.exceptions import ClientError  # pyright: ignore
-except ImportError:
-	raise ImportError(
-		'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
-	)
+if TYPE_CHECKING:
+	from boto3 import client as AwsClient
+	from boto3.session import Session
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -52,7 +49,7 @@ class ChatAWSBedrock(BaseChatModel):
 	aws_secret_access_key: str | None = None
 	aws_region: str | None = None
 	aws_sso_auth: bool = False
-	session: Session | None = None
+	session: 'Session | None' = None
 
 	# Request parameters
 	request_params: dict[str, Any] | None = None
@@ -62,8 +59,15 @@ class ChatAWSBedrock(BaseChatModel):
 	def provider(self) -> str:
 		return 'aws_bedrock'
 
-	def _get_client(self) -> AwsClient:  # type: ignore[reportUnknownReturnType]
+	def _get_client(self) -> AwsClient:
 		"""Get the AWS Bedrock client."""
+		try:
+			from boto3 import client as AwsClient
+		except ImportError:
+			raise ImportError(
+				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
+			)
+
 		if self.session:
 			return self.session.client('bedrock-runtime')
 
@@ -166,6 +170,13 @@ class ChatAWSBedrock(BaseChatModel):
 		Returns:
 			Either a string response or an instance of output_format
 		"""
+		try:
+			from botocore.exceptions import ClientError
+		except ImportError:
+			raise ImportError(
+				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
+			)
+
 		bedrock_messages, system_message = AWSBedrockMessageSerializer.serialize_messages(messages)
 
 		try:
