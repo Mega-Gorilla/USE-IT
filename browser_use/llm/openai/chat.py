@@ -13,7 +13,7 @@ from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.openai.serializer import OpenAIMessageSerializer
-from browser_use.llm.utils import create_optimized_json_schema
+from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
@@ -148,7 +148,7 @@ class ChatOpenAI(BaseChatModel):
 				response_format: JSONSchema = {
 					'name': 'agent_output',
 					'strict': True,
-					'schema': create_optimized_json_schema(output_format),
+					'schema': SchemaOptimizer.create_optimized_json_schema(output_format),
 				}
 
 				# Return structured response

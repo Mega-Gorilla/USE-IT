@@ -24,6 +24,7 @@ from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.groq.parser import try_parse_groq_failed_generation
 from browser_use.llm.groq.serializer import GroqMessageSerializer
 from browser_use.llm.messages import BaseMessage
+from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeUsage
 
 GroqVerifiedModels = Literal[
@@ -106,7 +107,8 @@ class ChatGroq(BaseChatModel):
 				)
 
 			else:
-				schema = output_format.model_json_schema()
+				schema = SchemaOptimizer.create_optimized_json_schema(output_format)
+
 				schema['additionalProperties'] = False
 
 				# Return structured response

@@ -5,7 +5,7 @@ import tiktoken
 
 from browser_use.agent.views import AgentOutput
 from browser_use.controller.service import Controller
-from browser_use.llm.utils import create_optimized_json_schema
+from browser_use.llm.schema import SchemaOptimizer
 
 
 def test_optimized_schema():
@@ -22,7 +22,7 @@ def test_optimized_schema():
 	original_schema = agent_output_model.model_json_schema()
 
 	# Create the optimized schema
-	optimized_schema = create_optimized_json_schema(agent_output_model)
+	optimized_schema = SchemaOptimizer.create_optimized_json_schema(agent_output_model)
 
 	# Create tmp directory if it doesn't exist
 	os.makedirs('./tmp', exist_ok=True)
