@@ -2324,7 +2324,7 @@ def get_git_info():
 		}
 
 
-# Helper function to start a new run on the server
+# Helper function to start a new run on the convex server
 def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_run_id: str | None = None):
 	"""Sends a request to start a new evaluation run and returns the run ID."""
 	if not convex_url or not secret_key:
