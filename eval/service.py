@@ -1362,6 +1362,7 @@ async def run_agent_with_browser(
 	validate_output: bool = False,
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
+	use_thinking: bool = True,
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
 	# Create controller, optionally with SERP search and structured output
@@ -1385,6 +1386,7 @@ async def run_agent_with_browser(
 		validate_output=validate_output,
 		planner_llm=planner_llm,
 		planner_interval=planner_interval,
+		use_thinking=use_thinking,
 		source='eval_platform',
 		calculate_cost=True,
 	)
@@ -1578,6 +1580,7 @@ async def run_task_with_semaphore(
 	include_result: bool = False,
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
+	use_thinking: bool = True,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -1680,6 +1683,7 @@ async def run_task_with_semaphore(
 								validate_output,
 								planner_llm,
 								planner_interval,
+								use_thinking,
 							),
 							timeout=1000,
 						)
@@ -1908,6 +1912,7 @@ async def run_multiple_tasks(
 	include_result: bool = False,
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
+	use_thinking: bool = True,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1985,6 +1990,7 @@ async def run_multiple_tasks(
 					include_result=include_result,
 					highlight_elements=highlight_elements,
 					use_mind2web_judge=use_mind2web_judge,
+					use_thinking=use_thinking,
 				)
 				for task in tasks_to_run
 			),
@@ -2253,6 +2259,7 @@ async def run_evaluation_pipeline(
 	laminar_eval_id: str | None = None,
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
+	use_thinking: bool = True,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -2303,6 +2310,7 @@ async def run_evaluation_pipeline(
 		include_result=include_result,
 		highlight_elements=highlight_elements,
 		use_mind2web_judge=use_mind2web_judge,
+		use_thinking=use_thinking,
 	)
 
 
@@ -2366,6 +2374,7 @@ if __name__ == '__main__':
 		help='Existing Laminar evaluation ID to use (if not provided, a new evaluation will be created)',
 	)
 	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
+	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
@@ -2610,6 +2619,7 @@ if __name__ == '__main__':
 				laminar_eval_id=args.laminar_eval_id,
 				highlight_elements=args.highlight_elements,
 				use_mind2web_judge=args.use_mind2web_judge,
+				use_thinking=not args.no_thinking,
 			)
 		)
 
