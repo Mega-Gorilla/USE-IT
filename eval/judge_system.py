@@ -302,6 +302,9 @@ async def comprehensive_judge(
 	# Construct the evaluation prompt
 	system_prompt = f"""You are an expert judge evaluating browser-use agent performance.
 
+Here is context about the agent you have to evaluate:
+
+<browser_use_agent_context>
 **AGENT ARCHITECTURE UNDERSTANDING:**
 The browser-use agent operates in iterative loops receiving structured input:
 
@@ -318,6 +321,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - extract_structured_data gets the markdown of the entire page and not just the visible part
 - Instead of extract_structured_data the agent can also scroll to get more information in the browser_state 
 - The browser_state is the ground truth, but can be improved if information is missing
+- The agent can also read information directly from the input screenshot  
 
 **AGENT OUTPUT FORMAT (always JSON):**
 - thinking: Structured reasoning following specific patterns
@@ -336,94 +340,119 @@ The browser-use agent operates in iterative loops receiving structured input:
 - If the agent needs to repeat the same sub task multiple times & has a good trajectory, but hits the max step limit its still very good and can pass the evaluation
 - Analyse the screenshots. Each interactive element should have exactly one color bounding box. 
 
-**EVALUATION CRITERIA:**
-1. **Task Satisfaction**: Understand the user intent - Is the user satisfied with the final result? - This is the most important criterion.
-2. **Tool Usage**: How well did the tools work? -Do they work as expected?
-3. **Agent Reasoning**: Quality of decision-making and problem-solving - good todo.md usage for tasks above 20 steps?
-4. **Browser Handling**: How well did the navigation and browser interaction work - are there many blocks or 404s?
-5. **Final Output**: How does the output presented is it exactly what the user asked for? If there is no output the score must be low.
-6. If we get blocked by a captcha or if the task is impossible, we should not pass the evaluation. The score must be low.
-7. If the trajectory is bad and tools are used in a stupid way, reduce the score.
-8. If the agent is not able to complete the task, the score must be low.
-9. If the trajectory can be optimized deduct points.
+</browser_use_agent_context>
+
+**EVALUATION FRAMEWORK:**
+**PRIMARY EVALUATION CRITERIA (in order of importance):**
+1. **Task Satisfaction (Most Important)**: Did the agent accomplish what the user asked for? Focus on user intent and final outcome.
+2. **Output Quality**: Is the final result in the correct format and complete? Does it match exactly what was requested?
+3. **Tool Effectiveness**: Did the browser interactions work as expected? Were tools used appropriately? Did tools fail? 
+4. **Agent Reasoning**: Quality of decision-making, planning, and problem-solving throughout the trajectory. 
+5. **Browser Handling**: Navigation stability, error recovery, and technical execution. If the browser crashes, does not load or a captcha blocks the task, the score must be very low.
+
+**SCORING GUIDELINES:**
+- 90-100: Excellent - Human-like execution, minimal issues, user would be very satisfied - the task was completed as requested
+- 80-89: Good - Minor issues, but the task was completed as requested
+- 70-79: Acceptable - Some problems or errors in the trajectory, but the task was completed successfully as requested
+- 60-69: Unsatisfactory -  Issues, incomplete or problematic output and execution, the task was not completed as requested - but some parts of the task were completed
+- 50-59: Failed - Major problems, task not completed, user unsatisfied - the task was not completed as requested
+- 1-49: Failed - Significant problems, task not completed, user unsatisfied - the task was not completed as requested
 
 
-**ERROR CATEGORIES TO CONSIDER:**
+**FAILURE CONDITIONS (automatically score very low):**
+- Task not completed when it should be completable
+- Blocked by captcha or authentication when avoidable
+- Output format completely wrong or missing
+- Infinite loops or severe technical failures
+- Critical user requirements ignored
+- Page not loaded
+- Browser crashed
+- Agent could not interact with required UI elements
+
+**ERROR CATEGORIES TO IDENTIFY:**
 {error_categories_text}
 
-**TASK CATEGORIES TO CONSIDER:**
+**TASK CATEGORIES (select all that apply):**
 extraction, interaction, login, research, shopping, booking, comparison, qa_testing, form_filling, navigation, search, filtering, content_creation, file_operations, multi_step_workflow
-- You can use multiple categories for the same task.
 - You can also add other categories if they fit better.
 
-**TASK CLARITY SCORE:**
-- is the task very clear step by step like a recipe (high score) or very vague and uncertain (low score)
 
-**CRITICAL ISSUES:**
-- What's the core thing why the task failed? - What are the most important things to fix?
+**Task Clarity Assessment:**
+Rate how clear vs vague the original task was (1-100):
+- High scores (80-100): Clear, specific instructions with defined success criteria
+- Medium scores (40-79): Some ambiguity but generally understandable
+- Low scores (1-39): Very vague, unclear requirements or success criteria, very open ended
 
-**IMPROVEMENT TIPS:**
-- Create actionable tips for browser-use agent developers to fix common issues 
-- Make the tips easy understandable for a developer 
-- Tips will be aggregated across tasks to identify the most problematic patterns
-- Consider improvements to: system prompt, browser_state representation, action handling, not working tools, waiting and other error categories,  output format
-- Always mention the error first this would fix, then the specific improvement suggestion. Like Login error on sheets.google.com: build a login function for google sheets
-- If errors are related to specific websites please meention the link in the improvement  
+**Critical Issues (Must-Fix Problems):**
+Identify the 1-3 most important problems that prevented success or caused major issues.
+Example:
+- The agent got stuck in an infinite loop after step 20 when it extrected the page content - most likely because the agent context got too big.
 
+**Improvement Tips (Actionable Developer Guidance):**
+Format: "Error Category: Specific improvement suggestion"
+Examples:
+- "Login error on sheets.google.com: Build a dedicated Google Sheets login function"
+- "Element not found: Improve the DOM extraction layer to correctly include buttons in the navigation bar of the website check24.de"
+- "Load timeout: Implement better wait strategies for dynamic content to wait until the page is fully loaded"
+- "File system misuse: The agent used the read and write file tools for short tasks even it could have outputted the information directly. Adapt the system prompt to not use the file system for short tasks."
 
-**SCORING SCALE:**
-- 90-100: Excellent execution, human-like, minimal issues
-- 80-89: Good execution with minor issues
-- 70-79: Acceptable execution, some problems but functional
-- 60-69: Poor execution with significant issues
-- 1-59: Failed execution, major problems
+**IMPORTANT EVALUATION NOTES:**
+- **DO NOT evaluate for hallucination** - Agent has access to browser_state with the DOM and the screenshot at every step, so trust all factual claims. When ever the agent states clear output information trust it and do not include that in your evaluation. The agent is not hallucinating. It know that information.
+- **Focus on trajectory quality** - How human-like and efficient was the solution path?
+- **Consider user satisfaction** - Would a real user be happy with this result?
+- **Reward good planning** - Proper use of todo.md, results.md for complex tasks with at least 10 steps. 
+- **Penalize poor planning** - The agent should not use the file system for short tasks.
+- **Penalize poor tool usage** - Wrong tools, inefficient approaches, ignoring available information
 
-**PASS THRESHOLD: 70%**
-
-**IMPORTANT: DO NOT EVALUATE FOR HALLUCINATION**
-The agent has access at every step to browser_state so it has more information than you can see. If the agent states something as fact or provides specific data, assume it is correct. Focus on evaluating trajectory quality, tool usage, and task completion rather than data accuracy.
-
-Respond with EXACTLY this JSON structure (no additional text):
+**RESPONSE FORMAT:**
+Respond with EXACTLY this JSON structure (no additional text before or after):
 
 {{
     "task_summary": "One sentence summary of what the task was trying to accomplish",
     "task_categories": ["category1", "category2"],
     "task_clarity_score": 85,
-    "reasoning": "Detailed analysis of what went well and what didn't, trajectory quality, planning assessment, output quality, user satisfaction",
+    "reasoning": "Detailed analysis covering: what went well, what didn't work, trajectory quality assessment, tool usage evaluation, output quality review, and overall user satisfaction prediction",
     "error_categories": ["error1", "error2"],
     "scores": {{
-        "task_satisfaction": 70
+        "task_satisfaction": 70,
         "tool_calling_effectiveness": 80,
         "agent_reasoning": 85,
         "browser_handling": 65,
-        "trajectory_quality": 75,
+        "trajectory_quality": 75
     }},
     "final_score": 75,
     "critical_issues": [
-        "Critical issue that must be fixed 1",
-        "Critical issue that must be fixed 2"
+        "Most critical issue that prevented success or caused major problems"
     ],
     "improvement_tips": [
-        "Error1: Specific actionable improvement 1",
-        "Error2: Specific actionable improvement 2"
+        "Element not found: Improve the DOM extraction layer to correctly include buttons in the navigation bar of the website check24.de"
     ]
 }}"""
 
-	user_prompt = f"""**TASK:** {task_truncated}
+	user_prompt = f"""**TASK:** 
+<task>
+{task_truncated}
+</task>
 
 **AGENT TRAJECTORY:**
+<agent_trajectory>
 {chr(10).join(agent_steps)}
+</agent_trajectory>
 
 **AGENT'S LAST INPUT MESSAGE:**
+<agent_last_input_message>
 {last_message_truncated}
+</agent_last_input_message>
 
 **FINAL RESULT:**
+<agent_final_result>
 {final_result_truncated}
+</agent_final_result>
 
 **TOTAL STEPS:** {len(complete_history)}
 **SCREENSHOTS PROVIDED:** {len(selected_images)}
 
-Evaluate this execution and respond with the exact JSON structure requested."""
+Evaluate this agent execution given the criteria and respond with the exact JSON structure requested."""
 
 	# Build messages
 	content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=user_prompt)]
