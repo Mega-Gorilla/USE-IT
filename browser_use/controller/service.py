@@ -3,7 +3,6 @@ import enum
 import json
 import logging
 import os
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
@@ -284,21 +283,6 @@ class Controller(Generic[Context]):
 				msg = f'Failed to upload file to index {params.index}: {str(e)}'
 				logger.info(msg)
 				return ActionResult(error=msg)
-
-		# Save PDF
-		@self.registry.action('Save the current page as a PDF file')
-		async def save_pdf(page: Page):
-			short_url = re.sub(r'^https?://(?:www\.)?|/$', '', page.url)
-			slug = re.sub(r'[^a-zA-Z0-9]+', '-', short_url).strip('-').lower()
-			sanitized_filename = f'{slug}.pdf'
-
-			await page.emulate_media(media='screen')
-			await page.pdf(path=sanitized_filename, format='A4', print_background=False)
-			msg = f'Saving page with URL {page.url} as PDF to ./{sanitized_filename}'
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=f'Saved PDF to {sanitized_filename}'
-			)
 
 		# Tab Management Actions
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
