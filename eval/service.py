@@ -581,6 +581,7 @@ class TaskResult:
 		# Add task execution data if available
 		if Stage.FORMAT_HISTORY in self.completed_stages:
 			format_data = self.stage_data.get(Stage.FORMAT_HISTORY, {})
+			logger.info(f'format_data: {format_data}')
 			payload.update(
 				{
 					'actionHistory': format_data.get('action_history', []),
