@@ -585,6 +585,12 @@ class TaskResult:
 			# log token usage
 			logger.info(f'tokensUsed: {format_data.get("tokensUsed")}')
 			logger.info(f'usage: {format_data.get("usage")}')
+
+			# Handle usage data - convert to JSON string if it's a dict
+			usage_data = format_data.get('usage')
+			if usage_data and isinstance(usage_data, dict):
+				usage_data = json.dumps(usage_data)
+
 			payload.update(
 				{
 					'actionHistory': format_data.get('action_history', []),
@@ -595,7 +601,7 @@ class TaskResult:
 					'steps': format_data.get('steps'),
 					'maxSteps': self.max_steps,
 					'tokensUsed': format_data.get('tokensUsed'),
-					'usage': format_data.get('usage'),  # Add usage data
+					'usage': usage_data,  # Add usage data (JSON string if dict)
 					'completeHistory': format_data.get('complete_history', []),  # Add complete step history
 				}
 			)
