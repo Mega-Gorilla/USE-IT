@@ -591,6 +591,7 @@ class TaskResult:
 					'steps': format_data.get('steps'),
 					'maxSteps': self.max_steps,
 					'tokensUsed': format_data.get('tokensUsed'),
+					'usage': format_data.get('usage'),  # Add usage data
 					'completeHistory': format_data.get('complete_history', []),  # Add complete step history
 				}
 			)
@@ -1027,6 +1028,11 @@ async def reformat_agent_history(
 	if include_result and final_result and final_result.strip():
 		action_history = action_history + [final_result]
 
+	# Extract usage data from agent history
+	usage_data = None
+	if agent_history.usage:
+		usage_data = agent_history.usage.model_dump()
+
 	# Create results structure with new fields
 	results = {
 		'task_id': task_id,
@@ -1042,6 +1048,7 @@ async def reformat_agent_history(
 		'task_duration': task_duration,
 		'steps': len(complete_history),
 		'tokensUsed': total_tokens_used,  # Add total tokens used
+		'usage': usage_data,  # Add usage data
 	}
 
 	# Save results file
@@ -1370,6 +1377,7 @@ async def run_agent_with_browser(
 		planner_llm=planner_llm,
 		planner_interval=planner_interval,
 		source='eval_platform',
+		calculate_cost=True,
 	)
 	# get last message
 	await agent.run(max_steps=max_steps)

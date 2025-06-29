@@ -1196,6 +1196,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.logger.info(f'❌ {agent_run_error}')
 
+			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+
 			# set the model output schema and call it on the fly
 			if self.state.history._output_model_schema is None and self.output_model_schema is not None:
 				self.state.history._output_model_schema = self.output_model_schema
@@ -1206,6 +1208,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
 			self.logger.info('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
+
+			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+
 			return self.state.history
 
 		except Exception as e:

@@ -22,6 +22,7 @@ from browser_use.dom.history_tree_processor.service import (
 from browser_use.dom.views import SelectorMap
 from browser_use.filesystem.file_system import FileSystemState
 from browser_use.llm.base import BaseChatModel
+from browser_use.tokens.views import UsageSummary
 
 
 class AgentSettings(BaseModel):
@@ -69,7 +70,7 @@ class AgentState(BaseModel):
 	n_steps: int = 1
 	consecutive_failures: int = 0
 	last_result: list[ActionResult] | None = None
-	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[]))
+	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[], usage=None))
 	last_plan: str | None = None
 	last_model_output: AgentOutput | None = None
 	paused: bool = False
@@ -265,6 +266,7 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 	"""List of AgentHistory messages, i.e. the history of the agent's actions and thoughts."""
 
 	history: list[AgentHistory]
+	usage: UsageSummary | None = None
 
 	_output_model_schema: type[AgentStructuredOutput] | None = None
 
