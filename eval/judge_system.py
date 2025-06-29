@@ -7,13 +7,12 @@ import base64
 import io
 import json
 import logging
-from dataclasses import asdict, dataclass
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
+from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import (
@@ -83,37 +82,18 @@ class TaskCategory(Enum):
 	MULTI_STEP_WORKFLOW = 'multi_step_workflow'
 
 
-@dataclass
-class ScoreBreakdown:
-	trajectory_quality: int  # How human-like is the solution path (1-100)
-	tool_calling_effectiveness: int  # How well do tools work (1-100)
-	agent_reasoning: int  # Quality of agent's decision making (1-100)
-	browser_handling: int  # Browser stability and error handling (1-100)
-	task_satisfaction: int  # Final user satisfaction (1-100)
-
-
-@dataclass
-class JudgeResult:
+class JudgeResult(BaseModel):
 	# Basic Information
 	task_summary: str  # 1 sentence summary
-	task_clarity_score: int  # How clear vs uncertain the task is (1-100)
-	task_categories: list[TaskCategory]  # Primary task categories
 
 	# Analysis
 	reasoning: str  # What went well/not well analysis
 	error_categories: list[ErrorCategory]  # Core error categories identified
 
-	# Scores
-	scores: ScoreBreakdown
-	final_score: int  # Overall score (1-100)
-	passed: bool  # Whether it meets 70% threshold
+	final_score: int  # Overall score (0-100) - percentage of task completion
 
 	# Developer Feedback
 	improvement_tips: list[str]  # Concrete improvement suggestions
-	critical_issues: list[str]  # Must-fix issues
-
-	# Metadata
-	evaluation_timestamp: str
 
 
 def encode_image(image_path: str) -> str:
@@ -335,10 +315,9 @@ The browser-use agent operates in iterative loops receiving structured input:
 - Uses todo.md for long tasks above 20 steps
 - Saves findings to results.md when the task is long multiple things need to be extracted on different pages
 - Dont use file system for short tasks except required by the task
-- Reasons explicitly about browser state, history, and progress
 - Calls done action only when task complete or impossible to continue - not too early
-- If the agent needs to repeat the same sub task multiple times & has a good trajectory, but hits the max step limit its still very good and can pass the evaluation
-- Analyse the screenshots. Each interactive element should have exactly one color bounding box. 
+- If the agent needs to repeat the same sub task multiple times & has a good trajectory, but hits the max step limit the score should be medium
+- Analyse the screenshots. Each interactive element should have exactly one color bounding box. If the bounding boxes look off mention that.
 
 </browser_use_agent_context>
 
@@ -346,17 +325,24 @@ The browser-use agent operates in iterative loops receiving structured input:
 **PRIMARY EVALUATION CRITERIA (in order of importance):**
 1. **Task Satisfaction (Most Important)**: Did the agent accomplish what the user asked for? Focus on user intent and final outcome.
 2. **Output Quality**: Is the final result in the correct format and complete? Does it match exactly what was requested?
-3. **Tool Effectiveness**: Did the browser interactions work as expected? Were tools used appropriately? Did tools fail? 
+3. **Tool Effectiveness**: Did the browser interactions work as expected? Were tools used appropriately? How many % of the tools failed? 
 4. **Agent Reasoning**: Quality of decision-making, planning, and problem-solving throughout the trajectory. 
 5. **Browser Handling**: Navigation stability, error recovery, and technical execution. If the browser crashes, does not load or a captcha blocks the task, the score must be very low.
 
-**SCORING GUIDELINES:**
-- 90-100: Excellent - Human-like execution, minimal issues, user would be very satisfied - the task was completed as requested
-- 80-89: Good - Minor issues, but the task was completed as requested
-- 70-79: Acceptable - Some problems or errors in the trajectory, but the task was completed successfully as requested
-- 60-69: Unsatisfactory -  Issues, incomplete or problematic output and execution, the task was not completed as requested - but some parts of the task were completed
-- 50-59: Failed - Major problems, task not completed, user unsatisfied - the task was not completed as requested
-- 1-49: Failed - Significant problems, task not completed, user unsatisfied - the task was not completed as requested
+**SCORING GUIDELINES (final_score represents % of task completion):**
+- 90-100: Excellent - Task completed as requested, human-like execution
+- 80-89: Very Good - Task completed with minor issues, but meets user fully requirements  
+- 70-79: Good - Task completed with minor issues, core requirements satisfied
+- 60-69: Partial - Some parts of task completed, but significant portions incomplete or incorrect
+- 40-59: Poor - Major issues, only minor parts of task completed successfully
+- 1-39: Failed - Task not completed, significant problems throughout execution
+- 0: Complete failure - No meaningful progress toward task completion or completely blocked by a captcha or login
+
+**Examples of task completion scoring:**
+- If task asks for 10 items and agent finds 4 items correctly: 40
+- If task completed to full user requirements but with some errors to improve in the trajectory: 85
+- If task impossible due to captcha/login requirements: 0
+- If the trajectory is ideal and the output is perfect: 100
 
 
 **FAILURE CONDITIONS (automatically score very low):**
@@ -372,22 +358,6 @@ The browser-use agent operates in iterative loops receiving structured input:
 **ERROR CATEGORIES TO IDENTIFY:**
 {error_categories_text}
 
-**TASK CATEGORIES (select all that apply):**
-extraction, interaction, login, research, shopping, booking, comparison, qa_testing, form_filling, navigation, search, filtering, content_creation, file_operations, multi_step_workflow
-- You can also add other categories if they fit better.
-
-
-**Task Clarity Assessment:**
-Rate how clear vs vague the original task was (1-100):
-- High scores (80-100): Clear, specific instructions with defined success criteria
-- Medium scores (40-79): Some ambiguity but generally understandable
-- Low scores (1-39): Very vague, unclear requirements or success criteria, very open ended
-
-**Critical Issues (Must-Fix Problems):**
-Identify the 1-3 most important problems that prevented success or caused major issues.
-Example:
-- The agent got stuck in an infinite loop after step 20 when it extrected the page content - most likely because the agent context got too big.
-
 **Improvement Tips (Actionable Developer Guidance):**
 Format: "Error Category: Specific improvement suggestion"
 Examples:
@@ -398,9 +368,6 @@ Examples:
 
 **IMPORTANT EVALUATION NOTES:**
 - **DO NOT evaluate for hallucination** - Agent has access to browser_state with the DOM and the screenshot at every step, so trust all factual claims. When ever the agent states clear output information trust it and do not include that in your evaluation. The agent is not hallucinating. It know that information.
-- **Focus on trajectory quality** - How human-like and efficient was the solution path?
-- **Consider user satisfaction** - Would a real user be happy with this result?
-- **Reward good planning** - Proper use of todo.md, results.md for complex tasks with at least 10 steps. 
 - **Penalize poor planning** - The agent should not use the file system for short tasks.
 - **Penalize poor tool usage** - Wrong tools, inefficient approaches, ignoring available information
 
@@ -409,23 +376,11 @@ Respond with EXACTLY this JSON structure (no additional text before or after):
 
 {{
     "task_summary": "One sentence summary of what the task was trying to accomplish",
-    "task_categories": ["category1", "category2"],
-    "task_clarity_score": 85,
     "reasoning": "Detailed analysis covering: what went well, what didn't work, trajectory quality assessment, tool usage evaluation, output quality review, and overall user satisfaction prediction",
     "error_categories": ["error1", "error2"],
-    "scores": {{
-        "task_satisfaction": 70,
-        "tool_calling_effectiveness": 80,
-        "agent_reasoning": 85,
-        "browser_handling": 65,
-        "trajectory_quality": 75
-    }},
     "final_score": 75,
-    "critical_issues": [
-        "Most critical issue that prevented success or caused major problems"
-    ],
     "improvement_tips": [
-        "Element not found: Improve the DOM extraction layer to correctly include buttons in the navigation bar of the website check24.de"
+        "Button not clickable: Improve the DOM extraction layer to correctly include buttons in the navigation bar of the website check24.de"
     ]
 }}"""
 
@@ -465,36 +420,14 @@ Evaluate this agent execution given the criteria and respond with the exact JSON
 
 	# Get structured response
 	try:
-		response = await model.ainvoke(messages)
+		response = await model.ainvoke(messages, output_format=JudgeResult)
 
-		# Parse the JSON response
-		# Handle both string and list content types
-		response_text = response.completion
-		response_text = response_text.strip()
-
-		# Try to extract JSON if wrapped in markdown
-		if '```json' in response_text:
-			json_start = response_text.find('```json') + 7
-			json_end = response_text.find('```', json_start)
-			if json_end != -1:
-				response_text = response_text[json_start:json_end].strip()
-		elif '```' in response_text:
-			json_start = response_text.find('```') + 3
-			json_end = response_text.find('```', json_start)
-			if json_end != -1:
-				response_text = response_text[json_start:json_end].strip()
-
-		# Parse JSON
-		try:
-			result_dict = json.loads(response_text)
-		except json.JSONDecodeError as e:
-			logger.error(f'Failed to parse JSON response: {e}')
-			logger.error(f'Response text: {response_text}')
-			# Create fallback result
-			return create_fallback_result(task, 'Failed to parse judge response')
-
-		# Convert to structured result
-		return parse_judge_response(result_dict, task)
+		# The response should already be a structured JudgeResult object
+		if isinstance(response, JudgeResult):
+			return response
+		else:
+			logger.error(f'Expected JudgeResult but got {type(response)}')
+			return create_fallback_result(task, 'Invalid response type from model')
 
 	except Exception as e:
 		logger.error(f'Judge evaluation failed: {e}')
@@ -504,15 +437,6 @@ Evaluate this agent execution given the criteria and respond with the exact JSON
 def parse_judge_response(result_dict: dict, task: str) -> JudgeResult:
 	"""Parse the LLM response into a structured JudgeResult."""
 	try:
-		# Parse task categories
-		task_categories = []
-		if 'task_categories' in result_dict:
-			for cat in result_dict['task_categories']:
-				try:
-					task_categories.append(TaskCategory(cat))
-				except ValueError:
-					logger.warning(f'Unknown task category: {cat}')
-
 		# Parse error categories
 		error_categories = []
 		if 'error_categories' in result_dict:
@@ -522,30 +446,14 @@ def parse_judge_response(result_dict: dict, task: str) -> JudgeResult:
 				except ValueError:
 					logger.warning(f'Unknown error category: {err}')
 
-		# Parse scores
-		scores_dict = result_dict.get('scores', {})
-		scores = ScoreBreakdown(
-			trajectory_quality=scores_dict.get('trajectory_quality', 50),
-			tool_calling_effectiveness=scores_dict.get('tool_calling_effectiveness', 50),
-			agent_reasoning=scores_dict.get('agent_reasoning', 50),
-			browser_handling=scores_dict.get('browser_handling', 50),
-			task_satisfaction=scores_dict.get('task_satisfaction', 50),
-		)
-
-		final_score = result_dict.get('final_score', 50)
+		final_score = result_dict.get('final_score', 0)
 
 		return JudgeResult(
 			task_summary=result_dict.get('task_summary', 'Task analysis unavailable'),
-			task_clarity_score=result_dict.get('task_clarity_score', 50),
-			task_categories=task_categories,
 			reasoning=result_dict.get('reasoning', 'Analysis unavailable'),
 			error_categories=error_categories,
-			scores=scores,
 			final_score=final_score,
-			passed=final_score >= 70,
 			improvement_tips=result_dict.get('improvement_tips', []),
-			critical_issues=result_dict.get('critical_issues', []),
-			evaluation_timestamp=datetime.now().isoformat(),
 		)
 
 	except Exception as e:
@@ -557,22 +465,10 @@ def create_fallback_result(task: str, error_msg: str) -> JudgeResult:
 	"""Create a fallback result when evaluation fails."""
 	return JudgeResult(
 		task_summary=f'Failed to analyze task: {task[:100]}...',
-		task_clarity_score=0,
-		task_categories=[TaskCategory.QA_TESTING],
 		reasoning=f'Evaluation failed: {error_msg}',
 		error_categories=[ErrorCategory.IMPOSSIBLE_TASK],
-		scores=ScoreBreakdown(
-			trajectory_quality=0,
-			tool_calling_effectiveness=0,
-			agent_reasoning=0,
-			browser_handling=0,
-			task_satisfaction=0,
-		),
 		final_score=0,
-		passed=False,
 		improvement_tips=['Fix evaluation system'],
-		critical_issues=[f'Evaluation system failure: {error_msg}'],
-		evaluation_timestamp=datetime.now().isoformat(),
 	)
 
 
@@ -619,34 +515,6 @@ async def judge_with_retry(
 
 	# Fallback return (should never reach here given the logic above, but ensures type safety)
 	return create_fallback_result(task, 'Max retries exceeded without proper error handling')
-
-
-def get_example_json_structure() -> dict:
-	"""Get an example of the expected JSON response structure for the LLM judge."""
-	return {
-		'task_summary': 'Extract product prices from an e-commerce website',
-		'task_clarity_score': 85,
-		'task_categories': ['extraction', 'research'],
-		'reasoning': 'The agent successfully navigated to the target website and extracted most product information. However, it had difficulty with dynamic loading elements and missed some prices that loaded asynchronously. The overall approach was logical but could benefit from better wait strategies.',
-		'error_categories': ['element_not_found', 'load_timeout'],
-		'scores': {
-			'trajectory_quality': 75,
-			'tool_calling_effectiveness': 80,
-			'agent_reasoning': 85,
-			'browser_handling': 65,
-			'task_satisfaction': 70,
-		},
-		'final_score': 75,
-		'critical_issues': [
-			'Missing wait for dynamic content to load',
-			'No fallback strategy when primary selectors fail',
-		],
-		'improvement_tips': [
-			'Browser not loaded: Implement better wait strategies for dynamic content',
-			'Element not found: Add retry logic for element detection',
-			'No error message: Improve error handling for the tool click element',
-		],
-	}
 
 
 def _read_result_file(result_file: Path) -> dict[str, Any]:
@@ -708,7 +576,7 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		)
 
 		# Convert to dict for storage
-		judge_dict = asdict(judge_result)
+		judge_dict = judge_result.model_dump()
 
 		# Save back to result file using async wrapper
 		result_data['comprehensive_judge_evaluation'] = judge_dict
