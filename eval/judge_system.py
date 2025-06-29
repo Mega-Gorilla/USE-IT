@@ -421,13 +421,16 @@ Evaluate this agent execution given the criteria and respond with the exact JSON
 	# Get structured response
 	try:
 		response = await model.ainvoke(messages, output_format=JudgeResult)
-
-		# The response should already be a structured JudgeResult object
-		if isinstance(response, JudgeResult):
-			return response
+		logger.info(f'Judge response: {response}')
+		# Extract the structured data from the completion response
+		if hasattr(response, 'completion') and isinstance(response.completion, JudgeResult):
+			# The completion attribute contains the structured JudgeResult
+			return response.completion
 		else:
-			logger.error(f'Expected JudgeResult but got {type(response)}')
-			return create_fallback_result(task, 'Invalid response type from model')
+			logger.error(
+				f'Unexpected response structure: {type(response)}, completion type: {type(response.completion) if hasattr(response, "completion") else "N/A"}'
+			)
+			return create_fallback_result(task, 'Invalid response structure from model')
 
 	except Exception as e:
 		logger.error(f'Judge evaluation failed: {e}')
