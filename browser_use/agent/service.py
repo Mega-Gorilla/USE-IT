@@ -1187,12 +1187,17 @@ class Agent(Generic[Context]):
 
 				self.logger.info(f'❌ {agent_run_error}')
 
+			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+
 			return self.state.history
 
 		except KeyboardInterrupt:
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
 			self.logger.info('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
+
+			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+
 			return self.state.history
 
 		except Exception as e:
