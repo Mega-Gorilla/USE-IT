@@ -57,11 +57,11 @@ from lmnr import AsyncLaminarClient, Laminar, observe
 from PIL import Image
 from pydantic import BaseModel
 
-from browser_use.agent.utils import create_pydantic_model_from_schema
 from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.openai.chat import ChatOpenAI
+from eval.utils import create_pydantic_model_from_schema
 
 MAX_IMAGE = 5
 

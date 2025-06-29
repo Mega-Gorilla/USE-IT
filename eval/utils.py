@@ -1,13 +1,12 @@
 import json
 import logging
 
-from datamodel_code_generator import DataModelType, generate
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicModel') -> type[BaseModel]:
+def create_pydantic_model_from_schema(original_schema: dict | str, model_name: str = 'DynamicModel') -> type[BaseModel]:
 	"""
 	Convert JSON schema to Pydantic model class using datamodel-code-generator.
 
@@ -36,9 +35,13 @@ def create_pydantic_model_from_schema(schema: dict, model_name: str = 'DynamicMo
 		import tempfile
 		from pathlib import Path
 
+		from datamodel_code_generator import DataModelType, generate
+
 		# Handle case where schema might be a string (JSON)
-		if isinstance(schema, str):
-			schema = json.loads(schema)
+		if isinstance(original_schema, str):
+			schema: dict = json.loads(original_schema)
+		else:
+			schema: dict = original_schema
 
 		logger.debug(f'Creating Pydantic model from schema: {schema}')
 
