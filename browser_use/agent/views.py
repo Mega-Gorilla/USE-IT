@@ -262,7 +262,7 @@ class AgentHistoryList(BaseModel):
 	"""List of AgentHistory messages, i.e. the history of the agent's actions and thoughts."""
 
 	history: list[AgentHistory]
-	usage: UsageSummary | None
+	usage: UsageSummary | None = None
 
 	def total_duration_seconds(self) -> float:
 		"""Get total duration of all steps in seconds"""
