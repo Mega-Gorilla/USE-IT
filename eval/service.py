@@ -582,6 +582,9 @@ class TaskResult:
 		if Stage.FORMAT_HISTORY in self.completed_stages:
 			format_data = self.stage_data.get(Stage.FORMAT_HISTORY, {})
 			logger.info(f'format_data: {format_data}')
+			# log token usage
+			logger.info(f'tokensUsed: {format_data.get("tokensUsed")}')
+			logger.info(f'usage: {format_data.get("usage")}')
 			payload.update(
 				{
 					'actionHistory': format_data.get('action_history', []),
