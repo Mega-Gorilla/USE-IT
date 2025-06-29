@@ -4,10 +4,11 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
+from typing_extensions import TypeVar
 from uuid_extensions import uuid7str
 
 from browser_use.agent.message_manager.views import MessageManagerState
@@ -257,10 +258,15 @@ class AgentHistory(BaseModel):
 		}
 
 
-class AgentHistoryList(BaseModel):
+AgentStructuredOutput = TypeVar('AgentStructuredOutput', bound=BaseModel)
+
+
+class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 	"""List of AgentHistory messages, i.e. the history of the agent's actions and thoughts."""
 
 	history: list[AgentHistory]
+
+	_output_model_schema: type[AgentStructuredOutput] | None = None
 
 	def total_duration_seconds(self) -> float:
 		"""Get total duration of all steps in seconds"""
@@ -455,6 +461,20 @@ class AgentHistoryList(BaseModel):
 	def number_of_steps(self) -> int:
 		"""Get the number of steps in the history"""
 		return len(self.history)
+
+	@property
+	def structured_output(self) -> AgentStructuredOutput | None:
+		"""Get the structured output from the history
+
+		Returns:
+			The structured output if both final_result and _output_model_schema are available,
+			otherwise None
+		"""
+		final_result = self.final_result()
+		if final_result is not None and self._output_model_schema is not None:
+			return self._output_model_schema.model_validate_json(final_result)
+
+		return None
 
 
 class AgentError:
