@@ -1335,6 +1335,10 @@ async def setup_browser_session(task: Task, headless: bool, highlight_elements: 
 		storage_state_path = task_folder / 'storage_state.json'
 		profile_kwargs['storage_state'] = str(storage_state_path)
 
+		downloads_dir_path = task_folder / 'downloads'
+		downloads_dir_path.mkdir(parents=True, exist_ok=True)
+		profile_kwargs['downloads_path'] = str(downloads_dir_path)
+
 		logger.debug(f'Login task {task.task_id}: Configured to save cookies to {storage_state_path}')
 
 	profile = BrowserProfile(**profile_kwargs)
