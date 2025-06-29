@@ -1,12 +1,16 @@
+import base64
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
+import anyio
 from bubus import BaseEvent
 from pydantic import Field, field_validator
 from uuid_extensions import uuid7str
 
-MAX_STRING_LENGTH = 10000  # 10K chars for most strings
-MAX_URL_LENGTH = 2000
-MAX_TASK_LENGTH = 5000
+MAX_STRING_LENGTH = 100000  # 100K chars ~ 25k tokens should be enough
+MAX_URL_LENGTH = 100000
+MAX_TASK_LENGTH = 100000
 MAX_COMMENT_LENGTH = 2000
 MAX_FILE_CONTENT_SIZE = 50 * 1024 * 1024  # 50MB
 
@@ -15,6 +19,7 @@ class UpdateAgentTaskEvent(BaseEvent):
 	# Required fields for identification
 	id: str  # The task ID to update
 	user_id: str = Field(max_length=255)  # For authorization
+	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 
 	# Optional fields that can be updated
 	stopped: bool | None = None
@@ -36,11 +41,17 @@ class UpdateAgentTaskEvent(BaseEvent):
 		return cls(
 			id=str(agent.task_id),
 			user_id='',  # To be filled by cloud handler
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			stopped=agent.state.stopped if hasattr(agent.state, 'stopped') else False,
 			paused=agent.state.paused if hasattr(agent.state, 'paused') else False,
 			done_output=done_output,
 			finished_at=datetime.now(timezone.utc) if agent.state.history and agent.state.history.is_done() else None,
 			agent_state=agent.state.model_dump() if hasattr(agent.state, 'model_dump') else {},
+			user_feedback_type=None,
+			user_comment=None,
+			gif_url=None,
 			# user_feedback_type and user_comment would be set by the API/frontend
 			# gif_url would be set after GIF generation if needed
 		)
@@ -50,6 +61,7 @@ class CreateAgentOutputFileEvent(BaseEvent):
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)
+	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 	task_id: str
 	file_name: str = Field(max_length=255)
 	file_content: str | None = None  # Base64 encoded file content
@@ -74,11 +86,6 @@ class CreateAgentOutputFileEvent(BaseEvent):
 	@classmethod
 	async def from_agent_and_file(cls, agent, output_path: str) -> 'CreateAgentOutputFileEvent':
 		"""Create a CreateAgentOutputFileEvent from a file path"""
-		import base64
-		import os
-		from pathlib import Path
-
-		import anyio
 
 		gif_path = Path(output_path)
 		if not gif_path.exists():
@@ -95,6 +102,9 @@ class CreateAgentOutputFileEvent(BaseEvent):
 
 		return cls(
 			user_id='',  # To be filled by cloud handler
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			task_id=str(agent.task_id),
 			file_name=gif_path.name,
 			file_content=gif_content,  # Base64 encoded
@@ -106,6 +116,7 @@ class CreateAgentStepEvent(BaseEvent):
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)  # Added for authorization checks
+	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 	created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 	agent_task_id: str
 	step: int
@@ -148,6 +159,9 @@ class CreateAgentStepEvent(BaseEvent):
 
 		return cls(
 			user_id='',  # To be filled by cloud handler
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			agent_task_id=str(agent.task_id),
 			step=agent.state.n_steps,
 			evaluation_previous_goal=current_state.evaluation_previous_goal if current_state else '',
@@ -163,6 +177,7 @@ class CreateAgentTaskEvent(BaseEvent):
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)  # Added for authorization checks
+	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 	agent_session_id: str
 	llm_model: str = Field(max_length=100)  # LLMModel enum value as string
 	stopped: bool = False
@@ -183,15 +198,21 @@ class CreateAgentTaskEvent(BaseEvent):
 		return cls(
 			id=str(agent.task_id),
 			user_id='',  # To be filled by cloud handler
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			agent_session_id=str(agent.session_id),
 			task=agent.task,
-			llm_model=agent.model_name,
+			llm_model=agent.llm.model_name,
 			agent_state=agent.state.model_dump() if hasattr(agent.state, 'model_dump') else {},
 			stopped=False,
 			paused=False,
 			done_output=None,
 			started_at=datetime.fromtimestamp(agent._task_start_time, tz=timezone.utc),
 			finished_at=None,
+			user_feedback_type=None,
+			user_comment=None,
+			gif_url=None,
 		)
 
 
@@ -199,6 +220,7 @@ class CreateAgentSessionEvent(BaseEvent):
 	# Model fields
 	id: str = Field(default_factory=uuid7str)
 	user_id: str = Field(max_length=255)
+	device_id: str | None = Field(None, max_length=255)  # Device ID for auth lookup
 	browser_session_id: str = Field(max_length=255)
 	browser_session_live_url: str = Field(max_length=MAX_URL_LENGTH)
 	browser_session_cdp_url: str = Field(max_length=MAX_URL_LENGTH)
@@ -214,6 +236,9 @@ class CreateAgentSessionEvent(BaseEvent):
 		return cls(
 			id=str(agent.session_id),
 			user_id='',  # To be filled by cloud handler
+			device_id=agent.cloud_sync.auth_client.device_id
+			if hasattr(agent, 'cloud_sync') and agent.cloud_sync and agent.cloud_sync.auth_client
+			else None,
 			browser_session_id=agent.browser_session.id,
 			browser_session_live_url='',  # To be filled by cloud handler
 			browser_session_cdp_url='',  # To be filled by cloud handler
