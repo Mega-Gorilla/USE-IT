@@ -342,6 +342,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - If task asks for 10 items and agent finds 4 items correctly: 40
 - If task completed to full user requirements but with some errors to improve in the trajectory: 85
 - If task impossible due to captcha/login requirements: 0
+- If we get blocked by Cloudflare challenge the final score must be 0
 - If the trajectory is ideal and the output is perfect: 100
 
 
