@@ -57,6 +57,11 @@ class SendKeysAction(BaseModel):
 	keys: str
 
 
+class UploadFileAction(BaseModel):
+	index: int
+	path: str
+
+
 class ExtractPageContentAction(BaseModel):
 	value: str
 
