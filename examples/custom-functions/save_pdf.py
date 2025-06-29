@@ -18,6 +18,7 @@ from browser_use.llm import ChatOpenAI
 controller = Controller()
 
 download_path = Path.cwd() / 'downloads'
+download_path.mkdir(parents=True, exist_ok=True)
 
 
 # Save PDF - exact copy from original controller function
