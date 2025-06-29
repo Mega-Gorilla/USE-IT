@@ -905,7 +905,7 @@ Explain the content of the page and that the requested information is not availa
 				'Complete task - with return text and if the task is finished (success=True) or not yet completely finished (success=False), because last step is reached',
 				param_model=StructuredOutputAction[output_model],
 			)
-			async def done(params: StructuredOutputAction[output_model]):
+			async def done(params: StructuredOutputAction):
 				# Exclude success from the output JSON since it's an internal parameter
 				output_dict = params.data.model_dump()
 

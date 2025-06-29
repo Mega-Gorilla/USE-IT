@@ -1196,7 +1196,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.logger.info(f'❌ {agent_run_error}')
 
-			if self.state.history.structured_output() is not None and self.output_model_schema is not None:
+			# set the model output schema and call it on the fly
+			if self.state.history._output_model_schema is None and self.output_model_schema is not None:
 				self.state.history._output_model_schema = self.output_model_schema
 
 			return self.state.history

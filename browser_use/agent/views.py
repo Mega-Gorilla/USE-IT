@@ -462,6 +462,7 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		"""Get the number of steps in the history"""
 		return len(self.history)
 
+	@property
 	def structured_output(self) -> AgentStructuredOutput | None:
 		"""Get the structured output from the history
 
@@ -469,8 +470,9 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 			The structured output if both final_result and _output_model_schema are available,
 			otherwise None
 		"""
-		if self.final_result() is not None and self._output_model_schema is not None:
-			return self._output_model_schema.model_validate_strings(self.final_result())
+		final_result = self.final_result()
+		if final_result is not None and self._output_model_schema is not None:
+			return self._output_model_schema.model_validate_json(final_result)
 
 		return None
 
