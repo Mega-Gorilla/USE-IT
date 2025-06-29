@@ -168,7 +168,11 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 			if isinstance(model_output, dict):
 				# Format the model output nicely
 				if 'action' in model_output:
-					step_text += f'Actions: {json.dumps(model_output["action"], indent=1)[:500]}...[cut for eval system]\n'
+					action_json = json.dumps(model_output['action'], indent=1)
+					if len(action_json) > 500:
+						step_text += f'Actions: {action_json[:500]}...[cut for eval system]\n'
+					else:
+						step_text += f'Actions: {action_json}\n'
 				# if 'current_state' in model_output:
 				# step_text += f'State: {model_output["current_state"]}\n'
 
@@ -177,9 +181,17 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 			for j, result in enumerate(step['result']):
 				if isinstance(result, dict):
 					if result.get('extracted_content'):
-						step_text += f'Result {j + 1}: {result["extracted_content"][:500]}...[cut for eval system]\n'
+						content = str(result['extracted_content'])
+						if len(content) > 500:
+							step_text += f'Result {j + 1}: {content[:500]}...[cut for eval system]\n'
+						else:
+							step_text += f'Result {j + 1}: {content}\n'
 					if result.get('error'):
-						step_text += f'Error {j + 1}: {result["error"][:500]}...[cut for eval system]\n'
+						error = str(result['error'])
+						if len(error) > 500:
+							step_text += f'Error {j + 1}: {error[:500]}...[cut for eval system]\n'
+						else:
+							step_text += f'Error {j + 1}: {error}\n'
 
 		steps.append(step_text)
 
