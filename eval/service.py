@@ -582,6 +582,9 @@ class TaskResult:
 		if Stage.FORMAT_HISTORY in self.completed_stages:
 			format_data = self.stage_data.get(Stage.FORMAT_HISTORY, {})
 			logger.info(f'format_data: {format_data}')
+			# log token usage
+			logger.info(f'tokensUsed: {format_data.get("tokensUsed")}')
+			logger.info(f'usage: {format_data.get("usage")}')
 			payload.update(
 				{
 					'actionHistory': format_data.get('action_history', []),
@@ -1031,8 +1034,13 @@ async def reformat_agent_history(
 
 	# Extract usage data from agent history
 	usage_data = None
-	if agent_history.usage:
+	logger.info(f'Agent history usage object: {agent_history.usage}')
+	logger.info(f'Agent history usage type: {type(agent_history.usage)}')
+	if hasattr(agent_history, 'usage') and agent_history.usage:
+		logger.info(f'Agent history usage model_dump: {agent_history.usage.model_dump()}')
 		usage_data = agent_history.usage.model_dump()
+	else:
+		logger.warning('Agent history has no usage data or usage is empty/None')
 
 	# Create results structure with new fields
 	results = {
