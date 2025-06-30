@@ -57,7 +57,6 @@ jobs:
         uses: useblacksmith/setup-uv@v4
         with:
           enable-cache: true
-          activate-environment: true
 
       - name: Install dependencies
         run: |
