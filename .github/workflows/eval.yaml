@@ -64,9 +64,38 @@ jobs:
           uv sync --extra eval
           echo "Dependencies installed successfully"
 
+      - name: Verify Python Environment
+        run: |
+          echo "=== PYTHON ENVIRONMENT VERIFICATION ==="
+          echo "System Python:"
+          which python || echo "No system python found"
+          python --version 2>/dev/null || echo "No system python version"
+          echo ""
+          echo "UV Python:"
+          uv run which python
+          uv run python --version
+          echo ""
+          echo "UV Environment Info:"
+          uv run python -c "import sys; print(f'Python executable: {sys.executable}')"
+          uv run python -c "import sys; print(f'Python path: {sys.path[:3]}...')"
+          echo ""
+          echo "Virtual Environment:"
+          echo "VIRTUAL_ENV: ${VIRTUAL_ENV:-'Not set'}"
+          echo "PATH (first 3 entries): $(echo $PATH | cut -d: -f1-3)"
+          echo "=================================="
+
       - name: Detect installed Playwright version
         id: playwright_version
-        run: echo "VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_OUTPUT
+        run: |
+          echo "=== DETECTING PLAYWRIGHT VERSION ==="
+          echo "Checking installed packages in UV environment..."
+          uv run python -m pip list | grep -i playwright || echo "Playwright not found in pip list"
+          echo ""
+          echo "Getting Playwright version via JSON..."
+          VERSION=$(uv run python -m pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')
+          echo "Detected Playwright version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "=================================="
 
       - name: Cache Playwright browsers
         uses: useblacksmith/cache@v5
@@ -78,9 +107,21 @@ jobs:
 
       - name: Install Playwright browser dependencies
         run: |
+          echo "=== INSTALLING PLAYWRIGHT BROWSERS ==="
+          echo "System Playwright check:"
+          which playwright 2>/dev/null || echo "No system playwright found"
+          echo ""
+          echo "UV Playwright check:"
+          uv run which playwright
+          uv run playwright --version
+          echo ""
           echo "Installing Playwright browsers..."
-          playwright install --no-shell chromium
+          uv run playwright install --no-shell chromium
           echo "Playwright browsers installed successfully"
+          echo ""
+          echo "Verifying browser installation:"
+          ls -la ~/.cache/ms-playwright/ 2>/dev/null || echo "No playwright cache found"
+          echo "=================================="
 
       - name: Install Xvfb for headed mode
         if: github.event.client_payload.script_args.headless == 'false'
@@ -176,7 +217,7 @@ jobs:
 
           # Build command using array for cleaner construction
           CMD_ARGS=(
-            "python" "eval/service.py"
+            "uv" "run" "python" "eval/service.py"
             "--model" "$MODEL"
             "--eval-model" "$EVAL_MODEL"
             "--parallel-runs" "$PARALLEL_RUNS"
@@ -262,6 +303,20 @@ jobs:
           echo "Command: ${{ steps.eval_command.outputs.FULL_COMMAND }}"
           echo "Starting time: $(date)"
           echo "Use Mind2Web Judge: ${{ github.event.client_payload.script_args.use_mind2web_judge }}"
+          echo ""
+          echo "=== FINAL ENVIRONMENT CHECK ==="
+          echo "Current working directory: $(pwd)"
+          echo "Python being used:"
+          uv run which python
+          uv run python --version
+          echo ""
+          echo "Key packages installed:"
+          uv run python -m pip list | grep -E "(browser-use|playwright|openai|anthropic)" || echo "Package check failed"
+          echo ""
+          echo "Environment variables (relevant):"
+          echo "OPENAI_API_KEY: ${OPENAI_API_KEY:+SET}"
+          echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+SET}"
+          echo "IN_DOCKER: ${IN_DOCKER}"
           echo "============================"
           
           # Set up signal handlers and run the command
