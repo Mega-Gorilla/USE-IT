@@ -53,10 +53,31 @@ jobs:
         with:
           ref: ${{ steps.determine_ref.outputs.REF }}
 
+      - name: Debug Repository Structure
+        run: |
+          echo "=== REPOSITORY STRUCTURE DEBUG ==="
+          echo "Current working directory: $(pwd)"
+          echo "Repository contents:"
+          ls -la
+          echo ""
+          echo "Looking for uv.lock:"
+          find . -name "uv.lock" -type f || echo "No uv.lock found"
+          echo ""
+          echo "Looking for pyproject.toml:"
+          find . -name "pyproject.toml" -type f || echo "No pyproject.toml found"
+          echo ""
+          echo "Git repository info:"
+          git remote -v
+          git branch
+          echo "=================================="
+
       - name: Set up Python and uv
         uses: useblacksmith/setup-uv@v4
         with:
           enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          # Alternative: disable cache if issues persist
+          # enable-cache: false
 
       - name: Install dependencies
         run: |
