@@ -5,24 +5,22 @@ import logging
 import re
 from collections.abc import Callable
 from inspect import Parameter, iscoroutinefunction, signature
+from types import UnionType
 from typing import Any, Generic, Optional, TypeVar, Union, get_args, get_origin
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from playwright.async_api import Page
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, RootModel, create_model
 
 from browser_use.browser import BrowserSession
+from browser_use.browser.types import Page
 from browser_use.controller.registry.views import (
 	ActionModel,
 	ActionRegistry,
 	RegisteredAction,
 	SpecialActionParameters,
 )
+from browser_use.filesystem.file_system import FileSystem
+from browser_use.llm.base import BaseChatModel
 from browser_use.telemetry.service import ProductTelemetry
-from browser_use.telemetry.views import (
-	ControllerRegisteredFunctionsTelemetryEvent,
-	RegisteredFunction,
-)
 from browser_use.utils import match_url_with_domain_pattern, time_execution_async
 
 Context = TypeVar('Context')
@@ -38,7 +36,7 @@ class Registry(Generic[Context]):
 		self.telemetry = ProductTelemetry()
 		self.exclude_actions = exclude_actions if exclude_actions is not None else []
 
-	def _get_special_param_types(self) -> dict[str, type]:
+	def _get_special_param_types(self) -> dict[str, type | UnionType | None]:
 		"""Get the expected types for special parameters from SpecialActionParameters"""
 		# Manually define the expected types to avoid issues with Optional handling.
 		# we should try to reduce this list to 0 if possible, give as few standardized objects to all the actions
@@ -53,6 +51,7 @@ class Registry(Generic[Context]):
 			'page_extraction_llm': BaseChatModel,
 			'available_file_paths': list,
 			'has_sensitive_data': bool,
+			'file_system': FileSystem,
 		}
 
 	def _normalize_action_function_signature(
@@ -146,6 +145,7 @@ class Registry(Generic[Context]):
 					f'{func.__name__}_Params',
 					__base__=ActionModel,
 				)
+		assert param_model is not None, f'param_model is None for {func.__name__}'
 
 		# Step 4: Create normalized wrapper function
 		@functools.wraps(func)
@@ -195,6 +195,14 @@ class Registry(Generic[Context]):
 								raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
 							elif param.name == 'page_extraction_llm':
 								raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+							elif param.name == 'file_system':
+								raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
+							elif param.name == 'page':
+								raise ValueError(f'Action {func.__name__} requires page but none provided.')
+							elif param.name == 'available_file_paths':
+								raise ValueError(f'Action {func.__name__} requires available_file_paths but none provided.')
+							elif param.name == 'file_system':
+								raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
 							else:
 								raise ValueError(f"{func.__name__}() missing required special parameter '{param.name}'")
 						call_args.append(value)
@@ -206,6 +214,14 @@ class Registry(Generic[Context]):
 							raise ValueError(f'Action {func.__name__} requires browser_session but none provided.')
 						elif param.name == 'page_extraction_llm':
 							raise ValueError(f'Action {func.__name__} requires page_extraction_llm but none provided.')
+						elif param.name == 'file_system':
+							raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
+						elif param.name == 'page':
+							raise ValueError(f'Action {func.__name__} requires page but none provided.')
+						elif param.name == 'available_file_paths':
+							raise ValueError(f'Action {func.__name__} requires available_file_paths but none provided.')
+						elif param.name == 'file_system':
+							raise ValueError(f'Action {func.__name__} requires file_system but none provided.')
 						else:
 							raise ValueError(f"{func.__name__}() missing required special parameter '{param.name}'")
 				else:
@@ -233,7 +249,7 @@ class Registry(Generic[Context]):
 		# Add **kwargs to accept and ignore extra params
 		new_params.append(Parameter('kwargs', Parameter.VAR_KEYWORD))
 
-		normalized_wrapper.__signature__ = sig.replace(parameters=new_params)
+		normalized_wrapper.__signature__ = sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
 		return normalized_wrapper, param_model
 
@@ -299,6 +315,7 @@ class Registry(Generic[Context]):
 		params: dict,
 		browser_session: BrowserSession | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
+		file_system: FileSystem | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		#
@@ -336,6 +353,7 @@ class Registry(Generic[Context]):
 				'page_extraction_llm': page_extraction_llm,
 				'available_file_paths': available_file_paths,
 				'has_sensitive_data': action_name == 'input_text' and bool(sensitive_data),
+				'file_system': file_system,
 			}
 
 			# Handle async page parameter if needed
@@ -347,7 +365,19 @@ class Registry(Generic[Context]):
 
 			# All functions are now normalized to accept kwargs only
 			# Call with params and unpacked special context
-			return await action.function(params=validated_params, **special_context)
+			try:
+				return await action.function(params=validated_params, **special_context)
+			except Exception as e:
+				# Retry once if it's a page error
+				logger.warning(f'⚠️ Action {action_name}() failed: {type(e).__name__}: {e}, trying one more time...')
+				special_context['page'] = browser_session and await browser_session.get_current_page()
+				try:
+					return await action.function(params=validated_params, **special_context)
+				except Exception as retry_error:
+					raise RuntimeError(
+						f'Action {action_name}() failed: {type(e).__name__}: {e} (page may have closed or navigated away mid-action)'
+					) from retry_error
+				raise
 
 		except ValueError as e:
 			# Preserve ValueError messages from validation
@@ -366,7 +396,9 @@ class Registry(Generic[Context]):
 			url_info = f' on {current_url}' if current_url and current_url != 'about:blank' else ''
 			logger.info(f'🔒 Using sensitive data placeholders: {", ".join(sorted(placeholders_used))}{url_info}')
 
-	def _replace_sensitive_data(self, params: BaseModel, sensitive_data: dict[str, Any], current_url: str = None) -> BaseModel:
+	def _replace_sensitive_data(
+		self, params: BaseModel, sensitive_data: dict[str, Any], current_url: str | None = None
+	) -> BaseModel:
 		"""
 		Replaces sensitive data placeholders in params with actual values.
 
@@ -438,13 +470,19 @@ class Registry(Generic[Context]):
 
 	# @time_execution_sync('--create_action_model')
 	def create_action_model(self, include_actions: list[str] | None = None, page=None) -> type[ActionModel]:
-		"""Creates a Pydantic model from registered actions, used by LLM APIs that support tool calling & enforce a schema"""
+		"""Creates a Union of individual action models from registered actions,
+		used by LLM APIs that support tool calling & enforce a schema.
+
+		Each action model contains only the specific action being used,
+		rather than all actions with most set to None.
+		"""
+		from typing import Union
 
 		# Filter actions based on page if provided:
 		#   if page is None, only include actions with no filters
 		#   if page is provided, only include actions that match the page
 
-		available_actions = {}
+		available_actions: dict[str, RegisteredAction] = {}
 		for name, action in self.registry.actions.items():
 			if include_actions is not None and name not in include_actions:
 				continue
@@ -463,24 +501,64 @@ class Registry(Generic[Context]):
 			if domain_is_allowed and page_is_allowed:
 				available_actions[name] = action
 
-		fields = {
-			name: (
-				Optional[action.param_model],
-				Field(default=None, description=action.description),
-			)
-			for name, action in available_actions.items()
-		}
+		# Create individual action models for each action
+		individual_action_models: list[type[BaseModel]] = []
 
-		self.telemetry.capture(
-			ControllerRegisteredFunctionsTelemetryEvent(
-				registered_functions=[
-					RegisteredFunction(name=name, params=action.param_model.model_json_schema())
-					for name, action in available_actions.items()
-				]
+		for name, action in available_actions.items():
+			# Create an individual model for each action that contains only one field
+			individual_model = create_model(
+				f'{name.title().replace("_", "")}ActionModel',
+				__base__=ActionModel,
+				**{
+					name: (
+						action.param_model,
+						Field(description=action.description),
+					)  # type: ignore
+				},
 			)
-		)
+			individual_action_models.append(individual_model)
 
-		return create_model('ActionModel', __base__=ActionModel, **fields)  # type:ignore
+		# If no actions available, return empty ActionModel
+		if not individual_action_models:
+			return create_model('EmptyActionModel', __base__=ActionModel)
+
+		# Create proper Union type that maintains ActionModel interface
+		if len(individual_action_models) == 1:
+			# If only one action, return it directly (no Union needed)
+			result_model = individual_action_models[0]
+
+		# Meaning the length is more than 1
+		else:
+			# Create a Union type using RootModel that properly delegates ActionModel methods
+			union_type = Union[tuple(individual_action_models)]  # type: ignore : Typing doesn't understand that the length is >= 2 (by design)
+
+			class ActionModelUnion(RootModel[union_type]):  # type: ignore
+				"""Union of all available action models that maintains ActionModel interface"""
+
+				def get_index(self) -> int | None:
+					"""Delegate get_index to the underlying action model"""
+					if hasattr(self.root, 'get_index'):
+						return self.root.get_index()  # type: ignore
+					return None
+
+				def set_index(self, index: int):
+					"""Delegate set_index to the underlying action model"""
+					if hasattr(self.root, 'set_index'):
+						self.root.set_index(index)  # type: ignore
+
+				def model_dump(self, **kwargs):
+					"""Delegate model_dump to the underlying action model"""
+					if hasattr(self.root, 'model_dump'):
+						return self.root.model_dump(**kwargs)  # type: ignore
+					return super().model_dump(**kwargs)
+
+			# Set the name for better debugging
+			ActionModelUnion.__name__ = 'ActionModel'
+			ActionModelUnion.__qualname__ = 'ActionModel'
+
+			result_model = ActionModelUnion
+
+		return result_model  # type:ignore
 
 	def get_prompt_description(self, page=None) -> str:
 		"""Get a description of all actions for the prompt

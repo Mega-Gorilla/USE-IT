@@ -14,9 +14,10 @@ Browser Use supports a wide variety of ways to launch or connect to a browser:
 - Connect to a local browser already running using `browser_pid`
 
 <Tip>
-Don't want to manage your own browser infrastructure? Try [☁️ Browser Use Cloud](https://browser-use.com) ➡️  
+Don't want to manage your own browser infrastructure? Try [☁️ Browser Use Cloud](https://browser-use.com) ➡️
 
 We provide automatic CAPTCHA solving, proxies, human-in-the-loop automation, and more!
+
 </Tip>
 
 ## Connection Methods
@@ -34,7 +35,7 @@ browser_session = BrowserSession(
     executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
     # For Windows: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
     # For Linux: '/usr/bin/google-chrome'
-    
+
     # Use a specific data directory on disk (optional, set to None for incognito)
     user_data_dir='~/.config/browseruse/profiles/default',   # this is the default
     # ... any other BrowserProfile or playwright launch_persistnet_context config...
@@ -51,7 +52,15 @@ agent = Agent(
 We support most `chromium`-based browsers in `executable_path`, including [Brave](https://github.com/browser-use/browser-use/tree/main/examples/browser/stealth.py), [patchright chromium](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright), [rebrowser](https://rebrowser.net/), Edge, and more. See [`examples/browser/stealth.py`](https://github.com/browser-use/browser-use/tree/main/examples/browser) for more. We do not support Firefox or Safari at the moment.
 
 <Warning>
-    [As of Chrome v136](https://github.com/browser-use/browser-use/issues/1520), driving browsers with the default profile is [no longer supported](https://developer.chrome.com/blog/remote-debugging-port) for security reasons. Browser-Use has transitioned to creating a new dedicated profile for agents in: `~/.config/browseruse/profiles/default`. You can [open this profile](https://superuser.com/questions/377186/how-do-i-start-chrome-using-a-specified-user-profile) and log into everything you need your agent to have access to, and it will persist over time.
+  [As of Chrome v136](https://github.com/browser-use/browser-use/issues/1520),
+  driving browsers with the default profile is [no longer
+  supported](https://developer.chrome.com/blog/remote-debugging-port) for
+  security reasons. Browser-Use has transitioned to creating a new dedicated
+  profile for agents in: `~/.config/browseruse/profiles/default`. You can [open
+  this
+  profile](https://superuser.com/questions/377186/how-do-i-start-chrome-using-a-specified-user-profile)
+  and log into everything you need your agent to have access to, and it will
+  persist over time.
 </Warning>
 
 ### Method B: Connect Using Existing Playwright Objects
@@ -67,7 +76,7 @@ async with async_playwright() as playwright:
     browser = await playwright.chromium.launch()
     context = await browser.new_context()
     page = await context.new_page()
-    
+
     browser_session = BrowserSession(
         page=page,
         # browser_context=context,  # all these are supported
@@ -146,8 +155,6 @@ agent = Agent(
 )
 ```
 
-
-
 ## Security Considerations
 
 <Warning>
@@ -164,6 +171,7 @@ agent = Agent(
 ## Best Practices
 
 1. **Use isolated profiles**: Create separate Chrome profiles for different agents to limit scope of risk:
+
    ```python
    browser_session = BrowserSession(
        user_data_dir='~/.config/browseruse/profiles/banking',
@@ -172,23 +180,30 @@ agent = Agent(
    ```
 
 2. **Limit domain access**: Restrict which sites the agent can visit:
+
    ```python
    browser_session = BrowserSession(
        allowed_domains=['example.com', 'http*://*.github.com'],
    )
    ```
 
-3. **Enable keep_alive for multiple tasks**: Keep the browser open between agent runs:
+3. **Enable `keep_alive=True`** If you want to use a single `BrowserSession` with more than one agent:
    ```python
    browser_session = BrowserSession(
        keep_alive=True,
        ...
    )
+   await browser_session.start()  # start the session yourself before passing to Agent
+   ...
+   agent = Agent(..., browser_session=browser_session)
+   await agent.run()
+   ...
+   await browser_session.kill()   # end the session yourself, shortcut for keep_alive=False + .stop()
    ```
 
 ## Re-Using a Browser
 
-A `BrowserSession` starts when the browser is launched/connected, and ends when the browser process exits/disconnects. A session internally manages a single live playwright browser context, and is normally auto-closed by the agent when its task is complete (*if* the agent started the session itself). If you pass an existing `BrowserSession` into an Agent, or if you set `BrowserSession(keep_alive=True)`, the session will not be closed and can be re-used between agents.
+A `BrowserSession` starts when the browser is launched/connected, and ends when the browser process exits/disconnects. A session internally manages a single live playwright browser context, and is normally auto-closed by the agent when its task is complete (_if_ the agent started the session itself). If you pass an existing `BrowserSession` into an Agent, or if you set `BrowserSession(keep_alive=True)`, the session will not be closed and can be re-used between agents.
 
 Browser Use provides a number of ways to re-use profiles, sessions, and other configuration across multiple agents.
 
@@ -200,7 +215,9 @@ Browser Use provides a number of ways to re-use profiles, sessions, and other co
 - ⚠️ parallel agents can share a single `BrowserSession`, working in the same tab
 
 <Important>
-Multiple `BrowserSession`s (aka chrome processes) cannot share the same `user_data_dir` at the same time, but they can share a `storage_state` file or `BrowserProfile` config.
+  Multiple `BrowserSession`s (aka chrome processes) cannot share the same
+  `user_data_dir` at the same time, but they can share a `storage_state` file or
+  `BrowserProfile` config.
 </Important>
 
 ### Sequential Agents, Same Profile, Different Browser
@@ -209,7 +226,7 @@ If you are only running one agent & browser at a time, they can re-use the same 
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
+from browser_use.llm import ChatOpenAI
 
 reused_profile = BrowserProfile(user_data_dir='~/.config/browseruse/profiles/default')
 
@@ -233,27 +250,29 @@ await agent2.run()
 ### Sequential Agents, Same Profile, Same Browser
 
 If you are only running one agent at a time, they can re-use the same active `BrowserSession` and avoid having to relaunch chrome.
+Each agent will start off looking at the same tab the last agent ended off on.
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
+from browser_use.llm import ChatOpenAI
 
 reused_session = BrowserSession(
     user_data_dir='~/.config/browseruse/profiles/default',
-    keep_alive=True,
+    keep_alive=True,  # dont close browser after 1st agent.run() ends
 )
+await reused_session.start()   # when keep_alive=True, session must be started manually
 
 agent1 = Agent(
     task="The first task...",
     llm=ChatOpenAI(model="gpt-4o-mini"),
-    browser_session=reused_session,              # pass the session in
+    browser_session=reused_session,
 )
 await agent1.run()
 
 agent2 = Agent(
     task="The second task...",
     llm=ChatOpenAI(model="gpt-4o-mini"),
-    browser_session=reused_session,              # re-use the same session
+    browser_session=reused_session,      # re-use the same session
 )
 await agent2.run()
 
@@ -264,40 +283,38 @@ await reused_session.close()
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
+from browser_use.llm import ChatOpenAI
+from playwright.async_api import async_playwright
 
-shared_browser = BrowserSession(
-    storage_state='/tmp/cookies.json',
-    user_data_dir=None,
-    keep_alive=True,
-    headless=True,
-)
+async with async_playwright() as playwright:
+    browser_context = await playwright.chromium.launch_persistent_context()
+    page1 = await browser_context.new_page()
+    page2 = await browser_context.new_page()
 
-agent1 = Agent(
-    task="The first task...",
-    llm=ChatOpenAI(model="gpt-4o-mini"),
-    browser_session=shared_browser,              # pass the session in
-)
-agent2 = Agent(
-    task="The second task...",
-    llm=ChatOpenAI(model="gpt-4o-mini"),
-    browser_session=shared_browser,              # re-use the same session
-)
-await asyncio.gather(agent1.run(), agent2.run()) # run in parallel
-
-await shared_browser.close()
+    agent1 = Agent(
+        task="The first task...",
+        llm=ChatOpenAI(model="gpt-4o-mini"),
+        page=page1,
+    )
+    agent2 = Agent(
+        task="The second task...",
+        llm=ChatOpenAI(model="gpt-4o-mini"),
+        page=page2,
+    )
+    await asyncio.gather(agent1.run(), agent2.run()) # run in parallel
 ```
 
 ### Parallel Agents, Same Browser, Same Tab
 
 <Warning>
-⚠️ This mode is not recommended. Agents are not yet optimized to share the same tab in the same browser, they may interfere with each other or cause errors.
+  ⚠️ This mode is not recommended. Agents are not yet optimized to share the
+  same tab in the same browser, they may interfere with each other or cause
+  errors.
 </Warning>
-
 
 ```python
 from browser_use import Agent, BrowserSession
-from langchain_openai import ChatOpenAI
+from browser_use.llm import ChatOpenAI
 from playwright.async_api import async_playwright
 
 playwright = await async_playwright().start()
@@ -306,27 +323,27 @@ context = await browser.new_context()
 shared_page = await context.new_page()
 await shared_page.goto('https://example.com', wait_until='domcontentloaded')
 
+shared_session = BrowserSession(page=shared_page, keep_alive=True)
+await shared_session.start()
+
 agent1 = Agent(
     task="Fill out the form in section A...",
     llm=ChatOpenAI(model="gpt-4o-mini"),
-    page=shared_page,                              # pass the Page in
-    # ^ shortcut for: browser_session=BrowserSession(page=page)
+    browser_session=shared_session
 )
 agent2 = Agent(
     task="Fill out the form in section B...",
     llm=ChatOpenAI(model="gpt-4o-mini"),
-    page=shared_page,                           # re-use the same Page
+    browser_session=shared_session,
 )
 await asyncio.gather(agent1.run(), agent2.run()) # run in parallel
 
-await browser.close()
+await shared_session.kill()
 ```
 
 ### Parallel Agents, Same Profile, Different Browsers
 
-<Tip>
-This mode is the recommended default.
-</Tip>
+<Tip>This mode is the recommended default.</Tip>
 
 To share a single set of configuration or cookies, but still have agents working in their own browser sessions (potentially in parallel), use our provided `BrowserProfile` object.
 
@@ -349,17 +366,19 @@ shared_profile = BrowserProfile(
 )
 
 window1 = BrowserSession(browser_profile=profile_a)
+await window1.start()
 agent1 = Agent(browser_session=window1)
 
 window2 = BrowserSession(browser_profile=profile_a)
+await window2.start()
 agent2 = Agent(browser_session=window2)
 
 await asyncio.gather(agent1.run(), agent2.run())  # run in parallel
-await window1.save_cookies()  # write cookie updates to auth.json
-await window2.save_cookies()  # you must decide when to save manually
+await window1.save_storage_state()  # write storage state (cookies, localStorage, etc.) to auth.json
+await window2.save_storage_state()  # you must decide when to save manually
 
 # can also reload the cookies from the file into the active session if they change
-await window1.load_cookies_from_file()
+await window1.load_storage_state()
 await window1.close()
 await window2.close()
 ```
@@ -389,7 +408,8 @@ If you get a "profile is already in use" error:
 3. Alternatively, manually delete the `SingletonLock` file in the profile directory
 
 <Note>
-  For more configuration options, see the [Browser Settings](/customize/browser-settings) documentation.
+  For more configuration options, see the [Browser
+  Settings](/customize/browser-settings) documentation.
 </Note>
 
 ### Profile Version Issues

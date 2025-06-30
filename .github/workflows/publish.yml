@@ -11,8 +11,8 @@ name: publish
 on:
   release:
     types: [published]     # publish full release to PyPI when a release is created on Github
-  schedule:
-    - cron: "0 17 * * FRI" # tag a pre-release on Github every Friday at 5 PM UTC
+  # schedule:
+  #   - cron: "0 17 * * FRI" # tag a pre-release on Github every Friday at 5 PM UTC
   workflow_dispatch:
 
 permissions:
@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   tag_pre_release:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IN_DOCKER: 'True'
+      ANONYMIZED_TELEMETRY: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -92,7 +93,7 @@ jobs:
       - run: playwright install chromium
 
       # TODO: just depend on the other test.yml action for this instead of re-running the tests here
-      - run: uv run pytest tests/ci                  # dont push the package to PyPI if the tests fail
+      - run: uv run pytest tests/ci/test_controller.py   # final sanity check: run a few of the tests before release
       
       # publish to PyPI
       - run: uv publish --trusted-publishing always

@@ -10,8 +10,8 @@
 [![Discord](https://img.shields.io/discord/1303749220842340412?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://link.browser-use.com/discord)
 [![Cloud](https://img.shields.io/badge/Cloud-☁️-blue)](https://cloud.browser-use.com)
 [![Documentation](https://img.shields.io/badge/Documentation-📕-blue)](https://docs.browser-use.com)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/gregpr07)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/mamagnus00)
+[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
+[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
 [![Weave Badge](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.workweave.ai%2Fapi%2Frepository%2Fbadge%2Forg_T5Pvn3UBswTHIsN1dWS3voPg%2F881458615&labelColor=#EC6341)](https://app.workweave.ai/reports/repository/org_T5Pvn3UBswTHIsN1dWS3voPg/881458615)
 
 🌐 Browser-use is the easiest way to connect your AI agents with the browser.
@@ -28,13 +28,8 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-For memory functionality (requires Python<3.13 due to PyTorch compatibility):  
-
-```bash
-pip install "browser-use[memory]"
-```
-
 Install the browser:
+
 ```bash
 playwright install chromium --with-deps --no-shell
 ```
@@ -46,7 +41,7 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 from browser_use import Agent
-from langchain_openai import ChatOpenAI
+from browser_use.llm import ChatOpenAI
 
 async def main():
     agent = Agent(
@@ -82,7 +77,7 @@ You can test browser-use using its [Web UI](https://github.com/browser-use/web-u
 You can also use our `browser-use` interactive CLI (similar to `claude` code):
 
 ```bash
-pip install browser-use[cli]
+pip install "browser-use[cli]"
 browser-use
 ```
 
@@ -156,15 +151,20 @@ Tell your computer what to do, and it gets it done.
 
 - [ ] Human work is sequential. The real power of a browser agent comes into reality if we can parallelize similar tasks. For example, if you want to find contact information for 100 companies, this can all be done in parallel and reported back to a main agent, which processes the results and kicks off parallel subtasks again.
 
-
 ## Contributing
 
 We love contributions! Feel free to open issues for bugs or feature requests. To contribute to the docs, check out the `/docs` folder.
 
+## 🧪 How to make your agents robust?
+
+We offer to run your tasks in our CI—automatically, on every update!
+
+- **Add your task:** Add a YAML file in `tests/agent_tasks/` (see the [`README there`](tests/agent_tasks/README.md) for details).
+- **Automatic validation:** Every time we push updates, your task will be run by the agent and evaluated using your criteria.
+
 ## Local Setup
 
 To learn more about the library, check out the [local setup 📕](https://docs.browser-use.com/development/local-setup).
-
 
 `main` is the primary development branch with frequent changes. For production use, install a stable [versioned release](https://github.com/browser-use/browser-use/releases) instead.
 
@@ -190,8 +190,8 @@ If you use Browser Use in your research or project, please cite:
 
  <div align="center"> <img src="https://github.com/user-attachments/assets/06fa3078-8461-4560-b434-445510c1766f" width="400"/> 
  
-[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/gregpr07)
-[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/mamagnus00)
+[![Twitter Follow](https://img.shields.io/twitter/follow/Gregor?style=social)](https://x.com/intent/user?screen_name=gregpr07)
+[![Twitter Follow](https://img.shields.io/twitter/follow/Magnus?style=social)](https://x.com/intent/user?screen_name=mamagnus00)
  
  </div>
 

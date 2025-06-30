@@ -8,15 +8,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langchain_openai import ChatOpenAI
-
 from browser_use import Agent
+from browser_use.llm import ChatOpenAI
 
 llm = ChatOpenAI(model='gpt-4o')
 
 initial_actions = [
-	{'open_tab': {'url': 'https://www.google.com'}},
-	{'open_tab': {'url': 'https://en.wikipedia.org/wiki/Randomness'}},
+	{'go_to_url': {'url': 'https://www.google.com', 'new_tab': True}},
+	{'go_to_url': {'url': 'https://en.wikipedia.org/wiki/Randomness', 'new_tab': True}},
 	{'scroll_down': {'amount': 1000}},
 ]
 agent = Agent(
