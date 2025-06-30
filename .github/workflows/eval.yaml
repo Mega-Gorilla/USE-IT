@@ -7,7 +7,7 @@ on:
 
 jobs:
   run_evaluation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
     env:
       IN_DOCKER: 'true'
@@ -54,7 +54,7 @@ jobs:
           ref: ${{ steps.determine_ref.outputs.REF }}
 
       - name: Set up Python and uv
-        uses: astral-sh/setup-uv@v6
+        uses: useblacksmith/setup-uv@v4
         with:
           enable-cache: true
           activate-environment: true
@@ -70,7 +70,7 @@ jobs:
         run: echo "VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_OUTPUT
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: useblacksmith/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright_version.outputs.VERSION }}
