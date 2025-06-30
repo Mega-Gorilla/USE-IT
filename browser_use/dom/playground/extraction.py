@@ -1,7 +1,9 @@
 import asyncio
 import os
+import time
 
 import anyio
+import tiktoken
 
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser import BrowserProfile, BrowserSession
@@ -71,7 +73,11 @@ async def test_focus_vs_all_elements():
 
 				# Get/refresh the state (includes removing old highlights)
 				print('\nGetting page state...')
+
+				start_time = time.time()
 				all_elements_state = await browser_session.get_state_summary(True)
+				end_time = time.time()
+				print(f'get_state_summary took {end_time - start_time:.2f} seconds')
 
 				selector_map = all_elements_state.selector_map
 				total_elements = len(selector_map.keys())
@@ -86,13 +92,17 @@ async def test_focus_vs_all_elements():
 				)
 				# print(prompt.get_user_message(use_vision=False).content)
 				# Write the user message to a file for analysis
-				user_message = prompt.get_user_message(use_vision=False).content
+				user_message = prompt.get_user_message(use_vision=False).text
 				os.makedirs('./tmp', exist_ok=True)
 				async with await anyio.open_file('./tmp/user_message.txt', 'w', encoding='utf-8') as f:
 					if isinstance(user_message, str):
 						await f.write(user_message)
 					else:
 						await f.write(str(user_message))
+
+				encoding = tiktoken.encoding_for_model('gpt-4o')
+				token_count = len(encoding.encode(user_message))
+				print(f'Token count: {token_count}')
 
 				print('User message written to ./tmp/user_message.txt')
 
