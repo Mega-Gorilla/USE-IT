@@ -56,11 +56,12 @@ jobs:
       - name: Set up Python and uv
         uses: useblacksmith/setup-uv@v4
         with:
-          enable-cache: false
-          # Disabled cache because uv.lock doesn't exist in repository
-          # cache-dependency-glob: "**/uv.lock"
-          # Alternative: disable cache if issues persist
-          # enable-cache: false
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/*requirements*.txt
+          cache-suffix: "eval-deps"
+          prune-cache: false
 
       - name: Install dependencies
         run: |
