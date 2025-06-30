@@ -31,12 +31,13 @@ async def test_focus_vs_all_elements():
 			# executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 			disable_security=True,
 			wait_for_network_idle_page_load_time=1,
-			headless=True,
+			headless=False,
 		)
 	)
 
 	websites = [
-		'https://demos.telerik.com/kendo-react-ui/treeview/overview/basic/func?theme=default-ocean-blue-a11y',
+		# 'https://demos.telerik.com/kendo-react-ui/treeview/overview/basic/func?theme=default-ocean-blue-a11y',
+		'https://google.com',
 		'https://www.ycombinator.com/companies',
 		'https://kayak.com/flights',
 		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
@@ -50,7 +51,6 @@ async def test_focus_vs_all_elements():
 		'https://reddit.com',
 		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
 		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
-		'https://google.com',
 		'https://amazon.com',
 		'https://github.com',
 	]
@@ -80,7 +80,7 @@ async def test_focus_vs_all_elements():
 				# print(all_elements_state.element_tree.clickable_elements_to_string())
 				prompt = AgentMessagePrompt(
 					browser_state_summary=all_elements_state,
-					file_system=FileSystem(dir_path='./tmp'),
+					file_system=FileSystem(base_dir='./tmp'),
 					include_attributes=DEFAULT_INCLUDE_ATTRIBUTES,
 					step_info=None,
 				)
