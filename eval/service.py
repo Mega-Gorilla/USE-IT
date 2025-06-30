@@ -66,6 +66,7 @@ if ANCHOR_BROWSER_API_KEY:
 else:
 	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Tasks will use local browser.')
 
+
 def create_anchor_browser_session(headless: bool = False) -> str:
 	"""Create an Anchor Browser session and return CDP URL"""
 	browser_configuration = {
@@ -1048,13 +1049,13 @@ async def load_existing_result(task_folder: Path) -> dict:
 	return existing_result
 
 
-async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
+async def setup_browser_session(task: Task, headless: bool, use_anchor: bool = False) -> BrowserSession:
 	"""Setup browser session for the task"""
 
-	# Check for Anchor Browser API key
+	# Check for Anchor Browser API key and flag
 	cdp_url = None
 
-	if ANCHOR_BROWSER_API_KEY:
+	if use_anchor and ANCHOR_BROWSER_API_KEY:
 		try:
 			logger.debug(f'Browser setup: Creating Anchor Browser session for task {task.task_id}')
 			cdp_url = await asyncio.to_thread(create_anchor_browser_session, headless)
@@ -1064,6 +1065,10 @@ async def setup_browser_session(task: Task, headless: bool) -> BrowserSession:
 			)
 			logger.info(f'Browser setup: Falling back to local browser for task {task.task_id}')
 			cdp_url = None
+	elif use_anchor and not ANCHOR_BROWSER_API_KEY:
+		logger.warning(
+			f'Browser setup: Anchor Browser requested but ANCHOR_BROWSER_API_KEY not set. Using local browser for task {task.task_id}'
+		)
 
 	if cdp_url:
 		# Use Anchor Browser
@@ -1194,6 +1199,7 @@ async def run_task_with_semaphore(
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
 	fresh_start: bool = True,
 	use_serp: bool = False,
+	use_anchor: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -1236,7 +1242,7 @@ async def run_task_with_semaphore(
 					try:
 						logger.info(f'Task {task.task_id}: Browser setup starting.')
 						browser_session = await run_stage(
-							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless), timeout=120
+							Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, use_anchor), timeout=120
 						)
 						task_result.stage_completed(Stage.SETUP_BROWSER)
 						logger.info(f'Task {task.task_id}: Browser session started successfully.')
@@ -1431,6 +1437,7 @@ async def run_multiple_tasks(
 	use_vision: bool = True,
 	fresh_start: bool = True,
 	use_serp: bool = False,
+	use_anchor: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -1463,6 +1470,7 @@ async def run_multiple_tasks(
 				semaphore_runs=semaphore_runs,  # Pass the semaphore
 				fresh_start=fresh_start,
 				use_serp=use_serp,
+				use_anchor=use_anchor,
 				enable_memory=enable_memory,
 				memory_interval=memory_interval,
 				max_actions_per_step=max_actions_per_step,
@@ -1704,6 +1712,7 @@ if __name__ == '__main__':
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
 	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
 	parser.add_argument('--use-serp', action='store_true', help='Use SERP search instead of Google search')
+	parser.add_argument('--use-anchor', action='store_true', help='Use Anchor Browser (requires ANCHOR_BROWSER_API_KEY)')
 	parser.add_argument('--enable-memory', action='store_true', help='Enable mem0 memory system for agents')
 	parser.add_argument('--memory-interval', type=int, default=10, help='Memory creation interval (default: 10 steps)')
 	parser.add_argument('--max-actions-per-step', type=int, default=10, help='Maximum number of actions per step (default: 10)')
@@ -1840,6 +1849,15 @@ if __name__ == '__main__':
 		else:
 			logger.info('🔍 Using default Google search')
 
+		# Log browser mode being used
+		if args.use_anchor:
+			if ANCHOR_BROWSER_API_KEY:
+				logger.info('🌐 Using Anchor Browser (remote browser service)')
+			else:
+				logger.warning('⚠️ --use-anchor flag provided but ANCHOR_BROWSER_API_KEY not set. Will use local browser!')
+		else:
+			logger.info('🌐 Using local browser')
+
 		# Log memory configuration
 		if args.enable_memory:
 			logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
@@ -1912,6 +1930,7 @@ if __name__ == '__main__':
 				use_vision=not args.no_vision,
 				fresh_start=args.fresh_start,
 				use_serp=args.use_serp,
+				use_anchor=args.use_anchor,
 				enable_memory=args.enable_memory,
 				memory_interval=args.memory_interval,
 				max_actions_per_step=args.max_actions_per_step,
