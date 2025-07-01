@@ -194,7 +194,7 @@ class TestHeadlessScreenshots:
 
 			# Take screenshots from all sessions at the same time
 			print('Taking screenshots from all 10 sessions simultaneously...')
-			screenshot_tasks = [session.take_screenshot(full_page=True) for session in browser_sessions]
+			screenshot_tasks = [session.take_screenshot() for session in browser_sessions]
 			screenshots = await asyncio.gather(*screenshot_tasks)
 
 			# Verify all screenshots are valid
@@ -222,9 +222,7 @@ class TestHeadlessScreenshots:
 
 			# Also test taking regular (viewport) screenshots in parallel
 			print('Taking viewport screenshots from all sessions simultaneously...')
-			viewport_screenshots = await asyncio.gather(
-				*[session.take_screenshot(full_page=False) for session in browser_sessions]
-			)
+			viewport_screenshots = await asyncio.gather(*[session.take_screenshot() for session in browser_sessions])
 
 			# Verify viewport screenshots
 			for i, screenshot in enumerate(viewport_screenshots):

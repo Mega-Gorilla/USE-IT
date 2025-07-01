@@ -2714,23 +2714,23 @@ class BrowserSession(BaseModel):
 			# This prevents timeouts on very long pages
 
 			# 1. Get current viewport and page dimensions including scroll position
-			dimensions = await page.evaluate("""() => {
-				return {
-					width: window.innerWidth,
-					height: window.innerHeight,
-					pageWidth: document.documentElement.scrollWidth,
-					pageHeight: document.documentElement.scrollHeight,
-					devicePixelRatio: window.devicePixelRatio || 1,
-					scrollX: window.pageXOffset || document.documentElement.scrollLeft || 0,
-					scrollY: window.pageYOffset || document.documentElement.scrollTop || 0
-				};
-			}""")
+			# dimensions = await page.evaluate("""() => {
+			# 	return {
+			# 		width: window.innerWidth,
+			# 		height: window.innerHeight,
+			# 		pageWidth: document.documentElement.scrollWidth,
+			# 		pageHeight: document.documentElement.scrollHeight,
+			# 		devicePixelRatio: window.devicePixelRatio || 1,
+			# 		scrollX: window.pageXOffset || document.documentElement.scrollLeft || 0,
+			# 		scrollY: window.pageYOffset || document.documentElement.scrollTop || 0
+			# 	};
+			# }""")
 
 			# When full_page=False, screenshot captures the current viewport
 			# The clip parameter uses viewport coordinates (0,0 is top-left of viewport)
 			# We just need to ensure the clip dimensions don't exceed our maximums
-			clip_width = min(dimensions['width'], MAX_SCREENSHOT_WIDTH)
-			clip_height = min(dimensions['height'], MAX_SCREENSHOT_HEIGHT)
+			# clip_width = min(dimensions['width'], MAX_SCREENSHOT_WIDTH)
+			# clip_height = min(dimensions['height'], MAX_SCREENSHOT_HEIGHT)
 
 			# Take screenshot using our retry-decorated method
 			# Don't pass clip parameter - let Playwright capture the full viewport
