@@ -7,7 +7,7 @@ on:
 
 jobs:
   run_evaluation:
-    runs-on: ubuntu-latest-16-cores
+    runs-on: ubuntu-latest-16-core
     timeout-minutes: 360
     env:
       IN_DOCKER: 'true'
