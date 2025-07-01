@@ -7,7 +7,7 @@ on:
 
 jobs:
   run_evaluation:
-    runs-on: ubuntu-latest-8-cores  
+    runs-on: ubuntu-latest-16-cores 
     # Other options:
     # ubuntu-latest          
     # ubuntu-latest-4-cores  
