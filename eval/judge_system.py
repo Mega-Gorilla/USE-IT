@@ -363,7 +363,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - element_interaction_error means that our extraction of the DOM is not correct. E.g. we missed to detect a crucial button and the agent does not see it with a [index]. This can be verified if you look how we highlight elements in the screenshot.
 - iframe_issues means we dont parse elements in the iframe correctly. E.g. we missed to detect a crucial button and the agent does not see it with a [index]. 
 - impossible_task means the task is impossible to complete because the said is down or information is missing
-- file_system_misuse means using read_file/write_file for short tasks when direct output would be appropriate. NOTE: extract_structured_data automatically saves to files as part of its core functionality - this is NOT filesystem misuse.
+- file_system_misuse means using read_file/write_file for short tasks when direct output would be appropriate. NOTE: extract_structured_data automatically saves to files as part of its core functionality - this is NOT file system misuse and expected behavior.
 
 
 **Improvement Tips (Actionable Developer Guidance):**
