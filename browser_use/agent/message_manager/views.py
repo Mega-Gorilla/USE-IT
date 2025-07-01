@@ -13,30 +13,23 @@ if TYPE_CHECKING:
 	pass
 
 
-class HistoryItem:
+class HistoryItem(BaseModel):
 	"""Represents a single agent history item with its data and string representation"""
 
-	def __init__(
-		self,
-		step_number: int | None = None,
-		evaluation_previous_goal: str | None = None,
-		memory: str | None = None,
-		next_goal: str | None = None,
-		action_results: str | None = None,
-		error: str | None = None,
-		system_message: str | None = None,
-	):
-		# Validate that error and system_message are not both provided
-		if error is not None and system_message is not None:
-			raise ValueError('Cannot have both error and system_message at the same time')
+	step_number: int | None = None
+	evaluation_previous_goal: str | None = None
+	memory: str | None = None
+	next_goal: str | None = None
+	action_results: str | None = None
+	error: str | None = None
+	system_message: str | None = None
 
-		self.step_number = step_number
-		self.evaluation_previous_goal = evaluation_previous_goal
-		self.memory = memory
-		self.next_goal = next_goal
-		self.action_results = action_results
-		self.error = error
-		self.system_message = system_message
+	model_config = ConfigDict(arbitrary_types_allowed=True)
+
+	def model_post_init(self, __context) -> None:
+		"""Validate that error and system_message are not both provided"""
+		if self.error is not None and self.system_message is not None:
+			raise ValueError('Cannot have both error and system_message at the same time')
 
 	def to_string(self) -> str:
 		"""Get string representation of the history item"""
