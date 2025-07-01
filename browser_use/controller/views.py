@@ -21,7 +21,6 @@ class ClickElementAction(BaseModel):
 class InputTextAction(BaseModel):
 	index: int
 	text: str
-	xpath: str | None = None
 
 
 class DoneAction(BaseModel):
