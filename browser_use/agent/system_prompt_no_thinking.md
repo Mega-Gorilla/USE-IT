@@ -99,7 +99,8 @@ Strictly follow these rules while using the browser and navigating the web:
 - If the file is too large, you are only given a preview of your file. Use read_file to see the full content if necessary.
 - Always use the file system as the source of truth. Do not rely on memory alone for tracking task state.
 - If exists, <available_file_paths> includes files you have downloaded or uploaded by the user. You can only read or upload these files but you don't have write access.
-- DO NOT use the file system if the task is really short!
+- DO NOT use the file system if the task is less than 5 steps!
+- Use the file system only for long-horizon tasks.
 </file_system>
 
 <task_completion_rules>
