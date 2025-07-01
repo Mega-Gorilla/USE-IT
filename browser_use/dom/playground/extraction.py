@@ -4,6 +4,7 @@ import os
 import time
 
 import anyio
+import pyperclip
 import tiktoken
 
 from browser_use.agent.prompts import AgentMessagePrompt
@@ -94,7 +95,7 @@ async def test_focus_vs_all_elements():
 
 				# save pure clickable elements to a file
 				async with await anyio.open_file('./tmp/element_tree.json', 'w', encoding='utf-8') as f:
-					await f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
+					await f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=0))
 
 				# copy the user message to the clipboard
 				# pyperclip.copy(text_to_save)
@@ -111,13 +112,32 @@ async def test_focus_vs_all_elements():
 				# 	f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
 				# print('Clickable elements written to ./tmp/clickable_elements.json')
 
-				answer = input("Enter element index to click, 'index,text' to input, or 'q' to quit: ")
+				answer = input(
+					"Enter element index to click, 'index,text' to input, 'c,index' to copy element JSON, or 'q' to quit: "
+				)
 
 				if answer.lower() == 'q':
 					break
 
 				try:
-					if ',' in answer:
+					if answer.lower().startswith('c,'):
+						# Copy element JSON format: c,index
+						parts = answer.split(',', 1)
+						if len(parts) == 2:
+							try:
+								target_index = int(parts[1].strip())
+								if target_index in selector_map:
+									element_node = selector_map[target_index]
+									element_json = json.dumps(element_node.__json__(), indent=2, default=str)
+									pyperclip.copy(element_json)
+									print(f'Copied element {target_index} JSON to clipboard: {element_node.tag_name}')
+								else:
+									print(f'Invalid index: {target_index}')
+							except ValueError:
+								print(f'Invalid index format: {parts[1]}')
+						else:
+							print("Invalid input format. Use 'c,index'.")
+					elif ',' in answer:
 						# Input text format: index,text
 						parts = answer.split(',', 1)
 						if len(parts) == 2:
@@ -149,7 +169,7 @@ async def test_focus_vs_all_elements():
 							else:
 								print(f'Invalid index: {clicked_index}')
 						except ValueError:
-							print(f"Invalid input: '{answer}'. Enter an index, 'index,text', or 'q'.")
+							print(f"Invalid input: '{answer}'. Enter an index, 'index,text', 'c,index', or 'q'.")
 
 				except Exception as action_e:
 					print(f'Action failed: {action_e}')
