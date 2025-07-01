@@ -7,7 +7,12 @@ on:
 
 jobs:
   run_evaluation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores  
+    # Other options:
+    # ubuntu-latest          
+    # ubuntu-latest-4-cores  
+    # ubuntu-latest-8-cores  
+    # ubuntu-latest-16-cores 
     timeout-minutes: 360
     env:
       IN_DOCKER: 'true'
