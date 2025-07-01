@@ -56,7 +56,7 @@ Interactive Elements: All interactive elements will be provided in format as [in
 
 Examples:
 [33]<div>User form</div>
-\t*[35]*<button aria-label='Submit form'>Submit</button>
+\t*[35]<button aria-label='Submit form'>Submit</button>
 
 Note that:
 - Only elements with numeric indexes in [] are interactive

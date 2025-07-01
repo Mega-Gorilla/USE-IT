@@ -244,7 +244,7 @@ class DOMElementNode(DOMBaseNode):
 
 					# Build the line
 					if node.is_new:
-						highlight_indicator = f'*[{node.highlight_index}]*'
+						highlight_indicator = f'*[{node.highlight_index}]'
 					else:
 						highlight_indicator = f'[{node.highlight_index}]'
 
@@ -264,7 +264,7 @@ class DOMElementNode(DOMBaseNode):
 					elif not attributes_html_str:
 						line += ' '
 
-					line += ' />'  # 1 token
+					# line += ' />'  # 1 token
 					formatted_text.append(line)
 
 				# Process children regardless
