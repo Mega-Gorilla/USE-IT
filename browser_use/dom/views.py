@@ -56,15 +56,15 @@ class DOMTextNode(DOMBaseNode):
 DEFAULT_INCLUDE_ATTRIBUTES = [
 	'title',
 	'type',
-	# 'name',
+	'checked',
+	'name',
 	'role',
 	'value',
-	'aria-label',
 	'placeholder',
-	'alt',
-	'aria-expanded',
 	'data-date-format',
-	'checked',
+	'alt',
+	'aria-label',
+	'aria-expanded',
 	'data-state',
 	'aria-checked',
 ]
@@ -188,7 +188,7 @@ class DOMElementNode(DOMBaseNode):
 					attributes_html_str = None
 					if include_attributes:
 						attributes_to_include = {
-							key: str(value)
+							key: str(value).strip()
 							for key, value in node.attributes.items()
 							if key in include_attributes and str(value).strip() != ''
 						}
@@ -239,7 +239,7 @@ class DOMElementNode(DOMBaseNode):
 						if attributes_to_include.items():
 							# Format as key1='value1' key2='value2'
 							attributes_html_str = ' '.join(
-								f'{key}={cap_text_length(value, 15)}' for key, value in attributes_to_include.items()
+								f'{key}={cap_text_length(value, 20)}' for key, value in attributes_to_include.items()
 							)
 
 					# Build the line
