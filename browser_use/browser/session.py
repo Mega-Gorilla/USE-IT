@@ -2718,6 +2718,7 @@ class BrowserSession(BaseModel):
 				return {
 					width: window.innerWidth,
 					height: window.innerHeight,
+					pageWidth: document.documentElement.scrollWidth,
 					pageHeight: document.documentElement.scrollHeight,
 					devicePixelRatio: window.devicePixelRatio || 1,
 					scrollX: window.pageXOffset || document.documentElement.scrollLeft || 0,
@@ -2725,14 +2726,38 @@ class BrowserSession(BaseModel):
 				};
 			}""")
 
+			# Calculate clip region that doesn't exceed page bounds
+			# The clip coordinates are in page coordinates, not viewport coordinates
+			clip_x = dimensions['scrollX']
+			clip_y = dimensions['scrollY']
+			clip_width = min(dimensions['width'], MAX_SCREENSHOT_WIDTH)
+			clip_height = min(dimensions['height'], MAX_SCREENSHOT_HEIGHT)
+
+			# Ensure clip region doesn't exceed page boundaries
+			max_x = max(0, dimensions['pageWidth'] - clip_x)
+			max_y = max(0, dimensions['pageHeight'] - clip_y)
+			clip_width = min(clip_width, max_x)
+			clip_height = min(clip_height, max_y)
+
+			# Don't try to screenshot if the clip area would be empty
+			if clip_width <= 0 or clip_height <= 0:
+				self.logger.warning(
+					f'Screenshot clip area would be empty: width={clip_width}, height={clip_height}, scrollY={clip_y}, pageHeight={dimensions["pageHeight"]}'
+				)
+				# Fall back to capturing from top of viewport if we're scrolled past the page
+				clip_x = 0
+				clip_y = max(0, dimensions['pageHeight'] - dimensions['height'])
+				clip_width = min(dimensions['width'], MAX_SCREENSHOT_WIDTH, dimensions['pageWidth'])
+				clip_height = min(dimensions['height'], MAX_SCREENSHOT_HEIGHT, dimensions['pageHeight'] - clip_y)
+
 			# Take screenshot using our retry-decorated method
 			return await self._take_screenshot_hybrid(
 				page,
 				clip={
-					'x': dimensions['scrollX'],
-					'y': dimensions['scrollY'],
-					'width': min(dimensions['width'], MAX_SCREENSHOT_WIDTH),
-					'height': min(dimensions['height'], MAX_SCREENSHOT_HEIGHT),
+					'x': clip_x,
+					'y': clip_y,
+					'width': clip_width,
+					'height': clip_height,
 				},
 			)
 		except Exception as e:
