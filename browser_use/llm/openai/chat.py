@@ -6,6 +6,7 @@ import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.shared.chat_model import ChatModel
+from openai.types.shared_params.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.response_format_json_schema import JSONSchema, ResponseFormatJSONSchema
 from pydantic import BaseModel
 
@@ -33,7 +34,7 @@ class ChatOpenAI(BaseChatModel):
 
 	# Model params
 	temperature: float | None = None
-	reasoning_effort: str = 'low'
+	reasoning_effort: ReasoningEffort = 'low'
 
 	# Client initialization parameters
 	api_key: str | None = None
