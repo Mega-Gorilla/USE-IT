@@ -356,6 +356,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - Notes for the error categories:
 - Use the main error - e.g. if we cant login and thats why we dont have an output we should use the login_failed error category
 - The error category list is sequential - so check if an error before is matching better and use that instead
+- captcha includes traditional captchas, Cloudflare challenges, and any other anti-bot protection systems that block task completion
 - partial_output means we collected some part of the output but some is missing
 - tool_failed means a tool like scrolling or file interaction failed or can be improved because functionality which would be helpful was missing - mention that in the improvement tips
 - infinite_loop means the agent is stuck in a loop and not making progress
