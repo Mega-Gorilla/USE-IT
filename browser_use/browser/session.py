@@ -248,12 +248,12 @@ class BrowserSession(BaseModel):
 		return self._logger
 
 	def __repr__(self) -> str:
-		is_copy = '©' if self._original_browser_session else '1️⃣ '
-		return f'BrowserSession🆂 {self.id[-4:]}{is_copy}{str(id(self))[-2:]} ({self._connection_str}, profile={self.browser_profile})'
+		is_copy = '©' if self._original_browser_session else '#'
+		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} ({self._connection_str}, profile={self.browser_profile})'
 
 	def __str__(self) -> str:
-		is_copy = '©' if self._original_browser_session else '1️⃣ '
-		return f'BrowserSession🆂 {self.id[-4:]}{is_copy}{str(id(self))[-2:]} 🅟 {str(id(self.agent_current_page))[-2:]}'
+		is_copy = '©' if self._original_browser_session else '#'
+		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} 🅟 {str(id(self.agent_current_page))[-2:]}'
 
 	# better to force people to get it from the right object, "only one way to do it" is better python
 	# def __getattr__(self, key: str) -> Any:
