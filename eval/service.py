@@ -2462,6 +2462,7 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
 	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
+	parser.add_argument('--use-anchor', action='store_true', help='Use anchor to navigate to the page')
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
