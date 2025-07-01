@@ -1246,8 +1246,9 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 
 			try:
 				# Run comprehensive judge evaluation
-				comprehensive_result = await evaluate_task_with_comprehensive_judge(
-					task_folder=task_folder, model=model, max_images=10
+				comprehensive_result = await asyncio.wait_for(
+					evaluate_task_with_comprehensive_judge(task_folder=task_folder, model=model, max_images=10),
+					timeout=180,  # 3 minutes max for evaluation
 				)
 
 				if comprehensive_result.get('error'):
