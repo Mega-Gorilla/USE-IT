@@ -222,24 +222,19 @@ class DOMElementNode(DOMBaseNode):
 						if node.tag_name == attributes_to_include.get('role'):
 							del attributes_to_include['role']
 
-						# if aria-label == text of the node, don't include it
-						if (
-							attributes_to_include.get('aria-label')
-							and attributes_to_include.get('aria-label', '').strip() == text.strip()
-						):
-							del attributes_to_include['aria-label']
-
-						# if placeholder == text of the node, don't include it
-						if (
-							attributes_to_include.get('placeholder')
-							and attributes_to_include.get('placeholder', '').strip() == text.strip()
-						):
-							del attributes_to_include['placeholder']
+						# Remove attributes that duplicate the node's text content
+						attrs_to_remove_if_text_matches = ['aria-label', 'placeholder', 'title']
+						for attr in attrs_to_remove_if_text_matches:
+							if (
+								attributes_to_include.get(attr)
+								and attributes_to_include.get(attr, '').strip().lower() == text.strip().lower()
+							):
+								del attributes_to_include[attr]
 
 						if attributes_to_include.items():
 							# Format as key1='value1' key2='value2'
 							attributes_html_str = ' '.join(
-								f'{key}={cap_text_length(value, 20)}' for key, value in attributes_to_include.items()
+								f'{key}={cap_text_length(value, 15)}' for key, value in attributes_to_include.items()
 							)
 
 					# Build the line
@@ -264,7 +259,8 @@ class DOMElementNode(DOMBaseNode):
 					elif not attributes_html_str:
 						line += ' '
 
-					# line += ' />'  # 1 token
+					# makes sense to have if the website has lots of text -> so the LLM knows which things are part of the same clickable element and which are not
+					line += ' />'  # 1 token
 					formatted_text.append(line)
 
 				# Process children regardless

@@ -81,7 +81,6 @@ async def test_focus_vs_all_elements():
 					include_attributes=DEFAULT_INCLUDE_ATTRIBUTES,
 					step_info=None,
 				)
-				print(prompt.get_user_message(use_vision=False).content)
 				# Write the user message to a file for analysis
 				user_message = prompt.get_user_message(use_vision=False).text
 
