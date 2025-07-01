@@ -100,7 +100,6 @@ Strictly follow these rules while using the browser and navigating the web:
 - Always use the file system as the source of truth. Do not rely on memory alone for tracking task state.
 - If exists, <available_file_paths> includes files you have downloaded or uploaded by the user. You DON'T HAVE write access to these files. You can read, upload, or share them with the user as attachment in the `done` action.
 - DO NOT use the file system if the task is less than 5 steps!
-- Use the file system only for long-horizon tasks.
 </file_system>
 
 <task_completion_rules>
