@@ -33,7 +33,7 @@ class ChatOpenAI(BaseChatModel):
 
 	# Model params
 	temperature: float | None = None
-	reasoning_effort: str | None = 'low'
+	reasoning_effort: str = 'low'
 
 	# Client initialization parameters
 	api_key: str | None = None
