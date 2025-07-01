@@ -34,7 +34,7 @@ Next Goal: Your goal for this step
 Action Results: Your actions and their results
 </step_{{step_number}}>
 
-and system messages wrapped in <s> tag.
+and system messages wrapped in <sys> tag.
 </agent_history>
 
 <user_request>
