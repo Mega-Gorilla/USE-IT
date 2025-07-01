@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import time
 
@@ -7,30 +8,19 @@ import tiktoken
 
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.types import ViewportSize
 from browser_use.dom.service import DomService
+from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
 from browser_use.filesystem.file_system import FileSystem
 
 TIMEOUT = 60
-
-DEFAULT_INCLUDE_ATTRIBUTES = [
-	'id',
-	'title',
-	'type',
-	'name',
-	'role',
-	'aria-label',
-	'placeholder',
-	'value',
-	'alt',
-	'aria-expanded',
-	'data-date-format',
-]
 
 
 async def test_focus_vs_all_elements():
 	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			# executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+			window_size=ViewportSize(width=1100, height=1000),
 			disable_security=True,
 			wait_for_network_idle_page_load_time=1,
 			headless=False,
@@ -90,21 +80,31 @@ async def test_focus_vs_all_elements():
 					include_attributes=DEFAULT_INCLUDE_ATTRIBUTES,
 					step_info=None,
 				)
-				# print(prompt.get_user_message(use_vision=False).content)
+				print(prompt.get_user_message(use_vision=False).content)
 				# Write the user message to a file for analysis
 				user_message = prompt.get_user_message(use_vision=False).text
+
+				# clickable_elements_str = all_elements_state.element_tree.clickable_elements_to_string()
+
+				text_to_save = user_message
+
 				os.makedirs('./tmp', exist_ok=True)
 				async with await anyio.open_file('./tmp/user_message.txt', 'w', encoding='utf-8') as f:
-					if isinstance(user_message, str):
-						await f.write(user_message)
-					else:
-						await f.write(str(user_message))
+					await f.write(text_to_save)
+
+				# save pure clickable elements to a file
+				async with await anyio.open_file('./tmp/element_tree.json', 'w', encoding='utf-8') as f:
+					await f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
+
+				# copy the user message to the clipboard
+				# pyperclip.copy(text_to_save)
 
 				encoding = tiktoken.encoding_for_model('gpt-4o')
-				token_count = len(encoding.encode(user_message))
+				token_count = len(encoding.encode(text_to_save))
 				print(f'Token count: {token_count}')
 
 				print('User message written to ./tmp/user_message.txt')
+				print('Element tree written to ./tmp/element_tree.json')
 
 				# also save all_elements_state.element_tree.clickable_elements_to_string() to a file
 				# with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:

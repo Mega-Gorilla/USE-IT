@@ -3,6 +3,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Optional
 
 from browser_use.dom.history_tree_processor.view import CoordinateSet, HashedDomElement, ViewportInfo
+from browser_use.dom.utils import cap_text_length
 from browser_use.utils import time_execution_sync
 
 # Avoid circular import issues
@@ -50,6 +51,23 @@ class DOMTextNode(DOMBaseNode):
 			'text': self.text,
 			'type': self.type,
 		}
+
+
+DEFAULT_INCLUDE_ATTRIBUTES = [
+	'title',
+	'type',
+	# 'name',
+	'role',
+	'value',
+	'aria-label',
+	'placeholder',
+	'alt',
+	'aria-expanded',
+	'data-date-format',
+	'checked',
+	'data-state',
+	'aria-checked',
+]
 
 
 @dataclass(frozen=False)
@@ -154,6 +172,9 @@ class DOMElementNode(DOMBaseNode):
 		"""Convert the processed DOM content to HTML."""
 		formatted_text = []
 
+		if not include_attributes:
+			include_attributes = DEFAULT_INCLUDE_ATTRIBUTES
+
 		def process_node(node: DOMBaseNode, depth: int) -> None:
 			next_depth = int(depth)
 			depth_str = depth * '\t'
@@ -163,12 +184,38 @@ class DOMElementNode(DOMBaseNode):
 				if node.highlight_index is not None:
 					next_depth += 1
 
-					text = node.get_all_text_till_next_clickable_element(max_depth=1)
-					attributes_html_str = ''
+					text = node.get_all_text_till_next_clickable_element()
+					attributes_html_str = None
 					if include_attributes:
 						attributes_to_include = {
-							key: str(value) for key, value in node.attributes.items() if key in include_attributes
+							key: str(value)
+							for key, value in node.attributes.items()
+							if key in include_attributes and str(value).strip() != ''
 						}
+
+						# If value of any of the attributes is the same as ANY other value attribute only include the one that appears first in include_attributes
+						# WARNING: heavy vibes, but it seems good enough for saving tokens (it kicks in hard when it's long text)
+
+						# Pre-compute ordered keys that exist in both lists (faster than repeated lookups)
+						ordered_keys = [key for key in include_attributes if key in attributes_to_include]
+
+						if len(ordered_keys) > 1:  # Only process if we have multiple attributes
+							keys_to_remove = set()  # Use set for O(1) lookups
+							seen_values = {}  # value -> first_key_with_this_value
+
+							for key in ordered_keys:
+								value = attributes_to_include[key]
+								if len(value) > 5:  # to not remove false, true, etc
+									if value in seen_values:
+										# This value was already seen with an earlier key, so remove this key
+										keys_to_remove.add(key)
+									else:
+										# First time seeing this value, record it
+										seen_values[value] = key
+
+							# Remove duplicate keys (no need to check existence since we know they exist)
+							for key in keys_to_remove:
+								del attributes_to_include[key]
 
 						# Easy LLM optimizations
 						# if tag == role attribute, don't include it
@@ -189,9 +236,11 @@ class DOMElementNode(DOMBaseNode):
 						):
 							del attributes_to_include['placeholder']
 
-						if attributes_to_include:
+						if attributes_to_include.items():
 							# Format as key1='value1' key2='value2'
-							attributes_html_str = ' '.join(f"{key}='{value}'" for key, value in attributes_to_include.items())
+							attributes_html_str = ' '.join(
+								f'{key}={cap_text_length(value, 15)}' for key, value in attributes_to_include.items()
+							)
 
 					# Build the line
 					if node.is_new:
@@ -206,6 +255,7 @@ class DOMElementNode(DOMBaseNode):
 
 					if text:
 						# Add space before >text only if there were NO attributes added before
+						text = text.strip()
 						if not attributes_html_str:
 							line += ' '
 						line += f'>{text}'
