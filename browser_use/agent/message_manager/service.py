@@ -116,6 +116,8 @@ class MessageManager:
 		self.use_thinking = use_thinking
 		self.max_history_items = max_history_items
 
+		assert max_history_items is None or max_history_items > 5, 'max_history_items must be None or greater than 5'
+
 		# Store settings as direct attributes instead of in a settings object
 		self.include_attributes = include_attributes or []
 		self.message_context = message_context
