@@ -15,7 +15,6 @@ class GoToUrlAction(BaseModel):
 
 class ClickElementAction(BaseModel):
 	index: int
-	xpath: str | None = None
 
 
 class InputTextAction(BaseModel):
