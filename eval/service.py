@@ -1744,80 +1744,80 @@ async def run_task_with_semaphore(
 
 						# Continue to server save instead of early return
 
-					# Stage 3: Format history
-					if agent_history is not None:  # Only format if agent ran successfully
-						try:
-							logger.info(f'Task {task.task_id}: History formatting starting.')
-							formatted_data = await run_stage(
-								Stage.FORMAT_HISTORY,
-								lambda: reformat_agent_history(
-									agent_history,
-									task.task_id,
-									run_id,
-									task.confirmed_task,
-									last_message,
-									include_result=include_result,
-								),
-							)
-							task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-							logger.info(f'Task {task.task_id}: Agent history formatted.')
-						except Exception as e:
-							error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
-							task_result.stage_failed(Stage.FORMAT_HISTORY, error)
-							logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
-							# Continue to server save instead of early return
-
-					# Stage 4: Evaluate (if we have execution data and no existing evaluation)
-					if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
-						try:
-							logger.info(f'Task {task.task_id}: Evaluation starting.')
-							evaluation = await run_stage(
-								Stage.EVALUATE,
-								lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge),
-								timeout=300,
-							)
-							task_result.stage_completed(Stage.EVALUATE, evaluation)
-							logger.info(f'Task {task.task_id}: Evaluation completed.')
-
-							if lmnr_run_id and datapoint_id:
-								await laminar_client.evals.update_datapoint(
-									eval_id=UUID(lmnr_run_id),
-									datapoint_id=datapoint_id,
-									scores={
-										'accuracy': evaluation['score'],
-									},
-								)
-						except Exception as e:
-							error = StageError(Stage.EVALUATE, 'exception', str(e))
-							task_result.stage_failed(Stage.EVALUATE, error)
-							logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
-
-					# Stage 5: Save to server (always attempt)
+				# Stage 3: Format history (MOVED OUTSIDE browser_session block)
+				if agent_history is not None:  # Only format if agent ran successfully
 					try:
-						logger.info(f'Task {task.task_id}: Saving result to server.')
-						# Only save to server if URLs are provided (skip for single task mode)
-						if convex_url and secret_key:
-							await run_stage(
-								Stage.SAVE_SERVER,
-								lambda: asyncio.to_thread(
-									save_result_to_server,
-									convex_url,
-									secret_key,
-									task_result.server_payload if task_result else {},
-								),
-								timeout=60,
-							)
-							task_result.stage_completed(Stage.SAVE_SERVER)
-							logger.info(f'Task {task.task_id}: Successfully saved result to server.')
-						else:
-							# Single task mode - skip server save but mark as completed
-							logger.info(f'Task {task.task_id}: Skipping server save (single task mode)')
-							task_result.stage_completed(Stage.SAVE_SERVER)
+						logger.info(f'Task {task.task_id}: History formatting starting.')
+						formatted_data = await run_stage(
+							Stage.FORMAT_HISTORY,
+							lambda: reformat_agent_history(
+								agent_history,
+								task.task_id,
+								run_id,
+								task.confirmed_task,
+								last_message,
+								include_result=include_result,
+							),
+						)
+						task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
+						logger.info(f'Task {task.task_id}: Agent history formatted.')
 					except Exception as e:
-						error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
-						task_result.stage_failed(Stage.SAVE_SERVER, error)
-						task_result.mark_server_save_failed(str(e))
-						logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
+						error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
+						task_result.stage_failed(Stage.FORMAT_HISTORY, error)
+						logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
+						# Continue to server save instead of early return
+
+				# Stage 4: Evaluate (MOVED OUTSIDE browser_session block)
+				if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
+					try:
+						logger.info(f'Task {task.task_id}: Evaluation starting.')
+						evaluation = await run_stage(
+							Stage.EVALUATE,
+							lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge),
+							timeout=300,
+						)
+						task_result.stage_completed(Stage.EVALUATE, evaluation)
+						logger.info(f'Task {task.task_id}: Evaluation completed.')
+
+						if lmnr_run_id and datapoint_id:
+							await laminar_client.evals.update_datapoint(
+								eval_id=UUID(lmnr_run_id),
+								datapoint_id=datapoint_id,
+								scores={
+									'accuracy': evaluation['score'],
+								},
+							)
+					except Exception as e:
+						error = StageError(Stage.EVALUATE, 'exception', str(e))
+						task_result.stage_failed(Stage.EVALUATE, error)
+						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+
+				# Stage 5: Save to server (MOVED OUTSIDE browser_session block - ALWAYS attempt)
+				try:
+					logger.info(f'Task {task.task_id}: Saving result to server.')
+					# Only save to server if URLs are provided (skip for single task mode)
+					if convex_url and secret_key:
+						await run_stage(
+							Stage.SAVE_SERVER,
+							lambda: asyncio.to_thread(
+								save_result_to_server,
+								convex_url,
+								secret_key,
+								task_result.server_payload if task_result else {},
+							),
+							timeout=60,
+						)
+						task_result.stage_completed(Stage.SAVE_SERVER)
+						logger.info(f'Task {task.task_id}: Successfully saved result to server.')
+					else:
+						# Single task mode - skip server save but mark as completed
+						logger.info(f'Task {task.task_id}: Skipping server save (single task mode)')
+						task_result.stage_completed(Stage.SAVE_SERVER)
+				except Exception as e:
+					error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
+					task_result.stage_failed(Stage.SAVE_SERVER, error)
+					task_result.mark_server_save_failed(str(e))
+					logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
 
 			except TimeoutError:
 				current_stage = determine_current_stage(task_result.completed_stages)
