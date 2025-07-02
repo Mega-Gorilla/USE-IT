@@ -964,6 +964,7 @@ async def reformat_agent_history(
 	last_message: str,
 	base_path: str = 'saved_trajectories',
 	include_result: bool = False,
+	agent_execution_time: float | None = None,
 ) -> dict:
 	# Update directory name
 	task_dir = Path(base_path) / task_id
@@ -1035,8 +1036,8 @@ async def reformat_agent_history(
 					f"Task {task_id}, Step {step_num}: Could not parse input_tokens '{step_metadata['input_tokens']}' as integer."
 				)
 
-	# Calculate task duration from metadata
-	task_duration = None
+	# Calculate task duration from metadata (step-based timing)
+	step_based_duration = None
 	if complete_history and len(complete_history) > 0:
 		first_step = complete_history[0].get('metadata', {})
 		last_step = complete_history[-1].get('metadata', {})
@@ -1048,9 +1049,12 @@ async def reformat_agent_history(
 				try:
 					start_time_float = float(start_time)
 					end_time_float = float(end_time)
-					task_duration = end_time_float - start_time_float
+					step_based_duration = end_time_float - start_time_float
 				except (ValueError, TypeError) as e:
-					logger.warning(f'Could not calculate task duration due to invalid timestamp format: {e}')
+					logger.warning(f'Could not calculate step-based duration due to invalid timestamp format: {e}')
+
+	# Use agent execution time if provided (wall-clock timing around run_agent), otherwise fall back to step-based
+	task_duration = agent_execution_time if agent_execution_time is not None else step_based_duration
 
 	# Conditionally include the final result in action history
 	if include_result and final_result and final_result.strip():
@@ -1631,6 +1635,7 @@ async def run_task_with_semaphore(
 		browser_session = None
 		laminar_task_link = None
 		datapoint_id = None
+		agent_execution_time = None  # Track agent execution time separately
 
 		try:
 			if lmnr_run_id:
@@ -1722,6 +1727,9 @@ async def run_task_with_semaphore(
 							convex_url, secret_key, run_id, task.task_id, 'run_agent', 'active', github_workflow_url
 						)
 
+						# Start timing for agent execution only
+						agent_start_time = time.time()
+
 						agent_history, last_message = await run_stage(
 							Stage.RUN_AGENT,
 							lambda: run_agent_with_browser(
@@ -1742,8 +1750,12 @@ async def run_task_with_semaphore(
 							timeout=1000,
 						)
 
+						# End timing for agent execution only
+						agent_end_time = time.time()
+						agent_execution_time = agent_end_time - agent_start_time
+
 						task_result.stage_completed(Stage.RUN_AGENT)
-						logger.info(f'Task {task.task_id}: Agent run completed.')
+						logger.info(f'Task {task.task_id}: Agent run completed in {agent_execution_time:.2f}s.')
 						# Send progress update for completed agent run
 						send_progress_update(
 							convex_url, secret_key, run_id, task.task_id, 'agent_completed', 'active', github_workflow_url
@@ -1772,6 +1784,7 @@ async def run_task_with_semaphore(
 								task.confirmed_task,
 								last_message,
 								include_result=include_result,
+								agent_execution_time=agent_execution_time,  # Pass agent execution time
 							),
 						)
 						task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
@@ -1940,9 +1953,16 @@ async def run_task_with_semaphore(
 		total_task_time = task_end_time - task_start_time
 		semaphore_hold_time = task_end_time - (semaphore_acquired_time or task_start_time)
 
-		logger.info(
-			f'🏁 Task {task.task_id}: Completed in {total_task_time:.2f}s (semaphore held for {semaphore_hold_time:.2f}s)'
-		)
+		# Log both pipeline time and agent execution time
+		if agent_execution_time is not None:
+			logger.info(
+				f'🏁 Task {task.task_id}: Agent executed in {agent_execution_time:.2f}s (total pipeline: {total_task_time:.2f}s, semaphore held: {semaphore_hold_time:.2f}s)'
+			)
+		else:
+			logger.info(
+				f'🏁 Task {task.task_id}: Pipeline completed in {total_task_time:.2f}s (agent did not run, semaphore held: {semaphore_hold_time:.2f}s)'
+			)
+
 		logger.info(f'📊 Task {task.task_id}: About to release semaphore (remaining slots will be: ~{semaphore_runs._value + 1})')
 		log_system_resources(f'TASK_END_{task.task_id}')
 
