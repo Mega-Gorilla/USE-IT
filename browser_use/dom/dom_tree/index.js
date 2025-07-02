@@ -658,7 +658,6 @@
       return true;
     }
 
-    // return false
 
     const interactiveRoles = new Set([
       'button',           // Directly clickable element
@@ -680,7 +679,6 @@
       'scrollbar'        // Scrollable control
     ]);
 
-    // return false
 
     // Basic role/attribute checks
     const hasInteractiveRole =
@@ -690,7 +688,6 @@
 
     if (hasInteractiveRole) return true;
 
-    return false
 
     // check whether element has event listeners by window.getEventListeners
     try {
@@ -912,6 +909,49 @@
 
 
   /**
+   * Heuristically determines if an element should be considered as independently interactive,
+   * even if it's nested inside another interactive container.
+   *
+   * This function helps detect deeply nested actionable elements (e.g., menu items within a button)
+   * that may not be picked up by strict interactivity checks.
+   */
+  function isHeuristicallyInteractive(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
+
+    // Skip non-visible elements early for performance
+    if (!isElementVisible(element)) return false;
+
+    // Check for common attributes that often indicate interactivity
+    const hasInteractiveAttributes =
+      element.hasAttribute('role') ||
+      element.hasAttribute('tabindex') ||
+      element.hasAttribute('onclick') ||
+      typeof element.onclick === 'function';
+
+    // Check for semantic class names suggesting interactivity
+    const hasInteractiveClass = /\b(btn|clickable|menu|item|entry|link)\b/i.test(element.className || '');
+
+    // Determine whether the element is inside a known interactive container
+    const isInKnownContainer = Boolean(
+      element.closest('button,a,[role="button"],.menu,.dropdown,.list,.toolbar')
+    );
+
+    // Ensure the element has at least one visible child (to avoid marking empty wrappers)
+    const hasVisibleChildren = [...element.children].some(isElementVisible);
+
+    // Avoid highlighting elements whose parent is <body> (top-level wrappers)
+    const isParentBody = element.parentElement && element.parentElement.isSameNode(document.body);
+
+    return (
+      (isInteractiveElement(element) || hasInteractiveAttributes || hasInteractiveClass) &&
+      hasVisibleChildren &&
+      isInKnownContainer &&
+      !isParentBody
+    );
+  }
+
+
+  /**
    * Checks if an element likely represents a distinct interaction
    * separate from its parent (if the parent is also interactive).
    */
@@ -978,10 +1018,9 @@
 
 
     // if the element is not strictly interactive but appears clickable based on heuristic signals
-    // REMOVING THIS FOR NOW. It yields way too many false positives.
-    // if (isHeuristicallyInteractive(element)) {
-    //   return true;
-    // }
+    if (isHeuristicallyInteractive(element)) {
+      return true;
+    }
 
     // Default to false: if it's interactive but doesn't match above,
     // assume it triggers the same action as the parent.
