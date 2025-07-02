@@ -731,6 +731,7 @@ SUPPORTED_MODELS = {
 	# OpenAI
 	'gpt-4.1': {'provider': 'openai', 'model_name': 'gpt-4.1-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4.1-mini': {'provider': 'openai', 'model_name': 'gpt-4.1-mini-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
+	'gpt-o3': {'provider': 'openai', 'model_name': 'o3-2025-04-16', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4.1-nano': {'provider': 'openai', 'model_name': 'gpt-4.1-nano-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4o': {'provider': 'openai', 'model_name': 'gpt-4o', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4o-mini': {'provider': 'openai', 'model_name': 'gpt-4o-mini', 'api_key_env': 'OPENAI_API_KEY'},
@@ -881,7 +882,7 @@ def get_llm(model_name: str):
 		case 'openai':
 			kwargs = {'model': config['model_name'], 'temperature': 0.0}
 			# Must set temperatue=1 if model is gpt-o4-mini
-			if model_name == 'gpt-o4-mini':
+			if model_name in ['gpt-o4-mini', 'gpt-o3']:
 				kwargs['temperature'] = 1
 			if api_key:
 				kwargs['api_key'] = api_key
