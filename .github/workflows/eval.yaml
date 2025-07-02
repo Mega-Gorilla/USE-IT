@@ -25,6 +25,7 @@ jobs:
       ANCHOR_BROWSER_API_KEY: ${{ secrets.ANCHOR_BROWSER_API_KEY }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
+      EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
 
     steps:
       - name: System Info and Resource Check
@@ -120,30 +121,45 @@ jobs:
           
           # Extract parameters for runner identification
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
-          TASK_ID="github_run_${{ github.run_id }}_${{ strategy.job-index || 'single' }}"
+          GITHUB_RUN_ID="${{ github.run_id }}"
           START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
           END_INDEX="${{ github.event.client_payload.script_args.end_index }}"
+          TOTAL_TASKS="${{ github.event.client_payload.script_args.total_tasks }}"
+          GITHUB_WORKFLOW_URL="${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}"
           
-          # Create task range string
-          TASK_RANGE="${START_INDEX:-0}-${END_INDEX:-100}"
-          
-          # Register runner with progress tracking API
-          if [[ -n "$RUN_ID" && -n "${{ secrets.EVALUATION_TOOL_URL }}" && -n "${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" ]]; then
-            curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
-              -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "runId": "'$RUN_ID'",
-                "runnerId": "'$TASK_ID'",
-                "githubWorkflowRunId": "${{ github.run_id }}",
-                "githubWorkflowUrl": "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}",
-                "currentStage": "starting",
-                "status": "active",
-                "assignedTaskRange": "'$TASK_RANGE'"
-              }' || echo "Failed to register runner progress (non-fatal)"
+          # Calculate task range for this runner
+          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ]; then
+            TASK_RANGE="${START_INDEX}-${END_INDEX}"
+            TOTAL_ASSIGNED_TASKS=$((END_INDEX - START_INDEX))
           else
-            echo "Skipping runner registration - missing RUN_ID or API credentials"
+            TASK_RANGE="${START_INDEX}+"
+            TOTAL_ASSIGNED_TASKS=$((TOTAL_TASKS - START_INDEX))
           fi
+          
+          # Generate consistent runner ID (matches Python service pattern)
+          RUNNER_ID="github_run_${GITHUB_RUN_ID}_batch_${START_INDEX}"
+          
+          echo "Runner ID: $RUNNER_ID"
+          echo "Task Range: $TASK_RANGE"
+          echo "Total Assigned Tasks: $TOTAL_ASSIGNED_TASKS"
+          
+          # Send registration to progress tracking API
+          curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
+            -d "{
+              \"runId\": \"${RUN_ID}\",
+              \"runnerId\": \"${RUNNER_ID}\",
+              \"githubWorkflowRunId\": \"${GITHUB_RUN_ID}\",
+              \"githubWorkflowUrl\": \"${GITHUB_WORKFLOW_URL}\",
+              \"taskId\": \"batch_${START_INDEX}\",
+              \"currentStage\": \"starting\",
+              \"status\": \"active\",
+              \"assignedTaskRange\": \"${TASK_RANGE}\",
+              \"totalAssignedTasks\": ${TOTAL_ASSIGNED_TASKS}
+            }" \
+            --max-time 10 \
+            --retry 2 || echo "⚠️ Runner registration failed, but continuing evaluation"
 
       - name: Construct eval command
         id: eval_command
@@ -301,38 +317,16 @@ jobs:
           echo $! > monitor_pid.txt
           echo "Resource monitoring started with PID: $(cat monitor_pid.txt)"
 
-      - name: Run evaluation script
-        id: run_eval
+      - name: Run evaluation
+        id: run_eval  
         run: |
-          echo "=== STARTING EVALUATION ==="
-          echo "Command: ${{ steps.eval_command.outputs.FULL_COMMAND }}"
-          echo "Starting time: $(date)"
-          echo "Use Mind2Web Judge: ${{ github.event.client_payload.script_args.use_mind2web_judge }}"
-          echo "============================"
-          
-          # Set up signal handlers and run the command
-          set -e
-          trap 'echo "=== EVALUATION INTERRUPTED ==="; echo "Time: $(date)"; echo "Last 50 lines of output:"; tail -50 eval_output.log; exit 130' INT TERM
-          
-          # Run the evaluation with output capture and better error handling
-          set +e  # Don't exit on errors, we want to capture them
-          ${{ steps.eval_command.outputs.FULL_COMMAND }} 2>&1 | tee eval_output.log
-          EVAL_EXIT_CODE=${PIPESTATUS[0]}
-          set -e  # Re-enable exit on error
-          
-          echo "=== EVALUATION COMPLETED ==="
-          echo "Exit code: $EVAL_EXIT_CODE"
-          echo "Completion time: $(date)"
-          echo "============================"
-          
-          # Show last part of log for context
-          if [ $EVAL_EXIT_CODE -ne 0 ]; then
-            echo "=== EVALUATION FAILED - LAST 100 LINES OF OUTPUT ==="
-            tail -100 eval_output.log
-            echo "=================================================="
-          fi
-          
-          exit $EVAL_EXIT_CODE
+          echo "🚀 Starting evaluation with command: ${{ steps.eval_command.outputs.FULL_COMMAND }}"
+          echo "📊 This may take several minutes depending on the number of tasks..."
+          ${{ steps.eval_command.outputs.FULL_COMMAND }}
+        env:
+          EVALUATION_TOOL_URL: ${{ secrets.EVALUATION_TOOL_URL }}
+          EVALUATION_TOOL_SECRET_KEY: ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}
+          EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
 
       - name: Post-execution Resource Check
         if: always()
@@ -455,7 +449,27 @@ jobs:
           
           # Extract parameters for runner identification
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
-          TASK_ID="github_run_${{ github.run_id }}_${{ strategy.job-index || 'single' }}"
+          GITHUB_RUN_ID="${{ github.run_id }}"
+          START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
+          END_INDEX="${{ github.event.client_payload.script_args.end_index }}"
+          TOTAL_TASKS="${{ github.event.client_payload.script_args.total_tasks }}"
+          GITHUB_WORKFLOW_URL="${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}"
+          
+          # Calculate task range for this runner
+          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ]; then
+            TASK_RANGE="${START_INDEX}-${END_INDEX}"
+            TOTAL_ASSIGNED_TASKS=$((END_INDEX - START_INDEX))
+          else
+            TASK_RANGE="${START_INDEX}+"
+            TOTAL_ASSIGNED_TASKS=$((TOTAL_TASKS - START_INDEX))
+          fi
+          
+          # Generate consistent runner ID (matches Python service pattern)
+          RUNNER_ID="github_run_${GITHUB_RUN_ID}_batch_${START_INDEX}"
+          
+          echo "Runner ID: $RUNNER_ID"
+          echo "Task Range: $TASK_RANGE"
+          echo "Total Assigned Tasks: $TOTAL_ASSIGNED_TASKS"
           
           # Determine final status based on evaluation outcome
           FINAL_STATUS="completed"
@@ -468,20 +482,19 @@ jobs:
             ERROR_MESSAGE="Evaluation step failed or was interrupted"
           fi
           
-          # Update runner status
-          if [[ -n "$RUN_ID" && -n "${{ secrets.EVALUATION_TOOL_URL }}" && -n "${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" ]]; then
-            curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
-              -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "runId": "'$RUN_ID'",
-                "runnerId": "'$TASK_ID'",
-                "githubWorkflowRunId": "${{ github.run_id }}",
-                "githubWorkflowUrl": "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}",
-                "currentStage": "'$FINAL_STAGE'",
-                "status": "'$FINAL_STATUS'",
-                "errorMessage": "'$ERROR_MESSAGE'"
-              }' || echo "Failed to update runner completion status (non-fatal)"
-          else
-            echo "Skipping runner completion update - missing RUN_ID or API credentials"
-          fi
+          # Send update to progress tracking API
+          curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
+            -d "{
+              \"runId\": \"${RUN_ID}\",
+              \"runnerId\": \"${RUNNER_ID}\",
+              \"githubWorkflowRunId\": \"${GITHUB_RUN_ID}\",
+              \"githubWorkflowUrl\": \"${GITHUB_WORKFLOW_URL}\",
+              \"taskId\": \"batch_${START_INDEX}\",
+              \"currentStage\": \"${FINAL_STAGE}\",
+              \"status\": \"${FINAL_STATUS}\",
+              \"errorMessage\": \"${ERROR_MESSAGE}\"
+            }" \
+            --max-time 10 \
+            --retry 2 || echo "⚠️ Runner completion update failed, but continuing"

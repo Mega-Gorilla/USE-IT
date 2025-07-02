@@ -2325,12 +2325,16 @@ def save_runner_progress_to_server(convex_url: str, secret_key: str, progress_de
 
 
 def generate_runner_id(task_id: str, github_run_id: str | None = None) -> str:
-	"""Generate a unique runner ID for progress tracking"""
+	"""Generate a unique runner ID for progress tracking that matches GitHub Actions pattern"""
 	if github_run_id:
-		return f'github_run_{github_run_id}_{task_id}'
+		# Use batch-level runner ID consistent with GitHub Actions
+		# GitHub Actions uses: github_run_{GITHUB_RUN_ID}_batch_{START_INDEX}
+		# Get start index from environment variable set by GitHub Actions
+		start_index = os.getenv('EVAL_START_INDEX', '0')
+		return f'github_run_{github_run_id}_batch_{start_index}'
 	else:
 		# Fallback for local runs
-		return f'local_run_{int(time.time())}_{task_id}'
+		return f'local_run_{int(time.time())}'
 
 
 def send_progress_update(
