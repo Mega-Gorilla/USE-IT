@@ -178,6 +178,7 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
+          GMAIL_2FA_TOKEN="${{ github.event.client_payload.script_args.gmail_2fa_token }}"
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
@@ -219,6 +220,9 @@ jobs:
           [[ -n "$PLANNER_MODEL" ]] && CMD_ARGS+=("--planner-model" "$PLANNER_MODEL")
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
+          
+          # Add Gmail 2FA parameters
+          [[ -n "$GMAIL_2FA_TOKEN" ]] && CMD_ARGS+=("--gmail-2fa-access-token" "$GMAIL_2FA_TOKEN")
           
           # Add single task mode parameters
           [[ -n "$TASK_ID" ]] && CMD_ARGS+=("--task-id" "$TASK_ID")

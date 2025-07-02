@@ -861,12 +861,27 @@ def create_controller_with_serp_search(output_model: type[BaseModel] | None = No
 	return controller
 
 
-def create_controller(use_serp: bool = False, output_model: type[BaseModel] | None = None):
-	"""Create a controller, optionally with SERP search"""
+def create_controller(use_serp: bool = False, output_model: type[BaseModel] | None = None, gmail_access_token: str | None = None):
+	"""Create a controller, optionally with SERP search and Gmail 2FA support"""
 	if use_serp:
-		return create_controller_with_serp_search(output_model=output_model)
+		controller = create_controller_with_serp_search(output_model=output_model)
 	else:
-		return Controller(output_model=output_model)
+		controller = Controller(output_model=output_model)
+	
+	# Add Gmail 2FA support if access token is available
+	if gmail_access_token:
+		try:
+			from browser_use.integrations.gmail import register_gmail_actions
+			
+			# Register Gmail actions using the access token
+			register_gmail_actions(controller, access_token=gmail_access_token)
+			
+			logger.info('Gmail 2FA integration registered successfully with access token')
+		
+		except Exception as e:
+			logger.error(f'Failed to setup Gmail integration: {e}')
+	
+	return controller
 
 
 def get_llm(model_name: str):
@@ -1382,10 +1397,15 @@ async def run_agent_with_browser(
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
 	use_thinking: bool = True,
+	gmail_access_token: str | None = None,
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
-	# Create controller, optionally with SERP search and structured output
-	controller = create_controller(use_serp=use_serp, output_model=task.output_model)
+	# Create controller, optionally with SERP search, structured output, and Gmail 2FA support
+	controller = create_controller(
+		use_serp=use_serp, 
+		output_model=task.output_model,
+		gmail_access_token=gmail_access_token
+	)
 
 	# Check for deprecated memory parameters
 	if enable_memory:
@@ -1601,6 +1621,7 @@ async def run_task_with_semaphore(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
+	gmail_access_token: str | None = None,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -1706,6 +1727,7 @@ async def run_task_with_semaphore(
 								planner_llm,
 								planner_interval,
 								use_thinking,
+								gmail_access_token,
 							),
 							timeout=1000,
 						)
@@ -1942,6 +1964,7 @@ async def run_multiple_tasks(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
+	gmail_access_token: str | None = None,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -2021,6 +2044,7 @@ async def run_multiple_tasks(
 					highlight_elements=highlight_elements,
 					use_mind2web_judge=use_mind2web_judge,
 					use_thinking=use_thinking,
+					gmail_access_token=gmail_access_token,
 				)
 				for task in tasks_to_run
 			),
@@ -2291,6 +2315,7 @@ async def run_evaluation_pipeline(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
+	gmail_access_token: str | None = None,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -2343,6 +2368,7 @@ async def run_evaluation_pipeline(
 		highlight_elements=highlight_elements,
 		use_mind2web_judge=use_mind2web_judge,
 		use_thinking=use_thinking,
+		gmail_access_token=gmail_access_token,
 	)
 
 
@@ -2409,6 +2435,9 @@ if __name__ == '__main__':
 	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
 	parser.add_argument('--use-anchor', action='store_true', help='Use anchor to navigate to the page')
 	parser.add_argument('--github-workflow-url', type=str, default=None, help='GitHub workflow URL for tracking')
+
+	# Gmail 2FA support arguments
+	parser.add_argument('--gmail-2fa-access-token', type=str, default=None, help='Access token for Gmail 2FA Lambda function (enables Gmail 2FA if provided)')
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
@@ -2655,6 +2684,7 @@ if __name__ == '__main__':
 				highlight_elements=args.highlight_elements,
 				use_mind2web_judge=args.use_mind2web_judge,
 				use_thinking=not args.no_thinking,
+				gmail_access_token=args.gmail_2fa_access_token,
 			)
 		)
 
