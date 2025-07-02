@@ -7,7 +7,9 @@ on:
 
 jobs:
   run_evaluation:
-    runs-on: ubuntu-latest
+    runs-on: 
+      group: eval
+      labels: eval-2-core-500
     timeout-minutes: 360
     env:
       IN_DOCKER: 'true'
@@ -104,6 +106,13 @@ jobs:
           ps aux | wc -l
           echo "================================="
 
+      - name: Construct GitHub Workflow URL
+        id: github_url
+        run: |
+          GITHUB_WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "GITHUB_WORKFLOW_URL=$GITHUB_WORKFLOW_URL" >> $GITHUB_OUTPUT
+          echo "::notice title=Workflow URL::Workflow URL: $GITHUB_WORKFLOW_URL"
+
       - name: Construct eval command
         id: eval_command
         run: |
@@ -196,6 +205,7 @@ jobs:
           [[ "${{ github.event.client_payload.script_args.no_vision }}" == "true" ]] && CMD_ARGS+=("--no-vision")
           [[ "$HEADLESS" == "true" ]] && CMD_ARGS+=("--headless")
           [[ "${{ github.event.client_payload.script_args.use_serp }}" == "true" ]] && CMD_ARGS+=("--use-serp")
+          [[ "${{ github.event.client_payload.script_args.use_anchor }}" == "true" ]] && CMD_ARGS+=("--use-anchor")
           [[ "${{ github.event.client_payload.script_args.enable_memory }}" == "true" ]] && CMD_ARGS+=("--enable-memory")
           [[ "${{ github.event.client_payload.script_args.validate_output }}" == "true" ]] && CMD_ARGS+=("--validate-output")
           [[ "${{ github.event.client_payload.script_args.include_result }}" == "true" ]] && CMD_ARGS+=("--include-result")
@@ -214,6 +224,9 @@ jobs:
           [[ -n "$TASK_ID" ]] && CMD_ARGS+=("--task-id" "$TASK_ID")
           [[ -n "$TASK_TEXT" ]] && CMD_ARGS+=("--task-text" "$TASK_TEXT")
           [[ -n "$TASK_WEBSITE" ]] && CMD_ARGS+=("--task-website" "$TASK_WEBSITE")
+
+          # Add GitHub workflow URL
+          [[ -n "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}" ]] && CMD_ARGS+=("--github-workflow-url" "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}")
 
           # Convert array to command string with proper escaping
           printf -v CMD_STRING '%q ' "${CMD_ARGS[@]}"
