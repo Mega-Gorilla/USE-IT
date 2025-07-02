@@ -119,7 +119,7 @@ jobs:
         run: |
           echo "Registering runner progress..."
           
-          # Extract parameters for runner identification
+          # Extract parameters for runner identification with validation
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           GITHUB_RUN_ID="${{ github.run_id }}"
           START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
@@ -127,13 +127,35 @@ jobs:
           TOTAL_TASKS="${{ github.event.client_payload.script_args.total_tasks }}"
           GITHUB_WORKFLOW_URL="${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}"
           
-          # Calculate task range for this runner
-          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ]; then
+          # Validate and set defaults for numeric variables to prevent arithmetic errors
+          START_INDEX="${START_INDEX:-0}"
+          TOTAL_TASKS="${TOTAL_TASKS:-100}"
+          
+          # Validate START_INDEX is numeric
+          if ! [[ "$START_INDEX" =~ ^[0-9]+$ ]]; then
+            echo "⚠️ Warning: START_INDEX '$START_INDEX' is not numeric, defaulting to 0"
+            START_INDEX=0
+          fi
+          
+          # Validate TOTAL_TASKS is numeric
+          if ! [[ "$TOTAL_TASKS" =~ ^[0-9]+$ ]]; then
+            echo "⚠️ Warning: TOTAL_TASKS '$TOTAL_TASKS' is not numeric, defaulting to 100"
+            TOTAL_TASKS=100
+          fi
+          
+          # Calculate task range for this runner with safe arithmetic
+          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ] && [[ "$END_INDEX" =~ ^[0-9]+$ ]]; then
             TASK_RANGE="${START_INDEX}-${END_INDEX}"
             TOTAL_ASSIGNED_TASKS=$((END_INDEX - START_INDEX))
           else
             TASK_RANGE="${START_INDEX}+"
             TOTAL_ASSIGNED_TASKS=$((TOTAL_TASKS - START_INDEX))
+          fi
+          
+          # Ensure TOTAL_ASSIGNED_TASKS is positive
+          if [ "$TOTAL_ASSIGNED_TASKS" -le 0 ]; then
+            echo "⚠️ Warning: Calculated TOTAL_ASSIGNED_TASKS is $TOTAL_ASSIGNED_TASKS, setting to 1"
+            TOTAL_ASSIGNED_TASKS=1
           fi
           
           # Generate consistent runner ID (matches Python service pattern)
@@ -142,6 +164,9 @@ jobs:
           echo "Runner ID: $RUNNER_ID"
           echo "Task Range: $TASK_RANGE"
           echo "Total Assigned Tasks: $TOTAL_ASSIGNED_TASKS"
+          echo "Start Index: $START_INDEX (validated)"
+          echo "End Index: $END_INDEX"
+          echo "Total Tasks: $TOTAL_TASKS (validated)"
           
           # Send registration to progress tracking API
           curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
@@ -320,9 +345,51 @@ jobs:
       - name: Run evaluation
         id: run_eval  
         run: |
+          echo "=== STARTING EVALUATION ==="
           echo "🚀 Starting evaluation with command: ${{ steps.eval_command.outputs.FULL_COMMAND }}"
           echo "📊 This may take several minutes depending on the number of tasks..."
-          ${{ steps.eval_command.outputs.FULL_COMMAND }}
+          echo "Starting time: $(date)"
+          echo "Use Mind2Web Judge: ${{ github.event.client_payload.script_args.use_mind2web_judge }}"
+          echo "============================"
+          
+          # Set up signal handlers for graceful interruption handling
+          set -e
+          trap 'echo "=== EVALUATION INTERRUPTED ==="; echo "Time: $(date)"; echo "Last 50 lines of output:"; tail -50 eval_output.log 2>/dev/null || echo "No output log available"; exit 130' INT TERM
+          
+          # Run the evaluation with output capture and comprehensive error handling
+          set +e  # Don't exit on errors, we want to capture them for debugging
+          ${{ steps.eval_command.outputs.FULL_COMMAND }} 2>&1 | tee eval_output.log
+          EVAL_EXIT_CODE=${PIPESTATUS[0]}
+          set -e  # Re-enable exit on error
+          
+          echo "=== EVALUATION COMPLETED ==="
+          echo "✅ Evaluation finished"
+          echo "Exit code: $EVAL_EXIT_CODE"
+          echo "Completion time: $(date)"
+          echo "============================"
+          
+          # Show last part of log for immediate context in GitHub Actions
+          if [ $EVAL_EXIT_CODE -ne 0 ]; then
+            echo "=== EVALUATION FAILED - LAST 100 LINES OF OUTPUT ==="
+            tail -100 eval_output.log 2>/dev/null || echo "No output log available for debugging"
+            echo "===================================================="
+            echo "❌ Evaluation failed with exit code $EVAL_EXIT_CODE"
+            echo "📋 Full debug information will be available in artifacts"
+          else
+            echo "✅ Evaluation completed successfully"
+            echo "📊 Last 20 lines of output for verification:"
+            tail -20 eval_output.log 2>/dev/null || echo "No output log available"
+          fi
+          
+          # Ensure eval_output.log exists for artifact collection
+          if [ ! -f eval_output.log ]; then
+            echo "⚠️ Warning: eval_output.log was not created" > eval_output.log
+            echo "This may indicate the evaluation command failed to start properly" >> eval_output.log
+            echo "Check the GitHub Actions logs above for more information" >> eval_output.log
+          fi
+          
+          # Exit with the original evaluation exit code to properly propagate failures
+          exit $EVAL_EXIT_CODE
         env:
           EVALUATION_TOOL_URL: ${{ secrets.EVALUATION_TOOL_URL }}
           EVALUATION_TOOL_SECRET_KEY: ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}
@@ -395,12 +462,26 @@ jobs:
           echo "Checking for OOM kills in kernel messages:"
           sudo dmesg | grep -i "killed process" | tail -10 || echo "No OOM kills found"
           
-          # Check evaluation output
+          # Check evaluation output (now properly captured)
           echo "Last 100 lines of evaluation output:"
           if [ -f eval_output.log ]; then
+            echo "📄 eval_output.log found ($(wc -l < eval_output.log) lines total)"
             tail -100 eval_output.log
           else
-            echo "No evaluation output log found"
+            echo "⚠️ No evaluation output log found - this indicates a critical failure"
+            echo "The evaluation may have failed to start or crashed immediately"
+          fi
+          
+          # Show evaluation log statistics
+          if [ -f eval_output.log ]; then
+            echo "=== EVALUATION LOG STATISTICS ==="
+            echo "Total lines: $(wc -l < eval_output.log)"
+            echo "Log size: $(ls -lh eval_output.log | awk '{print $5}')"
+            echo "Error indicators:"
+            grep -c -i "error\|exception\|failed\|traceback" eval_output.log 2>/dev/null || echo "0 error patterns found"
+            echo "Task completion indicators:"
+            grep -c -i "task.*completed\|evaluation.*complete" eval_output.log 2>/dev/null || echo "0 completion patterns found"
+            echo "================================"
           fi
           
           # Check for saved trajectories
@@ -447,7 +528,7 @@ jobs:
         run: |
           echo "Updating runner completion status..."
           
-          # Extract parameters for runner identification
+          # Extract parameters for runner identification with validation
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           GITHUB_RUN_ID="${{ github.run_id }}"
           START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
@@ -455,13 +536,35 @@ jobs:
           TOTAL_TASKS="${{ github.event.client_payload.script_args.total_tasks }}"
           GITHUB_WORKFLOW_URL="${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}"
           
-          # Calculate task range for this runner
-          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ]; then
+          # Validate and set defaults for numeric variables to prevent arithmetic errors
+          START_INDEX="${START_INDEX:-0}"
+          TOTAL_TASKS="${TOTAL_TASKS:-100}"
+          
+          # Validate START_INDEX is numeric
+          if ! [[ "$START_INDEX" =~ ^[0-9]+$ ]]; then
+            echo "⚠️ Warning: START_INDEX '$START_INDEX' is not numeric, defaulting to 0"
+            START_INDEX=0
+          fi
+          
+          # Validate TOTAL_TASKS is numeric
+          if ! [[ "$TOTAL_TASKS" =~ ^[0-9]+$ ]]; then
+            echo "⚠️ Warning: TOTAL_TASKS '$TOTAL_TASKS' is not numeric, defaulting to 100"
+            TOTAL_TASKS=100
+          fi
+          
+          # Calculate task range for this runner with safe arithmetic
+          if [ -n "$END_INDEX" ] && [ "$END_INDEX" != "null" ] && [[ "$END_INDEX" =~ ^[0-9]+$ ]]; then
             TASK_RANGE="${START_INDEX}-${END_INDEX}"
             TOTAL_ASSIGNED_TASKS=$((END_INDEX - START_INDEX))
           else
             TASK_RANGE="${START_INDEX}+"
             TOTAL_ASSIGNED_TASKS=$((TOTAL_TASKS - START_INDEX))
+          fi
+          
+          # Ensure TOTAL_ASSIGNED_TASKS is positive
+          if [ "$TOTAL_ASSIGNED_TASKS" -le 0 ]; then
+            echo "⚠️ Warning: Calculated TOTAL_ASSIGNED_TASKS is $TOTAL_ASSIGNED_TASKS, setting to 1"
+            TOTAL_ASSIGNED_TASKS=1
           fi
           
           # Generate consistent runner ID (matches Python service pattern)
@@ -470,6 +573,9 @@ jobs:
           echo "Runner ID: $RUNNER_ID"
           echo "Task Range: $TASK_RANGE"
           echo "Total Assigned Tasks: $TOTAL_ASSIGNED_TASKS"
+          echo "Start Index: $START_INDEX (validated)"
+          echo "End Index: $END_INDEX"
+          echo "Total Tasks: $TOTAL_TASKS (validated)"
           
           # Determine final status based on evaluation outcome
           FINAL_STATUS="completed"
