@@ -61,7 +61,7 @@ Examples:
 Note that:
 - Only elements with numeric indexes in [] are interactive
 - (stacked) indentation (with \t) is important and means that the element is a (html) child of the element above (with a lower index)
-- Elements with <new> tags are elements that appeared on the website since the last step - an element is only tagged as "new" if it was not present in the previous step but is now visible on the page (if url has not changed)
+- Elements with <new> tags appeared on the website since the last step (if url has not changed)
 - Pure text elements without [] are not interactive.
 </browser_state>
 
