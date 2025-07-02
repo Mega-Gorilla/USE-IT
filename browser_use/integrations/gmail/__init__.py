@@ -18,7 +18,7 @@ Usage:
 
 # @file purpose: Gmail integration for 2FA email authentication and email reading
 
-from .service import GmailService
 from .actions import register_gmail_actions
+from .service import GmailService
 
 __all__ = ['GmailService', 'register_gmail_actions']

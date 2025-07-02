@@ -6,11 +6,13 @@ email reading, and authentication management.
 
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 from browser_use.agent.views import ActionResult
 from browser_use.controller.service import Controller
+
 from .service import GmailService
 
 logger = logging.getLogger(__name__)

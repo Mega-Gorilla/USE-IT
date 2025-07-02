@@ -13,6 +13,7 @@ Setup:
 import asyncio
 import os
 import sys
+
 from dotenv import load_dotenv
 
 # Add the parent directory to the path so we can import browser_use
@@ -21,8 +22,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 load_dotenv()
 
 from browser_use import Agent, Controller
-from browser_use.llm import ChatOpenAI
 from browser_use.integrations.gmail import register_gmail_actions
+from browser_use.llm import ChatOpenAI
 
 
 async def main():

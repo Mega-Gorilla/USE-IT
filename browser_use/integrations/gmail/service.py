@@ -4,15 +4,14 @@ Handles Gmail API authentication, email reading, and 2FA code extraction.
 This service provides a clean interface for agents to interact with Gmail.
 """
 
-import os
-import re
-import time
 import base64
 import logging
-import asyncio
-from typing import List, Dict, Optional, Any
+import os
+import re
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+import aiofiles
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -126,8 +125,8 @@ class GmailService:
 					self.creds = flow.run_local_server(port=8080, open_browser=True)
 
 				# Save tokens for next time
-				with open(self.token_file, 'w') as token:
-					token.write(self.creds.to_json())
+				async with aiofiles.open(self.token_file, 'w') as token:
+					await token.write(self.creds.to_json())
 				logger.info(f'💾 Tokens saved to {self.token_file}')
 
 			# Build Gmail service
