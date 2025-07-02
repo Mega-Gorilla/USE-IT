@@ -1663,27 +1663,49 @@ async def run_task_with_semaphore(
 			task_folder = Path(f'saved_trajectories/{task.task_id}')
 
 			logger.info(f'Task {task.task_id}: Starting execution pipeline.')
+
+			# Send initial progress update to show task is starting
+			send_progress_update(convex_url, secret_key, run_id, task.task_id, 'starting', 'active', github_workflow_url)
+
 			try:
 				agent_history = None  # Initialize to track agent execution
 
 				# Stage 1: Setup browser
 				try:
 					logger.info(f'Task {task.task_id}: Browser setup starting.')
+					# Send progress update for starting browser setup
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'setup_browser', 'active', github_workflow_url
+					)
+
 					browser_session = await run_stage(
 						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
 					)
 					task_result.stage_completed(Stage.SETUP_BROWSER)
 					logger.info(f'Task {task.task_id}: Browser session started successfully.')
+
+					# Send progress update for completed browser setup
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'browser_ready', 'active', github_workflow_url
+					)
 				except Exception as e:
 					error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
 					task_result.stage_failed(Stage.SETUP_BROWSER, error)
 					logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+					# Send error progress update
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'setup_browser', 'failed', github_workflow_url, None, str(e)
+					)
 					# Continue to server save instead of early return
 
 				# Stage 2: Run agent
 				if browser_session:  # Only run agent if browser setup succeeded
 					try:
 						logger.info(f'Task {task.task_id}: Agent run starting.')
+						# Send progress update for starting agent run
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'run_agent', 'active', github_workflow_url
+						)
 
 						agent_history, last_message = await run_stage(
 							Stage.RUN_AGENT,
@@ -1707,84 +1729,95 @@ async def run_task_with_semaphore(
 
 						task_result.stage_completed(Stage.RUN_AGENT)
 						logger.info(f'Task {task.task_id}: Agent run completed.')
+						# Send progress update for completed agent run
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'agent_completed', 'active', github_workflow_url
+						)
 					except Exception as e:
 						error = StageError(Stage.RUN_AGENT, 'exception', str(e))
 						task_result.stage_failed(Stage.RUN_AGENT, error)
 						logger.error(f'Task {task.task_id}: Agent run failed: {str(e) + " " + str(e.__traceback__)}')
+						# Send error progress update
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'run_agent', 'failed', github_workflow_url, None, str(e)
+						)
 
 						# Continue to server save instead of early return
 
-				# Stage 3: Format history
-				if agent_history is not None:  # Only format if agent ran successfully
-					try:
-						logger.info(f'Task {task.task_id}: History formatting starting.')
-						formatted_data = await run_stage(
-							Stage.FORMAT_HISTORY,
-							lambda: reformat_agent_history(
-								agent_history,
-								task.task_id,
-								run_id,
-								task.confirmed_task,
-								last_message,
-								include_result=include_result,
-							),
-						)
-						task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
-						logger.info(f'Task {task.task_id}: Agent history formatted.')
-					except Exception as e:
-						error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
-						task_result.stage_failed(Stage.FORMAT_HISTORY, error)
-						logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
-						# Continue to server save instead of early return
-
-				# Stage 4: Evaluate (if we have execution data and no existing evaluation)
-				if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
-					try:
-						logger.info(f'Task {task.task_id}: Evaluation starting.')
-						evaluation = await run_stage(
-							Stage.EVALUATE,
-							lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge),
-							timeout=300,
-						)
-						task_result.stage_completed(Stage.EVALUATE, evaluation)
-						logger.info(f'Task {task.task_id}: Evaluation completed.')
-
-						if lmnr_run_id and datapoint_id:
-							await laminar_client.evals.update_datapoint(
-								eval_id=UUID(lmnr_run_id),
-								datapoint_id=datapoint_id,
-								scores={
-									'accuracy': evaluation['score'],
-								},
+					# Stage 3: Format history
+					if agent_history is not None:  # Only format if agent ran successfully
+						try:
+							logger.info(f'Task {task.task_id}: History formatting starting.')
+							formatted_data = await run_stage(
+								Stage.FORMAT_HISTORY,
+								lambda: reformat_agent_history(
+									agent_history,
+									task.task_id,
+									run_id,
+									task.confirmed_task,
+									last_message,
+									include_result=include_result,
+								),
 							)
-					except Exception as e:
-						error = StageError(Stage.EVALUATE, 'exception', str(e))
-						task_result.stage_failed(Stage.EVALUATE, error)
-						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+							task_result.stage_completed(Stage.FORMAT_HISTORY, formatted_data)
+							logger.info(f'Task {task.task_id}: Agent history formatted.')
+						except Exception as e:
+							error = StageError(Stage.FORMAT_HISTORY, 'exception', str(e))
+							task_result.stage_failed(Stage.FORMAT_HISTORY, error)
+							logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
+							# Continue to server save instead of early return
 
-				# Stage 5: Save to server (always attempt)
-				try:
-					logger.info(f'Task {task.task_id}: Saving result to server.')
-					# Only save to server if URLs are provided (skip for single task mode)
-					if convex_url and secret_key:
-						await run_stage(
-							Stage.SAVE_SERVER,
-							lambda: asyncio.to_thread(
-								save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
-							),
-							timeout=60,
-						)
-						task_result.stage_completed(Stage.SAVE_SERVER)
-						logger.info(f'Task {task.task_id}: Successfully saved result to server.')
-					else:
-						# Single task mode - skip server save but mark as completed
-						logger.info(f'Task {task.task_id}: Skipping server save (single task mode)')
-						task_result.stage_completed(Stage.SAVE_SERVER)
-				except Exception as e:
-					error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
-					task_result.stage_failed(Stage.SAVE_SERVER, error)
-					task_result.mark_server_save_failed(str(e))
-					logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
+					# Stage 4: Evaluate (if we have execution data and no existing evaluation)
+					if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
+						try:
+							logger.info(f'Task {task.task_id}: Evaluation starting.')
+							evaluation = await run_stage(
+								Stage.EVALUATE,
+								lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge),
+								timeout=300,
+							)
+							task_result.stage_completed(Stage.EVALUATE, evaluation)
+							logger.info(f'Task {task.task_id}: Evaluation completed.')
+
+							if lmnr_run_id and datapoint_id:
+								await laminar_client.evals.update_datapoint(
+									eval_id=UUID(lmnr_run_id),
+									datapoint_id=datapoint_id,
+									scores={
+										'accuracy': evaluation['score'],
+									},
+								)
+						except Exception as e:
+							error = StageError(Stage.EVALUATE, 'exception', str(e))
+							task_result.stage_failed(Stage.EVALUATE, error)
+							logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
+
+					# Stage 5: Save to server (always attempt)
+					try:
+						logger.info(f'Task {task.task_id}: Saving result to server.')
+						# Only save to server if URLs are provided (skip for single task mode)
+						if convex_url and secret_key:
+							await run_stage(
+								Stage.SAVE_SERVER,
+								lambda: asyncio.to_thread(
+									save_result_to_server,
+									convex_url,
+									secret_key,
+									task_result.server_payload if task_result else {},
+								),
+								timeout=60,
+							)
+							task_result.stage_completed(Stage.SAVE_SERVER)
+							logger.info(f'Task {task.task_id}: Successfully saved result to server.')
+						else:
+							# Single task mode - skip server save but mark as completed
+							logger.info(f'Task {task.task_id}: Skipping server save (single task mode)')
+							task_result.stage_completed(Stage.SAVE_SERVER)
+					except Exception as e:
+						error = StageError(Stage.SAVE_SERVER, 'exception', str(e))
+						task_result.stage_failed(Stage.SAVE_SERVER, error)
+						task_result.mark_server_save_failed(str(e))
+						logger.error(f'Task {task.task_id}: Server save failed: {str(e)}')
 
 			except TimeoutError:
 				current_stage = determine_current_stage(task_result.completed_stages)
@@ -2255,6 +2288,91 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 
 	except requests.exceptions.RequestException as e:
 		logger.error(f'Error during saveTaskResult request: {type(e).__name__}: {e}')
+		return False
+
+
+# Helper function to save runner progress to the server
+def save_runner_progress_to_server(convex_url: str, secret_key: str, progress_details: dict):
+	"""Sends a request to save runner progress to the Convex backend."""
+
+	if not convex_url:
+		logger.debug('No EVALUATION_TOOL_URL environment variable set for saving runner progress.')
+		return False
+
+	if not secret_key:
+		logger.debug('No EVALUATION_TOOL_SECRET_KEY environment variable set for saving runner progress.')
+		return False
+
+	endpoint_url = f'{convex_url}/api/saveRunnerProgress'
+	headers = {
+		'Authorization': f'Bearer {secret_key}',
+		'Content-Type': 'application/json',
+	}
+
+	try:
+		response = requests.post(endpoint_url, headers=headers, json=progress_details, timeout=10)
+
+		if response.status_code == 200:
+			logger.debug(f'Successfully saved runner progress for {progress_details.get("runnerId")}')
+			return True
+		else:
+			logger.warning(f'Failed to save runner progress. Status: {response.status_code}')
+			return False
+
+	except requests.exceptions.RequestException as e:
+		logger.warning(f'Error during saveRunnerProgress request: {type(e).__name__}: {e}')
+		return False
+
+
+def generate_runner_id(task_id: str, github_run_id: str | None = None) -> str:
+	"""Generate a unique runner ID for progress tracking"""
+	if github_run_id:
+		return f'github_run_{github_run_id}_{task_id}'
+	else:
+		# Fallback for local runs
+		return f'local_run_{int(time.time())}_{task_id}'
+
+
+def send_progress_update(
+	convex_url: str,
+	secret_key: str,
+	run_id: str,
+	task_id: str,
+	current_stage: str,
+	status: str = 'active',
+	github_workflow_url: str | None = None,
+	assigned_task_range: str | None = None,
+	error_message: str | None = None,
+) -> bool:
+	"""Send a progress update for the current runner and task"""
+	try:
+		# Generate runner ID
+		github_run_id = os.getenv('GITHUB_RUN_ID')
+		runner_id = generate_runner_id(task_id, github_run_id)
+
+		# Extract workflow run ID from URL if available
+		github_workflow_run_id = None
+		if github_workflow_url and 'actions/runs/' in github_workflow_url:
+			try:
+				github_workflow_run_id = github_workflow_url.split('actions/runs/')[1].split('/')[0]
+			except (IndexError, AttributeError):
+				pass
+
+		progress_details = {
+			'runId': run_id,
+			'runnerId': runner_id,
+			'taskId': task_id,
+			'currentStage': current_stage,
+			'status': status,
+			'githubWorkflowUrl': github_workflow_url,
+			'githubWorkflowRunId': github_workflow_run_id,
+			'assignedTaskRange': assigned_task_range,
+			'errorMessage': error_message,
+		}
+
+		return save_runner_progress_to_server(convex_url, secret_key, progress_details)
+	except Exception as e:
+		logger.warning(f'Failed to send progress update: {type(e).__name__}: {e}')
 		return False
 
 

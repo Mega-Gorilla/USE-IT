@@ -113,6 +113,38 @@ jobs:
           echo "GITHUB_WORKFLOW_URL=$GITHUB_WORKFLOW_URL" >> $GITHUB_OUTPUT
           echo "::notice title=Workflow URL::Workflow URL: $GITHUB_WORKFLOW_URL"
 
+      - name: Register Runner Progress
+        id: register_runner
+        run: |
+          echo "Registering runner progress..."
+          
+          # Extract parameters for runner identification
+          RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
+          TASK_ID="github_run_${{ github.run_id }}_${{ strategy.job-index || 'single' }}"
+          START_INDEX="${{ github.event.client_payload.script_args.start_index }}"
+          END_INDEX="${{ github.event.client_payload.script_args.end_index }}"
+          
+          # Create task range string
+          TASK_RANGE="${START_INDEX:-0}-${END_INDEX:-100}"
+          
+          # Register runner with progress tracking API
+          if [[ -n "$RUN_ID" && -n "${{ secrets.EVALUATION_TOOL_URL }}" && -n "${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" ]]; then
+            curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
+              -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "runId": "'$RUN_ID'",
+                "runnerId": "'$TASK_ID'",
+                "githubWorkflowRunId": "${{ github.run_id }}",
+                "githubWorkflowUrl": "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}",
+                "currentStage": "starting",
+                "status": "active",
+                "assignedTaskRange": "'$TASK_RANGE'"
+              }' || echo "Failed to register runner progress (non-fatal)"
+          else
+            echo "Skipping runner registration - missing RUN_ID or API credentials"
+          fi
+
       - name: Construct eval command
         id: eval_command
         run: |
@@ -415,3 +447,41 @@ jobs:
           fi
           
           echo "==========================="
+
+      - name: Update Runner Completion Status
+        if: always()
+        run: |
+          echo "Updating runner completion status..."
+          
+          # Extract parameters for runner identification
+          RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
+          TASK_ID="github_run_${{ github.run_id }}_${{ strategy.job-index || 'single' }}"
+          
+          # Determine final status based on evaluation outcome
+          FINAL_STATUS="completed"
+          FINAL_STAGE="completed"
+          ERROR_MESSAGE=""
+          
+          if [ "${{ steps.run_eval.outcome }}" != "success" ]; then
+            FINAL_STATUS="failed"
+            FINAL_STAGE="failed"
+            ERROR_MESSAGE="Evaluation step failed or was interrupted"
+          fi
+          
+          # Update runner status
+          if [[ -n "$RUN_ID" && -n "${{ secrets.EVALUATION_TOOL_URL }}" && -n "${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" ]]; then
+            curl -X POST "${{ secrets.EVALUATION_TOOL_URL }}/api/saveRunnerProgress" \
+              -H "Authorization: Bearer ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "runId": "'$RUN_ID'",
+                "runnerId": "'$TASK_ID'",
+                "githubWorkflowRunId": "${{ github.run_id }}",
+                "githubWorkflowUrl": "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}",
+                "currentStage": "'$FINAL_STAGE'",
+                "status": "'$FINAL_STATUS'",
+                "errorMessage": "'$ERROR_MESSAGE'"
+              }' || echo "Failed to update runner completion status (non-fatal)"
+          else
+            echo "Skipping runner completion update - missing RUN_ID or API credentials"
+          fi
