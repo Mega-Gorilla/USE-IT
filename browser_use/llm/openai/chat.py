@@ -19,6 +19,8 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
 
+ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
+
 
 @dataclass
 class ChatOpenAI(BaseChatModel):
@@ -134,13 +136,14 @@ class ChatOpenAI(BaseChatModel):
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
 		try:
+			reasoning_effort = self.reasoning_effort if self.model in ReasoningModels else None
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=self.reasoning_effort,
+					reasoning_effort=reasoning_effort,
 				)
 
 				usage = self._get_usage(response)
@@ -161,7 +164,7 @@ class ChatOpenAI(BaseChatModel):
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=self.reasoning_effort,
+					reasoning_effort=reasoning_effort,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
 				)
 
