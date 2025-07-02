@@ -1668,27 +1668,49 @@ async def run_task_with_semaphore(
 			task_folder = Path(f'saved_trajectories/{task.task_id}')
 
 			logger.info(f'Task {task.task_id}: Starting execution pipeline.')
+
+			# Send initial progress update to show task is starting
+			send_progress_update(convex_url, secret_key, run_id, task.task_id, 'starting', 'active', github_workflow_url)
+
 			try:
 				agent_history = None  # Initialize to track agent execution
 
 				# Stage 1: Setup browser
 				try:
 					logger.info(f'Task {task.task_id}: Browser setup starting.')
+					# Send progress update for starting browser setup
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'setup_browser', 'active', github_workflow_url
+					)
+
 					browser_session = await run_stage(
 						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
 					)
 					task_result.stage_completed(Stage.SETUP_BROWSER)
 					logger.info(f'Task {task.task_id}: Browser session started successfully.')
+
+					# Send progress update for completed browser setup
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'browser_ready', 'active', github_workflow_url
+					)
 				except Exception as e:
 					error = StageError(Stage.SETUP_BROWSER, 'exception', str(e))
 					task_result.stage_failed(Stage.SETUP_BROWSER, error)
 					logger.error(f'Task {task.task_id}: Browser setup failed: {str(e)}')
+					# Send error progress update
+					send_progress_update(
+						convex_url, secret_key, run_id, task.task_id, 'setup_browser', 'failed', github_workflow_url, None, str(e)
+					)
 					# Continue to server save instead of early return
 
 				# Stage 2: Run agent
 				if browser_session:  # Only run agent if browser setup succeeded
 					try:
 						logger.info(f'Task {task.task_id}: Agent run starting.')
+						# Send progress update for starting agent run
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'run_agent', 'active', github_workflow_url
+						)
 
 						agent_history, last_message = await run_stage(
 							Stage.RUN_AGENT,
@@ -1712,14 +1734,22 @@ async def run_task_with_semaphore(
 
 						task_result.stage_completed(Stage.RUN_AGENT)
 						logger.info(f'Task {task.task_id}: Agent run completed.')
+						# Send progress update for completed agent run
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'agent_completed', 'active', github_workflow_url
+						)
 					except Exception as e:
 						error = StageError(Stage.RUN_AGENT, 'exception', str(e))
 						task_result.stage_failed(Stage.RUN_AGENT, error)
 						logger.error(f'Task {task.task_id}: Agent run failed: {str(e) + " " + str(e.__traceback__)}')
+						# Send error progress update
+						send_progress_update(
+							convex_url, secret_key, run_id, task.task_id, 'run_agent', 'failed', github_workflow_url, None, str(e)
+						)
 
 						# Continue to server save instead of early return
 
-				# Stage 3: Format history
+				# Stage 3: Format history (MOVED OUTSIDE browser_session block)
 				if agent_history is not None:  # Only format if agent ran successfully
 					try:
 						logger.info(f'Task {task.task_id}: History formatting starting.')
@@ -1742,7 +1772,7 @@ async def run_task_with_semaphore(
 						logger.error(f'Task {task.task_id}: History formatting failed: {str(e)}')
 						# Continue to server save instead of early return
 
-				# Stage 4: Evaluate (if we have execution data and no existing evaluation)
+				# Stage 4: Evaluate (MOVED OUTSIDE browser_session block)
 				if task_result.has_execution_data() and Stage.EVALUATE not in task_result.completed_stages:
 					try:
 						logger.info(f'Task {task.task_id}: Evaluation starting.')
@@ -1767,7 +1797,7 @@ async def run_task_with_semaphore(
 						task_result.stage_failed(Stage.EVALUATE, error)
 						logger.error(f'Task {task.task_id}: Evaluation failed: {str(e)}')
 
-				# Stage 5: Save to server (always attempt)
+				# Stage 5: Save to server (MOVED OUTSIDE browser_session block - ALWAYS attempt)
 				try:
 					logger.info(f'Task {task.task_id}: Saving result to server.')
 					# Only save to server if URLs are provided (skip for single task mode)
@@ -1775,7 +1805,10 @@ async def run_task_with_semaphore(
 						await run_stage(
 							Stage.SAVE_SERVER,
 							lambda: asyncio.to_thread(
-								save_result_to_server, convex_url, secret_key, task_result.server_payload if task_result else {}
+								save_result_to_server,
+								convex_url,
+								secret_key,
+								task_result.server_payload if task_result else {},
 							),
 							timeout=60,
 						)
@@ -2260,6 +2293,95 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 
 	except requests.exceptions.RequestException as e:
 		logger.error(f'Error during saveTaskResult request: {type(e).__name__}: {e}')
+		return False
+
+
+# Helper function to save runner progress to the server
+def save_runner_progress_to_server(convex_url: str, secret_key: str, progress_details: dict):
+	"""Sends a request to save runner progress to the Convex backend."""
+
+	if not convex_url:
+		logger.debug('No EVALUATION_TOOL_URL environment variable set for saving runner progress.')
+		return False
+
+	if not secret_key:
+		logger.debug('No EVALUATION_TOOL_SECRET_KEY environment variable set for saving runner progress.')
+		return False
+
+	endpoint_url = f'{convex_url}/api/saveRunnerProgress'
+	headers = {
+		'Authorization': f'Bearer {secret_key}',
+		'Content-Type': 'application/json',
+	}
+
+	try:
+		response = requests.post(endpoint_url, headers=headers, json=progress_details, timeout=10)
+
+		if response.status_code == 200:
+			logger.debug(f'Successfully saved runner progress for {progress_details.get("runnerId")}')
+			return True
+		else:
+			logger.warning(f'Failed to save runner progress. Status: {response.status_code}')
+			return False
+
+	except requests.exceptions.RequestException as e:
+		logger.warning(f'Error during saveRunnerProgress request: {type(e).__name__}: {e}')
+		return False
+
+
+def generate_runner_id(task_id: str, github_run_id: str | None = None) -> str:
+	"""Generate a unique runner ID for progress tracking that matches GitHub Actions pattern"""
+	if github_run_id:
+		# Use batch-level runner ID consistent with GitHub Actions
+		# GitHub Actions uses: github_run_{GITHUB_RUN_ID}_batch_{START_INDEX}
+		# Get start index from environment variable set by GitHub Actions
+		start_index = os.getenv('EVAL_START_INDEX', '0')
+		return f'github_run_{github_run_id}_batch_{start_index}'
+	else:
+		# Fallback for local runs
+		return f'local_run_{int(time.time())}'
+
+
+def send_progress_update(
+	convex_url: str,
+	secret_key: str,
+	run_id: str,
+	task_id: str,
+	current_stage: str,
+	status: str = 'active',
+	github_workflow_url: str | None = None,
+	assigned_task_range: str | None = None,
+	error_message: str | None = None,
+) -> bool:
+	"""Send a progress update for the current runner and task"""
+	try:
+		# Generate runner ID
+		github_run_id = os.getenv('GITHUB_RUN_ID')
+		runner_id = generate_runner_id(task_id, github_run_id)
+
+		# Extract workflow run ID from URL if available
+		github_workflow_run_id = None
+		if github_workflow_url and 'actions/runs/' in github_workflow_url:
+			try:
+				github_workflow_run_id = github_workflow_url.split('actions/runs/')[1].split('/')[0]
+			except (IndexError, AttributeError):
+				pass
+
+		progress_details = {
+			'runId': run_id,
+			'runnerId': runner_id,
+			'taskId': task_id,
+			'currentStage': current_stage,
+			'status': status,
+			'githubWorkflowUrl': github_workflow_url,
+			'githubWorkflowRunId': github_workflow_run_id,
+			'assignedTaskRange': assigned_task_range,
+			'errorMessage': error_message,
+		}
+
+		return save_runner_progress_to_server(convex_url, secret_key, progress_details)
+	except Exception as e:
+		logger.warning(f'Failed to send progress update: {type(e).__name__}: {e}')
 		return False
 
 
