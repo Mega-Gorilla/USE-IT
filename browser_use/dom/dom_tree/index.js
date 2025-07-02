@@ -1261,7 +1261,7 @@
      * @type {
       {
           tagName: string;
-          attributes: Record<string, string>;
+          attributes: Record<string, string | null>;
           xpath: any;
           children: never[];
           isVisible?: boolean;
@@ -1285,9 +1285,7 @@
       const attributeNames = node.getAttributeNames?.() || [];
       for (const name of attributeNames) {
         const value = node.getAttribute(name);
-        if (value) {
-          nodeData.attributes[name] = value;
-        }
+        nodeData.attributes[name] = value;
       }
     }
 
