@@ -882,7 +882,7 @@ def get_llm(model_name: str):
 		case 'openai':
 			kwargs = {'model': config['model_name'], 'temperature': 0.0}
 			# Must set temperatue=1 if model is gpt-o4-mini
-			if model_name == 'gpt-o4-mini':
+			if model_name in ['gpt-o4-mini', 'gpt-o3']:
 				kwargs['temperature'] = 1
 			if api_key:
 				kwargs['api_key'] = api_key
