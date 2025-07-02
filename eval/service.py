@@ -535,6 +535,7 @@ class TaskResult:
 	task: Any
 	max_steps: int
 	laminar_link: str | None = None
+	github_workflow_url: str | None = None
 	completed_stages: set[Stage] = field(default_factory=set)
 	stage_data: dict[Stage, Any] = field(default_factory=dict)
 	errors: list = field(default_factory=list)
@@ -576,6 +577,7 @@ class TaskResult:
 			'critical_error': self.critical_error,
 			'server_save_failed': self.server_save_failed,
 			'laminarTaskLink': self.laminar_link,
+			'githubWorkflowUrl': self.github_workflow_url,
 		}
 
 		# Add task execution data if available
@@ -1582,6 +1584,7 @@ async def run_task_with_semaphore(
 	headless: bool,
 	use_vision: bool,
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
+	github_workflow_url: str | None = None,
 	use_serp: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
@@ -1653,7 +1656,9 @@ async def run_task_with_semaphore(
 				logger.debug(f'Task {task.task_id}: No Laminar run ID available, skipping datapoint creation')
 
 				# Initialize task result and basic setup
-			task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link)
+			task_result = TaskResult(
+				task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link, github_workflow_url
+			)
 
 			task_folder = Path(f'saved_trajectories/{task.task_id}')
 
@@ -1847,7 +1852,13 @@ async def run_task_with_semaphore(
 				# Create minimal task result for server reporting
 				try:
 					task_result = TaskResult(
-						task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link
+						task.task_id,
+						run_id,
+						task.confirmed_task,
+						task,
+						max_steps_per_task,
+						laminar_task_link,
+						github_workflow_url,
 					)
 					task_result.mark_critical_error(f'Initialization failed: {str(init_error)}')
 				except Exception as result_error:
@@ -1908,6 +1919,7 @@ async def run_multiple_tasks(
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
+	github_workflow_url: str | None = None,
 	max_parallel_runs: int = 3,
 	max_steps_per_task: int = 25,
 	start_index: int = 0,
@@ -1992,6 +2004,7 @@ async def run_multiple_tasks(
 					headless=headless,
 					use_vision=use_vision,
 					semaphore_runs=semaphore_runs,  # Pass the semaphore
+					github_workflow_url=github_workflow_url,
 					use_serp=use_serp,
 					enable_memory=enable_memory,
 					memory_interval=memory_interval,
@@ -2254,6 +2267,7 @@ async def run_evaluation_pipeline(
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
+	github_workflow_url: str | None = None,
 	max_parallel_runs: int = 3,
 	max_steps_per_task: int = 25,
 	start_index: int = 0,
@@ -2306,6 +2320,7 @@ async def run_evaluation_pipeline(
 		convex_url=convex_url,
 		secret_key=secret_key,
 		eval_model=eval_model,
+		github_workflow_url=github_workflow_url,
 		max_parallel_runs=max_parallel_runs,
 		max_steps_per_task=max_steps_per_task,
 		start_index=start_index,
@@ -2388,6 +2403,7 @@ if __name__ == '__main__':
 	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
 	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
 	parser.add_argument('--use-anchor', action='store_true', help='Use anchor to navigate to the page')
+	parser.add_argument('--github-workflow-url', type=str, default=None, help='GitHub workflow URL for tracking')
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
@@ -2615,6 +2631,7 @@ if __name__ == '__main__':
 				convex_url=convex_url,
 				secret_key=secret_key,
 				eval_model=eval_model,
+				github_workflow_url=args.github_workflow_url,
 				max_parallel_runs=parallel_runs,
 				max_steps_per_task=args.max_steps,
 				start_index=start_index,
