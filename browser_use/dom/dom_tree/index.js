@@ -21,7 +21,12 @@
     }
   };
 
-  // Cache helper functions
+  /**
+   * Gets the cached bounding rect for an element.
+   *
+   * @param {HTMLElement} element - The element to get the bounding rect for.
+   * @returns {DOMRect | null} The cached bounding rect, or null if the element is not found.
+   */
   function getCachedBoundingRect(element) {
     if (!element) return null;
 
@@ -37,6 +42,12 @@
     return rect;
   }
 
+  /**
+   * Gets the cached computed style for an element.
+   *
+   * @param {HTMLElement} element - The element to get the computed style for.
+   * @returns {CSSStyleDeclaration | null} The cached computed style, or null if the element is not found.
+   */
   function getCachedComputedStyle(element) {
     if (!element) return null;
 
@@ -52,7 +63,12 @@
     return style;
   }
 
-  // Add a new function to get cached client rects
+  /**
+   * Gets the cached client rects for an element.
+   *
+   * @param {HTMLElement} element - The element to get the client rects for.
+   * @returns {DOMRectList | null} The cached client rects, or null if the element is not found.
+   */
   function getCachedClientRects(element) {
     if (!element) return null;
 
@@ -82,24 +98,31 @@
   // Add a WeakMap cache for XPath strings
   const xpathCache = new WeakMap();
 
-  // Initialize once and reuse
-  const viewportObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach(entry => {
-        elementVisibilityMap.set(entry.target, entry.isIntersecting);
-      });
-    },
-    { rootMargin: `${viewportExpansion}px` }
-  );
+  // // Initialize once and reuse
+  // const viewportObserver = new IntersectionObserver(
+  //   (entries) => {
+  //     entries.forEach(entry => {
+  //       elementVisibilityMap.set(entry.target, entry.isIntersecting);
+  //     });
+  //   },
+  //   { rootMargin: `${viewportExpansion}px` }
+  // );
 
   /**
    * Highlights an element in the DOM and returns the index of the next element.
+   *
+   * @param {HTMLElement} element - The element to highlight.
+   * @param {number} index - The index of the element.
+   * @param {HTMLElement | null} parentIframe - The parent iframe node.
+   * @returns {number} The index of the next element.
    */
   function highlightElement(element, index, parentIframe = null) {
     if (!element) return index;
 
-    // Store overlays and the single label for updating
     const overlays = [];
+    /**
+     * @type {HTMLElement | null}
+     */
     let label = null;
     let labelWidth = 20;
     let labelHeight = 16;
@@ -190,7 +213,7 @@
       label.style.padding = "1px 4px";
       label.style.borderRadius = "4px";
       label.style.fontSize = `${Math.min(12, Math.max(8, firstRect.height / 2))}px`;
-      label.textContent = index;
+      label.textContent = index.toString();
 
       labelWidth = label.offsetWidth > 0 ? label.offsetWidth : labelWidth; // Update actual width if possible
       labelHeight = label.offsetHeight > 0 ? label.offsetHeight : labelHeight; // Update actual height if possible
@@ -282,6 +305,7 @@
         }
       };
 
+
       const throttleFunction = (func, delay) => {
         let lastCall = 0;
         return (...args) => {
@@ -318,18 +342,24 @@
     }
   }
 
-  // Add this function to perform cleanup when needed
-  function cleanupHighlights() {
-    if (window._highlightCleanupFunctions && window._highlightCleanupFunctions.length) {
-      window._highlightCleanupFunctions.forEach(fn => fn());
-      window._highlightCleanupFunctions = [];
-    }
+  // // Add this function to perform cleanup when needed
+  // function cleanupHighlights() {
+  //   if (window._highlightCleanupFunctions && window._highlightCleanupFunctions.length) {
+  //     window._highlightCleanupFunctions.forEach(fn => fn());
+  //     window._highlightCleanupFunctions = [];
+  //   }
 
-    // Also remove the container
-    const container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
-    if (container) container.remove();
-  }
+  //   // Also remove the container
+  //   const container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
+  //   if (container) container.remove();
+  // }
 
+  /**
+   * Gets the position of an element in its parent.
+   *
+   * @param {HTMLElement} currentElement - The element to get the position for.
+   * @returns {number} The position of the element in its parent.
+   */
   function getElementPosition(currentElement) {
     if (!currentElement.parentElement) {
       return 0; // No parent means no siblings
@@ -348,9 +378,7 @@
     return index;
   }
 
-  /**
-   * Returns an XPath tree string for an element.
-   */
+
   function getXPathTree(element, stopAtBoundary = true) {
     if (xpathCache.has(element)) return xpathCache.get(element);
 
@@ -382,6 +410,9 @@
 
   /**
    * Checks if a text node is visible.
+   *
+   * @param {Text} textNode - The text node to check.
+   * @returns {boolean} Whether the text node is visible.
    */
   function isTextNodeVisible(textNode) {
     try {
@@ -460,7 +491,12 @@
     }
   }
 
-  // Helper function to check if element is accepted
+  /**
+   * Checks if an element is accepted.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is accepted.
+   */
   function isElementAccepted(element) {
     if (!element || !element.tagName) return false;
 
@@ -487,14 +523,17 @@
 
   /**
    * Checks if an element is visible.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is visible.
    */
   function isElementVisible(element) {
     const style = getCachedComputedStyle(element);
     return (
       element.offsetWidth > 0 &&
       element.offsetHeight > 0 &&
-      style.visibility !== "hidden" &&
-      style.display !== "none"
+      style?.visibility !== "hidden" &&
+      style?.display !== "none"
     );
   }
 
@@ -504,6 +543,8 @@
    * lots of comments, and uncommented code - to show the logic of what we already tried
    * 
    * One of the things we tried at the beginning was also to use event listeners, and other fancy class, style stuff -> what actually worked best was just combining most things with computed cursor style :)
+   * 
+   * @param {HTMLElement} element - The element to check.
    */
   function isInteractiveElement(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -561,10 +602,16 @@
       // 'auto',        // Browser default
     ]);
 
+    /**
+     * Checks if an element has an interactive pointer.
+     *
+     * @param {HTMLElement} element - The element to check.
+     * @returns {boolean} Whether the element has an interactive pointer.
+     */
     function doesElementHaveInteractivePointer(element) {
       if (element.tagName.toLowerCase() === "html") return false;
 
-      if (interactiveCursors.has(style.cursor)) return true;
+      if (style?.cursor && interactiveCursors.has(style.cursor)) return true;
 
       return false;
     }
@@ -608,7 +655,7 @@
     // handle inputs, select, checkbox, radio, textarea, button and make sure they are not cursor style disabled/not-allowed
     if (interactiveElements.has(tagName)) {
       // Check for non-interactive cursor
-      if (nonInteractiveCursors.has(style.cursor)) {
+      if (style?.cursor && nonInteractiveCursors.has(style.cursor)) {
         return false;
       }
 
@@ -683,8 +730,8 @@
     // Basic role/attribute checks
     const hasInteractiveRole =
       interactiveElements.has(tagName) ||
-      interactiveRoles.has(role) ||
-      interactiveRoles.has(ariaRole);
+      (role && interactiveRoles.has(role)) ||
+      (ariaRole && interactiveRoles.has(ariaRole));
 
     if (hasInteractiveRole) return true;
 
@@ -731,6 +778,9 @@
 
   /**
    * Checks if an element is the topmost element at its position.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is the topmost element at its position.
    */
   function isTopElement(element) {
     // Special case: when viewportExpansion is -1, consider all elements as "top" elements
@@ -813,6 +863,10 @@
 
   /**
    * Checks if an element is within the expanded viewport.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @param {number} viewportExpansion - The viewport expansion.
+   * @returns {boolean} Whether the element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
     if (viewportExpansion === -1) {
@@ -853,27 +907,37 @@
     return false; // No rects were found in the viewport
   }
 
-  // Add this new helper function
-  function getEffectiveScroll(element) {
-    let currentEl = element;
-    let scrollX = 0;
-    let scrollY = 0;
+  // /**
+  //  * Gets the effective scroll of an element.
+  //  *
+  //  * @param {HTMLElement} element - The element to get the effective scroll for.
+  //  * @returns {Object} The effective scroll of the element.
+  //  */
+  // function getEffectiveScroll(element) {
+  //   let currentEl = element;
+  //   let scrollX = 0;
+  //   let scrollY = 0;
 
-    while (currentEl && currentEl !== document.documentElement) {
-      if (currentEl.scrollLeft || currentEl.scrollTop) {
-        scrollX += currentEl.scrollLeft;
-        scrollY += currentEl.scrollTop;
-      }
-      currentEl = currentEl.parentElement;
-    }
+  //   while (currentEl && currentEl !== document.documentElement) {
+  //     if (currentEl.scrollLeft || currentEl.scrollTop) {
+  //       scrollX += currentEl.scrollLeft;
+  //       scrollY += currentEl.scrollTop;
+  //     }
+  //     currentEl = currentEl.parentElement;
+  //   }
 
-    scrollX += window.scrollX;
-    scrollY += window.scrollY;
+  //   scrollX += window.scrollX;
+  //   scrollY += window.scrollY;
 
-    return { scrollX, scrollY };
-  }
+  //   return { scrollX, scrollY };
+  // }
 
-  // Add these helper functions at the top level
+  /**
+   * Checks if an element is an interactive candidate.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is an interactive candidate.
+   */
   function isInteractiveCandidate(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
 
@@ -914,6 +978,9 @@
    *
    * This function helps detect deeply nested actionable elements (e.g., menu items within a button)
    * that may not be picked up by strict interactivity checks.
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is heuristically interactive.
    */
   function isHeuristicallyInteractive(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
@@ -954,6 +1021,9 @@
   /**
    * Checks if an element likely represents a distinct interaction
    * separate from its parent (if the parent is also interactive).
+   *
+   * @param {HTMLElement} element - The element to check.
+   * @returns {boolean} Whether the element is a distinct interaction.
    */
   function isElementDistinctInteraction(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -1030,6 +1100,23 @@
 
   /**
    * Handles the logic for deciding whether to highlight an element and performing the highlight.
+   * @param {
+    {
+        tagName: string;
+        attributes: Record<string, string>;
+        xpath: any;
+        children: never[];
+        isVisible?: boolean;
+        isTopElement?: boolean;
+        isInteractive?: boolean;
+        isInViewport?: boolean;
+        highlightIndex?: number;
+        shadowRoot?: boolean;
+   }} nodeData - The node data object.
+   * @param {HTMLElement} node - The node to highlight.
+   * @param {HTMLElement | null} parentIframe - The parent iframe node.
+   * @param {boolean} isParentHighlighted - Whether the parent node is highlighted.
+   * @returns {boolean} Whether the element was highlighted.
    */
   function handleHighlighting(nodeData, node, parentIframe, isParentHighlighted) {
     if (!nodeData.isInteractive) return false; // Not interactive, definitely don't highlight
@@ -1077,6 +1164,11 @@
 
   /**
    * Creates a node data object for a given node and its descendants.
+   *
+   * @param {HTMLElement} node - The node to process.
+   * @param {HTMLElement | null} parentIframe - The parent iframe node.
+   * @param {boolean} isParentHighlighted - Whether the parent node is highlighted.
+   * @returns {string | null} The ID of the node data object, or null if the node is not processed.
    */
   function buildDomTree(node, parentIframe = null, isParentHighlighted = false) {
     // Fast rejection checks first
@@ -1116,7 +1208,7 @@
 
     // Process text nodes
     if (node.nodeType === Node.TEXT_NODE) {
-      const textContent = node.textContent.trim();
+      const textContent = node.textContent?.trim();
       if (!textContent) {
         return null;
       }
@@ -1165,7 +1257,22 @@
       }
     }
 
-    // Process element node
+    /**
+     * @type {
+      {
+          tagName: string;
+          attributes: Record<string, string>;
+          xpath: any;
+          children: never[];
+          isVisible?: boolean;
+          isTopElement?: boolean;
+          isInteractive?: boolean;
+          isInViewport?: boolean;
+          highlightIndex?: number;
+          shadowRoot?: boolean;
+      }
+    } nodeData - The node data object.
+     */
     const nodeData = {
       tagName: node.tagName.toLowerCase(),
       attributes: {},
@@ -1177,7 +1284,10 @@
     if (isInteractiveCandidate(node) || node.tagName.toLowerCase() === 'iframe' || node.tagName.toLowerCase() === 'body') {
       const attributeNames = node.getAttributeNames?.() || [];
       for (const name of attributeNames) {
-        nodeData.attributes[name] = node.getAttribute(name);
+        const value = node.getAttribute(name);
+        if (value) {
+          nodeData.attributes[name] = value;
+        }
       }
     }
 
