@@ -195,7 +195,7 @@ class DOMElementNode(DOMBaseNode):
 
 					# Build the line
 					if node.is_new:
-						highlight_indicator = f'*[{node.highlight_index}]*'
+						highlight_indicator = f'<new>[{node.highlight_index}]</new>'
 					else:
 						highlight_indicator = f'[{node.highlight_index}]'
 
