@@ -686,6 +686,11 @@ SUPPORTED_MODELS = {
 		'model_name': 'claude-3-5-sonnet-20241022',
 		'api_key_env': 'ANTHROPIC_API_KEY',
 	},
+	'claude-3.5-haiku-latest': {
+		'provider': 'anthropic',
+		'model_name': 'claude-3-5-haiku-latest',
+		'api_key_env': 'ANTHROPIC_API_KEY',
+	},
 	'claude-3.7-sonnet-exp': {
 		'provider': 'anthropic',
 		'model_name': 'claude-3-7-sonnet-20250219',
