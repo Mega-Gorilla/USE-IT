@@ -60,6 +60,7 @@ from pydantic import BaseModel
 from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
+from browser_use.llm.groq.chat import ChatGroq
 from browser_use.llm.openai.chat import ChatOpenAI
 from eval.utils import create_pydantic_model_from_schema
 
@@ -758,47 +759,47 @@ SUPPORTED_MODELS = {
 	},
 	# Groq
 	'gemma2-9b-it': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'gemma2-9b-it',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	'llama-3.3-70b-versatile': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'llama-3.3-70b-versatile',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	'llama-3.1-8b-instant': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'llama-3.1-8b-instant',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	'llama3-70b-8192': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'llama3-70b-8192',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	'llama3-8b-8192': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'llama3-8b-8192',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	# Groq Preview
 	'llama-4-maverick': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'meta-llama/llama-4-maverick-17b-128e-instruct',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	'llama-4-scout': {
-		'provider': 'openai_compatible',
+		'provider': 'groq',
 		'model_name': 'meta-llama/llama-4-scout-17b-16e-instruct',
-		'base_url': 'https://api.groq.com/openai/v1',
 		'api_key_env': 'GROQ_API_KEY',
+		'service_tier': 'auto',
 	},
 	# SambaNova
 	'deepseek-r1-sambanova': {
@@ -908,6 +909,15 @@ def get_llm(model_name: str):
 			if api_key:
 				kwargs['api_key'] = api_key
 			return ChatGoogle(**kwargs)
+		case 'groq':
+			kwargs = {
+				'model': config['model_name'],
+				'temperature': 0.0,
+				'service_tier': config.get('service_tier', 'auto'),
+			}
+			if api_key:
+				kwargs['api_key'] = api_key
+			return ChatGroq(**kwargs)
 		case 'openai_compatible':
 			kwargs = {'model': config['model_name'], 'base_url': config['base_url'], 'temperature': 0.0}
 			if api_key:
