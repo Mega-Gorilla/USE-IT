@@ -578,6 +578,7 @@ class TaskResult:
 	task: Any
 	max_steps: int
 	laminar_link: str | None = None
+	github_workflow_url: str | None = None
 	completed_stages: set[Stage] = field(default_factory=set)
 	stage_data: dict[Stage, Any] = field(default_factory=dict)
 	errors: list = field(default_factory=list)
@@ -619,6 +620,7 @@ class TaskResult:
 			'critical_error': self.critical_error,
 			'server_save_failed': self.server_save_failed,
 			'laminarTaskLink': self.laminar_link,
+			'githubWorkflowUrl': self.github_workflow_url,
 		}
 
 		# Add task execution data if available
@@ -759,8 +761,8 @@ SUPPORTED_MODELS = {
 	'gemini-1.5-flash': {'provider': 'google', 'model_name': 'gemini-1.5-flash-latest', 'api_key_env': 'GEMINI_API_KEY'},
 	'gemini-2.0-flash-lite': {'provider': 'google', 'model_name': 'gemini-2.0-flash-lite', 'api_key_env': 'GEMINI_API_KEY'},
 	'gemini-2.0-flash': {'provider': 'google', 'model_name': 'gemini-2.0-flash', 'api_key_env': 'GEMINI_API_KEY'},
-	'gemini-2.5-pro': {'provider': 'google', 'model_name': 'gemini-2.5-pro-preview-03-25', 'api_key_env': 'GEMINI_API_KEY'},
-	'gemini-2.5-flash': {'provider': 'google', 'model_name': 'gemini-2.5-flash-latest', 'api_key_env': 'GEMINI_API_KEY'},
+	'gemini-2.5-pro': {'provider': 'google', 'model_name': 'gemini-2.5-pro', 'api_key_env': 'GEMINI_API_KEY'},
+	'gemini-2.5-flash': {'provider': 'google', 'model_name': 'gemini-2.5-flash', 'api_key_env': 'GEMINI_API_KEY'},
 	'gemini-2.5-pro-preview-05-06': {
 		'provider': 'google',
 		'model_name': 'gemini-2.5-pro-preview-05-06',
@@ -774,6 +776,7 @@ SUPPORTED_MODELS = {
 	# OpenAI
 	'gpt-4.1': {'provider': 'openai', 'model_name': 'gpt-4.1-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4.1-mini': {'provider': 'openai', 'model_name': 'gpt-4.1-mini-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
+	'gpt-o3': {'provider': 'openai', 'model_name': 'o3-2025-04-16', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4.1-nano': {'provider': 'openai', 'model_name': 'gpt-4.1-nano-2025-04-14', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4o': {'provider': 'openai', 'model_name': 'gpt-4o', 'api_key_env': 'OPENAI_API_KEY'},
 	'gpt-4o-mini': {'provider': 'openai', 'model_name': 'gpt-4o-mini', 'api_key_env': 'OPENAI_API_KEY'},
@@ -924,7 +927,7 @@ def get_llm(model_name: str):
 		case 'openai':
 			kwargs = {'model': config['model_name'], 'temperature': 0.0}
 			# Must set temperatue=1 if model is gpt-o4-mini
-			if model_name == 'gpt-o4-mini':
+			if model_name in ['gpt-o4-mini', 'gpt-o3']:
 				kwargs['temperature'] = 1
 			if api_key:
 				kwargs['api_key'] = api_key
@@ -1289,8 +1292,9 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 
 			try:
 				# Run comprehensive judge evaluation
-				comprehensive_result = await evaluate_task_with_comprehensive_judge(
-					task_folder=task_folder, model=model, max_images=10
+				comprehensive_result = await asyncio.wait_for(
+					evaluate_task_with_comprehensive_judge(task_folder=task_folder, model=model, max_images=10),
+					timeout=180,  # 3 minutes max for evaluation
 				)
 
 				if comprehensive_result.get('error'):
@@ -1649,6 +1653,7 @@ async def run_task_with_semaphore(
 	headless: bool,
 	use_vision: bool,
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
+	github_workflow_url: str | None = None,
 	use_serp: bool = False,
 	use_anchor: bool = False,
 	enable_memory: bool = False,
@@ -1721,7 +1726,9 @@ async def run_task_with_semaphore(
 				logger.debug(f'Task {task.task_id}: No Laminar run ID available, skipping datapoint creation')
 
 				# Initialize task result and basic setup
-			task_result = TaskResult(task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link)
+			task_result = TaskResult(
+				task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link, github_workflow_url
+			)
 
 			task_folder = Path(f'saved_trajectories/{task.task_id}')
 
@@ -1917,7 +1924,13 @@ async def run_task_with_semaphore(
 				# Create minimal task result for server reporting
 				try:
 					task_result = TaskResult(
-						task.task_id, run_id, task.confirmed_task, task, max_steps_per_task, laminar_task_link
+						task.task_id,
+						run_id,
+						task.confirmed_task,
+						task,
+						max_steps_per_task,
+						laminar_task_link,
+						github_workflow_url,
 					)
 					task_result.mark_critical_error(f'Initialization failed: {str(init_error)}')
 				except Exception as result_error:
@@ -1978,6 +1991,7 @@ async def run_multiple_tasks(
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
+	github_workflow_url: str | None = None,
 	max_parallel_runs: int = 3,
 	max_steps_per_task: int = 25,
 	start_index: int = 0,
@@ -2063,6 +2077,7 @@ async def run_multiple_tasks(
 					headless=headless,
 					use_vision=use_vision,
 					semaphore_runs=semaphore_runs,  # Pass the semaphore
+					github_workflow_url=github_workflow_url,
 					use_serp=use_serp,
 					use_anchor=use_anchor,
 					enable_memory=enable_memory,
@@ -2326,6 +2341,7 @@ async def run_evaluation_pipeline(
 	convex_url: str,
 	secret_key: str,
 	eval_model: BaseChatModel,
+	github_workflow_url: str | None = None,
 	max_parallel_runs: int = 3,
 	max_steps_per_task: int = 25,
 	start_index: int = 0,
@@ -2379,6 +2395,7 @@ async def run_evaluation_pipeline(
 		convex_url=convex_url,
 		secret_key=secret_key,
 		eval_model=eval_model,
+		github_workflow_url=github_workflow_url,
 		max_parallel_runs=max_parallel_runs,
 		max_steps_per_task=max_steps_per_task,
 		start_index=start_index,
@@ -2463,6 +2480,7 @@ if __name__ == '__main__':
 	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
 	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
 	parser.add_argument('--use-anchor', action='store_true', help='Use anchor to navigate to the page')
+	parser.add_argument('--github-workflow-url', type=str, default=None, help='GitHub workflow URL for tracking')
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')
@@ -2705,6 +2723,7 @@ if __name__ == '__main__':
 				convex_url=convex_url,
 				secret_key=secret_key,
 				eval_model=eval_model,
+				github_workflow_url=args.github_workflow_url,
 				max_parallel_runs=parallel_runs,
 				max_steps_per_task=args.max_steps,
 				start_index=start_index,
