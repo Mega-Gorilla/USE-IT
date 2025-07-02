@@ -136,14 +136,19 @@ class ChatOpenAI(BaseChatModel):
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
 		try:
-			reasoning_effort = self.reasoning_effort if self.model in ReasoningModels else None
+			reasoning_effort_dict: dict = {}
+			if self.model in ReasoningModels:
+				reasoning_effort_dict = {
+					'reasoning_effort': self.reasoning_effort,
+				}
+
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=reasoning_effort,
+					**reasoning_effort_dict,
 				)
 
 				usage = self._get_usage(response)
@@ -164,8 +169,8 @@ class ChatOpenAI(BaseChatModel):
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=reasoning_effort,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
+					**reasoning_effort_dict,
 				)
 
 				if response.choices[0].message.content is None:
