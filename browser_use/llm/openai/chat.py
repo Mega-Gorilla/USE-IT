@@ -117,7 +117,7 @@ class ChatOpenAI(BaseChatModel):
 			else None
 		)
 		if response.usage is not None and response.usage.completion_tokens_details is not None:
-			usage.completion_tokens += response.usage.completion_tokens_details.reasoning_tokens
+			usage.completion_tokens += response.usage.completion_tokens_details.reasoning_tokens or 0
 
 		return usage
 
