@@ -5,6 +5,10 @@ from typing import Any, TypeVar, overload
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 from openai.types.chat.chat_completion import ChatCompletion
+from openai.types.shared_params.response_format_json_schema import (
+    JSONSchema,
+    ResponseFormatJSONSchema,
+)
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
@@ -152,46 +156,21 @@ class ChatOpenRouter(BaseChatModel):
                 # Create a JSON schema for structured output
                 schema = SchemaOptimizer.create_optimized_json_schema(output_format)
 
-                # Create a more explicit instruction based on the schema fields
-                schema_fields = list(schema.get("properties", {}).keys())
-                fields_str = ", ".join(schema_fields)
-
-                # Construct instructions about the required format
-                json_instruction = (
-                    f"Please provide your response as a JSON object with these fields: {fields_str}. "
-                    f"For example: {{"
-                )
-
-                # Add example values for each field
-                for field in schema_fields:
-                    json_instruction += f'"{field}": "<{field}_value>", '
-
-                # Remove trailing comma and space and close the example
-                json_instruction = json_instruction.rstrip(", ") + "}."
-
-                # Add the instructions to system or user message
-                has_system = any(msg['role'] == 'system' for msg in openrouter_messages)
-
-                if has_system:
-                    # Append to the first system message
-                    for msg in openrouter_messages:
-                        if msg['role'] == 'system':
-                            msg['content'] += f" {json_instruction}"
-                            break
-                else:
-                    # If no system message, add a new system message with the instructions
-                    system_message = {
-                        'role': 'system',
-                        'content': f"You are a helpful assistant. {json_instruction}"
-                    }
-                    openrouter_messages.insert(0, system_message)
+                response_format_schema: JSONSchema = {
+                    'name': 'agent_output',
+                    'strict': True,
+                    'schema': schema,
+                }
 
                 # Return structured response
                 response = await self.get_client().chat.completions.create(
                     model=self.model,
                     messages=openrouter_messages,
                     temperature=self.temperature,
-                    response_format={"type": "json_object"},
+                    response_format=ResponseFormatJSONSchema(
+                        json_schema=response_format_schema,
+                        type='json_schema',
+                    ),
                     extra_headers=extra_headers,
                 )
 
@@ -201,27 +180,16 @@ class ChatOpenRouter(BaseChatModel):
                         status_code=500,
                         model=self.name,
                     )
-
                 usage = self._get_usage(response)
 
-                try:
-                    # Try to parse the JSON response
-                    parsed = output_format.model_validate_json(response.choices[0].message.content)
-                    return ChatInvokeCompletion(
-                        completion=parsed,
-                        usage=usage,
-                    )
-                except Exception as e:
-                    # If parsing fails, provide a more detailed error
-                    error_msg = (
-                        f"Failed to parse response as {output_format.__name__}: {str(e)}. "
-                        f"Response content: {response.choices[0].message.content}"
-                    )
-                    raise ModelProviderError(
-                        message=error_msg,
-                        status_code=500,
-                        model=self.name,
-                    ) from e
+                parsed = output_format.model_validate_json(
+                    response.choices[0].message.content
+                )
+
+                return ChatInvokeCompletion(
+                    completion=parsed,
+                    usage=usage,
+                )
 
         except RateLimitError as e:
             error_message = e.response.json().get('error', {})
