@@ -251,6 +251,12 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
+          GMAIL_2FA_TOKEN="${{ github.event.client_payload.script_args.gmail_2fa_token }}"
+
+          # Debug Gmail 2FA token
+          echo "DEBUG: gmail_2fa_token from payload: '${{ github.event.client_payload.script_args.gmail_2fa_token }}'"
+          echo "DEBUG: GMAIL_2FA_TOKEN variable: '$GMAIL_2FA_TOKEN'"
+          echo "DEBUG: GMAIL_2FA_TOKEN length: ${#GMAIL_2FA_TOKEN}"
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
@@ -293,6 +299,15 @@ jobs:
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
           
+          # Add Gmail 2FA parameters
+          if [[ -n "$GMAIL_2FA_TOKEN" ]]; then
+            echo "DEBUG: Adding Gmail 2FA token to command (length: ${#GMAIL_2FA_TOKEN})"
+            echo "DEBUG: Gmail 2FA token first 20 chars: ${GMAIL_2FA_TOKEN:0:20}..."
+            CMD_ARGS+=("--gmail-2fa-access-token" "$GMAIL_2FA_TOKEN")
+          else
+            echo "DEBUG: Gmail 2FA token is empty or not set, skipping"
+          fi
+          
           # Add single task mode parameters
           [[ -n "$TASK_ID" ]] && CMD_ARGS+=("--task-id" "$TASK_ID")
           [[ -n "$TASK_TEXT" ]] && CMD_ARGS+=("--task-text" "$TASK_TEXT")
@@ -301,12 +316,15 @@ jobs:
           # Add GitHub workflow URL
           [[ -n "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}" ]] && CMD_ARGS+=("--github-workflow-url" "${{ steps.github_url.outputs.GITHUB_WORKFLOW_URL }}")
 
-          # Convert array to command string with proper escaping
-          printf -v CMD_STRING '%q ' "${CMD_ARGS[@]}"
-
-          # Add xvfb wrapper if needed
+          # Handle xvfb wrapper if needed - construct differently to preserve arguments
           if [[ "$HEADLESS" == "false" ]]; then
-            CMD_STRING="xvfb-run --auto-servernum --server-args='-screen 0 1280x1024x24' $CMD_STRING"
+            # For xvfb, we need to construct the command differently to preserve argument structure
+            XVFB_ARGS=("xvfb-run" "--auto-servernum" "--server-args=-screen 0 1280x1024x24")
+            FULL_CMD_ARGS=("${XVFB_ARGS[@]}" "${CMD_ARGS[@]}")
+            printf -v CMD_STRING '%q ' "${FULL_CMD_ARGS[@]}"
+          else
+            # For headless mode, just escape the python command args
+            printf -v CMD_STRING '%q ' "${CMD_ARGS[@]}"
           fi
 
           echo "FULL_COMMAND=$CMD_STRING" >> $GITHUB_OUTPUT
@@ -350,6 +368,14 @@ jobs:
           echo "📊 This may take several minutes depending on the number of tasks..."
           echo "Starting time: $(date)"
           echo "Use Mind2Web Judge: ${{ github.event.client_payload.script_args.use_mind2web_judge }}"
+          
+          # Debug: Show what we're about to execute
+          echo "=== COMMAND DEBUGGING ==="
+          FULL_CMD="${{ steps.eval_command.outputs.FULL_COMMAND }}"
+          echo "Full command string length: ${#FULL_CMD}"
+          echo "Command contains gmail-2fa-access-token: $(echo "$FULL_CMD" | grep -c 'gmail-2fa-access-token' || echo '0')"
+          echo "Command preview (first 500 chars): ${FULL_CMD:0:500}..."
+          echo "=========================="
           echo "============================"
           
           # Set up signal handlers for graceful interruption handling
