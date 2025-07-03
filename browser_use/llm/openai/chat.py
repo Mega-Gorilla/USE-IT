@@ -96,6 +96,10 @@ class ChatOpenAI(BaseChatModel):
 		return str(self.model)
 
 	def _get_usage(self, response: ChatCompletion) -> ChatInvokeUsage | None:
+		completion_tokens = response.usage.completion_tokens
+		if response.usage.completion_tokens_details is not None:
+			completion_tokens += response.usage.completion_tokens_details.reasoning_tokens
+
 		usage = (
 			ChatInvokeUsage(
 				prompt_tokens=response.usage.prompt_tokens,
@@ -105,8 +109,7 @@ class ChatOpenAI(BaseChatModel):
 				prompt_cache_creation_tokens=None,
 				prompt_image_tokens=None,
 				# Completion
-				completion_tokens=response.usage.completion_tokens
-				+ (response.usage.completion_tokens_details.reasoning_tokens or 0),
+				completion_tokens=completion_tokens,
 				total_tokens=response.usage.total_tokens,
 			)
 			if response.usage is not None
