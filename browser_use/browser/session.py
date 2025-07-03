@@ -2631,7 +2631,7 @@ class BrowserSession(BaseModel):
 			# Test if page is still accessible
 			await page.evaluate('1')
 		except Exception as e:
-			self.logger.debug(f'👋 Current page is no longer accessible: {type(e).__name__}: {e}')
+			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
 			raise BrowserError('Browser closed: no valid pages available')
 
 		try:
