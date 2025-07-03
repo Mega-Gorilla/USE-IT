@@ -43,6 +43,7 @@ import asyncio
 import base64
 import gc
 import io
+import json
 import logging
 import re
 import signal
@@ -1366,12 +1367,18 @@ async def setup_browser_session(task: Task, headless: bool, highlight_elements: 
 
 	if hasattr(task, 'login_cookie') and task.login_cookie:
 		# For login tasks, configure storage_state to save cookies to JSON file
-		# This works even in incognito mode (user_data_dir=None)
+		# Don't set user_data_dir=None for login tasks to avoid conflict
 		task_folder = Path(f'saved_trajectories/{task.task_id}')
 		task_folder.mkdir(parents=True, exist_ok=True)
 
 		storage_state_path = task_folder / 'storage_state.json'
+		# Create empty storage state file if it doesn't exist to avoid FileNotFoundError
+		if not storage_state_path.exists():
+			storage_state_path.write_text(json.dumps({"cookies": [], "origins": []}))
+		
 		profile_kwargs['storage_state'] = str(storage_state_path)
+		# Remove user_data_dir=None for login tasks to avoid conflict with storage_state
+		profile_kwargs.pop('user_data_dir', None)
 
 		downloads_dir_path = task_folder / 'downloads'
 		downloads_dir_path.mkdir(parents=True, exist_ok=True)
