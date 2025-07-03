@@ -1,11 +1,10 @@
-
 import os
 
 import pytest
 from pydantic import BaseModel
+
 from browser_use.agent.views import AgentOutput
 from browser_use.controller.service import Controller
-
 from browser_use.llm import ChatAnthropic, ChatGoogle, ChatGroq, ChatOpenAI, ChatOpenRouter
 from browser_use.llm.messages import ContentPartTextParam
 
@@ -55,11 +54,7 @@ class TestChatModels:
 		"""Provides an initialized ChatOpenRouter client for tests."""
 		if not os.getenv('OPENROUTER_API_KEY'):
 			pytest.skip('OPENROUTER_API_KEY not set')
-		return ChatOpenRouter(
-			model='openai/gpt-4o-mini',
-			api_key=os.getenv('OPENROUTER_API_KEY'),
-			temperature=0
-		)
+		return ChatOpenRouter(model='openai/gpt-4o-mini', api_key=os.getenv('OPENROUTER_API_KEY'), temperature=0)
 
 	@pytest.mark.asyncio
 	async def test_openai_ainvoke_normal(self):
@@ -217,11 +212,7 @@ class TestChatModels:
 		if not os.getenv('OPENROUTER_API_KEY'):
 			pytest.skip('OPENROUTER_API_KEY not set')
 
-		chat = ChatOpenRouter(
-			model='openai/gpt-4o-mini',
-			api_key=os.getenv('OPENROUTER_API_KEY'),
-			temperature=0
-		)
+		chat = ChatOpenRouter(model='openai/gpt-4o-mini', api_key=os.getenv('OPENROUTER_API_KEY'), temperature=0)
 		response = await chat.ainvoke(self.CONVERSATION_MESSAGES)
 		completion = response.completion
 
@@ -233,13 +224,9 @@ class TestChatModels:
 		"""Test structured output from OpenRouter"""
 		# Skip if no API key
 		if not os.getenv('OPENROUTER_API_KEY'):
-				pytest.skip('OPENROUTER_API_KEY not set')
+			pytest.skip('OPENROUTER_API_KEY not set')
 
-		chat = ChatOpenRouter(
-			model='openai/gpt-4o-mini',
-			api_key=os.getenv('OPENROUTER_API_KEY'),
-			temperature=0
-		)
+		chat = ChatOpenRouter(model='openai/gpt-4o-mini', api_key=os.getenv('OPENROUTER_API_KEY'), temperature=0)
 		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
 		completion = response.completion
 
@@ -255,19 +242,23 @@ class TestChatModels:
 		AgentOutputModel = AgentOutput.type_with_custom_actions(ActionModel)
 
 		json_response = (
-				'{"evaluation_previous_goal":"ok","memory":"m","next_goal":"done","action":[{"done":{"text":"ok","success":true}}]}'
+			'{"evaluation_previous_goal":"ok","memory":"m","next_goal":"done","action":[{"done":{"text":"ok","success":true}}]}'
 		)
 
 		class FakeCompletions:
-				async def create(self, *args, **kwargs):
-						return type('Resp', (), {
-								'choices': [type('C', (), {'message': type('M', (), {'content': json_response})})],
-								'usage': None,
-						})()
+			async def create(self, *args, **kwargs):
+				return type(
+					'Resp',
+					(),
+					{
+						'choices': [type('C', (), {'message': type('M', (), {'content': json_response})})],
+						'usage': None,
+					},
+				)()
 
 		class FakeClient:
-				def __init__(self):
-						self.chat = type('Chat', (), {'completions': FakeCompletions()})()
+			def __init__(self):
+				self.chat = type('Chat', (), {'completions': FakeCompletions()})()
 
 		chat = ChatOpenRouter(model='test', api_key='test')
 		chat.get_client = lambda: FakeClient()  # type: ignore[assignment]
