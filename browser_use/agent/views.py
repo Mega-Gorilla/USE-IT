@@ -195,8 +195,8 @@ class AgentOutput(BaseModel):
 
 		class AgentOutputNoThinking(AgentOutput):
 			@classmethod
-			def model_json_schema(cls):
-				schema = super().model_json_schema()
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
 				del schema['properties']['thinking']
 				return schema
 
