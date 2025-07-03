@@ -4,7 +4,6 @@ Defines agent actions for Gmail integration including 2FA code retrieval,
 email reading, and authentication management.
 """
 
-import asyncio
 import logging
 
 from pydantic import BaseModel, Field
@@ -20,20 +19,12 @@ logger = logging.getLogger(__name__)
 _gmail_service: GmailService | None = None
 
 
-class Find2FACodesParams(BaseModel):
-	"""Parameters for finding 2FA codes in emails"""
-
-	time_filter: str = Field(default='2m', description='Time filter for emails (e.g., "2m", "5m", "1h", "1d")')
-	sender_email: str | None = Field(default=None, description='Filter by specific sender email address')
-	custom_patterns: list[str] | None = Field(default=None, description='Additional regex patterns to search for codes')
-
-
 class GetRecentEmailsParams(BaseModel):
 	"""Parameters for getting recent emails"""
 
-	max_results: int = Field(default=10, description='Maximum number of emails to fetch')
-	query: str = Field(default='', description='Gmail search query (e.g., "from:noreply@example.com")')
-	time_filter: str = Field(default='1h', description='Time filter for emails (e.g., "5m", "1h", "1d")')
+	query: str = Field(
+		default='', description='Gmail search query (e.g., "from:noreply@example.com") - optional additional filter'
+	)
 
 
 def register_gmail_actions(
@@ -57,106 +48,13 @@ def register_gmail_actions(
 		_gmail_service = GmailService()
 
 	@controller.action(
-		description='🔐 **USE THIS FOR VERIFICATION CODES - NOT get_recent_emails** 🔐 '
-		'When you need verification codes/OTP/2FA: USE THIS ACTION IMMEDIATELY! '
-		'This searches Gmail, finds codes, extracts them automatically. '
-		'DO NOT use get_recent_emails for verification - it cannot extract codes! '
-		'This action is specifically built for code extraction from emails. '
-		'One call gets you the actual numeric code ready to input.',
-		param_model=Find2FACodesParams,
-	)
-	async def find_2fa_codes(params: Find2FACodesParams) -> ActionResult:
-		"""Find 2FA verification codes in recent emails"""
-		try:
-			if _gmail_service is None:
-				raise RuntimeError('Gmail service not initialized')
-
-			# Ensure authentication
-			if not _gmail_service.is_authenticated():
-				logger.info('📧 Gmail not authenticated, attempting authentication...')
-				authenticated = await _gmail_service.authenticate()
-				if not authenticated:
-					return ActionResult(
-						extracted_content='❌ Failed to authenticate with Gmail. Please ensure Gmail credentials are set up properly.',
-						include_in_memory=True,
-					)
-
-			# Find 2FA codes with retry logic (4 attempts with longer waits for email delivery)
-			max_retries = 4
-			codes_found = None
-			wait_times = [10, 20, 30]  # 10s, 20s, 30s (total 60s wait time)
-
-			for attempt in range(max_retries):
-				# Ensure authentication before each attempt
-				if not _gmail_service.is_authenticated():
-					logger.info(f'📧 Gmail not authenticated (attempt {attempt + 1}), attempting authentication...')
-					authenticated = await _gmail_service.authenticate()
-					if not authenticated:
-						logger.warning(f'❌ Gmail authentication failed on attempt {attempt + 1}')
-						# Continue to next attempt rather than failing immediately
-						if attempt < max_retries - 1:
-							wait_time = wait_times[attempt]
-							logger.info(f'🔄 Retrying authentication in {wait_time}s...')
-							await asyncio.sleep(wait_time)
-						continue
-
-				codes_found = await _gmail_service.find_2fa_codes(
-					time_filter=params.time_filter, sender_email=params.sender_email, custom_patterns=params.custom_patterns
-				)
-
-				if codes_found:
-					break
-
-				# If not the last attempt, wait for email delivery
-				if attempt < max_retries - 1:
-					wait_time = wait_times[attempt]
-					logger.info(f'🔄 No 2FA codes found (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...')
-					await asyncio.sleep(wait_time)
-
-			if not codes_found:
-				return ActionResult(
-					extracted_content=f'🔍 No 2FA codes found in emails from the last {params.time_filter} after {max_retries} attempts. '
-					f'{"Filter: " + params.sender_email if params.sender_email else ""}',
-					include_in_memory=True,
-				)
-
-			# Format results
-			results = []
-			for email_with_codes in codes_found:
-				results.append(
-					{
-						'codes': email_with_codes['codes'],
-						'from': email_with_codes['from'],
-						'subject': email_with_codes['subject'],
-						'snippet': email_with_codes['body_snippet'],
-					}
-				)
-
-			# Return the most recent code as the primary result
-			primary_code = codes_found[0]['codes'][0]
-
-			content = f'✅ Found 2FA code: {primary_code}\n'
-			content += f'📧 From: {codes_found[0]["from"]}\n'
-			content += f'📝 Subject: {codes_found[0]["subject"]}\n'
-
-			if len(codes_found) > 1:
-				content += f'\n🔍 Additional {len(codes_found) - 1} emails with codes found.'
-
-			return ActionResult(extracted_content=content, include_in_memory=True)
-
-		except Exception as e:
-			logger.error(f'Error finding 2FA codes: {e}')
-			return ActionResult(extracted_content=f'❌ Error finding 2FA codes: {str(e)}', include_in_memory=True)
-
-	@controller.action(
-		description='📧 **General Email Reading** - For newsletters, notifications, and email content analysis. '
-		'⚠️ DO NOT use when you need verification codes, OTP, 2FA, or login codes! '
-		"For any verification scenario, use find_2fa_codes instead - it's specifically designed for that. "
-		'This action has limited search capabilities that miss verification emails.',
+		description='📧 **Get recent verification emails** - Fetches the last 20 emails from the past 5 minutes with full content. '
+		'Perfect for finding verification codes, OTP, 2FA, or any recent email content. '
+		'Returns complete email content so you can extract verification codes or analyze email details yourself.',
 		param_model=GetRecentEmailsParams,
 	)
 	async def get_recent_emails(params: GetRecentEmailsParams) -> ActionResult:
-		"""Get recent emails from Gmail"""
+		"""Get recent emails from the last 5 minutes with full content"""
 		try:
 			if _gmail_service is None:
 				raise RuntimeError('Gmail service not initialized')
@@ -171,27 +69,37 @@ def register_gmail_actions(
 						include_in_memory=True,
 					)
 
+			# Fixed parameters: 10 emails max, last 5 minutes
+			max_results = 10
+			time_filter = '5m'
+
+			# Build query with time filter and optional user query
+			query_parts = [f'newer_than:{time_filter}']
+			if params.query.strip():
+				query_parts.append(params.query.strip())
+
+			query = ' '.join(query_parts)
+			logger.info(f'🔍 Gmail search query: {query}')
+
 			# Get emails
-			emails = await _gmail_service.get_recent_emails(
-				max_results=params.max_results, query=params.query, time_filter=params.time_filter
-			)
+			emails = await _gmail_service.get_recent_emails(max_results=max_results, query=query, time_filter=time_filter)
 
 			if not emails:
-				query_info = f" matching '{params.query}'" if params.query else ''
+				query_info = f" matching '{params.query}'" if params.query.strip() else ''
 				return ActionResult(
-					extracted_content=f'📭 No emails found from the last {params.time_filter}{query_info}', include_in_memory=True
+					extracted_content=f'📭 No emails found from the last {time_filter}{query_info}', include_in_memory=True
 				)
 
-			# Format email summary
-			content = f'📧 Found {len(emails)} recent emails:\n\n'
+			# Format with full email content
+			content = f'📧 Found {len(emails)} recent email{"s" if len(emails) > 1 else ""} from the last {time_filter}:\n\n'
 
-			for i, email in enumerate(emails[:5], 1):  # Show first 5 emails
-				content += f'{i}. From: {email["from"]}\n'
-				content += f'   Subject: {email["subject"]}\n'
-				content += f'   Preview: {email["body"][:100]}...\n\n'
-
-			if len(emails) > 5:
-				content += f'... and {len(emails) - 5} more emails'
+			for i, email in enumerate(emails, 1):
+				content += f'📧 Email {i}:\n'
+				content += f'From: {email["from"]}\n'
+				content += f'Subject: {email["subject"]}\n'
+				content += f'Date: {email["date"]}\n'
+				content += f'Content:\n{email["body"]}\n'
+				content += '-' * 50 + '\n\n'
 
 			return ActionResult(extracted_content=content, include_in_memory=True)
 

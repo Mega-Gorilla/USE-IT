@@ -7,7 +7,6 @@ This service provides a clean interface for agents to interact with Gmail.
 import base64
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -25,12 +24,11 @@ logger = logging.getLogger(__name__)
 
 class GmailService:
 	"""
-	Gmail API service for email reading and 2FA code extraction.
+	Gmail API service for email reading.
 	Provides functionality to:
 	- Authenticate with Gmail API using OAuth2
 	- Read recent emails with filtering
-	- Extract 2FA codes from email content
-	- Poll for new 2FA codes
+	- Return full email content for agent analysis
 	"""
 
 	# Gmail API scopes
@@ -226,142 +224,3 @@ class GmailService:
 					body = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
 
 		return body
-
-	async def find_2fa_codes(
-		self, time_filter: str = '5m', sender_email: str | None = None, custom_patterns: list[str] | None = None
-	) -> list[dict[str, Any]]:
-		"""
-		Find 2FA verification codes in recent emails
-		Args:
-		    time_filter: Time filter for emails (e.g., '5m', '1h', '1d')
-		    sender_email: Filter by specific sender email
-		    custom_patterns: Additional regex patterns to look for codes
-		Returns:
-		    List of emails containing potential 2FA codes
-		"""
-		logger.info(f'🔍 Looking for 2FA codes in emails from last {time_filter}...')
-
-		# Build search query for 2FA-related emails - very inclusive with simple terms
-		query_parts = [
-			f'newer_than:{time_filter}',
-			'(code OR otp OR "one time password" OR "verification code" OR 2FA OR "two-factor" OR "authentication code" OR verify OR "login code" OR "access your account" OR "sign in" OR "enter the code")',
-		]
-
-		if sender_email:
-			query_parts.append(f'from:{sender_email}')
-
-		query = ' '.join(query_parts)
-		logger.info(f'🔍 Gmail search query: {query}')
-
-		emails = await self.get_recent_emails(max_results=10, query=query)
-
-		codes_found = []
-
-		for email in emails:
-			codes = self._extract_codes_from_text(email['body'], custom_patterns)
-			if codes:
-				codes_found.append(
-					{
-						'subject': email['subject'],
-						'from': email['from'],
-						'timestamp': email['timestamp'],
-						'codes': codes,
-						'body_snippet': email['body'][:200] + '...' if len(email['body']) > 200 else email['body'],
-						'email_id': email['id'],
-					}
-				)
-
-		# Sort by timestamp (most recent first) and keep only the most recent per sender
-		codes_found.sort(key=lambda x: x['timestamp'], reverse=True)
-
-		# Group by sender and keep only the most recent from each
-		seen_senders = set()
-		filtered_codes = []
-		for email_with_codes in codes_found:
-			sender = email_with_codes['from']
-			if sender not in seen_senders:
-				seen_senders.add(sender)
-				filtered_codes.append(email_with_codes)
-
-		logger.info(f'🎯 Found {len(filtered_codes)} recent emails with 2FA codes (most recent per sender)')
-		return filtered_codes
-
-	def _extract_codes_from_text(self, text: str, custom_patterns: list[str] | None = None) -> list[str]:
-		"""Extract potential verification codes from text"""
-		if not text:
-			return []
-
-		# Common 2FA code patterns - prioritize context-specific patterns to avoid URL noise
-		patterns = [
-			# High priority: Context-specific patterns
-			r'(?:code|verification|OTP)[:\s]+(\d{4,8})',  # "code: 123456"
-			r'(?:your|the)\s+(?:code|verification)\s+(?:is|code)[:\s]+(\d{4,8})',  # "your code is 123456"
-			r'(?:enter|use)\s+(?:code|verification)[:\s]+(\d{4,8})',  # "enter code: 123456"
-			r'(?:below|code)\.\s*(\d{4,8})',  # "code below. 12345"
-			r'(?:emailCode=)(\d{4,8})',  # URL parameter like emailCode=77599
-			# Lower priority: Standalone numbers (but exclude those in long URLs)
-			r'(?<![\w\-])\d{5}(?![\w\-])',  # 5-digit codes (like 80565) not in URLs
-			r'(?<![\w\-])\d{6}(?![\w\-])',  # 6-digit codes (most common) not in URLs
-		]
-
-		# Add custom patterns if provided
-		if custom_patterns:
-			patterns.extend(custom_patterns)
-
-		found_codes_with_priority = []
-
-		for i, pattern in enumerate(patterns):
-			matches = re.findall(pattern, text, re.IGNORECASE)
-			for match in matches:
-				code = match if isinstance(match, str) else str(match)
-				# Assign priority based on pattern order (earlier patterns = higher priority)
-				priority = len(patterns) - i
-				found_codes_with_priority.append((code, priority))
-
-		# Filter out codes from long URLs (except emailCode parameter)
-		filtered_codes_with_priority = []
-		for code, priority in found_codes_with_priority:
-			# Skip codes that are part of long URL UUIDs or tokens
-			code_index = text.find(code)
-			if code_index != -1:
-				# Check surrounding context for URL patterns
-				context_start = max(0, code_index - 30)
-				context_end = min(len(text), code_index + len(code) + 30)
-				context = text[context_start:context_end]
-
-				# Skip if it's part of a UUID in a URL (like af6e5ca8-f2ae-4932-97d9)
-				if re.search(r'[a-f0-9]{8}-[a-f0-9]{4}-' + re.escape(code) + r'-[a-f0-9]{4}', context):
-					continue
-
-				# Special case: emailCode parameter gets highest priority
-				if 'emailCode=' in context:
-					priority = 1000
-
-				filtered_codes_with_priority.append((code, priority))
-
-		# Sort by priority (highest first) and remove duplicates
-		filtered_codes_with_priority.sort(key=lambda x: x[1], reverse=True)
-
-		# Remove duplicates while preserving priority order
-		seen = set()
-		unique_codes = []
-		for code, priority in filtered_codes_with_priority:
-			if code not in seen and 4 <= len(code) <= 8 and re.match(r'^\d+$', code):
-				seen.add(code)
-				unique_codes.append(code)
-
-		# If no numeric codes found, allow alphanumeric but with stricter filtering
-		if not unique_codes:
-			for code, priority in filtered_codes_with_priority:
-				if (
-					code not in seen
-					and 4 <= len(code) <= 8
-					and re.match(r'^[A-Z0-9]+$', code, re.IGNORECASE)
-					and not re.match(r'^[A-F0-9]{6}$', code)  # Exclude likely hex color codes
-					and code
-					not in ['header', 'padding', 'button', 'margin', 'border', 'center', 'hidden', 'normal', 'mobile', 'device']
-				):
-					seen.add(code)
-					unique_codes.append(code)
-
-		return unique_codes
