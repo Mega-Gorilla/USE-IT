@@ -3,8 +3,6 @@ import os
 import pytest
 from pydantic import BaseModel
 
-from browser_use.agent.views import AgentOutput
-from browser_use.controller.service import Controller
 from browser_use.llm import ChatAnthropic, ChatGoogle, ChatGroq, ChatOpenAI, ChatOpenRouter
 from browser_use.llm.messages import ContentPartTextParam
 
