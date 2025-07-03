@@ -736,7 +736,7 @@ SUPPORTED_MODELS = {
 		'api_key_env': 'GEMINI_API_KEY',
 		'thinking_budget': 0,
 	},
-	'gemini-2.5-flash-lite': {
+	'gemini-2.5-flash-lite-preview': {
 		'provider': 'google',
 		'model_name': 'gemini-2.5-flash-lite-preview-06-17',
 		'api_key_env': 'GEMINI_API_KEY',

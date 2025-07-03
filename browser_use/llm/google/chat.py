@@ -182,7 +182,8 @@ class ChatGoogle(BaseChatModel):
 			config['system_instruction'] = system_instruction
 
 		if self.thinking_budget is not None:
-			config['thinking_budget'] = types.ThinkingBudget(thinking_budget=self.thinking_budget)
+			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
+			config['thinking_config'] = thinking_config_dict
 
 		async def _make_api_call():
 			if output_format is None:
