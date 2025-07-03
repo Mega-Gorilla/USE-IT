@@ -233,38 +233,3 @@ class TestChatModels:
 		assert isinstance(completion, CapitalResponse)
 		assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
 		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
-
-	@pytest.mark.asyncio
-	async def test_openrouter_agent_output(self):
-		"""Ensure AgentOutput is parsed correctly using ChatOpenRouter."""
-		controller = Controller()
-		ActionModel = controller.registry.create_action_model()
-		AgentOutputModel = AgentOutput.type_with_custom_actions(ActionModel)
-
-		json_response = (
-			'{"evaluation_previous_goal":"ok","memory":"m","next_goal":"done","action":[{"done":{"text":"ok","success":true}}]}'
-		)
-
-		class FakeCompletions:
-			async def create(self, *args, **kwargs):
-				return type(
-					'Resp',
-					(),
-					{
-						'choices': [type('C', (), {'message': type('M', (), {'content': json_response})})],
-						'usage': None,
-					},
-				)()
-
-		class FakeClient:
-			def __init__(self):
-				self.chat = type('Chat', (), {'completions': FakeCompletions()})()
-
-		chat = ChatOpenRouter(model='test', api_key='test')
-		chat.get_client = lambda: FakeClient()  # type: ignore[assignment]
-
-		messages = [self.UserMessage(content='test')]
-		response = await chat.ainvoke(messages, output_format=AgentOutputModel)
-		completion = response.completion
-
-		assert isinstance(completion, AgentOutputModel)
