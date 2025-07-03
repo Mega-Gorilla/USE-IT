@@ -48,29 +48,30 @@ class TestChatModels:
 	STRUCTURED_MESSAGES: list[BaseMessage] = [UserMessage(content='What is the capital of France?')]
 
 	# OpenAI Tests
-	@pytest.mark.asyncio
-	async def test_openai_ainvoke_normal(self):
-		"""Test normal text response from OpenAI"""
-		# Skip if no API key
-		if not os.getenv('OPENAI_API_KEY'):
-			pytest.skip('OPENAI_API_KEY not set')
+	@pytest.fixture
+	def openrouter_chat(self):
+		"""Provides an initialized ChatOpenRouter client for tests."""
+		if not os.getenv('OPENROUTER_API_KEY'):
+			pytest.skip('OPENROUTER_API_KEY not set')
+		return ChatOpenRouter(
+			model='openai/gpt-4o-mini',
+			api_key=os.getenv('OPENROUTER_API_KEY'),
+			temperature=0
+		)
 
-		chat = ChatOpenAI(model='gpt-4o-mini', temperature=0)
-		response = await chat.ainvoke(self.CONVERSATION_MESSAGES)
+	@pytest.mark.asyncio
+	async def test_openai_ainvoke_normal(self, openrouter_chat):
+		"""Test normal text response from OpenAI"""
+		response = await openrouter_chat.ainvoke(self.CONVERSATION_MESSAGES)
 		completion = response.completion
 
 		assert isinstance(completion, str)
 		assert self.EXPECTED_GERMANY_CAPITAL in completion.lower()
 
 	@pytest.mark.asyncio
-	async def test_openai_ainvoke_structured(self):
-		"""Test structured output from OpenAI"""
-		# Skip if no API key
-		if not os.getenv('OPENAI_API_KEY'):
-			pytest.skip('OPENAI_API_KEY not set')
-
-		chat = ChatOpenAI(model='gpt-4o-mini', temperature=0)
-		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
+	async def test_openrouter_ainvoke_structured(self, openrouter_chat):
+		"""Test structured output from OpenRouter"""
+		response = await openrouter_chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
 		completion = response.completion
 
 		assert isinstance(completion, CapitalResponse)
