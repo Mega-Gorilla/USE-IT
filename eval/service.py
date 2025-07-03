@@ -487,7 +487,6 @@ async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model
 # ==============================================================================================================
 import argparse
 import http.client
-import json
 import os
 import subprocess
 from dataclasses import dataclass, field
