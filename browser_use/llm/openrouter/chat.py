@@ -88,22 +88,21 @@ class ChatOpenRouter(BaseChatModel):
 
     def _get_usage(self, response: ChatCompletion) -> ChatInvokeUsage | None:
         """Extract usage information from the OpenRouter response."""
-        usage = (
-            ChatInvokeUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                prompt_cached_tokens=response.usage.prompt_tokens_details.cached_tokens
-                if hasattr(response.usage, 'prompt_tokens_details') and response.usage.prompt_tokens_details is not None
-                else None,
-                prompt_cache_creation_tokens=None,
-                prompt_image_tokens=None,
-                # Completion
-                completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens,
-            )
-            if response.usage is not None
-            else None
+        if response.usage is None:
+            return None
+
+        prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+        cached_tokens = prompt_details.cached_tokens if prompt_details else None
+
+        return ChatInvokeUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            prompt_cached_tokens=cached_tokens,
+            prompt_cache_creation_tokens=None,
+            prompt_image_tokens=None,
+            # Completion
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
         )
-        return usage
 
     @overload
     async def ainvoke(self, messages: list[BaseMessage], output_format: None = None) -> ChatInvokeCompletion[str]:
