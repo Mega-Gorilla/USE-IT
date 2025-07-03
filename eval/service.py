@@ -1374,8 +1374,8 @@ async def setup_browser_session(task: Task, headless: bool, highlight_elements: 
 		storage_state_path = task_folder / 'storage_state.json'
 		# Create empty storage state file if it doesn't exist to avoid FileNotFoundError
 		if not storage_state_path.exists():
-			storage_state_path.write_text(json.dumps({"cookies": [], "origins": []}))
-		
+			storage_state_path.write_text(json.dumps({'cookies': [], 'origins': []}))
+
 		profile_kwargs['storage_state'] = str(storage_state_path)
 		# Remove user_data_dir=None for login tasks to avoid conflict with storage_state
 		profile_kwargs.pop('user_data_dir', None)
