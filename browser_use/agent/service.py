@@ -612,6 +612,67 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
+	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
+		"""Get browser state with multiple fallback strategies for error recovery"""
+
+		assert self.browser_session is not None, 'BrowserSession is not set up'
+
+		# Try 1: Full state summary (current implementation)
+		try:
+			return await self.browser_session.get_state_summary(cache_clickable_elements_hashes)
+		except Exception as e:
+			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
+
+		return await self._get_minimal_state_summary()
+
+	async def _get_minimal_state_summary(self) -> BrowserStateSummary:
+		"""Get basic page info without DOM processing, but try to capture screenshot"""
+		from browser_use.browser.views import BrowserStateSummary
+		from browser_use.dom.views import DOMElementNode
+
+		if self.browser_session is None:
+			raise Exception('Browser session is not available')
+
+		page = await self.browser_session.get_current_page()
+
+		# Get basic info - no DOM parsing to avoid errors
+		url = getattr(page, 'url', 'unknown')
+
+		# Try to get title safely
+		try:
+			title = await page.title()
+		except Exception:
+			title = 'Page Load Error'
+
+		# Try to get tabs info safely
+		try:
+			tabs_info = await self.browser_session.get_tabs_info()
+		except Exception:
+			tabs_info = []
+
+		# Skip screenshot capture for minimal state summary
+		screenshot_b64 = None
+
+		# Create minimal DOM element for error state
+		minimal_element_tree = DOMElementNode(
+			tag_name='body',
+			xpath='/body',
+			attributes={},
+			children=[],
+			is_visible=True,
+			parent=None,
+		)
+
+		return BrowserStateSummary(
+			element_tree=minimal_element_tree,  # Minimal DOM tree
+			selector_map={},  # Empty selector map
+			url=url,
+			title=title,
+			tabs=tabs_info,
+			screenshot=screenshot_b64,  # May be None, but that's OK
+			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
+		)
+
 	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
@@ -623,7 +684,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		try:
 			assert self.browser_session is not None, 'BrowserSession is not set up'
-			browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+
+			browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
 
 			self._log_step_context(current_page, browser_state_summary)
