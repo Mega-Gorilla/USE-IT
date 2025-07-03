@@ -253,11 +253,6 @@ jobs:
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
           GMAIL_2FA_TOKEN="${{ github.event.client_payload.script_args.gmail_2fa_token }}"
 
-          # Debug Gmail 2FA token
-          echo "DEBUG: gmail_2fa_token from payload: '${{ github.event.client_payload.script_args.gmail_2fa_token }}'"
-          echo "DEBUG: GMAIL_2FA_TOKEN variable: '$GMAIL_2FA_TOKEN'"
-          echo "DEBUG: GMAIL_2FA_TOKEN length: ${#GMAIL_2FA_TOKEN}"
-
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
           TASK_TEXT="${{ github.event.client_payload.script_args.task_text }}"
@@ -301,11 +296,9 @@ jobs:
           
           # Add Gmail 2FA parameters
           if [[ -n "$GMAIL_2FA_TOKEN" ]]; then
-            echo "DEBUG: Adding Gmail 2FA token to command (length: ${#GMAIL_2FA_TOKEN})"
-            echo "DEBUG: Gmail 2FA token first 20 chars: ${GMAIL_2FA_TOKEN:0:20}..."
             CMD_ARGS+=("--gmail-2fa-access-token" "$GMAIL_2FA_TOKEN")
           else
-            echo "DEBUG: Gmail 2FA token is empty or not set, skipping"
+            echo "DEBUG: ❌ GMAIL_2FA_TOKEN conditional failed - token is empty or not set, skipping"
           fi
           
           # Add single task mode parameters
@@ -330,14 +323,6 @@ jobs:
           echo "FULL_COMMAND=$CMD_STRING" >> $GITHUB_OUTPUT
           echo "::notice title=Eval Command::$CMD_STRING"
           
-          # Debug: Show final command structure
-          echo "DEBUG: Final command will be executed as:"
-          if [[ "$HEADLESS" == "false" ]]; then
-            echo "DEBUG: Using xvfb-run wrapper with ${#CMD_ARGS[@]} python command arguments"
-            echo "DEBUG: First few python args: ${CMD_ARGS[0]} ${CMD_ARGS[1]} ${CMD_ARGS[2]}"
-          else
-            echo "DEBUG: Direct execution with ${#CMD_ARGS[@]} arguments"
-          fi
 
       - name: Start Resource Monitoring
         run: |
@@ -378,14 +363,6 @@ jobs:
           echo "Starting time: $(date)"
           echo "Use Mind2Web Judge: ${{ github.event.client_payload.script_args.use_mind2web_judge }}"
           
-          # Debug: Show what we're about to execute
-          echo "=== COMMAND DEBUGGING ==="
-          FULL_CMD="${{ steps.eval_command.outputs.FULL_COMMAND }}"
-          echo "Full command string length: ${#FULL_CMD}"
-          echo "Command contains gmail-2fa-access-token: $(echo "$FULL_CMD" | grep -c 'gmail-2fa-access-token' || echo '0')"
-          echo "Command preview (first 500 chars): ${FULL_CMD:0:500}..."
-          echo "=========================="
-          echo "============================"
           
           # Set up signal handlers for graceful interruption handling
           set -e
