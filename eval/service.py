@@ -2611,6 +2611,19 @@ if __name__ == '__main__':
 	logger = logging.getLogger(__name__)  # Define logger for the module
 
 	logger.info('Running tasks...')
+
+	# Debug: Show all received arguments (for debugging purposes)
+	logger.info('🔧 ARGUMENT DEBUGGING:')
+	logger.info(f'🔧 Total sys.argv length: {len(sys.argv)}')
+	logger.info(f'🔧 Arguments containing "gmail": {[arg for arg in sys.argv if "gmail" in arg.lower()]}')
+
+	# Debug Gmail 2FA token
+	logger.info(f'🔧 Gmail 2FA token received: {"YES" if args.gmail_2fa_access_token else "NO"}')
+	if args.gmail_2fa_access_token:
+		logger.info(f'🔧 Gmail 2FA token length: {len(args.gmail_2fa_access_token)}')
+		logger.info(f'🔧 Gmail 2FA token first 20 chars: {args.gmail_2fa_access_token[:20]}...')
+	else:
+		logger.info('🔧 Gmail 2FA token is None or empty')
 	# Run tasks and evaluate
 	load_dotenv()
 
