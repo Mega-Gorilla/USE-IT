@@ -921,7 +921,7 @@ def get_llm(model_name: str):
 				kwargs['api_key'] = api_key
 			return ChatAnthropic(**kwargs)
 		case 'google':
-			kwargs = {'model': config['model_name'], 'temperature': 0.0}
+			kwargs = {'model': config['model_name'], 'temperature': 0.0, 'thinking_budget': config.get('thinking_budget', None)}
 			if api_key:
 				kwargs['api_key'] = api_key
 			return ChatGoogle(**kwargs)
