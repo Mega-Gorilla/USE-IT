@@ -650,9 +650,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		except Exception:
 			tabs_info = []
 
-		# Skip screenshot capture for minimal state summary
-		screenshot_b64 = None
-
 		# Create minimal DOM element for error state
 		minimal_element_tree = DOMElementNode(
 			tag_name='body',
@@ -669,7 +666,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			url=url,
 			title=title,
 			tabs=tabs_info,
-			screenshot=screenshot_b64,  # May be None, but that's OK
+			pixels_above=0,
+			pixels_below=0,
 			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
 		)
 
