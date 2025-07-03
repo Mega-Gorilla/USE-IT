@@ -28,7 +28,7 @@ from browser_use.llm.messages import (
 )
 from browser_use.llm.ollama.chat import ChatOllama
 from browser_use.llm.openai.chat import ChatOpenAI
-
+from browser_use.llm.openrouter.chat import ChatOpenRouter
 # Make better names for the message
 
 __all__ = [
@@ -51,4 +51,5 @@ __all__ = [
 	'ChatGroq',
 	'ChatAzureOpenAI',
 	'ChatOllama',
+	'ChatOpenRouter',
 ]
