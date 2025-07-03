@@ -1395,8 +1395,8 @@ async def setup_browser_session(task: Task, headless: bool, highlight_elements: 
 
 	# Navigate to task starting url if provided
 	# if task.website:
-	#	logger.debug(f'Browser setup: Navigating to {task.website} for task {task.task_id}')
-	#	await browser_session.navigate(task.website)
+	# logger.debug(f'Browser setup: Navigating to {task.website} for task {task.task_id}')
+	# await browser_session.navigate(task.website)
 
 	logger.debug(f'Browser setup: Setup completed for task {task.task_id}')
 	return browser_session
