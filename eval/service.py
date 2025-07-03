@@ -1742,8 +1742,8 @@ async def run_task_with_semaphore(
 									auth_info_text = format_auth_info_for_agent(auth_distribution, task.auth_keys)
 									if auth_info_text:
 										# Create a modified task with auth info appended
-										class TaskWithAuth:
-											def __init__(self, original_task, auth_text):
+										class TaskWithAuth(Task):
+											def __init__(self, original_task: Task, auth_text: str):
 												# Copy all attributes from original task
 												for attr_name in dir(original_task):
 													if not attr_name.startswith('__'):
