@@ -1408,6 +1408,8 @@ async def run_agent_with_browser(
 	use_thinking: bool = True,
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
+	logger.info(f'🚀 Task {task.task_id}: Creating agent with {max_steps} max steps')
+
 	# Create controller, optionally with SERP search and structured output
 	controller = create_controller(use_serp=use_serp, output_model=task.output_model)
 
@@ -1419,6 +1421,7 @@ async def run_agent_with_browser(
 			"Please remove the 'enable_memory' parameter."
 		)
 
+	logger.info(f'📍 Task {task.task_id}: Creating Agent instance...')
 	agent = Agent(
 		task=task.confirmed_task,
 		llm=llm,
@@ -1433,11 +1436,34 @@ async def run_agent_with_browser(
 		source='eval_platform',
 		calculate_cost=True,
 	)
-	# get last message
-	await agent.run(max_steps=max_steps)
-	last_input_messages = agent.message_manager.last_input_messages
-	last_message = last_input_messages[-1].text
-	return agent.state.history, last_message
+
+	logger.info(f'📍 Task {task.task_id}: Agent created, starting run() with model {llm.model}...')
+
+	# Track execution progress
+	execution_start = time.time()
+
+	try:
+		# get last message
+		await agent.run(max_steps=max_steps)
+		execution_time = time.time() - execution_start
+		logger.info(f'✅ Task {task.task_id}: Agent completed in {execution_time:.1f}s with {agent.state.n_steps} steps')
+
+		last_input_messages = agent.message_manager.last_input_messages
+		last_message = last_input_messages[-1].text
+		return agent.state.history, last_message
+
+	except Exception as e:
+		execution_time = time.time() - execution_start
+		logger.error(f'❌ Task {task.task_id}: Agent failed after {execution_time:.1f}s with error: {type(e).__name__}: {e}')
+		raise
+	finally:
+		# Log final state regardless of success/failure
+		try:
+			logger.info(
+				f'📊 Task {task.task_id}: Final state - Steps: {agent.state.n_steps}, History items: {len(agent.state.history.history)}'
+			)
+		except Exception as e:
+			logger.info(f'📊 Task {task.task_id}: Could not retrieve final agent state')
 
 
 @observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]

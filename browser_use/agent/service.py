@@ -683,6 +683,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		try:
 			assert self.browser_session is not None, 'BrowserSession is not set up'
 
+			self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
 			browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
 			current_page = await self.browser_session.get_current_page()
 
@@ -691,6 +692,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			await self._raise_if_stopped_or_paused()
 
 			# Update action models with page-specific actions
+			self.logger.debug(f'📝 Step {self.state.n_steps + 1}: Updating action models...')
 			await self._update_action_models_for_page(current_page)
 
 			# Get page-specific filtered actions
@@ -701,6 +703,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				page_action_message = f'For this page, these additional actions are available:\n{page_filtered_actions}'
 				self._message_manager._add_message_with_type(UserMessage(content=page_action_message))
 
+			self.logger.debug(f'💬 Step {self.state.n_steps + 1}: Adding state message to context...')
 			self._message_manager.add_state_message(
 				browser_state_summary=browser_state_summary,
 				model_output=self.state.last_model_output,
@@ -713,6 +716,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Run planner at specified intervals if planner is configured
 			if self.settings.planner_llm and self.state.n_steps % self.settings.planner_interval == 0:
+				self.logger.debug(f'🧠 Step {self.state.n_steps + 1}: Running planner...')
 				plan = await self._run_planner()
 				# add plan before last state message
 				self._message_manager.add_plan(plan, position=-1)
@@ -728,9 +732,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.AgentOutput = self.DoneAgentOutput
 
 			input_messages = self._message_manager.get_messages()
+			self.logger.debug(
+				f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
+			)
 
 			try:
 				model_output = await self.get_next_action(input_messages)
+				self.logger.debug(
+					f'✅ Step {self.state.n_steps + 1}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
+				)
+
 				if (
 					not model_output.action
 					or not isinstance(model_output.action, list)
@@ -796,9 +807,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			except Exception as e:
 				# model call failed, remove last state message from history
 				self._message_manager._remove_last_state_message()
+				self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
 				raise e
 
-			result: list[ActionResult] = await self.multi_act(model_output.action)
+			self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(model_output.action)} actions...')
+			result: list[ActionResult] = await asyncio.wait_for(
+				self.multi_act(model_output.action),
+				timeout=60,  # 1 minute timeout for actions
+			)
+			# result: list[ActionResult] = await self.multi_act(model_output.action)
+			self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
 
 			self.state.last_result = result
 			self.state.last_model_output = model_output
@@ -1167,24 +1185,34 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		try:
 			self._log_agent_run()
 
+			self.logger.debug(
+				f'🔧 Agent setup: Task ID {self.task_id[-4:]}, Session ID {self.session_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"}'
+			)
+
 			# Initialize timing for session and task
 			self._session_start_time = time.time()
 			self._task_start_time = self._session_start_time  # Initialize task start time
 
+			self.logger.debug('📡 Dispatching CreateAgentSessionEvent...')
 			# Emit CreateAgentSessionEvent at the START of run()
 			self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
 
+			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
 			# Emit CreateAgentTaskEvent at the START of run()
 			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
 			# Execute initial actions if provided
 			if self.initial_actions:
+				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
 				self.state.last_result = result
+				self.logger.debug('✅ Initial actions completed')
 
+			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
 				# Replace the polling with clean pause-wait
 				if self.state.paused:
+					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
 					await self.wait_until_resumed()
 					signal_handler.reset()
 
@@ -1209,13 +1237,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				if on_step_start is not None:
 					await on_step_start(self)
 
+				self.logger.debug(f'🚶 Starting step {step + 1}/{max_steps}...')
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
-				await self.step(step_info)
+				await asyncio.wait_for(
+					self.step(step_info),
+					timeout=150,  # 2.5 minute timeout per step
+				)
+				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 
 				if on_step_end is not None:
 					await on_step_end(self)
 
 				if self.state.history.is_done():
+					self.logger.debug(f'🎯 Task completed after {step + 1} steps!')
 					await self.log_completion()
 
 					if self.register_done_callback:
@@ -1246,12 +1280,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.logger.info(f'❌ {agent_run_error}')
 
+			self.logger.debug('📊 Collecting usage summary...')
 			self.state.history.usage = await self.token_cost_service.get_usage_summary()
 
 			# set the model output schema and call it on the fly
 			if self.state.history._output_model_schema is None and self.output_model_schema is not None:
 				self.state.history._output_model_schema = self.output_model_schema
 
+			self.logger.debug('🏁 Agent.run() completed successfully')
 			return self.state.history
 
 		except KeyboardInterrupt:
