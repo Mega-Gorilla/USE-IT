@@ -1,9 +1,10 @@
+
 import os
 
 import pytest
 from pydantic import BaseModel
 
-from browser_use.llm import ChatAnthropic, ChatGoogle, ChatGroq, ChatOpenAI
+from browser_use.llm import ChatAnthropic, ChatGoogle, ChatGroq, ChatOpenAI, ChatOpenRouter
 from browser_use.llm.messages import ContentPartTextParam
 
 
@@ -179,7 +180,6 @@ class TestChatModels:
 		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
 
 	# Groq Tests
-
 	@pytest.mark.asyncio
 	async def test_groq_ainvoke_normal(self):
 		"""Test normal text response from Groq"""
@@ -204,6 +204,44 @@ class TestChatModels:
 		chat = ChatGroq(model='meta-llama/llama-4-maverick-17b-128e-instruct', temperature=0)
 		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
 
+		completion = response.completion
+
+		assert isinstance(completion, CapitalResponse)
+		assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
+		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
+
+	# OpenRouter Tests
+	@pytest.mark.asyncio
+	async def test_openrouter_ainvoke_normal(self):
+		"""Test normal text response from OpenRouter"""
+		# Skip if no API key
+		if not os.getenv('OPENROUTER_API_KEY'):
+			pytest.skip('OPENROUTER_API_KEY not set')
+
+		chat = ChatOpenRouter(
+			model='openai/gpt-4o-mini',
+			api_key=os.getenv('OPENROUTER_API_KEY'),
+			temperature=0
+		)
+		response = await chat.ainvoke(self.CONVERSATION_MESSAGES)
+		completion = response.completion
+
+		assert isinstance(completion, str)
+		assert self.EXPECTED_GERMANY_CAPITAL in completion.lower()
+
+	@pytest.mark.asyncio
+	async def test_openrouter_ainvoke_structured(self):
+		"""Test structured output from OpenRouter"""
+		# Skip if no API key
+		if not os.getenv('OPENROUTER_API_KEY'):
+			pytest.skip('OPENROUTER_API_KEY not set')
+
+		chat = ChatOpenRouter(
+			model='openai/gpt-4o-mini',
+			api_key=os.getenv('OPENROUTER_API_KEY'),
+			temperature=0
+		)
+		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
 		completion = response.completion
 
 		assert isinstance(completion, CapitalResponse)
