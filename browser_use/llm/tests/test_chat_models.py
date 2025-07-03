@@ -62,23 +62,19 @@ class TestChatModels:
 		)
 
 	@pytest.mark.asyncio
-	async def test_openai_ainvoke_normal(self, openrouter_chat):
+	async def test_openai_ainvoke_normal(self):
 		"""Test normal text response from OpenAI"""
-		response = await openrouter_chat.ainvoke(self.CONVERSATION_MESSAGES)
+		# Skip if no API key
+		if not os.getenv('OPENAI_API_KEY'):
+			pytest.skip('OPENAI_API_KEY not set')
+
+		chat = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+		response = await chat.ainvoke(self.CONVERSATION_MESSAGES)
+
 		completion = response.completion
 
 		assert isinstance(completion, str)
 		assert self.EXPECTED_GERMANY_CAPITAL in completion.lower()
-
-	@pytest.mark.asyncio
-	async def test_openrouter_ainvoke_structured(self, openrouter_chat):
-		"""Test structured output from OpenRouter"""
-		response = await openrouter_chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
-		completion = response.completion
-
-		assert isinstance(completion, CapitalResponse)
-		assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
-		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
 
 	# Anthropic Tests
 	@pytest.mark.asyncio
@@ -233,11 +229,11 @@ class TestChatModels:
 		assert self.EXPECTED_GERMANY_CAPITAL in completion.lower()
 
 	@pytest.mark.asyncio
-        async def test_openrouter_ainvoke_structured(self):
-                """Test structured output from OpenRouter"""
-                # Skip if no API key
-                if not os.getenv('OPENROUTER_API_KEY'):
-                        pytest.skip('OPENROUTER_API_KEY not set')
+	async def test_openrouter_ainvoke_structured(self):
+		"""Test structured output from OpenRouter"""
+		# Skip if no API key
+		if not os.getenv('OPENROUTER_API_KEY'):
+				pytest.skip('OPENROUTER_API_KEY not set')
 
 		chat = ChatOpenRouter(
 			model='openai/gpt-4o-mini',
@@ -247,37 +243,37 @@ class TestChatModels:
 		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
 		completion = response.completion
 
-                assert isinstance(completion, CapitalResponse)
-                assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
-                assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
+		assert isinstance(completion, CapitalResponse)
+		assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
+		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
 
-        @pytest.mark.asyncio
-        async def test_openrouter_agent_output(self):
-                """Ensure AgentOutput is parsed correctly using ChatOpenRouter."""
-                controller = Controller()
-                ActionModel = controller.registry.create_action_model()
-                AgentOutputModel = AgentOutput.type_with_custom_actions(ActionModel)
+	@pytest.mark.asyncio
+	async def test_openrouter_agent_output(self):
+		"""Ensure AgentOutput is parsed correctly using ChatOpenRouter."""
+		controller = Controller()
+		ActionModel = controller.registry.create_action_model()
+		AgentOutputModel = AgentOutput.type_with_custom_actions(ActionModel)
 
-                json_response = (
-                        '{"evaluation_previous_goal":"ok","memory":"m","next_goal":"done","action":[{"done":{"text":"ok","success":true}}]}'
-                )
+		json_response = (
+				'{"evaluation_previous_goal":"ok","memory":"m","next_goal":"done","action":[{"done":{"text":"ok","success":true}}]}'
+		)
 
-                class FakeCompletions:
-                        async def create(self, *args, **kwargs):
-                                return type('Resp', (), {
-                                        'choices': [type('C', (), {'message': type('M', (), {'content': json_response})})],
-                                        'usage': None,
-                                })()
+		class FakeCompletions:
+				async def create(self, *args, **kwargs):
+						return type('Resp', (), {
+								'choices': [type('C', (), {'message': type('M', (), {'content': json_response})})],
+								'usage': None,
+						})()
 
-                class FakeClient:
-                        def __init__(self):
-                                self.chat = type('Chat', (), {'completions': FakeCompletions()})()
+		class FakeClient:
+				def __init__(self):
+						self.chat = type('Chat', (), {'completions': FakeCompletions()})()
 
-                chat = ChatOpenRouter(model='test', api_key='test')
-                chat.get_client = lambda: FakeClient()  # type: ignore[assignment]
+		chat = ChatOpenRouter(model='test', api_key='test')
+		chat.get_client = lambda: FakeClient()  # type: ignore[assignment]
 
-                messages = [self.UserMessage(content='test')]
-                response = await chat.ainvoke(messages, output_format=AgentOutputModel)
-                completion = response.completion
+		messages = [self.UserMessage(content='test')]
+		response = await chat.ainvoke(messages, output_format=AgentOutputModel)
+		completion = response.completion
 
-                assert isinstance(completion, AgentOutputModel)
+		assert isinstance(completion, AgentOutputModel)
