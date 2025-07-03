@@ -125,7 +125,7 @@ include = [
     "!browser_use/**/tests.py",
     "browser_use/agent/system_prompt.md",
     "browser_use/agent/system_prompt_no_thinking.md",
-    "browser_use/dom/buildDomTree.js",
+    "browser_use/dom/**/*.js",
     "!tests/**/*.py",
 ]
 
