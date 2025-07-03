@@ -105,7 +105,8 @@ class ChatOpenAI(BaseChatModel):
 				prompt_cache_creation_tokens=None,
 				prompt_image_tokens=None,
 				# Completion
-				completion_tokens=response.usage.completion_tokens,
+				completion_tokens=response.usage.completion_tokens
+				+ (response.usage.completion_tokens_details.reasoning_tokens or 0),
 				total_tokens=response.usage.total_tokens,
 			)
 			if response.usage is not None
