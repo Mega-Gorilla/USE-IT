@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiofiles
 from google.auth.transport.requests import Request
@@ -38,10 +38,10 @@ class GmailService:
 
 	def __init__(
 		self,
-		credentials_file: Optional[str] = None,
-		token_file: Optional[str] = None,
-		config_dir: Optional[str] = None,
-		access_token: Optional[str] = None,
+		credentials_file: str | None = None,
+		token_file: str | None = None,
+		config_dir: str | None = None,
+		access_token: str | None = None,
 	):
 		"""
 		Initialize Gmail Service
@@ -139,7 +139,7 @@ class GmailService:
 			logger.error(f'❌ Gmail authentication failed: {e}')
 			return False
 
-	async def get_recent_emails(self, max_results: int = 10, query: str = '', time_filter: str = '1h') -> List[Dict[str, Any]]:
+	async def get_recent_emails(self, max_results: int = 10, query: str = '', time_filter: str = '1h') -> list[dict[str, Any]]:
 		"""
 		Get recent emails with optional query filter
 		Args:
@@ -192,7 +192,7 @@ class GmailService:
 			logger.error(f'❌ Unexpected error fetching emails: {e}')
 			return []
 
-	def _parse_email(self, message: Dict[str, Any]) -> Dict[str, Any]:
+	def _parse_email(self, message: dict[str, Any]) -> dict[str, Any]:
 		"""Parse Gmail message into readable format"""
 		headers = {h['name']: h['value'] for h in message['payload']['headers']}
 
@@ -208,7 +208,7 @@ class GmailService:
 			'raw_message': message,
 		}
 
-	def _extract_body(self, payload: Dict[str, Any]) -> str:
+	def _extract_body(self, payload: dict[str, Any]) -> str:
 		"""Extract email body from payload"""
 		body = ''
 
@@ -228,8 +228,8 @@ class GmailService:
 		return body
 
 	async def find_2fa_codes(
-		self, time_filter: str = '5m', sender_email: Optional[str] = None, custom_patterns: Optional[List[str]] = None
-	) -> List[Dict[str, Any]]:
+		self, time_filter: str = '5m', sender_email: str | None = None, custom_patterns: list[str] | None = None
+	) -> list[dict[str, Any]]:
 		"""
 		Find 2FA verification codes in recent emails
 		Args:
@@ -286,7 +286,7 @@ class GmailService:
 		logger.info(f'🎯 Found {len(filtered_codes)} recent emails with 2FA codes (most recent per sender)')
 		return filtered_codes
 
-	def _extract_codes_from_text(self, text: str, custom_patterns: Optional[List[str]] = None) -> List[str]:
+	def _extract_codes_from_text(self, text: str, custom_patterns: list[str] | None = None) -> list[str]:
 		"""Extract potential verification codes from text"""
 		if not text:
 			return []

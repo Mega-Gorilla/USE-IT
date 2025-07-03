@@ -867,20 +867,20 @@ def create_controller(use_serp: bool = False, output_model: type[BaseModel] | No
 		controller = create_controller_with_serp_search(output_model=output_model)
 	else:
 		controller = Controller(output_model=output_model)
-	
+
 	# Add Gmail 2FA support if access token is available
 	if gmail_access_token:
 		try:
 			from browser_use.integrations.gmail import register_gmail_actions
-			
+
 			# Register Gmail actions using the access token
 			register_gmail_actions(controller, access_token=gmail_access_token)
-			
+
 			logger.info('Gmail 2FA integration registered successfully with access token')
-		
+
 		except Exception as e:
 			logger.error(f'Failed to setup Gmail integration: {e}')
-	
+
 	return controller
 
 
@@ -1401,11 +1401,7 @@ async def run_agent_with_browser(
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
 	# Create controller, optionally with SERP search, structured output, and Gmail 2FA support
-	controller = create_controller(
-		use_serp=use_serp, 
-		output_model=task.output_model,
-		gmail_access_token=gmail_access_token
-	)
+	controller = create_controller(use_serp=use_serp, output_model=task.output_model, gmail_access_token=gmail_access_token)
 
 	# Check for deprecated memory parameters
 	if enable_memory:
@@ -2437,7 +2433,12 @@ if __name__ == '__main__':
 	parser.add_argument('--github-workflow-url', type=str, default=None, help='GitHub workflow URL for tracking')
 
 	# Gmail 2FA support arguments
-	parser.add_argument('--gmail-2fa-access-token', type=str, default=None, help='Access token for Gmail 2FA Lambda function (enables Gmail 2FA if provided)')
+	parser.add_argument(
+		'--gmail-2fa-access-token',
+		type=str,
+		default=None,
+		help='Access token for Gmail 2FA Lambda function (enables Gmail 2FA if provided)',
+	)
 
 	# Single task mode arguments
 	parser.add_argument('--task-text', type=str, default=None, help='Task description for single task mode')

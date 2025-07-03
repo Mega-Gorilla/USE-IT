@@ -6,7 +6,6 @@ email reading, and authentication management.
 
 import asyncio
 import logging
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,15 +17,15 @@ from .service import GmailService
 logger = logging.getLogger(__name__)
 
 # Global Gmail service instance - initialized when actions are registered
-_gmail_service: Optional[GmailService] = None
+_gmail_service: GmailService | None = None
 
 
 class Find2FACodesParams(BaseModel):
 	"""Parameters for finding 2FA codes in emails"""
 
 	time_filter: str = Field(default='2m', description='Time filter for emails (e.g., "2m", "5m", "1h", "1d")')
-	sender_email: Optional[str] = Field(default=None, description='Filter by specific sender email address')
-	custom_patterns: Optional[List[str]] = Field(default=None, description='Additional regex patterns to search for codes')
+	sender_email: str | None = Field(default=None, description='Filter by specific sender email address')
+	custom_patterns: list[str] | None = Field(default=None, description='Additional regex patterns to search for codes')
 
 
 class GetRecentEmailsParams(BaseModel):
@@ -38,7 +37,7 @@ class GetRecentEmailsParams(BaseModel):
 
 
 def register_gmail_actions(
-	controller: Controller, gmail_service: Optional[GmailService] = None, access_token: Optional[str] = None
+	controller: Controller, gmail_service: GmailService | None = None, access_token: str | None = None
 ) -> None:
 	"""
 	Register Gmail actions with the provided controller
