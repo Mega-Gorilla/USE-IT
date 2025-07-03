@@ -69,6 +69,21 @@ class TestChatModels:
 		assert isinstance(completion, str)
 		assert self.EXPECTED_GERMANY_CAPITAL in completion.lower()
 
+	@pytest.mark.asyncio
+	async def test_openai_ainvoke_structured(self):
+		"""Test structured output from OpenAI"""
+		# Skip if no API key
+		if not os.getenv('OPENAI_API_KEY'):
+			pytest.skip('OPENAI_API_KEY not set')
+
+		chat = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+		response = await chat.ainvoke(self.STRUCTURED_MESSAGES, output_format=CapitalResponse)
+		completion = response.completion
+
+		assert isinstance(completion, CapitalResponse)
+		assert completion.country.lower() == self.EXPECTED_FRANCE_COUNTRY
+		assert completion.capital.lower() == self.EXPECTED_FRANCE_CAPITAL
+
 	# Anthropic Tests
 	@pytest.mark.asyncio
 	async def test_anthropic_ainvoke_normal(self):
