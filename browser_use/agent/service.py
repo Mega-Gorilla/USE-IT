@@ -813,7 +813,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(model_output.action)} actions...')
 			result: list[ActionResult] = await asyncio.wait_for(
 				self.multi_act(model_output.action),
-				timeout=60,  # 1 minute timeout for actions
+				timeout=20,  # 20 second aggressive timeout for actions
 			)
 			# result: list[ActionResult] = await self.multi_act(model_output.action)
 			self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
@@ -1243,7 +1243,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await asyncio.wait_for(
 					self.step(step_info),
-					timeout=60,  # 1 minute timeout per step - faster recovery from hangs
+					timeout=30,  # 30 second aggressive timeout per step
 				)
 				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 

@@ -698,13 +698,13 @@ class BrowserSession(BaseModel):
 		await self.setup_new_browser_context()
 
 	@retry(
-		wait=1,  # wait 1s between each attempt to take a screenshot (faster retry)
-		retries=3,  # try up to 3 times to take the screenshot (more attempts)
-		timeout=15,  # balanced timeout to catch deadlocks without being too aggressive
+		wait=0.5,  # wait 0.5s between attempts - aggressive
+		retries=2,  # only 2 attempts - fail fast
+		timeout=5,  # 5 second aggressive timeout
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
 		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
-		semaphore_timeout=5,  # shorter semaphore timeout (was 10s)
+		semaphore_timeout=2,  # 2 second aggressive semaphore timeout
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page) -> str:
@@ -758,17 +758,15 @@ class BrowserSession(BaseModel):
 		await page.bring_to_front()
 
 		try:
-			# Add extra timeout protection around screenshot to prevent deadlocks
+			# Aggressive timeout for screenshot
 			screenshot = await asyncio.wait_for(
 				page.screenshot(
 					full_page=False,
-					# scale='css',
-					timeout=10000,  # Balanced playwright timeout (10s)
-					# clip parameter removed - no clipping needed for deadlock protection
+					timeout=3000,  # 3 second aggressive playwright timeout
 					animations='allow',
 					caret='initial',
 				),
-				timeout=12.0,  # Extra asyncio timeout as deadlock protection
+				timeout=4.0,  # 4 second aggressive asyncio timeout
 			)
 		except TimeoutError:
 			self.logger.warning('🚨 Screenshot deadlock detected (asyncio timeout), restarting browser...')
@@ -2708,11 +2706,11 @@ class BrowserSession(BaseModel):
 						viewport_expansion=self.browser_profile.viewport_expansion,
 						highlight_elements=self.browser_profile.highlight_elements,
 					),
-					timeout=30.0,  # 30 second timeout for DOM processing
+					timeout=10.0,  # 10 second aggressive timeout
 				)
 			except TimeoutError:
-				self.logger.warning(f'DOM processing timed out after 30 seconds for {page.url} - page may be too complex')
-				raise BrowserError(f'Page DOM processing timeout - page may be too complex: {page.url}')
+				self.logger.warning(f'DOM processing timed out after 10 seconds for {page.url}')
+				raise BrowserError(f'DOM timeout: {page.url}')
 
 			tabs_info = await self.get_tabs_info()
 
@@ -2738,18 +2736,13 @@ class BrowserSession(BaseModel):
 			# 	)
 
 			try:
-				# Add timeout protection for screenshot to prevent long hangs on complex pages
+				# Aggressive timeout for screenshot - fail fast
 				screenshot_b64 = await asyncio.wait_for(
 					self.take_screenshot(),
-					timeout=15.0,  # 15 second timeout for screenshot operations
+					timeout=5.0,  # 5 second aggressive timeout
 				)
-			except TimeoutError:
-				self.logger.warning(
-					f'Screenshot timed out after 15 seconds for {page.url} - page may be too complex or slow to render'
-				)
-				screenshot_b64 = None
 			except Exception as e:
-				self.logger.warning(f'Failed to capture screenshot: {type(e).__name__}: {e}')
+				self.logger.warning(f'Screenshot failed for {page.url}: {type(e).__name__}')
 				screenshot_b64 = None
 
 			pixels_above, pixels_below = await self.get_scroll_info(page)
@@ -2793,7 +2786,7 @@ class BrowserSession(BaseModel):
 			page = await self.get_current_page()
 
 		try:
-			await page.wait_for_load_state(timeout=5000)
+			await page.wait_for_load_state(timeout=2000)  # 2 second aggressive timeout
 		except Exception:
 			pass
 
