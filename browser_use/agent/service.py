@@ -1251,7 +1251,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await asyncio.wait_for(
 					self.step(step_info),
-					timeout=60,  # 2 minute step timeout - less aggressive
+					timeout=120,  # 2 minute step timeout - less aggressive
 				)
 				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 

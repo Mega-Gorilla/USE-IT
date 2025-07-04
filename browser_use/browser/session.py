@@ -699,7 +699,7 @@ class BrowserSession(BaseModel):
 
 	@retry(
 		wait=1,  # wait 1s between attempts
-		retries=3,  # 3 attempts
+		retries=2,  # 3 attempts
 		timeout=15,  # 15 second reasonable timeout
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
