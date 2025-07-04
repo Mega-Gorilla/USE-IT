@@ -1466,6 +1466,12 @@ async def evaluate_task_result(
 		judge_result['success'] = cookie_result['success']
 		judge_result['error'] = cookie_result['error']
 
+		# Also overwrite comprehensive judge evaluation if it exists
+		if 'comprehensive_evaluation' in judge_result and judge_result['comprehensive_evaluation']:
+			judge_result['comprehensive_evaluation']['passed'] = cookie_result['success']
+			# Convert score from 0-1 scale to 0-100 scale for comprehensive judge
+			judge_result['comprehensive_evaluation']['final_score'] = int(cookie_result['score'] * 100)
+
 		return judge_result
 	else:
 		return await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
