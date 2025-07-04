@@ -140,7 +140,7 @@
         container.style.left = "0";
         container.style.width = "100%";
         container.style.height = "100%";
-        // Make sure to use the maximum valid value in zIndex to avoid being blocked by other elements
+        // Use the maximum valid value in zIndex to ensure the element is not blocked by overlapping elements.
         container.style.zIndex = "2147483647";
         container.style.backgroundColor = 'transparent';
         document.body.appendChild(container);
