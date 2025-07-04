@@ -72,8 +72,8 @@ def register_gmail_actions(
 
 			# Build query with time filter and optional user query
 			query_parts = [f'newer_than:{time_filter}']
-			if params.query.strip():
-				query_parts.append(params.query.strip())
+			if params.keyword.strip():
+				query_parts.append(params.keyword.strip())
 
 			query = ' '.join(query_parts)
 			logger.info(f'🔍 Gmail search query: {query}')
@@ -82,7 +82,7 @@ def register_gmail_actions(
 			emails = await _gmail_service.get_recent_emails(max_results=max_results, query=query, time_filter=time_filter)
 
 			if not emails:
-				query_info = f" matching '{params.query}'" if params.query.strip() else ''
+				query_info = f" matching '{params.keyword}'" if params.keyword.strip() else ''
 				memory = f'No recent emails found from last {time_filter}{query_info}'
 				return ActionResult(
 					extracted_content=memory,
