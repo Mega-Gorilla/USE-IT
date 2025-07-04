@@ -370,14 +370,13 @@ class Registry(Generic[Context]):
 			except Exception as e:
 				# Retry once if it's a page error
 				logger.warning(f'⚠️ Action {action_name}() failed: {type(e).__name__}: {e}, trying one more time...')
-				# if page error
-				# special_context['page'] = browser_session and await browser_session.get_current_page()
-				# try:
-				# 	return await action.function(params=validated_params, **special_context)
-				# except Exception as retry_error:
-				# 	raise RuntimeError(
-				# 		f'Action {action_name}() failed: {type(e).__name__}: {e} (page may have closed or navigated away mid-action)'
-				# 	) from retry_error
+				special_context['page'] = browser_session and await browser_session.get_current_page()
+				try:
+					return await action.function(params=validated_params, **special_context)
+				except Exception as retry_error:
+					raise RuntimeError(
+						f'Action {action_name}() failed: {type(e).__name__}: {e} (page may have closed or navigated away mid-action)'
+					) from retry_error
 				raise
 
 		except ValueError as e:
