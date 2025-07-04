@@ -96,8 +96,13 @@ else:
 def create_anchor_browser_session(headless: bool = False) -> str:
 	"""Create an Anchor Browser session and return CDP URL"""
 	browser_configuration = {
-		'session': {'proxy': {'type': 'anchor_residential', 'active': True}},
-		'browser': {'adblock': {'active': True}, 'captcha_solver': {'active': True}, 'headless': {'active': headless}},
+		'session': {'proxy': {'type': 'anchor_mobile', 'active': True, 'country_code': 'us'}},
+		'browser': {
+			'adblock': {'active': True},
+			'captcha_solver': {'active': True},
+			'headless': {'active': headless},
+			'extra_stealth': {'active': True},
+		},
 	}
 
 	try:
