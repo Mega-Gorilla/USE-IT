@@ -10,7 +10,7 @@ jobs:
     runs-on: 
       group: eval
       labels: eval-2-core-500
-    timeout-minutes: 360
+    timeout-minutes: 60 # 
     env:
       IN_DOCKER: 'true'
       ANONYMIZED_TELEMETRY: 'false'
@@ -25,8 +25,10 @@ jobs:
       ANCHOR_BROWSER_API_KEY: ${{ secrets.ANCHOR_BROWSER_API_KEY }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
+      BROWSER_USE_LOGGING_LEVEL: ${{ secrets.BROWSER_USE_LOGGING_LEVEL }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
-
+      
+    
     steps:
       - name: System Info and Resource Check
         run: |

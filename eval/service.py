@@ -726,9 +726,25 @@ SUPPORTED_MODELS = {
 	# Google
 	'gemini-1.5-flash': {'provider': 'google', 'model_name': 'gemini-1.5-flash-latest', 'api_key_env': 'GEMINI_API_KEY'},
 	'gemini-2.0-flash-lite': {'provider': 'google', 'model_name': 'gemini-2.0-flash-lite', 'api_key_env': 'GEMINI_API_KEY'},
-	'gemini-2.0-flash': {'provider': 'google', 'model_name': 'gemini-2.0-flash', 'api_key_env': 'GEMINI_API_KEY'},
+	'gemini-2.0-flash': {
+		'provider': 'google',
+		'model_name': 'gemini-2.0-flash',
+		'api_key_env': 'GEMINI_API_KEY',
+		'thinking_budget': 0,
+	},
 	'gemini-2.5-pro': {'provider': 'google', 'model_name': 'gemini-2.5-pro', 'api_key_env': 'GEMINI_API_KEY'},
-	'gemini-2.5-flash': {'provider': 'google', 'model_name': 'gemini-2.5-flash', 'api_key_env': 'GEMINI_API_KEY'},
+	'gemini-2.5-flash': {
+		'provider': 'google',
+		'model_name': 'gemini-2.5-flash',
+		'api_key_env': 'GEMINI_API_KEY',
+		'thinking_budget': 0,
+	},
+	'gemini-2.5-flash-lite-preview': {
+		'provider': 'google',
+		'model_name': 'gemini-2.5-flash-lite-preview-06-17',
+		'api_key_env': 'GEMINI_API_KEY',
+		'thinking_budget': 0,
+	},
 	'gemini-2.5-pro-preview-05-06': {
 		'provider': 'google',
 		'model_name': 'gemini-2.5-pro-preview-05-06',
@@ -923,7 +939,7 @@ def get_llm(model_name: str):
 				kwargs['api_key'] = api_key
 			return ChatAnthropic(**kwargs)
 		case 'google':
-			kwargs = {'model': config['model_name'], 'temperature': 0.0}
+			kwargs = {'model': config['model_name'], 'temperature': 0.0, 'thinking_budget': config.get('thinking_budget', None)}
 			if api_key:
 				kwargs['api_key'] = api_key
 			return ChatGoogle(**kwargs)
