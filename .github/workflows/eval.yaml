@@ -253,14 +253,14 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
-          GMAIL_2FA_TOKENS="${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}"
+          # Pass raw GitHub Actions object to Python - no parsing in bash
+          GMAIL_2FA_TOKENS_RAW='${{ github.event.client_payload.script_args.gmail_2fa_tokens }}'
           
           # Debug Gmail 2FA tokens variable assignment
           echo "DEBUG: 🔧 GMAIL_2FA_TOKENS assignment debug:"
           echo "DEBUG: 🔧 Raw payload value: '${{ github.event.client_payload.script_args.gmail_2fa_tokens }}'"
-          echo "DEBUG: 🔧 toJSON result: '${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}'"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS variable value: '$GMAIL_2FA_TOKENS'"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS length: ${#GMAIL_2FA_TOKENS}"
+          echo "DEBUG: 🔧 Final GMAIL_2FA_TOKENS_RAW variable: '$GMAIL_2FA_TOKENS_RAW'"
+          echo "DEBUG: 🔧 Variable length: ${#GMAIL_2FA_TOKENS_RAW}"
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
@@ -305,17 +305,17 @@ jobs:
           
           # Add Gmail 2FA parameters
           echo "DEBUG: 🔧 GMAIL_2FA_TOKENS conditional check:"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS value at check time: '$GMAIL_2FA_TOKENS'"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS length at check time: ${#GMAIL_2FA_TOKENS}"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS equals 'null': $([[ "$GMAIL_2FA_TOKENS" == "null" ]] && echo "true" || echo "false")"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS is empty: $([[ -z "$GMAIL_2FA_TOKENS" ]] && echo "true" || echo "false")"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS is non-empty: $([[ -n "$GMAIL_2FA_TOKENS" ]] && echo "true" || echo "false")"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW value at check time: '$GMAIL_2FA_TOKENS_RAW'"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW length at check time: ${#GMAIL_2FA_TOKENS_RAW}"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW equals 'null': $([[ "$GMAIL_2FA_TOKENS_RAW" == "null" ]] && echo "true" || echo "false")"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW is empty: $([[ -z "$GMAIL_2FA_TOKENS_RAW" ]] && echo "true" || echo "false")"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW is non-empty: $([[ -n "$GMAIL_2FA_TOKENS_RAW" ]] && echo "true" || echo "false")"
           
-          if [[ -n "$GMAIL_2FA_TOKENS" && "$GMAIL_2FA_TOKENS" != "null" ]]; then
-            echo "DEBUG: ✅ GMAIL_2FA_TOKENS conditional passed - adding tokens to command"
-            CMD_ARGS+=("--gmail-2fa-tokens" "$GMAIL_2FA_TOKENS")
+          if [[ -n "$GMAIL_2FA_TOKENS_RAW" && "$GMAIL_2FA_TOKENS_RAW" != "null" ]]; then
+            echo "DEBUG: ✅ GMAIL_2FA_TOKENS_RAW conditional passed - adding tokens to command"
+            CMD_ARGS+=("--gmail-2fa-tokens" "$GMAIL_2FA_TOKENS_RAW")
           else
-            echo "DEBUG: ❌ GMAIL_2FA_TOKENS conditional failed - tokens are empty, null, or not set, skipping"
+            echo "DEBUG: ❌ GMAIL_2FA_TOKENS_RAW conditional failed - tokens are empty, null, or not set, skipping"
           fi
           
           # Add single task mode parameters

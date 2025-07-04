@@ -2853,18 +2853,66 @@ if __name__ == '__main__':
 	logger.info(f'🔧 Total sys.argv length: {len(sys.argv)}')
 	logger.info(f'🔧 Arguments containing "gmail": {[arg for arg in sys.argv if "gmail" in arg.lower()]}')
 
-	# Parse Gmail 2FA tokens dictionary
+	# Parse Gmail 2FA tokens - handle GitHub Actions raw object format
 	gmail_tokens_dict = None
 	if args.gmail_2fa_tokens:
-		try:
-			gmail_tokens_dict = json.loads(args.gmail_2fa_tokens)
-			logger.info(f'🔧 Gmail 2FA tokens received: {"YES" if gmail_tokens_dict else "NO"}')
-			if gmail_tokens_dict:
-				logger.info(f'🔧 Gmail 2FA tokens count: {len(gmail_tokens_dict)}')
-				logger.info(f'🔧 Gmail 2FA users: {list(gmail_tokens_dict.keys())}')
-		except json.JSONDecodeError as e:
-			logger.error(f'🔧 Failed to parse Gmail 2FA tokens JSON: {e}')
+		raw_tokens = args.gmail_2fa_tokens
+		logger.info(f'🔧 Raw Gmail 2FA tokens received: "{raw_tokens}"')
+
+		# Check if GitHub Actions passed us something like "[object Object]" or similar
+		if raw_tokens in ['[object Object]', 'null', '', '{}']:
+			logger.info('🔧 GitHub Actions passed placeholder value, no Gmail tokens available')
 			gmail_tokens_dict = None
+		else:
+			try:
+				# First try parsing as valid JSON (in case it's already proper JSON)
+				gmail_tokens_dict = json.loads(raw_tokens)
+				logger.info(f'🔧 Successfully parsed as JSON - Gmail 2FA tokens count: {len(gmail_tokens_dict)}')
+				logger.info(f'🔧 Gmail 2FA users: {list(gmail_tokens_dict.keys())}')
+			except json.JSONDecodeError:
+				# If JSON parsing fails, try to parse GitHub Actions malformed toJSON format
+				try:
+					logger.info('🔧 JSON parsing failed, attempting to parse GitHub Actions malformed format...')
+
+					# Handle GitHub Actions toJSON format: { key: value, key2: value2 }
+					if raw_tokens.strip() and raw_tokens.strip() not in ['null', '{}']:
+						# Remove outer braces and parse line by line
+						content = raw_tokens.strip().strip('{}').strip()
+
+						if content:
+							tokens = {}
+							lines = [line.strip() for line in content.split('\n') if line.strip()]
+
+							for line in lines:
+								# Remove trailing comma if present
+								line = line.rstrip(',')
+
+								if ':' in line:
+									# Split on first colon only
+									key, value = line.split(':', 1)
+									key = key.strip()
+									value = value.strip()
+
+									# Store the key-value pair
+									tokens[key] = value
+
+							if tokens:
+								gmail_tokens_dict = tokens
+								logger.info('🔧 Successfully parsed malformed GitHub Actions format')
+								logger.info(f'🔧 Gmail 2FA tokens count: {len(gmail_tokens_dict)}')
+								logger.info(f'🔧 Gmail 2FA users: {list(gmail_tokens_dict.keys())}')
+							else:
+								logger.warning('🔧 No tokens found in malformed format')
+								gmail_tokens_dict = None
+						else:
+							logger.warning('🔧 Empty content in malformed format')
+							gmail_tokens_dict = None
+					else:
+						logger.info('🔧 Raw tokens empty or null')
+						gmail_tokens_dict = None
+				except Exception as e:
+					logger.error(f'🔧 Failed to parse malformed GitHub Actions format: {type(e).__name__}: {e}')
+					gmail_tokens_dict = None
 	else:
 		logger.info('🔧 Gmail 2FA tokens: None or empty')
 	# Run tasks and evaluate
