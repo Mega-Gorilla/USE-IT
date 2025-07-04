@@ -253,13 +253,21 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
-          GMAIL_2FA_TOKENS="${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}"
+          # Use jq to properly format the JSON tokens
+          GMAIL_2FA_TOKENS_RAW='${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}'
+          if [[ "$GMAIL_2FA_TOKENS_RAW" != "null" && "$GMAIL_2FA_TOKENS_RAW" != "" ]]; then
+            # Use jq to reformat as proper JSON
+            GMAIL_2FA_TOKENS=$(echo "$GMAIL_2FA_TOKENS_RAW" | jq -c '.' 2>/dev/null || echo "")
+          else
+            GMAIL_2FA_TOKENS=""
+          fi
           
           # Debug Gmail 2FA tokens variable assignment
           echo "DEBUG: 🔧 GMAIL_2FA_TOKENS assignment debug:"
           echo "DEBUG: 🔧 Raw payload value: '${{ github.event.client_payload.script_args.gmail_2fa_tokens }}'"
           echo "DEBUG: 🔧 toJSON result: '${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}'"
-          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS variable value: '$GMAIL_2FA_TOKENS'"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS_RAW: '$GMAIL_2FA_TOKENS_RAW'"
+          echo "DEBUG: 🔧 GMAIL_2FA_TOKENS (after jq): '$GMAIL_2FA_TOKENS'"
           echo "DEBUG: 🔧 GMAIL_2FA_TOKENS length: ${#GMAIL_2FA_TOKENS}"
 
           # Single task mode parameters
