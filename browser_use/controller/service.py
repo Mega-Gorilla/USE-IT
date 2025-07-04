@@ -364,10 +364,11 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
 
-			content = await asyncio.wait_for(
-				loop.run_in_executor(None, markdownify_func, page_html),
-				timeout=10.0,  # 10 second timeout for main page markdownify
-			)
+			try:
+				content = await asyncio.wait_for(loop.run_in_executor(None, markdownify_func, page_html), timeout=10.0)
+			except Exception as e:
+				logger.warning(f'Main page markdownify failed: {type(e).__name__}: {e}')
+				return ActionResult(error=f'Could not convert html to markdown: {type(e).__name__}: {e}')
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
