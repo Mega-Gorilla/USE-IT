@@ -254,7 +254,7 @@ jobs:
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
           # Use jq to properly format the JSON tokens
-          GMAIL_2FA_TOKENS_RAW='${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}'
+          GMAIL_2FA_TOKENS_RAW="${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}"
           if [[ "$GMAIL_2FA_TOKENS_RAW" != "null" && "$GMAIL_2FA_TOKENS_RAW" != "" ]]; then
             # Use jq to reformat as proper JSON
             GMAIL_2FA_TOKENS=$(echo "$GMAIL_2FA_TOKENS_RAW" | jq -c '.' 2>/dev/null || echo "")
