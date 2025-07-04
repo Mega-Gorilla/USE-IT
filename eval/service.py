@@ -45,6 +45,7 @@ import gc
 import io
 import json
 import logging
+import os
 import re
 import signal
 import sys
@@ -55,6 +56,8 @@ from uuid import UUID
 
 import anyio
 import psutil
+import requests
+from dotenv import load_dotenv
 from lmnr import AsyncLaminarClient, Laminar, observe
 from PIL import Image
 from pydantic import BaseModel
@@ -71,6 +74,48 @@ MAX_IMAGE = 5
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
+
+# Load dotenv
+load_dotenv()
+
+# Check for Anchor Browser API key
+ANCHOR_BROWSER_API_KEY = os.getenv('ANCHOR_BROWSER_API_KEY')
+if ANCHOR_BROWSER_API_KEY:
+	logger.info('ANCHOR_BROWSER_API_KEY is set. Tasks will use Anchor Browser.')
+else:
+	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Tasks will use local browser.')
+
+
+def create_anchor_browser_session(headless: bool = False) -> str:
+	"""Create an Anchor Browser session and return CDP URL"""
+	browser_configuration = {
+		'session': {'proxy': {'type': 'anchor_residential', 'active': True}},
+		'browser': {'adblock': {'active': True}, 'captcha_solver': {'active': True}, 'headless': {'active': headless}},
+	}
+
+	try:
+		response = requests.post(
+			'https://api.anchorbrowser.io/v1/sessions',
+			headers={
+				'anchor-api-key': ANCHOR_BROWSER_API_KEY,
+				'Content-Type': 'application/json',
+			},
+			json=browser_configuration,
+		)
+		response.raise_for_status()
+		session_data = response.json()['data']
+		session_id = session_data['id']
+
+		# Return only the CDP URL
+		return f'wss://connect.anchorbrowser.io?apiKey={ANCHOR_BROWSER_API_KEY}&sessionId={session_id}'
+
+	except requests.RequestException as e:
+		logger.error(f'Failed to create Anchor Browser session: {type(e).__name__}: {e}')
+		raise
+	except KeyError as e:
+		logger.error(f'Unexpected response format from Anchor Browser API: {e}')
+		raise
+
 
 Laminar.initialize()
 laminar_client = AsyncLaminarClient()
@@ -499,7 +544,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import requests
 from dotenv import load_dotenv
 
 # Import the new comprehensive judge system (conditional import for backwards compatibility)
@@ -1396,11 +1440,29 @@ async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
 	return await stage_func()
 
 
-async def setup_browser_session(task: Task, headless: bool, highlight_elements: bool = True) -> BrowserSession:
+async def setup_browser_session(
+	task: Task, headless: bool, highlight_elements: bool = True, use_anchor: bool = False
+) -> BrowserSession:
 	"""Setup browser session for the task"""
-	logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
 
-	# Use incognito mode (user_data_dir=None) for evaluations to avoid state pollution
+	# Check for Anchor Browser API key and flag
+	cdp_url = None
+
+	if use_anchor and ANCHOR_BROWSER_API_KEY:
+		try:
+			logger.debug(f'Browser setup: Creating Anchor Browser session for task {task.task_id}')
+			cdp_url = await asyncio.to_thread(create_anchor_browser_session, headless)
+		except Exception as e:
+			logger.error(
+				f'Browser setup: Failed to create Anchor Browser session for task {task.task_id}: {type(e).__name__}: {e}'
+			)
+			logger.info(f'Browser setup: Falling back to local browser for task {task.task_id}')
+			cdp_url = None
+	elif use_anchor and not ANCHOR_BROWSER_API_KEY:
+		logger.warning(
+			f'Browser setup: Anchor Browser requested but ANCHOR_BROWSER_API_KEY not set. Using local browser for task {task.task_id}'
+		)
+
 	profile_kwargs = {
 		'user_data_dir': None,  # Incognito mode - no persistent state
 		'headless': headless,
@@ -1439,10 +1501,16 @@ async def setup_browser_session(task: Task, headless: bool, highlight_elements: 
 		logger.debug(f'Login task {task.task_id}: Configured to save cookies to {storage_state_path}')
 
 	profile = BrowserProfile(**profile_kwargs)
-	browser_session = BrowserSession(browser_profile=profile)
+
+	if cdp_url:
+		logger.debug(f'Browser setup: Using CDP Browser for task {task.task_id}')
+		browser_session = BrowserSession(browser_profile=profile, cdp_url=cdp_url)
+	else:
+		# Use local browser
+		logger.debug(f'Browser setup: Initializing BrowserSession for task {task.task_id}')
+		browser_session = BrowserSession(browser_profile=profile)
 
 	# Start browser session
-	logger.debug(f'Browser setup: Starting browser session for task {task.task_id}')
 	await browser_session.start()
 	logger.debug(f'Browser setup: Browser session started for task {task.task_id}')
 
@@ -1576,11 +1644,11 @@ async def evaluate_task_with_login_cookie(login_cookie: str, task_folder: Path) 
 	If not found in tracking, falls back to checking end-state cookies.
 
 	Args:
-		login_cookie: String identifier that should appear in cookies if login was successful
-		task_folder: Path to the task result folder containing saved cookies
+	    login_cookie: String identifier that should appear in cookies if login was successful
+	    task_folder: Path to the task result folder containing saved cookies
 
 	Returns:
-		Dictionary containing evaluation results similar to Online_Mind2Web_eval format
+	    Dictionary containing evaluation results similar to Online_Mind2Web_eval format
 	"""
 	task_id = task_folder.name
 
@@ -1775,6 +1843,7 @@ async def run_task_with_semaphore(
 	semaphore_runs: asyncio.Semaphore,  # Pass semaphore as argument
 	github_workflow_url: str | None = None,
 	use_serp: bool = False,
+	use_anchor: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -1870,7 +1939,9 @@ async def run_task_with_semaphore(
 					)
 
 					browser_session = await run_stage(
-						Stage.SETUP_BROWSER, lambda: setup_browser_session(task, headless, highlight_elements), timeout=120
+						Stage.SETUP_BROWSER,
+						lambda: setup_browser_session(task, headless, highlight_elements, use_anchor),
+						timeout=120,
 					)
 					task_result.stage_completed(Stage.SETUP_BROWSER)
 					logger.info(f'Task {task.task_id}: Browser session started successfully.')
@@ -2177,6 +2248,7 @@ async def run_multiple_tasks(
 	headless: bool = False,
 	use_vision: bool = True,
 	use_serp: bool = False,
+	use_anchor: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -2257,6 +2329,7 @@ async def run_multiple_tasks(
 					semaphore_runs=semaphore_runs,  # Pass the semaphore
 					github_workflow_url=github_workflow_url,
 					use_serp=use_serp,
+					use_anchor=use_anchor,
 					enable_memory=enable_memory,
 					memory_interval=memory_interval,
 					max_actions_per_step=max_actions_per_step,
@@ -2616,6 +2689,7 @@ async def run_evaluation_pipeline(
 	headless: bool = False,
 	use_vision: bool = True,
 	use_serp: bool = False,
+	use_anchor: bool = False,
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -2670,6 +2744,7 @@ async def run_evaluation_pipeline(
 		headless=headless,
 		use_vision=use_vision,
 		use_serp=use_serp,
+		use_anchor=use_anchor,
 		enable_memory=enable_memory,
 		memory_interval=memory_interval,
 		max_actions_per_step=max_actions_per_step,
@@ -2802,6 +2877,7 @@ if __name__ == '__main__':
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
 	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
 	parser.add_argument('--use-serp', action='store_true', help='Use SERP search instead of Google search')
+	parser.add_argument('--use-anchor', action='store_true', help='Use Anchor Browser (requires ANCHOR_BROWSER_API_KEY)')
 	parser.add_argument('--enable-memory', action='store_true', help='Enable mem0 memory system for agents')
 	parser.add_argument('--memory-interval', type=int, default=10, help='Memory creation interval (default: 10 steps)')
 	parser.add_argument('--max-actions-per-step', type=int, default=10, help='Maximum number of actions per step (default: 10)')
@@ -3054,6 +3130,15 @@ if __name__ == '__main__':
 	else:
 		logger.info('🔍 Using default Google search')
 
+	# Log browser mode being used
+	if args.use_anchor:
+		if ANCHOR_BROWSER_API_KEY:
+			logger.info('🌐 Using Anchor Browser (remote browser service)')
+		else:
+			logger.warning('⚠️ --use-anchor flag provided but ANCHOR_BROWSER_API_KEY not set. Will use local browser!')
+	else:
+		logger.info('🌐 Using local browser')
+
 	# Log memory configuration
 	if args.enable_memory:
 		logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
@@ -3151,6 +3236,7 @@ if __name__ == '__main__':
 				headless=args.headless,
 				use_vision=not args.no_vision,
 				use_serp=args.use_serp,
+				use_anchor=args.use_anchor,
 				enable_memory=args.enable_memory,
 				memory_interval=args.memory_interval,
 				max_actions_per_step=args.max_actions_per_step,
