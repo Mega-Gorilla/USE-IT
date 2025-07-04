@@ -1451,10 +1451,22 @@ async def evaluate_task_result(
 	eval_model: BaseChatModel, task_folder: Path, task: Task | None = None, use_mind2web: bool = False
 ) -> dict:
 	"""Evaluate the task result"""
-	# Check if this is a login task that should use cookie-based evaluation
+	# Check if this is a login task that should use both cookie-based and judge evaluation
 	if task and hasattr(task, 'login_cookie') and task.login_cookie:
-		logger.info(f'Using cookie-based evaluation for login task {task.task_id}')
-		return await evaluate_task_with_login_cookie(task.login_cookie, task_folder)
+		logger.info(f'Using combined cookie-based and judge evaluation for login task {task.task_id}')
+
+		# First run the judge evaluation to get comprehensive feedback
+		judge_result = await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
+
+		# Then run the cookie-based evaluation to get the actual score
+		cookie_result = await evaluate_task_with_login_cookie(task.login_cookie, task_folder)
+
+		# Use the score from cookie_result to overwrite judge_result
+		judge_result['score'] = cookie_result['score']
+		judge_result['success'] = cookie_result['success']
+		judge_result['error'] = cookie_result['error']
+
+		return judge_result
 	else:
 		return await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
 
