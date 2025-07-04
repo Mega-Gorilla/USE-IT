@@ -351,12 +351,14 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 			# Run markdownify in a thread pool to avoid blocking the event loop
 			loop = asyncio.get_event_loop()
 
-			# Try getting page content with retries
-			page_html_result, action_result = await retry_async_function(
-				lambda: page.content(), "Couldn't extract page content due to an error."
-			)
-			if action_result:
-				return action_result
+			# Try getting page content with retries and timeout protection
+			try:
+				page_html_result = await asyncio.wait_for(page.content(), timeout=15.0)  # 30 second timeout
+			except TimeoutError:
+				return ActionResult(error='Page content extraction timed out after 30 seconds')
+			except Exception as e:
+				return ActionResult(error=f"Couldn't extract page content due to an error: {e}")
+
 			page_html = page_html_result
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
@@ -373,8 +375,12 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					# Run markdownify in a thread pool for iframe content as well
 					try:
-						iframe_html = await iframe.content()
+						# Add timeout protection for iframe content extraction
+						iframe_html = await asyncio.wait_for(iframe.content(), timeout=10.0)  # 10 second timeout
 						iframe_markdown = await loop.run_in_executor(None, markdownify_func, iframe_html)
+					except TimeoutError:
+						logger.warning(f'Iframe content extraction timed out for {iframe.url} (10s timeout)')
+						iframe_markdown = f'[Iframe content extraction timed out: {iframe.url}]'
 					except Exception as e:
 						logger.debug(f'Error extracting iframe content from within page {page.url}: {type(e).__name__}: {e}')
 						iframe_markdown = ''
@@ -397,7 +403,11 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
 			try:
 				formatted_prompt = prompt.format(query=query, page=content)
-				response = await page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)])
+				# Add timeout protection for LLM call
+				response = await asyncio.wait_for(
+					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
+					timeout=60.0,  # 60 second timeout for LLM call
+				)
 
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
 
@@ -426,6 +436,10 @@ Explain the content of the page and that the requested information is not availa
 					include_extracted_content_only_once=include_extracted_content_only_once,
 					long_term_memory=memory,
 				)
+			except TimeoutError:
+				error_msg = f'LLM call timed out in extract_structured_data after 60 seconds for query: {query}'
+				logger.warning(error_msg)
+				return ActionResult(error=error_msg)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
 				msg = f'📄  Extracted from page\n: {content}\n'
