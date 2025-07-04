@@ -1444,9 +1444,12 @@ async def run_agent_with_browser(
 		async def login_cookie_step_callback(browser_state_summary, agent_output, step_number):
 			"""Callback to check login cookie after each step"""
 			try:
-				await check_login_cookie_at_step(
-					browser_session=browser_session, task_id=task.task_id, login_cookie=task.login_cookie, step=step_number
-				)
+				if task.login_cookie is not None:
+					await check_login_cookie_at_step(
+						browser_session=browser_session, task_id=task.task_id, login_cookie=task.login_cookie, step=step_number
+					)
+				else:
+					logger.warning(f'❌ Task {task.task_id} Step {step_number}: login_cookie is None, skipping check')
 			except Exception as e:
 				logger.warning(f'❌ Error checking login cookie at step {step_number}: {type(e).__name__}: {e}')
 
