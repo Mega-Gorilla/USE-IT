@@ -22,8 +22,8 @@ _gmail_service: GmailService | None = None
 class GetRecentEmailsParams(BaseModel):
 	"""Parameters for getting recent emails"""
 
-	keyword: str = Field(default='', description='Search keyword')
-	max_results: int = Field(default=10, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 10)')
+	keyword: str = Field(default='', description='A single keyword for search, e.g. github, airbnb, etc.')
+	max_results: int = Field(default=3, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 3)')
 
 
 def register_gmail_actions(
@@ -47,7 +47,7 @@ def register_gmail_actions(
 		_gmail_service = GmailService()
 
 	@controller.registry.action(
-		description='Get recent emails from the mailbox with a keyword to retrieve verification codes, OTP, 2FA tokens, or any recent email content.',
+		description='Get recent emails from the mailbox with a keyword to retrieve verification codes, OTP, 2FA tokens, magic links, or any recent email content. Keep your query a single keyword.',
 		param_model=GetRecentEmailsParams,
 	)
 	async def get_recent_emails(params: GetRecentEmailsParams) -> ActionResult:
