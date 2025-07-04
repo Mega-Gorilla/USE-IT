@@ -3130,12 +3130,6 @@ if __name__ == '__main__':
 	else:
 		logger.info('🔍 Using default Google search')
 
-	# Log memory configuration
-	if args.enable_memory:
-		logger.info(f'🧠 Memory enabled: mem0 system with interval={args.memory_interval} steps')
-	else:
-		logger.info('🧠 Memory disabled')
-
 	# Log browser mode being used
 	if args.use_anchor:
 		if ANCHOR_BROWSER_API_KEY:
