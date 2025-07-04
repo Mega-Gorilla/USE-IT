@@ -1235,7 +1235,8 @@
     }
 
     // Early viewport check - only filter out elements clearly outside viewport
-    if (viewportExpansion !== -1) {
+    // The getBoundingClientRect() of the Shadow DOM host element may return width/height = 0
+    if (viewportExpansion !== -1 && !node.shadowRoot) {
       const rect = getCachedBoundingRect(node); // Keep for initial quick check
       const style = getCachedComputedStyle(node);
 
