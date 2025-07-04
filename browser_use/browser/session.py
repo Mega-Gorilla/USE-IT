@@ -698,13 +698,13 @@ class BrowserSession(BaseModel):
 		await self.setup_new_browser_context()
 
 	@retry(
-		wait=0.5,  # wait 0.5s between attempts - aggressive
-		retries=2,  # only 2 attempts - fail fast
-		timeout=5,  # 5 second aggressive timeout
+		wait=1,  # wait 1s between attempts
+		retries=3,  # 3 attempts
+		timeout=15,  # 15 second reasonable timeout
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
 		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
-		semaphore_timeout=2,  # 2 second aggressive semaphore timeout
+		semaphore_timeout=5,  # 5 second semaphore timeout
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page) -> str:
@@ -758,15 +758,15 @@ class BrowserSession(BaseModel):
 		await page.bring_to_front()
 
 		try:
-			# Aggressive timeout for screenshot
+			# Reasonable timeout for screenshot
 			screenshot = await asyncio.wait_for(
 				page.screenshot(
 					full_page=False,
-					timeout=3000,  # 3 second aggressive playwright timeout
+					timeout=10000,  # 10 second playwright timeout
 					animations='allow',
 					caret='initial',
 				),
-				timeout=4.0,  # 4 second aggressive asyncio timeout
+				timeout=12.0,  # 12 second asyncio timeout
 			)
 		except TimeoutError:
 			self.logger.warning('🚨 Screenshot deadlock detected (asyncio timeout), restarting browser...')
@@ -2400,22 +2400,8 @@ class BrowserSession(BaseModel):
 		elapsed = time.time() - start_time
 		remaining = max((timeout_overwrite or self.browser_profile.minimum_wait_page_load_time) - elapsed, 0)
 
-		# just for logging, calculate how much data was downloaded
-		try:
-			bytes_used = await page.evaluate("""
-				() => {
-					let total = 0;
-					for (const entry of performance.getEntriesByType('resource')) {
-						total += entry.transferSize || 0;
-					}
-					for (const nav of performance.getEntriesByType('navigation')) {
-						total += nav.transferSize || 0;
-					}
-					return total;
-				}
-			""")
-		except Exception:
-			bytes_used = None
+		# Skip expensive performance API logging - can cause significant delays on complex pages
+		bytes_used = None
 
 		try:
 			tab_idx = self.tabs.index(page)
@@ -2643,6 +2629,7 @@ class BrowserSession(BaseModel):
 	@time_execution_async('--get_state_summary')
 	@require_initialization
 	async def get_state_summary(self, cache_clickable_elements_hashes: bool) -> BrowserStateSummary:
+		self.logger.debug('🔄 Starting get_state_summary...')
 		"""Get a summary of the current browser state
 
 		This method builds a BrowserStateSummary object that captures the current state
@@ -2690,15 +2677,16 @@ class BrowserSession(BaseModel):
 		# Check if current page is still valid, if not switch to another available page
 		try:
 			# Test if page is still accessible
-			await page.evaluate('1')
+			await asyncio.wait_for(page.evaluate('1'), timeout=5.0)
 		except Exception as e:
 			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
 			raise BrowserError('Browser closed: no valid pages available')
 
 		try:
+			self.logger.debug('🧹 Removing highlights...')
 			await self.remove_highlights()
+			self.logger.debug('🌳 Starting DOM processing...')
 			dom_service = DomService(page, logger=self.logger)
-			# Add timeout protection for DOM processing to prevent indefinite hangs on complex pages
 			try:
 				content = await asyncio.wait_for(
 					dom_service.get_clickable_elements(
@@ -2706,13 +2694,32 @@ class BrowserSession(BaseModel):
 						viewport_expansion=self.browser_profile.viewport_expansion,
 						highlight_elements=self.browser_profile.highlight_elements,
 					),
-					timeout=10.0,  # 10 second aggressive timeout
+					timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
 				)
+				self.logger.debug('✅ DOM processing completed')
 			except TimeoutError:
-				self.logger.warning(f'DOM processing timed out after 10 seconds for {page.url}')
-				raise BrowserError(f'DOM timeout: {page.url}')
+				self.logger.warning(f'DOM processing timed out after 45 seconds for {page.url}')
+				self.logger.warning('🔄 Falling back to minimal DOM state to allow basic navigation...')
 
+				# Create minimal DOM state for basic navigation
+				from browser_use.dom.views import DOMElementNode
+
+				minimal_element_tree = DOMElementNode(
+					tag_name='body',
+					xpath='/body',
+					attributes={},
+					children=[],
+					is_visible=True,
+					parent=None,
+				)
+
+				from browser_use.dom.views import DOMState
+
+				content = DOMState(element_tree=minimal_element_tree, selector_map={})
+
+			self.logger.debug('📋 Getting tabs info...')
 			tabs_info = await self.get_tabs_info()
+			self.logger.debug('✅ Tabs info completed')
 
 			# Get all cross-origin iframes within the page and open them in new tabs
 			# mark the titles of the new tabs so the LLM knows to check them for additional content
@@ -2736,28 +2743,50 @@ class BrowserSession(BaseModel):
 			# 	)
 
 			try:
-				# Aggressive timeout for screenshot - fail fast
+				self.logger.debug('📸 Starting screenshot...')
+				# Reasonable timeout for screenshot
 				screenshot_b64 = await asyncio.wait_for(
 					self.take_screenshot(),
-					timeout=5.0,  # 5 second aggressive timeout
+					timeout=15.0,  # 15 second reasonable timeout
 				)
+				self.logger.debug('✅ Screenshot completed')
 			except Exception as e:
 				self.logger.warning(f'Screenshot failed for {page.url}: {type(e).__name__}')
 				screenshot_b64 = None
 
-			pixels_above, pixels_below = await self.get_scroll_info(page)
+			try:
+				self.logger.debug('📏 Getting scroll info...')
+				pixels_above, pixels_below = await asyncio.wait_for(self.get_scroll_info(page), timeout=5.0)
+				self.logger.debug('✅ Scroll info completed')
+			except Exception as e:
+				self.logger.warning(f'Failed to get scroll info: {type(e).__name__}')
+				pixels_above, pixels_below = 0, 0
+
+			try:
+				title = await asyncio.wait_for(page.title(), timeout=5.0)
+			except Exception:
+				title = 'Title unavailable'
+
+			# Check if this is a minimal fallback state
+			browser_errors = []
+			if not content.selector_map:  # Empty selector map indicates fallback state
+				browser_errors.append(
+					f'DOM processing timed out for {page.url} - using minimal state. Basic navigation still available via go_to_url, scroll, and search actions.'
+				)
 
 			self.browser_state_summary = BrowserStateSummary(
 				element_tree=content.element_tree,
 				selector_map=content.selector_map,
 				url=page.url,
-				title=await page.title(),
+				title=title,
 				tabs=tabs_info,
 				screenshot=screenshot_b64,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
+				browser_errors=browser_errors,
 			)
 
+			self.logger.debug('✅ get_state_summary completed successfully')
 			return self.browser_state_summary
 		except Exception as e:
 			self.logger.error(f'❌ Failed to update browser_state_summary: {type(e).__name__}: {e}')
