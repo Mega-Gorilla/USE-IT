@@ -932,6 +932,8 @@ def create_controller(
 
 		except Exception as e:
 			logger.error(f'Failed to setup Gmail integration: {e}')
+	else:
+		logger.info(f'No Gmail 2FA tokens provided, running without Gmail integration: {gmail_tokens_dict}, {task}')
 
 	return controller
 
@@ -2847,11 +2849,6 @@ if __name__ == '__main__':
 	logger = logging.getLogger(__name__)  # Define logger for the module
 
 	logger.info('Running tasks...')
-
-	# Debug: Show all received arguments (for debugging purposes)
-	logger.info('🔧 ARGUMENT DEBUGGING:')
-	logger.info(f'🔧 Total sys.argv length: {len(sys.argv)}')
-	logger.info(f'🔧 Arguments containing "gmail": {[arg for arg in sys.argv if "gmail" in arg.lower()]}')
 
 	# Parse Gmail 2FA tokens - handle GitHub Actions raw object format
 	gmail_tokens_dict = None

@@ -25,6 +25,7 @@ class GetRecentEmailsParams(BaseModel):
 	query: str = Field(
 		default='', description='Gmail search query (e.g., "from:noreply@example.com") - optional additional filter'
 	)
+	max_results: int = Field(default=10, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 10)')
 
 
 def register_gmail_actions(
@@ -48,8 +49,9 @@ def register_gmail_actions(
 		_gmail_service = GmailService()
 
 	@controller.action(
-		description='📧 **Get recent verification emails** - Fetches the last 20 emails from the past 5 minutes with full content. '
-		'Perfect for finding verification codes, OTP, 2FA, or any recent email content. '
+		description='📧 **Get recent emails** - to fetch recent emails from the past 5 minutes with full content. '
+		'Perfect for retrieving verification codes, OTP, 2FA tokens, or any recent email content. '
+		'This action accesses your Gmail inbox to read email messages and extract verification codes. '
 		'Returns complete email content so you can extract verification codes or analyze email details yourself.',
 		param_model=GetRecentEmailsParams,
 	)
@@ -65,12 +67,12 @@ def register_gmail_actions(
 				authenticated = await _gmail_service.authenticate()
 				if not authenticated:
 					return ActionResult(
-						extracted_content='❌ Failed to authenticate with Gmail. Please ensure Gmail credentials are set up properly.',
-						include_in_memory=True,
+						extracted_content='Failed to authenticate with Gmail. Please ensure Gmail credentials are set up properly.',
+						long_term_memory='Gmail authentication failed',
 					)
 
-			# Fixed parameters: 10 emails max, last 5 minutes
-			max_results = 10
+			# Use specified max_results (1-50, default 10), last 5 minutes
+			max_results = params.max_results
 			time_filter = '5m'
 
 			# Build query with time filter and optional user query
@@ -87,53 +89,31 @@ def register_gmail_actions(
 			if not emails:
 				query_info = f" matching '{params.query}'" if params.query.strip() else ''
 				return ActionResult(
-					extracted_content=f'📭 No emails found from the last {time_filter}{query_info}', include_in_memory=True
+					extracted_content=f'No emails found from the last {time_filter}{query_info}',
+					long_term_memory=f'No recent emails found from last {time_filter}',
 				)
 
-			# Format with full email content
-			content = f'📧 Found {len(emails)} recent email{"s" if len(emails) > 1 else ""} from the last {time_filter}:\n\n'
+			# Format with full email content for large display
+			content = f'Found {len(emails)} recent email{"s" if len(emails) > 1 else ""} from the last {time_filter}:\n\n'
 
 			for i, email in enumerate(emails, 1):
-				content += f'📧 Email {i}:\n'
+				content += f'Email {i}:\n'
 				content += f'From: {email["from"]}\n'
 				content += f'Subject: {email["subject"]}\n'
 				content += f'Date: {email["date"]}\n'
 				content += f'Content:\n{email["body"]}\n'
 				content += '-' * 50 + '\n\n'
 
-			return ActionResult(extracted_content=content, include_in_memory=True)
+			logger.info(f'📧 Retrieved {len(emails)} recent emails')
+			return ActionResult(
+				extracted_content=content,
+				include_extracted_content_only_once=True,
+				long_term_memory=f'Retrieved {len(emails)} recent emails from last {time_filter}',
+			)
 
 		except Exception as e:
 			logger.error(f'Error getting recent emails: {e}')
-			return ActionResult(extracted_content=f'❌ Error getting recent emails: {str(e)}', include_in_memory=True)
-
-	@controller.action(
-		description='🔧 **Gmail Setup** - Establishes Gmail connection for email access. '
-		'Usually auto-handled, but call this if email actions report authentication errors. '
-		'Enables automatic retrieval of verification codes and email content.',
-	)
-	async def authenticate_gmail() -> ActionResult:
-		"""Authenticate with Gmail API"""
-		try:
-			if _gmail_service is None:
-				raise RuntimeError('Gmail service not initialized')
-
-			authenticated = await _gmail_service.authenticate()
-
-			if authenticated:
-				return ActionResult(
-					extracted_content='✅ Successfully authenticated with Gmail API. Ready to read emails.',
-					include_in_memory=True,
-				)
-			else:
-				return ActionResult(
-					extracted_content='❌ Failed to authenticate with Gmail. Please check your credentials setup:\n'
-					'1. Download OAuth credentials from Google Cloud Console\n'
-					"2. Save as 'gmail_credentials.json' in ~/.config/browseruse/\n"
-					'3. Try again',
-					include_in_memory=True,
-				)
-
-		except Exception as e:
-			logger.error(f'Error authenticating Gmail: {e}')
-			return ActionResult(extracted_content=f'❌ Error authenticating with Gmail: {str(e)}', include_in_memory=True)
+			return ActionResult(
+				error=f'Error getting recent emails: {str(e)}',
+				long_term_memory='Failed to get recent emails due to error',
+			)
