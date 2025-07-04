@@ -881,22 +881,54 @@ def create_controller_with_serp_search(output_model: type[BaseModel] | None = No
 	return controller
 
 
-def create_controller(use_serp: bool = False, output_model: type[BaseModel] | None = None, gmail_access_token: str | None = None):
+def create_controller(
+	use_serp: bool = False,
+	output_model: type[BaseModel] | None = None,
+	gmail_tokens_dict: dict[str, str] | None = None,
+	task: 'Task | None' = None,
+):
 	"""Create a controller, optionally with SERP search and Gmail 2FA support"""
 	if use_serp:
 		controller = create_controller_with_serp_search(output_model=output_model)
 	else:
 		controller = Controller(output_model=output_model)
 
-	# Add Gmail 2FA support if access token is available
-	if gmail_access_token:
+	# Add Gmail 2FA support if tokens dict is available and task contains email
+	if gmail_tokens_dict and task:
 		try:
-			from browser_use.integrations.gmail import register_gmail_actions
+			# Extract username from task - check multiple possible sources
+			username = None
 
-			# Register Gmail actions using the access token
-			register_gmail_actions(controller, access_token=gmail_access_token)
+			# Check if task has email field directly
+			if hasattr(task, 'username') and getattr(task, 'username', None):
+				username = getattr(task, 'username')
+			# Check if email is in task description or other fields
+			elif hasattr(task, 'confirmed_task') and '@' in task.confirmed_task:
+				# Extract email from task description using regex
+				import re
 
-			logger.info('Gmail 2FA integration registered successfully with access token')
+				email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+				matches = re.findall(email_pattern, task.confirmed_task)
+				if matches:
+					username = matches[0]
+
+			if username:
+				# Extract user ID (part before @)
+				user_id = username.split('@')[0]
+
+				# Look up access token in the dictionary
+				access_token = gmail_tokens_dict.get(user_id)
+
+				if access_token:
+					from browser_use.integrations.gmail import register_gmail_actions
+
+					# Register Gmail actions using the access token
+					register_gmail_actions(controller, access_token=access_token)
+					logger.info(f'Gmail 2FA integration registered successfully for user {user_id}')
+				else:
+					logger.info(f'No Gmail 2FA token found for user {user_id}, running without Gmail integration')
+			else:
+				logger.info('No email found in task, running without Gmail integration')
 
 		except Exception as e:
 			logger.error(f'Failed to setup Gmail integration: {e}')
@@ -1436,11 +1468,13 @@ async def run_agent_with_browser(
 	planner_llm: BaseChatModel | None = None,
 	planner_interval: int = 1,
 	use_thinking: bool = True,
-	gmail_access_token: str | None = None,
+	gmail_tokens_dict: dict[str, str] | None = None,
 ) -> tuple[AgentHistoryList, str]:
 	"""Run agent with the browser session"""
 	# Create controller, optionally with SERP search, structured output, and Gmail 2FA support
-	controller = create_controller(use_serp=use_serp, output_model=task.output_model, gmail_access_token=gmail_access_token)
+	controller = create_controller(
+		use_serp=use_serp, output_model=task.output_model, gmail_tokens_dict=gmail_tokens_dict, task=task
+	)
 
 	# Check for deprecated memory parameters
 	if enable_memory:
@@ -1731,7 +1765,7 @@ async def run_task_with_semaphore(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
-	gmail_access_token: str | None = None,
+	gmail_tokens_dict: dict[str, str] | None = None,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -1863,7 +1897,7 @@ async def run_task_with_semaphore(
 								planner_llm,
 								planner_interval,
 								use_thinking,
-								gmail_access_token,
+								gmail_tokens_dict,
 							),
 							timeout=1000,
 						)
@@ -2133,7 +2167,7 @@ async def run_multiple_tasks(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
-	gmail_access_token: str | None = None,
+	gmail_tokens_dict: dict[str, str] | None = None,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -2213,7 +2247,7 @@ async def run_multiple_tasks(
 					highlight_elements=highlight_elements,
 					use_mind2web_judge=use_mind2web_judge,
 					use_thinking=use_thinking,
-					gmail_access_token=gmail_access_token,
+					gmail_tokens_dict=gmail_tokens_dict,
 				)
 				for task in tasks_to_run
 			),
@@ -2573,7 +2607,7 @@ async def run_evaluation_pipeline(
 	highlight_elements: bool = True,
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
-	gmail_access_token: str | None = None,
+	gmail_tokens_dict: dict[str, str] | None = None,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -2626,7 +2660,7 @@ async def run_evaluation_pipeline(
 		highlight_elements=highlight_elements,
 		use_mind2web_judge=use_mind2web_judge,
 		use_thinking=use_thinking,
-		gmail_access_token=gmail_access_token,
+		gmail_tokens_dict=gmail_tokens_dict,
 	)
 
 
@@ -2794,10 +2828,10 @@ if __name__ == '__main__':
 
 	# Gmail 2FA support arguments
 	parser.add_argument(
-		'--gmail-2fa-access-token',
+		'--gmail-2fa-tokens',
 		type=str,
 		default=None,
-		help='Access token for Gmail 2FA Lambda function (enables Gmail 2FA if provided)',
+		help='JSON dictionary of user IDs to access tokens for Gmail 2FA (e.g., \'{"user123": "token1", "user456": "token2"}\')',
 	)
 
 	# Single task mode arguments
@@ -2819,13 +2853,20 @@ if __name__ == '__main__':
 	logger.info(f'🔧 Total sys.argv length: {len(sys.argv)}')
 	logger.info(f'🔧 Arguments containing "gmail": {[arg for arg in sys.argv if "gmail" in arg.lower()]}')
 
-	# Debug Gmail 2FA token
-	logger.info(f'🔧 Gmail 2FA token received: {"YES" if args.gmail_2fa_access_token else "NO"}')
-	if args.gmail_2fa_access_token:
-		logger.info(f'🔧 Gmail 2FA token length: {len(args.gmail_2fa_access_token)}')
-		logger.info(f'🔧 Gmail 2FA token first 20 chars: {args.gmail_2fa_access_token[:20]}...')
+	# Parse Gmail 2FA tokens dictionary
+	gmail_tokens_dict = None
+	if args.gmail_2fa_tokens:
+		try:
+			gmail_tokens_dict = json.loads(args.gmail_2fa_tokens)
+			logger.info(f'🔧 Gmail 2FA tokens received: {"YES" if gmail_tokens_dict else "NO"}')
+			if gmail_tokens_dict:
+				logger.info(f'🔧 Gmail 2FA tokens count: {len(gmail_tokens_dict)}')
+				logger.info(f'🔧 Gmail 2FA users: {list(gmail_tokens_dict.keys())}')
+		except json.JSONDecodeError as e:
+			logger.error(f'🔧 Failed to parse Gmail 2FA tokens JSON: {e}')
+			gmail_tokens_dict = None
 	else:
-		logger.info('🔧 Gmail 2FA token is None or empty')
+		logger.info('🔧 Gmail 2FA tokens: None or empty')
 	# Run tasks and evaluate
 	load_dotenv()
 
@@ -3058,7 +3099,7 @@ if __name__ == '__main__':
 				highlight_elements=args.highlight_elements,
 				use_mind2web_judge=args.use_mind2web_judge,
 				use_thinking=not args.no_thinking,
-				gmail_access_token=args.gmail_2fa_access_token,
+				gmail_tokens_dict=gmail_tokens_dict,
 			)
 		)
 

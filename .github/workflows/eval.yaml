@@ -253,7 +253,7 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
-          GMAIL_2FA_TOKEN="${{ github.event.client_payload.script_args.gmail_2fa_token }}"
+          GMAIL_2FA_TOKENS="${{ github.event.client_payload.script_args.gmail_2fa_tokens }}"
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
@@ -297,10 +297,10 @@ jobs:
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
           
           # Add Gmail 2FA parameters
-          if [[ -n "$GMAIL_2FA_TOKEN" ]]; then
-            CMD_ARGS+=("--gmail-2fa-access-token" "$GMAIL_2FA_TOKEN")
+          if [[ -n "$GMAIL_2FA_TOKENS" ]]; then
+            CMD_ARGS+=("--gmail-2fa-tokens" "$GMAIL_2FA_TOKENS")
           else
-            echo "DEBUG: ❌ GMAIL_2FA_TOKEN conditional failed - token is empty or not set, skipping"
+            echo "DEBUG: ❌ GMAIL_2FA_TOKENS conditional failed - tokens are empty or not set, skipping"
           fi
           
           # Add single task mode parameters
