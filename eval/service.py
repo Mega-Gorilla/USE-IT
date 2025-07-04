@@ -893,8 +893,8 @@ def create_controller(
 	else:
 		controller = Controller(output_model=output_model)
 
-	# Add Gmail 2FA support if tokens dict is available and task contains email
-	if gmail_tokens_dict and task:
+	# Add Gmail 2FA support if tokens dict is available and task has login_type OTP
+	if gmail_tokens_dict and task and hasattr(task, 'login_type') and task.login_type == 'OTP':
 		try:
 			# Extract username from task - check multiple possible sources
 			username = None
@@ -924,16 +924,22 @@ def create_controller(
 
 					# Register Gmail actions using the access token
 					controller = register_gmail_actions(controller, access_token=access_token)
-					logger.info(f'Gmail 2FA integration registered successfully for user {user_id}')
+					logger.info(f'Gmail 2FA integration registered successfully for user {user_id} (OTP task)')
 				else:
 					logger.info(f'No Gmail 2FA token found for user {user_id}, running without Gmail integration')
 			else:
-				logger.info('No email found in task, running without Gmail integration')
+				logger.info('No email found in OTP task, running without Gmail integration')
 
 		except Exception as e:
 			logger.error(f'Failed to setup Gmail integration: {e}')
 	else:
-		logger.info(f'No Gmail 2FA tokens provided, running without Gmail integration: {gmail_tokens_dict}, {task}')
+		if gmail_tokens_dict and task:
+			if not hasattr(task, 'login_type') or task.login_type != 'OTP':
+				logger.info(f'Task login_type is "{getattr(task, "login_type", "None")}", not OTP - skipping Gmail integration')
+			else:
+				logger.info('Gmail 2FA tokens provided but no task or task missing login_type')
+		else:
+			logger.info('No Gmail 2FA tokens provided or no task, running without Gmail integration')
 
 	return controller
 
