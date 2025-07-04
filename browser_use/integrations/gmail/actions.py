@@ -22,9 +22,7 @@ _gmail_service: GmailService | None = None
 class GetRecentEmailsParams(BaseModel):
 	"""Parameters for getting recent emails"""
 
-	query: str = Field(
-		default='', description='Gmail search query (e.g., "from:noreply@example.com") - optional additional filter'
-	)
+	query: str = Field(default='', description='Gmail search query (e.g., "from:noreply@example.com")')
 	max_results: int = Field(default=10, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 10)')
 
 
@@ -49,10 +47,7 @@ def register_gmail_actions(
 		_gmail_service = GmailService()
 
 	@controller.action(
-		description='📧 **Get recent emails** - to fetch recent emails from the past 5 minutes with full content. '
-		'Perfect for retrieving verification codes, OTP, 2FA tokens, or any recent email content. '
-		'This action accesses your Gmail inbox to read email messages and extract verification codes. '
-		'Returns complete email content so you can extract verification codes or analyze email details yourself.',
+		description='Get recent emails from the mailbox with a query to retrieve verification codes, OTP, 2FA tokens, or any recent email content.',
 		param_model=GetRecentEmailsParams,
 	)
 	async def get_recent_emails(params: GetRecentEmailsParams) -> ActionResult:
@@ -88,9 +83,10 @@ def register_gmail_actions(
 
 			if not emails:
 				query_info = f" matching '{params.query}'" if params.query.strip() else ''
+				memory = f'No recent emails found from last {time_filter}{query_info}'
 				return ActionResult(
-					extracted_content=f'No emails found from the last {time_filter}{query_info}',
-					long_term_memory=f'No recent emails found from last {time_filter}',
+					extracted_content=memory,
+					long_term_memory=memory,
 				)
 
 			# Format with full email content for large display
@@ -108,7 +104,7 @@ def register_gmail_actions(
 			return ActionResult(
 				extracted_content=content,
 				include_extracted_content_only_once=True,
-				long_term_memory=f'Retrieved {len(emails)} recent emails from last {time_filter}',
+				long_term_memory=f'Retrieved {len(emails)} recent emails from last {time_filter} for query {query}.',
 			)
 
 		except Exception as e:
