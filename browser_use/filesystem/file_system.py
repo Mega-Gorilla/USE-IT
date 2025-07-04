@@ -94,6 +94,22 @@ class TxtFile(BaseFile):
 		return 'txt'
 
 
+class JsonFile(BaseFile):
+	"""JSON file implementation"""
+
+	@property
+	def extension(self) -> str:
+		return 'json'
+
+
+class CsvFile(BaseFile):
+	"""CSV file implementation"""
+
+	@property
+	def extension(self) -> str:
+		return 'csv'
+
+
 class FileSystemState(BaseModel):
 	"""Serializable state of the file system"""
 
@@ -120,6 +136,8 @@ class FileSystem:
 		self._file_types: dict[str, type[BaseFile]] = {
 			'md': MarkdownFile,
 			'txt': TxtFile,
+			'json': JsonFile,
+			'csv': CsvFile,
 		}
 
 		self.files = {}
@@ -188,8 +206,37 @@ class FileSystem:
 
 		return file_obj.read()
 
-	def read_file(self, full_filename: str) -> str:
+	async def read_file(self, full_filename: str, external_file: bool = False) -> str:
 		"""Read file content using file-specific read method and return appropriate message to LLM"""
+		if external_file:
+			try:
+				_, extension = self._parse_filename(full_filename)
+				if extension in ['md', 'txt', 'json', 'csv']:
+					import anyio
+
+					async with await anyio.open_file(full_filename, 'r') as f:
+						content = await f.read()
+						return f'Read from file {full_filename}.\n<content>\n{content}\n</content>'
+				elif extension == 'pdf':
+					import pypdf
+
+					reader = pypdf.PdfReader(full_filename)
+					num_pages = len(reader.pages)
+					MAX_PDF_PAGES = 5
+					extra_pages = num_pages - MAX_PDF_PAGES
+					extracted_text = ''
+					for page in reader.pages[:MAX_PDF_PAGES]:
+						extracted_text += page.extract_text()
+					return f'Read from file {full_filename}.\n<content>\n{extracted_text}\n{extra_pages} more pages...</content>'
+				else:
+					return f'Error: Cannot read file {full_filename} as {extension} extension is not supported.'
+			except FileNotFoundError:
+				return f"Error: File '{full_filename}' not found."
+			except PermissionError:
+				return f"Error: Permission denied to read file '{full_filename}'."
+			except Exception as e:
+				return f"Error: Could not read external file '{full_filename}'. {str(e)}"
+
 		if not self._is_valid_filename(full_filename):
 			return INVALID_FILENAME_ERROR_MESSAGE
 
