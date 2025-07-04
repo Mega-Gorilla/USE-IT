@@ -3,6 +3,7 @@ import enum
 import json
 import logging
 import os
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
@@ -353,38 +354,52 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 
 			# Try getting page content with retries and timeout protection
 			try:
-				page_html_result = await asyncio.wait_for(page.content(), timeout=15.0)  # 30 second timeout
+				page_html_result = await asyncio.wait_for(page.content(), timeout=10.0)  # 15 second timeout
 			except TimeoutError:
-				return ActionResult(error='Page content extraction timed out after 30 seconds')
+				return ActionResult(error='Page content extraction timed out after 10 seconds. Page content might be too long.')
 			except Exception as e:
 				return ActionResult(error=f"Couldn't extract page content due to an error: {e}")
 
 			page_html = page_html_result
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
-			content = await loop.run_in_executor(None, markdownify_func, page_html)
+
+			content = await asyncio.wait_for(
+				loop.run_in_executor(None, markdownify_func, page_html),
+				timeout=10.0,  # 10 second timeout for main page markdownify
+			)
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
 				try:
-					await iframe.wait_for_load_state(timeout=5000)  # extra on top of already loaded page
+					# some pages have 100 iframes so we should not wait too long here
+					await iframe.wait_for_load_state(timeout=100)  # extra on top of already loaded page
 				except Exception as e:
+					logger.debug(f'Error waiting for iframe load state: {type(e).__name__}: {e}')
 					pass
 
-				if iframe.url != page.url and not iframe.url.startswith('data:'):
+				if iframe.url != page.url and not iframe.url.startswith('data:') and not iframe.url.startswith('about:'):
 					content += f'\n\nIFRAME {iframe.url}:\n'
 					# Run markdownify in a thread pool for iframe content as well
 					try:
 						# Add timeout protection for iframe content extraction
-						iframe_html = await asyncio.wait_for(iframe.content(), timeout=10.0)  # 10 second timeout
-						iframe_markdown = await loop.run_in_executor(None, markdownify_func, iframe_html)
+						iframe_html = await asyncio.wait_for(iframe.content(), timeout=5.0)  # 5 second timeout
+						# Add timeout protection for iframe markdownify to prevent indefinite hangs
+						iframe_markdown = await asyncio.wait_for(
+							loop.run_in_executor(None, markdownify_func, iframe_html),
+							timeout=5.0,  # 5 second timeout for iframe markdownify
+						)
 					except TimeoutError:
-						logger.warning(f'Iframe content extraction timed out for {iframe.url} (10s timeout)')
-						iframe_markdown = f'[Iframe content extraction timed out: {iframe.url}]'
+						logger.warning(
+							f'Iframe processing timed out for {iframe.url} (content extraction or markdownify timeout)'
+						)
+						iframe_markdown = f'[Iframe processing timed out: {iframe.url}]'
 					except Exception as e:
 						logger.debug(f'Error extracting iframe content from within page {page.url}: {type(e).__name__}: {e}')
 						iframe_markdown = ''
 					content += iframe_markdown
+			# replace multiple sequential \n with a single \n
+			content = re.sub(r'\n+', '\n', content)
 
 			# limit to 40000 characters - remove text in the middle this is approx 20000 tokens
 			max_chars = 40000
@@ -437,7 +452,7 @@ Explain the content of the page and that the requested information is not availa
 					long_term_memory=memory,
 				)
 			except TimeoutError:
-				error_msg = f'LLM call timed out in extract_structured_data after 60 seconds for query: {query}'
+				error_msg = f'LLM call timed out in extract_structured_data after 60 seconds. Output or page content might be too long for query: {query}'
 				logger.warning(error_msg)
 				return ActionResult(error=error_msg)
 			except Exception as e:
