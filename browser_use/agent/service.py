@@ -623,6 +623,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		except Exception as e:
 			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
 
+		self.logger.warning('🔄 Falling back to minimal state summary')
 		return await self._get_minimal_state_summary()
 
 	async def _get_minimal_state_summary(self) -> BrowserStateSummary:
@@ -640,13 +641,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Try to get title safely
 		try:
-			title = await page.title()
+			# timeout after 5 seconds
+			title = await asyncio.wait_for(page.title(), timeout=2.0)
 		except Exception:
 			title = 'Page Load Error'
 
 		# Try to get tabs info safely
 		try:
-			tabs_info = await self.browser_session.get_tabs_info()
+			# timeout after 5 seconds
+			tabs_info = await asyncio.wait_for(self.browser_session.get_tabs_info(), timeout=2.0)
 		except Exception:
 			tabs_info = []
 
@@ -813,7 +816,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(model_output.action)} actions...')
 			result: list[ActionResult] = await asyncio.wait_for(
 				self.multi_act(model_output.action),
-				timeout=20,  # 20 second aggressive timeout for actions
+				timeout=60,  # 60 second timeout for actions
 			)
 			# result: list[ActionResult] = await self.multi_act(model_output.action)
 			self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
@@ -1243,7 +1246,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await asyncio.wait_for(
 					self.step(step_info),
-					timeout=30,  # 30 second aggressive timeout per step
+					timeout=60,  # 2 minute step timeout - less aggressive
 				)
 				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 
