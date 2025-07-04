@@ -848,16 +848,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug(f'InterruptedError: {type(e).__name__}: {e}')
 			self.state.last_result = [
 				ActionResult(
-					error='The agent was paused mid-step - the last action might need to be repeated',
-					include_in_memory=True,
+					error='The agent was interrupted mid-step' + (f' - {e}' if e else ''),
 				)
 			]
+			self.state.consecutive_failures += 1
 			return
 		except asyncio.CancelledError as e:
 			# Directly handle the case where the step is cancelled at a higher level
 			# self.logger.debug('Task cancelled - agent was paused with Ctrl+C')
 			self.logger.debug(f'asyncio.CancelledError: {type(e).__name__}: {e}')
-			self.state.last_result = [ActionResult(error='The agent was paused with Ctrl+C', include_in_memory=True)]
+			self.state.last_result = [
+				ActionResult(
+					error='The agent was interrupted mid-step' + (f' - {e}' if e else ''),
+				)
+			]
+			self.state.consecutive_failures += 1
 			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
