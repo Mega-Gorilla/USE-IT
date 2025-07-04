@@ -253,7 +253,7 @@ jobs:
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
-          GMAIL_2FA_TOKENS="${{ github.event.client_payload.script_args.gmail_2fa_tokens }}"
+          GMAIL_2FA_TOKENS="${{ toJSON(github.event.client_payload.script_args.gmail_2fa_tokens) }}"
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
