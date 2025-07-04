@@ -235,7 +235,7 @@ class FileSystem:
 			except PermissionError:
 				return f"Error: Permission denied to read file '{full_filename}'."
 			except Exception as e:
-				return f"Error: Could not read external file '{full_filename}'. {str(e)}"
+				return f"Error: Could not read file '{full_filename}'."
 
 		if not self._is_valid_filename(full_filename):
 			return INVALID_FILENAME_ERROR_MESSAGE
