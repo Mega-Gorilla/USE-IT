@@ -28,7 +28,7 @@ class GetRecentEmailsParams(BaseModel):
 
 def register_gmail_actions(
 	controller: Controller, gmail_service: GmailService | None = None, access_token: str | None = None
-) -> None:
+) -> Controller:
 	"""
 	Register Gmail actions with the provided controller
 	Args:
@@ -46,7 +46,7 @@ def register_gmail_actions(
 	else:
 		_gmail_service = GmailService()
 
-	@controller.action(
+	@controller.registry.action(
 		description='Get recent emails from the mailbox with a query to retrieve verification codes, OTP, 2FA tokens, or any recent email content.',
 		param_model=GetRecentEmailsParams,
 	)
@@ -113,3 +113,5 @@ def register_gmail_actions(
 				error=f'Error getting recent emails: {str(e)}',
 				long_term_memory='Failed to get recent emails due to error',
 			)
+
+	return controller

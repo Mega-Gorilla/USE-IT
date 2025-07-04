@@ -923,7 +923,7 @@ def create_controller(
 					from browser_use.integrations.gmail import register_gmail_actions
 
 					# Register Gmail actions using the access token
-					register_gmail_actions(controller, access_token=access_token)
+					controller = register_gmail_actions(controller, access_token=access_token)
 					logger.info(f'Gmail 2FA integration registered successfully for user {user_id}')
 				else:
 					logger.info(f'No Gmail 2FA token found for user {user_id}, running without Gmail integration')
