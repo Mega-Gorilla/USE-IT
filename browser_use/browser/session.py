@@ -2679,7 +2679,7 @@ class BrowserSession(BaseModel):
 		# Check if current page is still valid, if not switch to another available page
 		try:
 			# Test if page is still accessible
-			await asyncio.wait_for(page.evaluate('1'), timeout=5.0)
+			await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
 		except Exception as e:
 			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
 			raise BrowserError('Browser closed: no valid pages available')
@@ -2747,10 +2747,7 @@ class BrowserSession(BaseModel):
 			try:
 				self.logger.debug('📸 Starting screenshot...')
 				# Reasonable timeout for screenshot
-				screenshot_b64 = await asyncio.wait_for(
-					self.take_screenshot(),
-					timeout=15.0,  # 15 second reasonable timeout
-				)
+				screenshot_b64 = await self.take_screenshot()
 				self.logger.debug('✅ Screenshot completed')
 			except Exception as e:
 				self.logger.warning(f'Screenshot failed for {page.url}: {type(e).__name__}')
@@ -2808,13 +2805,6 @@ class BrowserSession(BaseModel):
 
 		# page has already loaded by this point, this is just extra for previous action animations/frame loads to settle
 		page = await self.get_current_page()
-
-		# Fast pre-check for crashed targets
-		if page.is_closed():
-			self.logger.warning('🚨 Current page is closed/crashed, attempting to recover...')
-			self._reset_connection_state()
-			await self.start()
-			page = await self.get_current_page()
 
 		try:
 			await page.wait_for_load_state(timeout=2000)  # 2 second aggressive timeout
