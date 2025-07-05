@@ -2691,10 +2691,11 @@ class BrowserSession(BaseModel):
 		# Check if current page is still valid, if not switch to another available page
 		try:
 			# Test if page is still accessible
+			# NOTE: This also happens on invalid urls like www.sadfdsafdssdafd.com
 			await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
 		except Exception as e:
 			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
-			raise BrowserError('Browser closed: no valid pages available')
+			raise BrowserError('Page is not accessible')
 
 		try:
 			self.logger.debug('🧹 Removing highlights...')

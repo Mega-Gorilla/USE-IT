@@ -144,7 +144,7 @@ class Controller(Generic[Context]):
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
-					return ActionResult(error=site_unavailable_msg, include_in_memory=True)
+					return ActionResult(error=site_unavailable_msg)
 				else:
 					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
 					raise
