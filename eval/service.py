@@ -81,16 +81,28 @@ load_dotenv()
 # Check for Anchor Browser API key
 ANCHOR_BROWSER_API_KEY = os.getenv('ANCHOR_BROWSER_API_KEY')
 if ANCHOR_BROWSER_API_KEY:
-	logger.info('ANCHOR_BROWSER_API_KEY is set. Tasks will use Anchor Browser.')
+	logger.info('ANCHOR_BROWSER_API_KEY is set. Tasks can use Anchor Browser.')
 else:
-	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Tasks will use local browser.')
+	logger.warning('ANCHOR_BROWSER_API_KEY is not set. Anchor Browser will not be available.')
+
+# Check for Brightdata CDP URL
+BRIGHTDATA_CDP_URL = os.getenv('BRIGHTDATA_CDP_URL')
+if BRIGHTDATA_CDP_URL:
+	logger.info('BRIGHTDATA_CDP_URL is set. Tasks can use Brightdata browser.')
+else:
+	logger.warning('BRIGHTDATA_CDP_URL is not set. Brightdata browser will not be available.')
 
 
 def create_anchor_browser_session(headless: bool = False) -> str:
 	"""Create an Anchor Browser session and return CDP URL"""
 	browser_configuration = {
-		'session': {'proxy': {'type': 'anchor_residential', 'active': True}},
-		'browser': {'adblock': {'active': True}, 'captcha_solver': {'active': True}, 'headless': {'active': headless}},
+		'session': {'proxy': {'type': 'anchor_mobile', 'active': True, 'country_code': 'us'}},
+		'browser': {
+			'adblock': {'active': True},
+			'captcha_solver': {'active': True},
+			'headless': {'active': headless},
+			'extra_stealth': {'active': True},
+		},
 	}
 
 	try:
@@ -1443,27 +1455,43 @@ async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
 
 
 async def setup_browser_session(
-	task: Task, headless: bool, highlight_elements: bool = True, use_anchor: bool = False
+	task: Task, headless: bool, highlight_elements: bool = True, browser: str = 'local'
 ) -> BrowserSession:
 	"""Setup browser session for the task"""
 
-	# Check for Anchor Browser API key and flag
+	# Validate browser option
+	valid_browsers = ['local', 'anchor-browser', 'brightdata', 'browser-use']
+	if browser not in valid_browsers:
+		logger.warning(f'Browser setup: Invalid browser option "{browser}". Falling back to local browser.')
+		browser = 'local'
+
 	cdp_url = None
 
-	if use_anchor and ANCHOR_BROWSER_API_KEY:
-		try:
-			logger.debug(f'Browser setup: Creating Anchor Browser session for task {task.task_id}')
-			cdp_url = await asyncio.to_thread(create_anchor_browser_session, headless)
-		except Exception as e:
-			logger.error(
-				f'Browser setup: Failed to create Anchor Browser session for task {task.task_id}: {type(e).__name__}: {e}'
+	if browser == 'anchor-browser':
+		if ANCHOR_BROWSER_API_KEY:
+			try:
+				logger.debug(f'Browser setup: Creating Anchor Browser session for task {task.task_id}')
+				cdp_url = await asyncio.to_thread(create_anchor_browser_session, headless)
+			except Exception as e:
+				logger.error(
+					f'Browser setup: Failed to create Anchor Browser session for task {task.task_id}: {type(e).__name__}: {e}'
+				)
+				logger.info(f'Browser setup: Falling back to local browser for task {task.task_id}')
+				cdp_url = None
+		else:
+			logger.warning(
+				f'Browser setup: Anchor Browser requested but ANCHOR_BROWSER_API_KEY not set. Using local browser for task {task.task_id}'
 			)
-			logger.info(f'Browser setup: Falling back to local browser for task {task.task_id}')
-			cdp_url = None
-	elif use_anchor and not ANCHOR_BROWSER_API_KEY:
-		logger.warning(
-			f'Browser setup: Anchor Browser requested but ANCHOR_BROWSER_API_KEY not set. Using local browser for task {task.task_id}'
-		)
+	elif browser == 'brightdata':
+		if BRIGHTDATA_CDP_URL:
+			logger.debug(f'Browser setup: Using Brightdata CDP URL for task {task.task_id}')
+			cdp_url = BRIGHTDATA_CDP_URL
+		else:
+			logger.warning(
+				f'Browser setup: Brightdata requested but BRIGHTDATA_CDP_URL not set. Using local browser for task {task.task_id}'
+			)
+	elif browser == 'browser-use':
+		logger.warning(f'Browser setup: Browser-use not implemented yet. Falling back to local browser for task {task.task_id}')
 
 	profile_kwargs = {
 		'user_data_dir': None,  # Incognito mode - no persistent state
@@ -1846,7 +1874,7 @@ async def run_task_with_semaphore(
 	auth_distribution: dict | None = None,  # Pre-fetched auth distribution
 	github_workflow_url: str | None = None,
 	use_serp: bool = False,
-	use_anchor: bool = False,
+	browser: str = 'local',
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -1943,7 +1971,7 @@ async def run_task_with_semaphore(
 
 					browser_session = await run_stage(
 						Stage.SETUP_BROWSER,
-						lambda: setup_browser_session(task, headless, highlight_elements, use_anchor),
+						lambda: setup_browser_session(task, headless, highlight_elements, browser),
 						timeout=120,
 					)
 					task_result.stage_completed(Stage.SETUP_BROWSER)
@@ -2284,7 +2312,7 @@ async def run_multiple_tasks(
 	headless: bool = False,
 	use_vision: bool = True,
 	use_serp: bool = False,
-	use_anchor: bool = False,
+	browser: str = 'local',
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -2366,7 +2394,7 @@ async def run_multiple_tasks(
 					auth_distribution=auth_distribution,  # Pass the pre-fetched auth distribution
 					github_workflow_url=github_workflow_url,
 					use_serp=use_serp,
-					use_anchor=use_anchor,
+					browser=browser,
 					enable_memory=enable_memory,
 					memory_interval=memory_interval,
 					max_actions_per_step=max_actions_per_step,
@@ -2830,7 +2858,7 @@ async def run_evaluation_pipeline(
 	headless: bool = False,
 	use_vision: bool = True,
 	use_serp: bool = False,
-	use_anchor: bool = False,
+	browser: str = 'local',
 	enable_memory: bool = False,
 	memory_interval: int = 10,
 	max_actions_per_step: int = 10,
@@ -2886,7 +2914,7 @@ async def run_evaluation_pipeline(
 		headless=headless,
 		use_vision=use_vision,
 		use_serp=use_serp,
-		use_anchor=use_anchor,
+		browser=browser,
 		enable_memory=enable_memory,
 		memory_interval=memory_interval,
 		max_actions_per_step=max_actions_per_step,
@@ -3019,7 +3047,12 @@ if __name__ == '__main__':
 	parser.add_argument('--eval-group', type=str, default='', help='Evaluation group to include in the run')
 	parser.add_argument('--developer-id', type=str, default=None, help='Name of the developer starting the run')
 	parser.add_argument('--use-serp', action='store_true', help='Use SERP search instead of Google search')
-	parser.add_argument('--use-anchor', action='store_true', help='Use Anchor Browser (requires ANCHOR_BROWSER_API_KEY)')
+	parser.add_argument(
+		'--browser',
+		type=str,
+		default='local',
+		help='Browser to use: local, anchor-browser, brightdata, browser-use (default: local)',
+	)
 	parser.add_argument('--enable-memory', action='store_true', help='Enable mem0 memory system for agents')
 	parser.add_argument('--memory-interval', type=int, default=10, help='Memory creation interval (default: 10 steps)')
 	parser.add_argument('--max-actions-per-step', type=int, default=10, help='Maximum number of actions per step (default: 10)')
@@ -3291,11 +3324,18 @@ if __name__ == '__main__':
 		logger.info('🔍 Using default Google search')
 
 	# Log browser mode being used
-	if args.use_anchor:
+	if args.browser == 'anchor-browser':
 		if ANCHOR_BROWSER_API_KEY:
 			logger.info('🌐 Using Anchor Browser (remote browser service)')
 		else:
-			logger.warning('⚠️ --use-anchor flag provided but ANCHOR_BROWSER_API_KEY not set. Will use local browser!')
+			logger.warning('⚠️ --browser anchor-browser provided but ANCHOR_BROWSER_API_KEY not set. Will use local browser!')
+	elif args.browser == 'brightdata':
+		if BRIGHTDATA_CDP_URL:
+			logger.info('🌐 Using Brightdata browser (remote browser service)')
+		else:
+			logger.warning('⚠️ --browser brightdata provided but BRIGHTDATA_CDP_URL not set. Will use local browser!')
+	elif args.browser == 'browser-use':
+		logger.warning('🌐 Browser-use not implemented yet. Will use local browser!')
 	else:
 		logger.info('🌐 Using local browser')
 
@@ -3397,7 +3437,7 @@ if __name__ == '__main__':
 				headless=args.headless,
 				use_vision=not args.no_vision,
 				use_serp=args.use_serp,
-				use_anchor=args.use_anchor,
+				browser=args.browser,
 				enable_memory=args.enable_memory,
 				memory_interval=args.memory_interval,
 				max_actions_per_step=args.max_actions_per_step,
