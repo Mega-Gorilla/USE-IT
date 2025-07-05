@@ -2777,7 +2777,7 @@ class BrowserSession(BaseModel):
 				pixels_above, pixels_below = 0, 0
 
 			try:
-				title = await asyncio.wait_for(page.title(), timeout=5.0)
+				title = await self._get_page_title(page)
 			except Exception:
 				title = 'Title unavailable'
 
@@ -3440,7 +3440,12 @@ class BrowserSession(BaseModel):
 			f'Starting agent {str(self.id)[-4:]}...'  # set up by self._show_dvd_screensaver_loading_animation()
 		)
 		for page in self.browser_context.pages:
-			page_title = await page.title()
+			try:
+				# sometimes this fails, because the page is not accessible
+				page_title = await self._get_page_title(page)
+			except Exception:
+				page_title = 'Title unavailable'
+
 			if page.url == 'about:blank' and page != self.agent_current_page and page_title == title_of_our_setup_tab:
 				await page.close()
 				self.human_current_page = (  # in case we just closed the human's tab, fix the refs
