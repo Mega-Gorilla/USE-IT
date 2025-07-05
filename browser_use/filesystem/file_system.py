@@ -210,7 +210,10 @@ class FileSystem:
 		"""Read file content using file-specific read method and return appropriate message to LLM"""
 		if external_file:
 			try:
-				_, extension = self._parse_filename(full_filename)
+				try:
+					_, extension = self._parse_filename(full_filename)
+				except Exception:
+					return f'Error: Invalid filename format {full_filename}. Must be alphanumeric with a supported extension.'
 				if extension in ['md', 'txt', 'json', 'csv']:
 					import anyio
 
@@ -227,7 +230,8 @@ class FileSystem:
 					extracted_text = ''
 					for page in reader.pages[:MAX_PDF_PAGES]:
 						extracted_text += page.extract_text()
-					return f'Read from file {full_filename}.\n<content>\n{extracted_text}\n{extra_pages} more pages...</content>'
+					extra_pages_text = f'{extra_pages} more pages...' if extra_pages > 0 else ''
+					return f'Read from file {full_filename}.\n<content>\n{extracted_text}\n{extra_pages_text}</content>'
 				else:
 					return f'Error: Cannot read file {full_filename} as {extension} extension is not supported.'
 			except FileNotFoundError:
@@ -414,6 +418,10 @@ class FileSystem:
 				file_obj = MarkdownFile(**file_info)
 			elif file_type == 'TxtFile':
 				file_obj = TxtFile(**file_info)
+			elif file_type == 'JsonFile':
+				file_obj = JsonFile(**file_info)
+			elif file_type == 'CsvFile':
+				file_obj = CsvFile(**file_info)
 			else:
 				# Skip unknown file types
 				continue
