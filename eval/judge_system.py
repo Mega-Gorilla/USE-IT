@@ -182,6 +182,7 @@ def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 	return last_part[::-1]
 
 
+@observe_debug()
 def are_images_identical(img_path1: str, img_path2: str) -> bool:
 	"""Check if two images are identical by comparing their content."""
 	try:
@@ -202,6 +203,7 @@ def are_images_identical(img_path1: str, img_path2: str) -> bool:
 		return False
 
 
+@observe_debug()
 def filter_images(screenshot_paths: list[str], max_images: int) -> list[str]:
 	"""
 	Filter screenshot paths to:
@@ -469,6 +471,7 @@ def parse_judge_response(result_dict: dict, task: str) -> JudgeResult:
 		return create_fallback_result(task, 'Failed to parse structured response')
 
 
+@observe_debug()
 def create_fallback_result(task: str, error_msg: str) -> JudgeResult:
 	"""Create a fallback result when evaluation fails."""
 	return JudgeResult(
@@ -480,6 +483,7 @@ def create_fallback_result(task: str, error_msg: str) -> JudgeResult:
 	)
 
 
+@observe_debug()
 async def judge_with_retry(
 	task: str,
 	complete_history: list[dict],
