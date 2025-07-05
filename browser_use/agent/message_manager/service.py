@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 
+from lmnr import observe
+
 from browser_use.agent.message_manager.views import (
 	HistoryItem,
 )
@@ -218,6 +220,7 @@ The file system actions do not change the browser state, so I can also click on 
 		task_update_item = HistoryItem(system_message=f'User updated <user_request> to: {new_task}')
 		self.state.agent_history_items.append(task_update_item)
 
+	@observe(name='update_agent_history_description')
 	def _update_agent_history_description(
 		self,
 		model_output: AgentOutput | None = None,
@@ -248,7 +251,7 @@ The file system actions do not change the browser state, so I can also click on 
 
 			if action_result.error:
 				if len(action_result.error) > 200:
-					error_text = action_result.error[:100] + '...' + action_result.error[-100:]
+					error_text = action_result.error[:100] + '......' + action_result.error[-100:]
 				else:
 					error_text = action_result.error
 				action_results += f'Action {idx + 1}/{result_len}: {error_text}\n'
@@ -299,6 +302,7 @@ The file system actions do not change the browser state, so I can also click on 
 
 		return ''
 
+	@observe(name='add_state_message')
 	@time_execution_sync('--add_state_message')
 	def add_state_message(
 		self,

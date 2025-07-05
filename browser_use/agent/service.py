@@ -1368,7 +1368,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
-	@observe(name='controller.multi_act')
+	@observe()
 	@time_execution_async('--multi_act')
 	async def multi_act(
 		self,

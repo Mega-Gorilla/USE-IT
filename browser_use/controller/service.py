@@ -7,9 +7,8 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from lmnr import Laminar
+from lmnr import Laminar, observe
 from pydantic import BaseModel
-from traitlets import observe
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
@@ -86,7 +85,6 @@ class Controller(Generic[Context]):
 		self._register_done_action(output_model)
 
 		# Basic Navigation Actions
-		@observe('search_google')
 		@self.registry.action(
 			'Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long.',
 			param_model=SearchGoogleAction,
@@ -109,7 +107,6 @@ class Controller(Generic[Context]):
 				extracted_content=msg, include_in_memory=True, long_term_memory=f"Searched Google for '{params.query}'"
 			)
 
-		@observe('go_to_url')
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
 		)
@@ -147,12 +144,11 @@ class Controller(Generic[Context]):
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
-					return ActionResult(error=site_unavailable_msg, include_in_memory=True, long_term_memory=site_unavailable_msg)
+					return ActionResult(error=site_unavailable_msg, include_in_memory=True)
 				else:
 					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
 					raise
 
-		@observe('go_back')
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			await browser_session.go_back()
@@ -161,7 +157,7 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory='Navigated back')
 
 		# wait for x seconds
-		@observe('wait')
+
 		@self.registry.action('Wait for x seconds default 3')
 		async def wait(seconds: int = 3):
 			msg = f'🕒  Waiting for {seconds} seconds'
@@ -170,7 +166,7 @@ class Controller(Generic[Context]):
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {seconds} seconds')
 
 		# Element Interaction Actions
-		@observe('click_element_by_index')
+
 		@self.registry.action('Click element by index', param_model=ClickElementAction)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
 			# Browser is now a BrowserSession itself
@@ -235,7 +231,6 @@ class Controller(Generic[Context]):
 					logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
 					return ActionResult(error=error_msg, success=False)
 
-		@observe('input_text')
 		@self.registry.action(
 			'Click and input text into a input interactive element',
 			param_model=InputTextAction,
@@ -264,7 +259,6 @@ class Controller(Generic[Context]):
 				long_term_memory=f"Input '{params.text}' into element {params.index}.",
 			)
 
-		@observe('upload_file')
 		@self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
 		async def upload_file(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str]):
 			if params.path not in available_file_paths:
@@ -304,7 +298,7 @@ class Controller(Generic[Context]):
 				return ActionResult(error=msg)
 
 		# Tab Management Actions
-		@observe('switch_tab')
+
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			await browser_session.switch_to_tab(params.page_id)
@@ -320,7 +314,6 @@ class Controller(Generic[Context]):
 				extracted_content=msg, include_in_memory=True, long_term_memory=f'Switched to tab {params.page_id}'
 			)
 
-		@observe('close_tab')
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
 			await browser_session.switch_to_tab(params.page_id)
@@ -338,7 +331,7 @@ class Controller(Generic[Context]):
 			)
 
 		# Content Actions
-		@observe('extract_structured_data')
+
 		@self.registry.action(
 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
 Only use this for extracting info from a single product/article page, not for entire listings or search results pages.
@@ -493,7 +486,6 @@ Explain the content of the page and that the requested information is not availa
 		# 		include_extracted_content_only_once=True,
 		# 	)
 
-		@observe('scroll')
 		@self.registry.action(
 			'Scroll the page by one page (set down=True to scroll down, down=False to scroll up)',
 			param_model=ScrollAction,
@@ -530,7 +522,7 @@ Explain the content of the page and that the requested information is not availa
 			)
 
 		# send keys
-		@observe('send_keys')
+
 		@self.registry.action(
 			'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
 			param_model=SendKeysAction,
@@ -553,7 +545,6 @@ Explain the content of the page and that the requested information is not availa
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
 
-		@observe('scroll_to_text')
 		@self.registry.action(
 			description='Scroll to a text in the current page',
 		)
@@ -602,21 +593,19 @@ Explain the content of the page and that the requested information is not availa
 				return ActionResult(error=msg, include_in_memory=True)
 
 		# File System Actions
-		@observe('write_file')
+
 		@self.registry.action('Write content to file_name in file system, use only .md or .txt extensions.')
 		async def write_file(file_name: str, content: str, file_system: FileSystem):
 			result = await file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-		@observe('append_file')
 		@self.registry.action('Append content to file_name in file system')
 		async def append_file(file_name: str, content: str, file_system: FileSystem):
 			result = await file_system.append_file(file_name, content)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-		@observe('read_file')
 		@self.registry.action('Read file_name from file system')
 		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
 			if available_file_paths and file_name in available_file_paths:
@@ -1014,7 +1003,7 @@ Explain the content of the page and that the requested information is not availa
 		return self.registry.action(description, **kwargs)
 
 	# Act --------------------------------------------------------------------
-
+	@observe(name='act')
 	@time_execution_sync('--act')
 	async def act(
 		self,

@@ -2,6 +2,8 @@ import importlib.resources
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
+from lmnr import observe
+
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 
 if TYPE_CHECKING:
@@ -93,6 +95,7 @@ class AgentMessagePrompt:
 		self.available_file_paths: list[str] | None = available_file_paths
 		assert self.browser_state
 
+	@observe(name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
@@ -173,6 +176,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			agent_state += '<available_file_paths>\n' + '\n'.join(self.available_file_paths) + '\n</available_file_paths>\n'
 		return agent_state
 
+	@observe(name='get_user_message')
 	def get_user_message(self, use_vision: bool = True) -> UserMessage:
 		# Don't pass screenshot to model if page is about:blank, step is 0, and there's only one tab
 		if (

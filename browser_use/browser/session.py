@@ -1415,7 +1415,7 @@ class BrowserSession(BaseModel):
 					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
 				)
 
-	@observe(name='setup_viewports', ignore_output=True, ignore_input=True)
+	@observe(name='setup_viewports', metadata={'browser_profile': '{{browser_profile}}'})
 	async def _setup_viewports(self) -> None:
 		"""Resize any existing page viewports to match the configured size, set up storage_state, permissions, geolocation, etc."""
 
@@ -2477,6 +2477,7 @@ class BrowserSession(BaseModel):
 				self.logger.error(f'⛔️ Failed to go back after detecting non-allowed URL: {type(e).__name__}: {e}')
 			raise URLNotAllowedError(f'Navigation to non-allowed URL: {page.url}')
 
+	@observe()
 	async def navigate_to(self, url: str):
 		"""Navigate the agent's current tab to a URL"""
 
@@ -2496,6 +2497,7 @@ class BrowserSession(BaseModel):
 				f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after navigation: {type(e).__name__}: {e}'
 			)
 
+	@observe()
 	async def refresh_page(self):
 		"""Refresh the agent's current page"""
 
