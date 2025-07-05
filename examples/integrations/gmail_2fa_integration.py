@@ -43,7 +43,7 @@ async def main():
 	print()
 
 	# Initialize LLM
-	llm = ChatOpenAI(model='gpt-4o')
+	llm = ChatOpenAI(model='gpt-4.1')
 
 	# Example 1: Basic Gmail authentication test
 	print('📧 Testing Gmail authentication...')
