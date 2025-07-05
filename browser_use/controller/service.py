@@ -7,6 +7,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
+from browser.views import BrowserError
 from lmnr import Laminar, observe
 from pydantic import BaseModel
 
@@ -38,31 +39,34 @@ logger = logging.getLogger(__name__)
 
 async def retry_async_function(
 	func: Callable[[], Awaitable[Any]], error_message: str, n_retries: int = 3, sleep_seconds: float = 1
-) -> tuple[Any | None, ActionResult | None]:
+) -> Any:
 	"""
-	Retry an async function n times before giving up and returning an ActionResult with an error.
+	Retry an async function n times before giving up and raising an exception.
 
 	Args:
 		func: Async function to retry
-		error_message: Error message to use in ActionResult if all retries fail
+		error_message: Error message to use in exception if all retries fail
 		n_retries: Number of retries (default 3)
 		sleep_seconds: Seconds to sleep between retries (default 1)
 
 	Returns:
-		Tuple of (result, None) on success or (None, ActionResult) on failure
+		The result of the function on success
+
+	Raises:
+		RuntimeError: If all retries fail
 	"""
 	for attempt in range(n_retries):
 		try:
 			result = await func()
-			return result, None
+			return result
 		except Exception as e:
 			await asyncio.sleep(sleep_seconds)
 			logger.debug(f'Error (attempt {attempt + 1}/{n_retries}): {e}')
 			if attempt == n_retries - 1:  # Last attempt failed
-				return None, ActionResult(error=error_message + str(e))
+				raise RuntimeError(error_message + str(e))
 
 	# Should never reach here but make type checker happy
-	return None, ActionResult(error=error_message)
+	raise RuntimeError(error_message)
 
 
 Context = TypeVar('Context')
@@ -144,7 +148,7 @@ class Controller(Generic[Context]):
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					logger.warning(site_unavailable_msg)
-					return ActionResult(error=site_unavailable_msg)
+					raise BrowserError(site_unavailable_msg)
 				else:
 					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
 					raise
@@ -224,12 +228,10 @@ class Controller(Generic[Context]):
 					# Page navigated during click - refresh state and return it
 					logger.info('Page context changed during click, refreshing state...')
 					await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-					return ActionResult(
-						error='Page navigated during click. Refreshed state provided.', include_in_memory=True, success=False
-					)
+					raise BrowserError('Page navigated during click. Refreshed state provided.')
 				else:
 					logger.warning(f'Element not clickable with index {params.index} - most likely the page changed')
-					return ActionResult(error=error_msg, success=False)
+					raise BrowserError(error_msg)
 
 		@self.registry.action(
 			'Click and input text into a input interactive element',
@@ -245,7 +247,7 @@ class Controller(Generic[Context]):
 				await browser_session._input_text_element_node(element_node, params.text)
 			except Exception:
 				msg = f'Failed to input text into element {params.index}.'
-				return ActionResult(error=msg)
+				raise BrowserError(msg)
 
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'
@@ -262,10 +264,10 @@ class Controller(Generic[Context]):
 		@self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
 		async def upload_file(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str]):
 			if params.path not in available_file_paths:
-				return ActionResult(error=f'File path {params.path} is not available')
+				raise BrowserError(f'File path {params.path} is not available')
 
 			if not os.path.exists(params.path):
-				return ActionResult(error=f'File {params.path} does not exist')
+				raise BrowserError(f'File {params.path} does not exist')
 
 			file_upload_dom_el = await browser_session.find_file_upload_element_by_index(
 				params.index, max_height=3, max_descendant_depth=3
@@ -274,14 +276,14 @@ class Controller(Generic[Context]):
 			if file_upload_dom_el is None:
 				msg = f'No file upload element found at index {params.index}'
 				logger.info(msg)
-				return ActionResult(error=msg)
+				raise BrowserError(msg)
 
 			file_upload_el = await browser_session.get_locate_element(file_upload_dom_el)
 
 			if file_upload_el is None:
 				msg = f'No file upload element found at index {params.index}'
 				logger.info(msg)
-				return ActionResult(error=msg)
+				raise BrowserError(msg)
 
 			try:
 				await file_upload_el.set_input_files(params.path)
@@ -295,7 +297,7 @@ class Controller(Generic[Context]):
 			except Exception as e:
 				msg = f'Failed to upload file to index {params.index}: {str(e)}'
 				logger.info(msg)
-				return ActionResult(error=msg)
+				raise BrowserError(msg)
 
 		# Tab Management Actions
 
@@ -361,9 +363,9 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 			try:
 				page_html_result = await asyncio.wait_for(page.content(), timeout=5.0)  # 5 second aggressive timeout
 			except TimeoutError:
-				return ActionResult(error='Page content extraction timed out after 5 seconds')
+				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
-				return ActionResult(error=f"Couldn't extract page content: {e}")
+				raise RuntimeError(f"Couldn't extract page content: {e}")
 
 			page_html = page_html_result
 
@@ -375,7 +377,7 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 				)  # 5 second aggressive timeout
 			except Exception as e:
 				logger.warning(f'Markdownify failed: {type(e).__name__}')
-				return ActionResult(error=f'Could not convert html to markdown: {type(e).__name__}')
+				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
 			for iframe in page.frames:
@@ -453,12 +455,12 @@ Explain the content of the page and that the requested information is not availa
 			except TimeoutError:
 				error_msg = f'LLM call timed out after 30 seconds for query: {query}'
 				logger.warning(error_msg)
-				return ActionResult(error=error_msg)
+				raise RuntimeError(error_msg)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
 				msg = f'📄  Extracted from page\n: {content}\n'
 				logger.info(msg)
-				return ActionResult(error=str(e))
+				raise RuntimeError(str(e))
 
 		# @self.registry.action(
 		# 	'Get the accessibility tree of the page in the format "role name" with the number_of_elements to return',
@@ -498,11 +500,9 @@ Explain the content of the page and that the requested information is not availa
 			page = await browser_session.get_current_page()
 
 			# Get window height with retries
-			dy_result, action_result = await retry_async_function(
+			dy_result = await retry_async_function(
 				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
 			)
-			if action_result:
-				return action_result
 
 			# Set direction based on down parameter
 			dy = dy_result if params.down else -(dy_result or 0)
@@ -590,7 +590,7 @@ Explain the content of the page and that the requested information is not availa
 			except Exception as e:
 				msg = f"Failed to scroll to text '{text}': {str(e)}"
 				logger.error(msg)
-				return ActionResult(error=msg, include_in_memory=True)
+				raise BrowserError(msg)
 
 		# File System Actions
 
@@ -813,7 +813,7 @@ Explain the content of the page and that the requested information is not availa
 			except Exception as e:
 				msg = f'Selection failed: {str(e)}'
 				logger.error(msg)
-				return ActionResult(error=msg, include_in_memory=True)
+				raise BrowserError(msg)
 
 		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
 		async def read_sheet_contents(page: Page):
