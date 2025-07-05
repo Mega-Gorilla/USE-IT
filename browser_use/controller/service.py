@@ -7,13 +7,13 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from browser.views import BrowserError
 from lmnr import Laminar, observe
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.types import Page
+from browser_use.browser.views import BrowserError
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
 	ClickElementAction,
