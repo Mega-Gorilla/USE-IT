@@ -28,8 +28,8 @@ from browser_use.tokens.service import TokenCost
 
 load_dotenv()
 
-# from lmnr.sdk.decorators import observe
 from bubus import EventBus
+from lmnr.sdk.decorators import observe
 from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
@@ -612,6 +612,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
+	@observe(name='get_browser_state_with_recovery')
 	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
 		"""Get browser state with multiple fallback strategies for error recovery"""
 
@@ -626,6 +627,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.warning('🔄 Falling back to minimal state summary')
 		return await self._get_minimal_state_summary()
 
+	@observe(name='get_minimal_state_summary')
 	async def _get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
@@ -674,7 +676,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
 		)
 
-	# @observe(name='agent.step', ignore_output=True, ignore_input=True)
+	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
@@ -1158,7 +1160,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		return False, False
 
-	# @observe(name='agent.run', ignore_output=True)
+	@observe(name='agent.run', metadata={'task': '{{task}}', 'debug': '{{debug}}'})
 	@time_execution_async('--run')
 	async def run(
 		self,
@@ -1366,7 +1368,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
-	# @observe(name='controller.multi_act')
+	@observe(name='controller.multi_act')
 	@time_execution_async('--multi_act')
 	async def multi_act(
 		self,
