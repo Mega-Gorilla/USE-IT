@@ -154,7 +154,9 @@ def create_browserbase_session() -> str:
 	try:
 		from browserbase import Browserbase
 	except ImportError:
-		raise ImportError('browserbase package is required for Browserbase functionality. Install it with: pip install browserbase')
+		raise ImportError(
+			'browserbase package is required for Browserbase functionality. Install it with: pip install browserbase'
+		)
 
 	try:
 		bb = Browserbase(api_key=BROWSERBASE_API_KEY)
@@ -181,7 +183,9 @@ async def create_hyperbrowser_session() -> str:
 		from hyperbrowser import AsyncHyperbrowser
 		from hyperbrowser.models import CreateSessionParams
 	except ImportError:
-		raise ImportError('hyperbrowser package is required for Hyperbrowser functionality. Install it with: pip install hyperbrowser')
+		raise ImportError(
+			'hyperbrowser package is required for Hyperbrowser functionality. Install it with: pip install hyperbrowser'
+		)
 
 	try:
 		client = AsyncHyperbrowser(api_key=HYPERBROWSER_API_KEY)
