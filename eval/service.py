@@ -57,10 +57,7 @@ from uuid import UUID
 import anyio
 import psutil
 import requests
-from browserbase import Browserbase
 from dotenv import load_dotenv
-from hyperbrowser import AsyncHyperbrowser
-from hyperbrowser.models import CreateSessionParams
 from lmnr import AsyncLaminarClient, Laminar, observe
 from PIL import Image
 from pydantic import BaseModel
@@ -155,6 +152,11 @@ def create_browserbase_session() -> str:
 		raise ValueError('BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID must be set')
 
 	try:
+		from browserbase import Browserbase
+	except ImportError:
+		raise ImportError('browserbase package is required for Browserbase functionality. Install it with: pip install browserbase')
+
+	try:
 		bb = Browserbase(api_key=BROWSERBASE_API_KEY)
 		session = bb.sessions.create(
 			project_id=BROWSERBASE_PROJECT_ID,
@@ -174,6 +176,12 @@ async def create_hyperbrowser_session() -> str:
 	"""Create a Hyperbrowser session and return WebSocket endpoint"""
 	if not HYPERBROWSER_API_KEY:
 		raise ValueError('HYPERBROWSER_API_KEY must be set')
+
+	try:
+		from hyperbrowser import AsyncHyperbrowser
+		from hyperbrowser.models import CreateSessionParams
+	except ImportError:
+		raise ImportError('hyperbrowser package is required for Hyperbrowser functionality. Install it with: pip install hyperbrowser')
 
 	try:
 		client = AsyncHyperbrowser(api_key=HYPERBROWSER_API_KEY)
