@@ -22,15 +22,13 @@ _gmail_service: GmailService | None = None
 class GetRecentEmailsParams(BaseModel):
 	"""Parameters for getting recent emails"""
 
-	query: str = Field(
-		default='', description='Gmail search query (e.g., "from:noreply@example.com") - optional additional filter'
-	)
-	max_results: int = Field(default=10, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 10)')
+	keyword: str = Field(default='', description='A single keyword for search, e.g. github, airbnb, etc.')
+	max_results: int = Field(default=3, ge=1, le=50, description='Maximum number of emails to retrieve (1-50, default: 3)')
 
 
 def register_gmail_actions(
 	controller: Controller, gmail_service: GmailService | None = None, access_token: str | None = None
-) -> None:
+) -> Controller:
 	"""
 	Register Gmail actions with the provided controller
 	Args:
@@ -48,11 +46,8 @@ def register_gmail_actions(
 	else:
 		_gmail_service = GmailService()
 
-	@controller.action(
-		description='📧 **Get recent emails** - to fetch recent emails from the past 5 minutes with full content. '
-		'Perfect for retrieving verification codes, OTP, 2FA tokens, or any recent email content. '
-		'This action accesses your Gmail inbox to read email messages and extract verification codes. '
-		'Returns complete email content so you can extract verification codes or analyze email details yourself.',
+	@controller.registry.action(
+		description='Get recent emails from the mailbox with a keyword to retrieve verification codes, OTP, 2FA tokens, magic links, or any recent email content. Keep your query a single keyword.',
 		param_model=GetRecentEmailsParams,
 	)
 	async def get_recent_emails(params: GetRecentEmailsParams) -> ActionResult:
@@ -77,8 +72,8 @@ def register_gmail_actions(
 
 			# Build query with time filter and optional user query
 			query_parts = [f'newer_than:{time_filter}']
-			if params.query.strip():
-				query_parts.append(params.query.strip())
+			if params.keyword.strip():
+				query_parts.append(params.keyword.strip())
 
 			query = ' '.join(query_parts)
 			logger.info(f'🔍 Gmail search query: {query}')
@@ -87,10 +82,11 @@ def register_gmail_actions(
 			emails = await _gmail_service.get_recent_emails(max_results=max_results, query=query, time_filter=time_filter)
 
 			if not emails:
-				query_info = f" matching '{params.query}'" if params.query.strip() else ''
+				query_info = f" matching '{params.keyword}'" if params.keyword.strip() else ''
+				memory = f'No recent emails found from last {time_filter}{query_info}'
 				return ActionResult(
-					extracted_content=f'No emails found from the last {time_filter}{query_info}',
-					long_term_memory=f'No recent emails found from last {time_filter}',
+					extracted_content=memory,
+					long_term_memory=memory,
 				)
 
 			# Format with full email content for large display
@@ -108,7 +104,7 @@ def register_gmail_actions(
 			return ActionResult(
 				extracted_content=content,
 				include_extracted_content_only_once=True,
-				long_term_memory=f'Retrieved {len(emails)} recent emails from last {time_filter}',
+				long_term_memory=f'Retrieved {len(emails)} recent emails from last {time_filter} for query {query}.',
 			)
 
 		except Exception as e:
@@ -117,3 +113,5 @@ def register_gmail_actions(
 				error=f'Error getting recent emails: {str(e)}',
 				long_term_memory='Failed to get recent emails due to error',
 			)
+
+	return controller
