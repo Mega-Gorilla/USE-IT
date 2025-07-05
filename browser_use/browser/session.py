@@ -711,7 +711,9 @@ class BrowserSession(BaseModel):
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 
 		# Critical: Check for crashed target BEFORE any operations
-		if page.is_closed():
+		try:
+			await page.evaluate('1')
+		except Exception:
 			raise Exception('Cannot screenshot - page is closed/crashed')
 
 		# Check if browser context is still valid
