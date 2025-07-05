@@ -170,7 +170,7 @@ def create_browserbase_session() -> str:
 		raise
 
 
-async def create_hyperbrowser_session(headless: bool = False) -> str:
+async def create_hyperbrowser_session() -> str:
 	"""Create a Hyperbrowser session and return WebSocket endpoint"""
 	if not HYPERBROWSER_API_KEY:
 		raise ValueError('HYPERBROWSER_API_KEY must be set')
@@ -184,7 +184,9 @@ async def create_hyperbrowser_session(headless: bool = False) -> str:
 			)
 		)
 
-		return session.ws_endpoint
+		await client.close()
+
+		return session.ws_endpoint or ''
 
 	except Exception as e:
 		logger.error(f'Failed to create Hyperbrowser session: {type(e).__name__}: {e}')
@@ -1577,7 +1579,7 @@ async def setup_browser_session(
 		if HYPERBROWSER_API_KEY:
 			try:
 				logger.debug(f'Browser setup: Creating Hyperbrowser session for task {task.task_id}')
-				cdp_url = await create_hyperbrowser_session(headless)
+				cdp_url = await create_hyperbrowser_session()
 			except Exception as e:
 				logger.error(
 					f'Browser setup: Failed to create Hyperbrowser session for task {task.task_id}: {type(e).__name__}: {e}'
