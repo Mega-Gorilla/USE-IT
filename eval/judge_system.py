@@ -23,6 +23,7 @@ from browser_use.llm.messages import (
 	SystemMessage,
 	UserMessage,
 )
+from browser_use.observability import observe_debug
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,7 @@ def truncate_text(text: str, max_length: int, from_beginning: bool = False) -> s
 		return text[: max_length - 23] + '...[cut for eval]...'
 
 
+@observe_debug()
 def prepare_agent_steps(complete_history: list[dict]) -> list[str]:
 	"""Extract and format agent steps, limiting each to 2000 characters.
 
@@ -231,6 +233,7 @@ def filter_images(screenshot_paths: list[str], max_images: int) -> list[str]:
 	return deduplicated_paths[-max_images:] if len(deduplicated_paths) > max_images else deduplicated_paths
 
 
+@observe_debug()
 async def comprehensive_judge(
 	task: str,
 	complete_history: list[dict],
@@ -438,6 +441,7 @@ Evaluate this agent execution given the criteria and respond with the exact JSON
 		return create_fallback_result(task, str(e))
 
 
+@observe_debug()
 def parse_judge_response(result_dict: dict, task: str) -> JudgeResult:
 	"""Parse the LLM response into a structured JudgeResult."""
 	try:
@@ -534,6 +538,7 @@ def _write_result_file(result_file: Path, result_data: dict[str, Any]) -> None:
 
 
 # Integration helper function
+@observe_debug()
 async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseChatModel, max_images: int = 10) -> dict[str, Any]:
 	"""
 	Evaluate a task result using the comprehensive judge system.

@@ -8,7 +8,7 @@ from inspect import Parameter, iscoroutinefunction, signature
 from types import UnionType
 from typing import Any, Generic, Optional, TypeVar, Union, get_args, get_origin
 
-from lmnr import observe
+from observability import observe_debug
 from pydantic import BaseModel, Field, RootModel, create_model
 
 from browser_use.browser import BrowserSession
@@ -309,7 +309,7 @@ class Registry(Generic[Context]):
 
 		return decorator
 
-	@observe(name='execute_action')
+	@observe_debug(name='execute_action')
 	@time_execution_async('--execute_action')
 	async def execute_action(
 		self,

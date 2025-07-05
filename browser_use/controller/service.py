@@ -7,7 +7,12 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from lmnr import Laminar, observe
+from observability import observe_debug
+
+try:
+	from lmnr import Laminar  # type: ignore
+except ImportError:
+	Laminar = None  # type: ignore
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -1003,7 +1008,7 @@ Explain the content of the page and that the requested information is not availa
 		return self.registry.action(description, **kwargs)
 
 	# Act --------------------------------------------------------------------
-	@observe(name='act')
+	@observe_debug(name='act')
 	@time_execution_sync('--act')
 	async def act(
 		self,
@@ -1021,14 +1026,23 @@ Explain the content of the page and that the requested information is not availa
 
 		for action_name, params in action.model_dump(exclude_unset=True).items():
 			if params is not None:
-				with Laminar.start_as_current_span(
-					name=action_name,
-					input={
-						'action': action_name,
-						'params': params,
-					},
-					span_type='TOOL',
-				):
+				# Use Laminar span if available, otherwise use no-op context manager
+				if Laminar is not None:
+					span_context = Laminar.start_as_current_span(
+						name=action_name,
+						input={
+							'action': action_name,
+							'params': params,
+						},
+						span_type='TOOL',
+					)
+				else:
+					# No-op context manager when lmnr is not available
+					from contextlib import nullcontext
+
+					span_context = nullcontext()
+
+				with span_context:
 					result = await self.registry.execute_action(
 						action_name=action_name,
 						params=params,

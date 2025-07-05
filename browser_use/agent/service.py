@@ -29,7 +29,6 @@ from browser_use.tokens.service import TokenCost
 load_dotenv()
 
 from bubus import EventBus
-from lmnr.sdk.decorators import observe
 from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
@@ -67,6 +66,7 @@ from browser_use.dom.history_tree_processor.service import (
 )
 from browser_use.exceptions import LLMException
 from browser_use.filesystem.file_system import FileSystem
+from browser_use.observability import observe, observe_debug
 from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
@@ -612,7 +612,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
-	@observe(name='get_browser_state_with_recovery')
+	@observe_debug(name='get_browser_state_with_recovery')
 	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
 		"""Get browser state with multiple fallback strategies for error recovery"""
 
@@ -630,7 +630,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.warning('🔄 Falling back to minimal state summary')
 		return await self._get_minimal_state_summary()
 
-	@observe(name='get_minimal_state_summary')
+	@observe_debug(name='get_minimal_state_summary')
 	async def _get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
@@ -1362,7 +1362,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
-	@observe()
+	@observe_debug()
 	@time_execution_async('--multi_act')
 	async def multi_act(
 		self,

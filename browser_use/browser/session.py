@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
-from lmnr import observe
+from observability import observe_debug
 
 from browser_use.config import CONFIG
 from browser_use.utils import _log_pretty_path, _log_pretty_url
@@ -266,7 +266,7 @@ class BrowserSession(BaseModel):
 	# 	"""
 	# 	return getattr(self.browser_profile, key)
 
-	@observe(name='browser.session.start')
+	@observe_debug(name='browser.session.start')
 	async def start(self) -> Self:
 		"""
 		Starts the browser session by either connecting to an existing browser or launching a new one.
@@ -700,7 +700,7 @@ class BrowserSession(BaseModel):
 		# Launch new browser as last resort
 		await self.setup_new_browser_context()
 
-	@observe(ignore_output=True)
+	@observe_debug(ignore_output=True)
 	@retry(
 		wait=1,  # wait 1s between attempts
 		retries=2,  # 3 attempts
@@ -1415,7 +1415,7 @@ class BrowserSession(BaseModel):
 					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
 				)
 
-	@observe(name='setup_viewports', metadata={'browser_profile': '{{browser_profile}}'})
+	@observe_debug(name='setup_viewports', metadata={'browser_profile': '{{browser_profile}}'})
 	async def _setup_viewports(self) -> None:
 		"""Resize any existing page viewports to match the configured size, set up storage_state, permissions, geolocation, etc."""
 
@@ -1672,7 +1672,7 @@ class BrowserSession(BaseModel):
 					self.logger.error(f'❌ Failed to create parent directory for {path_name} {path_value}: {e}')
 
 	# --- Tab management ---
-	@observe(name='get_current_page', ignore_input=True)
+	@observe_debug(name='get_current_page', ignore_input=True)
 	async def get_current_page(self) -> Page:
 		"""Get the current page + ensure it's not None / closed"""
 
@@ -1742,7 +1742,7 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 		await page.wait_for_selector(selector, state='visible', timeout=timeout)
 
-	@observe(name='remove_highlights', ignore_output=True, ignore_input=True)
+	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
 	@require_initialization
 	@time_execution_async('--remove_highlights')
 	async def remove_highlights(self):
@@ -2382,7 +2382,7 @@ class BrowserSession(BaseModel):
 		if elapsed > 1:
 			self.logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
-	@observe(name='wait_for_page_and_frames_load')
+	@observe_debug(name='wait_for_page_and_frames_load')
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
 		Ensures page is fully loaded before continuing.
@@ -2477,7 +2477,7 @@ class BrowserSession(BaseModel):
 				self.logger.error(f'⛔️ Failed to go back after detecting non-allowed URL: {type(e).__name__}: {e}')
 			raise URLNotAllowedError(f'Navigation to non-allowed URL: {page.url}')
 
-	@observe()
+	@observe_debug()
 	async def navigate_to(self, url: str):
 		"""Navigate the agent's current tab to a URL"""
 
@@ -2503,7 +2503,7 @@ class BrowserSession(BaseModel):
 			# NOTE we dont have to wait since we will wait later when we get the new page state
 			pass
 
-	@observe()
+	@observe_debug()
 	async def refresh_page(self):
 		"""Refresh the agent's current page"""
 
@@ -2644,7 +2644,7 @@ class BrowserSession(BaseModel):
 		structure = await page.evaluate(debug_script)
 		return structure
 
-	@observe(ignore_output=True)
+	@observe_debug(ignore_output=True)
 	@time_execution_async('--get_state_summary')
 	@require_initialization
 	async def get_state_summary(self, cache_clickable_elements_hashes: bool) -> BrowserStateSummary:
@@ -2688,7 +2688,7 @@ class BrowserSession(BaseModel):
 
 		return self._cached_browser_state_summary
 
-	@observe(name='get_updated_state')
+	@observe_debug(name='get_updated_state')
 	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
 		"""Update and return state."""
 
@@ -2814,7 +2814,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Browser Actions
-	@observe(name='take_screenshot')
+	@observe_debug(name='take_screenshot')
 	@require_initialization
 	@time_execution_async('--take_screenshot')
 	async def take_screenshot(self, full_page: bool = False) -> str:
@@ -3373,7 +3373,7 @@ class BrowserSession(BaseModel):
 
 		return page
 
-	@observe(name='create_new_tab')
+	@observe_debug(name='create_new_tab')
 	@time_execution_async('--create_new_tab')
 	async def create_new_tab(self, url: str | None = None) -> Page:
 		"""Create a new tab and optionally navigate to a URL"""
@@ -3463,21 +3463,21 @@ class BrowserSession(BaseModel):
 		return new_page
 
 	# region - Helper methods for easier access to the DOM
-	@observe(name='get_selector_map')
+	@observe_debug(name='get_selector_map')
 	@require_initialization
 	async def get_selector_map(self) -> SelectorMap:
 		if self._cached_browser_state_summary is None:
 			return {}
 		return self._cached_browser_state_summary.selector_map
 
-	@observe(name='get_element_by_index')
+	@observe_debug(name='get_element_by_index')
 	@require_initialization
 	async def get_element_by_index(self, index: int) -> ElementHandle | None:
 		selector_map = await self.get_selector_map()
 		element_handle = await self.get_locate_element(selector_map[index])
 		return element_handle
 
-	@observe(name='is_file_input_by_index')
+	@observe_debug(name='is_file_input_by_index')
 	async def is_file_input_by_index(self, index: int) -> bool:
 		try:
 			selector_map = await self.get_selector_map()

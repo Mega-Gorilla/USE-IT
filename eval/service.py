@@ -57,7 +57,7 @@ import anyio
 import psutil
 import requests
 from dotenv import load_dotenv
-from lmnr import AsyncLaminarClient, Laminar, observe
+from lmnr import AsyncLaminarClient, Instruments, Laminar
 from PIL import Image
 from pydantic import BaseModel
 
@@ -66,6 +66,7 @@ from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.groq.chat import ChatGroq
 from browser_use.llm.openai.chat import ChatOpenAI
+from browser_use.observability import observe_debug
 from eval.utils import create_pydantic_model_from_schema
 
 MAX_IMAGE = 5
@@ -128,7 +129,7 @@ def create_anchor_browser_session(headless: bool = False) -> str:
 		raise
 
 
-Laminar.initialize()
+Laminar.initialize(disabled_instruments={Instruments.BROWSER_USE}, disable_batch=True)
 laminar_client = AsyncLaminarClient()
 
 # Global variables for resource monitoring
@@ -220,6 +221,7 @@ def log_system_resources(context: str = ''):
 	logger.info('=' * (20 + len(context)))
 
 
+@observe_debug()
 async def start_resource_monitoring(interval: int = 30):
 	"""Start background resource monitoring"""
 	global _resource_monitor_task, _resource_monitor_stop_event
@@ -266,6 +268,7 @@ async def start_resource_monitoring(interval: int = 30):
 	_resource_monitor_task = asyncio.create_task(monitor_loop())
 
 
+@observe_debug()
 async def stop_resource_monitoring():
 	"""Stop background resource monitoring"""
 	global _resource_monitor_task, _resource_monitor_stop_event
@@ -360,6 +363,7 @@ async def identify_key_points(task, model):
 	return response.completion
 
 
+@observe_debug()
 async def judge_image(task, image_path, key_points, model):
 	system_msg = """You are an expert evaluator tasked with determining whether an image contains information about the necessary steps to complete a task.
 
@@ -413,6 +417,7 @@ The snapshot of the web page is shown in the image."""
 	return response.completion
 
 
+@observe_debug()
 async def Online_Mind2Web_eval(task, last_actions, images_path, model, score_threshold):
 	system_msg = """You are an expert in evaluating the performance of a web navigation agent. The agent is designed to help a human user navigate a website to complete a task. Given the user's task, the agent's action history, key points for task completion, some potentially important web pages in the agent's trajectory and their reasons, your goal is to determine whether the agent has completed the task and achieved all requirements.
 
@@ -508,6 +513,7 @@ Action History:
 	return messages, text, system_msg, record, key_points
 
 
+@observe_debug()
 async def Online_Mind2Web_eval_with_retry(task, last_actions, images_path, model, score_threshold, max_retries=3):
 	"""
 	Wrapper for Online_Mind2Web_eval with retry logic.
@@ -561,6 +567,7 @@ except ImportError:
 	logger.warning('Comprehensive judge system not available. Only Mind2Web judge will be available.')
 	COMPREHENSIVE_JUDGE_AVAILABLE = False
 
+	@observe_debug()
 	async def evaluate_task_with_comprehensive_judge(*args, **kwargs) -> dict[str, Any]:
 		"""Fallback function when comprehensive judge system is not available"""
 		raise ImportError('Comprehensive judge system not available')
@@ -1074,6 +1081,7 @@ def make_json_serializable(obj: Any) -> Any:
 		return str(obj)
 
 
+@observe_debug()
 async def reformat_agent_history(
 	agent_history: AgentHistoryList,
 	task_id: str,
@@ -1275,6 +1283,7 @@ class Task:
 		return self.__str__()
 
 
+@observe_debug()
 async def judge_task_result(model, task_folder: Path, score_threshold: float = 3, use_mind2web: bool = False) -> dict:
 	"""
 	Judge a single task result using the comprehensive judge system by default,
@@ -1441,6 +1450,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 		}
 
 
+@observe_debug()
 async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
 	"""Generic stage runner with timeout"""
 	if timeout:
@@ -1448,6 +1458,7 @@ async def run_stage(stage: Stage, stage_func, timeout: int | None = None):
 	return await stage_func()
 
 
+@observe_debug()
 async def setup_browser_session(
 	task: Task, headless: bool, highlight_elements: bool = True, browser: str = 'local'
 ) -> BrowserSession:
@@ -1547,7 +1558,7 @@ async def setup_browser_session(
 	return browser_session
 
 
-@observe(name='executor', span_type='EXECUTOR')  # type: ignore[arg-type]
+@observe_debug(name='executor', span_type='EXECUTOR')  # type: ignore[arg-type]
 async def run_agent_with_browser(
 	browser_session: BrowserSession,
 	task: Task,
@@ -1629,7 +1640,7 @@ async def run_agent_with_browser(
 	return agent.state.history, last_message
 
 
-@observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
+@observe_debug(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
 async def evaluate_task_result(
 	eval_model: BaseChatModel, task_folder: Path, task: Task | None = None, use_mind2web: bool = False
 ) -> dict:
@@ -1660,6 +1671,7 @@ async def evaluate_task_result(
 		return await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
 
 
+@observe_debug(name='evaluate_task_with_login_cookie')  # type: ignore[arg-type]
 async def evaluate_task_with_login_cookie(login_cookie: str, task_folder: Path) -> dict:
 	"""
 	Evaluate a login task by checking if the login_cookie is present in browser cookies.
@@ -1818,11 +1830,13 @@ async def evaluate_task_with_login_cookie(login_cookie: str, task_folder: Path) 
 	}
 
 
+@observe_debug()
 def save_result_to_server(convex_url: str, secret_key: str, payload: dict) -> bool:
 	"""Save result to server (sync function for use with asyncio.to_thread)"""
 	return save_task_result_to_server(convex_url, secret_key, payload)
 
 
+@observe_debug()
 async def cleanup_browser_safe(browser_session: BrowserSession):
 	"""Safe browser cleanup with timeout"""
 	try:
@@ -1851,7 +1865,7 @@ def determine_current_stage(completed_stages: set) -> Stage:
 		return Stage.SETUP_BROWSER  # Default starting stage
 
 
-@observe(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
+@observe_debug(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,
@@ -2288,6 +2302,7 @@ async def run_task_with_semaphore(
 		return final_result
 
 
+@observe_debug()
 async def run_multiple_tasks(
 	tasks: list[Task],
 	llm: BaseChatModel,
@@ -2342,6 +2357,7 @@ async def run_multiple_tasks(
 	heartbeat_task = None
 	heartbeat_stop_event = asyncio.Event()
 
+	@observe_debug()
 	async def heartbeat_logger():
 		"""Log periodic heartbeat to show the process is alive"""
 		heartbeat_count = 0
@@ -2834,6 +2850,7 @@ def send_progress_update(
 		return False
 
 
+@observe_debug()
 async def run_evaluation_pipeline(
 	tasks: list[Task],
 	llm: BaseChatModel,
@@ -2923,6 +2940,7 @@ async def run_evaluation_pipeline(
 	)
 
 
+@observe_debug()
 async def check_login_cookie_at_step(browser_session, task_id: str, login_cookie: str, step: int) -> bool:
 	"""
 	Check if login cookie is present at the current step.
@@ -2991,6 +3009,7 @@ async def check_login_cookie_at_step(browser_session, task_id: str, login_cookie
 		return False
 
 
+@observe_debug()
 async def save_login_cookie_tracking(task_folder: Path, task_id: str) -> None:
 	"""
 	Save the login cookie tracking information to a file.
