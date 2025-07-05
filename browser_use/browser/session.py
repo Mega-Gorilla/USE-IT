@@ -761,14 +761,13 @@ class BrowserSession(BaseModel):
 
 		try:
 			# Reasonable timeout for screenshot
-			screenshot = await asyncio.wait_for(
-				page.screenshot(
-					full_page=False,
-					timeout=10000,  # 10 second playwright timeout
-					animations='allow',
-					caret='initial',
-				),
-				timeout=12.0,  # 12 second asyncio timeout
+			screenshot = await page.screenshot(
+				full_page=False,
+				# scale='css',
+				timeout=self.browser_profile.default_timeout or 10000,
+				# clip=FloatRect(**clip) if clip else None,
+				animations='allow',
+				caret='initial',
 			)
 		except TimeoutError:
 			self.logger.warning('🚨 Screenshot deadlock detected (asyncio timeout), restarting browser...')
