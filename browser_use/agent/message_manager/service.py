@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 import logging
 
-from observability import observe_debug
-
 from browser_use.agent.message_manager.views import (
 	HistoryItem,
 )
@@ -24,6 +22,7 @@ from browser_use.llm.messages import (
 	SystemMessage,
 	UserMessage,
 )
+from browser_use.observability import observe_debug
 from browser_use.utils import match_url_with_domain_pattern, time_execution_sync
 
 logger = logging.getLogger(__name__)

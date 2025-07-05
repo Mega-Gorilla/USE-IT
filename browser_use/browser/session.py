@@ -16,9 +16,8 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
-from observability import observe_debug
-
 from browser_use.config import CONFIG
+from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
 from .utils import normalize_url

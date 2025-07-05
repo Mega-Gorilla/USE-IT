@@ -7,8 +7,6 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar, cast
 
-from observability import observe_debug
-
 try:
 	from lmnr import Laminar  # type: ignore
 except ImportError:
@@ -37,6 +35,7 @@ from browser_use.controller.views import (
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import UserMessage
+from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
