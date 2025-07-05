@@ -66,7 +66,7 @@ from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.groq.chat import ChatGroq
 from browser_use.llm.openai.chat import ChatOpenAI
-from browser_use.observability import observe_debug
+from browser_use.observability import observe, observe_debug
 from eval.utils import create_pydantic_model_from_schema
 
 MAX_IMAGE = 5
@@ -1640,7 +1640,7 @@ async def run_agent_with_browser(
 	return agent.state.history, last_message
 
 
-@observe_debug(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
+@observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
 async def evaluate_task_result(
 	eval_model: BaseChatModel, task_folder: Path, task: Task | None = None, use_mind2web: bool = False
 ) -> dict:
@@ -1865,7 +1865,7 @@ def determine_current_stage(completed_stages: set) -> Stage:
 		return Stage.SETUP_BROWSER  # Default starting stage
 
 
-@observe_debug(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
+@observe(name='evaluation', span_type='EVALUATION')  # type: ignore[arg-type]
 async def run_task_with_semaphore(
 	task: Task,
 	run_id: str,

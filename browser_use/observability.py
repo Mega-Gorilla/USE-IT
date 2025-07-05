@@ -79,6 +79,7 @@ def observe(
 	ignore_input: bool = False,
 	ignore_output: bool = False,
 	metadata: dict[str, Any] | None = None,
+	span_type: str | None = None,
 	**kwargs: Any,
 ) -> Callable[[F], F]:
 	"""
@@ -104,11 +105,13 @@ def observe(
 	"""
 	if _LMNR_AVAILABLE and _lmnr_observe:
 		# Use the real lmnr observe decorator
-		return _lmnr_observe(name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, **kwargs)
+		return _lmnr_observe(
+			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
+		)
 	else:
 		# Use no-op decorator
 		return _create_no_op_decorator(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, **kwargs
+			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
 		)
 
 
@@ -117,6 +120,7 @@ def observe_debug(
 	ignore_input: bool = False,
 	ignore_output: bool = False,
 	metadata: dict[str, Any] | None = None,
+	span_type: str | None = None,
 	**kwargs: Any,
 ) -> Callable[[F], F]:
 	"""
@@ -147,11 +151,13 @@ def observe_debug(
 	"""
 	if _LMNR_AVAILABLE and _lmnr_observe and _is_debug_mode():
 		# Use the real lmnr observe decorator only in debug mode
-		return _lmnr_observe(name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, **kwargs)
+		return _lmnr_observe(
+			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
+		)
 	else:
 		# Use no-op decorator (either not in debug mode or lmnr not available)
 		return _create_no_op_decorator(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, **kwargs
+			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
 		)
 
 
