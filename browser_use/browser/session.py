@@ -2382,7 +2382,7 @@ class BrowserSession(BaseModel):
 		if elapsed > 1:
 			self.logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
-	@observe()
+	@observe(name='wait_for_page_and_frames_load')
 	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
 		Ensures page is fully loaded before continuing.
