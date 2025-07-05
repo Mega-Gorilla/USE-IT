@@ -622,6 +622,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		try:
 			return await self.browser_session.get_state_summary(cache_clickable_elements_hashes)
 		except Exception as e:
+			if self.state.last_result is None:
+				self.state.last_result = []
+			self.state.last_result.append(ActionResult(error=str(e)))
 			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
 
 		self.logger.warning('🔄 Falling back to minimal state summary')
