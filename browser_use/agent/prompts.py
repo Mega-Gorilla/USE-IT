@@ -201,7 +201,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			state_description += 'For this page, these additional actions are available:\n'
 			state_description += self.page_filtered_actions + '\n'
 
-		if use_vision is True:
+		if use_vision is True and self.screenshots:
 			# Start with text description
 			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=state_description)]
 			for screenshot in self.screenshots:

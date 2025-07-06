@@ -317,15 +317,15 @@ The file system actions do not change the browser state, so I can also click on 
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
 		# Extract previous screenshots if we need more than 1 image and have agent history
-		previous_screenshots = []
+		screenshots = []
 		if agent_history_list and self.images_per_step > 1:
 			# Get previous screenshots and filter out None values
 			raw_screenshots = agent_history_list.screenshots(n_last=self.images_per_step - 1, return_none_if_not_screenshot=False)
-			previous_screenshots = [s for s in raw_screenshots if s is not None]
+			screenshots = [s for s in raw_screenshots if s is not None]
 
 		# add current screenshot to the end
 		if browser_state_summary.screenshot:
-			previous_screenshots.append(browser_state_summary.screenshot)
+			screenshots.append(browser_state_summary.screenshot)
 
 		# otherwise add state message and result to next message (which will not stay in memory)
 		assert browser_state_summary
@@ -340,7 +340,7 @@ The file system actions do not change the browser state, so I can also click on 
 			page_filtered_actions=page_filtered_actions,
 			sensitive_data=self.sensitive_data_description,
 			available_file_paths=self.available_file_paths,
-			screenshots=previous_screenshots,
+			screenshots=screenshots,
 		).get_user_message(use_vision)
 
 		self._add_message_with_type(state_message)
