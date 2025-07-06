@@ -344,7 +344,9 @@ async def reformat_agent_history(
 # ================================================
 
 
-async def judge_task_result(model, task_folder: Path, score_threshold: float = 3, use_mind2web: bool = False) -> dict:
+async def judge_task_result(
+	model, task_folder: Path, score_threshold: float = 3, use_mind2web: bool = False, judge_repeat_count: int = 1
+) -> dict:
 	"""
 	Judge a single task result using the comprehensive judge system by default,
 	with optional fallback to the original Online_Mind2Web evaluation.
@@ -354,6 +356,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 	    task_folder: Path to the task result folder
 	    score_threshold: Score threshold for image filtering (used only for Mind2Web)
 	    use_mind2web: If True, use the original Online_Mind2Web evaluation instead
+	    judge_repeat_count: Number of times to repeat the judge evaluation (averages over multiple judgments)
 
 	Returns:
 	    Dictionary containing judgment results
@@ -436,7 +439,7 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 
 		else:
 			# Use the new comprehensive judge system (default)
-			logger.info(f'Task {task_folder.name}: Using comprehensive judge evaluation')
+			logger.info(f'Task {task_folder.name}: Using comprehensive judge evaluation with {judge_repeat_count} repetition(s)')
 
 			# Check if comprehensive judge result already exists
 			if result.get('comprehensive_judge_evaluation'):
@@ -451,10 +454,12 @@ async def judge_task_result(model, task_folder: Path, score_threshold: float = 3
 				}
 
 			try:
-				# Run comprehensive judge evaluation
+				# Run comprehensive judge evaluation (with repeat and averaging handled in comprehensive_judge.py)
 				comprehensive_result = await asyncio.wait_for(
-					evaluate_task_with_comprehensive_judge(task_folder=task_folder, model=model, max_images=10),
-					timeout=180,  # 3 minutes max for evaluation
+					evaluate_task_with_comprehensive_judge(
+						task_folder=task_folder, model=model, max_images=10, judge_repeat_count=judge_repeat_count
+					),
+					timeout=180 * judge_repeat_count,  # Increase timeout based on repeat count
 				)
 
 				if comprehensive_result.get('error'):
@@ -594,7 +599,11 @@ async def run_agent_with_browser(
 
 @observe(name='evaluate_task_result', span_type='EVALUATOR')  # type: ignore[arg-type]
 async def evaluate_task_result(
-	eval_model: BaseChatModel, task_folder: Path, task: Task | None = None, use_mind2web: bool = False
+	eval_model: BaseChatModel,
+	task_folder: Path,
+	task: Task | None = None,
+	use_mind2web: bool = False,
+	judge_repeat_count: int = 1,
 ) -> dict:
 	"""Evaluate the task result"""
 	# Check if this is a login task that should use both cookie-based and judge evaluation
@@ -602,7 +611,9 @@ async def evaluate_task_result(
 		logger.info(f'Using combined cookie-based and judge evaluation for login task {task.task_id}')
 
 		# First run the judge evaluation to get comprehensive feedback
-		judge_result = await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
+		judge_result = await judge_task_result(
+			eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web, judge_repeat_count=judge_repeat_count
+		)
 
 		# Then run the cookie-based evaluation to get the actual score
 		cookie_result = await evaluate_task_with_login_cookie(task.login_cookie, task_folder)
@@ -620,7 +631,9 @@ async def evaluate_task_result(
 
 		return judge_result
 	else:
-		return await judge_task_result(eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web)
+		return await judge_task_result(
+			eval_model, task_folder, score_threshold=3, use_mind2web=use_mind2web, judge_repeat_count=judge_repeat_count
+		)
 
 
 async def cleanup_browser_safe(browser_session: BrowserSession):
@@ -697,6 +710,7 @@ async def run_task_with_semaphore(
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
 	gmail_tokens_dict: dict[str, str] | None = None,
+	judge_repeat_count: int = 1,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -928,8 +942,8 @@ async def run_task_with_semaphore(
 						logger.info(f'Task {task.task_id}: Evaluation starting.')
 						evaluation = await run_stage(
 							Stage.EVALUATE,
-							lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge),
-							timeout=300,
+							lambda: evaluate_task_result(eval_model, task_folder, task, use_mind2web_judge, judge_repeat_count),
+							timeout=300 * judge_repeat_count,  # Increase timeout based on repeat count
 						)
 						task_result.stage_completed(Stage.EVALUATE, evaluation)
 						logger.info(f'Task {task.task_id}: Evaluation completed.')
@@ -1135,6 +1149,7 @@ async def run_multiple_tasks(
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
 	gmail_tokens_dict: dict[str, str] | None = None,
+	judge_repeat_count: int = 1,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1217,6 +1232,7 @@ async def run_multiple_tasks(
 					use_mind2web_judge=use_mind2web_judge,
 					use_thinking=use_thinking,
 					gmail_tokens_dict=gmail_tokens_dict,
+					judge_repeat_count=judge_repeat_count,
 				)
 				for task in tasks_to_run
 			),
@@ -1313,6 +1329,7 @@ async def run_evaluation_pipeline(
 	use_mind2web_judge: bool = False,
 	use_thinking: bool = True,
 	gmail_tokens_dict: dict[str, str] | None = None,
+	judge_repeat_count: int = 1,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -1368,6 +1385,7 @@ async def run_evaluation_pipeline(
 		use_mind2web_judge=use_mind2web_judge,
 		use_thinking=use_thinking,
 		gmail_tokens_dict=gmail_tokens_dict,
+		judge_repeat_count=judge_repeat_count,
 	)
 
 
@@ -1414,6 +1432,12 @@ if __name__ == '__main__':
 		help='Model to use for planning (separate from main agent model)',
 	)
 	parser.add_argument('--planner-interval', type=int, default=1, help='Run planner every N steps (default: 1)')
+	parser.add_argument(
+		'--judge-repeat-count',
+		type=int,
+		default=1,
+		help='Number of times to repeat the judge evaluation for each task (averages over multiple judgments)',
+	)
 	parser.add_argument(
 		'--test-case', type=str, default='OnlineMind2Web', help='Name of the test case to fetch (default: OnlineMind2Web)'
 	)
@@ -1625,6 +1649,7 @@ if __name__ == '__main__':
 		'planner_model': args.planner_model,
 		'planner_interval': args.planner_interval,
 		'include_result': args.include_result,
+		'judge_repeat_count': args.judge_repeat_count,
 	}
 
 	run_data = {
@@ -1811,6 +1836,7 @@ if __name__ == '__main__':
 				use_mind2web_judge=args.use_mind2web_judge,
 				use_thinking=not args.no_thinking,
 				gmail_tokens_dict=gmail_tokens_dict,
+				judge_repeat_count=args.judge_repeat_count,
 			)
 		)
 
