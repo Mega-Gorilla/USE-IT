@@ -152,9 +152,10 @@ class SchemaOptimizer:
 
 			# Then update required for this level
 			if 'properties' in schema and 'type' in schema and schema['type'] == 'object':
-				# Add all properties to required array
-				all_props = list(schema['properties'].keys())
-				schema['required'] = all_props  # Set all properties as required
+				# Add all properties to required array if 'required' is not already defined
+				if 'required' not in schema:
+					all_props = list(schema['properties'].keys())
+					schema['required'] = all_props  # Set all properties as required
 
 		elif isinstance(schema, list):
 			for item in schema:

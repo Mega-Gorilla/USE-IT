@@ -38,27 +38,27 @@ def test_optimizer_preserves_all_fields_in_structured_done_action():
     # 4. Find the 'done' action schema within the optimized output.
     # The path is properties -> action -> items -> anyOf -> [schema with 'done'].
     done_action_schema = None
-    actions_schemas = optimized_schema.get("properties", {}).get("action", {}).get("items", {}).get("anyOf", [])
+    actions_schemas = optimized_schema.get('properties', {}).get('action', {}).get('items', {}).get('anyOf', [])
     for action_schema in actions_schemas:
-        if "done" in action_schema.get("properties", {}):
+        if 'done' in action_schema.get('properties', {}):
             done_action_schema = action_schema
             break
 
     # 5. Assert that the 'done' action schema was successfully found.
-    assert done_action_schema is not None, "Could not find 'done' action in the optimized schema."
+    assert done_action_schema is not None, 'Could not find "done" action in the optimized schema.'
 
     # 6. Navigate to the schema for our custom data model within the 'done' action.
     # The path is properties -> done -> properties -> data -> properties.
-    done_params_schema = done_action_schema.get("properties", {}).get("done", {})
-    structured_data_schema = done_params_schema.get("properties", {}).get("data", {})
-    final_properties = structured_data_schema.get("properties", {})
+    done_params_schema = done_action_schema.get('properties', {}).get('done', {})
+    structured_data_schema = done_params_schema.get('properties', {}).get('data', {})
+    final_properties = structured_data_schema.get('properties', {})
 
     # 7. Assert that the set of fields in the optimized schema matches the original model's fields.
     original_fields = set(ProductInfo.model_fields.keys())
     optimized_fields = set(final_properties.keys())
 
     assert original_fields == optimized_fields, (
-        f"Field mismatch between original and optimized structured 'done' action schema.\n"
-        f"Missing from optimized: {original_fields - optimized_fields}\n"
-        f"Unexpected in optimized: {optimized_fields - original_fields}"
+        f'Field mismatch between original and optimized structured \'done\' action schema.\n'
+        f'Missing from optimized: {original_fields - optimized_fields}\n'
+        f'Unexpected in optimized: {optimized_fields - original_fields}'
     ) 
