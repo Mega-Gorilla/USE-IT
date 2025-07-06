@@ -103,7 +103,7 @@ class MessageManager:
 		available_file_paths: list[str] | None = None,
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
-		include_tool_call_examples: bool = True,
+		include_tool_call_examples: bool = False,
 		include_attributes: list[str] | None = None,
 		message_context: str | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,

@@ -171,7 +171,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
-		include_tool_call_examples: bool = True,
+		include_tool_call_examples: bool = False,
 		**kwargs,
 	):
 		# Check for deprecated memory parameters
