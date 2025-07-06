@@ -26,8 +26,7 @@ llm = ChatOpenAI(
 )
 
 
-task = 'Go to google.com/travel/flights and search for flights to Tokyo next week'
-task = 'Directly call done and in the text write the description of the tool extract_structured_data'
+task = 'Find the founders of browser-use'
 agent = Agent(task=task, llm=llm)
 
 
