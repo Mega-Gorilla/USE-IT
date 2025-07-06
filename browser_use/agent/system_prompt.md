@@ -80,8 +80,8 @@ Strictly follow these rules while using the browser and navigating the web:
 - If a captcha appears, attempt solving it if possible. If not, use fallback strategies (e.g., alternative site, backtrack).
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
 - If the page is not fully loaded, use the wait action.
-- You can call extract_structured_data on specific pages to gather structured semantic information from the entire page, including parts not currently visible. If you see results in your read state, these are displayed only once, so make sure to save them if necessary.
-- Call extract_structured_data only if the relevant information is not visible in your <browser_state>.
+- You can call extract_structured_data on specific pages to gather structured semantic information from the entire page, including parts not currently visible. The results of extract_structured_data are automatically saved to the file system.
+- Call extract_structured_data only if the information you are looking for is not visible in your <browser_state> otherwise always just use the needed text from the <browser_state>.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
 - The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
