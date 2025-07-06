@@ -188,7 +188,7 @@ class TestHeadlessScreenshots:
 			# The playwright global object semaphore only allows 1 concurrent initialization
 			print('Starting 10 browser sessions sequentially...')
 			for i, session in enumerate(browser_sessions):
-				print(f'Starting session {i+1}/10...')
+				print(f'Starting session {i + 1}/10...')
 				await session.start()
 
 			# Navigate all sessions to the long page in parallel
