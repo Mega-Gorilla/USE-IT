@@ -10,7 +10,7 @@ from pathlib import Path
 import requests
 
 from browser_use import BrowserProfile, BrowserSession
-from eval.types import Task
+from eval.task_types import Task
 
 logger = logging.getLogger(__name__)
 

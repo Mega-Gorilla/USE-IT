@@ -48,7 +48,7 @@ from .server import (
 	send_progress_update,
 	start_new_run,
 )
-from .types import Stage, StageError, Task, TaskResult
+from .task_types import Stage, StageError, Task, TaskResult
 from .utils import get_git_info
 from .web_judge import Online_Mind2Web_eval_with_retry
 
