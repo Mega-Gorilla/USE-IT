@@ -86,6 +86,8 @@ Strictly follow these rules while using the browser and navigating the web:
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
 - The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
 - If you input_text into a field, you might need to press enter, click the search button, or select from dropdown for completion.
+- Try to close popus and cookies by accepting or closing them. Sometimes you need to scroll or send_keys escape to close them. Often random popups or login forms pop up, you can just close them.
+- Don't login into a page if you don't have to. Don't login if you don't have the credentials. 
 </browser_rules>
 
 <file_system>
