@@ -266,6 +266,15 @@ jobs:
           # Pass raw GitHub Actions object to Python - no parsing in bash
           GMAIL_2FA_TOKENS_RAW='${{ github.event.client_payload.script_args.gmail_2fa_tokens }}'
 
+          # Browser timeout and stealth parameters
+          DEFAULT_NAVIGATION_TIMEOUT="${{ github.event.client_payload.script_args.default_navigation_timeout }}"
+          DEFAULT_TIMEOUT="${{ github.event.client_payload.script_args.default_timeout }}"
+          MINIMUM_WAIT_PAGE_LOAD_TIME="${{ github.event.client_payload.script_args.minimum_wait_page_load_time }}"
+          WAIT_FOR_NETWORK_IDLE_PAGE_LOAD_TIME="${{ github.event.client_payload.script_args.wait_for_network_idle_page_load_time }}"
+          MAXIMUM_WAIT_PAGE_LOAD_TIME="${{ github.event.client_payload.script_args.maximum_wait_page_load_time }}"
+          WAIT_BETWEEN_ACTIONS="${{ github.event.client_payload.script_args.wait_between_actions }}"
+          STEALTH="${{ github.event.client_payload.script_args.stealth }}"
+
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
           TASK_TEXT="${{ github.event.client_payload.script_args.task_text }}"
@@ -299,6 +308,7 @@ jobs:
           [[ "${{ github.event.client_payload.script_args.highlight_elements }}" == "false" ]] && CMD_ARGS+=("--no-highlight-elements")
           [[ "${{ github.event.client_payload.script_args.use_mind2web_judge }}" == "true" ]] && CMD_ARGS+=("--use-mind2web-judge")
           [[ "$THINKING" == "false" ]] && CMD_ARGS+=("--no-thinking")
+          [[ "$STEALTH" == "true" ]] && CMD_ARGS+=("--stealth")
 
           # Add optional string parameters
           [[ -n "$USER_MESSAGE" ]] && CMD_ARGS+=("--user-message" "$USER_MESSAGE")
@@ -309,6 +319,14 @@ jobs:
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
           [[ -n "$BROWSER_LOGGING_LEVEL" ]] && CMD_ARGS+=("--browser-logging-level" "$BROWSER_LOGGING_LEVEL")
+          
+          # Add browser timeout parameters
+          [[ -n "$DEFAULT_NAVIGATION_TIMEOUT" ]] && CMD_ARGS+=("--default-navigation-timeout" "$DEFAULT_NAVIGATION_TIMEOUT")
+          [[ -n "$DEFAULT_TIMEOUT" ]] && CMD_ARGS+=("--default-timeout" "$DEFAULT_TIMEOUT")
+          [[ -n "$MINIMUM_WAIT_PAGE_LOAD_TIME" ]] && CMD_ARGS+=("--minimum-wait-page-load-time" "$MINIMUM_WAIT_PAGE_LOAD_TIME")
+          [[ -n "$WAIT_FOR_NETWORK_IDLE_PAGE_LOAD_TIME" ]] && CMD_ARGS+=("--wait-for-network-idle-page-load-time" "$WAIT_FOR_NETWORK_IDLE_PAGE_LOAD_TIME")
+          [[ -n "$MAXIMUM_WAIT_PAGE_LOAD_TIME" ]] && CMD_ARGS+=("--maximum-wait-page-load-time" "$MAXIMUM_WAIT_PAGE_LOAD_TIME")
+          [[ -n "$WAIT_BETWEEN_ACTIONS" ]] && CMD_ARGS+=("--wait-between-actions" "$WAIT_BETWEEN_ACTIONS")
           
           if [[ -n "$GMAIL_2FA_TOKENS_RAW" && "$GMAIL_2FA_TOKENS_RAW" != "null" ]]; then
             echo "DEBUG: ✅ GMAIL_2FA_TOKENS_RAW conditional passed - adding tokens to command"
