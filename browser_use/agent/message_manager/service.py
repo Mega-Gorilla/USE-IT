@@ -9,6 +9,7 @@ from browser_use.agent.message_manager.views import (
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.agent.views import (
 	ActionResult,
+	AgentHistoryList,
 	AgentOutput,
 	AgentStepInfo,
 	MessageManagerState,
@@ -107,6 +108,7 @@ class MessageManager:
 		message_context: str | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		max_history_items: int | None = None,
+		images_per_step: int = 1,
 	):
 		self.task = task
 		self.state = state
@@ -116,6 +118,7 @@ class MessageManager:
 		self.available_file_paths = available_file_paths
 		self.use_thinking = use_thinking
 		self.max_history_items = max_history_items
+		self.images_per_step = images_per_step
 
 		assert max_history_items is None or max_history_items > 5, 'max_history_items must be None or greater than 5'
 
@@ -168,31 +171,7 @@ class MessageManager:
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_type(placeholder_message)
 
-		# Create base example content
-		example_content = {
-			'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
-			'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-			'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
-			'action': [
-				{
-					'write_file': {
-						'path': 'todo.md',
-						'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
-					}
-				},
-				{
-					'write_file': {
-						'path': 'github.md',
-						'content': '# Github Repositories:\n',
-					}
-				},
-				{
-					'click_element_by_index': {
-						'index': 4,
-					}
-				},
-			],
-		}
+		example_content = dict()
 
 		# Add thinking field only if use_thinking is True
 		if self.use_thinking:
@@ -204,6 +183,32 @@ I need to capture the key repositories I've identified so far into my memory and
 Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
 After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
 The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
+
+		# Create base example content
+		example_content['evaluation_previous_goal'] = 'Navigated to GitHub explore page. Verdict: Success'
+		example_content['memory'] = 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.'
+		example_content['next_goal'] = (
+			'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.'
+		)
+		example_content['action'] = [
+			{
+				'write_file': {
+					'path': 'todo.md',
+					'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
+				}
+			},
+			{
+				'write_file': {
+					'path': 'github.md',
+					'content': '# Github Repositories:\n',
+				}
+			},
+			{
+				'click_element_by_index': {
+					'index': 4,
+				}
+			},
+		]
 
 		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
 		self._add_message_with_type(example_tool_call_1)
@@ -312,12 +317,25 @@ The file system actions do not change the browser state, so I can also click on 
 		use_vision=True,
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
+		agent_history_list: AgentHistoryList | None = None,  # Pass AgentHistoryList from agent
 	) -> None:
 		"""Add browser state as human message"""
 
 		self._update_agent_history_description(model_output, result, step_info)
 		if sensitive_data:
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
+
+		# Extract previous screenshots if we need more than 1 image and have agent history
+		screenshots = []
+		if agent_history_list and self.images_per_step > 1:
+			# Get previous screenshots and filter out None values
+			raw_screenshots = agent_history_list.screenshots(n_last=self.images_per_step - 1, return_none_if_not_screenshot=False)
+			screenshots = [s for s in raw_screenshots if s is not None]
+
+		# add current screenshot to the end
+		if browser_state_summary.screenshot:
+			screenshots.append(browser_state_summary.screenshot)
+
 		# otherwise add state message and result to next message (which will not stay in memory)
 		assert browser_state_summary
 		state_message = AgentMessagePrompt(
@@ -331,6 +349,7 @@ The file system actions do not change the browser state, so I can also click on 
 			page_filtered_actions=page_filtered_actions,
 			sensitive_data=self.sensitive_data_description,
 			available_file_paths=self.available_file_paths,
+			screenshots=screenshots,
 		).get_user_message(use_vision)
 
 		self._add_message_with_type(state_message)

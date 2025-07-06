@@ -39,6 +39,7 @@ dependencies = [
     "google-api-python-client>=2.174.0",
     "google-auth>=2.40.3",
     "google-auth-oauthlib>=1.2.2",
+    "pypdf>=5.7.0",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -73,6 +74,8 @@ eval = [
     "Pillow>=11.2.1",
     "psutil>=7.0.0",
     "datamodel-code-generator>=0.26.0",
+    "hyperbrowser==0.47.0",
+    "browserbase==1.4.0",
 ]
 all = [
     "browser-use[cli,examples,aws]",
