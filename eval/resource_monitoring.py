@@ -27,7 +27,7 @@ def get_system_resources() -> dict[str, Any]:
 		memory_available_gb = memory.available / (1024**3)
 
 		# CPU usage
-		cpu_percent = psutil.cpu_percent(interval=1)
+		cpu_percent = psutil.cpu_percent(interval=None)
 
 		# Load average (Unix only)
 		try:

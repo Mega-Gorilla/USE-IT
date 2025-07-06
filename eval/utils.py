@@ -239,7 +239,7 @@ def make_json_serializable(obj: Any) -> Any:
 	elif isinstance(obj, (str, int, float, bool)):
 		return obj
 	elif isinstance(obj, dict):
-		return {k: make_json_serializable(v) for k, v in obj.items()}
+		return {str(k): make_json_serializable(v) for k, v in obj.items()}
 	elif isinstance(obj, (list, tuple)):
 		return [make_json_serializable(item) for item in obj]
 	elif hasattr(obj, 'value'):  # Handle enums

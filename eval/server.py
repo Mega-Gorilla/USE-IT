@@ -29,7 +29,7 @@ def fetch_tasks_from_server(convex_url: str, secret_key: str, test_case_name: st
 	logger.info(f"Fetching test case '{test_case_name}' from {endpoint_url}...")
 
 	try:
-		response = requests.post(endpoint_url, headers=headers, json=payload)
+		response = requests.post(endpoint_url, headers=headers, json=payload, timeout=10)
 
 		logger.info(f'Fetch Status Code: {response.status_code}')
 
@@ -79,7 +79,7 @@ def fetch_auth_distribution_from_server(convex_url: str, secret_key: str):
 	logger.info(f'Fetching auth distribution from {endpoint_url}...')
 
 	try:
-		response = requests.post(endpoint_url, headers=headers, json={})
+		response = requests.post(endpoint_url, headers=headers, json={}, timeout=10)
 
 		logger.info(f'Fetch Auth Distribution Status Code: {response.status_code}')
 
@@ -183,7 +183,7 @@ def start_new_run(convex_url: str, secret_key: str, run_details: dict, existing_
 	logger.info(f'Run details: {json.dumps(loggable_details, indent=2)}')
 
 	try:
-		response = requests.post(endpoint_url, headers=headers, json=payload)
+		response = requests.post(endpoint_url, headers=headers, json=payload, timeout=10)
 		logger.info(f'Start Run Status Code: {response.status_code}')
 
 		if response.status_code == 200:
@@ -237,7 +237,7 @@ def save_task_result_to_server(convex_url: str, secret_key: str, result_details:
 	logger.debug(f'Result details payload: {json.dumps(result_details, indent=2)}')  # Log details at debug level
 
 	try:
-		response = requests.post(endpoint_url, headers=headers, json=result_details)
+		response = requests.post(endpoint_url, headers=headers, json=result_details, timeout=10)
 
 		logger.info(f'Save Task Result Status Code: {response.status_code}')
 

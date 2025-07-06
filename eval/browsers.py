@@ -67,6 +67,7 @@ def create_anchor_browser_session(headless: bool = False) -> str:
 				'Content-Type': 'application/json',
 			},
 			json=browser_configuration,
+			timeout=10,
 		)
 		response.raise_for_status()
 		session_data = response.json()['data']
