@@ -779,6 +779,12 @@ SUPPORTED_MODELS = {
 		'base_url': 'https://api.deepseek.com/v1',
 		'api_key_env': 'DEEPSEEK_API_KEY',
 	},
+	'qwen2.5-vl-72b-instruct': {
+		'provider': 'openai_compatible',
+		'model_name': 'Qwen/Qwen2.5-VL-72B-Instruct',
+		'base_url': 'https://api.together.xyz/v1',
+		'api_key_env': 'TOGETHER_API_KEY',
+	},
 	# Google
 	'gemini-1.5-flash': {'provider': 'google', 'model_name': 'gemini-1.5-flash-latest', 'api_key_env': 'GEMINI_API_KEY'},
 	'gemini-2.0-flash-lite': {'provider': 'google', 'model_name': 'gemini-2.0-flash-lite', 'api_key_env': 'GEMINI_API_KEY'},
