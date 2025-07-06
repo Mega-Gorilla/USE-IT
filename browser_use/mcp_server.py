@@ -156,7 +156,12 @@ class BrowserUseServer:
 							'index': {
 								'type': 'integer',
 								'description': 'The index of the element to click (from browser_get_state)',
-							}
+							},
+							'new_tab': {
+								'type': 'boolean',
+								'description': 'Whether to open any resulting navigation in a new tab',
+								'default': False,
+							},
 						},
 						'required': ['index'],
 					},
@@ -288,7 +293,7 @@ class BrowserUseServer:
 				return await self._navigate(arguments['url'], arguments.get('new_tab', False))
 
 			elif tool_name == 'browser_click':
-				return await self._click(arguments['index'])
+				return await self._click(arguments['index'], arguments.get('new_tab', False))
 
 			elif tool_name == 'browser_type':
 				return await self._type_text(arguments['index'], arguments['text'])
@@ -319,7 +324,7 @@ class BrowserUseServer:
 
 		return f'Unknown tool: {tool_name}'
 
-	async def _init_browser_session(self, allowed_domains: list[str] = None):
+	async def _init_browser_session(self, allowed_domains: list[str] | None = None):
 		"""Initialize browser session and controller."""
 		if self.browser_session:
 			return
@@ -421,16 +426,38 @@ class BrowserUseServer:
 			await self.browser_session.navigate_to(url)
 			return f'Navigated to: {url}'
 
-	async def _click(self, index: int) -> str:
+	async def _click(self, index: int, new_tab: bool = False) -> str:
 		"""Click an element by index."""
 		# Get the element
 		element = await self.browser_session.get_dom_element_by_index(index)
 		if not element:
 			return f'Element with index {index} not found'
 
-		# Click it
-		await self.browser_session._click_element_node(element)
-		return f'Clicked element {index}'
+		if new_tab:
+			# For links, extract href and open in new tab
+			href = element.attributes.get('href')
+			if href:
+				# Open link in new tab
+				page = await self.browser_session.create_new_tab(href)
+				tab_idx = self.browser_session.tabs.index(page)
+				return f'Clicked element {index} and opened in new tab #{tab_idx}'
+			else:
+				# For non-link elements, try Cmd/Ctrl+Click
+				page = await self.browser_session.get_current_page()
+				element_handle = await self.browser_session.get_locate_element(element)
+				if element_handle:
+					# Use playwright's click with modifiers
+					modifiers = ['Meta'] if sys.platform == 'darwin' else ['Control']
+					await element_handle.click(modifiers=modifiers)
+					# Wait a bit for potential new tab
+					await asyncio.sleep(0.5)
+					return f'Clicked element {index} with {modifiers[0]} key (new tab if supported)'
+				else:
+					return f'Could not locate element {index} for modified click'
+		else:
+			# Normal click
+			await self.browser_session._click_element_node(element)
+			return f'Clicked element {index}'
 
 	async def _type_text(self, index: int, text: str) -> str:
 		"""Type text into an element."""
