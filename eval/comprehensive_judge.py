@@ -555,20 +555,30 @@ async def judge_with_repeat_and_average(
 			task, complete_history, final_result, last_message, screenshot_paths, model, max_retries, max_images
 		)
 
-	logger.info(f'Running {judge_repeat_count} judge evaluations for averaging')
+	logger.info(f'Running {judge_repeat_count} judge evaluations in parallel for averaging')
 
-	evaluations: list[JudgeResult] = []
+	# Create tasks for parallel execution
+	judge_tasks = []
 	for i in range(judge_repeat_count):
-		logger.info(f'Running judge evaluation {i + 1}/{judge_repeat_count}')
+		task_coro = judge_with_retry(
+			task, complete_history, final_result, last_message, screenshot_paths, model, max_retries, max_images
+		)
+		judge_tasks.append(task_coro)
 
-		try:
-			evaluation = await judge_with_retry(
-				task, complete_history, final_result, last_message, screenshot_paths, model, max_retries, max_images
-			)
-			evaluations.append(evaluation)
-		except Exception as e:
-			logger.warning(f'Judge evaluation {i + 1} failed: {e}')
-			continue
+	# Run all judge evaluations in parallel
+	logger.info(f'Starting {len(judge_tasks)} parallel judge evaluations...')
+	results = await asyncio.gather(*judge_tasks, return_exceptions=True)
+
+	# Process results and filter out exceptions
+	evaluations: list[JudgeResult] = []
+	for i, result in enumerate(results):
+		if isinstance(result, Exception):
+			logger.warning(f'Judge evaluation {i + 1} failed: {result}')
+		elif isinstance(result, JudgeResult):
+			evaluations.append(result)
+			logger.info(f'Judge evaluation {i + 1} completed successfully with score: {result.final_score}')
+		else:
+			logger.warning(f'Judge evaluation {i + 1} returned unexpected type: {type(result)}')
 
 	if not evaluations or len(evaluations) == 0:
 		return create_fallback_result(task, 'All judge evaluations failed')
