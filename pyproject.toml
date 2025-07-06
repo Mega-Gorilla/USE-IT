@@ -74,6 +74,8 @@ eval = [
     "Pillow>=11.2.1",
     "psutil>=7.0.0",
     "datamodel-code-generator>=0.26.0",
+    "hyperbrowser==0.47.0",
+    "browserbase==1.4.0",
 ]
 all = [
     "browser-use[cli,examples,aws]",
