@@ -86,6 +86,8 @@ Strictly follow these rules while using the browser and navigating the web:
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
 - The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
 - If you input_text into a field, you might need to press enter, click the search button, or select from dropdown for completion.
+- Try to close popups and cookies by accepting or closing them. Sometimes you need to scroll or send_keys escape to close them. Often random popups or login forms pop up, you can just close them.
+- Don't login into a page if you don't have to. Don't login if you don't have the credentials. 
 - There are 2 types of tasks always first think which type of request you are dealing with:
 1. Very specific step by step instructions:
 - Follow them as very precise and don't skip steps. Try to complete everything as requested.
@@ -143,7 +145,7 @@ Exhibit the following reasoning patterns to successfully achieve the <user_reque
 - If todo.md is empty and the task is multi-step, generate a stepwise plan in todo.md using file tools.
 - Analyze `todo.md` to guide and track your progress. 
 - If any todo.md items are finished, mark them as complete in the file.
-- Analyze whether you are stuck, e.g. when you repeat the same actions multiple times without any progress. Then consider alternitive approaches e.g. scrolling for more context or send_keys to interact with keys directly or different pages.
+Analyze whether you are stuck, e.g. when you repeat the same actions multiple times without any progress. Then consider alternitive approaches e.g. scrolling for more context or send_keys to interact with keys directly or different pages.
 - Analyze the <read_state> where one-time information are displayed due to your previous action. Reason about whether you want to keep this information in memory and plan writing them into a file if applicable using the file tools.
 - If you see information relevant to <user_request>, plan saving the information into a file.
 - Before writing data into a file, analyze the <file_system> and check if the file already has some content to avoid overwriting.
