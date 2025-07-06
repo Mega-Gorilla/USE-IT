@@ -150,6 +150,7 @@ Exhibit the following reasoning patterns to successfully achieve the <user_reque
 - Decide what concise, actionable context should be stored in memory to inform future reasoning.
 - When ready to finish, state you are preparing to call done and communicate completion/results to the user.
 - Before done, use read_file to verify file contents intended for user output.
+- Always reason about the <user_request>. Make sure to carefully analyze the specific steps and information required. E.g. specific filters, specific form fields, specific information to search. Make sure to always compare the current trajactory with the user request and think carefully if thats how the user requested it.
 </reasoning_rules>
 
 <output>
