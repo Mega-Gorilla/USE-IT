@@ -605,6 +605,10 @@ async def judge_with_repeat_and_average(
 	for j, eval in enumerate(evaluations):
 		reasoning += f'JUDGE {j + 1} SCORE: {eval.final_score}\n{eval.reasoning}\n'
 
+	max_diff = (
+		max(evaluations, key=lambda x: x.final_score).final_score - min(evaluations, key=lambda x: x.final_score).final_score
+	)
+	reasoning += f'MAX DIFF: {max_diff}\n'
 	# Create averaged result
 	return JudgeResult(
 		task_summary=evaluations[0].task_summary,
