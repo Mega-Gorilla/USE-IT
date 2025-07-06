@@ -405,6 +405,8 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 	def screenshots(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
 		"""Get all screenshots from history"""
+		if n_last == 0:
+			return []
 		if n_last is None:
 			if return_none_if_not_screenshot:
 				return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history]
