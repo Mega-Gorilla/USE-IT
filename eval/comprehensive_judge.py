@@ -55,7 +55,6 @@ class ErrorCategory(Enum):
 
 	# File System
 	FILE_SYSTEM_MISUSE = 'file_system_misuse'  # Not saving results or tracking progress
-	EXTRACT_DATA_MISUSE = 'extract_data_misuse'  # Wrong usage of extract_structured_data
 
 
 class TaskCategory(Enum):
@@ -364,7 +363,7 @@ The browser-use agent operates in iterative loops receiving structured input:
 - element_interaction_error means that our extraction of the DOM is not correct. E.g. we missed to detect a crucial button and the agent does not see it with a [index]. This can be verified if you look how we highlight elements in the screenshot.
 - iframe_issues means we dont parse elements in the iframe correctly. E.g. we missed to detect a crucial button and the agent does not see it with a [index]. 
 - impossible_task means the task is impossible to complete because the said is down or information is missing
-- file_system_misuse means using read_file/write_file for short tasks when direct output would be appropriate. NOTE: extract_structured_data automatically saves to files as part of its core functionality - this is NOT file system misuse and expected behavior.
+- file_system_misuse means using read_file/write_file for short tasks when direct output would be appropriate. Important NOTE: extract_structured_data alone is not a file system misuse. This is allowed even for short tasks.
 
 
 **Improvement Tips (Actionable Developer Guidance):**
