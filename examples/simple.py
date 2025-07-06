@@ -10,6 +10,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+	from lmnr import Laminar
+
+	Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'))
+except Exception:
+	print('Error initializing Laminar')
+	pass
 
 from browser_use import Agent
 
@@ -19,7 +26,7 @@ llm = ChatOpenAI(
 )
 
 
-task = 'Open 3 tabs with random wikipedia pages'
+task = 'Go to google.com/travel/flights and search for flights to Tokyo next week'
 agent = Agent(task=task, llm=llm)
 
 
