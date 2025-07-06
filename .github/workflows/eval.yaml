@@ -24,9 +24,12 @@ jobs:
       EVALUATION_TOOL_SECRET_KEY: ${{ secrets.EVALUATION_TOOL_SECRET_KEY }}
       ANCHOR_BROWSER_API_KEY: ${{ secrets.ANCHOR_BROWSER_API_KEY }}
       BRIGHTDATA_CDP_URL: ${{ secrets.BRIGHTDATA_CDP_URL }}
+      HYPERBROWSER_API_KEY: ${{ secrets.HYPERBROWSER_API_KEY }}
+      BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+      BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
-      BROWSER_USE_LOGGING_LEVEL: ${{ secrets.BROWSER_USE_LOGGING_LEVEL }}
+      BROWSER_USE_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.browser_logging_level || secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
       TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
     
@@ -206,6 +209,7 @@ jobs:
           DEFAULT_MEMORY_INTERVAL="10"
           DEFAULT_MAX_ACTIONS_PER_STEP="10"
           DEFAULT_PLANNER_INTERVAL="1"
+          DEFAULT_JUDGE_REPEAT_COUNT="1"
           DEFAULT_TEST_CASE="OnlineMind2Web"
 
           # Extract and apply defaults using parameter expansion
@@ -245,6 +249,9 @@ jobs:
           PLANNER_INTERVAL="${{ github.event.client_payload.script_args.planner_interval }}"
           PLANNER_INTERVAL="${PLANNER_INTERVAL:-$DEFAULT_PLANNER_INTERVAL}"
 
+          JUDGE_REPEAT_COUNT="${{ github.event.client_payload.script_args.judge_repeat_count }}"
+          JUDGE_REPEAT_COUNT="${JUDGE_REPEAT_COUNT:-$DEFAULT_JUDGE_REPEAT_COUNT}"
+
           TEST_CASE="${{ github.event.client_payload.script_args.test_case }}"
           TEST_CASE="${TEST_CASE:-$DEFAULT_TEST_CASE}"
 
@@ -253,6 +260,7 @@ jobs:
           DEVELOPER_ID="${{ github.event.client_payload.script_args.developer_id }}"
           PLANNER_MODEL="${{ github.event.client_payload.script_args.planner_model }}"
           BROWSER="${{ github.event.client_payload.script_args.browser }}"
+          IMAGES_PER_STEP="${{ github.event.client_payload.script_args.images_per_step }}"
           RUN_ID="${{ github.event.client_payload.script_args.run_id }}"
           LAMINAR_EVAL_ID="${{ github.event.client_payload.script_args.laminar_eval_id }}"
           # Pass raw GitHub Actions object to Python - no parsing in bash
@@ -277,6 +285,7 @@ jobs:
             "--memory-interval" "$MEMORY_INTERVAL"
             "--max-actions-per-step" "$MAX_ACTIONS_PER_STEP"
             "--planner-interval" "$PLANNER_INTERVAL"
+            "--judge-repeat-count" "$JUDGE_REPEAT_COUNT"
             "--test-case" "$TEST_CASE"
           )
 
@@ -296,8 +305,10 @@ jobs:
           [[ -n "$DEVELOPER_ID" ]] && CMD_ARGS+=("--developer-id" "$DEVELOPER_ID")
           [[ -n "$PLANNER_MODEL" ]] && CMD_ARGS+=("--planner-model" "$PLANNER_MODEL")
           [[ -n "$BROWSER" ]] && CMD_ARGS+=("--browser" "$BROWSER")
+          [[ -n "$IMAGES_PER_STEP" ]] && CMD_ARGS+=("--images-per-step" "$IMAGES_PER_STEP")
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
+          [[ -n "$BROWSER_LOGGING_LEVEL" ]] && CMD_ARGS+=("--browser-logging-level" "$BROWSER_LOGGING_LEVEL")
           
           if [[ -n "$GMAIL_2FA_TOKENS_RAW" && "$GMAIL_2FA_TOKENS_RAW" != "null" ]]; then
             echo "DEBUG: ✅ GMAIL_2FA_TOKENS_RAW conditional passed - adding tokens to command"
