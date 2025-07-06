@@ -31,7 +31,7 @@ jobs:
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
       BROWSER_USE_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.browser_logging_level || secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
-      
+      TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
     
     steps:
       - name: System Info and Resource Check

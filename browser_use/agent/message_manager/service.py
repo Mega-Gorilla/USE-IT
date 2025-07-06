@@ -170,31 +170,7 @@ class MessageManager:
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_type(placeholder_message)
 
-		# Create base example content
-		example_content = {
-			'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
-			'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-			'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
-			'action': [
-				{
-					'write_file': {
-						'path': 'todo.md',
-						'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
-					}
-				},
-				{
-					'write_file': {
-						'path': 'github.md',
-						'content': '# Github Repositories:\n',
-					}
-				},
-				{
-					'click_element_by_index': {
-						'index': 4,
-					}
-				},
-			],
-		}
+		example_content = dict()
 
 		# Add thinking field only if use_thinking is True
 		if self.use_thinking:
@@ -206,6 +182,32 @@ I need to capture the key repositories I've identified so far into my memory and
 Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
 After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
 The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
+
+		# Create base example content
+		example_content['evaluation_previous_goal'] = 'Navigated to GitHub explore page. Verdict: Success'
+		example_content['memory'] = 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.'
+		example_content['next_goal'] = (
+			'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.'
+		)
+		example_content['action'] = [
+			{
+				'write_file': {
+					'path': 'todo.md',
+					'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
+				}
+			},
+			{
+				'write_file': {
+					'path': 'github.md',
+					'content': '# Github Repositories:\n',
+				}
+			},
+			{
+				'click_element_by_index': {
+					'index': 4,
+				}
+			},
+		]
 
 		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
 		self._add_message_with_type(example_tool_call_1)
