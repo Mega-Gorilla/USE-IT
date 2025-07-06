@@ -95,6 +95,35 @@ class AgentMessagePrompt:
 		self.screenshots = screenshots or []
 		assert self.browser_state
 
+	def _deduplicate_screenshots(self, screenshots: list[str]) -> list[str]:
+		"""
+		Remove consecutive duplicate screenshots, keeping only the most recent of each.
+
+		Args:
+			screenshots: List of base64-encoded screenshot strings in chronological order (oldest first)
+
+		Returns:
+			List of screenshots with consecutive duplicates removed, maintaining chronological order
+		"""
+		if not screenshots:
+			return []
+
+		if len(screenshots) == 1:
+			return screenshots
+
+		# Keep track of unique screenshots by comparing each with the next one
+		unique_screenshots = []
+
+		for i in range(len(screenshots)):
+			# Always keep the last screenshot
+			if i == len(screenshots) - 1:
+				unique_screenshots.append(screenshots[i])
+			# Only keep screenshot if it's different from the next one
+			elif screenshots[i] != screenshots[i + 1]:
+				unique_screenshots.append(screenshots[i])
+
+		return unique_screenshots
+
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
@@ -204,8 +233,22 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		if use_vision is True and self.screenshots:
 			# Start with text description
 			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=state_description)]
-			for screenshot in self.screenshots:
-				# Add previous screenshots first (chronologically ordered)
+
+			# Deduplicate screenshots, keeping only the most recent of each unique image
+			unique_screenshots = self._deduplicate_screenshots(self.screenshots)
+
+			# Add screenshots with labels
+			for i, screenshot in enumerate(unique_screenshots):
+				steps_ago = len(unique_screenshots) - 1 - i
+				if steps_ago == 0:
+					label = 'Current screenshot:'
+				else:
+					label = 'Past screenshot from previous step:'
+
+				# Add label as text content
+				content_parts.append(ContentPartTextParam(text=label))
+
+				# Add the screenshot
 				content_parts.append(
 					ContentPartImageParam(
 						image_url=ImageURL(
