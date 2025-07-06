@@ -239,11 +239,11 @@ Interactive elements from top layer of the current page inside the viewport{trun
 
 			# Add screenshots with labels
 			for i, screenshot in enumerate(unique_screenshots):
-				steps_ago = len(unique_screenshots) - 1 - i
-				if steps_ago == 0:
+				if i == len(unique_screenshots) - 1:
 					label = 'Current screenshot:'
 				else:
-					label = 'Past screenshot from previous step:'
+					# Use simple, accurate labeling since we don't have actual step timing info
+					label = 'Previous screenshot:'
 
 				# Add label as text content
 				content_parts.append(ContentPartTextParam(text=label))
