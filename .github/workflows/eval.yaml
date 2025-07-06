@@ -29,7 +29,7 @@ jobs:
       BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
-      BROWSER_USE_LOGGING_LEVEL: ${{ secrets.BROWSER_USE_LOGGING_LEVEL }}
+      BROWSER_USE_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.browser_logging_level || secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
       
     
@@ -308,6 +308,7 @@ jobs:
           [[ -n "$IMAGES_PER_STEP" ]] && CMD_ARGS+=("--images-per-step" "$IMAGES_PER_STEP")
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
+          [[ -n "$BROWSER_LOGGING_LEVEL" ]] && CMD_ARGS+=("--browser-logging-level" "$BROWSER_LOGGING_LEVEL")
           
           if [[ -n "$GMAIL_2FA_TOKENS_RAW" && "$GMAIL_2FA_TOKENS_RAW" != "null" ]]; then
             echo "DEBUG: ✅ GMAIL_2FA_TOKENS_RAW conditional passed - adding tokens to command"
