@@ -330,8 +330,9 @@ class Controller(Generic[Context]):
 		# Content Actions
 		@self.registry.action(
 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-Only use this for extracting info from a single product/article page, not for entire listings or search results pages.
-Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
+This tool takes the entire markdown of the page and extracts the query from it. 
+Set extract_links=True ONLY if your query requires extracting links/URLs from the page. 
+Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
 """,
 		)
 		async def extract_structured_data(
