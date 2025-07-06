@@ -308,7 +308,7 @@ The file system actions do not change the browser state, so I can also click on 
 		use_vision=True,
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
-		agent_history_list=AgentHistoryList,  # Pass AgentHistoryList from agent
+		agent_history_list: AgentHistoryList | None = None,  # Pass AgentHistoryList from agent
 	) -> None:
 		"""Add browser state as human message"""
 
@@ -317,9 +317,12 @@ The file system actions do not change the browser state, so I can also click on 
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
 		# Extract previous screenshots if we need more than 1 image and have agent history
-		previous_screenshots = agent_history_list.screenshots(
-			n_last=self.images_per_step - 1, return_none_if_not_screenshot=False
-		)
+		previous_screenshots = []
+		if agent_history_list and self.images_per_step > 1:
+			# Get previous screenshots and filter out None values
+			raw_screenshots = agent_history_list.screenshots(n_last=self.images_per_step - 1, return_none_if_not_screenshot=False)
+			previous_screenshots = [s for s in raw_screenshots if s is not None]
+
 		# add current screenshot to the end
 		if browser_state_summary.screenshot:
 			previous_screenshots.append(browser_state_summary.screenshot)
