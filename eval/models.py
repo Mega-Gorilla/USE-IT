@@ -164,6 +164,12 @@ SUPPORTED_MODELS = {
 		'base_url': 'https://api.sambanova.ai/v1',
 		'api_key_env': 'SAMBANOVA_API_KEY',
 	},
+	'qwen2.5-vl-72b-instruct': {
+		'provider': 'openai_compatible',
+		'model_name': 'Qwen/Qwen2.5-VL-72B-Instruct',
+		'base_url': 'https://api.together.xyz/v1',
+		'api_key_env': 'TOGETHER_API_KEY',
+	},
 }
 
 
