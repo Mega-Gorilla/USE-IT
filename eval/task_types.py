@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .utils import create_pydantic_model_from_schema, make_json_serializable
+from eval.utils import create_pydantic_model_from_schema, make_json_serializable
 
 logger = logging.getLogger(__name__)
 

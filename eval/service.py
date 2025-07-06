@@ -21,8 +21,7 @@ from pydantic import BaseModel
 from browser_use import ActionResult, Agent, BrowserSession, Controller
 from browser_use.agent.views import AgentHistoryList
 from browser_use.llm.base import BaseChatModel
-
-from .browsers import (
+from eval.browsers import (
 	ANCHOR_BROWSER_API_KEY,
 	BRIGHTDATA_CDP_URL,
 	BROWSERBASE_API_KEY,
@@ -30,17 +29,17 @@ from .browsers import (
 	HYPERBROWSER_API_KEY,
 	setup_browser_session,
 )
-from .comprehensive_judge import evaluate_task_with_comprehensive_judge
-from .cookie_judge import check_login_cookie_at_step, evaluate_task_with_login_cookie, save_login_cookie_tracking
-from .models import SUPPORTED_MODELS, get_llm
-from .resource_monitoring import (
+from eval.comprehensive_judge import evaluate_task_with_comprehensive_judge
+from eval.cookie_judge import check_login_cookie_at_step, evaluate_task_with_login_cookie, save_login_cookie_tracking
+from eval.models import SUPPORTED_MODELS, get_llm
+from eval.resource_monitoring import (
 	get_system_resources,
 	log_system_resources,
 	setup_signal_handlers,
 	start_resource_monitoring,
 	stop_resource_monitoring,
 )
-from .server import (
+from eval.server import (
 	fetch_auth_distribution_from_server,
 	fetch_tasks_from_server,
 	format_auth_info_for_agent,
@@ -48,9 +47,9 @@ from .server import (
 	send_progress_update,
 	start_new_run,
 )
-from .task_types import Stage, StageError, Task, TaskResult
-from .utils import get_git_info
-from .web_judge import Online_Mind2Web_eval_with_retry
+from eval.task_types import Stage, StageError, Task, TaskResult
+from eval.utils import get_git_info
+from eval.web_judge import Online_Mind2Web_eval_with_retry
 
 # ================================================
 # Setup Logging
