@@ -141,7 +141,17 @@ async def create_hyperbrowser_session() -> str:
 
 
 async def setup_browser_session(
-	task: Task, headless: bool, highlight_elements: bool = True, browser: str = 'local'
+	task: Task,
+	headless: bool,
+	highlight_elements: bool = True,
+	browser: str = 'local',
+	default_navigation_timeout: int | None = None,
+	default_timeout: int | None = None,
+	minimum_wait_page_load_time: float | None = None,
+	wait_for_network_idle_page_load_time: float | None = None,
+	maximum_wait_page_load_time: float | None = None,
+	wait_between_actions: float | None = None,
+	stealth: bool = False,
 ) -> BrowserSession:
 	"""Setup browser session for the task"""
 
@@ -215,15 +225,24 @@ async def setup_browser_session(
 		'chromium_sandbox': False,  # running in docker
 		'highlight_elements': highlight_elements,  # Control element highlighting (passed to profile)
 		'keep_alive': True,
+		'stealth': stealth,
 		# higher timeouts = higher success rates on long tail of slow sites or if on a slow CI server
-		# timeout=60_000,
-		# default_timeout=60_000,
-		# default_navigation_timeout=60_000,
-		# wait_for_network_idle_page_load_time=60.0,
-		# maximum_wait_page_load_time=60.0,
-		# wait_between_actions=0.5,
 		# ignore_https_errors=True,  # some eval tasks have http:// or broken https sites in them
 	}
+
+	# Add timeout parameters if provided
+	if default_navigation_timeout is not None:
+		profile_kwargs['default_navigation_timeout'] = default_navigation_timeout
+	if default_timeout is not None:
+		profile_kwargs['default_timeout'] = default_timeout
+	if minimum_wait_page_load_time is not None:
+		profile_kwargs['minimum_wait_page_load_time'] = minimum_wait_page_load_time
+	if wait_for_network_idle_page_load_time is not None:
+		profile_kwargs['wait_for_network_idle_page_load_time'] = wait_for_network_idle_page_load_time
+	if maximum_wait_page_load_time is not None:
+		profile_kwargs['maximum_wait_page_load_time'] = maximum_wait_page_load_time
+	if wait_between_actions is not None:
+		profile_kwargs['wait_between_actions'] = wait_between_actions
 
 	if hasattr(task, 'login_cookie') and task.login_cookie:
 		# For login tasks, configure storage_state to save cookies to JSON file

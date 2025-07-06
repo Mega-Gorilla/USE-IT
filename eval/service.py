@@ -714,6 +714,13 @@ async def run_task_with_semaphore(
 	gmail_tokens_dict: dict[str, str] | None = None,
 	judge_repeat_count: int = 1,
 	images_per_step: int = 1,
+	default_navigation_timeout: int | None = None,
+	default_timeout: int | None = None,
+	minimum_wait_page_load_time: float | None = None,
+	wait_for_network_idle_page_load_time: float | None = None,
+	maximum_wait_page_load_time: float | None = None,
+	wait_between_actions: float | None = None,
+	stealth: bool = False,
 ) -> dict:
 	"""Clean pipeline approach for running tasks"""
 	task_start_time = time.time()
@@ -799,7 +806,19 @@ async def run_task_with_semaphore(
 
 					browser_session = await run_stage(
 						Stage.SETUP_BROWSER,
-						lambda: setup_browser_session(task, headless, highlight_elements, browser),
+						lambda: setup_browser_session(
+							task,
+							headless,
+							highlight_elements,
+							browser,
+							default_navigation_timeout,
+							default_timeout,
+							minimum_wait_page_load_time,
+							wait_for_network_idle_page_load_time,
+							maximum_wait_page_load_time,
+							wait_between_actions,
+							stealth,
+						),
 						timeout=120,
 					)
 					task_result.stage_completed(Stage.SETUP_BROWSER)
@@ -1155,6 +1174,13 @@ async def run_multiple_tasks(
 	gmail_tokens_dict: dict[str, str] | None = None,
 	judge_repeat_count: int = 1,
 	images_per_step: int = 1,
+	default_navigation_timeout: int | None = None,
+	default_timeout: int | None = None,
+	minimum_wait_page_load_time: float | None = None,
+	wait_for_network_idle_page_load_time: float | None = None,
+	maximum_wait_page_load_time: float | None = None,
+	wait_between_actions: float | None = None,
+	stealth: bool = False,
 ) -> dict:
 	"""
 	Run multiple tasks in parallel and evaluate results.
@@ -1239,6 +1265,13 @@ async def run_multiple_tasks(
 					gmail_tokens_dict=gmail_tokens_dict,
 					judge_repeat_count=judge_repeat_count,
 					images_per_step=images_per_step,
+					default_navigation_timeout=default_navigation_timeout,
+					default_timeout=default_timeout,
+					minimum_wait_page_load_time=minimum_wait_page_load_time,
+					wait_for_network_idle_page_load_time=wait_for_network_idle_page_load_time,
+					maximum_wait_page_load_time=maximum_wait_page_load_time,
+					wait_between_actions=wait_between_actions,
+					stealth=stealth,
 				)
 				for task in tasks_to_run
 			),
@@ -1337,6 +1370,13 @@ async def run_evaluation_pipeline(
 	gmail_tokens_dict: dict[str, str] | None = None,
 	judge_repeat_count: int = 1,
 	images_per_step: int = 1,
+	default_navigation_timeout: int | None = None,
+	default_timeout: int | None = None,
+	minimum_wait_page_load_time: float | None = None,
+	wait_for_network_idle_page_load_time: float | None = None,
+	maximum_wait_page_load_time: float | None = None,
+	wait_between_actions: float | None = None,
+	stealth: bool = False,
 ) -> dict:
 	"""
 	Complete evaluation pipeline that handles Laminar setup and task execution in the same event loop
@@ -1394,6 +1434,13 @@ async def run_evaluation_pipeline(
 		gmail_tokens_dict=gmail_tokens_dict,
 		judge_repeat_count=judge_repeat_count,
 		images_per_step=images_per_step,
+		default_navigation_timeout=default_navigation_timeout,
+		default_timeout=default_timeout,
+		minimum_wait_page_load_time=minimum_wait_page_load_time,
+		wait_for_network_idle_page_load_time=wait_for_network_idle_page_load_time,
+		maximum_wait_page_load_time=maximum_wait_page_load_time,
+		wait_between_actions=wait_between_actions,
+		stealth=stealth,
 	)
 
 
@@ -1482,6 +1529,21 @@ if __name__ == '__main__':
 	parser.add_argument('--use-mind2web-judge', action='store_true', help='Use original judge')
 	parser.add_argument('--no-thinking', action='store_true', help='Disable thinking in agent system prompt')
 	parser.add_argument('--github-workflow-url', type=str, default=None, help='GitHub workflow URL for tracking')
+
+	# Browser timeout and stealth configuration arguments
+	parser.add_argument('--default-navigation-timeout', type=int, default=None, help='Default navigation timeout in milliseconds')
+	parser.add_argument('--default-timeout', type=int, default=None, help='Default timeout in milliseconds')
+	parser.add_argument(
+		'--minimum-wait-page-load-time', type=float, default=None, help='Minimum wait time for page load in seconds'
+	)
+	parser.add_argument(
+		'--wait-for-network-idle-page-load-time', type=float, default=None, help='Wait time for network idle page load in seconds'
+	)
+	parser.add_argument(
+		'--maximum-wait-page-load-time', type=float, default=None, help='Maximum wait time for page load in seconds'
+	)
+	parser.add_argument('--wait-between-actions', type=float, default=None, help='Wait time between actions in seconds')
+	parser.add_argument('--stealth', action='store_true', help='Enable stealth mode for browser')
 
 	# Gmail 2FA support arguments
 	parser.add_argument(
@@ -1665,6 +1727,13 @@ if __name__ == '__main__':
 		'include_result': args.include_result,
 		'judge_repeat_count': args.judge_repeat_count,
 		'images_per_step': args.images_per_step,
+		'default_navigation_timeout': args.default_navigation_timeout,
+		'default_timeout': args.default_timeout,
+		'minimum_wait_page_load_time': args.minimum_wait_page_load_time,
+		'wait_for_network_idle_page_load_time': args.wait_for_network_idle_page_load_time,
+		'maximum_wait_page_load_time': args.maximum_wait_page_load_time,
+		'wait_between_actions': args.wait_between_actions,
+		'stealth': args.stealth,
 	}
 
 	run_data = {
@@ -1853,6 +1922,13 @@ if __name__ == '__main__':
 				gmail_tokens_dict=gmail_tokens_dict,
 				judge_repeat_count=args.judge_repeat_count,
 				images_per_step=args.images_per_step,
+				default_navigation_timeout=args.default_navigation_timeout,
+				default_timeout=args.default_timeout,
+				minimum_wait_page_load_time=args.minimum_wait_page_load_time,
+				wait_for_network_idle_page_load_time=args.wait_for_network_idle_page_load_time,
+				maximum_wait_page_load_time=args.maximum_wait_page_load_time,
+				wait_between_actions=args.wait_between_actions,
+				stealth=args.stealth,
 			)
 		)
 
