@@ -332,7 +332,7 @@ class Controller(Generic[Context]):
 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
 This tool takes the entire markdown of the page and extracts the query from it. 
 Set extract_links=True ONLY if your query requires extracting links/URLs from the page. 
-Only use this for specifc queries for information retrieval from the page. Dont use this to get interactive elements - the tool does not see html elements, only the markdown. 
+Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
 """,
 		)
 		async def extract_structured_data(
