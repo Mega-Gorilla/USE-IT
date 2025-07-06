@@ -592,8 +592,8 @@ async def judge_with_repeat_and_average(
 
 	# concat reasoning with 1. and 2....
 	reasoning = ''
-	for eval in evaluations:
-		reasoning += f'Judge {i + 1} score: {eval.final_score}\n{eval.reasoning}\n'
+	for j, eval in enumerate(evaluations):
+		reasoning += f'Judge {j + 1} score: {eval.final_score}\n{eval.reasoning}\n'
 
 	# Create averaged result
 	return JudgeResult(
