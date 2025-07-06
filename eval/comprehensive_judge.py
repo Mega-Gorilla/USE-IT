@@ -521,6 +521,90 @@ async def judge_with_retry(
 	return create_fallback_result(task, 'Max retries exceeded without proper error handling')
 
 
+async def judge_with_repeat_and_average(
+	task: str,
+	complete_history: list[dict],
+	final_result: str,
+	last_message: str,
+	screenshot_paths: list[str],
+	model: BaseChatModel,
+	judge_repeat_count: int = 1,
+	max_retries: int = 3,
+	max_images: int = 10,
+) -> JudgeResult:
+	"""
+	Run the judge multiple times and average the results.
+
+	Args:
+		task: The original task description
+		complete_history: Full execution history with steps and results
+		final_result: The final result returned to the user
+		last_message: The agent's final message/output before completion
+		screenshot_paths: List of screenshot file paths from execution
+		model: The LLM model to use for evaluation
+		judge_repeat_count: Number of times to repeat the judge evaluation (averages over multiple judgments)
+		max_retries: Maximum number of retry attempts per judge run
+		max_images: Maximum number of images to include in evaluation
+
+	Returns:
+		JudgeResult with averaged scores and merged feedback
+	"""
+	if judge_repeat_count <= 1:
+		# Single evaluation - use existing logic
+		return await judge_with_retry(
+			task, complete_history, final_result, last_message, screenshot_paths, model, max_retries, max_images
+		)
+
+	logger.info(f'Running {judge_repeat_count} judge evaluations for averaging')
+
+	evaluations: list[JudgeResult] = []
+	for i in range(judge_repeat_count):
+		logger.info(f'Running judge evaluation {i + 1}/{judge_repeat_count}')
+
+		try:
+			evaluation = await judge_with_retry(
+				task, complete_history, final_result, last_message, screenshot_paths, model, max_retries, max_images
+			)
+			evaluations.append(evaluation)
+		except Exception as e:
+			logger.warning(f'Judge evaluation {i + 1} failed: {e}')
+			continue
+
+	if not evaluations or len(evaluations) == 0:
+		return create_fallback_result(task, 'All judge evaluations failed')
+
+	logger.info(f'Averaging {len(evaluations)} successful evaluations')
+
+	# Calculate averaged score
+	avg_score = sum(eval.final_score for eval in evaluations) / len(evaluations)
+
+	# Merge error categories (keep unique)
+	all_error_categories = []
+	for eval in evaluations:
+		all_error_categories.extend(eval.error_categories)
+	unique_error_categories = list(set(all_error_categories))  # Remove duplicates
+
+	# Merge improvement tips (keep unique)
+	all_improvement_tips = []
+	for eval in evaluations:
+		all_improvement_tips.extend(eval.improvement_tips)
+	unique_improvement_tips = list(set(all_improvement_tips))  # Remove duplicates
+
+	# concat reasoning with 1. and 2....
+	reasoning = ''
+	for j, eval in enumerate(evaluations):
+		reasoning += f'Judge {j + 1} score: {eval.final_score}\n{eval.reasoning}\n'
+
+	# Create averaged result
+	return JudgeResult(
+		task_summary=evaluations[0].task_summary,
+		reasoning=reasoning,
+		error_categories=unique_error_categories,
+		final_score=int(avg_score),
+		improvement_tips=unique_improvement_tips,
+	)
+
+
 def _read_result_file(result_file: Path) -> dict[str, Any]:
 	"""Helper function to read result file synchronously."""
 	with open(result_file) as f:
@@ -534,12 +618,20 @@ def _write_result_file(result_file: Path, result_data: dict[str, Any]) -> None:
 
 
 # Integration helper function
-async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseChatModel, max_images: int = 10) -> dict[str, Any]:
+async def evaluate_task_with_comprehensive_judge(
+	task_folder: Path, model: BaseChatModel, max_images: int = 10, judge_repeat_count: int = 1
+) -> dict[str, Any]:
 	"""
 	Evaluate a task result using the comprehensive judge system.
 
-	Returns a dictionary with both the old format for compatibility
-	and the new comprehensive analysis.
+	Args:
+		task_folder: Path to the task result folder
+		model: The LLM model to use for evaluation
+		max_images: Maximum number of images to include in evaluation
+		judge_repeat_count: Number of times to repeat the judge evaluation (averages over multiple judgments)
+
+	Returns:
+		Dictionary with both the old format for compatibility and the new comprehensive analysis.
 	"""
 	result_file = task_folder / 'result.json'
 	if not result_file.exists():
@@ -568,14 +660,15 @@ async def evaluate_task_with_comprehensive_judge(task_folder: Path, model: BaseC
 		last_message = result_data.get('last_message', '')
 		screenshot_paths = result_data.get('screenshot_paths', [])
 
-		# Run comprehensive evaluation
-		judge_result = await judge_with_retry(
+		# Run comprehensive evaluation with repeat and averaging
+		judge_result = await judge_with_repeat_and_average(
 			task=task,
 			complete_history=complete_history,
 			final_result=final_result,
 			last_message=last_message,
 			screenshot_paths=screenshot_paths,
 			model=model,
+			judge_repeat_count=judge_repeat_count,
 			max_images=max_images,
 		)
 

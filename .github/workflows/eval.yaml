@@ -209,6 +209,7 @@ jobs:
           DEFAULT_MEMORY_INTERVAL="10"
           DEFAULT_MAX_ACTIONS_PER_STEP="10"
           DEFAULT_PLANNER_INTERVAL="1"
+          DEFAULT_JUDGE_REPEAT_COUNT="1"
           DEFAULT_TEST_CASE="OnlineMind2Web"
 
           # Extract and apply defaults using parameter expansion
@@ -248,6 +249,9 @@ jobs:
           PLANNER_INTERVAL="${{ github.event.client_payload.script_args.planner_interval }}"
           PLANNER_INTERVAL="${PLANNER_INTERVAL:-$DEFAULT_PLANNER_INTERVAL}"
 
+          JUDGE_REPEAT_COUNT="${{ github.event.client_payload.script_args.judge_repeat_count }}"
+          JUDGE_REPEAT_COUNT="${JUDGE_REPEAT_COUNT:-$DEFAULT_JUDGE_REPEAT_COUNT}"
+
           TEST_CASE="${{ github.event.client_payload.script_args.test_case }}"
           TEST_CASE="${TEST_CASE:-$DEFAULT_TEST_CASE}"
 
@@ -280,6 +284,7 @@ jobs:
             "--memory-interval" "$MEMORY_INTERVAL"
             "--max-actions-per-step" "$MAX_ACTIONS_PER_STEP"
             "--planner-interval" "$PLANNER_INTERVAL"
+            "--judge-repeat-count" "$JUDGE_REPEAT_COUNT"
             "--test-case" "$TEST_CASE"
           )
 
