@@ -383,7 +383,7 @@ Examples:
 Respond with EXACTLY this JSON structure (no additional text before or after):
 
 {{
-    "task_summary": "One sentence summary of what the task was trying to accomplish",
+    "task_summary": "One sentence summary of what the task. This only includes the input task and nothing from the agent.",
     "reasoning": "Detailed analysis covering: what went well, what didn't work, trajectory quality assessment, tool usage evaluation, output quality review, and overall user satisfaction prediction",
     "error_categories": ["error1", "error2"],
     "final_score": 75,
