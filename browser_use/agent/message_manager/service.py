@@ -167,12 +167,27 @@ class MessageManager:
 		# placeholder_message = HumanMessage(content='Example output:')
 		self._add_message_with_type(placeholder_message)
 
+		example_content = dict()
+
+		# Add thinking field only if use_thinking is True
+		if self.use_thinking:
+			example_content[
+				'thinking'
+			] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
+My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
+I need to capture the key repositories I've identified so far into my memory and into a file.
+Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
+After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
+The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
+
 		# Create base example content
-		example_content = {
-			'evaluation_previous_goal': 'Navigated to GitHub explore page. Verdict: Success',
-			'memory': 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.',
-			'next_goal': 'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.',
-			'action': [
+		example_content['evaluation_previous_goal'] = 'Navigated to GitHub explore page. Verdict: Success'
+		example_content['memory'] = 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.'
+		example_content['next_goal'] = (
+			'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.'
+		)
+		example_content['action'] = (
+			[
 				{
 					'write_file': {
 						'path': 'todo.md',
@@ -191,18 +206,7 @@ class MessageManager:
 					}
 				},
 			],
-		}
-
-		# Add thinking field only if use_thinking is True
-		if self.use_thinking:
-			example_content[
-				'thinking'
-			] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
-My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
-I need to capture the key repositories I've identified so far into my memory and into a file.
-Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
-After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
-The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
+		)
 
 		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
 		self._add_message_with_type(example_tool_call_1)
