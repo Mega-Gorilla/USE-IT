@@ -1,4 +1,5 @@
 # pyright: reportMissingImports=false
+# We do this because we need to install the other browser packages but dont want them in our main package dependencies
 
 import asyncio
 import json

@@ -31,7 +31,7 @@ from .browsers import (
 	setup_browser_session,
 )
 from .comprehensive_judge import evaluate_task_with_comprehensive_judge
-from .cookies import check_login_cookie_at_step, evaluate_task_with_login_cookie, save_login_cookie_tracking
+from .cookie_judge import check_login_cookie_at_step, evaluate_task_with_login_cookie, save_login_cookie_tracking
 from .models import SUPPORTED_MODELS, get_llm
 from .resource_monitoring import (
 	get_system_resources,

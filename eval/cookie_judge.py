@@ -1,7 +1,3 @@
-# ================================================
-# Login Cookie Tracking and Judgement
-# ================================================
-
 import json
 import logging
 import time

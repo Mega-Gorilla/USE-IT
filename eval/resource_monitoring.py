@@ -1,18 +1,3 @@
-# @file purpose: Resource monitoring and system health tracking for eval pipeline
-"""
-Resource monitoring module for browser-use evaluation pipeline.
-
-This module provides system resource monitoring capabilities including:
-- Memory and CPU usage tracking
-- Process monitoring (Chrome/Python processes)
-- Background monitoring with configurable intervals
-- Graceful shutdown handling with signal handlers
-- Resource logging and alerting
-
-The module is designed to help track system health during long-running
-evaluation tasks and provide early warning for resource exhaustion.
-"""
-
 import asyncio
 import gc
 import logging
