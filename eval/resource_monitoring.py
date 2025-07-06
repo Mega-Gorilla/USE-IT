@@ -20,7 +20,7 @@ import signal
 import sys
 import threading
 import time
-from typing import Any, Dict
+from typing import Any
 
 import psutil
 
@@ -33,7 +33,7 @@ _resource_monitor_stop_event = None
 _graceful_shutdown_initiated = False
 
 
-def get_system_resources() -> Dict[str, Any]:
+def get_system_resources() -> dict[str, Any]:
 	"""Get current system resource usage"""
 	try:
 		# Memory usage
