@@ -103,6 +103,7 @@ class MessageManager:
 		available_file_paths: list[str] | None = None,
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
+		include_tool_call_examples: bool = False,
 		include_attributes: list[str] | None = None,
 		message_context: str | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
@@ -116,6 +117,7 @@ class MessageManager:
 		self.sensitive_data_description = ''
 		self.available_file_paths = available_file_paths
 		self.use_thinking = use_thinking
+		self.include_tool_call_examples = include_tool_call_examples
 		self.max_history_items = max_history_items
 		self.images_per_step = images_per_step
 
@@ -163,60 +165,61 @@ class MessageManager:
 		"""Initialize the message history with system message, context, task, and other initial messages"""
 		self._add_message_with_type(self.system_prompt)
 
-		placeholder_message = UserMessage(
-			content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.',
-			cache=True,
-		)
-		# placeholder_message = HumanMessage(content='Example output:')
-		self._add_message_with_type(placeholder_message)
+		if self.include_tool_call_examples:
+			placeholder_message = UserMessage(
+				content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.',
+				cache=True,
+			)
+			# placeholder_message = HumanMessage(content='Example output:')
+			self._add_message_with_type(placeholder_message)
 
-		example_content = dict()
+			example_content = dict()
 
-		# Add thinking field only if use_thinking is True
-		if self.use_thinking:
-			example_content[
-				'thinking'
-			] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
+			# Add thinking field only if use_thinking is True
+			if self.use_thinking:
+				example_content[
+					'thinking'
+				] = """I have successfully navigated to https://github.com/explore and can see the page has loaded with a list of featured repositories. The page contains interactive elements and I can identify specific repositories like bytedance/UI-TARS-desktop (index [4]) and ray-project/kuberay (index [5]). The user's request is to explore GitHub repositories and collect information about them such as descriptions, stars, or other metadata. So far, I haven't collected any information.
 My navigation to the GitHub explore page was successful. The page loaded correctly and I can see the expected content.
 I need to capture the key repositories I've identified so far into my memory and into a file.
 Since this appears to be a multi-step task involving visiting multiple repositories and collecting their information, I need to create a structured plan in todo.md.
 After writing todo.md, I can also initialize a github.md file to accumulate the information I've collected.
 The file system actions do not change the browser state, so I can also click on the bytedance/UI-TARS-desktop (index [4]) to start collecting information."""
 
-		# Create base example content
-		example_content['evaluation_previous_goal'] = 'Navigated to GitHub explore page. Verdict: Success'
-		example_content['memory'] = 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.'
-		example_content['next_goal'] = (
-			'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.'
-		)
-		example_content['action'] = [
-			{
-				'write_file': {
-					'path': 'todo.md',
-					'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
-				}
-			},
-			{
-				'write_file': {
-					'path': 'github.md',
-					'content': '# Github Repositories:\n',
-				}
-			},
-			{
-				'click_element_by_index': {
-					'index': 4,
-				}
-			},
-		]
+			# Create base example content
+			example_content['evaluation_previous_goal'] = 'Navigated to GitHub explore page. Verdict: Success'
+			example_content['memory'] = 'Found initial repositories such as bytedance/UI-TARS-desktop and ray-project/kuberay.'
+			example_content['next_goal'] = (
+				'Create todo.md checklist to track progress, initialize github.md for collecting information, and click on bytedance/UI-TARS-desktop.'
+			)
+			example_content['action'] = [
+				{
+					'write_file': {
+						'path': 'todo.md',
+						'content': '# Interesting Github Repositories in Explore Section\n\n## Tasks\n- [ ] Initialize a tracking file for GitHub repositories called github.md\n- [ ] Visit each Github repository and find their description\n- [ ] Visit bytedance/UI-TARS-desktop\n- [ ] Visit ray-project/kuberay\n- [ ] Check for additional Github repositories by scrolling down\n- [ ] Compile all results in the requested format\n- [ ] Validate that I have not missed anything in the page\n- [ ] Report final results to user',
+					}
+				},
+				{
+					'write_file': {
+						'path': 'github.md',
+						'content': '# Github Repositories:\n',
+					}
+				},
+				{
+					'click_element_by_index': {
+						'index': 4,
+					}
+				},
+			]
 
-		example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
-		self._add_message_with_type(example_tool_call_1)
-		self._add_message_with_type(
-			UserMessage(
-				content='Data written to todo.md.\nData written to github.md.\nClicked element with index 4.\n</example_1>',
-				cache=True,
-			),
-		)
+			example_tool_call_1 = AssistantMessage(content=json.dumps(example_content), cache=True)
+			self._add_message_with_type(example_tool_call_1)
+			self._add_message_with_type(
+				UserMessage(
+					content='Data written to todo.md.\nData written to github.md.\nClicked element with index 4.\n</example_1>',
+					cache=True,
+				),
+			)
 
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
