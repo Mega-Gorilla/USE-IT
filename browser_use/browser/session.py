@@ -1675,6 +1675,7 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	@time_execution_async('--remove_highlights')
+	@retry(timeout=5, retries=0)
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.

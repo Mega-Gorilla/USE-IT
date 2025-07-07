@@ -358,7 +358,12 @@ class BrowserUseServer:
 		logger.info('Browser session initialized')
 
 	async def _run_agent_task(
-		self, task: str, max_steps: int = 100, model: str = 'gpt-4o', allowed_domains: list[str] = None, use_vision: bool = True
+		self,
+		task: str,
+		max_steps: int = 100,
+		model: str = 'gpt-4o',
+		allowed_domains: list[str] | None = None,
+		use_vision: bool = True,
 	) -> str:
 		"""Run an autonomous agent task."""
 		logger.info(f'Running agent task: {task}')
@@ -405,7 +410,10 @@ class BrowserUseServer:
 			# Include URLs visited
 			urls = history.urls()
 			if urls:
-				results.append(f'\nURLs visited: {", ".join(urls)}')
+				# Filter out None values and convert to strings
+				valid_urls = [str(url) for url in urls if url is not None]
+				if valid_urls:
+					results.append(f'\nURLs visited: {", ".join(valid_urls)}')
 
 			return '\n'.join(results)
 
@@ -418,6 +426,9 @@ class BrowserUseServer:
 
 	async def _navigate(self, url: str, new_tab: bool = False) -> str:
 		"""Navigate to a URL."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		if new_tab:
 			page = await self.browser_session.create_new_tab(url)
 			tab_idx = self.browser_session.tabs.index(page)
