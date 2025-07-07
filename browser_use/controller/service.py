@@ -462,7 +462,7 @@ Explain the content of the page and that the requested information is not availa
 		# 	)
 
 		@self.registry.action(
-			'Scroll the page by specified amount in pixels (set down=True to scroll down, down=False to scroll up, amount=pixels to scroll or None for one page)',
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc. or None for one page)',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
@@ -472,17 +472,22 @@ Explain the content of the page and that the requested information is not availa
 			"""
 			page = await browser_session.get_current_page()
 
-			# Determine scroll amount
-			if params.amount is not None:
-				scroll_amount = params.amount
+			# Get window height with retries
+			dy_result, action_result = await retry_async_function(
+				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
+			)
+			if action_result:
+				return action_result
+			window_height = dy_result or 0
+
+			# Determine scroll amount based on num_pages
+			if params.num_pages is not None:
+				scroll_amount = int(window_height * params.num_pages)
+				pages_scrolled = params.num_pages
 			else:
-				# Get window height with retries (default behavior)
-				dy_result, action_result = await retry_async_function(
-					lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
-				)
-				if action_result:
-					return action_result
-				scroll_amount = dy_result or 0
+				# Default to one page
+				scroll_amount = window_height
+				pages_scrolled = 1.0
 
 			# Set direction based on down parameter
 			dy = scroll_amount if params.down else -scroll_amount
@@ -495,9 +500,13 @@ Explain the content of the page and that the requested information is not availa
 				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
 			direction = 'down' if params.down else 'up'
-			if params.amount is not None:
-				msg = f'🔍 Scrolled {direction} the page by {params.amount} pixels'
-				long_term_memory = f'Scrolled {direction} the page by {params.amount} pixels'
+			if params.num_pages is not None:
+				if pages_scrolled == 1.0:
+					msg = f'🔍 Scrolled {direction} the page by one page'
+					long_term_memory = f'Scrolled {direction} the page by one page'
+				else:
+					msg = f'🔍 Scrolled {direction} the page by {pages_scrolled} pages'
+					long_term_memory = f'Scrolled {direction} the page by {pages_scrolled} pages'
 			else:
 				msg = f'🔍 Scrolled {direction} the page by one page'
 				long_term_memory = f'Scrolled {direction} the page by one page'
