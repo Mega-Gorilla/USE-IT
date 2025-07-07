@@ -346,7 +346,7 @@ jobs:
           # Handle xvfb wrapper if needed - construct differently to preserve arguments
           if [[ "$HEADLESS" == "false" ]]; then
             # For xvfb, we need to construct the command differently to preserve argument structure
-            XVFB_ARGS=("xvfb-run" "--auto-servernum" "--server-args=-screen 0 1280x1024x24")
+            XVFB_ARGS=("xvfb-run" "--auto-servernum" "--server-args=-screen 0 1920x1080x24")
             FULL_CMD_ARGS=("${XVFB_ARGS[@]}" "${CMD_ARGS[@]}")
             printf -v CMD_STRING '%q ' "${FULL_CMD_ARGS[@]}"
           else
