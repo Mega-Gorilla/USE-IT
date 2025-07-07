@@ -501,11 +501,9 @@ Explain the content of the page and that the requested information is not availa
 			else:
 				msg = f'🔍 Scrolled {direction} the page by one page'
 				long_term_memory = f'Scrolled {direction} the page by one page'
-			
+
 			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory
-			)
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 
 		# send keys
 		@self.registry.action(
