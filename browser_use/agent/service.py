@@ -171,7 +171,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cloud_sync: CloudSync | None = None,
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
-		include_tool_call_examples: bool = False,
 		**kwargs,
 	):
 		# Check for deprecated memory parameters
@@ -234,7 +233,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			is_planner_reasoning=is_planner_reasoning,
 			extend_planner_system_message=extend_planner_system_message,
 			calculate_cost=calculate_cost,
-			include_tool_call_examples=include_tool_call_examples,
 		)
 
 		# Token cost service
