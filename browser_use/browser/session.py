@@ -711,61 +711,20 @@ class BrowserSession(BaseModel):
 		semaphore_timeout=10,  # wait up to 10s for a lock
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
-	async def _take_screenshot_hybrid(self, page: Page) -> str:
+	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
-
-		# Critical: Check for crashed target BEFORE any operations
-		try:
-			await page.evaluate('1')
-		except Exception:
-			raise Exception('Cannot screenshot - page is closed/crashed')
-
-		# Check if browser context is still valid
-		try:
-			# Quick validation that the context is still functional
-			if not self.browser_context or not self.browser_context.pages:
-				raise Exception('Browser context is invalid or has no pages')
-
-			# Verify the page is still in the context's active pages
-			if page not in self.browser_context.pages:
-				raise Exception('Page is no longer in browser context - target crashed')
-
-		except Exception as e:
-			self.logger.warning(f'🚨 Browser context validation failed: {type(e).__name__}: {e}')
-			raise Exception(f'Browser context invalid: {e}')
-
 		# Use Playwright screenshot directly
+
 		assert self.browser_context
+		# try:
+		# 	# get fresh page handle
+		# 	page = [p for p in self.browser_context.pages if p.url == page.url][0]
+		# except Exception:
+		# 	pass
+		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
+		await page.bring_to_front()
 
-		# Fast crash detection - if this fails quickly, target is crashed
 		try:
-			# This should complete in <100ms on healthy pages, hang/error on crashed ones
-			await asyncio.wait_for(page.evaluate('() => document.readyState'), timeout=2.0)
-		except TimeoutError:
-			raise Exception('Page is unresponsive - likely crashed target')
-		except Exception as e:
-			# Handle specific Playwright target crash errors
-			error_str = str(e).lower()
-			if any(
-				crash_indicator in error_str
-				for crash_indicator in ['target crashed', 'target closed', 'context has been closed', 'page has been closed']
-			):
-				raise Exception(f'Detected crashed target: {type(e).__name__}: {e}')
-			raise Exception(f'Page evaluation failed: {type(e).__name__}: {e}')
-
-		# Final assertion - this should be very fast on healthy pages
-		try:
-			assert await asyncio.wait_for(page.evaluate('() => true'), timeout=1.0), 'Page evaluation failed'
-		except TimeoutError:
-			raise Exception('Page assertion timeout - crashed target')
-		except Exception as e:
-			raise Exception(f'Page assertion failed: {type(e).__name__}: {e}')
-
-		self.logger.info('Page is healthy, bringing to front')
-		# await asyncio.wait_for(page.bring_to_front(), timeout=3.0)
-		self.logger.info('Page brought to front, taking screenshot')
-		try:
-			# Reasonable timeout for screenshot
 			screenshot = await page.screenshot(
 				full_page=False,
 				# scale='css',
@@ -774,35 +733,13 @@ class BrowserSession(BaseModel):
 				animations='allow',
 				caret='initial',
 			)
-		except TimeoutError:
-			self.logger.warning('🚨 Screenshot deadlock detected (asyncio timeout), restarting browser...')
-			self._reset_connection_state()
-			await self.start()
-			raise Exception('Screenshot deadlock detected, browser restarted')
 		except Exception as err:
-			if 'timeout' in str(err).lower() or 'TimeoutError' in str(type(err).__name__):
-				self.logger.warning(
-					'🚨 Screenshot timed out (playwright timeout), resetting connection state and restarting browser...'
-				)
+			if 'timeout' in str(err).lower():
+				self.logger.warning('🚨 Screenshot timed out, resetting connection state and restarting browser...')
 				self._reset_connection_state()
 				await self.start()
 			raise err
-
-		# Final validation - should be instant on healthy pages
-		try:
-			assert await asyncio.wait_for(page.evaluate('() => true'), timeout=1.0), 'Page is not usable after screenshot!'
-		except TimeoutError:
-			raise Exception('Post-screenshot validation timeout - page may have crashed during screenshot')
-		except Exception as e:
-			raise Exception(f'Post-screenshot validation failed: {type(e).__name__}: {e}')
-
-		# Quick encoding check - if this is slow, we have a problem
-		screenshot_size_mb = len(screenshot) / (1024 * 1024)
-		if screenshot_size_mb > 5.0:  # Warn about unusually large screenshots
-			self.logger.warning(
-				f'Unusually large screenshot: {screenshot_size_mb:.1f}MB - this may indicate page rendering issues'
-			)
-
+		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
 		return screenshot_b64
