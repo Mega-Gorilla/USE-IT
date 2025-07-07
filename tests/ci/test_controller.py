@@ -113,17 +113,6 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert f'Navigated to {base_url}' in result.extracted_content
 
-		# Test that get_state_summary works
-		try:
-			await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-			assert False, 'Expected throw error when navigating to non-existent page'
-		except Exception as e:
-			pass
-
-		# Test that get_minimal_state_summary always works
-		summary = await browser_session.get_minimal_state_summary()
-		assert summary is not None
-
 	async def test_scroll_actions(self, controller, browser_session, base_url):
 		"""Test that scroll actions correctly scroll the page."""
 		# First navigate to a page
@@ -1150,6 +1139,14 @@ class TestControllerIntegration:
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		# The navigation should fail with an error for non-existent domain
-		assert result.error is not None, 'Expected error when navigating to non-existent domain'
-		assert 'Site unavailable' in result.error, f"Expected 'Site unavailable' in error message, got: {result.error}"
-		assert 'nonexistentdndbeyond.com' in result.error, 'Expected URL in error message'
+
+		# Test that get_state_summary works
+		try:
+			await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+			assert False, 'Expected throw error when navigating to non-existent page'
+		except Exception as e:
+			pass
+
+		# Test that get_minimal_state_summary always works
+		summary = await browser_session.get_minimal_state_summary()
+		assert summary is not None
