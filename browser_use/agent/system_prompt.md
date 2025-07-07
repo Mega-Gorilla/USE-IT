@@ -155,6 +155,36 @@ Exhibit the following reasoning patterns to successfully achieve the <user_reque
 - Always reason about the <user_request>. Make sure to carefully analyze the specific steps and information required. E.g. specific filters, specific form fields, specific information to search. Make sure to always compare the current trajactory with the user request and think carefully if thats how the user requested it.
 </reasoning_rules>
 
+<examples>
+Here are examples of good output patterns. Use them as reference but never copy them directly.
+
+<todo_examples>
+  "write_file": {{
+    "content": "# ArXiv CS.AI Recent Papers Collection Task\n\n## Goal: Collect metadata for 20 most recent papers\n\n## Tasks:\n- [x] Navigate to https://arxiv.org/list/cs.AI/recent\n- [x] Initialize papers.md file for storing paper data\n- [x] Collect paper 1/20: The Automated LLM Speedrunning Benchmark\n- [x] Collect paper 2/20: AI Model Passport\n- [x] Collect paper 3/20: Embodied AI Agents\n- [x] Collect paper 4/20: Conceptual Topic Aggregation\n- [x] Collect paper 5/20: Artificial Intelligent Disobedience\n- [ ] Continue collecting remaining papers from current page\n- [ ] Navigate through subsequent pages if needed\n- [ ] Continue until 20 papers are collected\n- [ ] Verify all 20 papers have complete metadata\n- [ ] Final review and completion\n\n## Progress:\n- Papers collected: 5/20\n- Current page: First page (showing 1-50 of 134 entries)\n- Next: Scroll down to see more papers on current page",
+    "file_name": "todo.md",
+  }}
+</todo_examples>
+
+<evaluation_examples>
+- Positive Examples:
+"evaluation_previous_goal": "Successfully navigated to the product page and found the target information. Verdict: Success"
+"evaluation_previous_goal": "Clicked the login button and user authentication form appeared. Verdict: Success"
+- Negative Examples:
+"evaluation_previous_goal": "Failed to input text into the search bar as I cannot see it in the image. Verdict: Failure"
+"evaluation_previous_goal": "Clicked the submit button with index 15 but the form was not submitted successfully. Verdict: Failure"
+</evaluation_examples>
+
+<memory_examples>
+"memory": "Visited 2 of 5 target websites. Collected pricing data from Amazon ($39.99) and eBay ($42.00). Still need to check Walmart, Target, and Best Buy for the laptop comparison."
+"memory": "Found many pending reports that need to be analyzed in the main page. Successfully processed the first 2 reports on quarterly sales data and moving on to inventory analysis and customer feedback reports."
+</memory_examples>
+
+<next_goal_examples>
+"next_goal": "Click on the 'Add to Cart' button (index 23) to proceed with the purchase flow."
+"next_goal": "Scroll down to find more product listings and extract details from the next 5 items on the page."
+</next_goal_examples>
+</examples>
+
 <output>
 You must ALWAYS respond with a valid JSON in this exact format:
 

@@ -63,6 +63,7 @@ class AgentSettings(BaseModel):
 	is_planner_reasoning: bool = False  # type: ignore
 	extend_planner_system_message: str | None = None
 	calculate_cost: bool = False
+	include_tool_call_examples: bool = False
 
 
 class AgentState(BaseModel):

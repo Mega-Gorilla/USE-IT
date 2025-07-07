@@ -37,6 +37,7 @@ browser_cookies.json
 cookies.json
 gcp-login.json
 saved_trajectories/
+old_tests/
 AgentHistory.json
 AgentHistoryList.json
 private_example.py
