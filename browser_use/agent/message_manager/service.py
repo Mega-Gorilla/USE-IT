@@ -23,6 +23,7 @@ from browser_use.llm.messages import (
 	SystemMessage,
 	UserMessage,
 )
+from browser_use.observability import observe_debug
 from browser_use.utils import match_url_with_domain_pattern, time_execution_sync
 
 logger = logging.getLogger(__name__)
@@ -226,6 +227,7 @@ The file system actions do not change the browser state, so I can also click on 
 		task_update_item = HistoryItem(system_message=f'User updated <user_request> to: {new_task}')
 		self.state.agent_history_items.append(task_update_item)
 
+	@observe_debug(name='update_agent_history_description')
 	def _update_agent_history_description(
 		self,
 		model_output: AgentOutput | None = None,
@@ -255,8 +257,12 @@ The file system actions do not change the browser state, so I can also click on 
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 
 			if action_result.error:
-				action_results += f'Action {idx + 1}/{result_len}: {action_result.error[:200]}\n'
-				logger.debug(f'Added error to action_results: {action_result.error[:200]}')
+				if len(action_result.error) > 200:
+					error_text = action_result.error[:100] + '......' + action_result.error[-100:]
+				else:
+					error_text = action_result.error
+				action_results += f'Action {idx + 1}/{result_len}: {error_text}\n'
+				logger.debug(f'Added error to action_results: {error_text}')
 
 		if action_results:
 			action_results = f'Action Results:\n{action_results}'
@@ -303,6 +309,7 @@ The file system actions do not change the browser state, so I can also click on 
 
 		return ''
 
+	@observe_debug(name='add_state_message')
 	@time_execution_sync('--add_state_message')
 	def add_state_message(
 		self,
