@@ -327,11 +327,16 @@ class Registry(Generic[Context]):
 
 		action = self.registry.actions[action_name]
 		try:
-			# Create the validated Pydantic model
+			# Remove special parameters from params to avoid double kwarg conflicts
+			# Special parameters will be passed via special_context instead
+			special_param_names = set(self._get_special_param_types().keys())
+			cleaned_params = {k: v for k, v in params.items() if k not in special_param_names}
+
+			# Create the validated Pydantic model with cleaned params
 			try:
-				validated_params = action.param_model(**params)
+				validated_params = action.param_model(**cleaned_params)
 			except Exception as e:
-				raise ValueError(f'Invalid parameters {params} for action {action_name}: {type(e)}: {e}') from e
+				raise ValueError(f'Invalid parameters {cleaned_params} for action {action_name}: {type(e)}: {e}') from e
 
 			if sensitive_data:
 				# Get current URL if browser_session is provided
