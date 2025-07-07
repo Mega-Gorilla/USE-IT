@@ -46,6 +46,7 @@ class CloseTabAction(BaseModel):
 
 class ScrollAction(BaseModel):
 	down: bool  # True to scroll down, False to scroll up
+	amount: int | None = Field(None, description='Number of pixels to scroll. If None, defaults to one page height')
 
 
 class SendKeysAction(BaseModel):

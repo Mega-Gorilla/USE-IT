@@ -462,7 +462,7 @@ Explain the content of the page and that the requested information is not availa
 		# 	)
 
 		@self.registry.action(
-			'Scroll the page by one page (set down=True to scroll down, down=False to scroll up)',
+			'Scroll the page by specified amount in pixels (set down=True to scroll down, down=False to scroll up, amount=pixels to scroll or None for one page)',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
@@ -472,15 +472,20 @@ Explain the content of the page and that the requested information is not availa
 			"""
 			page = await browser_session.get_current_page()
 
-			# Get window height with retries
-			dy_result, action_result = await retry_async_function(
-				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
-			)
-			if action_result:
-				return action_result
+			# Determine scroll amount
+			if params.amount is not None:
+				scroll_amount = params.amount
+			else:
+				# Get window height with retries (default behavior)
+				dy_result, action_result = await retry_async_function(
+					lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
+				)
+				if action_result:
+					return action_result
+				scroll_amount = dy_result or 0
 
 			# Set direction based on down parameter
-			dy = dy_result if params.down else -(dy_result or 0)
+			dy = scroll_amount if params.down else -scroll_amount
 
 			try:
 				await browser_session._scroll_container(cast(int, dy))
@@ -490,10 +495,16 @@ Explain the content of the page and that the requested information is not availa
 				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
 			direction = 'down' if params.down else 'up'
-			msg = f'🔍 Scrolled {direction} the page by one page'
+			if params.amount is not None:
+				msg = f'🔍 Scrolled {direction} the page by {params.amount} pixels'
+				long_term_memory = f'Scrolled {direction} the page by {params.amount} pixels'
+			else:
+				msg = f'🔍 Scrolled {direction} the page by one page'
+				long_term_memory = f'Scrolled {direction} the page by one page'
+			
 			logger.info(msg)
 			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled {direction} the page by one page'
+				extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory
 			)
 
 		# send keys
