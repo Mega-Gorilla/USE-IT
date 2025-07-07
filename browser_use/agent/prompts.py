@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
+from browser_use.observability import observe_debug
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import AgentStepInfo
@@ -95,6 +96,7 @@ class AgentMessagePrompt:
 		self.screenshots = screenshots or []
 		assert self.browser_state
 
+	@observe_debug(name='_deduplicate_screenshots')
 	def _deduplicate_screenshots(self, screenshots: list[str]) -> list[str]:
 		"""
 		Remove consecutive duplicate screenshots, keeping only the most recent of each.
@@ -124,6 +126,7 @@ class AgentMessagePrompt:
 
 		return unique_screenshots
 
+	@observe_debug(name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
@@ -217,6 +220,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			agent_state += '<available_file_paths>\n' + '\n'.join(self.available_file_paths) + '\n</available_file_paths>\n'
 		return agent_state
 
+	@observe_debug(name='get_user_message')
 	def get_user_message(self, use_vision: bool = True) -> UserMessage:
 		# Don't pass screenshot to model if page is about:blank, step is 0, and there's only one tab
 		if (

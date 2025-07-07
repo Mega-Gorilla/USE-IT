@@ -10,13 +10,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-try:
-	from lmnr import Laminar
-
-	Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'))
-except Exception:
-	print('Error initializing Laminar')
-	pass
 
 from browser_use import Agent
 
@@ -31,9 +24,7 @@ agent = Agent(task=task, llm=llm)
 
 
 async def main():
-	history = await agent.run()
-	# token usage
-	print(history.usage)
+	await agent.run()
 
 
 if __name__ == '__main__':

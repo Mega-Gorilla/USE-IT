@@ -15,12 +15,15 @@ from uuid import UUID
 
 import anyio
 from dotenv import load_dotenv
-from lmnr import AsyncLaminarClient, Laminar, observe
+from lmnr import AsyncLaminarClient, Instruments, Laminar
 from pydantic import BaseModel
 
 from browser_use import ActionResult, Agent, BrowserSession, Controller
 from browser_use.agent.views import AgentHistoryList
 from browser_use.llm.base import BaseChatModel
+from browser_use.observability import observe, observe_debug
+
+MAX_IMAGE = 5
 from eval.browsers import (
 	ANCHOR_BROWSER_API_KEY,
 	BRIGHTDATA_CDP_URL,
@@ -75,7 +78,7 @@ if not SERPER_API_KEY:
 # Tracking and Observations
 # ================================================
 
-Laminar.initialize()
+Laminar.initialize(disabled_instruments={Instruments.BROWSER_USE}, disable_batch=True)
 laminar_client = AsyncLaminarClient()
 
 # Resource monitoring functions moved to resource_monitoring.py module
@@ -344,6 +347,7 @@ async def reformat_agent_history(
 # ================================================
 
 
+@observe_debug()
 async def judge_task_result(
 	model, task_folder: Path, score_threshold: float = 3, use_mind2web: bool = False, judge_repeat_count: int = 1
 ) -> dict:
@@ -638,6 +642,7 @@ async def evaluate_task_result(
 		)
 
 
+@observe_debug()
 async def cleanup_browser_safe(browser_session: BrowserSession):
 	"""Safe browser cleanup with timeout"""
 	try:
@@ -1142,6 +1147,7 @@ async def run_task_with_semaphore(
 		return final_result
 
 
+@observe_debug()
 async def run_multiple_tasks(
 	tasks: list[Task],
 	llm: BaseChatModel,
@@ -1205,6 +1211,7 @@ async def run_multiple_tasks(
 	heartbeat_task = None
 	heartbeat_stop_event = asyncio.Event()
 
+	@observe_debug()
 	async def heartbeat_logger():
 		"""Log periodic heartbeat to show the process is alive"""
 		heartbeat_count = 0
@@ -1337,6 +1344,7 @@ async def run_multiple_tasks(
 # ================================================
 
 
+@observe_debug()
 async def run_evaluation_pipeline(
 	tasks: list[Task],
 	llm: BaseChatModel,
