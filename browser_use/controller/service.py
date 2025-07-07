@@ -458,7 +458,7 @@ Explain the content of the page and that the requested information is not availa
 					long_term_memory=memory,
 				)
 			except TimeoutError:
-				error_msg = f'LLM call timed out after 30 seconds for query: {query}'
+				error_msg = f'LLM call timed out for query: {query}'
 				logger.warning(error_msg)
 				raise RuntimeError(error_msg)
 			except Exception as e:
