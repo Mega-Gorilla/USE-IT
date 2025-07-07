@@ -137,11 +137,11 @@ class AgentMessagePrompt:
 		has_content_below = (self.browser_state.pixels_below or 0) > 0
 
 		# Enhanced page information for the model
-		page_info_text = ""
+		page_info_text = ''
 		if self.browser_state.page_info:
 			pi = self.browser_state.page_info
-			page_info_text = f"Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pi.pages_above} pages above, {pi.pages_below} pages below, {pi.total_pages} total pages, at {pi.current_page_position:.0%} of page"
-		
+			page_info_text = f'Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pi.pages_above} pages above, {pi.pages_below} pages below, {pi.total_pages} total pages, at {pi.current_page_position:.0%} of page'
+
 		if elements_text != '':
 			if has_content_above:
 				if self.browser_state.page_info:

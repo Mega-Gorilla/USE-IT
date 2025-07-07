@@ -3449,7 +3449,7 @@ class BrowserSession(BaseModel):
 				scroll_y: window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
 			};
 		}""")
-		
+
 		# Calculate derived values
 		viewport_width = page_data['viewport_width']
 		viewport_height = page_data['viewport_height']
@@ -3457,19 +3457,19 @@ class BrowserSession(BaseModel):
 		page_height = page_data['page_height']
 		scroll_x = page_data['scroll_x']
 		scroll_y = page_data['scroll_y']
-		
+
 		# Calculate scroll information
 		pixels_above = scroll_y
 		pixels_below = max(0, page_height - (scroll_y + viewport_height))
 		pixels_left = scroll_x
 		pixels_right = max(0, page_width - (scroll_x + viewport_width))
-		
+
 		# Calculate page statistics
 		pages_above = scroll_y / viewport_height if viewport_height > 0 else 0
 		pages_below = pixels_below / viewport_height if viewport_height > 0 else 0
 		total_pages = page_height / viewport_height if viewport_height > 0 else 0
 		current_page_position = scroll_y / max(1, page_height - viewport_height) if page_height > viewport_height else 0
-		
+
 		return PageInfo(
 			viewport_width=viewport_width,
 			viewport_height=viewport_height,
@@ -3484,7 +3484,7 @@ class BrowserSession(BaseModel):
 			pages_above=round(pages_above, 1),
 			pages_below=round(pages_below, 1),
 			total_pages=round(total_pages, 1),
-			current_page_position=round(current_page_position, 2)
+			current_page_position=round(current_page_position, 2),
 		)
 
 	@require_initialization

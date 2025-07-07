@@ -23,21 +23,21 @@ class PageInfo(BaseModel):
 	# Current viewport dimensions
 	viewport_width: int
 	viewport_height: int
-	
+
 	# Total page dimensions
 	page_width: int
 	page_height: int
-	
+
 	# Current scroll position
 	scroll_x: int
 	scroll_y: int
-	
+
 	# Calculated scroll information
 	pixels_above: int
 	pixels_below: int
 	pixels_left: int
 	pixels_right: int
-	
+
 	# Page statistics for the model
 	pages_above: float
 	pages_below: float
@@ -58,7 +58,7 @@ class BrowserStateSummary(DOMState):
 	tabs: list[TabInfo]
 	screenshot: str | None = field(default=None, repr=False)
 	page_info: PageInfo | None = None  # Enhanced page information
-	
+
 	# Keep legacy fields for backward compatibility
 	pixels_above: int = 0
 	pixels_below: int = 0
