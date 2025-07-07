@@ -16,7 +16,7 @@ import logging
 import os
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
@@ -69,7 +69,7 @@ def _create_no_op_decorator(
 		def wrapper(*args, **kwargs):
 			return func(*args, **kwargs)
 
-		return wrapper  # type: ignore
+		return cast(F, wrapper)
 
 	return decorator
 
@@ -114,7 +114,7 @@ def observe(
 
 	if _LMNR_AVAILABLE and _lmnr_observe:
 		# Use the real lmnr observe decorator
-		return _lmnr_observe(**kwargs)
+		return cast(Callable[[F], F], _lmnr_observe(**kwargs))
 	else:
 		# Use no-op decorator
 		return _create_no_op_decorator(**kwargs)
@@ -165,7 +165,7 @@ def observe_debug(
 
 	if _LMNR_AVAILABLE and _lmnr_observe and _is_debug_mode():
 		# Use the real lmnr observe decorator only in debug mode
-		return _lmnr_observe(**kwargs)
+		return cast(Callable[[F], F], _lmnr_observe(**kwargs))
 	else:
 		# Use no-op decorator (either not in debug mode or lmnr not available)
 		return _create_no_op_decorator(**kwargs)
