@@ -274,6 +274,8 @@ jobs:
           MAXIMUM_WAIT_PAGE_LOAD_TIME="${{ github.event.client_payload.script_args.maximum_wait_page_load_time }}"
           WAIT_BETWEEN_ACTIONS="${{ github.event.client_payload.script_args.wait_between_actions }}"
           STEALTH="${{ github.event.client_payload.script_args.stealth }}"
+          BLOCK_IMAGES="${{ github.event.client_payload.script_args.block_images }}"
+          BLOCK_CSS="${{ github.event.client_payload.script_args.block_css }}" 
 
           # Single task mode parameters
           TASK_ID="${{ github.event.client_payload.script_args.task_id }}"
@@ -309,6 +311,8 @@ jobs:
           [[ "${{ github.event.client_payload.script_args.use_mind2web_judge }}" == "true" ]] && CMD_ARGS+=("--use-mind2web-judge")
           [[ "$THINKING" == "false" ]] && CMD_ARGS+=("--no-thinking")
           [[ "$STEALTH" == "true" ]] && CMD_ARGS+=("--stealth")
+          [[ "$BLOCK_IMAGES" == "true" ]] && CMD_ARGS+=("--block-images")
+          [[ "$BLOCK_CSS" == "true" ]] && CMD_ARGS+=("--block-css")
 
           # Add optional string parameters
           [[ -n "$USER_MESSAGE" ]] && CMD_ARGS+=("--user-message" "$USER_MESSAGE")
