@@ -721,7 +721,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 					retry_messages = input_messages + [clarification_message]
 					model_output = await self.get_next_action(retry_messages)
-					self.state.last_model_output = model_output
+
 					if not model_output.action or all(action.model_dump() == {} for action in model_output.action):
 						self.logger.warning('Model still returned empty after retry. Inserting safe noop action.')
 						action_instance = self.ActionModel()
@@ -734,7 +734,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 							},
 						)
 						model_output.action = [action_instance]
-
+				self.state.last_model_output = model_output
 				# Check again for paused/stopped state after getting model output
 				await self._raise_if_stopped_or_paused()
 
@@ -794,6 +794,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				except Exception as e:
 					self.logger.debug(f'📁 Failed to check for new downloads: {type(e).__name__}: {e}')
 
+			self.state.consecutive_failures = 0
+			self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures reset to: {self.state.consecutive_failures}')
 			if len(result) > 0 and result[-1].is_done:
 				self.logger.info(f'📄 Result: {result[-1].extracted_content}')
 				if result[-1].attachments:
@@ -801,11 +803,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					for file_path in result[-1].attachments:
 						self.logger.info(f'👉 {file_path}')
 
-			self.state.consecutive_failures = 0
-
 		except InterruptedError as e:
 			# self.logger.debug('Agent paused')
 			self.logger.debug(f'InterruptedError: {type(e).__name__}: {e}')
+
 			self.state.last_result = [
 				ActionResult(
 					error='The agent was interrupted mid-step' + (f' - {e}' if e else ''),
@@ -1202,7 +1203,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
 				await asyncio.wait_for(
 					self.step(step_info),
-					timeout=120,  # 2 minute step timeout - less aggressive
+					timeout=180,  # 3 minute step timeout - less aggressive
 				)
 				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 
