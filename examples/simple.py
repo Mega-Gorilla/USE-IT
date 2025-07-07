@@ -2,7 +2,8 @@ import asyncio
 import os
 import sys
 
-from lmnr import Instruments
+
+# from lmnr import Instruments  # Move this import inside the try block below
 
 from browser_use.llm.openai.chat import ChatOpenAI
 
