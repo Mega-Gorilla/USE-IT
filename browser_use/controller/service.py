@@ -1038,18 +1038,22 @@ Explain the content of the page and that the requested information is not availa
 					span_context = nullcontext()
 
 				with span_context:
-					result = await self.registry.execute_action(
-						action_name=action_name,
-						params=params,
-						browser_session=browser_session,
-						page_extraction_llm=page_extraction_llm,
-						file_system=file_system,
-						sensitive_data=sensitive_data,
-						available_file_paths=available_file_paths,
-						context=context,
-					)
+					try:
+						result = await self.registry.execute_action(
+							action_name=action_name,
+							params=params,
+							browser_session=browser_session,
+							page_extraction_llm=page_extraction_llm,
+							file_system=file_system,
+							sensitive_data=sensitive_data,
+							available_file_paths=available_file_paths,
+							context=context,
+						)
+					except Exception as e:
+						result = ActionResult(error=str(e))
 
-				# Laminar.set_span_output(result)
+					if Laminar is not None:
+						Laminar.set_span_output(result)
 
 				if isinstance(result, str):
 					return ActionResult(extracted_content=result)
