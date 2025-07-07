@@ -92,7 +92,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - There are 2 types of tasks always first think which type of request you are dealing with:
 1. Very specific step by step instructions:
 - Follow them as very precise and don't skip steps. Try to complete everything as requested.
-1. Open ended tasks. Plan yourself, be creative in achieving them.
+2. Open ended tasks. Plan yourself, be creative in achieving them.
 - If you get stuck e.g. with logins or captcha in open-ended tasks you can re-evaluate the task and try alternative ways, e.g. sometimes accidentally login pops up, even though there some part of the page is accessible or you get some information via web search.
 </browser_rules>
 
