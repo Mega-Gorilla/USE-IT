@@ -3599,13 +3599,8 @@ class BrowserSession(BaseModel):
 		pixels_left = scroll_x
 		pixels_right = max(0, page_width - (scroll_x + viewport_width))
 
-		# Calculate page statistics
-		pages_above = scroll_y / viewport_height if viewport_height > 0 else 0
-		pages_below = pixels_below / viewport_height if viewport_height > 0 else 0
-		total_pages = page_height / viewport_height if viewport_height > 0 else 0
-		current_page_position = scroll_y / max(1, page_height - viewport_height) if page_height > viewport_height else 0
-
-		return PageInfo(
+		# Create PageInfo object with comprehensive information
+		page_info = PageInfo(
 			viewport_width=viewport_width,
 			viewport_height=viewport_height,
 			page_width=page_width,
@@ -3616,11 +3611,9 @@ class BrowserSession(BaseModel):
 			pixels_below=pixels_below,
 			pixels_left=pixels_left,
 			pixels_right=pixels_right,
-			pages_above=round(pages_above, 1),
-			pages_below=round(pages_below, 1),
-			total_pages=round(total_pages, 1),
-			current_page_position=round(current_page_position, 2),
 		)
+
+		return page_info
 
 	@require_initialization
 	async def _scroll_container(self, pixels: int) -> None:

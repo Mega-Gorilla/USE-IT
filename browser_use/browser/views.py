@@ -38,11 +38,7 @@ class PageInfo(BaseModel):
 	pixels_left: int
 	pixels_right: int
 
-	# Page statistics for the model
-	pages_above: float
-	pages_below: float
-	total_pages: float
-	current_page_position: float  # 0.0 = top, 1.0 = bottom
+	# Page statistics are now computed dynamically instead of stored
 
 
 @dataclass

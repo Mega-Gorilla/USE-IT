@@ -123,8 +123,8 @@ class TestControllerIntegration:
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
-		# Test 1: Default scroll down (no amount specified)
-		scroll_action = {'scroll': ScrollAction(down=True)}
+		# Test 1: Default scroll down (one page)
+		scroll_action = {'scroll': ScrollAction(down=True, num_pages=1.0)}
 
 		class ScrollActionModel(ActionModel):
 			scroll: ScrollAction | None = None

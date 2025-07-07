@@ -143,19 +143,28 @@ class AgentMessagePrompt:
 		page_info_text = ''
 		if self.browser_state.page_info:
 			pi = self.browser_state.page_info
-			page_info_text = f'Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pi.pages_above} pages above, {pi.pages_below} pages below, {pi.total_pages} total pages, at {pi.current_page_position:.0%} of page'
+			# Compute page statistics dynamically
+			pages_above = pi.pixels_above / pi.viewport_height if pi.viewport_height > 0 else 0
+			pages_below = pi.pixels_below / pi.viewport_height if pi.viewport_height > 0 else 0
+			total_pages = pi.page_height / pi.viewport_height if pi.viewport_height > 0 else 0
+			current_page_position = pi.scroll_y / max(pi.page_height - pi.viewport_height, 1)
+			page_info_text = f'Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pages_above:.1f} pages above, {pages_below:.1f} pages below, {total_pages:.1f} total pages, at {current_page_position:.0%} of page'
 
 		if elements_text != '':
 			if has_content_above:
 				if self.browser_state.page_info:
-					elements_text = f'... {self.browser_state.pixels_above} pixels above ({self.browser_state.page_info.pages_above} pages) - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+					pi = self.browser_state.page_info
+					pages_above = pi.pixels_above / pi.viewport_height if pi.viewport_height > 0 else 0
+					elements_text = f'... {self.browser_state.pixels_above} pixels above ({pages_above:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
 				else:
 					elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
 			else:
 				elements_text = f'[Start of page]\n{elements_text}'
 			if has_content_below:
 				if self.browser_state.page_info:
-					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({self.browser_state.page_info.pages_below} pages) - scroll to see more or extract structured data if you are looking for specific information ...'
+					pi = self.browser_state.page_info
+					pages_below = pi.pixels_below / pi.viewport_height if pi.viewport_height > 0 else 0
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({pages_below:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...'
 				else:
 					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
 			else:
