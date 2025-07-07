@@ -16,7 +16,7 @@ import logging
 import os
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
@@ -79,7 +79,7 @@ def observe(
 	ignore_input: bool = False,
 	ignore_output: bool = False,
 	metadata: dict[str, Any] | None = None,
-	span_type: str | None = None,
+	span_type: Literal['DEFAULT', 'LLM', 'TOOL'] = 'DEFAULT',
 	**kwargs: Any,
 ) -> Callable[[F], F]:
 	"""
@@ -108,10 +108,9 @@ def observe(
 		'ignore_input': ignore_input,
 		'ignore_output': ignore_output,
 		'metadata': metadata,
+		'span_type': span_type,
 		**kwargs,
 	}
-	if span_type:
-		kwargs['span_type'] = span_type
 
 	if _LMNR_AVAILABLE and _lmnr_observe:
 		# Use the real lmnr observe decorator
@@ -126,7 +125,7 @@ def observe_debug(
 	ignore_input: bool = False,
 	ignore_output: bool = False,
 	metadata: dict[str, Any] | None = None,
-	span_type: str | None = None,
+	span_type: Literal['DEFAULT', 'LLM', 'TOOL'] = 'DEFAULT',
 	**kwargs: Any,
 ) -> Callable[[F], F]:
 	"""
@@ -160,10 +159,9 @@ def observe_debug(
 		'ignore_input': ignore_input,
 		'ignore_output': ignore_output,
 		'metadata': metadata,
+		'span_type': span_type,
 		**kwargs,
 	}
-	if span_type:
-		kwargs['span_type'] = span_type
 
 	if _LMNR_AVAILABLE and _lmnr_observe and _is_debug_mode():
 		# Use the real lmnr observe decorator only in debug mode
