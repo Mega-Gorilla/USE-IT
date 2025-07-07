@@ -439,6 +439,9 @@ class BrowserUseServer:
 
 	async def _click(self, index: int, new_tab: bool = False) -> str:
 		"""Click an element by index."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		# Get the element
 		element = await self.browser_session.get_dom_element_by_index(index)
 		if not element:
@@ -472,6 +475,9 @@ class BrowserUseServer:
 
 	async def _type_text(self, index: int, text: str) -> str:
 		"""Type text into an element."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		element = await self.browser_session.get_dom_element_by_index(index)
 		if not element:
 			return f'Element with index {index} not found'
@@ -481,6 +487,9 @@ class BrowserUseServer:
 
 	async def _get_browser_state(self, include_screenshot: bool = False) -> str:
 		"""Get current browser state."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
 
 		result = {
