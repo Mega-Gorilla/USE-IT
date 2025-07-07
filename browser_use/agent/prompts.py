@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
+from browser_use.observability import observe_debug
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import AgentStepInfo
@@ -79,6 +80,7 @@ class AgentMessagePrompt:
 		max_clickable_elements_length: int = 40000,
 		sensitive_data: str | None = None,
 		available_file_paths: list[str] | None = None,
+		screenshots: list[str] | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -91,8 +93,40 @@ class AgentMessagePrompt:
 		self.max_clickable_elements_length: int = max_clickable_elements_length
 		self.sensitive_data: str | None = sensitive_data
 		self.available_file_paths: list[str] | None = available_file_paths
+		self.screenshots = screenshots or []
 		assert self.browser_state
 
+	@observe_debug(name='_deduplicate_screenshots')
+	def _deduplicate_screenshots(self, screenshots: list[str]) -> list[str]:
+		"""
+		Remove consecutive duplicate screenshots, keeping only the most recent of each.
+
+		Args:
+			screenshots: List of base64-encoded screenshot strings in chronological order (oldest first)
+
+		Returns:
+			List of screenshots with consecutive duplicates removed, maintaining chronological order
+		"""
+		if not screenshots:
+			return []
+
+		if len(screenshots) == 1:
+			return screenshots
+
+		# Keep track of unique screenshots by comparing each with the next one
+		unique_screenshots = []
+
+		for i in range(len(screenshots)):
+			# Always keep the last screenshot
+			if i == len(screenshots) - 1:
+				unique_screenshots.append(screenshots[i])
+			# Only keep screenshot if it's different from the next one
+			elif screenshots[i] != screenshots[i + 1]:
+				unique_screenshots.append(screenshots[i])
+
+		return unique_screenshots
+
+	@observe_debug(name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
@@ -173,6 +207,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			agent_state += '<available_file_paths>\n' + '\n'.join(self.available_file_paths) + '\n</available_file_paths>\n'
 		return agent_state
 
+	@observe_debug(name='get_user_message')
 	def get_user_message(self, use_vision: bool = True) -> UserMessage:
 		# Don't pass screenshot to model if page is about:blank, step is 0, and there's only one tab
 		if (
@@ -199,19 +234,35 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			state_description += 'For this page, these additional actions are available:\n'
 			state_description += self.page_filtered_actions + '\n'
 
-		if self.browser_state.screenshot and use_vision is True:
-			# Format message for vision model
-			return UserMessage(
-				content=[
-					ContentPartTextParam(text=state_description),
+		if use_vision is True and self.screenshots:
+			# Start with text description
+			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=state_description)]
+
+			# Deduplicate screenshots, keeping only the most recent of each unique image
+			unique_screenshots = self._deduplicate_screenshots(self.screenshots)
+
+			# Add screenshots with labels
+			for i, screenshot in enumerate(unique_screenshots):
+				if i == len(unique_screenshots) - 1:
+					label = 'Current screenshot:'
+				else:
+					# Use simple, accurate labeling since we don't have actual step timing info
+					label = 'Previous screenshot:'
+
+				# Add label as text content
+				content_parts.append(ContentPartTextParam(text=label))
+
+				# Add the screenshot
+				content_parts.append(
 					ContentPartImageParam(
 						image_url=ImageURL(
-							url=f'data:image/png;base64,{self.browser_state.screenshot}',
+							url=f'data:image/png;base64,{screenshot}',
 							media_type='image/png',
 						),
-					),
-				]
-			)
+					)
+				)
+
+			return UserMessage(content=content_parts)
 
 		return UserMessage(content=state_description)
 
