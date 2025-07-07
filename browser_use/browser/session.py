@@ -674,6 +674,7 @@ class BrowserSession(BaseModel):
 			self.logger.info(f'🎥 Saving browser context trace to {final_trace_path}...')
 			await self.browser_context.tracing.stop(path=str(final_trace_path))
 
+	@observe_debug(name='connect_or_launch_browser')
 	async def _connect_or_launch_browser(self) -> None:
 		"""Try all connection methods in order of precedence."""
 		# Try connecting via passed objects first
@@ -816,6 +817,7 @@ class BrowserSession(BaseModel):
 		semaphore_lax=False,
 		semaphore_timeout=5,  # 5s to wait for global playwright object
 	)
+	@observe_debug(name='setup_playwright')
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())
@@ -1290,6 +1292,7 @@ class BrowserSession(BaseModel):
 	# 	self.browser_profile.user_data_dir = fork_path
 	# 	self.browser_profile.prepare_user_data_dir()
 
+	@observe_debug(name='setup_current_page_change_listeners')
 	async def _setup_current_page_change_listeners(self) -> None:
 		# Uses a combination of:
 		# - visibilitychange events
@@ -1535,6 +1538,7 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.keep_alive is None:
 			self.browser_profile.keep_alive = keep_alive
 
+	@observe_debug(name='is_connected')
 	async def is_connected(self, restart: bool = True) -> bool:
 		"""
 		Check if the browser session has valid, connected browser and context objects.
@@ -1619,6 +1623,7 @@ class BrowserSession(BaseModel):
 		if not already_disconnected:
 			self.logger.debug(f'⚰️ Browser {self._connection_str} disconnected')
 
+	@observe_debug(name='prepare_user_data_dir')
 	def prepare_user_data_dir(self) -> None:
 		"""Create and unlock the user data dir and ensure all recording paths exist."""
 

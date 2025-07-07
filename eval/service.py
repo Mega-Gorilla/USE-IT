@@ -15,7 +15,7 @@ from uuid import UUID
 
 import anyio
 from dotenv import load_dotenv
-from lmnr import AsyncLaminarClient, Laminar, observe
+from lmnr import AsyncLaminarClient, Instruments, Laminar
 from pydantic import BaseModel
 
 from browser_use import ActionResult, Agent, BrowserSession, Controller
@@ -78,7 +78,7 @@ if not SERPER_API_KEY:
 # Tracking and Observations
 # ================================================
 
-Laminar.initialize()
+Laminar.initialize(disabled_instruments={Instruments.BROWSER_USE}, disable_batch=True)
 laminar_client = AsyncLaminarClient()
 
 # Resource monitoring functions moved to resource_monitoring.py module
@@ -519,7 +519,7 @@ async def judge_task_result(
 # ================================================
 
 
-@observe_debug(name='executor', span_type='EXECUTOR')  # type: ignore[arg-type]
+@observe(name='executor', span_type='EXECUTOR')  # type: ignore[arg-type]
 async def run_agent_with_browser(
 	browser_session: BrowserSession,
 	task: Task,

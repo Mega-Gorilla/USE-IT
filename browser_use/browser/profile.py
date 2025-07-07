@@ -7,6 +7,7 @@ from re import Pattern
 from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlparse
 
+from observability import observe_debug
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from uuid_extensions import uuid7str
 
@@ -47,7 +48,7 @@ CHROME_DISABLED_COMPONENTS = [
 	'ThirdPartyStoragePartitioning',
 	# See https://github.com/microsoft/playwright/issues/16126
 	'Translate',
-	###########################3
+	# 3
 	# Added by us:
 	'AutomationControlled',
 	'BackForwardCache',
@@ -737,6 +738,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# 			logger.info(f'🔍 Preinstalling extension {extension_id}...')
 	# 			# TODO: copy this from ArchiveBox implementation
 
+	@observe_debug(name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:
 		"""
 		Detect the system display size and initialize the display-related config defaults:
