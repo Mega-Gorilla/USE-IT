@@ -130,7 +130,7 @@ class TestControllerIntegration:
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
-		# Create scroll down action
+		# Test 1: Default scroll down (no amount specified)
 		scroll_action = {'scroll': ScrollAction(down=True)}
 
 		class ScrollActionModel(ActionModel):
@@ -144,8 +144,8 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert 'Scrolled down' in result.extracted_content
 
-		# Create scroll up action
-		scroll_up_action = {'scroll': ScrollAction(down=False)}
+		# Test 2: Custom scroll amount up
+		scroll_up_action = {'scroll': ScrollAction(down=False, amount=250)}
 
 		class ScrollUpActionModel(ActionModel):
 			scroll: ScrollAction | None = None
@@ -157,6 +157,22 @@ class TestControllerIntegration:
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
 		assert 'Scrolled up' in result.extracted_content
+		assert '250 pixels' in result.extracted_content
+
+		# Test 3: Custom scroll amount down
+		scroll_custom_action = {'scroll': ScrollAction(down=True, amount=500)}
+
+		class ScrollCustomActionModel(ActionModel):
+			scroll: ScrollAction | None = None
+
+		# Execute custom scroll down
+		result = await controller.act(ScrollCustomActionModel(**scroll_custom_action), browser_session)
+
+		# Verify the result
+		assert isinstance(result, ActionResult)
+		assert result.extracted_content is not None
+		assert 'Scrolled down' in result.extracted_content
+		assert '500 pixels' in result.extracted_content
 
 	async def test_registry_actions(self, controller, browser_session):
 		"""Test that the registry contains the expected default actions."""
