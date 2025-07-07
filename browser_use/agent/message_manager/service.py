@@ -171,7 +171,6 @@ class MessageManager:
 				content='<example_1>\nHere is an example output of thinking and tool call. You can use it as a reference but do not copy it exactly.',
 				cache=True,
 			)
-			# placeholder_message = HumanMessage(content='Example output:')
 			self._add_message_with_type(placeholder_message)
 
 			example_content = dict()
