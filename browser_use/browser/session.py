@@ -702,13 +702,13 @@ class BrowserSession(BaseModel):
 
 	@observe_debug(ignore_output=True)
 	@retry(
-		wait=1,  # wait 1s between attempts
-		retries=2,  # 3 attempts
-		timeout=15,  # 15 second reasonable timeout
+		wait=2,  # wait 2s between each attempt to take a screenshot
+		retries=2,  # try up to 2 times to take the screenshot
+		timeout=35,  # allow up to 35s for each attempt to take a screenshot
 		semaphore_name='screenshot_global',
 		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
 		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
-		semaphore_timeout=5,  # 5 second semaphore timeout
+		semaphore_timeout=10,  # wait up to 10s for a lock
 		semaphore_lax=True,  # proceed anyway if we cant get a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page) -> str:
@@ -769,7 +769,7 @@ class BrowserSession(BaseModel):
 			screenshot = await page.screenshot(
 				full_page=False,
 				# scale='css',
-				timeout=self.browser_profile.default_timeout or 10000,
+				timeout=self.browser_profile.default_timeout or 30000,
 				# clip=FloatRect(**clip) if clip else None,
 				animations='allow',
 				caret='initial',
@@ -1088,7 +1088,7 @@ class BrowserSession(BaseModel):
 				async with asyncio.timeout(self.browser_profile.timeout / 1000):
 					assert self.playwright is not None, 'playwright instance is None'
 					self.browser_context = await self.playwright.chromium.launch_persistent_context(
-						**self.browser_profile.kwargs_for_launch_persistent_context().model_dump()
+						**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
 					)
 			except Exception as e:
 				# show a nice logger hint explaining what went wrong with the user_data_dir
@@ -1915,7 +1915,7 @@ class BrowserSession(BaseModel):
 
 		return tabs_info
 
-	@retry(timeout=2, retries=0)  # Single attempt with 1s timeout, no retries
+	@retry(timeout=1, retries=0)  # Single attempt with 1s timeout, no retries
 	async def _get_page_title(self, page: Page) -> str:
 		"""Get page title with timeout protection."""
 		return await page.title()
@@ -2831,7 +2831,7 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			await page.wait_for_load_state(timeout=2000)  # 2 second aggressive timeout
+			await page.wait_for_load_state(timeout=5000)
 		except Exception:
 			pass
 
