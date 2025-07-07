@@ -1,0 +1,538 @@
+---
+title: "MCP Client"
+description: "Connect external MCP servers to extend browser-use with additional tools and integrations"
+icon: "plug"
+---
+
+The MCP (Model Context Protocol) client allows browser-use agents to connect to external MCP servers, automatically exposing their tools as actions. This enables integrations with databases, APIs, file systems, and other services without writing custom action code.
+
+<Note>
+  MCP is an open protocol for integrating LLMs with external data sources and tools. Learn more at [modelcontextprotocol.io](https://modelcontextprotocol.io).
+</Note>
+
+<Info>
+  Looking to expose browser-use as an MCP server instead? See [MCP Server](/customize/mcp-server) to let AI assistants like Claude Desktop control browsers.
+</Info>
+
+## Overview
+
+The MCP client acts as a bridge between external MCP servers and browser-use's action system:
+
+```mermaid
+graph LR
+    A[Browser-use Agent] --> B[Controller]
+    B --> C[MCP Client]
+    C -->|MCP Protocol| D[External MCP Server]
+    D --> E[Tools/Services]
+    
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+## Installation
+
+```bash
+pip install "browser-use[mcp]"
+```
+
+## Quick Start
+
+```python
+from browser_use import Agent, Controller
+from browser_use.mcp.client import MCPClient
+
+# Create controller
+controller = Controller()
+
+# Connect to an MCP server
+mcp_client = MCPClient(
+    server_name="filesystem",
+    command="npx",
+    args=["@modelcontextprotocol/server-filesystem", "/path/to/files"]
+)
+
+# Connect and register tools
+await mcp_client.connect()
+await mcp_client.register_to_controller(controller)
+
+# Agent can now use filesystem tools
+agent = Agent(
+    task="Read all .txt files and summarize their contents",
+    controller=controller
+)
+await agent.run()
+
+# Clean up
+await mcp_client.disconnect()
+```
+
+## API Reference
+
+### MCPClient
+
+The main class for connecting to MCP servers.
+
+```python
+class MCPClient:
+    def __init__(
+        self,
+        server_name: str,
+        command: str,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+    ) -> None
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `server_name` | `str` | Name of the MCP server (for logging and identification) |
+| `command` | `str` | Command to start the MCP server (e.g., `"npx"`, `"python"`) |
+| `args` | `list[str] \| None` | Arguments for the command (e.g., `["@modelcontextprotocol/server-filesystem", "."]`) |
+| `env` | `dict[str, str] \| None` | Environment variables for the server process |
+
+#### Methods
+
+##### `async def connect() -> None`
+
+Establishes connection to the MCP server and discovers available tools.
+
+```python
+await mcp_client.connect()
+```
+
+**Raises:**
+- `ImportError`: If MCP SDK is not installed
+- `RuntimeError`: If connection fails after timeout (3 seconds)
+
+##### `async def disconnect() -> None`
+
+Disconnects from the MCP server and cleans up resources.
+
+```python
+await mcp_client.disconnect()
+```
+
+##### `async def register_to_controller(controller: Controller, tool_filter: list[str] | None = None, prefix: str | None = None) -> None`
+
+Registers MCP tools as browser-use actions.
+
+```python
+await mcp_client.register_to_controller(
+    controller,
+    tool_filter=['read_file', 'write_file'],  # Optional: only specific tools
+    prefix='fs_'  # Optional: prefix for action names
+)
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `controller` | `Controller` | Browser-use controller instance |
+| `tool_filter` | `list[str] \| None` | List of tool names to register (None = all tools) |
+| `prefix` | `str \| None` | Prefix to add to action names to avoid conflicts |
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `session` | `ClientSession \| None` | Active MCP session (None if disconnected) |
+| `server_name` | `str` | Name of the MCP server |
+| `command` | `str` | Command used to start the server |
+| `args` | `list[str]` | Arguments passed to the command |
+| `env` | `dict[str, str] \| None` | Environment variables for the server |
+
+### Context Manager Usage
+
+MCPClient supports async context manager protocol:
+
+```python
+async with MCPClient(
+    server_name="github",
+    command="npx",
+    args=["@modelcontextprotocol/server-github"],
+    env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+) as mcp_client:
+    await mcp_client.register_to_controller(controller)
+    # Use agent with MCP tools
+    await agent.run()
+# Automatically disconnected
+```
+
+### Convenience Functions
+
+#### `create_playwright_mcp_client`
+
+Helper function to create a Playwright MCP client:
+
+```python
+async def create_playwright_mcp_client(
+    controller: Controller,
+    headless: bool = True,
+    browser: str = "chromium",
+    viewport_size: str = "1280,720",
+    vision: bool = False,
+    **kwargs
+) -> MCPClient
+```
+
+**Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `controller` | `Controller` | - | Browser-use controller to register actions to |
+| `headless` | `bool` | `True` | Whether to run browser in headless mode |
+| `browser` | `str` | `"chromium"` | Browser to use (chromium, firefox, webkit) |
+| `viewport_size` | `str` | `"1280,720"` | Browser viewport size |
+| `vision` | `bool` | `False` | Whether to use vision mode (screenshots) |
+| `**kwargs` | `Any` | - | Additional arguments passed to Playwright MCP |
+
+## Concepts
+
+### Tool Discovery
+
+When connecting to an MCP server, the client automatically:
+1. Starts the server process using the specified command
+2. Establishes stdio communication
+3. Calls `list_tools()` to discover available tools
+4. Parses tool schemas to understand parameters
+
+### Tool Registration
+
+Each MCP tool is converted to a browser-use action:
+1. **Parameter Mapping**: JSON Schema → Pydantic model via `create_model()`
+2. **Type Conversion**: JSON types → Python types
+3. **Validation**: Automatic parameter validation
+4. **Error Handling**: Graceful failure with `ActionResult(success=False, error=...)`
+
+### Action Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Action
+    participant MCPClient
+    participant MCPServer
+    
+    Agent->>Action: Call MCP action
+    Action->>MCPClient: Execute with params
+    MCPClient->>MCPServer: session.call_tool(name, args)
+    MCPServer->>MCPClient: Tool result
+    MCPClient->>Action: ActionResult
+    Action->>Agent: Result
+```
+
+### Type Conversion
+
+The client converts JSON Schema types to Python types:
+
+| JSON Schema Type | Python Type |
+|------------------|-------------|
+| `"string"` | `str` |
+| `"number"` | `float` |
+| `"integer"` | `int` |
+| `"boolean"` | `bool` |
+| `"array"` | `list` |
+| `"object"` | `dict` |
+| `"null"` | `type(None)` |
+
+Nullable types are converted to unions: `type | None`
+
+## Common MCP Servers
+
+### Filesystem Server
+
+Read and write local files:
+
+```python
+mcp_client = MCPClient(
+    server_name="filesystem",
+    command="npx",
+    args=["@modelcontextprotocol/server-filesystem", "/Users/me/documents"]
+)
+```
+
+### PostgreSQL Server
+
+Database operations:
+
+```python
+mcp_client = MCPClient(
+    server_name="postgres",
+    command="npx",
+    args=["@modelcontextprotocol/server-postgres", "postgresql://user:pass@localhost/db"]
+)
+```
+
+### GitHub Server
+
+Repository management:
+
+```python
+mcp_client = MCPClient(
+    server_name="github",
+    command="npx",
+    args=["@modelcontextprotocol/server-github"],
+    env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+)
+```
+
+### Gmail Server
+
+Email operations:
+
+```python
+mcp_client = MCPClient(
+    server_name="gmail",
+    command="npx",
+    args=["gmail-mcp-server"],
+    env={
+        "GMAIL_CLIENT_ID": os.getenv("GMAIL_CLIENT_ID"),
+        "GMAIL_CLIENT_SECRET": os.getenv("GMAIL_CLIENT_SECRET"),
+        "GMAIL_REFRESH_TOKEN": os.getenv("GMAIL_REFRESH_TOKEN")
+    }
+)
+```
+
+## Advanced Usage
+
+### Multiple MCP Servers
+
+Connect multiple servers with different capabilities:
+
+```python
+controller = Controller()
+
+# Filesystem access
+fs_client = MCPClient(
+    server_name="filesystem",
+    command="npx",
+    args=["@modelcontextprotocol/server-filesystem", "."]
+)
+
+# Database access
+db_client = MCPClient(
+    server_name="postgres",
+    command="npx",
+    args=["@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+)
+
+# Register both with prefixes
+await fs_client.connect()
+await fs_client.register_to_controller(controller, prefix="fs_")
+
+await db_client.connect()
+await db_client.register_to_controller(controller, prefix="db_")
+
+# Agent has access to both fs_read_file() and db_query()
+agent = Agent(
+    task="Read config.json and update the database based on its contents",
+    controller=controller
+)
+```
+
+### Tool Filtering
+
+Register only specific tools:
+
+```python
+# Only register read operations
+await mcp_client.register_to_controller(
+    controller,
+    tool_filter=['read_file', 'list_directory', 'get_file_info']
+)
+```
+
+### Custom MCP Server
+
+Create your own MCP server:
+
+```python
+# my_mcp_server.py
+import mcp.server.stdio
+import mcp.types as types
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
+
+server = Server("custom-tools")
+
+@server.list_tools()
+async def handle_list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="calculate",
+            description="Perform calculation",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "Math expression"
+                    }
+                },
+                "required": ["expression"]
+            }
+        )
+    ]
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent]:
+    if name == "calculate":
+        expr = arguments.get("expression", "")
+        try:
+            result = eval(expr)  # Caution: example only
+            return [types.TextContent(type="text", text=str(result))]
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"Error: {e}")]
+    return [types.TextContent(type="text", text="Unknown tool")]
+
+# Run server
+async def main():
+    async with mcp.server.stdio.stdio_server() as (read, write):
+        await server.run(read, write, InitializationOptions(
+            server_name="custom-tools",
+            server_version="1.0.0",
+            capabilities=server.get_capabilities()
+        ))
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+Connect to custom server:
+
+```python
+mcp_client = MCPClient(
+    server_name="custom",
+    command="python",
+    args=["my_mcp_server.py"]
+)
+```
+
+## Error Handling
+
+The MCP client handles errors gracefully:
+
+```python
+# Connection errors
+try:
+    await mcp_client.connect()
+except RuntimeError as e:
+    print(f"Failed to connect: {e}")
+
+# Tool execution errors return ActionResult with error
+# When using registered actions, errors are handled automatically
+# The ActionResult will have success=False and an error message
+```
+
+## Best Practices
+
+### 1. Resource Management
+
+Always disconnect when done:
+
+```python
+try:
+    await mcp_client.connect()
+    await mcp_client.register_to_controller(controller)
+    await agent.run()
+finally:
+    await mcp_client.disconnect()
+```
+
+Or use context manager:
+
+```python
+async with MCPClient(...) as mcp_client:
+    await mcp_client.register_to_controller(controller)
+    await agent.run()
+```
+
+### 2. Naming Conflicts
+
+Use prefixes when connecting multiple servers:
+
+```python
+# Without prefix: potential conflicts
+await server1.register_to_controller(controller)  # Registers: read_file, write_file
+await server2.register_to_controller(controller)  # May conflict if same tool names
+
+# With prefix: no conflicts
+await server1.register_to_controller(controller, prefix="local_")  # local_read_file
+await server2.register_to_controller(controller, prefix="remote_")  # remote_read_file
+```
+
+### 3. Security
+
+- Only connect to trusted MCP servers
+- Use tool filtering to limit capabilities
+- Review tool permissions before registration
+- Set appropriate environment variables securely
+
+## Troubleshooting
+
+### Import Error
+
+```
+ImportError: MCP SDK not installed. Install with: pip install mcp
+```
+
+**Solution:**
+```bash
+pip install mcp
+# or
+pip install "browser-use[mcp]"
+```
+
+### Connection Timeout
+
+```
+RuntimeError: Failed to connect to MCP server 'name' after 3 seconds
+```
+
+**Solutions:**
+1. Verify the command works: `npx @modelcontextprotocol/server-filesystem /path`
+2. Check server logs for errors
+3. Ensure all dependencies are installed
+4. Try running the server command manually to see errors
+
+### Tool Discovery
+
+Check discovered tools:
+
+```python
+await mcp_client.connect()
+print(f"Found tools: {list(mcp_client._tools.keys())}")
+for name, tool in mcp_client._tools.items():
+    print(f"- {name}: {tool.description}")
+```
+
+## Implementation Details
+
+### Action Wrapper Functions
+
+The MCP client creates wrapper functions for each tool:
+- Tools with parameters: `async def wrapper(params: ParamModel) -> ActionResult`
+- Tools without parameters: `async def wrapper() -> ActionResult`
+
+### Result Formatting
+
+MCP results are converted to strings:
+- If result has `.content` attribute, it's extracted
+- List results are joined with newlines
+- Text content items extract the `.text` attribute
+
+### Browser Tool Detection
+
+Tools starting with `"browser_"` or containing `"page"` in the name are marked as browser-specific and have a page filter applied.
+
+## Examples
+
+- [Simple MCP client](https://github.com/browser-use/browser-use/tree/main/examples/mcp/simple_client.py)
+- [Gmail integration](https://github.com/browser-use/browser-use/tree/main/examples/mcp/advanced_client.py)
+
+## See Also
+
+- [MCP Server](/customize/mcp-server) - Expose browser-use as an MCP server
+- [Custom Functions](/customize/custom-functions) - Write custom actions directly
+- [Model Context Protocol](https://modelcontextprotocol.io) - MCP specification

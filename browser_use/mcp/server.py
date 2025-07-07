@@ -7,14 +7,17 @@ This server provides tools for:
 - File system operations
 
 Usage:
-    python -m browser_use.mcp_server
+    uvx browser-use --mcp
 
 Or as an MCP server in Claude Desktop or other MCP clients:
     {
         "mcpServers": {
             "browser-use": {
-                "command": "python",
-                "args": ["-m", "browser_use.mcp_server"]
+                "command": "uvx",
+                "args": ["browser-use", "--mcp"],
+                "env": {
+                    "OPENAI_API_KEY": "sk-proj-1234567890",
+                }
             }
         }
     }
@@ -26,7 +29,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # Add browser-use to path if running from source
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -49,8 +52,9 @@ stderr_handler = logging.StreamHandler(sys.stderr)
 stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 root_logger.addHandler(stderr_handler)
 
-from browser_use import Agent
+from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
 from browser_use.controller.service import Controller
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.openai.chat import ChatOpenAI
@@ -82,6 +86,7 @@ class BrowserUseServer:
 
 	def __init__(self):
 		self.server = Server('browser-use')
+		self.config = load_browser_use_config()
 		self.agent: Agent | None = None
 		self.browser_session: BrowserSession | None = None
 		self.controller: Controller | None = None
@@ -99,41 +104,6 @@ class BrowserUseServer:
 			"""List all available browser-use tools."""
 			return [
 				# Agent tools
-				# types.Tool(
-				# 	name="browser_use_run_task",
-				# 	description="Run an autonomous browser task using AI agent. The agent will navigate, interact with pages, and extract information to complete the given task.",
-				# 	inputSchema={
-				# 		"type": "object",
-				# 		"properties": {
-				# 			"task": {
-				# 				"type": "string",
-				# 				"description": "The task description for the AI agent to complete"
-				# 			},
-				# 			"max_steps": {
-				# 				"type": "integer",
-				# 				"description": "Maximum number of steps the agent can take",
-				# 				"default": 100
-				# 			},
-				# 			"model": {
-				# 				"type": "string",
-				# 				"description": "LLM model to use (e.g., gpt-4o, claude-3-opus-20240229)",
-				# 				"default": "gpt-4o"
-				# 			},
-				# 			"allowed_domains": {
-				# 				"type": "array",
-				# 				"items": {"type": "string"},
-				# 				"description": "List of domains the agent is allowed to visit (security feature)",
-				# 				"default": []
-				# 			},
-				# 			"use_vision": {
-				# 				"type": "boolean",
-				# 				"description": "Whether to use vision capabilities (screenshots) for the agent",
-				# 				"default": True
-				# 			}
-				# 		},
-				# 		"required": ["task"]
-				# 	}
-				# ),
 				# Direct browser control tools
 				types.Tool(
 					name='browser_navigate',
@@ -155,7 +125,7 @@ class BrowserUseServer:
 						'properties': {
 							'index': {
 								'type': 'integer',
-								'description': 'The index of the element to click (from browser_get_state)',
+								'description': 'The index of the link or element to click (from browser_get_state)',
 							},
 							'new_tab': {
 								'type': 'boolean',
@@ -172,7 +142,10 @@ class BrowserUseServer:
 					inputSchema={
 						'type': 'object',
 						'properties': {
-							'index': {'type': 'integer', 'description': 'The index of the input element'},
+							'index': {
+								'type': 'integer',
+								'description': 'The index of the input element (from browser_get_state)',
+							},
 							'text': {'type': 'string', 'description': 'The text to type'},
 						},
 						'required': ['index', 'text'],
@@ -180,13 +153,13 @@ class BrowserUseServer:
 				),
 				types.Tool(
 					name='browser_get_state',
-					description='Get the current state of the browser including all interactive elements',
+					description='Get the current state of the page including all interactive elements',
 					inputSchema={
 						'type': 'object',
 						'properties': {
 							'include_screenshot': {
 								'type': 'boolean',
-								'description': 'Whether to include a base64 screenshot',
+								'description': 'Whether to include a screenshot of the current page',
 								'default': False,
 							}
 						},
@@ -228,14 +201,6 @@ class BrowserUseServer:
 					description='Go back to the previous page',
 					inputSchema={'type': 'object', 'properties': {}},
 				),
-				# types.Tool(
-				# 	name="browser_close",
-				# 	description="Close the browser session",
-				# 	inputSchema={
-				# 		"type": "object",
-				# 		"properties": {}
-				# 	}
-				# ),
 				# Tab management
 				types.Tool(
 					name='browser_list_tabs', description='List all open tabs', inputSchema={'type': 'object', 'properties': {}}
@@ -258,6 +223,49 @@ class BrowserUseServer:
 						'required': ['tab_index'],
 					},
 				),
+				# types.Tool(
+				# 	name="browser_close",
+				# 	description="Close the browser session",
+				# 	inputSchema={
+				# 		"type": "object",
+				# 		"properties": {}
+				# 	}
+				# ),
+				types.Tool(
+					name='retry_with_browser_use_agent',
+					description='Retry a task using the browser-use agent. Only use this as a last resort if you fail to interact with a page multiple times.',
+					inputSchema={
+						'type': 'object',
+						'properties': {
+							'task': {
+								'type': 'string',
+								'description': 'The high-level goal and detailed step-by-step description of the task the AI browser agent needs to attempt, along with any relevant data needed to complete the task and info about previous attempts.',
+							},
+							'max_steps': {
+								'type': 'integer',
+								'description': 'Maximum number of steps the agent can take',
+								'default': 100,
+							},
+							'model': {
+								'type': 'string',
+								'description': 'LLM model to use (e.g., gpt-4o, claude-3-opus-20240229)',
+								'default': 'gpt-4o',
+							},
+							'allowed_domains': {
+								'type': 'array',
+								'items': {'type': 'string'},
+								'description': 'List of domains the agent is allowed to visit (security feature)',
+								'default': [],
+							},
+							'use_vision': {
+								'type': 'boolean',
+								'description': 'Whether to use vision capabilities (screenshots) for the agent',
+								'default': True,
+							},
+						},
+						'required': ['task'],
+					},
+				),
 			]
 
 		@self.server.call_tool()
@@ -274,8 +282,8 @@ class BrowserUseServer:
 		"""Execute a browser-use tool."""
 
 		# Agent-based tools
-		if tool_name == 'browser_use_run_task':
-			return await self._run_agent_task(
+		if tool_name == 'retry_with_browser_use_agent':
+			return await self._retry_with_browser_use_agent(
 				task=arguments['task'],
 				max_steps=arguments.get('max_steps', 100),
 				model=arguments.get('model', 'gpt-4o'),
@@ -324,21 +332,39 @@ class BrowserUseServer:
 
 		return f'Unknown tool: {tool_name}'
 
-	async def _init_browser_session(self, allowed_domains: list[str] | None = None):
-		"""Initialize browser session and controller."""
+	async def _init_browser_session(self, allowed_domains: list[str] | None = None, **kwargs):
+		"""Initialize browser session using config"""
 		if self.browser_session:
 			return
 
 		logger.info('Initializing browser session...')
 
-		# Create browser profile with security settings
-		profile = BrowserProfile(
-			allowed_domains=allowed_domains or [],
-			# Enable some useful features
-			downloads_path=str(Path.home() / 'Downloads' / 'browser-use-mcp'),
-			wait_between_actions=0.5,
-			keep_alive=True,
-		)
+		# Get profile config
+		profile_config = get_default_profile(self.config)
+
+		# Merge profile config with defaults and overrides
+		profile_data = {
+			'downloads_path': str(Path.home() / 'Downloads' / 'browser-use-mcp'),
+			'wait_between_actions': 0.5,
+			'keep_alive': True,
+			'user_data_dir': '~/.config/browseruse/profiles/default',
+			'is_mobile': False,
+			'device_scale_factor': 1.0,
+			'disable_security': False,
+			'headless': False,
+			**profile_config,  # Config values override defaults
+		}
+
+		# Tool parameter overrides (highest priority)
+		if allowed_domains is not None:
+			profile_data['allowed_domains'] = allowed_domains
+
+		# Merge any additional kwargs that are valid BrowserProfile fields
+		for key, value in kwargs.items():
+			profile_data[key] = value
+
+		# Create browser profile
+		profile = BrowserProfile(**profile_data)
 
 		# Create browser session
 		self.browser_session = BrowserSession(browser_profile=profile)
@@ -347,17 +373,23 @@ class BrowserUseServer:
 		# Create controller for direct actions
 		self.controller = Controller()
 
-		# Initialize LLM for extraction tasks
-		api_key = os.getenv('OPENAI_API_KEY')
-		if api_key:
-			self.llm = ChatOpenAI(model='gpt-4o-mini', api_key=api_key)
+		# Initialize LLM from config
+		llm_config = get_default_llm(self.config)
+		if api_key := llm_config.get('api_key'):
+			self.llm = ChatOpenAI(
+				model=llm_config.get('model', 'gpt-4o-mini'),
+				api_key=api_key,
+				temperature=llm_config.get('temperature', 0.7),
+				# max_tokens=llm_config.get('max_tokens'),
+			)
 
 		# Initialize FileSystem for extraction actions
-		self.file_system = FileSystem(base_dir=Path.home() / '.browser-use-mcp')
+		file_system_path = profile_config.get('file_system_path', '~/.browser-use-mcp')
+		self.file_system = FileSystem(base_dir=Path(file_system_path).expanduser())
 
 		logger.info('Browser session initialized')
 
-	async def _run_agent_task(
+	async def _retry_with_browser_use_agent(
 		self,
 		task: str,
 		max_steps: int = 100,
@@ -368,18 +400,33 @@ class BrowserUseServer:
 		"""Run an autonomous agent task."""
 		logger.info(f'Running agent task: {task}')
 
-		# Initialize LLM
-		api_key = os.getenv('OPENAI_API_KEY')
+		# Get LLM config
+		llm_config = get_default_llm(self.config)
+		api_key = llm_config.get('api_key') or os.getenv('OPENAI_API_KEY')
 		if not api_key:
-			return 'Error: OPENAI_API_KEY environment variable not set'
+			return 'Error: OPENAI_API_KEY not set in config or environment'
 
-		llm = ChatOpenAI(model=model, api_key=api_key)
+		# Override model if provided in tool call
+		if model != llm_config.get('model', 'gpt-4o'):
+			llm_model = model
+		else:
+			llm_model = llm_config.get('model', 'gpt-4o')
 
-		# Create browser profile with security settings
-		profile = BrowserProfile(
-			allowed_domains=allowed_domains or [],
-			downloads_path=str(Path.home() / 'Downloads' / 'browser-use-mcp'),
+		llm = ChatOpenAI(
+			model=llm_model,
+			api_key=api_key,
+			temperature=llm_config.get('temperature', 0.7),
 		)
+
+		# Get profile config and merge with tool parameters
+		profile_config = get_default_profile(self.config)
+
+		# Override allowed_domains if provided in tool call
+		if allowed_domains is not None:
+			profile_config['allowed_domains'] = allowed_domains
+
+		# Create browser profile using config
+		profile = BrowserProfile(**profile_config)
 
 		# Create and run agent
 		agent = Agent(
@@ -451,8 +498,19 @@ class BrowserUseServer:
 			# For links, extract href and open in new tab
 			href = element.attributes.get('href')
 			if href:
+				# Convert relative href to absolute URL
+				current_page = await self.browser_session.get_current_page()
+				if href.startswith('/'):
+					# Relative URL - construct full URL
+					from urllib.parse import urlparse
+
+					parsed = urlparse(current_page.url)
+					full_url = f'{parsed.scheme}://{parsed.netloc}{href}'
+				else:
+					full_url = href
+
 				# Open link in new tab
-				page = await self.browser_session.create_new_tab(href)
+				page = await self.browser_session.create_new_tab(full_url)
 				tab_idx = self.browser_session.tabs.index(page)
 				return f'Clicked element {index} and opened in new tab #{tab_idx}'
 			else:
@@ -461,11 +519,11 @@ class BrowserUseServer:
 				element_handle = await self.browser_session.get_locate_element(element)
 				if element_handle:
 					# Use playwright's click with modifiers
-					modifiers = ['Meta'] if sys.platform == 'darwin' else ['Control']
-					await element_handle.click(modifiers=modifiers)
+					modifier: Literal['Meta', 'Control'] = 'Meta' if sys.platform == 'darwin' else 'Control'
+					await element_handle.click(modifiers=[modifier])
 					# Wait a bit for potential new tab
 					await asyncio.sleep(0.5)
-					return f'Clicked element {index} with {modifiers[0]} key (new tab if supported)'
+					return f'Clicked element {index} with {modifier} key (new tab if supported)'
 				else:
 					return f'Could not locate element {index} for modified click'
 		else:
@@ -525,19 +583,28 @@ class BrowserUseServer:
 		if not self.file_system:
 			return 'Error: FileSystem not initialized'
 
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
+		if not self.controller:
+			return 'Error: Controller not initialized'
+
 		page = await self.browser_session.get_current_page()
 
 		# Use the extract_structured_data action
+		# Create a dynamic action model that matches the controller's expectations
+		from pydantic import create_model
+
+		# Create action model dynamically
+		ExtractAction = create_model(
+			'ExtractAction',
+			__base__=ActionModel,
+			extract_structured_data=(dict[str, Any], {'query': query, 'extract_links': extract_links}),
+		)
+
+		action = ExtractAction()
 		action_result = await self.controller.act(
-			action=type(
-				'Action',
-				(),
-				{
-					'model_dump': lambda self, **kwargs: {
-						'extract_structured_data': {'query': query, 'extract_links': extract_links}
-					}
-				},
-			)(),
+			action=action,
 			browser_session=self.browser_session,
 			page_extraction_llm=self.llm,
 			file_system=self.file_system,
@@ -547,6 +614,9 @@ class BrowserUseServer:
 
 	async def _scroll(self, direction: str = 'down') -> str:
 		"""Scroll the page."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		page = await self.browser_session.get_current_page()
 
 		# Get viewport height
@@ -558,6 +628,9 @@ class BrowserUseServer:
 
 	async def _go_back(self) -> str:
 		"""Go back in browser history."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		await self.browser_session.go_back()
 		return 'Navigated back'
 
@@ -572,6 +645,9 @@ class BrowserUseServer:
 
 	async def _list_tabs(self) -> str:
 		"""List all open tabs."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		tabs = []
 		for i, tab in enumerate(self.browser_session.tabs):
 			tabs.append({'index': i, 'url': tab.url, 'title': await tab.title() if not tab.is_closed() else 'Closed'})
@@ -579,12 +655,18 @@ class BrowserUseServer:
 
 	async def _switch_tab(self, tab_index: int) -> str:
 		"""Switch to a different tab."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		await self.browser_session.switch_to_tab(tab_index)
 		page = await self.browser_session.get_current_page()
 		return f'Switched to tab {tab_index}: {page.url}'
 
 	async def _close_tab(self, tab_index: int) -> str:
 		"""Close a specific tab."""
+		if not self.browser_session:
+			return 'Error: No browser session active'
+
 		if 0 <= tab_index < len(self.browser_session.tabs):
 			tab = self.browser_session.tabs[tab_index]
 			url = tab.url
