@@ -807,6 +807,7 @@ class BrowserSession(BaseModel):
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
 		return screenshot_b64
 
+	@observe_debug(name='setup_playwright')
 	@retry(
 		wait=1,
 		retries=3,
@@ -817,7 +818,6 @@ class BrowserSession(BaseModel):
 		semaphore_lax=False,
 		semaphore_timeout=5,  # 5s to wait for global playwright object
 	)
-	@observe_debug(name='setup_playwright')
 	async def setup_playwright(self) -> None:
 		"""
 		Set up playwright library client object: usually the result of (await async_playwright().start())

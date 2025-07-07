@@ -33,9 +33,9 @@ def _is_debug_mode() -> bool:
 
 	browser_use_debug = os.getenv('BROWSER_USE_LOGGING_LEVEL', '').lower()
 	if browser_use_debug in ('debug'):
-		logger.info('Debug mode is enabled for observability')
+		# logger.info('Debug mode is enabled for observability')
 		return True
-	logger.info('Debug mode is disabled for observability')
+	# logger.info('Debug mode is disabled for observability')
 	return False
 
 
@@ -103,16 +103,22 @@ def observe(
 	    def my_function(param1, param2):
 	        return param1 + param2
 	"""
+	kwargs = {
+		'name': name,
+		'ignore_input': ignore_input,
+		'ignore_output': ignore_output,
+		'metadata': metadata,
+		**kwargs,
+	}
+	if span_type:
+		kwargs['span_type'] = span_type
+
 	if _LMNR_AVAILABLE and _lmnr_observe:
 		# Use the real lmnr observe decorator
-		return _lmnr_observe(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
-		)
+		return _lmnr_observe(**kwargs)
 	else:
 		# Use no-op decorator
-		return _create_no_op_decorator(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
-		)
+		return _create_no_op_decorator(**kwargs)
 
 
 def observe_debug(
@@ -149,16 +155,22 @@ def observe_debug(
 	    def debug_function(param1, param2):
 	        return param1 + param2
 	"""
+	kwargs = {
+		'name': name,
+		'ignore_input': ignore_input,
+		'ignore_output': ignore_output,
+		'metadata': metadata,
+		**kwargs,
+	}
+	if span_type:
+		kwargs['span_type'] = span_type
+
 	if _LMNR_AVAILABLE and _lmnr_observe and _is_debug_mode():
 		# Use the real lmnr observe decorator only in debug mode
-		return _lmnr_observe(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
-		)
+		return _lmnr_observe(**kwargs)
 	else:
 		# Use no-op decorator (either not in debug mode or lmnr not available)
-		return _create_no_op_decorator(
-			name=name, ignore_input=ignore_input, ignore_output=ignore_output, metadata=metadata, span_type=span_type, **kwargs
-		)
+		return _create_no_op_decorator(**kwargs)
 
 
 # Convenience functions for checking availability and debug status
