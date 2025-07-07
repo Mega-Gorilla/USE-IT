@@ -44,6 +44,7 @@ from browser_use.browser.types import (
 from browser_use.browser.views import (
 	BrowserError,
 	BrowserStateSummary,
+	PageInfo,
 	TabInfo,
 	URLNotAllowedError,
 )
@@ -2672,6 +2673,9 @@ class BrowserSession(BaseModel):
 				self.logger.warning(f'Failed to capture screenshot: {type(e).__name__}: {e}')
 				screenshot_b64 = None
 
+			# Get comprehensive page information
+			page_info = await self.get_page_info(page)
+			# Also get legacy scroll info for backward compatibility
 			pixels_above, pixels_below = await self.get_scroll_info(page)
 
 			self.browser_state_summary = BrowserStateSummary(
@@ -2681,6 +2685,7 @@ class BrowserSession(BaseModel):
 				title=await page.title(),
 				tabs=tabs_info,
 				screenshot=screenshot_b64,
+				page_info=page_info,
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
 			)
@@ -3418,6 +3423,69 @@ class BrowserSession(BaseModel):
 		pixels_above = scroll_y
 		pixels_below = total_height - (scroll_y + viewport_height)
 		return pixels_above, pixels_below
+
+	@require_initialization
+	async def get_page_info(self, page: Page) -> PageInfo:
+		"""Get comprehensive page size and scroll information."""
+		# Get all page dimensions and scroll info in one JavaScript call for efficiency
+		page_data = await page.evaluate("""() => {
+			return {
+				// Current viewport dimensions
+				viewport_width: window.innerWidth,
+				viewport_height: window.innerHeight,
+				
+				// Total page dimensions
+				page_width: Math.max(
+					document.documentElement.scrollWidth,
+					document.body.scrollWidth || 0
+				),
+				page_height: Math.max(
+					document.documentElement.scrollHeight,
+					document.body.scrollHeight || 0
+				),
+				
+				// Current scroll position
+				scroll_x: window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0,
+				scroll_y: window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
+			};
+		}""")
+		
+		# Calculate derived values
+		viewport_width = page_data['viewport_width']
+		viewport_height = page_data['viewport_height']
+		page_width = page_data['page_width']
+		page_height = page_data['page_height']
+		scroll_x = page_data['scroll_x']
+		scroll_y = page_data['scroll_y']
+		
+		# Calculate scroll information
+		pixels_above = scroll_y
+		pixels_below = max(0, page_height - (scroll_y + viewport_height))
+		pixels_left = scroll_x
+		pixels_right = max(0, page_width - (scroll_x + viewport_width))
+		
+		# Calculate page statistics
+		pages_above = scroll_y / viewport_height if viewport_height > 0 else 0
+		pages_below = pixels_below / viewport_height if viewport_height > 0 else 0
+		total_pages = page_height / viewport_height if viewport_height > 0 else 0
+		current_page_position = scroll_y / max(1, page_height - viewport_height) if page_height > viewport_height else 0
+		
+		return PageInfo(
+			viewport_width=viewport_width,
+			viewport_height=viewport_height,
+			page_width=page_width,
+			page_height=page_height,
+			scroll_x=scroll_x,
+			scroll_y=scroll_y,
+			pixels_above=pixels_above,
+			pixels_below=pixels_below,
+			pixels_left=pixels_left,
+			pixels_right=pixels_right,
+			pages_above=round(pages_above, 1),
+			pages_below=round(pages_below, 1),
+			total_pages=round(total_pages, 1),
+			current_page_position=round(current_page_position, 2)
+		)
 
 	@require_initialization
 	async def _scroll_container(self, pixels: int) -> None:

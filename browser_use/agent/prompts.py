@@ -136,13 +136,25 @@ class AgentMessagePrompt:
 		has_content_above = (self.browser_state.pixels_above or 0) > 0
 		has_content_below = (self.browser_state.pixels_below or 0) > 0
 
+		# Enhanced page information for the model
+		page_info_text = ""
+		if self.browser_state.page_info:
+			pi = self.browser_state.page_info
+			page_info_text = f"Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pi.pages_above} pages above, {pi.pages_below} pages below, {pi.total_pages} total pages, at {pi.current_page_position:.0%} of page"
+		
 		if elements_text != '':
 			if has_content_above:
-				elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+				if self.browser_state.page_info:
+					elements_text = f'... {self.browser_state.pixels_above} pixels above ({self.browser_state.page_info.pages_above} pages) - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+				else:
+					elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
 			else:
 				elements_text = f'[Start of page]\n{elements_text}'
 			if has_content_below:
-				elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
+				if self.browser_state.page_info:
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({self.browser_state.page_info.pages_below} pages) - scroll to see more or extract structured data if you are looking for specific information ...'
+				else:
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
 			else:
 				elements_text = f'{elements_text}\n[End of page]'
 		else:
@@ -168,6 +180,7 @@ class AgentMessagePrompt:
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
+{page_info_text}
 Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
