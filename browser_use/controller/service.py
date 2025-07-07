@@ -366,7 +366,7 @@ Only use this for specific queries for information retrieval from the page. Don'
 
 			# Aggressive timeout for page content
 			try:
-				page_html_result = await asyncio.wait_for(page.content(), timeout=5.0)  # 5 second aggressive timeout
+				page_html_result = await asyncio.wait_for(page.content(), timeout=10.0)  # 5 second aggressive timeout
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
@@ -427,7 +427,7 @@ Explain the content of the page and that the requested information is not availa
 				# Aggressive timeout for LLM call
 				response = await asyncio.wait_for(
 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
-					timeout=30.0,  # 30 second aggressive timeout for LLM call
+					timeout=60.0,  # 30 second aggressive timeout for LLM call
 				)
 
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
