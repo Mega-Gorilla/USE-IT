@@ -762,10 +762,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
-			except asyncio.CancelledError:
-				# Task was cancelled due to Ctrl+C
-				self._message_manager._remove_last_state_message()
-				raise InterruptedError('Model query cancelled by user')
 			except InterruptedError:
 				# Agent was paused during get_next_action
 				self._message_manager._remove_last_state_message()
@@ -778,8 +774,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(model_output.action)} actions...')
 			result: list[ActionResult] = await self.multi_act(model_output.action)
-
-			# result: list[ActionResult] = await self.multi_act(model_output.action)
 			self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
 
 			self.state.last_result = result
@@ -796,6 +790,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.state.consecutive_failures = 0
 			self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures reset to: {self.state.consecutive_failures}')
+
 			if len(result) > 0 and result[-1].is_done:
 				self.logger.info(f'📄 Result: {result[-1].extracted_content}')
 				if result[-1].attachments:
@@ -804,7 +799,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						self.logger.info(f'👉 {file_path}')
 
 		except InterruptedError as e:
-			# self.logger.debug('Agent paused')
 			self.logger.debug(f'InterruptedError: {type(e).__name__}: {e}')
 
 			self.state.last_result = [
@@ -814,17 +808,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			]
 			self.state.consecutive_failures += 1
 			return
-		except asyncio.CancelledError as e:
-			# Directly handle the case where the step is cancelled at a higher level
-			# self.logger.debug('Task cancelled - agent was paused with Ctrl+C')
-			self.logger.debug(f'asyncio.CancelledError: {type(e).__name__}: {e}')
-			self.state.last_result = [
-				ActionResult(
-					error='The agent was interrupted mid-step' + (f' - {e}' if e else ''),
-				)
-			]
-			self.state.consecutive_failures += 1
-			raise InterruptedError('Step cancelled by user')
 		except Exception as e:
 			result = await self._handle_step_error(e)
 			self.state.last_result = result
@@ -1402,18 +1385,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				await asyncio.sleep(self.browser_profile.wait_between_actions)
 				# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
-			except asyncio.CancelledError:
-				# Gracefully handle task cancellation
-				self.logger.info(f'Action {i + 1} was cancelled due to Ctrl+C')
-				if not results:
-					# Add a result for the cancelled action
-					results.append(
-						ActionResult(
-							error='The action was cancelled due to Ctrl+C',
-							include_in_memory=True,
-						)
-					)
-				raise InterruptedError('Action cancelled by user')
+			except Exception as e:
+				# Handle any exceptions during action execution
+				self.logger.error(f'Action {i + 1} failed: {type(e).__name__}: {e}')
+				raise e
 
 		return results
 
