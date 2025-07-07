@@ -721,7 +721,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 					retry_messages = input_messages + [clarification_message]
 					model_output = await self.get_next_action(retry_messages)
-
+					self.state.last_model_output = model_output
 					if not model_output.action or all(action.model_dump() == {} for action in model_output.action):
 						self.logger.warning('Model still returned empty after retry. Inserting safe noop action.')
 						action_instance = self.ActionModel()
@@ -785,7 +785,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
 
 			self.state.last_result = result
-			self.state.last_model_output = model_output
 
 			# Check for new downloads after executing actions
 			if self.has_downloads_path:
@@ -1328,7 +1327,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		check_for_new_elements: bool = True,
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
-		results = []
+		results: list[ActionResult] = []
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		cached_selector_map = await self.browser_session.get_selector_map()
