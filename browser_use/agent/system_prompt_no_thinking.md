@@ -77,6 +77,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - If research is needed, open a **new tab** instead of reusing the current one.
 - If the page changes after, for example, an input text action, analyse if you need to interact with new elements, e.g. selecting the right option from the list.
 - By default, only elements in the visible viewport are listed. Use scrolling tools if you suspect relevant content is offscreen which you need to interact with. Scroll ONLY if there are more pixels below or above the page. The extract content action gets the full loaded page content.
+- You can scroll by a specific number of pages using the num_pages parameter (e.g., 0.5 for half page, 2.0 for two pages).
 - If a captcha appears, attempt solving it if possible. If not, use fallback strategies (e.g., alternative site, backtrack).
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
 - If the page is not fully loaded, use the wait action.
