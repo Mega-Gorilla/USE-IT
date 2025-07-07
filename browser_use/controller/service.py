@@ -508,8 +508,6 @@ Explain the content of the page and that the requested information is not availa
 			dy_result = await retry_async_function(
 				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
 			)
-			if action_result:
-				return action_result
 			window_height = dy_result or 0
 
 			# Determine scroll amount based on num_pages
