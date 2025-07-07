@@ -32,7 +32,7 @@ def _is_debug_mode() -> bool:
 	"""Check if we're in debug mode based on environment variables or logging level."""
 
 	browser_use_debug = os.getenv('BROWSER_USE_LOGGING_LEVEL', '').lower()
-	if browser_use_debug in ('debug'):
+	if browser_use_debug == 'debug':
 		# logger.info('Debug mode is enabled for observability')
 		return True
 	# logger.info('Debug mode is disabled for observability')
