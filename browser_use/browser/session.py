@@ -2629,6 +2629,54 @@ class BrowserSession(BaseModel):
 
 		return self._cached_browser_state_summary
 
+	@observe_debug(name='get_minimal_state_summary')
+	@require_initialization
+	@time_execution_async('--get_minimal_state_summary')
+	async def get_minimal_state_summary(self) -> BrowserStateSummary:
+		"""Get basic page info without DOM processing, but try to capture screenshot"""
+		from browser_use.browser.views import BrowserStateSummary
+		from browser_use.dom.views import DOMElementNode
+
+		page = await self.get_current_page()
+
+		# Get basic info - no DOM parsing to avoid errors
+		url = getattr(page, 'url', 'unknown')
+
+		# Try to get title safely
+		try:
+			# timeout after 2 seconds
+			title = await asyncio.wait_for(page.title(), timeout=2.0)
+		except Exception:
+			title = 'Page Load Error'
+
+		# Try to get tabs info safely
+		try:
+			# timeout after 2 seconds
+			tabs_info = await asyncio.wait_for(self.get_tabs_info(), timeout=2.0)
+		except Exception:
+			tabs_info = []
+
+		# Create minimal DOM element for error state
+		minimal_element_tree = DOMElementNode(
+			tag_name='body',
+			xpath='/body',
+			attributes={},
+			children=[],
+			is_visible=True,
+			parent=None,
+		)
+
+		return BrowserStateSummary(
+			element_tree=minimal_element_tree,  # Minimal DOM tree
+			selector_map={},  # Empty selector map
+			url=url,
+			title=title,
+			tabs=tabs_info,
+			pixels_above=0,
+			pixels_below=0,
+			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
+		)
+
 	@observe_debug(name='get_updated_state')
 	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
 		"""Update and return state."""
