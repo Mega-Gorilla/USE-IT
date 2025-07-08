@@ -37,32 +37,44 @@ pip install "browser-use[mcp]"
 ## Quick Start
 
 ```python
+import os
 from browser_use import Agent, Controller
 from browser_use.mcp.client import MCPClient
 
 # Create controller
 controller = Controller()
 
-# Connect to an MCP server
-mcp_client = MCPClient(
+# Connect to multiple MCP servers
+filesystem_client = MCPClient(
     server_name="filesystem",
     command="npx",
     args=["@modelcontextprotocol/server-filesystem", "/path/to/files"]
 )
 
-# Connect and register tools
-await mcp_client.connect()
-await mcp_client.register_to_controller(controller)
+github_client = MCPClient(
+    server_name="github",
+    command="npx",
+    args=["@modelcontextprotocol/server-github"],
+    env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+)
 
-# Agent can now use filesystem tools
+# Connect and register both servers
+await filesystem_client.connect()
+await filesystem_client.register_to_controller(controller, prefix="fs_")
+
+await github_client.connect()
+await github_client.register_to_controller(controller, prefix="gh_")
+
+# Agent can now use both filesystem and GitHub tools
 agent = Agent(
-    task="Read all .txt files and summarize their contents",
+    task="Read the README.md file and create a GitHub issue with a summary of its contents",
     controller=controller
 )
 await agent.run()
 
 # Clean up
-await mcp_client.disconnect()
+await filesystem_client.disconnect()
+await github_client.disconnect()
 ```
 
 ## API Reference
@@ -144,19 +156,34 @@ await mcp_client.register_to_controller(
 
 ### Context Manager Usage
 
-MCPClient supports async context manager protocol:
+MCPClient supports async context manager protocol for multiple servers:
 
 ```python
+controller = Controller()
+
+# Use multiple MCP servers with context managers
 async with MCPClient(
     server_name="github",
     command="npx",
     args=["@modelcontextprotocol/server-github"],
     env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
-) as mcp_client:
-    await mcp_client.register_to_controller(controller)
-    # Use agent with MCP tools
-    await agent.run()
-# Automatically disconnected
+) as github_client:
+    async with MCPClient(
+        server_name="postgres",
+        command="npx",
+        args=["@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+    ) as db_client:
+        # Register both servers
+        await github_client.register_to_controller(controller, prefix="gh_")
+        await db_client.register_to_controller(controller, prefix="db_")
+        
+        # Use agent with both GitHub and database tools
+        agent = Agent(
+            task="Query the user table and create a GitHub issue listing users who haven't logged in for 30 days",
+            controller=controller
+        )
+        await agent.run()
+# Both automatically disconnected
 ```
 
 ### Convenience Functions
@@ -297,37 +324,75 @@ mcp_client = MCPClient(
 
 ### Multiple MCP Servers
 
-Connect multiple servers with different capabilities:
+Connect multiple servers with different capabilities for complex multi-service tasks:
 
 ```python
 controller = Controller()
 
-# Filesystem access
+# 1. Filesystem access for local files
 fs_client = MCPClient(
     server_name="filesystem",
     command="npx",
-    args=["@modelcontextprotocol/server-filesystem", "."]
+    args=["@modelcontextprotocol/server-filesystem", "./project"]
 )
 
-# Database access
+# 2. Database for data storage
 db_client = MCPClient(
     server_name="postgres",
     command="npx",
     args=["@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
 )
 
-# Register both with prefixes
+# 3. GitHub for repository management
+github_client = MCPClient(
+    server_name="github",
+    command="npx",
+    args=["@modelcontextprotocol/server-github"],
+    env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+)
+
+# 4. Gmail for notifications
+gmail_client = MCPClient(
+    server_name="gmail",
+    command="npx",
+    args=["gmail-mcp-server"],
+    env={
+        "GMAIL_CLIENT_ID": os.getenv("GMAIL_CLIENT_ID"),
+        "GMAIL_CLIENT_SECRET": os.getenv("GMAIL_CLIENT_SECRET"),
+        "GMAIL_REFRESH_TOKEN": os.getenv("GMAIL_REFRESH_TOKEN")
+    }
+)
+
+# Connect and register all servers with prefixes to avoid conflicts
 await fs_client.connect()
 await fs_client.register_to_controller(controller, prefix="fs_")
 
 await db_client.connect()
 await db_client.register_to_controller(controller, prefix="db_")
 
-# Agent has access to both fs_read_file() and db_query()
+await github_client.connect()
+await github_client.register_to_controller(controller, prefix="gh_")
+
+await gmail_client.connect()
+await gmail_client.register_to_controller(controller, prefix="email_")
+
+# Agent has access to all tools from all servers
 agent = Agent(
-    task="Read config.json and update the database based on its contents",
+    task="""
+    1. Read all .json config files in the project directory
+    2. Validate the database schema matches the configs
+    3. Create a GitHub issue if there are mismatches
+    4. Send an email summary of the validation results
+    """,
     controller=controller
 )
+await agent.run()
+
+# Clean up all connections
+await fs_client.disconnect()
+await db_client.disconnect()
+await github_client.disconnect()
+await gmail_client.disconnect()
 ```
 
 ### Tool Filtering
@@ -399,14 +464,41 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Connect to custom server:
+Connect custom server alongside standard servers:
 
 ```python
-mcp_client = MCPClient(
+controller = Controller()
+
+# Custom calculation server
+custom_client = MCPClient(
     server_name="custom",
     command="python",
     args=["my_mcp_server.py"]
 )
+
+# Standard filesystem server
+fs_client = MCPClient(
+    server_name="filesystem",
+    command="npx",
+    args=["@modelcontextprotocol/server-filesystem", "."]
+)
+
+# Connect and register both
+await custom_client.connect()
+await custom_client.register_to_controller(controller, prefix="calc_")
+
+await fs_client.connect()
+await fs_client.register_to_controller(controller, prefix="fs_")
+
+# Agent can use both custom calculations and file operations
+agent = Agent(
+    task="Read numbers from data.txt, calculate their sum using the custom calculator, and save the result",
+    controller=controller
+)
+await agent.run()
+
+await custom_client.disconnect()
+await fs_client.disconnect()
 ```
 
 ## Error Handling
@@ -429,23 +521,57 @@ except RuntimeError as e:
 
 ### 1. Resource Management
 
-Always disconnect when done:
+Always disconnect all clients when done:
 
 ```python
+# Manual management for multiple clients
+clients = []
 try:
-    await mcp_client.connect()
-    await mcp_client.register_to_controller(controller)
+    # Connect filesystem client
+    fs_client = MCPClient(
+        server_name="filesystem",
+        command="npx",
+        args=["@modelcontextprotocol/server-filesystem", "."]
+    )
+    await fs_client.connect()
+    await fs_client.register_to_controller(controller, prefix="fs_")
+    clients.append(fs_client)
+    
+    # Connect database client
+    db_client = MCPClient(
+        server_name="postgres",
+        command="npx",
+        args=["@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+    )
+    await db_client.connect()
+    await db_client.register_to_controller(controller, prefix="db_")
+    clients.append(db_client)
+    
+    # Run agent with both clients
     await agent.run()
 finally:
-    await mcp_client.disconnect()
+    # Ensure all clients are disconnected
+    for client in clients:
+        await client.disconnect()
 ```
 
-Or use context manager:
+Or use nested context managers for automatic cleanup:
 
 ```python
-async with MCPClient(...) as mcp_client:
-    await mcp_client.register_to_controller(controller)
-    await agent.run()
+async with MCPClient(
+    server_name="filesystem",
+    command="npx",
+    args=["@modelcontextprotocol/server-filesystem", "."]
+) as fs_client:
+    async with MCPClient(
+        server_name="github",
+        command="npx",
+        args=["@modelcontextprotocol/server-github"],
+        env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+    ) as gh_client:
+        await fs_client.register_to_controller(controller, prefix="fs_")
+        await gh_client.register_to_controller(controller, prefix="gh_")
+        await agent.run()
 ```
 
 ### 2. Naming Conflicts
@@ -527,6 +653,97 @@ MCP results are converted to strings:
 Tools starting with `"browser_"` or containing `"page"` in the name are marked as browser-specific and have a page filter applied.
 
 ## Examples
+
+### Complete Multi-Service Integration
+
+Here's a comprehensive example showing multiple MCP servers working together:
+
+```python
+import os
+from browser_use import Agent, Controller
+from browser_use.mcp.client import MCPClient
+
+async def analyze_and_report():
+    """Analyze project files, query database, and report findings via GitHub and email."""
+    controller = Controller()
+    
+    # Setup all MCP clients
+    clients = {
+        'fs': MCPClient(
+            server_name="filesystem",
+            command="npx",
+            args=["@modelcontextprotocol/server-filesystem", "./src"]
+        ),
+        'db': MCPClient(
+            server_name="postgres",
+            command="npx",
+            args=["@modelcontextprotocol/server-postgres", os.getenv("DATABASE_URL")]
+        ),
+        'gh': MCPClient(
+            server_name="github",
+            command="npx",
+            args=["@modelcontextprotocol/server-github"],
+            env={"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")}
+        ),
+        'email': MCPClient(
+            server_name="gmail",
+            command="npx",
+            args=["gmail-mcp-server"],
+            env={
+                "GMAIL_CLIENT_ID": os.getenv("GMAIL_CLIENT_ID"),
+                "GMAIL_CLIENT_SECRET": os.getenv("GMAIL_CLIENT_SECRET"),
+                "GMAIL_REFRESH_TOKEN": os.getenv("GMAIL_REFRESH_TOKEN")
+            }
+        )
+    }
+    
+    try:
+        # Connect all clients
+        for name, client in clients.items():
+            await client.connect()
+            await client.register_to_controller(controller, prefix=f"{name}_")
+        
+        # Create agent with complex multi-service task
+        agent = Agent(
+            task="""
+            Perform a comprehensive code analysis:
+            
+            1. Use filesystem tools to:
+               - List all Python files in the src directory
+               - Read each Python file and count the number of functions
+               - Identify files with more than 10 functions
+            
+            2. Use database tools to:
+               - Query the code_metrics table for historical function counts
+               - Compare current counts with historical data
+            
+            3. Use GitHub tools to:
+               - Check if there's already an issue about large files
+               - If not, create a new issue listing files that grew by >50%
+               - Add labels: 'refactoring', 'code-quality'
+            
+            4. Use email tools to:
+               - Send a summary email to the team lead
+               - Include the list of files needing refactoring
+               - CC the development team
+            """,
+            controller=controller
+        )
+        
+        # Run the analysis
+        await agent.run()
+        
+    finally:
+        # Cleanup all connections
+        for client in clients.values():
+            await client.disconnect()
+
+# Run the example
+import asyncio
+asyncio.run(analyze_and_report())
+```
+
+### Repository Links
 
 - [Simple MCP client](https://github.com/browser-use/browser-use/tree/main/examples/mcp/simple_client.py)
 - [Gmail integration](https://github.com/browser-use/browser-use/tree/main/examples/mcp/advanced_client.py)

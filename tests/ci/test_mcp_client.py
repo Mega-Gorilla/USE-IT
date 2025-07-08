@@ -436,3 +436,103 @@ async def test_mcp_result_formatting(test_mcp_server_script):
 
 	finally:
 		await mcp_client.disconnect()
+
+
+async def test_agent_with_multiple_mcp_servers(test_mcp_server_script, httpserver: HTTPServer):
+	"""Test agent using tools from multiple MCP servers in a single task."""
+	# Set up test webpage
+	httpserver.expect_request('/').respond_with_data(
+		"""
+		<html>
+		<body>
+			<h1>Multi-MCP Test</h1>
+			<p>Use tools from both servers</p>
+		</body>
+		</html>
+		""",
+		content_type='text/html',
+	)
+
+	browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None))
+	await browser_session.start()
+	controller = Controller()
+
+	# Connect two MCP servers with different prefixes
+	mcp_server1 = MCPClient(server_name='math-server', command=sys.executable, args=[test_mcp_server_script])
+	mcp_server2 = MCPClient(server_name='data-server', command=sys.executable, args=[test_mcp_server_script])
+
+	try:
+		# Connect and register both servers
+		await mcp_server1.connect()
+		await mcp_server1.register_to_controller(controller, prefix='math_', tool_filter=['count_to_n'])
+
+		await mcp_server2.connect()
+		await mcp_server2.register_to_controller(controller, prefix='data_', tool_filter=['echo_message', 'get_test_data'])
+
+		# Import create_mock_llm from conftest
+		from tests.ci.conftest import create_mock_llm
+
+		# Create mock LLM with actions using tools from both servers
+		actions = [
+			f'{{"thinking": null, "evaluation_previous_goal": "Starting", "memory": "Starting multi-MCP task", "next_goal": "Navigate to test page", "action": [{{"go_to_url": {{"url": "{httpserver.url_for("/")}"}}}}]}}',
+			'{"thinking": null, "evaluation_previous_goal": "Navigated", "memory": "On test page", "next_goal": "Use math server to count", "action": [{"math_count_to_n": {"n": 5}}]}',
+			'{"thinking": null, "evaluation_previous_goal": "Counted with math server", "memory": "Used math_count_to_n", "next_goal": "Use data server to echo", "action": [{"data_echo_message": {"message": "Counted successfully", "prefix": "Result:"}}]}',
+			'{"thinking": null, "evaluation_previous_goal": "Echoed with data server", "memory": "Used data_echo_message", "next_goal": "Get test data from data server", "action": [{"data_get_test_data": {}}]}',
+			'{"thinking": null, "evaluation_previous_goal": "Got test data", "memory": "Retrieved JSON data", "next_goal": "Complete", "action": [{"done": {"text": "Used tools from both MCP servers successfully", "success": true}}]}',
+		]
+		mock_llm = create_mock_llm(actions=actions)
+
+		# Create agent with extended system message
+		agent = Agent(
+			task=f'Go to {httpserver.url_for("/")}, use math_count_to_n to count to 5, then use data_echo_message and data_get_test_data',
+			llm=mock_llm,
+			browser_session=browser_session,
+			controller=controller,
+			extend_system_message="""You have access to tools from two MCP servers:
+- math server: Provides math_count_to_n for counting
+- data server: Provides data_echo_message for echoing and data_get_test_data for JSON data
+
+Use tools from both servers to complete the task.""",
+		)
+
+		# Run agent
+		history = await agent.run(max_steps=10)
+
+		# Verify the agent used tools from both servers
+		action_names = []
+		for step in history.history:
+			if step.model_output and step.model_output.action:
+				for action in step.model_output.action:
+					action_dict = action.model_dump(exclude_unset=True)
+					action_names.extend(action_dict.keys())
+
+		# Should have used tools from both servers
+		assert 'math_count_to_n' in action_names
+		assert 'data_echo_message' in action_names
+		assert 'data_get_test_data' in action_names
+
+		# Check results contain outputs from both servers
+		results = []
+		memory_entries = []
+		for step in history.history:
+			if step.result:
+				for r in step.result:
+					if r.extracted_content:
+						results.append(r.extracted_content)
+					if r.long_term_memory:
+						memory_entries.append(r.long_term_memory)
+
+		# Verify outputs from both servers
+		assert any('Counted to 5: 1, 2, 3, 4, 5' in r for r in results)
+		assert any('Result: Counted successfully' in r for r in results)
+		assert any('"status": "success"' in r for r in results)
+
+		# Verify both server names appear in memory
+		all_memory = ' '.join(memory_entries)
+		assert 'math-server' in all_memory
+		assert 'data-server' in all_memory
+
+	finally:
+		await mcp_server1.disconnect()
+		await mcp_server2.disconnect()
+		await browser_session.stop()
