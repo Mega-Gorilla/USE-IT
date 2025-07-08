@@ -39,7 +39,9 @@ def _is_debug_mode() -> bool:
 	return False
 
 
-logger.info(f'Debug mode is {_is_debug_mode()}')
+# Only log debug mode status if explicitly requested
+if os.environ.get('BROWSER_USE_VERBOSE_OBSERVABILITY', 'false').lower() == 'true':
+	logger.info(f'Debug mode is {_is_debug_mode()}')
 
 # Try to import lmnr observe
 _LMNR_AVAILABLE = False
@@ -48,10 +50,12 @@ _lmnr_observe = None
 try:
 	from lmnr import observe as _lmnr_observe  # type: ignore
 
-	logger.info('Lmnr is available for observability')
+	if os.environ.get('BROWSER_USE_VERBOSE_OBSERVABILITY', 'false').lower() == 'true':
+		logger.info('Lmnr is available for observability')
 	_LMNR_AVAILABLE = True
 except ImportError:
-	logger.info('Lmnr is not available for observability')
+	if os.environ.get('BROWSER_USE_VERBOSE_OBSERVABILITY', 'false').lower() == 'true':
+		logger.info('Lmnr is not available for observability')
 	_LMNR_AVAILABLE = False
 
 

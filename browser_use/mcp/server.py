@@ -31,27 +31,36 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
+# Set environment to suppress browser-use logging during import
+os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'error'
+os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'  # Prevent automatic logging setup
+
 # Add browser-use to path if running from source
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Override browser-use's logging BEFORE importing it
-# This prevents it from setting up stdout logging
-logging.basicConfig(
-	level=logging.ERROR,  # Only show errors to avoid interference
-	format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-	stream=sys.stderr,
-	force=True,  # Force reconfiguration
-)
+# Import and configure logging to use stderr before other imports
+from browser_use.logging_config import setup_logging
 
-# Clear any existing handlers on root logger
-root_logger = logging.getLogger()
-root_logger.handlers = []
+# Configure logging to stderr for MCP mode
+setup_logging(stream=sys.stderr, log_level='error', force_setup=True)
 
-# Add our stderr handler
+# Also configure the root logger and all existing loggers to use stderr
+logging.root.handlers = []
 stderr_handler = logging.StreamHandler(sys.stderr)
 stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-root_logger.addHandler(stderr_handler)
+logging.root.addHandler(stderr_handler)
+logging.root.setLevel(logging.ERROR)
 
+# Configure all existing loggers to use stderr
+for name in list(logging.root.manager.loggerDict.keys()):
+	logger = logging.getLogger(name)
+	logger.handlers = []
+	logger.addHandler(stderr_handler)
+	logger.setLevel(logging.ERROR)
+	logger.propagate = False
+
+
+# Import browser_use modules
 from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
@@ -59,13 +68,37 @@ from browser_use.controller.service import Controller
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.openai.chat import ChatOpenAI
 
-# After import, ensure browser_use logger doesn't output to stdout
-browser_use_logger = logging.getLogger('browser_use')
-browser_use_logger.handlers = []
-browser_use_logger.addHandler(stderr_handler)
-browser_use_logger.setLevel(logging.ERROR)
-
 logger = logging.getLogger(__name__)
+
+
+def _ensure_all_loggers_use_stderr():
+	"""Ensure ALL loggers only output to stderr, not stdout."""
+	# Get the stderr handler
+	stderr_handler = None
+	for handler in logging.root.handlers:
+		if hasattr(handler, 'stream') and handler.stream == sys.stderr:  # type: ignore
+			stderr_handler = handler
+			break
+
+	if not stderr_handler:
+		stderr_handler = logging.StreamHandler(sys.stderr)
+		stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+	# Configure root logger
+	logging.root.handlers = [stderr_handler]
+	logging.root.setLevel(logging.ERROR)
+
+	# Configure all existing loggers
+	for name in list(logging.root.manager.loggerDict.keys()):
+		logger_obj = logging.getLogger(name)
+		logger_obj.handlers = [stderr_handler]
+		logger_obj.setLevel(logging.ERROR)
+		logger_obj.propagate = False
+
+
+# Ensure stderr logging after all imports
+_ensure_all_loggers_use_stderr()
+
 
 # Try to import MCP SDK
 try:
@@ -75,6 +108,13 @@ try:
 	from mcp.server.models import InitializationOptions
 
 	MCP_AVAILABLE = True
+
+	# Configure MCP SDK logging to stderr as well
+	mcp_logger = logging.getLogger('mcp')
+	mcp_logger.handlers = []
+	mcp_logger.addHandler(logging.root.handlers[0] if logging.root.handlers else logging.StreamHandler(sys.stderr))
+	mcp_logger.setLevel(logging.ERROR)
+	mcp_logger.propagate = False
 except ImportError:
 	MCP_AVAILABLE = False
 	logger.error('MCP SDK not installed. Install with: pip install mcp')
@@ -85,6 +125,9 @@ class BrowserUseServer:
 	"""MCP Server for browser-use capabilities."""
 
 	def __init__(self):
+		# Ensure all logging goes to stderr
+		_ensure_all_loggers_use_stderr()
+
 		self.server = Server('browser-use')
 		self.config = load_browser_use_config()
 		self.agent: Agent | None = None
@@ -337,7 +380,10 @@ class BrowserUseServer:
 		if self.browser_session:
 			return
 
-		logger.info('Initializing browser session...')
+		# Ensure all logging goes to stderr before browser initialization
+		_ensure_all_loggers_use_stderr()
+
+		logger.debug('Initializing browser session...')
 
 		# Get profile config
 		profile_config = get_default_profile(self.config)
@@ -387,7 +433,7 @@ class BrowserUseServer:
 		file_system_path = profile_config.get('file_system_path', '~/.browser-use-mcp')
 		self.file_system = FileSystem(base_dir=Path(file_system_path).expanduser())
 
-		logger.info('Browser session initialized')
+		logger.debug('Browser session initialized')
 
 	async def _retry_with_browser_use_agent(
 		self,
@@ -398,7 +444,7 @@ class BrowserUseServer:
 		use_vision: bool = True,
 	) -> str:
 		"""Run an autonomous agent task."""
-		logger.info(f'Running agent task: {task}')
+		logger.debug(f'Running agent task: {task}')
 
 		# Get LLM config
 		llm_config = get_default_llm(self.config)
