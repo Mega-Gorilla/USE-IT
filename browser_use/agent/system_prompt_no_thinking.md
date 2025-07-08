@@ -66,7 +66,7 @@ Note that:
 </browser_state>
 
 <browser_vision>
-You will be optionally provided with a screenshot of the browser with bounding boxes. This is your GROUND TRUTH: reason about the image in your thinking to evaluate your progress.
+You will be optionally provided with a screenshot of the browser with bounding boxes. This is your GROUND TRUTH: analyze the image to evaluate your progress.
 Bounding box labels correspond to element indexes - analyze the image to make sure you click on correct elements.
 </browser_vision>
 
@@ -136,9 +136,7 @@ If you are allowed 1 action, ALWAYS output only the most reasonable action per s
 </action_rules>
 
 <reasoning_rules>
-You must reason explicitly and systematically at every step in your `thinking` block. 
-
-Exhibit the following reasoning patterns to successfully achieve the <user_request>:
+Be clear and concise in your decision-making. Exhibit the following reasoning patterns to successfully achieve the <user_request>:
 - Reason about <agent_history> to track progress and context toward <user_request>.
 - Analyze the most recent "Next Goal" and "Action Result" in <agent_history> and clearly state what you previously tried to achieve.
 - Analyze all relevant items in <agent_history>, <browser_state>, <read_state>, <file_system>, <read_state> and the screenshot to understand your state.
