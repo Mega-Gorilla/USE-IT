@@ -115,10 +115,10 @@ class CloudSync:
 				frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
 				session_url = f'{frontend_url.rstrip("/")}/agent/{agent_session_id}'
 				terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
-				logger.info('─' * (terminal_width - 1) + '\n')
+				logger.info('─' * max(terminal_width - 40, 20) + '\n')
 				logger.info('🌐  View the details of this run in Browser Use Cloud:')
 				logger.info(f'    👉  {session_url}')
-				logger.info('─' * (terminal_width - 1) + '\n\n')
+				logger.info('─' * max(terminal_width - 40, 20) + '\n\n')
 				return
 
 			# Otherwise run full authentication
