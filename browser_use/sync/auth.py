@@ -331,7 +331,8 @@ class DeviceAuthClient:
 				logger.warning(f'Failed to authenticate with cloud service: HTTP {e.response.status_code} - {e.response.text}')
 		except httpx.RequestError as e:
 			# Connection/network errors
-			logger.warning(f'Failed to connect to cloud service: {type(e).__name__}: {e}')
+			# logger.warning(f'Failed to connect to cloud service: {type(e).__name__}: {e}')
+			pass
 		except Exception as e:
 			# Other unexpected errors
 			logger.warning(f'Unexpected error during cloud authentication: {type(e).__name__}: {e}')

@@ -888,6 +888,9 @@ class BrowserSession(BaseModel):
 		# Wait for CDP port to become available (Chrome might still be starting)
 		import httpx
 
+		# Add initial delay to give Chrome time to start up before first check
+		await asyncio.sleep(1.3)
+
 		async with httpx.AsyncClient() as client:
 			for i in range(30):  # 30 second timeout
 				# First check if the Chrome process has exited
