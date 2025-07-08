@@ -1552,6 +1552,9 @@ class BrowserSession(BaseModel):
 
 			# show browser-use dvd screensaver-style bouncing loading animation on any new tab pages
 			if is_new_tab_page(page.url):
+				# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+				if page.url.startswith('chrome://new-tab-page'):
+					await page.goto('about:blank')
 				await self._show_dvd_screensaver_loading_animation(page)
 
 		page = page or (await self.browser_context.new_page())
@@ -3574,6 +3577,13 @@ class BrowserSession(BaseModel):
 			self.logger.warning(
 				f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}'
 			)
+
+		# Show DVD animation on new tab pages (after navigating to about:blank if needed)
+		if not normalized_url and is_new_tab_page(new_page.url):
+			# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+			if new_page.url.startswith('chrome://new-tab-page'):
+				await new_page.goto('about:blank')
+			await self._show_dvd_screensaver_loading_animation(new_page)
 
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
