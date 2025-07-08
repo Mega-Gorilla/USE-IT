@@ -623,7 +623,7 @@ MULTIPROCESS_SEMAPHORE_DIR = Path(tempfile.gettempdir()) / 'browser_use_semaphor
 MULTIPROCESS_SEMAPHORE_DIR.mkdir(exist_ok=True)
 
 # Global multiprocess semaphore registry
-MULTIPROCESS_SEMAPHORES: dict[str, portalocker.utils.NamedBoundedSemaphore] = {}
+# Multiprocess semaphores are not cached due to internal state issues causing "Already locked" errors
 MULTIPROCESS_SEMAPHORE_LOCK = threading.Lock()
 
 # Global overload detection state
@@ -727,14 +727,13 @@ def retry(
 					# Use multiprocess semaphore
 					sem_key = base_name
 					with MULTIPROCESS_SEMAPHORE_LOCK:
-						if sem_key not in MULTIPROCESS_SEMAPHORES:
-							# Create a NamedBoundedSemaphore with the given limit
-							MULTIPROCESS_SEMAPHORES[sem_key] = portalocker.utils.NamedBoundedSemaphore(
-								maximum=semaphore_limit,
-								name=sem_key,
-								directory=str(MULTIPROCESS_SEMAPHORE_DIR),
-							)
-						semaphore = MULTIPROCESS_SEMAPHORES[sem_key]
+						# Don't cache multiprocess semaphores - they have internal state issues
+						# Create a new instance each time to avoid "Already locked" errors
+						semaphore = portalocker.utils.NamedBoundedSemaphore(
+							maximum=semaphore_limit,
+							name=sem_key,
+							directory=str(MULTIPROCESS_SEMAPHORE_DIR),
+						)
 				else:
 					# Use in-process semaphore
 					if semaphore_scope == 'global':
