@@ -882,6 +882,26 @@ class BrowserSession(BaseModel):
 			return
 
 		self.cdp_url = self.cdp_url or f'http://localhost:{debug_port}/'
+
+		# Wait for CDP port to become available (Chrome might still be starting)
+		import httpx
+
+		async with httpx.AsyncClient() as client:
+			for i in range(30):  # 30 second timeout
+				try:
+					response = await client.get(f'{self.cdp_url}json/version', timeout=1.0)
+					if response.status_code == 200:
+						self.logger.debug(f'✅ Chrome CDP port {debug_port} is ready')
+						break
+				except (httpx.ConnectError, httpx.TimeoutException):
+					if i == 0:
+						self.logger.debug(f'⏳ Waiting for Chrome CDP port {debug_port} to become available...')
+					await asyncio.sleep(1)
+			else:
+				self.logger.error(f'❌ Chrome CDP port {debug_port} did not become available after 30 seconds')
+				self.browser_pid = None
+				return
+
 		self.logger.info(f'🌎 Connecting to existing local browser process: browser_pid={self.browser_pid} on {self.cdp_url}')
 		assert self.playwright is not None, 'playwright instance is None'
 		self.browser = self.browser or await self.playwright.chromium.connect_over_cdp(
