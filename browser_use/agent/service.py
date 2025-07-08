@@ -1319,7 +1319,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
-		await self.browser_session.remove_highlights()
+		try:
+			await self.browser_session.remove_highlights()
+		except asyncio.TimeoutError:
+			# we don't care if this times out
+			self.logger.debug('Timeout to remove highlights')
 
 		for i, action in enumerate(actions):
 			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
