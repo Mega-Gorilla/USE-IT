@@ -505,17 +505,6 @@ Explain the content of the page and that the requested information is not availa
 			"""
 			page = await browser_session.get_current_page()
 
-			# Enable console logging for debugging
-			def log_console_message(msg):
-				if '[SCROLL DEBUG]' in msg.text:
-					logger.debug(f'🟡 Browser Console: {msg.text}')
-
-			page.on('console', log_console_message)
-
-			# Log page context for debugging
-			logger.debug(f'🌐 Page URL: {page.url}')
-			logger.debug(f'📏 Scroll parameters: down={params.down}, num_pages={params.num_pages}, index={params.index}')
-
 			# Get window height with retries
 			dy_result = await retry_async_function(
 				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
@@ -537,20 +526,12 @@ Explain the content of the page and that the requested information is not availa
 			if params.index is not None:
 				try:
 					# Check if element exists in current selector map
-					logger.debug(f'🔍 Looking up element index {params.index} in selector map')
 					selector_map = await browser_session.get_selector_map()
-					logger.debug(
-						f'📊 Current selector map has {len(selector_map)} elements with indices: {list(selector_map.keys())[:10]}{"..." if len(selector_map) > 10 else ""}'
-					)
-
 					if params.index not in selector_map:
 						# Force a state refresh in case the cache is stale
 						logger.info(f'Element with index {params.index} not found in selector map, refreshing state...')
 						await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 						selector_map = await browser_session.get_selector_map()
-						logger.debug(
-							f'📊 After refresh, selector map has {len(selector_map)} elements with indices: {list(selector_map.keys())[:10]}{"..." if len(selector_map) > 10 else ""}'
-						)
 
 						if params.index not in selector_map:
 							# Return informative message about invalid index
@@ -559,71 +540,29 @@ Explain the content of the page and that the requested information is not availa
 							logger.warning(msg)
 							# Fall through to page-level scrolling
 						else:
-							logger.debug(f'✅ Found element {params.index} after refresh')
 							element_node = await browser_session.get_dom_element_by_index(params.index)
 					else:
-						logger.debug(f'✅ Found element {params.index} in selector map')
 						element_node = await browser_session.get_dom_element_by_index(params.index)
-
-					if element_node:
-						logger.debug(
-							f'🏷️ Element {params.index} details: tag={element_node.tag_name}, xpath={element_node.xpath}, attributes={element_node.attributes}'
-						)
 
 					if params.index in selector_map and element_node is not None:
 						# Try to find and scroll within the element's scroll container
-						logger.debug(
-							f'🔍 Attempting element-specific scrolling for index {params.index}, xpath: {element_node.xpath}'
-						)
-
 						element_scroll_js = """
 						(params) => {
 							const { dy, elementXPath } = params;
-							console.log(`[SCROLL DEBUG] Starting scroll for XPath: ${elementXPath}, dy: ${dy}`);
 							
 							// Find the scroll container for the specified element
 							const findScrollContainer = (element) => {
-								console.log(`[SCROLL DEBUG] Checking scroll container for element:`, element.tagName, element.className);
-								
-								const bigEnough = el => {
-									const height = el.clientHeight;
-									const windowHeight = window.innerHeight;
-									const ratio = height / windowHeight;
-									console.log(`[SCROLL DEBUG] Element height: ${height}px, window height: ${windowHeight}px, ratio: ${ratio}`);
-									return ratio >= 0.3;
-								};
-								
-								const canScroll = el => {
-									if (!el) return false;
-									const style = getComputedStyle(el);
-									const overflowY = style.overflowY;
-									const scrollHeight = el.scrollHeight;
-									const clientHeight = el.clientHeight;
-									const isBigEnough = bigEnough(el);
-									
-									console.log(`[SCROLL DEBUG] Element ${el.tagName}.${el.className}:`, {
-										overflowY,
-										scrollHeight,
-										clientHeight,
-										hasScrollableContent: scrollHeight > clientHeight,
-										isBigEnough,
-										canScrollResult: /(auto|scroll|overlay)/.test(overflowY) && scrollHeight > clientHeight && isBigEnough
-									});
-									
-									return /(auto|scroll|overlay)/.test(overflowY) && 
-										   scrollHeight > clientHeight && 
-										   isBigEnough;
-								};
+								const bigEnough = el => el.clientHeight >= window.innerHeight * 0.3;
+								const canScroll = el =>
+									el &&
+									/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) &&
+									el.scrollHeight > el.clientHeight &&
+									bigEnough(el);
 
 								let current = element;
 								let depth = 0;
-								console.log(`[SCROLL DEBUG] Starting DOM traversal from:`, current.tagName, current.className);
-								
 								while (current && current !== document.body && current !== document.documentElement && depth < 10) {
-									console.log(`[SCROLL DEBUG] Depth ${depth}: Checking element:`, current.tagName, current.className || '(no class)');
-									
 									if (canScroll(current)) {
-										console.log(`[SCROLL DEBUG] Found scrollable container at depth ${depth}:`, current.tagName, current.className);
 										return current;
 									}
 									current = current.parentElement;
@@ -631,42 +570,26 @@ Explain the content of the page and that the requested information is not availa
 								}
 
 								// Check if body/documentElement can scroll
-								console.log(`[SCROLL DEBUG] Checking body/documentElement for scrollability`);
-								if (canScroll(document.body)) {
-									console.log(`[SCROLL DEBUG] Body is scrollable`);
-									return document.body;
-								}
-								if (canScroll(document.documentElement)) {
-									console.log(`[SCROLL DEBUG] DocumentElement is scrollable`);
-									return document.documentElement;
-								}
+								if (canScroll(document.body)) return document.body;
+								if (canScroll(document.documentElement)) return document.documentElement;
 								
-								console.log(`[SCROLL DEBUG] No suitable scroll container found`);
 								return null;
 							};
 
 							// Get the target element by XPath
-							console.log(`[SCROLL DEBUG] Evaluating XPath: ${elementXPath}`);
 							const targetElement = document.evaluate(elementXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 							if (!targetElement) {
-								console.error(`[SCROLL DEBUG] Element not found by XPath: ${elementXPath}`);
-								return { success: false, reason: 'Element not found by XPath', xpath: elementXPath };
+								return { success: false, reason: 'Element not found by XPath' };
 							}
-							
-							console.log(`[SCROLL DEBUG] Target element found:`, targetElement.tagName, targetElement.className);
 
 							// Find scroll container for this element
 							const scrollContainer = findScrollContainer(targetElement);
 							
 							if (scrollContainer && scrollContainer !== document.body && scrollContainer !== document.documentElement) {
 								// Found a specific scroll container
-								console.log(`[SCROLL DEBUG] Scrolling in container:`, scrollContainer.tagName, scrollContainer.className);
-								
 								const beforeScrollTop = scrollContainer.scrollTop;
 								scrollContainer.scrollBy({ top: dy, behavior: 'auto' });
 								const afterScrollTop = scrollContainer.scrollTop;
-								
-								console.log(`[SCROLL DEBUG] Container scroll: ${beforeScrollTop} -> ${afterScrollTop} (delta: ${afterScrollTop - beforeScrollTop})`);
 								
 								return { 
 									success: true, 
@@ -674,35 +597,26 @@ Explain the content of the page and that the requested information is not availa
 									containerTag: scrollContainer.tagName.toLowerCase(),
 									containerClass: scrollContainer.className || '',
 									containerId: scrollContainer.id || '',
-									scrollDelta: afterScrollTop - beforeScrollTop,
-									scrollTop: afterScrollTop
+									scrollDelta: afterScrollTop - beforeScrollTop
 								};
 							} else {
 								// No specific container found, use page-level scrolling
-								console.log(`[SCROLL DEBUG] No specific container found, using window.scrollBy`);
-								
 								const beforeScrollY = window.scrollY;
 								window.scrollBy(0, dy);
 								const afterScrollY = window.scrollY;
 								
-								console.log(`[SCROLL DEBUG] Window scroll: ${beforeScrollY} -> ${afterScrollY} (delta: ${afterScrollY - beforeScrollY})`);
-								
 								return { 
 									success: true, 
 									containerType: 'page',
-									scrollDelta: afterScrollY - beforeScrollY,
-									scrollY: afterScrollY
+									scrollDelta: afterScrollY - beforeScrollY
 								};
 							}
 						}
 						"""
 
-						# Pass parameters as a single object to fix the argument count issue
+						# Pass parameters as a single object
 						scroll_params = {'dy': dy, 'elementXPath': element_node.xpath}
-						logger.debug(f'🔧 Calling page.evaluate with params: {scroll_params}')
-
 						result = await page.evaluate(element_scroll_js, scroll_params)
-						logger.debug(f'📊 JavaScript scroll result: {result}')
 
 						if result['success']:
 							if result['containerType'] == 'element':
@@ -727,17 +641,12 @@ Explain the content of the page and that the requested information is not availa
 
 			# Page-level scrolling (default or fallback)
 			if scroll_target == 'the page' or 'fallback' in scroll_target or 'no scroll container found' in scroll_target:
-				logger.debug(f'🔄 Performing page-level scrolling. Reason: {scroll_target}')
 				try:
-					logger.debug(f'🎯 Using browser_session._scroll_container with dy={dy}')
 					await browser_session._scroll_container(cast(int, dy))
-					logger.debug('✅ browser_session._scroll_container succeeded')
 				except Exception as e:
 					# Hard fallback: always works on root scroller
-					logger.debug(f'⚠️ browser_session._scroll_container failed: {e}')
-					logger.debug(f'🔧 Using window.scrollBy fallback with dy={dy}')
 					await page.evaluate('(y) => window.scrollBy(0, y)', dy)
-					logger.debug('✅ window.scrollBy fallback completed')
+					logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
 			# Create descriptive message
 			if pages_scrolled == 1.0:
@@ -748,13 +657,6 @@ Explain the content of the page and that the requested information is not availa
 			msg = f'🔍 {long_term_memory}'
 
 			logger.info(msg)
-
-			# Cleanup console listener
-			try:
-				page.remove_listener('console', log_console_message)
-			except Exception as e:
-				pass  # Ignore cleanup errors
-
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 
 		# send keys
