@@ -1073,8 +1073,8 @@ class BrowserSession(BaseModel):
 						# It will wait for the CDP port to become available
 						await self.setup_browser_via_browser_pid()
 
-						# If connection failed, browser_context will be None
-						if not self.browser_context:
+						# If connection failed, browser will be None
+						if not self.browser:
 							# Try to get error info from the process
 							if process.returncode is not None:
 								raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
