@@ -10,16 +10,16 @@ The `browser-use` command-line interface provides multiple modes of operation fo
 
 ## Installation
 
-Install browser-use using uv:
+Get started with browser-use immediately using `uvx`:
 
 ```bash
-uvx browser-use
+uvx browser-use --help
 ```
 
-Or install globally:
+Or install it globally:
 
 ```bash
-uv tool install browser-use
+uv tool install 'browser-use[cli]'
 ```
 
 ## Modes of Operation
@@ -55,7 +55,7 @@ Options:
 Run browser-use as a Model Context Protocol server:
 
 ```bash
-uvx browser-use --mcp
+uvx browser-use --mcp   # exoects MCP JSON RPC over stdio
 ```
 
 This mode exposes browser automation capabilities as MCP tools that can be used by:
