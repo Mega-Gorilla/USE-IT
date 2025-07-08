@@ -881,7 +881,7 @@ class BrowserSession(BaseModel):
 			self.browser_pid = None
 			return
 
-		self.cdp_url = self.cdp_url or f'http://localhost:{debug_port}/'
+		self.cdp_url = self.cdp_url or f'http://127.0.0.1:{debug_port}/'
 
 		# Wait for CDP port to become available (Chrome might still be starting)
 		import httpx
@@ -959,8 +959,6 @@ class BrowserSession(BaseModel):
 
 	async def _unsafe_setup_new_browser_context(self) -> None:
 		"""Unsafe browser context setup without retry protection."""
-		current_process = psutil.Process(os.getpid())
-		child_pids_before_launch = {child.pid for child in current_process.children(recursive=True)}
 
 		# if we have a browser object but no browser_context, use the first context discovered or make a new one
 		if self.browser and not self.browser_context:
@@ -1058,7 +1056,7 @@ class BrowserSession(BaseModel):
 
 						# Launch chrome as subprocess
 						self.logger.info(
-							f' ↳ Spawning Chrome subprocess listening on CDP port :{debug_port} with user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							f' ↳ Spawning Chrome subprocess listening on CDP port 127.0.0.1:{debug_port} with user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
 						)
 						process = await asyncio.create_subprocess_exec(
 							*chrome_launch_cmd,
@@ -1068,6 +1066,8 @@ class BrowserSession(BaseModel):
 
 						# Store the browser PID
 						self.browser_pid = process.pid
+						self._set_browser_keep_alive(False)  # We launched it, so we should close it
+						self.logger.debug(f'Chrome subprocess launched with PID {process.pid}')
 
 						# Use the existing setup_browser_via_browser_pid method to connect
 						# It will wait for the CDP port to become available
@@ -1079,6 +1079,12 @@ class BrowserSession(BaseModel):
 							if process.returncode is not None:
 								raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
 							else:
+								# Kill the subprocess if it's still running but we couldn't connect
+								try:
+									process.terminate()
+									await process.wait()
+								except Exception:
+									pass
 								raise RuntimeError(f'Failed to connect to Chrome subprocess on port {debug_port}')
 
 					except Exception as e:
@@ -1148,74 +1154,7 @@ class BrowserSession(BaseModel):
 		# ^ self.browser can unfortunately still be None at the end ^
 		# playwright does not give us a browser object at all when we use launch_persistent_context()!
 
-		# Detect any new child chrome processes that we might have launched above
-		# Skip this if we already have a browser_pid from subprocess launching
-		if self.browser_pid:
-			self.logger.debug(
-				f'Skipping browser PID detection, already have browser_pid={self.browser_pid} from subprocess launch'
-			)
-			self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
-		else:
-
-			def is_our_chrome_proc(pid: int) -> psutil.Process | None:
-				try:
-					proc = psutil.Process(pid)
-					cmdline = proc.cmdline()
-					if 'Helper' in proc.name():
-						return None
-					if proc.status() != 'running':
-						return None
-					if (
-						self.browser_profile.executable_path
-						and Path(cmdline[0]).expanduser().resolve()
-						!= Path(self.browser_profile.executable_path).expanduser().resolve()
-					):
-						# self.logger.debug(f'❌ Found new child chrome process that does not match our executable: {str(cmdline)[:50]}')
-						return None
-					if (
-						self.browser_profile.user_data_dir
-						and f'--user-data-dir={Path(self.browser_profile.user_data_dir).expanduser().resolve()}' in cmdline
-					):
-						# self.logger.debug(f'✅ Found new child chrome process that matches our user_data_dir: {str(cmdline)[:50]}')
-						return proc
-					else:
-						# self.logger.debug(f'❌ Found new child chrome process that does not match our user_data_dir: {[arg for arg in cmdline if "--user-data-dir=" in arg]}')
-						return None
-				except Exception:
-					pass
-				return None
-
-			child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
-			new_child_pids = child_pids_after_launch - child_pids_before_launch
-			new_child_procs = list(filter(bool, (is_our_chrome_proc(pid) for pid in new_child_pids)))
-			if not new_child_procs:
-				self.logger.debug(
-					f'❌ Failed to find any new child chrome processes after launching new browser: {new_child_pids}'
-				)
-				new_chrome_proc = None
-				# Browser PID detection can fail in some environments (e.g. CI, containers)
-				# This is not critical - the browser is still running and usable
-				self.browser_pid = None
-			elif len(new_child_procs) > 1:
-				self.logger.debug(f'❌ Found multiple new child chrome processes after launching new browser: {new_child_procs}')
-				new_chrome_proc = None
-				self.browser_pid = None
-			else:
-				new_chrome_proc = new_child_procs[0]
-
-			if new_chrome_proc and not self.browser_pid:
-				# look through the discovered new chrome processes to uniquely identify the one that *we* launched,
-				# match using unique user_data_dir
-				try:
-					self.browser_pid = new_chrome_proc.pid
-					cmdline = new_chrome_proc.cmdline()
-					executable_path = cmdline[0] if cmdline else 'unknown'
-					self.logger.info(f' ↳ Spawned browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
-					if cmdline:
-						self.logger.debug(' '.join(cmdline))  # print the entire launch command for debugging
-					self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
-				except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-					self.logger.warning(f'Browser process {self.browser_pid} died immediately after launch: {type(e).__name__}')
+		# PID detection is no longer needed since we get PIDs directly from subprocesses or passed objects
 
 		if self.browser:
 			assert self.browser.is_connected(), (
@@ -1629,6 +1568,9 @@ class BrowserSession(BaseModel):
 		self.agent_current_page = None
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
+		# Reset CDP connection info when browser is stopped
+		self.cdp_url = None
+		self.browser_pid = None
 		self._cached_browser_state_summary = None
 		# Don't clear self.playwright here - it should be cleared explicitly in kill()
 

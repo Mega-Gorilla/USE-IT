@@ -67,7 +67,7 @@ def test_replace_sensitive_data_with_missing_keys(registry, caplog):
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text
 	# Verify the behavior - username replaced, password kept as tag
-	assert 'password' in caplog.text
+	assert 'Missing' in caplog.text and 'password' in caplog.text
 	caplog.clear()
 
 	# Case 3: Multiple keys missing
@@ -85,7 +85,7 @@ def test_replace_sensitive_data_with_missing_keys(registry, caplog):
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text
 	# Empty value should be treated the same as missing key
-	assert 'password' in caplog.text
+	assert 'Missing' in caplog.text and 'password' in caplog.text
 	caplog.clear()
 
 	# Restore original propagate setting

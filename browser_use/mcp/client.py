@@ -34,15 +34,11 @@ from browser_use.controller.service import Controller
 
 logger = logging.getLogger(__name__)
 
-# Try to import MCP SDK
-try:
-	from mcp import ClientSession, StdioServerParameters, types
-	from mcp.client.stdio import stdio_client
+# Import MCP SDK
+from mcp import ClientSession, StdioServerParameters, types
+from mcp.client.stdio import stdio_client
 
-	MCP_AVAILABLE = True
-except ImportError:
-	MCP_AVAILABLE = False
-	logger.warning('MCP SDK not installed. Install with: pip install mcp')
+MCP_AVAILABLE = True
 
 
 class MCPClient:
@@ -63,9 +59,6 @@ class MCPClient:
 			args: Arguments for the command (e.g., ["@playwright/mcp@latest"])
 			env: Environment variables for the server process
 		"""
-		if not MCP_AVAILABLE:
-			raise ImportError('MCP SDK not installed. Install with: pip install mcp')
-
 		self.server_name = server_name
 		self.command = command
 		self.args = args or []
