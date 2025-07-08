@@ -3642,12 +3642,17 @@ class BrowserSession(BaseModel):
 
 		return page_info
 
-	@require_initialization
-	async def _scroll_container(self, pixels: int) -> None:
-		"""Scroll using CDP Input.synthesizeScrollGesture for universal compatibility across all contexts."""
+	async def _scroll_with_cdp_gesture(self, page: Page, pixels: int) -> bool:
+		"""
+		Scroll using CDP Input.synthesizeScrollGesture for universal compatibility.
 
-		page = await self.get_current_page()
+		Args:
+			page: The page to scroll
+			pixels: Number of pixels to scroll (positive = up, negative = down)
 
+		Returns:
+			True if successful, False if failed
+		"""
 		try:
 			# Use CDP to synthesize scroll gesture - works in all contexts including PDFs
 			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
@@ -3671,18 +3676,30 @@ class BrowserSession(BaseModel):
 					'xDistance': 0,
 					'yDistance': -pixels,  # Negative = scroll down, Positive = scroll up
 					'gestureSourceType': 'mouse',  # Use mouse gestures for better compatibility
-					'speed': 1000,  # Pixels per second
+					'speed': 3000,  # Pixels per second
 				},
 			)
 
 			await cdp_session.detach()
 			self.logger.debug(f'📄 Scrolled using CDP gesture: {pixels}px')
-			return
+			return True
 
 		except Exception as e:
-			self.logger.debug(f'CDP scroll failed: {e}, falling back to JavaScript')
+			self.logger.debug(f'CDP scroll failed: {e}')
+			return False
+
+	@require_initialization
+	async def _scroll_container(self, pixels: int) -> None:
+		"""Scroll using CDP gesture synthesis with JavaScript fallback."""
+
+		page = await self.get_current_page()
+
+		# Try CDP scroll gesture first (works universally including PDFs)
+		if await self._scroll_with_cdp_gesture(page, pixels):
+			return
 
 		# Fallback to JavaScript for older browsers or when CDP fails
+		self.logger.debug('Falling back to JavaScript scrolling')
 		SMART_SCROLL_JS = """(dy) => {
 			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;
 			const canScroll = el =>
