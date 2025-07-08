@@ -32,6 +32,13 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+try:
+	import psutil
+
+	PSUTIL_AVAILABLE = True
+except ImportError:
+	PSUTIL_AVAILABLE = False
+
 # Set environment to suppress browser-use logging during import
 os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'error'
 os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'  # Prevent automatic logging setup
@@ -123,6 +130,37 @@ except ImportError:
 
 from browser_use.telemetry import MCPServerTelemetryEvent, ProductTelemetry
 from browser_use.utils import get_browser_use_version
+
+
+def get_parent_process_cmdline() -> str | None:
+	"""Get the command line of all parent processes up the chain."""
+	if not PSUTIL_AVAILABLE:
+		return None
+
+	try:
+		cmdlines = []
+		current_process = psutil.Process()
+		parent = current_process.parent()
+
+		while parent:
+			try:
+				cmdline = parent.cmdline()
+				if cmdline:
+					cmdlines.append(' '.join(cmdline))
+			except (psutil.AccessDenied, psutil.NoSuchProcess):
+				# Skip processes we can't access (like system processes)
+				pass
+
+			try:
+				parent = parent.parent()
+			except (psutil.AccessDenied, psutil.NoSuchProcess):
+				# Can't go further up the chain
+				break
+
+		return ';'.join(cmdlines) if cmdlines else None
+	except Exception:
+		# If we can't get parent process info, just return None
+		return None
 
 
 class BrowserUseServer:
@@ -770,6 +808,7 @@ async def main():
 		MCPServerTelemetryEvent(
 			version=get_browser_use_version(),
 			action='start',
+			parent_process_cmdline=get_parent_process_cmdline(),
 		)
 	)
 	try:
@@ -782,6 +821,7 @@ async def main():
 				version=get_browser_use_version(),
 				action='stop',
 				duration_seconds=duration,
+				parent_process_cmdline=get_parent_process_cmdline(),
 			)
 		)
 		server._telemetry.flush()

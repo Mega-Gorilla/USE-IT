@@ -69,6 +69,7 @@ class MCPServerTelemetryEvent(BaseTelemetryEvent):
 	tool_name: str | None = None
 	duration_seconds: float | None = None
 	error_message: str | None = None
+	parent_process_cmdline: str | None = None
 
 	name: str = 'mcp_server_event'
 

@@ -424,6 +424,19 @@ def is_unsafe_pattern(pattern: str) -> bool:
 	return '*' in bare_domain
 
 
+def is_new_tab_page(url: str) -> bool:
+	"""
+	Check if a URL is a new tab page (about:blank or chrome://new-tab-page).
+
+	Args:
+		url: The URL to check
+
+	Returns:
+		bool: True if the URL is a new tab page, False otherwise
+	"""
+	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page')
+
+
 def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: bool = False) -> bool:
 	"""
 	Check if a URL matches a domain pattern. SECURITY CRITICAL.
@@ -437,7 +450,7 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 	When no scheme is specified, https is used by default for security.
 	For example, 'example.com' will match 'https://example.com' but not 'http://example.com'.
 
-	Note: about:blank must be handled at the callsite, not inside this function.
+	Note: New tab pages (about:blank, chrome://new-tab-page) must be handled at the callsite, not inside this function.
 
 	Args:
 		url: The URL to check
@@ -448,8 +461,8 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 		bool: True if the URL matches the pattern, False otherwise
 	"""
 	try:
-		# Note: about:blank should be handled at the callsite, not here
-		if url == 'about:blank':
+		# Note: new tab pages should be handled at the callsite, not here
+		if is_new_tab_page(url):
 			return False
 
 		parsed_url = urlparse(url)
@@ -835,10 +848,18 @@ def retry(
 							# Calculate wait time with backoff
 							current_wait = wait * (backoff_factor**attempt)
 
-							logger.warning(
-								f'{func.__name__} failed (attempt {attempt + 1}/{retries + 1}): '
-								f'{type(e).__name__}: {e}. Waiting {current_wait:.1f}s before retry...'
-							)
+							# Only log warning on the final retry attempt (second-to-last overall attempt)
+							if attempt == retries - 1:
+								logger.warning(
+									f'{func.__name__} failed (attempt {attempt + 1}/{retries + 1}): '
+									f'{type(e).__name__}: {e}. Waiting {current_wait:.1f}s before retry...'
+								)
+							# else:
+							# 	# For earlier attempts, skip logging to reduce noise
+							# 	logger.debug(
+							# 		f'{func.__name__} failed (attempt {attempt + 1}/{retries + 1}): '
+							# 		f'{type(e).__name__}: {e}. Waiting {current_wait:.1f}s before retry...'
+							# 	)
 							await asyncio.sleep(current_wait)
 						else:
 							# Final failure

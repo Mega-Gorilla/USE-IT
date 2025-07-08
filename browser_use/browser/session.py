@@ -52,7 +52,14 @@ from browser_use.browser.views import (
 from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
-from browser_use.utils import match_url_with_domain_pattern, merge_dicts, retry, time_execution_async, time_execution_sync
+from browser_use.utils import (
+	is_new_tab_page,
+	match_url_with_domain_pattern,
+	merge_dicts,
+	retry,
+	time_execution_async,
+	time_execution_sync,
+)
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
@@ -704,14 +711,14 @@ class BrowserSession(BaseModel):
 
 	@observe_debug(ignore_output=True)
 	@retry(
-		wait=2,  # wait 2s between each attempt to take a screenshot
+		wait=1,  # wait 1s between each attempt to take a screenshot
 		retries=2,  # try up to 2 times to take the screenshot
-		timeout=35,  # allow up to 35s for each attempt to take a screenshot
+		timeout=20,  # allow up to 20s for each attempt to take a screenshot
 		semaphore_name='screenshot_global',
-		semaphore_limit=3,  # only 3 concurrent screenshots at a time total on the entire machine (ideally)
-		semaphore_scope='global',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
-		semaphore_timeout=10,  # wait up to 10s for a lock
-		semaphore_lax=True,  # proceed anyway if we cant get a lock
+		semaphore_limit=1,  # only 1 screenshot at a time total on the entire machine
+		semaphore_scope='multiprocess',  # because it's a hardware VRAM bottleneck, chrome crashes if too many concurrent screenshots are rendered via CDP
+		semaphore_timeout=30,  # wait up to 30s for a lock
+		semaphore_lax=True,  # do not proceed without getting a lock
 	)
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
@@ -909,6 +916,19 @@ class BrowserSession(BaseModel):
 							if 'Failed parsing extensions' in stderr_output:
 								self.logger.error(f'❌ Chrome process {self.browser_pid} exited: Failed parsing extensions')
 								raise RuntimeError('Failed parsing extensions: Chrome profile incompatibility detected')
+							elif 'SingletonLock' in stderr_output or 'ProcessSingleton' in stderr_output:
+								# Chrome exited due to singleton lock
+								self._fallback_to_temp_profile('Chrome process exit due to SingletonLock')
+								# Kill the subprocess and retry with new profile
+								try:
+									self._subprocess.terminate()
+									await self._subprocess.wait()
+								except Exception:
+									pass
+								self.browser_pid = None
+								# Retry with the new temp directory
+								await self._unsafe_setup_new_browser_context()
+								return
 						self.logger.error(f'❌ Chrome process {self.browser_pid} exited unexpectedly')
 						self.browser_pid = None
 						return
@@ -1034,26 +1054,8 @@ class BrowserSession(BaseModel):
 			# user data dir was provided, prepare it for use
 			self.prepare_user_data_dir()
 
-			# search for potentially conflicting local processes running on the same user_data_dir
-			for proc in psutil.process_iter(['pid', 'cmdline']):
-				if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-					# If this is a temp directory, automatically create a new one
-					if Path(self.browser_profile.user_data_dir).name.startswith('browseruse-tmp-'):
-						old_dir = self.browser_profile.user_data_dir
-						self.browser_profile.user_data_dir = Path(tempfile.mkdtemp(prefix='browseruse-tmp-'))
-						self.logger.warning(
-							f'⚠️ Found conflicting browser process pid={proc.info["pid"]} using temp dir {_log_pretty_path(old_dir)}. '
-							f'Creating new temp dir: {_log_pretty_path(self.browser_profile.user_data_dir)}'
-						)
-						# Re-prepare the new user data dir
-						self.prepare_user_data_dir()
-					else:
-						# For non-temp directories, just log the error
-						self.logger.error(
-							f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
-							f'already running with the same user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
-						)
-					break
+			# user data dir was provided, prepare it for use (handles conflicts automatically)
+			self.prepare_user_data_dir()
 
 			# if a user_data_dir is provided, launch Chrome as subprocess then connect via CDP
 			try:
@@ -1148,15 +1150,18 @@ class BrowserSession(BaseModel):
 					except Exception as e:
 						# Check if it's a SingletonLock error
 						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
-							self.logger.warning('⚠️ SingletonLock error detected. Cleaning up and retrying...')
-							# Remove the stale lock file
-							singleton_lock = Path(self.browser_profile.user_data_dir) / 'SingletonLock'
-							if singleton_lock.exists():
-								singleton_lock.unlink()
-							# Wait a moment for cleanup
-							await asyncio.sleep(0.1)
-							# Retry the launch (recursively call this method)
-							raise  # Will be caught by outer try-except to retry
+							# Fall back to temporary directory
+							self._fallback_to_temp_profile('Chrome launch error due to SingletonLock')
+							# Kill the failed subprocess if it exists
+							if hasattr(self, '_subprocess') and self._subprocess:
+								try:
+									self._subprocess.terminate()
+									await self._subprocess.wait()
+								except Exception:
+									pass
+							# Retry the launch with the new temporary directory
+							await self._unsafe_setup_new_browser_context()
+							return
 						# Re-raise if not a timeout
 						elif not isinstance(e, asyncio.TimeoutError):
 							raise
@@ -1171,6 +1176,14 @@ class BrowserSession(BaseModel):
 				await self._unsafe_setup_new_browser_context()
 				return
 			except Exception as e:
+				# Check if it's a SingletonLock error from the subprocess
+				if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
+					# Fall back to temporary directory
+					self._fallback_to_temp_profile('Chrome launch error due to SingletonLock')
+					# Retry the launch with the new temporary directory
+					await self._unsafe_setup_new_browser_context()
+					return
+
 				# show a nice logger hint explaining what went wrong with the user_data_dir
 				# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
 				user_data_dir_chrome_version = '???'
@@ -1427,8 +1440,8 @@ class BrowserSession(BaseModel):
 		# self.logger.info(f'Setting up visibility listeners for {len(self.browser_context.pages)} pages')
 		for page in self.browser_context.pages:
 			# self.logger.info(f'Processing page with URL: {repr(page.url)}')
-			# Skip about:blank pages as they can hang when evaluating scripts
-			if page.url == 'about:blank':
+			# Skip new tab pages as they can hang when evaluating scripts
+			if is_new_tab_page(page.url):
 				continue
 
 			try:
@@ -1516,8 +1529,8 @@ class BrowserSession(BaseModel):
 			if viewport:
 				await page.set_viewport_size(viewport)
 
-			# show browser-use dvd screensaver-style bouncing loading animation on any about:blank pages
-			if page.url == 'about:blank':
+			# show browser-use dvd screensaver-style bouncing loading animation on any new tab pages
+			if is_new_tab_page(page.url):
 				await self._show_dvd_screensaver_loading_animation(page)
 
 		page = page or (await self.browser_context.new_page())
@@ -1649,11 +1662,51 @@ class BrowserSession(BaseModel):
 		if not already_disconnected:
 			self.logger.debug(f'⚰️ Browser {self._connection_str} disconnected')
 
-	@observe_debug(name='prepare_user_data_dir')
-	def prepare_user_data_dir(self) -> None:
-		"""Create and unlock the user data dir and ensure all recording paths exist."""
+	def _check_for_singleton_lock_conflict(self) -> bool:
+		"""Check if the user data directory has a conflicting browser process.
 
+		Returns:
+			True if there's a conflict (active process using this profile), False otherwise
+		"""
+		if not self.browser_profile.user_data_dir:
+			return False
+
+		# Check for running processes using this user data dir
+		for proc in psutil.process_iter(['pid', 'cmdline']):
+			if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
+				return True
+
+		# Note: We don't consider a SingletonLock file alone as a conflict
+		# because it might be stale. Only actual running processes count as conflicts.
+		return False
+
+	def _fallback_to_temp_profile(self, reason: str = 'SingletonLock conflict') -> None:
+		"""Fallback to a temporary profile directory when the current one is locked.
+
+		Args:
+			reason: Human-readable reason for the fallback
+		"""
+		old_dir = self.browser_profile.user_data_dir
+		self.browser_profile.user_data_dir = Path(tempfile.mkdtemp(prefix='browseruse-tmp-singleton-'))
+		self.logger.warning(
+			f'⚠️ {reason} detected. Profile at {_log_pretty_path(old_dir)} is locked. '
+			f'Using temporary profile instead: {_log_pretty_path(self.browser_profile.user_data_dir)}'
+		)
+
+	@observe_debug(name='prepare_user_data_dir')
+	def prepare_user_data_dir(self, check_conflicts: bool = True) -> None:
+		"""Create and prepare the user data dir, handling conflicts if needed.
+
+		Args:
+			check_conflicts: Whether to check for and handle singleton lock conflicts
+		"""
 		if self.browser_profile.user_data_dir:
+			# Check for conflicts and fallback if needed
+			if check_conflicts and self._check_for_singleton_lock_conflict():
+				self._fallback_to_temp_profile()
+				# Recursive call without conflict checking to prepare the new temp dir
+				return self.prepare_user_data_dir(check_conflicts=False)
+
 			try:
 				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
 				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -1663,13 +1716,23 @@ class BrowserSession(BaseModel):
 					f'Unusable path provided for user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)} (check for typos/permissions issues)'
 				) from e
 
-			# clear any existing locks by any other chrome processes (hacky)
+			# Remove stale singleton lock file ONLY if no process is using this profile
 			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
 			if singleton_lock.exists():
-				singleton_lock.unlink()
-				self.logger.warning(
-					f'⚠️ Multiple chrome processes may be trying to share user_data_dir={self.browser_profile.user_data_dir} which can lead to crashes and profile data corruption!'
-				)
+				# Check if any process is actually using this user_data_dir
+				has_active_process = False
+				for proc in psutil.process_iter(['pid', 'cmdline']):
+					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
+						has_active_process = True
+						break
+
+				if not has_active_process:
+					# No active process, safe to remove stale lock
+					try:
+						singleton_lock.unlink()
+						self.logger.debug('Removed stale SingletonLock file (no active Chrome process found)')
+					except Exception:
+						pass  # Ignore errors removing lock file
 
 		# Create directories for all paths that need them
 		dir_paths = {
@@ -1775,7 +1838,7 @@ class BrowserSession(BaseModel):
 	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
 	@require_initialization
 	@time_execution_async('--remove_highlights')
-	@retry(timeout=5, retries=0)
+	@retry(timeout=10, retries=0)
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.
@@ -1934,7 +1997,7 @@ class BrowserSession(BaseModel):
 				title = await self._get_page_title(page)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
-				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
+				# page.title() can hang forever on tabs that are crashed/disappeared/new tab pages
 				# we dont want to try automating those tabs because they will hang the whole script
 				self.logger.debug(f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (ignoring)')
 				tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
@@ -1942,7 +2005,7 @@ class BrowserSession(BaseModel):
 
 		return tabs_info
 
-	@retry(timeout=1, retries=0)  # Single attempt with 1s timeout, no retries
+	@retry(timeout=3, retries=0)  # Single attempt with 3s timeout, no retries
 	async def _get_page_title(self, page: Page) -> str:
 		"""Get page title with timeout protection."""
 		return await page.title()
@@ -2478,8 +2541,8 @@ class BrowserSession(BaseModel):
 		if not self.browser_profile.allowed_domains:
 			return True  # allowed_domains are not configured, allow everything by default
 
-		# Special case: Always allow 'about:blank' new tab page
-		if url == 'about:blank':
+		# Special case: Always allow new tab pages
+		if is_new_tab_page(url):
 			return True
 
 		for allowed_domain in self.browser_profile.allowed_domains:
@@ -2492,7 +2555,7 @@ class BrowserSession(BaseModel):
 						_log_glob_warning(domain, allowed_domain, self.logger)
 					return True
 			except AssertionError:
-				# This would only happen if about:blank is passed to match_url_with_domain_pattern,
+				# This would only happen if a new tab page is passed to match_url_with_domain_pattern,
 				# which shouldn't occur since we check for it above
 				continue
 
@@ -3519,7 +3582,7 @@ class BrowserSession(BaseModel):
 		# else:
 		# 	assert self.agent_current_page.url == 'about:blank'
 
-		# if there are any unused about:blank tabs after we open a new tab, close them to clean up unused tabs
+		# if there are any unused new tab pages after we open a new tab, close them to clean up unused tabs
 		assert self.browser_context is not None, 'Browser context is not set'
 		# hacky way to be sure we only close our own tabs, check the title of the tab for our BrowserSession name
 		title_of_our_setup_tab = (
@@ -3532,14 +3595,14 @@ class BrowserSession(BaseModel):
 			except Exception:
 				page_title = 'Title unavailable'
 
-			if page.url == 'about:blank' and page != self.agent_current_page and page_title == title_of_our_setup_tab:
+			if is_new_tab_page(page.url) and page != self.agent_current_page and page_title == title_of_our_setup_tab:
 				await page.close()
 				self.human_current_page = (  # in case we just closed the human's tab, fix the refs
 					self.human_current_page if not self.human_current_page.is_closed() else self.agent_current_page
 				)
-				break  # only close a maximum of one unused about:blank tab,
+				break  # only close a maximum of one unused new tab page,
 				# if multiple parallel agents share one BrowserSession
-				# closing every new_page() tab (which start on about:blank) causes lots of problems
+				# closing every new_page() tab (which start on new tab pages) causes lots of problems
 				# (the title check is not enough when they share a single BrowserSession)
 
 		return new_page
@@ -3644,8 +3707,9 @@ class BrowserSession(BaseModel):
 		scroll_y = await page.evaluate('window.scrollY')
 		viewport_height = await page.evaluate('window.innerHeight')
 		total_height = await page.evaluate('document.documentElement.scrollHeight')
-		pixels_above = scroll_y
-		pixels_below = total_height - (scroll_y + viewport_height)
+		# Convert to int to handle fractional pixels
+		pixels_above = int(scroll_y)
+		pixels_below = int(max(0, total_height - (scroll_y + viewport_height)))
 		return pixels_above, pixels_below
 
 	@require_initialization
@@ -3674,13 +3738,13 @@ class BrowserSession(BaseModel):
 			};
 		}""")
 
-		# Calculate derived values
-		viewport_width = page_data['viewport_width']
-		viewport_height = page_data['viewport_height']
-		page_width = page_data['page_width']
-		page_height = page_data['page_height']
-		scroll_x = page_data['scroll_x']
-		scroll_y = page_data['scroll_y']
+		# Calculate derived values (convert to int to handle fractional pixels)
+		viewport_width = int(page_data['viewport_width'])
+		viewport_height = int(page_data['viewport_height'])
+		page_width = int(page_data['page_width'])
+		page_height = int(page_data['page_height'])
+		scroll_x = int(page_data['scroll_x'])
+		scroll_y = int(page_data['scroll_y'])
 
 		# Calculate scroll information
 		pixels_above = scroll_y
@@ -3748,7 +3812,7 @@ class BrowserSession(BaseModel):
 			return
 
 		# we could enforce this, but maybe it's useful to be able to show it on other tabs?
-		# assert page.url == 'about:blank', 'DVD screensaver loading animation should only be shown on about:blank tabs'
+		# assert is_new_tab_page(page.url), 'DVD screensaver loading animation should only be shown on new tab pages'
 
 		# all in one JS function for speed, we want as few roundtrip CDP calls as possible
 		# between opening the tab and showing the animation
