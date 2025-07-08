@@ -123,6 +123,8 @@ skip-magic-trailing-comma = false
 [tool.pyright]
 typeCheckingMode = "basic"
 exclude = ["tests/old/", ".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/"]
+venvPath = "."
+venv = ".venv"
 
 
 [tool.hatch.build]
