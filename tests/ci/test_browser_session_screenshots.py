@@ -4,6 +4,7 @@ Test that screenshots work correctly in headless browser mode.
 
 import asyncio
 import base64
+import time
 
 from browser_use.browser import BrowserProfile, BrowserSession
 
@@ -195,45 +196,100 @@ class TestHeadlessScreenshots:
 			print('Navigating all sessions to the long test page...')
 			await asyncio.gather(*[session.navigate(test_url) for session in browser_sessions])
 
-			# Take screenshots from all sessions at the same time
-			print('Taking screenshots from all 10 sessions simultaneously...')
+			# Take screenshots from all sessions
+			# Due to semaphore_limit=1, these will execute sequentially
+			print('Taking screenshots from all 10 sessions...')
+			start_time = time.time()
 			screenshot_tasks = [session.take_screenshot() for session in browser_sessions]
-			screenshots = await asyncio.gather(*screenshot_tasks)
+
+			# Use return_exceptions=True to handle any failures gracefully
+			results = await asyncio.gather(*screenshot_tasks, return_exceptions=True)
+			total_time = time.time() - start_time
+
+			# Verify timing - maximum should be 200s (20s × 10)
+			assert total_time < 200, f'Screenshots took too long: {total_time:.1f}s (should be < 200s)'
+			print(f'All screenshot attempts completed in {total_time:.1f}s')
+
+			# Separate successful screenshots from failures
+			screenshots = []
+			failures = []
+			for i, result in enumerate(results):
+				if isinstance(result, Exception):
+					failures.append((i, result))
+					print(f'Session {i} failed: {type(result).__name__}: {result}')
+				else:
+					screenshots.append(result)
+					print(f'Session {i} screenshot completed successfully')
+
+			# ALL screenshots must succeed
+			assert len(failures) == 0, (
+				f'{len(failures)} screenshots failed: {[(i, type(e).__name__, str(e)) for i, e in failures]}'
+			)
+			assert len(screenshots) == 10, f'Expected 10 successful screenshots, got {len(screenshots)}'
+			print('✅ All 10 screenshots captured successfully!')
 
 			# Verify all screenshots are valid
-			print('Verifying all screenshots...')
+			print('Verifying all 10 screenshots...')
 			for i, screenshot in enumerate(screenshots):
 				# Should not be None
-				assert screenshot is not None, f'Session {i} returned None screenshot'
-				assert isinstance(screenshot, str), f'Session {i} screenshot is not a string'
-				assert len(screenshot) > 0, f'Session {i} screenshot is empty'
+				assert screenshot is not None, f'Screenshot {i} returned None'
+				assert isinstance(screenshot, str), f'Screenshot {i} is not a string'
+				assert len(screenshot) > 0, f'Screenshot {i} is empty'
 
 				# Decode and validate
 				try:
 					screenshot_bytes = base64.b64decode(screenshot)
 				except Exception as e:
-					raise AssertionError(f'Session {i} screenshot is not valid base64: {e}')
+					raise AssertionError(f'Screenshot {i} is not valid base64: {e}')
 
 				# Verify PNG signature
-				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n'), f'Session {i} screenshot is not a valid PNG'
+				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n'), f'Screenshot {i} is not a valid PNG'
 
 				# Full page screenshot should be reasonably large
-				# Due to our 6,000px height limit, expect at least 30KB
-				assert len(screenshot_bytes) > 5000, f'Session {i} screenshot too small: {len(screenshot_bytes)} bytes'
+				# Due to our 6,000px height limit, expect at least 5KB
+				assert len(screenshot_bytes) > 5000, f'Screenshot {i} too small: {len(screenshot_bytes)} bytes'
 
-			print(f'All {len(screenshots)} screenshots validated successfully!')
+			print('✅ All 10 screenshots validated successfully!')
 
-			# Also test taking regular (viewport) screenshots in parallel
-			print('Taking viewport screenshots from all sessions simultaneously...')
-			viewport_screenshots = await asyncio.gather(*[session.take_screenshot() for session in browser_sessions])
+			# Also test taking regular (viewport) screenshots
+			print('\nTaking viewport screenshots from all sessions...')
+			start_time = time.time()
+			viewport_results = await asyncio.gather(
+				*[session.take_screenshot() for session in browser_sessions], return_exceptions=True
+			)
+			viewport_time = time.time() - start_time
+			assert viewport_time < 200, f'Viewport screenshots took too long: {viewport_time:.1f}s (should be < 200s)'
+			print(f'All viewport screenshot attempts completed in {viewport_time:.1f}s')
 
-			# Verify viewport screenshots
+			# Check for failures
+			viewport_screenshots = []
+			viewport_failures = []
+			for i, result in enumerate(viewport_results):
+				if isinstance(result, Exception):
+					viewport_failures.append((i, result))
+					print(f'Session {i} viewport failed: {type(result).__name__}: {result}')
+				else:
+					viewport_screenshots.append(result)
+					print(f'Session {i} viewport screenshot completed successfully')
+
+			# ALL viewport screenshots must succeed
+			assert len(viewport_failures) == 0, (
+				f'{len(viewport_failures)} viewport screenshots failed: {[(i, type(e).__name__, str(e)) for i, e in viewport_failures]}'
+			)
+			assert len(viewport_screenshots) == 10, (
+				f'Expected 10 successful viewport screenshots, got {len(viewport_screenshots)}'
+			)
+			print('✅ All 10 viewport screenshots captured successfully!')
+
+			# Verify all 10 viewport screenshots
+			print('Verifying all 10 viewport screenshots...')
 			for i, screenshot in enumerate(viewport_screenshots):
-				assert screenshot is not None, f'Session {i} viewport screenshot is None'
+				assert screenshot is not None, f'Viewport screenshot {i} is None'
 				screenshot_bytes = base64.b64decode(screenshot)
-				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n')
-				# Viewport screenshots should be smaller than full page
-				assert len(screenshot_bytes) > 5000, f'Session {i} viewport screenshot too small'
+				assert screenshot_bytes.startswith(b'\x89PNG\r\n\x1a\n'), f'Viewport screenshot {i} is not a valid PNG'
+				# Viewport screenshots should be reasonably sized
+				assert len(screenshot_bytes) > 5000, f'Viewport screenshot {i} too small: {len(screenshot_bytes)} bytes'
+			print('✅ All 10 viewport screenshots validated successfully!')
 
 		finally:
 			# Kill all sessions in parallel

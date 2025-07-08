@@ -713,7 +713,12 @@ class BrowserSession(BaseModel):
 	@retry(
 		wait=1,  # wait 1s between each attempt to take a screenshot
 		retries=2,  # try up to 2 times to take the screenshot
-		timeout=20,  # allow up to 20s for each attempt to take a screenshot
+		timeout=15,  # allow up to 15s for each attempt to take a screenshot
+		semaphore_limit=1,  # Only one screenshot at a time across all processes
+		semaphore_name='screenshot_global',
+		semaphore_scope='multiprocess',
+		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
+		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
 	)
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
@@ -1681,10 +1686,21 @@ class BrowserSession(BaseModel):
 		if not self.browser_profile.user_data_dir:
 			return False
 
+		# Normalize the path for comparison
+		target_dir = str(Path(self.browser_profile.user_data_dir).expanduser().resolve())
+
 		# Check for running processes using this user data dir
 		for proc in psutil.process_iter(['pid', 'cmdline']):
-			if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-				return True
+			cmdline = proc.info['cmdline'] or []
+
+			# Check both formats: --user-data-dir=/path and --user-data-dir /path
+			for i, arg in enumerate(cmdline):
+				# Combined format: --user-data-dir=/path
+				if arg.startswith('--user-data-dir=') and str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
+					return True
+				# Separate format: --user-data-dir /path
+				elif arg == '--user-data-dir' and i + 1 < len(cmdline) and cmdline[i + 1] == target_dir:
+					return True
 
 		# Note: We don't consider a SingletonLock file alone as a conflict
 		# because it might be stale. Only actual running processes count as conflicts.
