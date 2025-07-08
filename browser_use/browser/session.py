@@ -222,6 +222,7 @@ class BrowserSession(BaseModel):
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 	_original_browser_session: Any = PrivateAttr(default=None)  # Reference to prevent GC of the original session when copied
 	_owns_browser_resources: bool = PrivateAttr(default=True)  # True if this instance owns and should clean up browser resources
+	_subprocess: Any = PrivateAttr(default=None)  # Chrome subprocess reference for error handling
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -868,6 +869,7 @@ class BrowserSession(BaseModel):
 
 		# check that browser_pid process is exposing a debug port we can connect to, otherwise we cannot connect to it
 		debug_port = next((arg for arg in args if arg.startswith('--remote-debugging-port=')), '').split('=')[-1].strip()
+		self.logger.debug(f'Found Chrome process args: {args[:5]}..., debug_port={debug_port}')
 		if not debug_port:
 			# provided pid is unusable, it's either not running or doesnt have an open debug port we can connect to
 			if '--remote-debugging-pipe' in args:
@@ -888,6 +890,30 @@ class BrowserSession(BaseModel):
 
 		async with httpx.AsyncClient() as client:
 			for i in range(30):  # 30 second timeout
+				# First check if the Chrome process has exited
+				try:
+					chrome_process = psutil.Process(pid=self.browser_pid)
+					if not chrome_process.is_running():
+						# If we have a subprocess reference, try to get stderr
+						if hasattr(self, '_subprocess') and self._subprocess:
+							stderr_output = ''
+							if self._subprocess.stderr:
+								try:
+									stderr_bytes = await self._subprocess.stderr.read()
+									stderr_output = stderr_bytes.decode('utf-8', errors='replace')
+								except Exception:
+									pass
+							if 'Failed parsing extensions' in stderr_output:
+								self.logger.error(f'❌ Chrome process {self.browser_pid} exited: Failed parsing extensions')
+								raise RuntimeError('Failed parsing extensions: Chrome profile incompatibility detected')
+						self.logger.error(f'❌ Chrome process {self.browser_pid} exited unexpectedly')
+						self.browser_pid = None
+						return
+				except psutil.NoSuchProcess:
+					self.logger.error(f'❌ Chrome process {self.browser_pid} no longer exists')
+					self.browser_pid = None
+					return
+
 				try:
 					response = await client.get(f'{self.cdp_url}json/version', timeout=1.0)
 					if response.status_code == 200:
@@ -962,7 +988,14 @@ class BrowserSession(BaseModel):
 
 		# if we have a browser object but no browser_context, use the first context discovered or make a new one
 		if self.browser and not self.browser_context:
-			if self.browser.contexts:
+			# If HAR recording is requested, we need to create a new context with recording enabled
+			# Cannot reuse existing context as HAR recording must be configured at context creation
+			if self.browser_profile.record_har_path and self.browser.contexts:
+				self.logger.info('🎥 Creating new browser_context with HAR recording enabled (cannot reuse existing context)')
+				self.browser_context = await self.browser.new_context(
+					**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
+				)
+			elif self.browser.contexts:
 				self.browser_context = self.browser.contexts[0]
 				self.logger.info(f'🌎 Using first browser_context available in existing browser: {self.browser_context}')
 			else:
@@ -1060,9 +1093,12 @@ class BrowserSession(BaseModel):
 						)
 						process = await asyncio.create_subprocess_exec(
 							*chrome_launch_cmd,
-							stdout=asyncio.subprocess.DEVNULL,
-							stderr=asyncio.subprocess.DEVNULL,
+							stdout=asyncio.subprocess.PIPE,
+							stderr=asyncio.subprocess.PIPE,
 						)
+
+						# Store the subprocess reference for error handling
+						self._subprocess = process
 
 						# Store the browser PID
 						self.browser_pid = process.pid
@@ -1077,7 +1113,26 @@ class BrowserSession(BaseModel):
 						if not self.browser:
 							# Try to get error info from the process
 							if process.returncode is not None:
-								raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
+								# Chrome exited, try to read stderr for error message
+								stderr_output = ''
+								if process.stderr:
+									try:
+										stderr_bytes = await process.stderr.read()
+										stderr_output = stderr_bytes.decode('utf-8', errors='replace')
+									except Exception:
+										pass
+
+								# Check for common Chrome errors
+								if 'Failed parsing extensions' in stderr_output:
+									raise RuntimeError(
+										f'Failed parsing extensions: Chrome profile incompatibility detected. Chrome exited with code {process.returncode}'
+									)
+								elif stderr_output:
+									raise RuntimeError(
+										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500]}'
+									)
+								else:
+									raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
 							else:
 								# Kill the subprocess if it's still running but we couldn't connect
 								try:

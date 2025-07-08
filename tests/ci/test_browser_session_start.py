@@ -488,7 +488,7 @@ class TestBrowserSessionStart:
 		original_propagate = browser_use_logger.propagate
 		browser_use_logger.propagate = True
 
-		caplog.set_level(logging.WARNING, logger='browser_use.utils')
+		caplog.set_level(logging.WARNING, logger='browser_use')
 
 		# Test 1: Chromium with default user_data_dir and default channel should work fine
 		session = BrowserSession(
@@ -509,13 +509,17 @@ class TestBrowserSessionStart:
 		finally:
 			await session.kill()
 
+		# Clear any previous log records
+		caplog.clear()
+
 		# Test 2: Chrome with default user_data_dir should show warning and change dir
-		profile2 = BrowserProfile(
-			headless=True,
-			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
-			channel=BrowserChannel.CHROME,
-			keep_alive=False,
-		)
+		with caplog.at_level(logging.WARNING):
+			profile2 = BrowserProfile(
+				headless=True,
+				user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+				channel=BrowserChannel.CHROME,
+				keep_alive=False,
+			)
 
 		# The validator should have changed the user_data_dir
 		assert profile2.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
@@ -525,7 +529,9 @@ class TestBrowserSessionStart:
 		warning_found = any(
 			'Changing user_data_dir=' in record.message and 'CHROME' in record.message for record in caplog.records
 		)
-		assert warning_found, 'Expected warning about changing user_data_dir was not found'
+		assert warning_found, (
+			f'Expected warning about changing user_data_dir was not found. Captured logs: {[record.message for record in caplog.records if "browser_use" in record.name]}'
+		)
 
 		# Restore original propagate setting
 		browser_use_logger.propagate = original_propagate

@@ -89,12 +89,13 @@ class MCPClient:
 
 		# Wait for connection to be established
 		retries = 0
-		while not self._connected and retries < 30:  # 3 second timeout
+		max_retries = 100  # 10 second timeout (increased for parallel test execution)
+		while not self._connected and retries < max_retries:
 			await asyncio.sleep(0.1)
 			retries += 1
 
 		if not self._connected:
-			raise RuntimeError(f"Failed to connect to MCP server '{self.server_name}' after 3 seconds")
+			raise RuntimeError(f"Failed to connect to MCP server '{self.server_name}' after {max_retries * 0.1} seconds")
 
 		logger.info(f"📦 Discovered {len(self._tools)} tools from '{self.server_name}': {list(self._tools.keys())}")
 
