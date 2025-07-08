@@ -889,7 +889,7 @@ class BrowserSession(BaseModel):
 		import httpx
 
 		# Add initial delay to give Chrome time to start up before first check
-		await asyncio.sleep(1.3)
+		await asyncio.sleep(2)
 
 		async with httpx.AsyncClient() as client:
 			for i in range(30):  # 30 second timeout

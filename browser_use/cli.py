@@ -44,6 +44,8 @@ from browser_use.agent.views import AgentSettings
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import CONFIG
 from browser_use.logging_config import addLoggingLevel
+from browser_use.telemetry import CLITelemetryEvent, ProductTelemetry
+from browser_use.utils import get_browser_use_version
 
 USER_DATA_DIR = CONFIG.BROWSER_USE_PROFILES_DIR / 'cli'
 
@@ -432,6 +434,8 @@ class BrowserUseApp(App):
 		self.task_history = config.get('command_history', [])
 		# Track current position in history for up/down navigation
 		self.history_index = len(self.task_history)
+		# Initialize telemetry
+		self._telemetry = ProductTelemetry()
 
 	def setup_richlog_logging(self) -> None:
 		"""Set up logging to redirect to RichLog widget instead of stdout."""
@@ -549,6 +553,17 @@ class BrowserUseApp(App):
 		except Exception as e:
 			logger.error(f'Error starting info panel updates: {str(e)}', exc_info=True)
 			# Non-critical, continue
+
+		# Capture telemetry for CLI start
+		self._telemetry.capture(
+			CLITelemetryEvent(
+				version=get_browser_use_version(),
+				action='start',
+				mode='interactive',
+				model=self.llm.model if self.llm and hasattr(self.llm, 'model') else None,
+				model_provider=self.llm.provider if self.llm and hasattr(self.llm, 'provider') else None,
+			)
+		)
 
 		logger.debug('on_mount() completed successfully')
 
@@ -1170,6 +1185,11 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 	# The logging is now properly configured by setup_logging()
 	# No need to manually configure handlers since setup_logging() handles it
+
+	# Initialize telemetry
+	telemetry = ProductTelemetry()
+	start_time = time.time()
+	error_msg = None
 
 	try:
 		# Load config
