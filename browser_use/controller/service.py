@@ -494,13 +494,14 @@ Explain the content of the page and that the requested information is not availa
 		# 	)
 
 		@self.registry.action(
-			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.)',
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within the scroll container of a specific element.',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
 			"""
-			(a) Use browser._scroll_container for container-aware scrolling.
-			(b) If that JavaScript throws, fall back to window.scrollBy().
+			(a) If index is provided, find the scroll container of that element and scroll within it.
+			(b) If no index or no scroll container found, use browser._scroll_container for container-aware scrolling.
+			(c) If that JavaScript throws, fall back to window.scrollBy().
 			"""
 			page = await browser_session.get_current_page()
 
@@ -517,18 +518,125 @@ Explain the content of the page and that the requested information is not availa
 			# Set direction based on down parameter
 			dy = scroll_amount if params.down else -scroll_amount
 
-			try:
-				await browser_session._scroll_container(cast(int, dy))
-			except Exception as e:
-				# Hard fallback: always works on root scroller
-				await page.evaluate('(y) => window.scrollBy(0, y)', dy)
-				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
-
+			# Initialize result message components
 			direction = 'down' if params.down else 'up'
+			scroll_target = "the page"
+			
+			# Element-specific scrolling if index is provided
+			if params.index is not None:
+				try:
+					# Check if element exists in current selector map
+					selector_map = await browser_session.get_selector_map()
+					if params.index not in selector_map:
+						# Force a state refresh in case the cache is stale
+						logger.info(f'Element with index {params.index} not found in selector map, refreshing state...')
+						await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+						selector_map = await browser_session.get_selector_map()
+
+						if params.index not in selector_map:
+							# Return informative message about invalid index
+							max_index = max(selector_map.keys()) if selector_map else -1
+							msg = f'❌ Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). Using page-level scroll instead.'
+							logger.warning(msg)
+							# Fall through to page-level scrolling
+						else:
+							element_node = await browser_session.get_dom_element_by_index(params.index)
+					else:
+						element_node = await browser_session.get_dom_element_by_index(params.index)
+
+					if params.index in selector_map and element_node is not None:
+						# Try to find and scroll within the element's scroll container
+						element_scroll_js = f"""
+						(dy, elementXPath) => {{
+							// Find the scroll container for the specified element
+							const findScrollContainer = (element) => {{
+								const bigEnough = el => el.clientHeight >= window.innerHeight * 0.3;
+								const canScroll = el =>
+									el &&
+									/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) &&
+									el.scrollHeight > el.clientHeight &&
+									bigEnough(el);
+
+								let current = element;
+								while (current && current !== document.body && current !== document.documentElement) {{
+									if (canScroll(current)) {{
+										return current;
+									}}
+									current = current.parentElement;
+								}}
+
+								// Check if body/documentElement can scroll
+								if (canScroll(document.body)) return document.body;
+								if (canScroll(document.documentElement)) return document.documentElement;
+								
+								return null; // No suitable scroll container found
+							}};
+
+							// Get the target element by XPath
+							const targetElement = document.evaluate(elementXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+							if (!targetElement) {{
+								return {{ success: false, reason: 'Element not found by XPath' }};
+							}}
+
+							// Find scroll container for this element
+							const scrollContainer = findScrollContainer(targetElement);
+							
+							if (scrollContainer && scrollContainer !== document.body && scrollContainer !== document.documentElement) {{
+								// Found a specific scroll container
+								scrollContainer.scrollBy({{ top: dy, behavior: 'auto' }});
+								return {{ 
+									success: true, 
+									containerType: 'element', 
+									containerTag: scrollContainer.tagName.toLowerCase(),
+									containerClass: scrollContainer.className || '',
+									containerId: scrollContainer.id || ''
+								}};
+							}} else {{
+								// No specific container found, use page-level scrolling
+								window.scrollBy(0, dy);
+								return {{ success: true, containerType: 'page' }};
+							}}
+						}}
+						"""
+
+						result = await page.evaluate(element_scroll_js, dy, element_node.xpath)
+						
+						if result['success']:
+							if result['containerType'] == 'element':
+								container_info = f"{result['containerTag']}"
+								if result['containerId']:
+									container_info += f"#{result['containerId']}"
+								elif result['containerClass']:
+									container_info += f".{result['containerClass'].split()[0]}"
+								scroll_target = f"element {params.index}'s scroll container ({container_info})"
+							else:
+								scroll_target = f"the page (no scroll container found for element {params.index})"
+						else:
+							# JavaScript execution failed, fall back to page-level scrolling
+							logger.debug(f"Element-specific scroll failed: {result.get('reason', 'Unknown')}")
+							scroll_target = f"the page (element {params.index} scroll detection failed)"
+							raise Exception("Element scroll failed, falling back to page scroll")
+
+				except Exception as e:
+					logger.debug(f"Element-specific scrolling failed for index {params.index}: {e}")
+					scroll_target = f"the page (fallback from element {params.index})"
+					# Fall through to page-level scrolling
+
+			# Page-level scrolling (default or fallback)
+			if scroll_target == "the page" or "fallback" in scroll_target or "no scroll container found" in scroll_target:
+				try:
+					await browser_session._scroll_container(cast(int, dy))
+				except Exception as e:
+					# Hard fallback: always works on root scroller
+					await page.evaluate('(y) => window.scrollBy(0, y)', dy)
+					logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
+
+			# Create descriptive message
 			if pages_scrolled == 1.0:
-				long_term_memory = f'Scrolled {direction} the page by one page'
+				long_term_memory = f'Scrolled {direction} {scroll_target} by one page'
 			else:
-				long_term_memory = f'Scrolled {direction} the page by {pages_scrolled} pages'
+				long_term_memory = f'Scrolled {direction} {scroll_target} by {pages_scrolled} pages'
+			
 			msg = f'🔍 {long_term_memory}'
 
 			logger.info(msg)
