@@ -89,7 +89,11 @@ jobs:
       - name: Install Playwright browser dependencies
         run: |
           echo "Installing Playwright browsers..."
-          playwright install --no-shell chromium
+          # comment out some based on whether stealth=True is used for evals or not
+          playwright install --no-shell chromium --with-deps
+          patchright install --no-shell chromium --with-deps
+          playwright install --no-shell chrome --with-deps
+          patchright install --no-shell chrome --with-deps
           echo "Playwright browsers installed successfully"
 
       - name: Install Xvfb for headed mode
