@@ -375,7 +375,7 @@ Only use this for specific queries for information retrieval from the page. Don'
 			# replace multiple sequential \n with a single \n
 			content = re.sub(r'\n+', '\n', content)
 
-			# limit to 000 characters - remove text in the middle this is approx 20000 tokens
+			# limit to 30000 characters - remove text in the middle (≈15000 tokens)
 			max_chars = 30000
 			if len(content) > max_chars:
 				logger.info(f'Content is too long, removing middle {len(content) - max_chars} characters')
