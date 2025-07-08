@@ -494,7 +494,7 @@ Explain the content of the page and that the requested information is not availa
 		# 	)
 
 		@self.registry.action(
-			'Scroll the page by one page (set down=True to scroll down, down=False to scroll up)',
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.)',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
@@ -508,9 +508,14 @@ Explain the content of the page and that the requested information is not availa
 			dy_result = await retry_async_function(
 				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
 			)
+			window_height = dy_result or 0
+
+			# Determine scroll amount based on num_pages
+			scroll_amount = int(window_height * params.num_pages)
+			pages_scrolled = params.num_pages
 
 			# Set direction based on down parameter
-			dy = dy_result if params.down else -(dy_result or 0)
+			dy = scroll_amount if params.down else -scroll_amount
 
 			try:
 				await browser_session._scroll_container(cast(int, dy))
@@ -520,11 +525,14 @@ Explain the content of the page and that the requested information is not availa
 				logger.debug('Smart scroll failed; used window.scrollBy fallback', exc_info=e)
 
 			direction = 'down' if params.down else 'up'
-			msg = f'🔍 Scrolled {direction} the page by one page'
+			if pages_scrolled == 1.0:
+				long_term_memory = f'Scrolled {direction} the page by one page'
+			else:
+				long_term_memory = f'Scrolled {direction} the page by {pages_scrolled} pages'
+			msg = f'🔍 {long_term_memory}'
+
 			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled {direction} the page by one page'
-			)
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 
 		# send keys
 
