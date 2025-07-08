@@ -2991,7 +2991,7 @@ class BrowserSession(BaseModel):
 			self.logger.debug('🧹 Removing highlights...')
 			try:
 				await self.remove_highlights()
-			except asyncio.TimeoutError:
+			except TimeoutError:
 				self.logger.debug('Timeout to remove highlights')
 
 			# Check for PDF and auto-download if needed

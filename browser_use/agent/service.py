@@ -1306,7 +1306,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		try:
 			await self.browser_session.remove_highlights()
-		except asyncio.TimeoutError:
+		except TimeoutError:
 			# we don't care if this times out
 			self.logger.debug('Timeout to remove highlights')
 
