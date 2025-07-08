@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 from browser_use.observability import observe_debug
+from browser_use.utils import is_new_tab_page
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import AgentStepInfo
@@ -139,13 +140,34 @@ class AgentMessagePrompt:
 		has_content_above = (self.browser_state.pixels_above or 0) > 0
 		has_content_below = (self.browser_state.pixels_below or 0) > 0
 
+		# Enhanced page information for the model
+		page_info_text = ''
+		if self.browser_state.page_info:
+			pi = self.browser_state.page_info
+			# Compute page statistics dynamically
+			pages_above = pi.pixels_above / pi.viewport_height if pi.viewport_height > 0 else 0
+			pages_below = pi.pixels_below / pi.viewport_height if pi.viewport_height > 0 else 0
+			total_pages = pi.page_height / pi.viewport_height if pi.viewport_height > 0 else 0
+			current_page_position = pi.scroll_y / max(pi.page_height - pi.viewport_height, 1)
+			page_info_text = f'Page info: {pi.viewport_width}x{pi.viewport_height}px viewport, {pi.page_width}x{pi.page_height}px total page size, {pages_above:.1f} pages above, {pages_below:.1f} pages below, {total_pages:.1f} total pages, at {current_page_position:.0%} of page'
+
 		if elements_text != '':
 			if has_content_above:
-				elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+				if self.browser_state.page_info:
+					pi = self.browser_state.page_info
+					pages_above = pi.pixels_above / pi.viewport_height if pi.viewport_height > 0 else 0
+					elements_text = f'... {self.browser_state.pixels_above} pixels above ({pages_above:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+				else:
+					elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
 			else:
 				elements_text = f'[Start of page]\n{elements_text}'
 			if has_content_below:
-				elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
+				if self.browser_state.page_info:
+					pi = self.browser_state.page_info
+					pages_below = pi.pixels_below / pi.viewport_height if pi.viewport_height > 0 else 0
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({pages_below:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...'
+				else:
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
 			else:
 				elements_text = f'{elements_text}\n[End of page]'
 		else:
@@ -171,6 +193,7 @@ class AgentMessagePrompt:
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
+{page_info_text}
 Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
@@ -209,9 +232,9 @@ Interactive elements from top layer of the current page inside the viewport{trun
 
 	@observe_debug(name='get_user_message')
 	def get_user_message(self, use_vision: bool = True) -> UserMessage:
-		# Don't pass screenshot to model if page is about:blank, step is 0, and there's only one tab
+		# Don't pass screenshot to model if page is a new tab page, step is 0, and there's only one tab
 		if (
-			self.browser_state.url == 'about:blank'
+			is_new_tab_page(self.browser_state.url)
 			and self.step_info is not None
 			and self.step_info.step_number == 0
 			and len(self.browser_state.tabs) == 1

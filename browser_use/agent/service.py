@@ -961,18 +961,22 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
-		response = await self.llm.ainvoke(input_messages, output_format=self.AgentOutput)
-		parsed = response.completion
+		try:
+			response = await self.llm.ainvoke(input_messages, output_format=self.AgentOutput)
+			parsed = response.completion
 
-		# cut the number of actions to max_actions_per_step if needed
-		if len(parsed.action) > self.settings.max_actions_per_step:
-			parsed.action = parsed.action[: self.settings.max_actions_per_step]
+			# cut the number of actions to max_actions_per_step if needed
+			if len(parsed.action) > self.settings.max_actions_per_step:
+				parsed.action = parsed.action[: self.settings.max_actions_per_step]
 
-		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
-			log_response(parsed, self.controller.registry.registry, self.logger)
+			if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
+				log_response(parsed, self.controller.registry.registry, self.logger)
 
-		self._log_next_action_summary(parsed)
-		return parsed
+			self._log_next_action_summary(parsed)
+			return parsed
+		except ValidationError as e:
+			# Just re-raise - Pydantic's validation errors are already descriptive
+			raise
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
