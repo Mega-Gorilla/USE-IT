@@ -623,40 +623,107 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
-		# Try to get state summary with fallback, handling agent-specific error state
+		# Try 1: Full state summary (current implementation) - like main branch
 		try:
-			return await self.browser_session.get_state_summary_with_fallback(cache_clickable_elements_hashes)
+			return await self.browser_session.get_state_summary(cache_clickable_elements_hashes)
 		except Exception as e:
-			# Update agent state with error information
 			if self.state.last_result is None:
 				self.state.last_result = []
 			self.state.last_result.append(ActionResult(error=str(e)))
-			self.logger.error(f'Both full and minimal state retrieval failed: {type(e).__name__}: {e}')
-			raise  # Re-raise since we couldn't recover
+			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
+
+		self.logger.warning('🔄 Falling back to minimal state summary')
+		return await self.browser_session.get_minimal_state_summary()
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
 		browser_state_summary = None
+		model_output = None
+		result: list[ActionResult] = []
+		step_start_time = time.time()
 
 		try:
-			browser_state_summary = await self._prepare_step_context(step_info)
+			# Phase 1: Prepare context (browser state, action models, messages)
+			browser_state_summary = await self._prepare_step_context(step_info, step_start_time)
 
-			await self._get_next_action(browser_state_summary, step_info)
+			# Phase 2: Execute LLM interaction AND action execution in SAME try block (critical for performance!)
+			model_output = await self._execute_llm_interaction(browser_state_summary)
+			result = await self._execute_actions(model_output)
 
-			await self._take_actions()
+			# Phase 3: Post-processing (downloads, reset failures, logging)
+			await self._handle_post_action_processing()
 
+		except InterruptedError as e:
+			self.logger.debug(f'InterruptedError: {type(e).__name__}: {e}')
+			self.state.consecutive_failures += 1
+			self.state.last_result = [
+				ActionResult(
+					error='The agent was interrupted mid-step' + (f' - {e}' if e else ''),
+				)
+			]
+			return
 		except Exception as e:
-			await self._handle_step_error(e)
+			# Handle ALL exceptions (LLM AND action execution) - like main branch!
+			result = await self._handle_step_error(e)
+			self.state.last_result = result
 
 		finally:
-			await self._finalize_step(browser_state_summary)
+			await self._finalize_step(browser_state_summary, step_start_time)
 
-	async def _prepare_step_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
+	async def _execute_llm_interaction(self, browser_state_summary: BrowserStateSummary) -> AgentOutput:
+		"""Execute LLM interaction with retry logic and handle callbacks"""
+		input_messages = self._message_manager.get_messages()
+		self.logger.debug(
+			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
+		)
+
+		try:
+			model_output = await self._get_model_output_with_retry(input_messages)
+			self.state.last_model_output = model_output
+
+			# Check again for paused/stopped state after getting model output
+			await self._raise_if_stopped_or_paused()
+
+			self.state.n_steps += 1
+
+			# Handle callbacks and conversation saving
+			await self._handle_post_llm_processing(browser_state_summary, input_messages)
+
+			self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
+
+			# check again if Ctrl+C was pressed before we commit the output to history
+			await self._raise_if_stopped_or_paused()
+
+			return model_output
+
+		except InterruptedError:
+			# Agent was paused during get_next_action - handle like main branch
+			self._message_manager._remove_last_state_message()
+			raise  # Re-raise to be caught by the outer try/except
+		except Exception as e:
+			# model call failed, remove last state message from history
+			self._message_manager._remove_last_state_message()
+			self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
+			raise e
+
+	async def _execute_actions(self, model_output: AgentOutput) -> list[ActionResult]:
+		"""Execute the actions from model output"""
+		self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(model_output.action)} actions...')
+		result = await self.multi_act(model_output.action)
+		self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
+
+		self.state.last_result = result
+		return result
+
+	async def _prepare_step_context(
+		self, step_info: AgentStepInfo | None = None, step_start_time: float | None = None
+	) -> BrowserStateSummary:
 		"""Prepare the context for the step: browser state, action models, page actions"""
 
-		self.step_start_time = time.time()
+		if step_start_time is None:
+			step_start_time = time.time()
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
@@ -689,6 +756,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			sensitive_data=self.sensitive_data,
 			agent_history_list=self.state.history,  # Pass AgentHistoryList for screenshots
 		)
+
 		await self._handle_final_step(step_info)
 		return browser_state_summary
 
@@ -704,39 +772,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._message_manager._add_message_with_type(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
-	async def _get_next_action(self, browser_state_summary: BrowserStateSummary, step_info: AgentStepInfo | None = None) -> None:
-		"""Execute LLM interaction with retry logic and handle callbacks"""
-		input_messages = self._message_manager.get_messages()
-		self.logger.debug(
-			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
-		)
-
-		try:
-			model_output = await self._get_model_output_with_retry(input_messages)
-			self.state.last_model_output = model_output
-
-			# Check again for paused/stopped state after getting model output
-			await self._raise_if_stopped_or_paused()
-
-			self.state.n_steps += 1
-
-			# Handle callbacks and conversation saving
-			await self._handle_post_llm_processing(browser_state_summary, input_messages)
-
-			self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
-
-			# check again if Ctrl+C was pressed before we commit the output to history
-			await self._raise_if_stopped_or_paused()
-
-		except Exception as e:
-			# model call failed, remove last state message from history
-			self._message_manager._remove_last_state_message()
-			self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
-			raise e
-
 	async def _get_model_output_with_retry(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get model output with retry logic for empty actions"""
-		model_output = await self.get_model_output(input_messages)
+		model_output = await self.get_next_action(input_messages)  # Use get_next_action like main branch
 		self.logger.debug(
 			f'✅ Step {self.state.n_steps + 1}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
 		)
@@ -753,7 +791,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			)
 
 			retry_messages = input_messages + [clarification_message]
-			model_output = await self.get_model_output(retry_messages)
+			model_output = await self.get_next_action(retry_messages)  # Use get_next_action like main branch
 
 			if not model_output.action or all(action.model_dump() == {} for action in model_output.action):
 				self.logger.warning('Model still returned empty after retry. Inserting safe noop action.')
@@ -792,21 +830,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.settings.save_conversation_path_encoding,
 			)
 
-	async def _take_actions(self) -> None:
-		"""Execute the actions from model output"""
-		assert self.state.last_model_output is not None, 'Model output is not available'
-
-		self.logger.debug(f'⚡ Step {self.state.n_steps}: Executing {len(self.state.last_model_output.action)} actions...')
-		result = await self.multi_act(self.state.last_model_output.action)
-		self.logger.debug(f'✅ Step {self.state.n_steps}: Actions completed')
-
-		self.state.last_result = result
-		await self._handle_post_action_processing()
-
-	async def _finalize_step(self, browser_state_summary: BrowserStateSummary | None) -> None:
+	async def _finalize_step(self, browser_state_summary: BrowserStateSummary | None, step_start_time: float) -> None:
 		"""Finalize the step with history, logging, and events"""
 		step_end_time = time.time()
-		step_start_time = self.step_start_time
 		if not self.state.last_result:
 			return
 
@@ -817,30 +843,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				step_end_time=step_end_time,
 			)
 
-			# Create and store history item directly
-			if self.state.last_model_output:
-				interacted_elements = AgentHistory.get_interacted_element(
-					self.state.last_model_output, browser_state_summary.selector_map
-				)
-			else:
-				interacted_elements = [None]
-
-			state_history = BrowserStateHistory(
-				url=browser_state_summary.url,
-				title=browser_state_summary.title,
-				tabs=browser_state_summary.tabs,
-				interacted_element=interacted_elements,
-				screenshot=browser_state_summary.screenshot,
-			)
-
-			history_item = AgentHistory(
-				model_output=self.state.last_model_output,
-				result=self.state.last_result,
-				state=state_history,
-				metadata=metadata,
-			)
-
-			self.state.history.history.append(history_item)
+			# Use _make_history_item like main branch
+			self._make_history_item(self.state.last_model_output, browser_state_summary, self.state.last_result, metadata)
 
 		# Log step completion summary
 		self._log_step_completion_summary(step_start_time, self.state.last_result)
@@ -862,6 +866,37 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self, self.state.last_model_output, self.state.last_result, actions_data, browser_state_summary
 			)
 			self.eventbus.dispatch(step_event)
+
+	def _make_history_item(
+		self,
+		model_output: AgentOutput | None,
+		browser_state_summary: BrowserStateSummary,
+		result: list[ActionResult],
+		metadata: StepMetadata | None = None,
+	) -> None:
+		"""Create and store history item"""
+
+		if model_output:
+			interacted_elements = AgentHistory.get_interacted_element(model_output, browser_state_summary.selector_map)
+		else:
+			interacted_elements = [None]
+
+		state_history = BrowserStateHistory(
+			url=browser_state_summary.url,
+			title=browser_state_summary.title,
+			tabs=browser_state_summary.tabs,
+			interacted_element=interacted_elements,
+			screenshot=browser_state_summary.screenshot,
+		)
+
+		history_item = AgentHistory(
+			model_output=model_output,
+			result=result,
+			state=state_history,
+			metadata=metadata,
+		)
+
+		self.state.history.history.append(history_item)
 
 	async def _handle_post_action_processing(self) -> None:
 		"""Handle post-action processing like download tracking and result logging"""
@@ -888,21 +923,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				for file_path in self.state.last_result[-1].attachments:
 					self.logger.info(f'👉 {file_path}')
 
-	async def _handle_step_error(self, error: Exception) -> None:
+	async def _handle_step_error(self, error: Exception) -> list[ActionResult]:
 		"""Handle all types of errors that can occur during a step"""
-
-		# Handle InterruptedError specifically (agent pause/stop)
-		if isinstance(error, InterruptedError):
-			self.logger.debug(f'InterruptedError: {type(error).__name__}: {error}')
-			self.state.consecutive_failures += 1
-			self.state.last_result = [
-				ActionResult(
-					error='The agent was interrupted mid-step' + (f' - {error}' if error else ''),
-				)
-			]
-			return
-
-		# Handle all other exceptions
 		include_trace = self.logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
@@ -945,7 +967,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			else:
 				self.logger.error(f'{prefix}{error_msg}')
 
-		self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
+		return [ActionResult(error=error_msg, include_in_memory=True)]
 
 	def _remove_think_tags(self, text: str) -> str:
 		THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
@@ -958,7 +980,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return text.strip()
 
 	@time_execution_async('--get_next_action')
-	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
+	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
 		try:
