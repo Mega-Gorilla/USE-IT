@@ -3644,9 +3644,45 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	async def _scroll_container(self, pixels: int) -> None:
-		"""Scroll the element that truly owns vertical scroll.Starts at the focused node ➜ climbs to the first big, scroll-enabled ancestor otherwise picks the first scrollable element or the root, then calls `element.scrollBy` (or `window.scrollBy` for the root) by the supplied pixel value."""
+		"""Scroll using CDP Input.synthesizeScrollGesture for universal compatibility across all contexts."""
 
-		# An element can *really* scroll if: overflow-y is auto|scroll|overlay, it has more content than fits, its own viewport is not a postage stamp (more than 50 % of window).
+		page = await self.get_current_page()
+
+		try:
+			# Use CDP to synthesize scroll gesture - works in all contexts including PDFs
+			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
+
+			# Get viewport center for scroll origin
+			viewport = await page.evaluate("""
+				() => ({
+					width: window.innerWidth,
+					height: window.innerHeight
+				})
+			""")
+
+			center_x = viewport['width'] // 2
+			center_y = viewport['height'] // 2
+
+			await cdp_session.send(
+				'Input.synthesizeScrollGesture',
+				{
+					'x': center_x,
+					'y': center_y,
+					'xDistance': 0,
+					'yDistance': -pixels,  # Negative = scroll down, Positive = scroll up
+					'gestureSourceType': 'mouse',  # Use mouse gestures for better compatibility
+					'speed': 1000,  # Pixels per second
+				},
+			)
+
+			await cdp_session.detach()
+			self.logger.debug(f'📄 Scrolled using CDP gesture: {pixels}px')
+			return
+
+		except Exception as e:
+			self.logger.debug(f'CDP scroll failed: {e}, falling back to JavaScript')
+
+		# Fallback to JavaScript for older browsers or when CDP fails
 		SMART_SCROLL_JS = """(dy) => {
 			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;
 			const canScroll = el =>
@@ -3672,7 +3708,6 @@ class BrowserSession(BaseModel):
 				el.scrollBy({ top: dy, behavior: 'auto' });
 			}
 		}"""
-		page = await self.get_current_page()
 		await page.evaluate(SMART_SCROLL_JS, pixels)
 
 	# --- DVD Screensaver Loading Animation Helper ---
@@ -3792,8 +3827,9 @@ class BrowserSession(BaseModel):
 		try:
 			is_pdf_viewer = await page.evaluate("""
 				() => {
-					// Check for Chrome's built-in PDF viewer
-					const pdfEmbed = document.querySelector('body > embed[type="application/pdf"][width="100%"]');
+					// Check for Chrome's built-in PDF viewer (updated selector)
+					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
+									 document.querySelector('embed[type="application/pdf"]');
 					const isPdfViewer = !!pdfEmbed;
 					
 					// Also check if the URL ends with .pdf or has PDF content-type
