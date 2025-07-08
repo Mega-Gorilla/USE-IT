@@ -4,8 +4,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Awaitable, Callable
-from typing import Any, Generic, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
 try:
 	from lmnr import Laminar  # type: ignore
@@ -40,38 +39,6 @@ from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
-
-
-async def retry_async_function(
-	func: Callable[[], Awaitable[Any]], error_message: str, n_retries: int = 3, sleep_seconds: float = 1
-) -> Any:
-	"""
-	Retry an async function n times before giving up and raising an exception.
-
-	Args:
-		func: Async function to retry
-		error_message: Error message to use in exception if all retries fail
-		n_retries: Number of retries (default 3)
-		sleep_seconds: Seconds to sleep between retries (default 1)
-
-	Returns:
-		The result of the function on success
-
-	Raises:
-		RuntimeError: If all retries fail
-	"""
-	for attempt in range(n_retries):
-		try:
-			result = await func()
-			return result
-		except Exception as e:
-			await asyncio.sleep(sleep_seconds)
-			logger.debug(f'Error (attempt {attempt + 1}/{n_retries}): {e}')
-			if attempt == n_retries - 1:  # Last attempt failed
-				raise RuntimeError(error_message + str(e))
-
-	# Should never reach here but make type checker happy
-	raise RuntimeError(error_message)
 
 
 Context = TypeVar('Context')
