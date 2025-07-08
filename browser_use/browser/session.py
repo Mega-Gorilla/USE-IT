@@ -1026,7 +1026,11 @@ class BrowserSession(BaseModel):
 				)
 			elif self.browser.contexts:
 				self.browser_context = self.browser.contexts[0]
-				self.logger.info(f'🌎 Using first browser_context available in existing browser: {self.browser_context}')
+				# Check if this is a newly spawned subprocess
+				if hasattr(self, '_subprocess') and self._subprocess and self._subprocess.pid == self.browser_pid:
+					self.logger.debug(f'📎 Using default browser_context from newly spawned browser: {self.browser_context}')
+				else:
+					self.logger.info(f'🌎 Using first browser_context available in existing browser: {self.browser_context}')
 			else:
 				self.browser_context = await self.browser.new_context(
 					**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
@@ -1237,7 +1241,12 @@ class BrowserSession(BaseModel):
 			assert self.browser.is_connected(), (
 				f'Browser is not connected, did the browser process crash or get killed? (connection method: {self._connection_str})'
 			)
-		self.logger.debug(f'🪢 Browser {self._connection_str} connected {self.browser or self.browser_context}')
+			# Only log final connection if we didn't already log it via setup_browser_via_browser_pid
+			if not (hasattr(self, '_subprocess') and self._subprocess and self._subprocess.pid == self.browser_pid):
+				self.logger.debug(f'🪢 Browser {self._connection_str} connected {self.browser or self.browser_context}')
+		elif self.browser_context and not self.browser:
+			# For launch_persistent_context case where we don't get a browser object
+			self.logger.debug(f'🪢 Browser context {self._connection_str} connected {self.browser_context}')
 
 		assert self.browser_context, (
 			f'{self} Failed to create a playwright BrowserContext {self.browser_context} for browser={self.browser}'
