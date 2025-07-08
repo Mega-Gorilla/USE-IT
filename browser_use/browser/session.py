@@ -964,7 +964,7 @@ class BrowserSession(BaseModel):
 		if not self.browser_context:
 			assert self.browser_profile.channel is not None, 'browser_profile.channel is None'
 			self.logger.info(
-				f'🌎 Launching new local browser '
+				f'🌎 Launching new local browser context '
 				f'{str(type(self.playwright).__module__).split(".")[0]}:{self.browser_profile.channel.name.lower()} keep_alive={self.browser_profile.keep_alive or False} '
 				f'user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir) or "<incognito>"}'
 			)
@@ -983,10 +983,22 @@ class BrowserSession(BaseModel):
 			# search for potentially conflicting local processes running on the same user_data_dir
 			for proc in psutil.process_iter(['pid', 'cmdline']):
 				if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-					self.logger.error(
-						f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
-						f'already running with the same user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
-					)
+					# If this is a temp directory, automatically create a new one
+					if Path(self.browser_profile.user_data_dir).name.startswith('browseruse-tmp-'):
+						old_dir = self.browser_profile.user_data_dir
+						self.browser_profile.user_data_dir = Path(tempfile.mkdtemp(prefix='browseruse-tmp-'))
+						self.logger.warning(
+							f'⚠️ Found conflicting browser process pid={proc.info["pid"]} using temp dir {_log_pretty_path(old_dir)}. '
+							f'Creating new temp dir: {_log_pretty_path(self.browser_profile.user_data_dir)}'
+						)
+						# Re-prepare the new user data dir
+						self.prepare_user_data_dir()
+					else:
+						# For non-temp directories, just log the error
+						self.logger.error(
+							f'🚨 Found potentially conflicting browser process browser_pid={proc.info["pid"]} '
+							f'already running with the same user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
+						)
 					break
 
 			# if a user_data_dir is provided, launch Chrome as subprocess then connect via CDP
@@ -1024,43 +1036,32 @@ class BrowserSession(BaseModel):
 						# Build final command
 						chrome_launch_cmd = [chromium_path] + final_args
 
-						self.logger.info(
-							f'🚀 Launching Chrome subprocess on port {debug_port} with user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir)}'
-						)
-
 						# Launch chrome as subprocess
+						self.logger.info(
+							f' ↳ Spawning Chrome subprocess listening on CDP port :{debug_port} with user_data_dir= {_log_pretty_path(self.browser_profile.user_data_dir)}'
+						)
 						process = await asyncio.create_subprocess_exec(
 							*chrome_launch_cmd,
 							stdout=asyncio.subprocess.DEVNULL,
 							stderr=asyncio.subprocess.DEVNULL,
 						)
 
-						# Wait for Chrome to start and be ready
-						import httpx
+						# Store the browser PID
+						self.browser_pid = process.pid
 
-						async with httpx.AsyncClient() as client:
-							for i in range(30):  # 30 second timeout
-								try:
-									response = await client.get(f'http://localhost:{debug_port}/json/version', timeout=1.0)
-									if response.status_code == 200:
-										self.logger.debug(f'✅ Chrome subprocess ready on port {debug_port}')
-										break
-								except (httpx.ConnectError, httpx.TimeoutException):
-									pass
-								await asyncio.sleep(1)
+						# Wait a moment for Chrome to start
+						await asyncio.sleep(2)
+
+						# Use the existing setup_browser_via_browser_pid method to connect
+						await self.setup_browser_via_browser_pid()
+
+						# If connection failed, browser_context will be None
+						if not self.browser_context:
+							# Try to get error info from the process
+							if process.returncode is not None:
+								raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
 							else:
-								raise RuntimeError(f'Chrome subprocess failed to start on port {debug_port} after 30 seconds')
-
-						# Connect to the Chrome instance via CDP
-						self.browser = await self.playwright.chromium.connect_over_cdp(
-							endpoint_url=f'http://localhost:{debug_port}',
-							timeout=20000,  # 20 second timeout for connection
-						)
-
-						# Create a new context from the connected browser
-						self.browser_context = await self.browser.new_context(
-							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
-						)
+								raise RuntimeError(f'Failed to connect to Chrome subprocess on port {debug_port}')
 
 					except Exception as e:
 						# Check if it's a SingletonLock error
