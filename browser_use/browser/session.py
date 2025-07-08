@@ -712,13 +712,13 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_output=True)
 	@retry(
 		wait=1,  # wait 1s between each attempt to take a screenshot
-		retries=2,  # try up to 2 times to take the screenshot
-		timeout=15,  # allow up to 15s for each attempt to take a screenshot
-		semaphore_limit=1,  # Only one screenshot at a time across all processes
+		retries=1,  # try up to 1 time to take the screenshot (2 total attempts)
+		timeout=12,  # allow up to 12s for each attempt to take a screenshot
+		semaphore_limit=2,  # Allow 2 screenshots at a time to better utilize resources
 		semaphore_name='screenshot_global',
 		semaphore_scope='multiprocess',
 		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
-		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
+		semaphore_timeout=15,  # Wait up to 15s for semaphore acquisition
 	)
 	async def _take_screenshot_hybrid(self, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
@@ -740,19 +740,22 @@ class BrowserSession(BaseModel):
 			pass
 
 		try:
+			# Use a shorter timeout for screenshots to prevent semaphore starvation
+			# 10 seconds should be enough for most screenshots
+			screenshot_timeout = min(10000, self.browser_profile.default_timeout or 10000)
 			screenshot = await page.screenshot(
 				full_page=False,
 				# scale='css',
-				timeout=self.browser_profile.default_timeout or 30000,
+				timeout=screenshot_timeout,
 				# clip=FloatRect(**clip) if clip else None,
 				animations='allow',
 				caret='initial',
 			)
 		except Exception as err:
+			# Don't reset browser on timeout - this can cause semaphore deadlocks
+			# Just re-raise the error and let the retry decorator handle it
 			if 'timeout' in str(err).lower():
-				self.logger.warning('🚨 Screenshot timed out, resetting connection state and restarting browser...')
-				self._reset_connection_state()
-				await self.start()
+				self.logger.warning(f'⏱️ Screenshot timed out on page {page.url}: {err}')
 			raise err
 		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
