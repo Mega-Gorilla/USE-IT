@@ -657,7 +657,7 @@ Explain the content of the page and that the requested information is not availa
 			msg = f'🔍 {long_term_memory}'
 
 			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
+			return ActionResult(long_term_memory=long_term_memory)
 
 		# send keys
 
