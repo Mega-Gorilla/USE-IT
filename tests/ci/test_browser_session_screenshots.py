@@ -4,6 +4,7 @@ Test that screenshots work correctly in headless browser mode.
 
 import asyncio
 import base64
+import time
 
 from browser_use.browser import BrowserProfile, BrowserSession
 
@@ -195,10 +196,17 @@ class TestHeadlessScreenshots:
 			print('Navigating all sessions to the long test page...')
 			await asyncio.gather(*[session.navigate(test_url) for session in browser_sessions])
 
-			# Take screenshots from all sessions at the same time
-			print('Taking screenshots from all 10 sessions simultaneously...')
+			# Take screenshots from all sessions
+			# Due to semaphore_limit=1, these will execute sequentially
+			print('Taking screenshots from all 10 sessions...')
+			start_time = time.time()
 			screenshot_tasks = [session.take_screenshot() for session in browser_sessions]
 			screenshots = await asyncio.gather(*screenshot_tasks)
+			total_time = time.time() - start_time
+
+			# Verify all screenshots completed within 1 minute
+			assert total_time < 60, f'Screenshots took too long: {total_time:.1f}s (should be < 60s)'
+			print(f'All screenshots completed in {total_time:.1f}s')
 
 			# Verify all screenshots are valid
 			print('Verifying all screenshots...')
@@ -223,9 +231,13 @@ class TestHeadlessScreenshots:
 
 			print(f'All {len(screenshots)} screenshots validated successfully!')
 
-			# Also test taking regular (viewport) screenshots in parallel
-			print('Taking viewport screenshots from all sessions simultaneously...')
+			# Also test taking regular (viewport) screenshots
+			print('Taking viewport screenshots from all sessions...')
+			start_time = time.time()
 			viewport_screenshots = await asyncio.gather(*[session.take_screenshot() for session in browser_sessions])
+			viewport_time = time.time() - start_time
+			assert viewport_time < 60, f'Viewport screenshots took too long: {viewport_time:.1f}s (should be < 60s)'
+			print(f'All viewport screenshots completed in {viewport_time:.1f}s')
 
 			# Verify viewport screenshots
 			for i, screenshot in enumerate(viewport_screenshots):

@@ -713,11 +713,12 @@ class BrowserSession(BaseModel):
 	@retry(
 		wait=1,  # wait 1s between each attempt to take a screenshot
 		retries=2,  # try up to 2 times to take the screenshot
-		timeout=20,  # allow up to 20s for each attempt to take a screenshot
+		timeout=15,  # allow up to 15s for each attempt to take a screenshot
 		semaphore_limit=1,  # Only one screenshot at a time across all processes
 		semaphore_name='screenshot_global',
 		semaphore_scope='multiprocess',
 		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
+		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
 	)
 	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
