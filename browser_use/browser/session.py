@@ -935,6 +935,22 @@ class BrowserSession(BaseModel):
 								# Retry with the new temp directory
 								await self._unsafe_setup_new_browser_context()
 								return
+							else:
+								# Chrome exited for unknown reason, try fallback to temp profile
+								self.logger.warning(
+									f'⚠️ Chrome process {self.browser_pid} exited unexpectedly. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+								)
+								self._fallback_to_temp_profile('Chrome process exit with unknown error')
+								# Kill the subprocess and retry with new profile
+								try:
+									self._subprocess.terminate()
+									await self._subprocess.wait()
+								except Exception:
+									pass
+								self.browser_pid = None
+								# Retry with the new temp directory
+								await self._unsafe_setup_new_browser_context()
+								return
 						self.logger.error(f'❌ Chrome process {self.browser_pid} exited unexpectedly')
 						self.browser_pid = None
 						return
@@ -1148,12 +1164,16 @@ class BrowserSession(BaseModel):
 									raise RuntimeError(
 										f'Failed parsing extensions: Chrome profile incompatibility detected. Chrome exited with code {process.returncode}'
 									)
-								elif stderr_output:
-									raise RuntimeError(
-										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500]}'
-									)
+								elif 'SingletonLock' in stderr_output or 'ProcessSingleton' in stderr_output:
+									raise RuntimeError(f'SingletonLock error: {stderr_output[:500]}')
 								else:
-									raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
+									# For any other error, log it and raise to trigger fallback
+									self.logger.warning(
+										f'⚠️ Chrome subprocess exited with code {process.returncode}. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
+									raise RuntimeError(
+										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
 							else:
 								# Kill the subprocess if it's still running but we couldn't connect
 								try:
@@ -1164,10 +1184,20 @@ class BrowserSession(BaseModel):
 								raise RuntimeError(f'Failed to connect to Chrome subprocess on port {debug_port}')
 
 					except Exception as e:
-						# Check if it's a SingletonLock error
-						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
+						# Check if it's a SingletonLock error or Chrome subprocess exit error
+						if (
+							'SingletonLock' in str(e)
+							or 'ProcessSingleton' in str(e)
+							or 'Chrome subprocess exited' in str(e)
+							or isinstance(e, RuntimeError)
+						):
 							# Fall back to temporary directory
-							self._fallback_to_temp_profile('Chrome launch error due to SingletonLock')
+							reason = (
+								'Chrome launch error due to SingletonLock'
+								if 'SingletonLock' in str(e)
+								else 'Chrome subprocess failed to start'
+							)
+							self._fallback_to_temp_profile(reason)
 							# Kill the failed subprocess if it exists
 							if hasattr(self, '_subprocess') and self._subprocess:
 								try:
