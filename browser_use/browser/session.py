@@ -4075,11 +4075,14 @@ class BrowserSession(BaseModel):
 			try:
 				self.logger.debug(f'Downloading PDF from URL: {pdf_url}')
 
+				# Properly escape the URL to prevent JavaScript injection
+				escaped_pdf_url = json.dumps(pdf_url)
+
 				download_result = await page.evaluate(f"""
 					async () => {{
 						try {{
 							// Use fetch with cache: 'force-cache' to prioritize cached version
-							const response = await fetch('{pdf_url}', {{
+							const response = await fetch({escaped_pdf_url}, {{
 								cache: 'force-cache'
 							}});
 							if (!response.ok) {{
@@ -4092,7 +4095,7 @@ class BrowserSession(BaseModel):
 							// Log whether this was served from cache
 							const fromCache = response.headers.has('age') || 
 											 !response.headers.has('date') ||
-											 performance.getEntriesByName('{pdf_url}').some(entry => 
+											 performance.getEntriesByName({escaped_pdf_url}).some(entry => 
 												 entry.transferSize === 0 || entry.transferSize < entry.encodedBodySize
 											 );
 											 
