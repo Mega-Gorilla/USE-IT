@@ -3894,7 +3894,7 @@ class BrowserSession(BaseModel):
 
 			# Check if already downloaded
 			expected_path = os.path.join(self.browser_profile.downloads_path, pdf_filename)
-			if any(pdf_filename in downloaded for downloaded in self._downloaded_files):
+			if any(os.path.basename(downloaded) == pdf_filename for downloaded in self._downloaded_files):
 				self.logger.debug(f'📄 PDF already downloaded: {pdf_filename}')
 				return None
 
