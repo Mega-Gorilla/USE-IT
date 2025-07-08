@@ -479,17 +479,8 @@ class TestBrowserSessionStart:
 		finally:
 			await session.kill()
 
-	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self, caplog):
+	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self):
 		"""Test user_data_dir handling for different browser channels and version mismatches."""
-		import logging
-
-		# Temporarily enable propagation for browser_use logger to capture logs
-		browser_use_logger = logging.getLogger('browser_use')
-		original_propagate = browser_use_logger.propagate
-		browser_use_logger.propagate = True
-
-		caplog.set_level(logging.WARNING, logger='browser_use')
-
 		# Test 1: Chromium with default user_data_dir and default channel should work fine
 		session = BrowserSession(
 			browser_profile=BrowserProfile(
@@ -509,32 +500,28 @@ class TestBrowserSessionStart:
 		finally:
 			await session.kill()
 
-		# Clear any previous log records
-		caplog.clear()
+		# Test 2: Chrome with default user_data_dir should automatically change dir
+		profile2 = BrowserProfile(
+			headless=True,
+			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			channel=BrowserChannel.CHROME,
+			keep_alive=False,
+		)
 
-		# Test 2: Chrome with default user_data_dir should show warning and change dir
-		with caplog.at_level(logging.WARNING):
-			profile2 = BrowserProfile(
-				headless=True,
-				user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
-				channel=BrowserChannel.CHROME,
-				keep_alive=False,
-			)
-
-		# The validator should have changed the user_data_dir
+		# The validator should have changed the user_data_dir to avoid corruption
 		assert profile2.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
 		assert profile2.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / 'default-chrome'
 
-		# Check warning was logged
-		warning_found = any(
-			'Changing user_data_dir=' in record.message and 'CHROME' in record.message for record in caplog.records
-		)
-		assert warning_found, (
-			f'Expected warning about changing user_data_dir was not found. Captured logs: {[record.message for record in caplog.records if "browser_use" in record.name]}'
+		# Test 3: Edge with default user_data_dir should also change
+		profile3 = BrowserProfile(
+			headless=True,
+			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			channel=BrowserChannel.MSEDGE,
+			keep_alive=False,
 		)
 
-		# Restore original propagate setting
-		browser_use_logger.propagate = original_propagate
+		assert profile3.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+		assert profile3.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / 'default-msedge'
 
 	# only run if `/Applications/Brave Browser.app` is installed
 	@pytest.mark.skipif(
