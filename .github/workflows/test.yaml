@@ -86,14 +86,8 @@ jobs:
             ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
-      #- run: playwright install chrome     # tests that need it can install it manually
       - run: playwright install chromium --with-deps
-      
-      - name: Verify Playwright installation
-        run: |
-          playwright --version
-          ls -la ~/.cache/ms-playwright/ || echo "No playwright cache found"
-          find ~/.cache/ms-playwright/ -name "chrome*" -type f 2>/dev/null | head -5 || echo "No chrome binaries found"
+      - run: playwright install chrome --with-deps 
 
       - run: pytest tests/ci/${{ matrix.test_filename }}.py
 
@@ -126,12 +120,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
       - run: playwright install chromium --with-deps
-      
-      - name: Verify Playwright installation
-        run: |
-          playwright --version
-          ls -la ~/.cache/ms-playwright/ || echo "No playwright cache found"
-          find ~/.cache/ms-playwright/ -name "chrome*" -type f 2>/dev/null | head -5 || echo "No chrome binaries found"
+      - run: playwright install chrome --with-deps
 
       - name: Run agent tasks evaluation and capture score
         id: eval
