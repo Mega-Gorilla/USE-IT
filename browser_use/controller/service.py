@@ -4,13 +4,13 @@ import json
 import logging
 import os
 import re
-from collections.abc import Awaitable, Callable
-from typing import Any, Generic, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
 try:
 	from lmnr import Laminar  # type: ignore
 except ImportError:
 	Laminar = None  # type: ignore
+from bubus.helpers import retry
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -39,38 +39,6 @@ from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
-
-
-async def retry_async_function(
-	func: Callable[[], Awaitable[Any]], error_message: str, n_retries: int = 3, sleep_seconds: float = 1
-) -> Any:
-	"""
-	Retry an async function n times before giving up and raising an exception.
-
-	Args:
-		func: Async function to retry
-		error_message: Error message to use in exception if all retries fail
-		n_retries: Number of retries (default 3)
-		sleep_seconds: Seconds to sleep between retries (default 1)
-
-	Returns:
-		The result of the function on success
-
-	Raises:
-		RuntimeError: If all retries fail
-	"""
-	for attempt in range(n_retries):
-		try:
-			result = await func()
-			return result
-		except Exception as e:
-			await asyncio.sleep(sleep_seconds)
-			logger.debug(f'Error (attempt {attempt + 1}/{n_retries}): {e}')
-			if attempt == n_retries - 1:  # Last attempt failed
-				raise RuntimeError(error_message + str(e))
-
-	# Should never reach here but make type checker happy
-	raise RuntimeError(error_message)
 
 
 Context = TypeVar('Context')
@@ -505,11 +473,17 @@ Explain the content of the page and that the requested information is not availa
 			"""
 			page = await browser_session.get_current_page()
 
+			# Helper function to get window height with retry decorator
+			@retry(wait=1, retries=3, timeout=5)
+			async def get_window_height():
+				return await page.evaluate('() => window.innerHeight')
+
 			# Get window height with retries
-			dy_result = await retry_async_function(
-				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
-			)
-			window_height = dy_result or 0
+			try:
+				window_height = await get_window_height()
+			except Exception as e:
+				raise RuntimeError(f'Scroll failed due to an error: {e}')
+			window_height = window_height or 0
 
 			# Determine scroll amount based on num_pages
 			scroll_amount = int(window_height * params.num_pages)
