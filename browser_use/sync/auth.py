@@ -298,10 +298,10 @@ class DeviceAuthClient:
 
 			terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
 			if show_instructions:
-				logger.info('─' * min(terminal_width - 40, 20))
+				logger.info('─' * max(terminal_width - 40, 20))
 				logger.info('🌐  View the details of this run in Browser Use Cloud:')
 				logger.info(f'    👉  {verification_uri_complete}')
-				logger.info('─' * min(terminal_width - 40, 20) + '\n')
+				logger.info('─' * max(terminal_width - 40, 20) + '\n')
 
 			# Poll for token
 			token_data = await self.poll_for_token(
