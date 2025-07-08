@@ -1691,7 +1691,7 @@ class BrowserSession(BaseModel):
 			# Check both formats: --user-data-dir=/path and --user-data-dir /path
 			for i, arg in enumerate(cmdline):
 				# Combined format: --user-data-dir=/path
-				if arg.startswith('--user-data-dir=') and arg.split('=', 1)[1] == target_dir:
+				if arg.startswith('--user-data-dir=') and str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
 					return True
 				# Separate format: --user-data-dir /path
 				elif arg == '--user-data-dir' and i + 1 < len(cmdline) and cmdline[i + 1] == target_dir:
