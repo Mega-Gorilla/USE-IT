@@ -989,14 +989,79 @@ class BrowserSession(BaseModel):
 					)
 					break
 
-			# if a user_data_dir is provided, launch a persistent context with that user_data_dir
+			# if a user_data_dir is provided, launch Chrome as subprocess then connect via CDP
 			try:
 				async with asyncio.timeout(self.browser_profile.timeout / 1000):
 					try:
 						assert self.playwright is not None, 'playwright instance is None'
-						self.browser_context = await self.playwright.chromium.launch_persistent_context(
-							**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
+
+						# Find an available port for remote debugging
+						import socket
+
+						with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+							s.bind(('', 0))
+							s.listen(1)
+							debug_port = s.getsockname()[1]
+
+						# Get chromium executable path from playwright
+						chromium_path = self.playwright.chromium.executable_path
+
+						# Build chrome launch command with all args
+						chrome_args = self.browser_profile.get_args()
+
+						# Add/replace remote-debugging-port with our chosen port
+						final_args = []
+						for arg in chrome_args:
+							if not arg.startswith('--remote-debugging-port='):
+								final_args.append(arg)
+						final_args.extend(
+							[
+								f'--remote-debugging-port={debug_port}',
+								f'--user-data-dir={self.browser_profile.user_data_dir}',
+							]
 						)
+
+						# Build final command
+						chrome_launch_cmd = [chromium_path] + final_args
+
+						self.logger.info(
+							f'🚀 Launching Chrome subprocess on port {debug_port} with user_data_dir={_log_pretty_path(self.browser_profile.user_data_dir)}'
+						)
+
+						# Launch chrome as subprocess
+						process = await asyncio.create_subprocess_exec(
+							*chrome_launch_cmd,
+							stdout=asyncio.subprocess.DEVNULL,
+							stderr=asyncio.subprocess.DEVNULL,
+						)
+
+						# Wait for Chrome to start and be ready
+						import httpx
+
+						async with httpx.AsyncClient() as client:
+							for i in range(30):  # 30 second timeout
+								try:
+									response = await client.get(f'http://localhost:{debug_port}/json/version', timeout=1.0)
+									if response.status_code == 200:
+										self.logger.debug(f'✅ Chrome subprocess ready on port {debug_port}')
+										break
+								except (httpx.ConnectError, httpx.TimeoutException):
+									pass
+								await asyncio.sleep(1)
+							else:
+								raise RuntimeError(f'Chrome subprocess failed to start on port {debug_port} after 30 seconds')
+
+						# Connect to the Chrome instance via CDP
+						self.browser = await self.playwright.chromium.connect_over_cdp(
+							endpoint_url=f'http://localhost:{debug_port}',
+							timeout=20000,  # 20 second timeout for connection
+						)
+
+						# Create a new context from the connected browser
+						self.browser_context = await self.browser.new_context(
+							**self.browser_profile.kwargs_for_new_context().model_dump(mode='json')
+						)
+
 					except Exception as e:
 						# Check if it's a SingletonLock error
 						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
@@ -1007,11 +1072,8 @@ class BrowserSession(BaseModel):
 								singleton_lock.unlink()
 							# Wait a moment for cleanup
 							await asyncio.sleep(0.1)
-							# Retry the launch
-							assert self.playwright is not None, 'playwright instance is None'
-							self.browser_context = await self.playwright.chromium.launch_persistent_context(
-								**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
-							)
+							# Retry the launch (recursively call this method)
+							raise  # Will be caught by outer try-except to retry
 						# Re-raise if not a timeout
 						elif not isinstance(e, asyncio.TimeoutError):
 							raise
@@ -1022,12 +1084,9 @@ class BrowserSession(BaseModel):
 				)
 				# Force recreation of the playwright object
 				self.playwright = await self._start_global_playwright_subprocess(is_stealth=self.browser_profile.stealth)
-				# Retry the operation with the new playwright instance
-				async with asyncio.timeout(self.browser_profile.timeout / 1000):
-					assert self.playwright is not None, 'playwright instance is None'
-					self.browser_context = await self.playwright.chromium.launch_persistent_context(
-						**self.browser_profile.kwargs_for_launch_persistent_context().model_dump(mode='json')
-					)
+				# Retry the whole subprocess launch
+				await self._unsafe_setup_new_browser_context()
+				return
 			except Exception as e:
 				# show a nice logger hint explaining what went wrong with the user_data_dir
 				# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
