@@ -27,6 +27,8 @@ jobs:
       HYPERBROWSER_API_KEY: ${{ secrets.HYPERBROWSER_API_KEY }}
       BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
       BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
+      UKC_TOKEN: ${{ secrets.UKC_TOKEN }}
+      UKC_METRO: ${{ secrets.UKC_METRO }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
       BROWSER_USE_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.browser_logging_level || secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}

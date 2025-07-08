@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
+import anyio
+
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, _log_pretty_url
@@ -24,7 +26,6 @@ from .utils import normalize_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
-import anyio
 import psutil
 from bubus.helpers import retry
 from playwright._impl._api_structures import ViewportSize
@@ -229,6 +230,7 @@ class BrowserSession(BaseModel):
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 	_original_browser_session: Any = PrivateAttr(default=None)  # Reference to prevent GC of the original session when copied
 	_owns_browser_resources: bool = PrivateAttr(default=True)  # True if this instance owns and should clean up browser resources
+	_auto_download_pdfs: bool = PrivateAttr(default=True)  # Auto-download PDFs when detected
 	_subprocess: Any = PrivateAttr(default=None)  # Chrome subprocess reference for error handling
 
 	@model_validator(mode='after')
@@ -712,18 +714,19 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_output=True)
 	@retry(
 		wait=1,  # wait 1s between each attempt to take a screenshot
-		retries=2,  # try up to 2 times to take the screenshot
-		timeout=15,  # allow up to 15s for each attempt to take a screenshot
-		semaphore_limit=1,  # Only one screenshot at a time across all processes
+		retries=1,  # try up to 1 time to take the screenshot (2 total attempts)
+		timeout=12,  # allow up to 12s for each attempt to take a screenshot
+		semaphore_limit=2,  # Allow 2 screenshots at a time to better utilize resources
 		semaphore_name='screenshot_global',
 		semaphore_scope='multiprocess',
 		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
-		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
+		semaphore_timeout=15,  # Wait up to 15s for semaphore acquisition
 	)
-	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
+	async def _take_screenshot_hybrid(self, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 		# Use Playwright screenshot directly
 
+		page = await self.get_current_page()
 		assert self.browser_context
 		# try:
 		# 	# get fresh page handle
@@ -731,22 +734,30 @@ class BrowserSession(BaseModel):
 		# except Exception:
 		# 	pass
 		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
-		await page.bring_to_front()
 
 		try:
+			await page.bring_to_front()
+			await page.wait_for_load_state('load', timeout=8000)
+		except Exception:
+			pass
+
+		try:
+			# Use a shorter timeout for screenshots to prevent semaphore starvation
+			# 10 seconds should be enough for most screenshots
+			screenshot_timeout = min(10000, self.browser_profile.default_timeout or 10000)
 			screenshot = await page.screenshot(
 				full_page=False,
 				# scale='css',
-				timeout=self.browser_profile.default_timeout or 30000,
+				timeout=screenshot_timeout,
 				# clip=FloatRect(**clip) if clip else None,
 				animations='allow',
 				caret='initial',
 			)
 		except Exception as err:
+			# Don't reset browser on timeout - this can cause semaphore deadlocks
+			# Just re-raise the error and let the retry decorator handle it
 			if 'timeout' in str(err).lower():
-				self.logger.warning('🚨 Screenshot timed out, resetting connection state and restarting browser...')
-				self._reset_connection_state()
-				await self.start()
+				self.logger.warning(f'⏱️ Screenshot timed out on page {page.url}: {err}')
 			raise err
 		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
@@ -929,6 +940,22 @@ class BrowserSession(BaseModel):
 								# Retry with the new temp directory
 								await self._unsafe_setup_new_browser_context()
 								return
+							else:
+								# Chrome exited for unknown reason, try fallback to temp profile
+								self.logger.warning(
+									f'⚠️ Chrome process {self.browser_pid} exited unexpectedly. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+								)
+								self._fallback_to_temp_profile('Chrome process exit with unknown error')
+								# Kill the subprocess and retry with new profile
+								try:
+									self._subprocess.terminate()
+									await self._subprocess.wait()
+								except Exception:
+									pass
+								self.browser_pid = None
+								# Retry with the new temp directory
+								await self._unsafe_setup_new_browser_context()
+								return
 						self.logger.error(f'❌ Chrome process {self.browser_pid} exited unexpectedly')
 						self.browser_pid = None
 						return
@@ -1061,9 +1088,6 @@ class BrowserSession(BaseModel):
 					tempfile.mkdtemp(prefix='browseruse-tmp-')
 				)
 
-			# user data dir was provided, prepare it for use
-			self.prepare_user_data_dir()
-
 			# user data dir was provided, prepare it for use (handles conflicts automatically)
 			self.prepare_user_data_dir()
 
@@ -1142,12 +1166,16 @@ class BrowserSession(BaseModel):
 									raise RuntimeError(
 										f'Failed parsing extensions: Chrome profile incompatibility detected. Chrome exited with code {process.returncode}'
 									)
-								elif stderr_output:
-									raise RuntimeError(
-										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500]}'
-									)
+								elif 'SingletonLock' in stderr_output or 'ProcessSingleton' in stderr_output:
+									raise RuntimeError(f'SingletonLock error: {stderr_output[:500]}')
 								else:
-									raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
+									# For any other error, log it and raise to trigger fallback
+									self.logger.warning(
+										f'⚠️ Chrome subprocess exited with code {process.returncode}. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
+									raise RuntimeError(
+										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
 							else:
 								# Kill the subprocess if it's still running but we couldn't connect
 								try:
@@ -1158,10 +1186,20 @@ class BrowserSession(BaseModel):
 								raise RuntimeError(f'Failed to connect to Chrome subprocess on port {debug_port}')
 
 					except Exception as e:
-						# Check if it's a SingletonLock error
-						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
+						# Check if it's a SingletonLock error or Chrome subprocess exit error
+						if (
+							'SingletonLock' in str(e)
+							or 'ProcessSingleton' in str(e)
+							or 'Chrome subprocess exited' in str(e)
+							or isinstance(e, RuntimeError)
+						):
 							# Fall back to temporary directory
-							self._fallback_to_temp_profile('Chrome launch error due to SingletonLock')
+							reason = (
+								'Chrome launch error due to SingletonLock'
+								if 'SingletonLock' in str(e)
+								else 'Chrome subprocess failed to start'
+							)
+							self._fallback_to_temp_profile(reason)
 							# Kill the failed subprocess if it exists
 							if hasattr(self, '_subprocess') and self._subprocess:
 								try:
@@ -1546,6 +1584,9 @@ class BrowserSession(BaseModel):
 
 			# show browser-use dvd screensaver-style bouncing loading animation on any new tab pages
 			if is_new_tab_page(page.url):
+				# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+				if page.url.startswith('chrome://new-tab-page'):
+					await page.goto('about:blank')
 				await self._show_dvd_screensaver_loading_animation(page)
 
 		page = page or (await self.browser_context.new_page())
@@ -1691,16 +1732,46 @@ class BrowserSession(BaseModel):
 
 		# Check for running processes using this user data dir
 		for proc in psutil.process_iter(['pid', 'cmdline']):
+			# Skip our own browser process
+			if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+				continue
+
 			cmdline = proc.info['cmdline'] or []
 
 			# Check both formats: --user-data-dir=/path and --user-data-dir /path
 			for i, arg in enumerate(cmdline):
 				# Combined format: --user-data-dir=/path
-				if arg.startswith('--user-data-dir=') and str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
-					return True
+				if arg.startswith('--user-data-dir='):
+					try:
+						cmd_path = str(Path(arg.split('=', 1)[1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 				# Separate format: --user-data-dir /path
-				elif arg == '--user-data-dir' and i + 1 < len(cmdline) and cmdline[i + 1] == target_dir:
-					return True
+				elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+					try:
+						cmd_path = str(Path(cmdline[i + 1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 
 		# Note: We don't consider a SingletonLock file alone as a conflict
 		# because it might be stale. Only actual running processes count as conflicts.
@@ -1727,12 +1798,6 @@ class BrowserSession(BaseModel):
 			check_conflicts: Whether to check for and handle singleton lock conflicts
 		"""
 		if self.browser_profile.user_data_dir:
-			# Check for conflicts and fallback if needed
-			if check_conflicts and self._check_for_singleton_lock_conflict():
-				self._fallback_to_temp_profile()
-				# Recursive call without conflict checking to prepare the new temp dir
-				return self.prepare_user_data_dir(check_conflicts=False)
-
 			try:
 				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
 				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -1743,22 +1808,58 @@ class BrowserSession(BaseModel):
 				) from e
 
 			# Remove stale singleton lock file ONLY if no process is using this profile
+			# This must happen BEFORE checking for conflicts to avoid false positives
 			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
 			if singleton_lock.exists():
 				# Check if any process is actually using this user_data_dir
 				has_active_process = False
+				target_dir = str(self.browser_profile.user_data_dir)
 				for proc in psutil.process_iter(['pid', 'cmdline']):
-					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-						has_active_process = True
+					# Skip our own browser process
+					if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+						continue
+
+					cmdline = proc.info['cmdline'] or []
+					# Check both formats: --user-data-dir=/path and --user-data-dir /path
+					for i, arg in enumerate(cmdline):
+						if arg.startswith('--user-data-dir='):
+							try:
+								if str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+						elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+							try:
+								if str(Path(cmdline[i + 1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+					if has_active_process:
 						break
 
 				if not has_active_process:
 					# No active process, safe to remove stale lock
 					try:
-						singleton_lock.unlink()
-						self.logger.debug('Removed stale SingletonLock file (no active Chrome process found)')
+						# Handle both regular files and symlinks
+						if singleton_lock.is_symlink() or singleton_lock.exists():
+							singleton_lock.unlink()
+							self.logger.debug(
+								f'🧹 Removed stale SingletonLock file from {_log_pretty_path(self.browser_profile.user_data_dir)} (no active Chrome process found)'
+							)
 					except Exception:
 						pass  # Ignore errors removing lock file
+
+			# Check for conflicts and fallback if needed (AFTER cleaning stale locks)
+			if check_conflicts and self._check_for_singleton_lock_conflict():
+				self._fallback_to_temp_profile()
+				# Recursive call without conflict checking to prepare the new temp dir
+				return self.prepare_user_data_dir(check_conflicts=False)
 
 		# Create directories for all paths that need them
 		dir_paths = {
@@ -1864,7 +1965,7 @@ class BrowserSession(BaseModel):
 	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
 	@require_initialization
 	@time_execution_async('--remove_highlights')
-	@retry(timeout=10, retries=0)
+	@retry(timeout=2, retries=0)
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.
@@ -2313,6 +2414,21 @@ class BrowserSession(BaseModel):
 		"""
 		self.logger.debug(f'📁 Retrieved {len(self._downloaded_files)} downloaded files from session tracking')
 		return self._downloaded_files.copy()
+
+	def set_auto_download_pdfs(self, enabled: bool) -> None:
+		"""
+		Enable or disable automatic PDF downloading when PDFs are encountered.
+
+		Args:
+		    enabled: Whether to automatically download PDFs
+		"""
+		self._auto_download_pdfs = enabled
+		self.logger.info(f'📄 PDF auto-download {"enabled" if enabled else "disabled"}')
+
+	@property
+	def auto_download_pdfs(self) -> bool:
+		"""Get current PDF auto-download setting."""
+		return self._auto_download_pdfs
 
 	# @property
 	# def browser_extension_pages(self) -> list[Page]:
@@ -2873,7 +2989,19 @@ class BrowserSession(BaseModel):
 
 		try:
 			self.logger.debug('🧹 Removing highlights...')
-			await self.remove_highlights()
+			try:
+				await self.remove_highlights()
+			except TimeoutError:
+				self.logger.debug('Timeout to remove highlights')
+
+			# Check for PDF and auto-download if needed
+			try:
+				pdf_path = await self._auto_download_pdf_if_needed(page)
+				if pdf_path:
+					self.logger.info(f'📄 PDF auto-downloaded: {pdf_path}')
+			except Exception as e:
+				self.logger.debug(f'PDF auto-download check failed: {type(e).__name__}: {e}')
+
 			self.logger.debug('🌳 Starting DOM processing...')
 			dom_service = DomService(page, logger=self.logger)
 			try:
@@ -2994,32 +3122,9 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
-		# page has already loaded by this point, this is just extra for previous action animations/frame loads to settle
-		page = await self.get_current_page()
-
 		try:
-			await page.wait_for_load_state(timeout=5_000)
-		except Exception:
-			pass
-
-		try:
-			# Check if browser process is still responsive
-			if self.browser_pid:
-				try:
-					proc = psutil.Process(self.browser_pid)
-					if not proc.is_running():
-						self.logger.warning('🚨 Browser process died, restarting...')
-						self._reset_connection_state()
-						await self.start()
-						page = await self.get_current_page()
-				except psutil.NoSuchProcess:
-					self.logger.warning('🚨 Browser process not found, restarting...')
-					self._reset_connection_state()
-					await self.start()
-					page = await self.get_current_page()
-
 			# Take screenshot with comprehensive crash detection
-			return await self._take_screenshot_hybrid(page)
+			return await self._take_screenshot_hybrid()
 		except Exception as e:
 			# Check for specific crash-related errors
 			error_str = str(e).lower()
@@ -3040,8 +3145,7 @@ class BrowserSession(BaseModel):
 				try:
 					self._reset_connection_state()
 					await self.start()
-					page = await self.get_current_page()
-					result = await self._take_screenshot_hybrid(page)
+					result = await self._take_screenshot_hybrid()
 					self.logger.info('✅ Screenshot successful after browser restart')
 					return result
 				except Exception as restart_error:
@@ -3593,6 +3697,13 @@ class BrowserSession(BaseModel):
 				f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}'
 			)
 
+		# Show DVD animation on new tab pages (after navigating to about:blank if needed)
+		if not normalized_url and is_new_tab_page(new_page.url):
+			# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+			if new_page.url.startswith('chrome://new-tab-page'):
+				await new_page.goto('about:blank')
+			await self._show_dvd_screensaver_loading_animation(new_page)
+
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
 			await new_page.set_viewport_size(self.browser_profile.viewport)
@@ -3797,11 +3908,64 @@ class BrowserSession(BaseModel):
 
 		return page_info
 
+	async def _scroll_with_cdp_gesture(self, page: Page, pixels: int) -> bool:
+		"""
+		Scroll using CDP Input.synthesizeScrollGesture for universal compatibility.
+
+		Args:
+			page: The page to scroll
+			pixels: Number of pixels to scroll (positive = up, negative = down)
+
+		Returns:
+			True if successful, False if failed
+		"""
+		try:
+			# Use CDP to synthesize scroll gesture - works in all contexts including PDFs
+			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
+
+			# Get viewport center for scroll origin
+			viewport = await page.evaluate("""
+				() => ({
+					width: window.innerWidth,
+					height: window.innerHeight
+				})
+			""")
+
+			center_x = viewport['width'] // 2
+			center_y = viewport['height'] // 2
+
+			await cdp_session.send(
+				'Input.synthesizeScrollGesture',
+				{
+					'x': center_x,
+					'y': center_y,
+					'xDistance': 0,
+					'yDistance': -pixels,  # Negative = scroll down, Positive = scroll up
+					'gestureSourceType': 'mouse',  # Use mouse gestures for better compatibility
+					'speed': 3000,  # Pixels per second
+				},
+			)
+
+			await cdp_session.detach()
+			self.logger.debug(f'📄 Scrolled using CDP gesture: {pixels}px')
+			return True
+
+		except Exception as e:
+			self.logger.debug(f'CDP scroll failed: {e}')
+			return False
+
 	@require_initialization
 	async def _scroll_container(self, pixels: int) -> None:
-		"""Scroll the element that truly owns vertical scroll.Starts at the focused node ➜ climbs to the first big, scroll-enabled ancestor otherwise picks the first scrollable element or the root, then calls `element.scrollBy` (or `window.scrollBy` for the root) by the supplied pixel value."""
+		"""Scroll using CDP gesture synthesis with JavaScript fallback."""
 
-		# An element can *really* scroll if: overflow-y is auto|scroll|overlay, it has more content than fits, its own viewport is not a postage stamp (more than 50 % of window).
+		page = await self.get_current_page()
+
+		# Try CDP scroll gesture first (works universally including PDFs)
+		if await self._scroll_with_cdp_gesture(page, pixels):
+			return
+
+		# Fallback to JavaScript for older browsers or when CDP fails
+		self.logger.debug('Falling back to JavaScript scrolling')
 		SMART_SCROLL_JS = """(dy) => {
 			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;
 			const canScroll = el =>
@@ -3827,7 +3991,6 @@ class BrowserSession(BaseModel):
 				el.scrollBy({ top: dy, behavior: 'auto' });
 			}
 		}"""
-		page = await self.get_current_page()
 		await page.evaluate(SMART_SCROLL_JS, pixels)
 
 	# --- DVD Screensaver Loading Animation Helper ---
@@ -3938,3 +4101,138 @@ class BrowserSession(BaseModel):
 		}""",
 			str(self.id)[-4:],
 		)
+
+	async def _is_pdf_viewer(self, page: Page) -> bool:
+		"""
+		Check if the current page is displaying a PDF in Chrome's PDF viewer.
+		Returns True if PDF is detected, False otherwise.
+		"""
+		try:
+			is_pdf_viewer = await page.evaluate("""
+				() => {
+					// Check for Chrome's built-in PDF viewer (updated selector)
+					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
+									 document.querySelector('embed[type="application/pdf"]');
+					const isPdfViewer = !!pdfEmbed;
+					
+					// Also check if the URL ends with .pdf or has PDF content-type
+					const url = window.location.href;
+					const isPdfUrl = url.toLowerCase().includes('.pdf') || 
+									document.contentType === 'application/pdf';
+					
+					return isPdfViewer || isPdfUrl;
+				}
+			""")
+			return is_pdf_viewer
+		except Exception as e:
+			self.logger.debug(f'Error checking PDF viewer: {type(e).__name__}: {e}')
+			return False
+
+	async def _auto_download_pdf_if_needed(self, page: Page) -> str | None:
+		"""
+		Check if the current page is a PDF viewer and automatically download the PDF if so.
+		Returns the download path if a PDF was downloaded, None otherwise.
+		"""
+		if not self.browser_profile.downloads_path or not self._auto_download_pdfs:
+			return None
+
+		try:
+			# Check if we're in a PDF viewer
+			is_pdf_viewer = await self._is_pdf_viewer(page)
+			self.logger.debug(f'is_pdf_viewer: {is_pdf_viewer}')
+
+			if not is_pdf_viewer:
+				return None
+
+			# Get the PDF URL
+			pdf_url = page.url
+
+			# Check if we've already downloaded this PDF
+			pdf_filename = os.path.basename(pdf_url.split('?')[0])  # Remove query params
+			if not pdf_filename or not pdf_filename.endswith('.pdf'):
+				# Generate filename from URL
+				from urllib.parse import urlparse
+
+				parsed = urlparse(pdf_url)
+				pdf_filename = os.path.basename(parsed.path) or 'document.pdf'
+				if not pdf_filename.endswith('.pdf'):
+					pdf_filename += '.pdf'
+
+			# Check if already downloaded
+			expected_path = os.path.join(self.browser_profile.downloads_path, pdf_filename)
+			if any(os.path.basename(downloaded) == pdf_filename for downloaded in self._downloaded_files):
+				self.logger.debug(f'📄 PDF already downloaded: {pdf_filename}')
+				return None
+
+			self.logger.info(f'📄 Auto-downloading PDF from: {pdf_url}')
+
+			# Download the actual PDF file using JavaScript fetch
+			# Note: This should hit the browser cache since Chrome already downloaded the PDF to display it
+			try:
+				self.logger.debug(f'Downloading PDF from URL: {pdf_url}')
+
+				# Properly escape the URL to prevent JavaScript injection
+				escaped_pdf_url = json.dumps(pdf_url)
+
+				download_result = await page.evaluate(f"""
+					async () => {{
+						try {{
+							// Use fetch with cache: 'force-cache' to prioritize cached version
+							const response = await fetch({escaped_pdf_url}, {{
+								cache: 'force-cache'
+							}});
+							if (!response.ok) {{
+								throw new Error(`HTTP error! status: ${{response.status}}`);
+							}}
+							const blob = await response.blob();
+							const arrayBuffer = await blob.arrayBuffer();
+							const uint8Array = new Uint8Array(arrayBuffer);
+							
+							// Log whether this was served from cache
+							const fromCache = response.headers.has('age') || 
+											 !response.headers.has('date') ||
+											 performance.getEntriesByName({escaped_pdf_url}).some(entry => 
+												 entry.transferSize === 0 || entry.transferSize < entry.encodedBodySize
+											 );
+											 
+							return {{ 
+								data: Array.from(uint8Array),
+								fromCache: fromCache,
+								responseSize: uint8Array.length,
+								transferSize: response.headers.get('content-length') || 'unknown'
+							}};
+						}} catch (error) {{
+							throw new Error(`Fetch failed: ${{error.message}}`);
+						}}
+					}}
+				""")
+
+				if download_result and download_result.get('data') and len(download_result['data']) > 0:
+					# Ensure unique filename
+					unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, pdf_filename)
+					download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
+
+					# Save the PDF asynchronously
+					async with await anyio.open_file(download_path, 'wb') as f:
+						await f.write(bytes(download_result['data']))
+
+					# Track the downloaded file
+					self._downloaded_files.append(download_path)
+
+					# Log cache information
+					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
+					response_size = download_result.get('responseSize', 0)
+					self.logger.info(f'📄 Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
+
+					return download_path
+				else:
+					self.logger.warning(f'⚠️ No data received when downloading PDF from {pdf_url}')
+					return None
+
+			except Exception as e:
+				self.logger.warning(f'⚠️ Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
+				return None
+
+		except Exception as e:
+			self.logger.warning(f'⚠️ Error in PDF auto-download check: {type(e).__name__}: {e}')
+			return None
