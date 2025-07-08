@@ -81,6 +81,55 @@ pip install "browser-use[cli]"
 browser-use
 ```
 
+## MCP Integration
+
+Browser-use supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), enabling integration with Claude Desktop and other MCP-compatible clients.
+
+### Use as MCP Server with Claude Desktop
+
+Add browser-use to your Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "browser-use": {
+      "command": "uvx",
+      "args": ["browser-use", "--mcp"],
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
+```
+
+This gives Claude Desktop access to browser automation tools for web scraping, form filling, and more.
+
+### Connect External MCP Servers to Browser-Use Agent
+
+Browser-use agents can connect to external MCP servers to extend their capabilities:
+
+```python
+from browser_use import Agent, MCPClient
+from browser_use.llm import ChatOpenAI
+
+# Connect to an external MCP server (e.g., filesystem, database, etc.)
+mcp_client = MCPClient(
+    server_command=["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+    server_args=["/Users/me/documents"]
+)
+
+# Create agent with MCP tools
+agent = Agent(
+    task="Find the latest report.pdf file and upload it to the website",
+    llm=ChatOpenAI(model="gpt-4o"),
+    mcp_client=mcp_client
+)
+await agent.run()
+```
+
+See the [MCP documentation](https://docs.browser-use.com/customize/mcp-server) for more details.
+
 # Demos
 
 <br/><br/>
