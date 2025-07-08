@@ -70,7 +70,7 @@ class AgentState(BaseModel):
 	"""Holds all state information for an Agent"""
 
 	agent_id: str = Field(default_factory=uuid7str)
-	n_steps: int = 1
+	n_steps: int = 0
 	consecutive_failures: int = 0
 	last_result: list[ActionResult] | None = None
 	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[], usage=None))

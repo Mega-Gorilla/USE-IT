@@ -637,6 +637,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
+		# Initialize timing first, before any exceptions can occur
+		self.step_start_time = time.time()
+
+		# Increment step counter at the start of each step
+		self.state.n_steps += 1
+
 		browser_state_summary = None
 
 		try:
@@ -659,11 +665,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def _prepare_context(self, step_info: AgentStepInfo | None = None) -> BrowserStateSummary:
 		"""Prepare the context for the step: browser state, action models, page actions"""
-		self.step_start_time = time.time()
+		# step_start_time is now set in step() method
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
-		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
+		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
 		current_page = await self.browser_session.get_current_page()
 
@@ -671,7 +677,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		await self._raise_if_stopped_or_paused()
 
 		# Update action models with page-specific actions
-		self.logger.debug(f'📝 Step {self.state.n_steps + 1}: Updating action models...')
+		self.logger.debug(f'📝 Step {self.state.n_steps}: Updating action models...')
 		await self._update_action_models_for_page(current_page)
 
 		# Get page-specific filtered actions
@@ -682,7 +688,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			page_action_message = f'For this page, these additional actions are available:\n{page_filtered_actions}'
 			self._message_manager._add_message_with_type(UserMessage(content=page_action_message), 'consistent')
 
-		self.logger.debug(f'💬 Step {self.state.n_steps + 1}: Adding state message to context...')
+		self.logger.debug(f'💬 Step {self.state.n_steps}: Adding state message to context...')
 		self._message_manager.add_state_message(
 			browser_state_summary=browser_state_summary,
 			model_output=self.state.last_model_output,
@@ -701,7 +707,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
 		self.logger.debug(
-			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
+			f'🤖 Step {self.state.n_steps}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
 		)
 
 		model_output = await self._get_model_output_with_retry(input_messages)
@@ -710,7 +716,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Check again for paused/stopped state after getting model output
 		await self._raise_if_stopped_or_paused()
 
-		self.state.n_steps += 1
+		# NOTE: n_steps is now incremented at the start of step() method
 
 		# Handle callbacks and conversation saving
 		await self._handle_post_llm_processing(browser_state_summary, input_messages)
@@ -859,7 +865,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Get model output with retry logic for empty actions"""
 		model_output = await self.get_model_output(input_messages)
 		self.logger.debug(
-			f'✅ Step {self.state.n_steps + 1}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
+			f'✅ Step {self.state.n_steps}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
 		)
 
 		if (
@@ -1209,11 +1215,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				self.logger.debug(f'🚶 Starting step {step + 1}/{max_steps}...')
 				step_info = AgentStepInfo(step_number=step, max_steps=max_steps)
-				await asyncio.wait_for(
-					self.step(step_info),
-					timeout=180,  # 3 minute step timeout - less aggressive
-				)
-				self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
+
+				try:
+					await asyncio.wait_for(
+						self.step(step_info),
+						timeout=300,  # 5 minute step timeout - more generous for slow LLM calls
+					)
+					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
+				except TimeoutError:
+					# Handle step timeout gracefully
+					error_msg = f'Step {step + 1} timed out after 300 seconds'
+					logger.error(f'⏰ {error_msg}')
 
 				if on_step_end is not None:
 					await on_step_end(self)
