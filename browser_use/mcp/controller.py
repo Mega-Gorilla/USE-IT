@@ -238,43 +238,6 @@ class MCPToolWrapper:
 		return base_type
 
 
-class PlaywrightMCPIntegration:
-	"""Specific integration for Playwright MCP server."""
-
-	def __init__(self, registry: Registry, **playwright_args):
-		"""Initialize Playwright MCP integration.
-
-		Args:
-			registry: Browser-use action registry
-			**playwright_args: Arguments to pass to Playwright MCP server
-				- headless: bool = True
-				- browser: str = "chromium"
-				- viewport_size: str = "1280,720"
-				- etc.
-		"""
-		# Build MCP server arguments
-		mcp_args = ['@playwright/mcp@latest']
-
-		# Convert kwargs to command line arguments
-		for key, value in playwright_args.items():
-			arg_name = key.replace('_', '-')
-			if isinstance(value, bool):
-				if value:
-					mcp_args.append(f'--{arg_name}')
-			else:
-				mcp_args.extend([f'--{arg_name}', str(value)])
-
-		self.wrapper = MCPToolWrapper(registry=registry, mcp_command='npx', mcp_args=mcp_args)
-
-	async def connect(self):
-		"""Connect to Playwright MCP server."""
-		await self.wrapper.connect()
-
-	async def disconnect(self):
-		"""Disconnect from Playwright MCP server."""
-		await self.wrapper.disconnect()
-
-
 # Convenience function for easy integration
 async def register_mcp_tools(registry: Registry, mcp_command: str, mcp_args: list[str] | None = None) -> MCPToolWrapper:
 	"""Register MCP tools with a browser-use registry.
