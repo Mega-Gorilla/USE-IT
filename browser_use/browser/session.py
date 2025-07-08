@@ -3905,7 +3905,7 @@ class BrowserSession(BaseModel):
 
 			// Add a little CSS for smoothness
 			const style = document.createElement('style');
-			style.innerHTML = `
+			style.textContent = `
 				#pretty-loading-animation {
 					/*backdrop-filter: blur(2px) brightness(0.9);*/
 				}

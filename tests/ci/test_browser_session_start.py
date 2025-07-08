@@ -547,9 +547,12 @@ class TestBrowserSessionStart:
 			),
 		)
 
-		# open chrome with corrupted user_data_dir
-		with pytest.raises(Exception, match='Failed parsing extensions'):
-			await chromium_session.start()
+		# open chrome with corrupted user_data_dir - should now fallback to temp dir instead of crashing
+		await chromium_session.start()
+		# Check that it fell back to a temporary directory
+		assert chromium_session.browser_profile.user_data_dir != '~/.config/browseruse/profiles/stealth'
+		assert 'browseruse-tmp-' in str(chromium_session.browser_profile.user_data_dir)
+		await chromium_session.stop()
 
 
 class TestBrowserSessionReusePatterns:
