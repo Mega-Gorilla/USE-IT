@@ -120,7 +120,7 @@ CHROME_DEFAULT_ARGS = [
 	'--disable-dev-shm-usage',  # crucial for docker support, harmless in non-docker environments
 	# '--disable-extensions',
 	# '--disable-features=' + disabledFeatures(assistantMode).join(','),
-	'--allow-pre-commit-input',  # let page JS run a little early before GPU rendering finishes
+	# '--allow-pre-commit-input',  # duplicate removed
 	'--disable-hang-monitor',
 	'--disable-ipc-flooding-protection',  # important to be able to make lots of CDP calls in a tight loop
 	'--disable-popup-blocking',
