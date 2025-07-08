@@ -1069,10 +1069,8 @@ class BrowserSession(BaseModel):
 						# Store the browser PID
 						self.browser_pid = process.pid
 
-						# Wait a moment for Chrome to start
-						await asyncio.sleep(2)
-
 						# Use the existing setup_browser_via_browser_pid method to connect
+						# It will wait for the CDP port to become available
 						await self.setup_browser_via_browser_pid()
 
 						# If connection failed, browser_context will be None
@@ -1151,63 +1149,73 @@ class BrowserSession(BaseModel):
 		# playwright does not give us a browser object at all when we use launch_persistent_context()!
 
 		# Detect any new child chrome processes that we might have launched above
-		def is_our_chrome_proc(pid: int) -> psutil.Process | None:
-			try:
-				proc = psutil.Process(pid)
-				cmdline = proc.cmdline()
-				if 'Helper' in proc.name():
-					return None
-				if proc.status() != 'running':
-					return None
-				if (
-					self.browser_profile.executable_path
-					and Path(cmdline[0]).expanduser().resolve()
-					!= Path(self.browser_profile.executable_path).expanduser().resolve()
-				):
-					# self.logger.debug(f'❌ Found new child chrome process that does not match our executable: {str(cmdline)[:50]}')
-					return None
-				if (
-					self.browser_profile.user_data_dir
-					and f'--user-data-dir={Path(self.browser_profile.user_data_dir).expanduser().resolve()}' in cmdline
-				):
-					# self.logger.debug(f'✅ Found new child chrome process that matches our user_data_dir: {str(cmdline)[:50]}')
-					return proc
-				else:
-					# self.logger.debug(f'❌ Found new child chrome process that does not match our user_data_dir: {[arg for arg in cmdline if "--user-data-dir=" in arg]}')
-					return None
-			except Exception:
-				pass
-			return None
-
-		child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
-		new_child_pids = child_pids_after_launch - child_pids_before_launch
-		new_child_procs = list(filter(bool, (is_our_chrome_proc(pid) for pid in new_child_pids)))
-		if not new_child_procs:
-			self.logger.debug(f'❌ Failed to find any new child chrome processes after launching new browser: {new_child_pids}')
-			new_chrome_proc = None
-			# Browser PID detection can fail in some environments (e.g. CI, containers)
-			# This is not critical - the browser is still running and usable
-			self.browser_pid = None
-		elif len(new_child_procs) > 1:
-			self.logger.debug(f'❌ Found multiple new child chrome processes after launching new browser: {new_child_procs}')
-			new_chrome_proc = None
-			self.browser_pid = None
+		# Skip this if we already have a browser_pid from subprocess launching
+		if self.browser_pid:
+			self.logger.debug(
+				f'Skipping browser PID detection, already have browser_pid={self.browser_pid} from subprocess launch'
+			)
+			self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
 		else:
-			new_chrome_proc = new_child_procs[0]
 
-		if new_chrome_proc and not self.browser_pid:
-			# look through the discovered new chrome processes to uniquely identify the one that *we* launched,
-			# match using unique user_data_dir
-			try:
-				self.browser_pid = new_chrome_proc.pid
-				cmdline = new_chrome_proc.cmdline()
-				executable_path = cmdline[0] if cmdline else 'unknown'
-				self.logger.info(f' ↳ Spawned browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
-				if cmdline:
-					self.logger.debug(' '.join(cmdline))  # print the entire launch command for debugging
-				self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
-			except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-				self.logger.warning(f'Browser process {self.browser_pid} died immediately after launch: {type(e).__name__}')
+			def is_our_chrome_proc(pid: int) -> psutil.Process | None:
+				try:
+					proc = psutil.Process(pid)
+					cmdline = proc.cmdline()
+					if 'Helper' in proc.name():
+						return None
+					if proc.status() != 'running':
+						return None
+					if (
+						self.browser_profile.executable_path
+						and Path(cmdline[0]).expanduser().resolve()
+						!= Path(self.browser_profile.executable_path).expanduser().resolve()
+					):
+						# self.logger.debug(f'❌ Found new child chrome process that does not match our executable: {str(cmdline)[:50]}')
+						return None
+					if (
+						self.browser_profile.user_data_dir
+						and f'--user-data-dir={Path(self.browser_profile.user_data_dir).expanduser().resolve()}' in cmdline
+					):
+						# self.logger.debug(f'✅ Found new child chrome process that matches our user_data_dir: {str(cmdline)[:50]}')
+						return proc
+					else:
+						# self.logger.debug(f'❌ Found new child chrome process that does not match our user_data_dir: {[arg for arg in cmdline if "--user-data-dir=" in arg]}')
+						return None
+				except Exception:
+					pass
+				return None
+
+			child_pids_after_launch = {child.pid for child in current_process.children(recursive=True)}
+			new_child_pids = child_pids_after_launch - child_pids_before_launch
+			new_child_procs = list(filter(bool, (is_our_chrome_proc(pid) for pid in new_child_pids)))
+			if not new_child_procs:
+				self.logger.debug(
+					f'❌ Failed to find any new child chrome processes after launching new browser: {new_child_pids}'
+				)
+				new_chrome_proc = None
+				# Browser PID detection can fail in some environments (e.g. CI, containers)
+				# This is not critical - the browser is still running and usable
+				self.browser_pid = None
+			elif len(new_child_procs) > 1:
+				self.logger.debug(f'❌ Found multiple new child chrome processes after launching new browser: {new_child_procs}')
+				new_chrome_proc = None
+				self.browser_pid = None
+			else:
+				new_chrome_proc = new_child_procs[0]
+
+			if new_chrome_proc and not self.browser_pid:
+				# look through the discovered new chrome processes to uniquely identify the one that *we* launched,
+				# match using unique user_data_dir
+				try:
+					self.browser_pid = new_chrome_proc.pid
+					cmdline = new_chrome_proc.cmdline()
+					executable_path = cmdline[0] if cmdline else 'unknown'
+					self.logger.info(f' ↳ Spawned browser_pid={self.browser_pid} {_log_pretty_path(executable_path)}')
+					if cmdline:
+						self.logger.debug(' '.join(cmdline))  # print the entire launch command for debugging
+					self._set_browser_keep_alive(False)  # close the browser at the end because we launched it
+				except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+					self.logger.warning(f'Browser process {self.browser_pid} died immediately after launch: {type(e).__name__}')
 
 		if self.browser:
 			assert self.browser.is_connected(), (
