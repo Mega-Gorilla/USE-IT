@@ -28,7 +28,7 @@ graph LR
 ## Installation
 
 ```bash
-pip install "browser-use[mcp]"
+uv pip install "browser-use[cli]"
 ```
 
 ## Quick Start
@@ -45,7 +45,7 @@ Add browser-use to your Claude Desktop configuration:
       "mcpServers": {
         "browser-use": {
           "command": "uvx",
-          "args": ["browser-use", "--mcp"],
+          "args": ["browser-use[cli]", "--mcp"],
           "env": {
             "OPENAI_API_KEY": "sk-..."  // Optional: for content extraction
           }
@@ -61,7 +61,7 @@ Add browser-use to your Claude Desktop configuration:
       "mcpServers": {
         "browser-use": {
           "command": "uvx",
-          "args": ["browser-use", "--mcp"],
+          "args": ["browser-use[cli]", "--mcp"],
           "env": {
             "OPENAI_API_KEY": "sk-..."  // Optional: for content extraction
           }
@@ -393,12 +393,7 @@ If you see "MCP server connection failed":
 
 2. Check all dependencies:
    ```bash
-   pip install "browser-use[mcp]"
-   ```
-
-3. Ensure MCP SDK is installed:
-   ```bash
-   pip install mcp
+   uv pip install "browser-use[cli]"
    ```
 
 ### Content Extraction Not Working
