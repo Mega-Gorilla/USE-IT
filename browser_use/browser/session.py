@@ -712,18 +712,19 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_output=True)
 	@retry(
 		wait=1,  # wait 1s between each attempt to take a screenshot
-		retries=2,  # try up to 2 times to take the screenshot
-		timeout=15,  # allow up to 15s for each attempt to take a screenshot
-		semaphore_limit=1,  # Only one screenshot at a time across all processes
+		retries=1,  # try up to 1 time to take the screenshot (2 total attempts)
+		timeout=12,  # allow up to 12s for each attempt to take a screenshot
+		semaphore_limit=2,  # Allow 2 screenshots at a time to better utilize resources
 		semaphore_name='screenshot_global',
 		semaphore_scope='multiprocess',
 		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
-		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
+		semaphore_timeout=15,  # Wait up to 15s for semaphore acquisition
 	)
-	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
+	async def _take_screenshot_hybrid(self, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 		# Use Playwright screenshot directly
 
+		page = await self.get_current_page()
 		assert self.browser_context
 		# try:
 		# 	# get fresh page handle
@@ -731,22 +732,30 @@ class BrowserSession(BaseModel):
 		# except Exception:
 		# 	pass
 		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
-		await page.bring_to_front()
 
 		try:
+			await page.bring_to_front()
+			await page.wait_for_load_state('load', timeout=8000)
+		except Exception:
+			pass
+
+		try:
+			# Use a shorter timeout for screenshots to prevent semaphore starvation
+			# 10 seconds should be enough for most screenshots
+			screenshot_timeout = min(10000, self.browser_profile.default_timeout or 10000)
 			screenshot = await page.screenshot(
 				full_page=False,
 				# scale='css',
-				timeout=self.browser_profile.default_timeout or 30000,
+				timeout=screenshot_timeout,
 				# clip=FloatRect(**clip) if clip else None,
 				animations='allow',
 				caret='initial',
 			)
 		except Exception as err:
+			# Don't reset browser on timeout - this can cause semaphore deadlocks
+			# Just re-raise the error and let the retry decorator handle it
 			if 'timeout' in str(err).lower():
-				self.logger.warning('🚨 Screenshot timed out, resetting connection state and restarting browser...')
-				self._reset_connection_state()
-				await self.start()
+				self.logger.warning(f'⏱️ Screenshot timed out on page {page.url}: {err}')
 			raise err
 		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
 		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
@@ -929,6 +938,22 @@ class BrowserSession(BaseModel):
 								# Retry with the new temp directory
 								await self._unsafe_setup_new_browser_context()
 								return
+							else:
+								# Chrome exited for unknown reason, try fallback to temp profile
+								self.logger.warning(
+									f'⚠️ Chrome process {self.browser_pid} exited unexpectedly. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+								)
+								self._fallback_to_temp_profile('Chrome process exit with unknown error')
+								# Kill the subprocess and retry with new profile
+								try:
+									self._subprocess.terminate()
+									await self._subprocess.wait()
+								except Exception:
+									pass
+								self.browser_pid = None
+								# Retry with the new temp directory
+								await self._unsafe_setup_new_browser_context()
+								return
 						self.logger.error(f'❌ Chrome process {self.browser_pid} exited unexpectedly')
 						self.browser_pid = None
 						return
@@ -1061,9 +1086,6 @@ class BrowserSession(BaseModel):
 					tempfile.mkdtemp(prefix='browseruse-tmp-')
 				)
 
-			# user data dir was provided, prepare it for use
-			self.prepare_user_data_dir()
-
 			# user data dir was provided, prepare it for use (handles conflicts automatically)
 			self.prepare_user_data_dir()
 
@@ -1142,12 +1164,16 @@ class BrowserSession(BaseModel):
 									raise RuntimeError(
 										f'Failed parsing extensions: Chrome profile incompatibility detected. Chrome exited with code {process.returncode}'
 									)
-								elif stderr_output:
-									raise RuntimeError(
-										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500]}'
-									)
+								elif 'SingletonLock' in stderr_output or 'ProcessSingleton' in stderr_output:
+									raise RuntimeError(f'SingletonLock error: {stderr_output[:500]}')
 								else:
-									raise RuntimeError(f'Chrome subprocess exited with code {process.returncode}')
+									# For any other error, log it and raise to trigger fallback
+									self.logger.warning(
+										f'⚠️ Chrome subprocess exited with code {process.returncode}. Error: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
+									raise RuntimeError(
+										f'Chrome subprocess exited with code {process.returncode}. Error output: {stderr_output[:500] if stderr_output else "No error output"}'
+									)
 							else:
 								# Kill the subprocess if it's still running but we couldn't connect
 								try:
@@ -1158,10 +1184,20 @@ class BrowserSession(BaseModel):
 								raise RuntimeError(f'Failed to connect to Chrome subprocess on port {debug_port}')
 
 					except Exception as e:
-						# Check if it's a SingletonLock error
-						if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
+						# Check if it's a SingletonLock error or Chrome subprocess exit error
+						if (
+							'SingletonLock' in str(e)
+							or 'ProcessSingleton' in str(e)
+							or 'Chrome subprocess exited' in str(e)
+							or isinstance(e, RuntimeError)
+						):
 							# Fall back to temporary directory
-							self._fallback_to_temp_profile('Chrome launch error due to SingletonLock')
+							reason = (
+								'Chrome launch error due to SingletonLock'
+								if 'SingletonLock' in str(e)
+								else 'Chrome subprocess failed to start'
+							)
+							self._fallback_to_temp_profile(reason)
 							# Kill the failed subprocess if it exists
 							if hasattr(self, '_subprocess') and self._subprocess:
 								try:
@@ -1546,6 +1582,9 @@ class BrowserSession(BaseModel):
 
 			# show browser-use dvd screensaver-style bouncing loading animation on any new tab pages
 			if is_new_tab_page(page.url):
+				# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+				if page.url.startswith('chrome://new-tab-page'):
+					await page.goto('about:blank')
 				await self._show_dvd_screensaver_loading_animation(page)
 
 		page = page or (await self.browser_context.new_page())
@@ -1691,16 +1730,46 @@ class BrowserSession(BaseModel):
 
 		# Check for running processes using this user data dir
 		for proc in psutil.process_iter(['pid', 'cmdline']):
+			# Skip our own browser process
+			if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+				continue
+
 			cmdline = proc.info['cmdline'] or []
 
 			# Check both formats: --user-data-dir=/path and --user-data-dir /path
 			for i, arg in enumerate(cmdline):
 				# Combined format: --user-data-dir=/path
-				if arg.startswith('--user-data-dir=') and str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
-					return True
+				if arg.startswith('--user-data-dir='):
+					try:
+						cmd_path = str(Path(arg.split('=', 1)[1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 				# Separate format: --user-data-dir /path
-				elif arg == '--user-data-dir' and i + 1 < len(cmdline) and cmdline[i + 1] == target_dir:
-					return True
+				elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+					try:
+						cmd_path = str(Path(cmdline[i + 1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 
 		# Note: We don't consider a SingletonLock file alone as a conflict
 		# because it might be stale. Only actual running processes count as conflicts.
@@ -1727,12 +1796,6 @@ class BrowserSession(BaseModel):
 			check_conflicts: Whether to check for and handle singleton lock conflicts
 		"""
 		if self.browser_profile.user_data_dir:
-			# Check for conflicts and fallback if needed
-			if check_conflicts and self._check_for_singleton_lock_conflict():
-				self._fallback_to_temp_profile()
-				# Recursive call without conflict checking to prepare the new temp dir
-				return self.prepare_user_data_dir(check_conflicts=False)
-
 			try:
 				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
 				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -1743,22 +1806,58 @@ class BrowserSession(BaseModel):
 				) from e
 
 			# Remove stale singleton lock file ONLY if no process is using this profile
+			# This must happen BEFORE checking for conflicts to avoid false positives
 			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
 			if singleton_lock.exists():
 				# Check if any process is actually using this user_data_dir
 				has_active_process = False
+				target_dir = str(self.browser_profile.user_data_dir)
 				for proc in psutil.process_iter(['pid', 'cmdline']):
-					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-						has_active_process = True
+					# Skip our own browser process
+					if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+						continue
+
+					cmdline = proc.info['cmdline'] or []
+					# Check both formats: --user-data-dir=/path and --user-data-dir /path
+					for i, arg in enumerate(cmdline):
+						if arg.startswith('--user-data-dir='):
+							try:
+								if str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+						elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+							try:
+								if str(Path(cmdline[i + 1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+					if has_active_process:
 						break
 
 				if not has_active_process:
 					# No active process, safe to remove stale lock
 					try:
-						singleton_lock.unlink()
-						self.logger.debug('Removed stale SingletonLock file (no active Chrome process found)')
+						# Handle both regular files and symlinks
+						if singleton_lock.is_symlink() or singleton_lock.exists():
+							singleton_lock.unlink()
+							self.logger.debug(
+								f'🧹 Removed stale SingletonLock file from {_log_pretty_path(self.browser_profile.user_data_dir)} (no active Chrome process found)'
+							)
 					except Exception:
 						pass  # Ignore errors removing lock file
+
+			# Check for conflicts and fallback if needed (AFTER cleaning stale locks)
+			if check_conflicts and self._check_for_singleton_lock_conflict():
+				self._fallback_to_temp_profile()
+				# Recursive call without conflict checking to prepare the new temp dir
+				return self.prepare_user_data_dir(check_conflicts=False)
 
 		# Create directories for all paths that need them
 		dir_paths = {
@@ -2994,32 +3093,9 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
-		# page has already loaded by this point, this is just extra for previous action animations/frame loads to settle
-		page = await self.get_current_page()
-
 		try:
-			await page.wait_for_load_state(timeout=5_000)
-		except Exception:
-			pass
-
-		try:
-			# Check if browser process is still responsive
-			if self.browser_pid:
-				try:
-					proc = psutil.Process(self.browser_pid)
-					if not proc.is_running():
-						self.logger.warning('🚨 Browser process died, restarting...')
-						self._reset_connection_state()
-						await self.start()
-						page = await self.get_current_page()
-				except psutil.NoSuchProcess:
-					self.logger.warning('🚨 Browser process not found, restarting...')
-					self._reset_connection_state()
-					await self.start()
-					page = await self.get_current_page()
-
 			# Take screenshot with comprehensive crash detection
-			return await self._take_screenshot_hybrid(page)
+			return await self._take_screenshot_hybrid()
 		except Exception as e:
 			# Check for specific crash-related errors
 			error_str = str(e).lower()
@@ -3040,8 +3116,7 @@ class BrowserSession(BaseModel):
 				try:
 					self._reset_connection_state()
 					await self.start()
-					page = await self.get_current_page()
-					result = await self._take_screenshot_hybrid(page)
+					result = await self._take_screenshot_hybrid()
 					self.logger.info('✅ Screenshot successful after browser restart')
 					return result
 				except Exception as restart_error:
@@ -3592,6 +3667,13 @@ class BrowserSession(BaseModel):
 			self.logger.warning(
 				f'⚠️ New page [{tab_idx}]{_log_pretty_url(new_page.url)} failed to fully load: {type(e).__name__}: {e}'
 			)
+
+		# Show DVD animation on new tab pages (after navigating to about:blank if needed)
+		if not normalized_url and is_new_tab_page(new_page.url):
+			# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
+			if new_page.url.startswith('chrome://new-tab-page'):
+				await new_page.goto('about:blank')
+			await self._show_dvd_screensaver_loading_animation(new_page)
 
 		# Set the viewport size for the new tab
 		if self.browser_profile.viewport:
