@@ -26,6 +26,7 @@ os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/micr
 
 import anyio
 import psutil
+from bubus.helpers import retry
 from playwright._impl._api_structures import ViewportSize
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
 from uuid_extensions import uuid7str
@@ -56,7 +57,6 @@ from browser_use.utils import (
 	is_new_tab_page,
 	match_url_with_domain_pattern,
 	merge_dicts,
-	retry,
 	time_execution_async,
 	time_execution_sync,
 )

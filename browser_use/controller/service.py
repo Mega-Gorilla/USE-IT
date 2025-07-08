@@ -11,6 +11,7 @@ try:
 	from lmnr import Laminar  # type: ignore
 except ImportError:
 	Laminar = None  # type: ignore
+from bubus.helpers import retry
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -505,11 +506,17 @@ Explain the content of the page and that the requested information is not availa
 			"""
 			page = await browser_session.get_current_page()
 
+			# Helper function to get window height with retry decorator
+			@retry(wait=1, retries=3, timeout=5)
+			async def get_window_height():
+				return await page.evaluate('() => window.innerHeight')
+
 			# Get window height with retries
-			dy_result = await retry_async_function(
-				lambda: page.evaluate('() => window.innerHeight'), 'Scroll failed due to an error.'
-			)
-			window_height = dy_result or 0
+			try:
+				window_height = await get_window_height()
+			except Exception as e:
+				raise RuntimeError(f'Scroll failed due to an error: {e}')
+			window_height = window_height or 0
 
 			# Determine scroll amount based on num_pages
 			scroll_amount = int(window_height * params.num_pages)
