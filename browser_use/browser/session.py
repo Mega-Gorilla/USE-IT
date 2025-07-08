@@ -1965,7 +1965,7 @@ class BrowserSession(BaseModel):
 	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
 	@require_initialization
 	@time_execution_async('--remove_highlights')
-	@retry(timeout=10, retries=0)
+	@retry(timeout=2, retries=0)
 	async def remove_highlights(self):
 		"""
 		Removes all highlight overlays and labels created by the highlightElement function.
@@ -2989,7 +2989,10 @@ class BrowserSession(BaseModel):
 
 		try:
 			self.logger.debug('🧹 Removing highlights...')
-			await self.remove_highlights()
+			try:
+				await self.remove_highlights()
+			except TimeoutError:
+				self.logger.debug('Timeout to remove highlights')
 
 			# Check for PDF and auto-download if needed
 			try:

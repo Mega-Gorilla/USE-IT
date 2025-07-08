@@ -666,7 +666,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# If there are page-specific actions, add them as a special message for this step only
 			if page_filtered_actions:
 				page_action_message = f'For this page, these additional actions are available:\n{page_filtered_actions}'
-				self._message_manager._add_message_with_type(UserMessage(content=page_action_message))
+				self._message_manager._add_message_with_type(UserMessage(content=page_action_message), 'consistent')
 
 			self.logger.debug(f'💬 Step {self.state.n_steps + 1}: Adding state message to context...')
 			self._message_manager.add_state_message(
@@ -680,13 +680,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				agent_history_list=self.state.history,  # Pass AgentHistoryList for screenshots
 			)
 
-			# Run planner at specified intervals if planner is configured
-			if self.settings.planner_llm and self.state.n_steps % self.settings.planner_interval == 0:
-				self.logger.debug(f'🧠 Step {self.state.n_steps + 1}: Running planner...')
-				plan = await self._run_planner()
-				# add plan before last state message
-				self._message_manager.add_plan(plan, position=-1)
-
 			if step_info and step_info.is_last_step():
 				# Add last step warning if needed
 				msg = 'Now comes your last step. Use only the "done" action now. No other actions - so here your action sequence must have length 1.'
@@ -694,7 +687,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				msg += '\nIf the task is fully finished, set success in "done" to true.'
 				msg += '\nInclude everything you found out for the ultimate task in the done text.'
 				self.logger.info('Last step finishing up')
-				self._message_manager._add_message_with_type(UserMessage(content=msg))
+				self._message_manager._add_message_with_type(UserMessage(content=msg), 'consistent')
 				self.AgentOutput = self.DoneAgentOutput
 
 			input_messages = self._message_manager.get_messages()
@@ -757,18 +750,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						self.settings.save_conversation_path_encoding,
 					)
 
-				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
-
-				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
-			except InterruptedError:
-				# Agent was paused during get_next_action
-				self._message_manager._remove_last_state_message()
-				raise  # Re-raise to be caught by the outer try/except
 			except Exception as e:
-				# model call failed, remove last state message from history
-				self._message_manager._remove_last_state_message()
+				# model call failed
 				self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
 				raise e
 
@@ -1319,7 +1304,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
-		await self.browser_session.remove_highlights()
+		try:
+			await self.browser_session.remove_highlights()
+		except TimeoutError:
+			# we don't care if this times out
+			self.logger.debug('Timeout to remove highlights')
 
 		for i, action in enumerate(actions):
 			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
