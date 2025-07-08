@@ -1083,9 +1083,6 @@ class BrowserSession(BaseModel):
 					tempfile.mkdtemp(prefix='browseruse-tmp-')
 				)
 
-			# user data dir was provided, prepare it for use
-			self.prepare_user_data_dir()
-
 			# user data dir was provided, prepare it for use (handles conflicts automatically)
 			self.prepare_user_data_dir()
 
@@ -1730,16 +1727,46 @@ class BrowserSession(BaseModel):
 
 		# Check for running processes using this user data dir
 		for proc in psutil.process_iter(['pid', 'cmdline']):
+			# Skip our own browser process
+			if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+				continue
+
 			cmdline = proc.info['cmdline'] or []
 
 			# Check both formats: --user-data-dir=/path and --user-data-dir /path
 			for i, arg in enumerate(cmdline):
 				# Combined format: --user-data-dir=/path
-				if arg.startswith('--user-data-dir=') and str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
-					return True
+				if arg.startswith('--user-data-dir='):
+					try:
+						cmd_path = str(Path(arg.split('=', 1)[1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 				# Separate format: --user-data-dir /path
-				elif arg == '--user-data-dir' and i + 1 < len(cmdline) and cmdline[i + 1] == target_dir:
-					return True
+				elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+					try:
+						cmd_path = str(Path(cmdline[i + 1]).expanduser().resolve())
+						if cmd_path == target_dir:
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
+					except Exception:
+						# Fallback to string comparison if path resolution fails
+						if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+							self.logger.debug(
+								f'🔍 Found conflicting Chrome process PID {proc.info["pid"]} using profile {_log_pretty_path(self.browser_profile.user_data_dir)}'
+							)
+							return True
 
 		# Note: We don't consider a SingletonLock file alone as a conflict
 		# because it might be stale. Only actual running processes count as conflicts.
@@ -1766,12 +1793,6 @@ class BrowserSession(BaseModel):
 			check_conflicts: Whether to check for and handle singleton lock conflicts
 		"""
 		if self.browser_profile.user_data_dir:
-			# Check for conflicts and fallback if needed
-			if check_conflicts and self._check_for_singleton_lock_conflict():
-				self._fallback_to_temp_profile()
-				# Recursive call without conflict checking to prepare the new temp dir
-				return self.prepare_user_data_dir(check_conflicts=False)
-
 			try:
 				self.browser_profile.user_data_dir = Path(self.browser_profile.user_data_dir).expanduser().resolve()
 				self.browser_profile.user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -1782,22 +1803,58 @@ class BrowserSession(BaseModel):
 				) from e
 
 			# Remove stale singleton lock file ONLY if no process is using this profile
+			# This must happen BEFORE checking for conflicts to avoid false positives
 			singleton_lock = self.browser_profile.user_data_dir / 'SingletonLock'
 			if singleton_lock.exists():
 				# Check if any process is actually using this user_data_dir
 				has_active_process = False
+				target_dir = str(self.browser_profile.user_data_dir)
 				for proc in psutil.process_iter(['pid', 'cmdline']):
-					if f'--user-data-dir={self.browser_profile.user_data_dir}' in (proc.info['cmdline'] or []):
-						has_active_process = True
+					# Skip our own browser process
+					if hasattr(self, 'browser_pid') and self.browser_pid and proc.info['pid'] == self.browser_pid:
+						continue
+
+					cmdline = proc.info['cmdline'] or []
+					# Check both formats: --user-data-dir=/path and --user-data-dir /path
+					for i, arg in enumerate(cmdline):
+						if arg.startswith('--user-data-dir='):
+							try:
+								if str(Path(arg.split('=', 1)[1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if arg.split('=', 1)[1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+						elif arg == '--user-data-dir' and i + 1 < len(cmdline):
+							try:
+								if str(Path(cmdline[i + 1]).expanduser().resolve()) == target_dir:
+									has_active_process = True
+									break
+							except Exception:
+								if cmdline[i + 1] == str(self.browser_profile.user_data_dir):
+									has_active_process = True
+									break
+					if has_active_process:
 						break
 
 				if not has_active_process:
 					# No active process, safe to remove stale lock
 					try:
-						singleton_lock.unlink()
-						self.logger.debug('Removed stale SingletonLock file (no active Chrome process found)')
+						# Handle both regular files and symlinks
+						if singleton_lock.is_symlink() or singleton_lock.exists():
+							singleton_lock.unlink()
+							self.logger.debug(
+								f'🧹 Removed stale SingletonLock file from {_log_pretty_path(self.browser_profile.user_data_dir)} (no active Chrome process found)'
+							)
 					except Exception:
 						pass  # Ignore errors removing lock file
+
+			# Check for conflicts and fallback if needed (AFTER cleaning stale locks)
+			if check_conflicts and self._check_for_singleton_lock_conflict():
+				self._fallback_to_temp_profile()
+				# Recursive call without conflict checking to prepare the new temp dir
+				return self.prepare_user_data_dir(check_conflicts=False)
 
 		# Create directories for all paths that need them
 		dir_paths = {
