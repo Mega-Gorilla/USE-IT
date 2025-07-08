@@ -225,7 +225,7 @@ class FileSystem:
 
 					reader = pypdf.PdfReader(full_filename)
 					num_pages = len(reader.pages)
-					MAX_PDF_PAGES = 5
+					MAX_PDF_PAGES = 10
 					extra_pages = num_pages - MAX_PDF_PAGES
 					extracted_text = ''
 					for page in reader.pages[:MAX_PDF_PAGES]:

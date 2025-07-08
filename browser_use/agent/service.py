@@ -691,20 +691,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Handle callbacks and conversation saving
 			await self._handle_post_llm_processing(browser_state_summary, input_messages)
 
-			self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
-
 			# check again if Ctrl+C was pressed before we commit the output to history
 			await self._raise_if_stopped_or_paused()
 
 			return model_output
 
-		except InterruptedError:
-			# Agent was paused during get_next_action - handle like main branch
-			self._message_manager._remove_last_state_message()
-			raise  # Re-raise to be caught by the outer try/except
 		except Exception as e:
 			# model call failed, remove last state message from history
-			self._message_manager._remove_last_state_message()
 			self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
 			raise e
 
@@ -743,7 +736,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# If there are page-specific actions, add them as a special message for this step only
 		if page_filtered_actions:
 			page_action_message = f'For this page, these additional actions are available:\n{page_filtered_actions}'
-			self._message_manager._add_message_with_type(UserMessage(content=page_action_message))
+			self._message_manager._add_message_with_type(UserMessage(content=page_action_message), 'consistent')
 
 		self.logger.debug(f'💬 Step {self.state.n_steps + 1}: Adding state message to context...')
 		self._message_manager.add_state_message(
@@ -769,7 +762,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			msg += '\nIf the task is fully finished, set success in "done" to true.'
 			msg += '\nInclude everything you found out for the ultimate task in the done text.'
 			self.logger.info('Last step finishing up')
-			self._message_manager._add_message_with_type(UserMessage(content=msg))
+			self._message_manager._add_message_with_type(UserMessage(content=msg), 'consistent')
 			self.AgentOutput = self.DoneAgentOutput
 
 	async def _get_model_output_with_retry(self, input_messages: list[BaseMessage]) -> AgentOutput:
@@ -1365,7 +1358,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 
-		await self.browser_session.remove_highlights()
+		try:
+			await self.browser_session.remove_highlights()
+		except TimeoutError:
+			# we don't care if this times out
+			self.logger.debug('Timeout to remove highlights')
 
 		for i, action in enumerate(actions):
 			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
