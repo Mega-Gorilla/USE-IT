@@ -951,7 +951,13 @@ class BrowserSession(BaseModel):
 				self.browser_pid = None
 				return
 
-		self.logger.info(f'🌎 Connecting to existing local browser process: browser_pid={self.browser_pid} on {self.cdp_url}')
+		# Determine if this is a newly spawned subprocess or an existing process
+		if hasattr(self, '_subprocess') and self._subprocess and self._subprocess.pid == self.browser_pid:
+			self.logger.info(
+				f'🌎 Connecting to newly spawned browser subprocess: browser_pid={self.browser_pid} on {self.cdp_url}'
+			)
+		else:
+			self.logger.info(f'🌎 Connecting to existing local browser process: browser_pid={self.browser_pid} on {self.cdp_url}')
 		assert self.playwright is not None, 'playwright instance is None'
 		self.browser = self.browser or await self.playwright.chromium.connect_over_cdp(
 			self.cdp_url,
@@ -3006,6 +3012,7 @@ class BrowserSession(BaseModel):
 					'page has been closed',
 					'crashed target',
 					'page is closed',
+					'timeout',  # Add timeout to trigger reconnection with fresh page
 				]
 			):
 				self.logger.warning(f'🚨 Detected crashed target during screenshot: {type(e).__name__}: {e}')
@@ -3014,7 +3021,9 @@ class BrowserSession(BaseModel):
 					self._reset_connection_state()
 					await self.start()
 					page = await self.get_current_page()
-					return await self._take_screenshot_hybrid(page)
+					result = await self._take_screenshot_hybrid(page)
+					self.logger.info('✅ Screenshot successful after browser restart')
+					return result
 				except Exception as restart_error:
 					self.logger.error(
 						f'❌ Failed to restart browser after crash: {type(restart_error).__name__}: {restart_error}'

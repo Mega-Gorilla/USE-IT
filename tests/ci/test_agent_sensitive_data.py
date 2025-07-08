@@ -7,7 +7,7 @@ from browser_use.controller.registry.service import Registry
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm import SystemMessage, UserMessage
 from browser_use.llm.messages import ContentPartTextParam
-from browser_use.utils import match_url_with_domain_pattern
+from browser_use.utils import is_new_tab_page, match_url_with_domain_pattern
 
 
 class SensitiveParams(BaseModel):
@@ -123,9 +123,13 @@ def test_match_url_with_domain_pattern():
 	assert match_url_with_domain_pattern('chrome-extension://abcdefghijkl', 'chrome-extension://*') is True
 	assert match_url_with_domain_pattern('chrome-extension://mnopqrstuvwx', 'chrome-extension://abcdefghijkl') is False
 
-	# Test about:blank handling
+	# Test new tab page handling
 	assert match_url_with_domain_pattern('about:blank', 'example.com') is False
 	assert match_url_with_domain_pattern('about:blank', '*://*') is False
+	assert match_url_with_domain_pattern('chrome://new-tab-page/', 'example.com') is False
+	assert match_url_with_domain_pattern('chrome://new-tab-page/', '*://*') is False
+	assert match_url_with_domain_pattern('chrome://new-tab-page', 'example.com') is False
+	assert match_url_with_domain_pattern('chrome://new-tab-page', '*://*') is False
 
 
 def test_unsafe_domain_patterns():
@@ -249,3 +253,19 @@ def test_filter_sensitive_data(message_manager):
 	assert '<secret>username</secret>' in result.content
 	assert '<secret>password</secret>' in result.content
 	assert '<secret>email</secret>' in result.content
+
+
+def test_is_new_tab_page():
+	"""Test is_new_tab_page function"""
+	# Test about:blank
+	assert is_new_tab_page('about:blank') is True
+
+	# Test chrome://new-tab-page variations
+	assert is_new_tab_page('chrome://new-tab-page/') is True
+	assert is_new_tab_page('chrome://new-tab-page') is True
+
+	# Test regular URLs
+	assert is_new_tab_page('https://example.com') is False
+	assert is_new_tab_page('http://google.com') is False
+	assert is_new_tab_page('') is False
+	assert is_new_tab_page('chrome://settings') is False

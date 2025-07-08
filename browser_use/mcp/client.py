@@ -33,7 +33,7 @@ from browser_use.agent.views import ActionResult
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.service import Controller
 from browser_use.telemetry import MCPClientTelemetryEvent, ProductTelemetry
-from browser_use.utils import get_browser_use_version
+from browser_use.utils import get_browser_use_version, is_new_tab_page
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +292,7 @@ class MCPClient:
 
 		if is_browser_tool:
 			# Browser tools should only be available when on a web page
-			page_filter = lambda page: page and page.url != 'about:blank'
+			page_filter = lambda page: page and not is_new_tab_page(page.url)
 
 		# Create async wrapper function for the MCP tool
 		# Need to define function with explicit parameters to satisfy registry validation
