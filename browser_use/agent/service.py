@@ -757,18 +757,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						self.settings.save_conversation_path_encoding,
 					)
 
-				self._message_manager._remove_last_state_message()  # we dont want the whole state in the chat history
-
-				# check again if Ctrl+C was pressed before we commit the output to history
 				await self._raise_if_stopped_or_paused()
 
-			except InterruptedError:
-				# Agent was paused during get_next_action
-				self._message_manager._remove_last_state_message()
-				raise  # Re-raise to be caught by the outer try/except
 			except Exception as e:
-				# model call failed, remove last state message from history
-				self._message_manager._remove_last_state_message()
+				# model call failed
 				self.logger.error(f'❌ Step {self.state.n_steps + 1}: LLM call failed: {type(e).__name__}: {e}')
 				raise e
 

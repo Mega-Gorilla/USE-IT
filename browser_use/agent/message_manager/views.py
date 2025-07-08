@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from browser_use.llm.messages import (
 	BaseMessage,
-	UserMessage,
 )
 
 if TYPE_CHECKING:
@@ -77,11 +76,6 @@ class MessageHistory(BaseModel):
 	def get_messages(self) -> list[BaseMessage]:
 		"""Get all messages"""
 		return self.messages
-
-	def remove_last_state_message(self) -> None:
-		"""Remove last state message from history"""
-		if len(self.messages) > 2 and isinstance(self.messages[-1], UserMessage):
-			self.messages.pop()
 
 
 class MessageManagerState(BaseModel):

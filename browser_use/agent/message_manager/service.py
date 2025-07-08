@@ -466,7 +466,3 @@ The file system actions do not change the browser state, so I can also click on 
 					item.text = replace_sensitive(item.text)
 					message.content[i] = item
 		return message
-
-	def _remove_last_state_message(self) -> None:
-		"""Remove last state message from history"""
-		self.state.history.remove_last_state_message()
