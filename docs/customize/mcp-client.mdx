@@ -236,15 +236,6 @@ custom_client = MCPClient(
 )
 ```
 
-## Error Handling
-
-```python
-try:
-    await mcp_client.connect()
-except RuntimeError as e:
-    print(f"Failed to connect: {e}")
-```
-
 ## Best Practices
 
 1. **Always disconnect** when done
@@ -252,19 +243,6 @@ except RuntimeError as e:
 3. **Filter tools** to limit capabilities
 4. **Use context managers** for automatic cleanup
 
-## Troubleshooting
-
-**Import Error:**
-```bash
-pip install mcp
-# or
-pip install "browser-use[mcp]"
-```
-
-**Connection Timeout:**
-- Verify command works manually
-- Check server logs
-- Ensure dependencies installed
 
 ## See Also
 

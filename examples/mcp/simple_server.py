@@ -6,7 +6,7 @@ a running browser-use MCP server and call its browser automation tools.
 
 Prerequisites:
 1. Install required packages:
-   pip install mcp browser-use[mcp]
+   pip install 'browser-use[cli]'
 
 2. Start the browser-use MCP server in a separate terminal:
    uvx browser-use --mcp

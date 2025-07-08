@@ -9,7 +9,7 @@ This example shows how to build a more sophisticated MCP client that:
 
 Prerequisites:
 1. Install required packages:
-   pip install mcp browser-use[mcp]
+   pip install 'browser-use[cli]'
 
 2. Start the browser-use MCP server:
    uvx browser-use --mcp
