@@ -1223,7 +1223,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				except TimeoutError:
 					# Handle step timeout gracefully
 					error_msg = f'Step {step + 1} timed out after 300 seconds'
-					logger.error(f'⏰ {error_msg}')
+					self.logger.error(f'⏰ {error_msg}')
+					self.state.consecutive_failures += 1
+					self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
 
 				if on_step_end is not None:
 					await on_step_end(self)
