@@ -720,10 +720,11 @@ class BrowserSession(BaseModel):
 		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
 		semaphore_timeout=20,  # Wait up to 20s for semaphore acquisition
 	)
-	async def _take_screenshot_hybrid(self, page: Page, clip: dict[str, int] | None = None) -> str:
+	async def _take_screenshot_hybrid(self, clip: dict[str, int] | None = None) -> str:
 		"""Take screenshot using Playwright, with retry and semaphore protection."""
 		# Use Playwright screenshot directly
 
+		page = await self.get_current_page()
 		assert self.browser_context
 		# try:
 		# 	# get fresh page handle
@@ -731,7 +732,12 @@ class BrowserSession(BaseModel):
 		# except Exception:
 		# 	pass
 		assert await page.evaluate('() => true'), 'Page is not usable before screenshot!'
-		await page.bring_to_front()
+
+		try:
+			await page.bring_to_front()
+			await page.wait_for_load_state('load', timeout=8000)
+		except Exception:
+			pass
 
 		try:
 			screenshot = await page.screenshot(
@@ -2994,32 +3000,9 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.agent_current_page is not None, 'Agent current page is not set'
 
-		# page has already loaded by this point, this is just extra for previous action animations/frame loads to settle
-		page = await self.get_current_page()
-
 		try:
-			await page.wait_for_load_state(timeout=5_000)
-		except Exception:
-			pass
-
-		try:
-			# Check if browser process is still responsive
-			if self.browser_pid:
-				try:
-					proc = psutil.Process(self.browser_pid)
-					if not proc.is_running():
-						self.logger.warning('🚨 Browser process died, restarting...')
-						self._reset_connection_state()
-						await self.start()
-						page = await self.get_current_page()
-				except psutil.NoSuchProcess:
-					self.logger.warning('🚨 Browser process not found, restarting...')
-					self._reset_connection_state()
-					await self.start()
-					page = await self.get_current_page()
-
 			# Take screenshot with comprehensive crash detection
-			return await self._take_screenshot_hybrid(page)
+			return await self._take_screenshot_hybrid()
 		except Exception as e:
 			# Check for specific crash-related errors
 			error_str = str(e).lower()
@@ -3040,8 +3023,7 @@ class BrowserSession(BaseModel):
 				try:
 					self._reset_connection_state()
 					await self.start()
-					page = await self.get_current_page()
-					result = await self._take_screenshot_hybrid(page)
+					result = await self._take_screenshot_hybrid()
 					self.logger.info('✅ Screenshot successful after browser restart')
 					return result
 				except Exception as restart_error:
