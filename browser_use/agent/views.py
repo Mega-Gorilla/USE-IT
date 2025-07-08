@@ -494,21 +494,6 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		return None
 
 
-class ActionNotFoundError(ValueError):
-	"""Raised when an unknown action is attempted"""
-
-	def __init__(self, attempted_action: str | None, available_actions: list[str]):
-		self.attempted_action = attempted_action
-		self.available_actions = sorted(available_actions)
-
-		if attempted_action:
-			message = f"Unknown action '{attempted_action}' in model response. Available actions are: {', '.join(self.available_actions)}"
-		else:
-			message = f'Failed to parse action from model response. Available actions are: {", ".join(self.available_actions)}'
-
-		super().__init__(message)
-
-
 class AgentError:
 	"""Container for agent error handling"""
 
@@ -520,9 +505,6 @@ class AgentError:
 	def format_error(error: Exception, include_trace: bool = False) -> str:
 		"""Format error message based on error type and optionally include trace"""
 		message = ''
-		if isinstance(error, ActionNotFoundError):
-			# For ActionNotFoundError, use the message as-is
-			return str(error)
 		if isinstance(error, ValidationError):
 			return f'{AgentError.VALIDATION_ERROR}\nDetails: {str(error)}'
 		if isinstance(error, RateLimitError):

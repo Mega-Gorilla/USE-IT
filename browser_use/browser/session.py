@@ -1750,7 +1750,7 @@ class BrowserSession(BaseModel):
 				if self.browser_profile.downloads_path:
 					try:
 						# Try short-timeout expect_download to detect a file download has been been triggered
-						async with page.expect_download(timeout=5000) as download_info:
+						async with page.expect_download(timeout=5_000) as download_info:
 							await click_func()
 						download = await download_info.value
 						# Determine file path
@@ -1787,7 +1787,7 @@ class BrowserSession(BaseModel):
 					await self._check_and_handle_navigation(page)
 
 			try:
-				return await perform_click(lambda: element_handle and element_handle.click(timeout=1500))
+				return await perform_click(lambda: element_handle and element_handle.click(timeout=1_500))
 			except URLNotAllowedError as e:
 				raise e
 			except Exception as e:
@@ -1800,7 +1800,7 @@ class BrowserSession(BaseModel):
 						raise Exception(f'Element no longer exists in DOM after context loss: {repr(element_node)}')
 					# Try click again with fresh element
 					try:
-						return await perform_click(lambda: element_handle.click(timeout=1500))
+						return await perform_click(lambda: element_handle.click(timeout=1_500))
 					except Exception:
 						# Fall back to JavaScript click
 						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
@@ -1903,7 +1903,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			if 'timeout' in str(e).lower():
 				self.logger.warning(
-					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {(self.browser_profile.default_navigation_timeout or 30000) / 1000}s, continuing anyway..."
+					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {(self.browser_profile.default_navigation_timeout or 30_000) / 1000}s, continuing anyway..."
 				)
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 			else:
@@ -2462,7 +2462,7 @@ class BrowserSession(BaseModel):
 		try:
 			# 10 ms timeout
 			page = await self.get_current_page()
-			await page.go_back(timeout=10, wait_until='domcontentloaded')
+			await page.go_back(timeout=10_000, wait_until='domcontentloaded')
 
 			# await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
 		except Exception as e:
@@ -2473,7 +2473,7 @@ class BrowserSession(BaseModel):
 		"""Navigate the agent's tab forward in browser history"""
 		try:
 			page = await self.get_current_page()
-			await page.go_forward(timeout=10, wait_until='domcontentloaded')
+			await page.go_forward(timeout=10_000, wait_until='domcontentloaded')
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
 			self.logger.debug(f'⏭️ Error during go_forward: {type(e).__name__}: {e}')
@@ -2821,7 +2821,7 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			await page.wait_for_load_state(timeout=5000)
+			await page.wait_for_load_state(timeout=5_000)
 		except Exception:
 			pass
 
@@ -3269,10 +3269,10 @@ class BrowserSession(BaseModel):
 
 			# Ensure element is ready for input
 			try:
-				await element_handle.wait_for_element_state('stable', timeout=1000)
+				await element_handle.wait_for_element_state('stable', timeout=1_000)
 				is_visible = await self._is_visible(element_handle)
 				if is_visible:
-					await element_handle.scroll_into_view_if_needed(timeout=1000)
+					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 			except Exception:
 				pass
 

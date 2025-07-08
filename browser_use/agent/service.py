@@ -852,12 +852,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 		self.state.consecutive_failures += 1
 
-		from browser_use.agent.views import ActionNotFoundError
-
-		if isinstance(error, ActionNotFoundError):
-			# For ActionNotFoundError, the message is already clear and complete
-			self.logger.error(f'{prefix}{error_msg}')
-		elif isinstance(error, (ValidationError, ValueError)):
+		if isinstance(error, (ValidationError, ValueError)):
 			self.logger.error(f'{prefix}{error_msg}')
 			if 'Max token limit reached' in error_msg:
 				# cut tokens from history
@@ -956,29 +951,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._log_next_action_summary(parsed)
 			return parsed
 		except ValidationError as e:
-			# Extract available actions from the registry
-			available_actions = list(self.controller.registry.registry.actions.keys())
-
-			# Try to extract the action that was attempted from the error
-			attempted_action = None
-			error_str = str(e)
-
-			# Look for patterns like {"action_name": {...}} in the error
-			import re
-
-			action_pattern = r'\{["\']?(\w+)["\']?\s*:'
-			matches = re.findall(action_pattern, error_str)
-			if matches:
-				# Get the first non-standard field name that might be an action
-				for match in matches:
-					if match not in ['thinking', 'evaluation_previous_goal', 'memory', 'next_goal', 'action']:
-						attempted_action = match
-						break
-
-			# Raise our custom error
-			from browser_use.agent.views import ActionNotFoundError
-
-			raise ActionNotFoundError(attempted_action, available_actions) from e
+			# Just re-raise - Pydantic's validation errors are already descriptive
+			raise
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
