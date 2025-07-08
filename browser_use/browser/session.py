@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Self
 from urllib.parse import urlparse
 
+import anyio
+
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, _log_pretty_url
@@ -24,7 +26,6 @@ from .utils import normalize_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
-import anyio
 import psutil
 from playwright._impl._api_structures import ViewportSize
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
@@ -222,6 +223,7 @@ class BrowserSession(BaseModel):
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 	_original_browser_session: Any = PrivateAttr(default=None)  # Reference to prevent GC of the original session when copied
 	_owns_browser_resources: bool = PrivateAttr(default=True)  # True if this instance owns and should clean up browser resources
+	_auto_download_pdfs: bool = PrivateAttr(default=True)  # Auto-download PDFs when detected
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -2137,6 +2139,21 @@ class BrowserSession(BaseModel):
 		self.logger.debug(f'📁 Retrieved {len(self._downloaded_files)} downloaded files from session tracking')
 		return self._downloaded_files.copy()
 
+	def set_auto_download_pdfs(self, enabled: bool) -> None:
+		"""
+		Enable or disable automatic PDF downloading when PDFs are encountered.
+
+		Args:
+		    enabled: Whether to automatically download PDFs
+		"""
+		self._auto_download_pdfs = enabled
+		self.logger.info(f'📄 PDF auto-download {"enabled" if enabled else "disabled"}')
+
+	@property
+	def auto_download_pdfs(self) -> bool:
+		"""Get current PDF auto-download setting."""
+		return self._auto_download_pdfs
+
 	# @property
 	# def browser_extension_pages(self) -> list[Page]:
 	# 	if not self.browser_context:
@@ -2697,6 +2714,15 @@ class BrowserSession(BaseModel):
 		try:
 			self.logger.debug('🧹 Removing highlights...')
 			await self.remove_highlights()
+
+			# Check for PDF and auto-download if needed
+			try:
+				pdf_path = await self._auto_download_pdf_if_needed(page)
+				if pdf_path:
+					self.logger.info(f'📄 PDF auto-downloaded: {pdf_path}')
+			except Exception as e:
+				self.logger.debug(f'PDF auto-download check failed: {type(e).__name__}: {e}')
+
 			self.logger.debug('🌳 Starting DOM processing...')
 			dom_service = DomService(page, logger=self.logger)
 			try:
@@ -3757,3 +3783,134 @@ class BrowserSession(BaseModel):
 		}""",
 			str(self.id)[-4:],
 		)
+
+	async def _is_pdf_viewer(self, page: Page) -> bool:
+		"""
+		Check if the current page is displaying a PDF in Chrome's PDF viewer.
+		Returns True if PDF is detected, False otherwise.
+		"""
+		try:
+			is_pdf_viewer = await page.evaluate("""
+				() => {
+					// Check for Chrome's built-in PDF viewer
+					const pdfEmbed = document.querySelector('body > embed[type="application/pdf"][width="100%"]');
+					const isPdfViewer = !!pdfEmbed;
+					
+					// Also check if the URL ends with .pdf or has PDF content-type
+					const url = window.location.href;
+					const isPdfUrl = url.toLowerCase().includes('.pdf') || 
+									document.contentType === 'application/pdf';
+					
+					return isPdfViewer || isPdfUrl;
+				}
+			""")
+			return is_pdf_viewer
+		except Exception as e:
+			self.logger.debug(f'Error checking PDF viewer: {type(e).__name__}: {e}')
+			return False
+
+	async def _auto_download_pdf_if_needed(self, page: Page) -> str | None:
+		"""
+		Check if the current page is a PDF viewer and automatically download the PDF if so.
+		Returns the download path if a PDF was downloaded, None otherwise.
+		"""
+		if not self.browser_profile.downloads_path or not self._auto_download_pdfs:
+			return None
+
+		try:
+			# Check if we're in a PDF viewer
+			is_pdf_viewer = await self._is_pdf_viewer(page)
+			self.logger.debug(f'is_pdf_viewer: {is_pdf_viewer}')
+
+			if not is_pdf_viewer:
+				return None
+
+			# Get the PDF URL
+			pdf_url = page.url
+
+			# Check if we've already downloaded this PDF
+			pdf_filename = os.path.basename(pdf_url.split('?')[0])  # Remove query params
+			if not pdf_filename or not pdf_filename.endswith('.pdf'):
+				# Generate filename from URL
+				from urllib.parse import urlparse
+
+				parsed = urlparse(pdf_url)
+				pdf_filename = os.path.basename(parsed.path) or 'document.pdf'
+				if not pdf_filename.endswith('.pdf'):
+					pdf_filename += '.pdf'
+
+			# Check if already downloaded
+			expected_path = os.path.join(self.browser_profile.downloads_path, pdf_filename)
+			if any(pdf_filename in downloaded for downloaded in self._downloaded_files):
+				self.logger.debug(f'📄 PDF already downloaded: {pdf_filename}')
+				return None
+
+			self.logger.info(f'📄 Auto-downloading PDF from: {pdf_url}')
+
+			# Download the actual PDF file using JavaScript fetch
+			# Note: This should hit the browser cache since Chrome already downloaded the PDF to display it
+			try:
+				self.logger.debug(f'Downloading PDF from URL: {pdf_url}')
+
+				download_result = await page.evaluate(f"""
+					async () => {{
+						try {{
+							// Use fetch with cache: 'force-cache' to prioritize cached version
+							const response = await fetch('{pdf_url}', {{
+								cache: 'force-cache'
+							}});
+							if (!response.ok) {{
+								throw new Error(`HTTP error! status: ${{response.status}}`);
+							}}
+							const blob = await response.blob();
+							const arrayBuffer = await blob.arrayBuffer();
+							const uint8Array = new Uint8Array(arrayBuffer);
+							
+							// Log whether this was served from cache
+							const fromCache = response.headers.has('age') || 
+											 !response.headers.has('date') ||
+											 performance.getEntriesByName('{pdf_url}').some(entry => 
+												 entry.transferSize === 0 || entry.transferSize < entry.encodedBodySize
+											 );
+											 
+							return {{ 
+								data: Array.from(uint8Array),
+								fromCache: fromCache,
+								responseSize: uint8Array.length,
+								transferSize: response.headers.get('content-length') || 'unknown'
+							}};
+						}} catch (error) {{
+							throw new Error(`Fetch failed: ${{error.message}}`);
+						}}
+					}}
+				""")
+
+				if download_result and download_result.get('data') and len(download_result['data']) > 0:
+					# Ensure unique filename
+					unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, pdf_filename)
+					download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
+
+					# Save the PDF asynchronously
+					async with await anyio.open_file(download_path, 'wb') as f:
+						await f.write(bytes(download_result['data']))
+
+					# Track the downloaded file
+					self._downloaded_files.append(download_path)
+
+					# Log cache information
+					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
+					response_size = download_result.get('responseSize', 0)
+					self.logger.info(f'📄 Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
+
+					return download_path
+				else:
+					self.logger.warning(f'⚠️ No data received when downloading PDF from {pdf_url}')
+					return None
+
+			except Exception as e:
+				self.logger.warning(f'⚠️ Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
+				return None
+
+		except Exception as e:
+			self.logger.warning(f'⚠️ Error in PDF auto-download check: {type(e).__name__}: {e}')
+			return None
