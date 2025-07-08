@@ -62,20 +62,21 @@ class HistoryItem(BaseModel):
 class MessageHistory(BaseModel):
 	"""History of messages"""
 
-	messages: list[BaseMessage] = Field(default_factory=list)
-
+	system_message: BaseMessage | None = None
+	state_message: BaseMessage | None = None
+	consistent_messages: list[BaseMessage] = Field(default_factory=list)
 	model_config = ConfigDict(arbitrary_types_allowed=True)
-
-	def add_message(self, message: BaseMessage, position: int | None = None) -> None:
-		"""Add message to history"""
-		if position is None:
-			self.messages.append(message)
-		else:
-			self.messages.insert(position, message)
 
 	def get_messages(self) -> list[BaseMessage]:
 		"""Get all messages"""
-		return self.messages
+		messages = []
+		if self.system_message:
+			messages.append(self.system_message)
+		if self.state_message:
+			messages.append(self.state_message)
+		messages.extend(self.consistent_messages)
+
+		return messages
 
 
 class MessageManagerState(BaseModel):
