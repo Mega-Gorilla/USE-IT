@@ -1842,7 +1842,7 @@ class BrowserSession(BaseModel):
 					tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 				else:
 					# Preserve the real URL and use a descriptive fallback title
-					fallback_title = f'Loading... (title unavailable)'
+					fallback_title = f'(title unavailable)'
 					tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
 			tabs_info.append(tab_info)
 
