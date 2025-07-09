@@ -2741,13 +2741,6 @@ class BrowserSession(BaseModel):
 			raise BrowserError(f'Navigation to non-allowed URL: {normalized_url}')
 
 		page = await self.get_current_page()
-		try:
-			await asyncio.wait_for(page.evaluate('1'), timeout=3)
-		except Exception as e:
-			# new tab to recover
-			self.logger.warning(f'🚨 Page {_log_pretty_url(normalized_url)} is unresponsive, creating new tab...')
-			page = await self.create_new_tab(normalized_url)
-			return
 
 		try:
 			await asyncio.wait_for(page.goto(normalized_url), timeout=0.1)
