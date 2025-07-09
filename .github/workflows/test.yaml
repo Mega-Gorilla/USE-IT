@@ -80,7 +80,7 @@ jobs:
         run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_ENV
 
       - name: Cache chrome binaries
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             /tmp/google-chrome-stable_current_amd64.deb
@@ -95,7 +95,7 @@ jobs:
       # - run: playwright install chrome --with-deps
 
       - name: Cache chromium binaries
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ms-playwright
@@ -130,7 +130,7 @@ jobs:
         run: echo "PLAYWRIGHT_VERSION=$(uv pip list --format json | jq -r '.[] | select(.name == "playwright") | .version')" >> $GITHUB_ENV
 
       - name: Cache chrome binaries
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             /tmp/google-chrome-stable_current_amd64.deb
@@ -145,7 +145,7 @@ jobs:
       # - run: playwright install chrome --with-deps
 
       - name: Cache chromium binaries
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ms-playwright
