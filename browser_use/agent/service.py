@@ -761,18 +761,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _handle_step_error(self, error: Exception) -> None:
 		"""Handle all types of errors that can occur during a step"""
 
-		# Handle InterruptedError specially
-		if isinstance(error, InterruptedError):
-			self.logger.debug(f'InterruptedError: {type(error).__name__}: {error}')
-			self.state.consecutive_failures += 1
-
-			self.state.last_result = [
-				ActionResult(
-					error='The agent was interrupted mid-step' + (f' - {error}' if error else ''),
-				)
-			]
-			return
-
 		# Handle all other exceptions
 		include_trace = self.logger.isEnabledFor(logging.DEBUG)
 		error_msg = AgentError.format_error(error, include_trace=include_trace)
@@ -784,6 +772,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if 'Max token limit reached' in error_msg:
 				# TODO: figure out what to do here
 				pass
+		# Handle InterruptedError specially
+		elif isinstance(error, InterruptedError):
+			error_msg = 'The agent was interrupted mid-step' + (f' - {error}' if error else '')
+			self.logger.error(f'{prefix}{error_msg}')
 		elif 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
 			# give model a hint how output should look like
 			logger.debug(f'Model: {self.llm.model} failed')
@@ -807,7 +799,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			else:
 				self.logger.error(f'{prefix}{error_msg}')
 
-		self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
+		self.state.last_result = [ActionResult(error=error_msg)]
 		return None
 
 	async def _finalize(self, browser_state_summary: BrowserStateSummary | None) -> None:
