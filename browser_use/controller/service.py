@@ -743,7 +743,9 @@ Explain the content of the page and that the requested information is not availa
 				raise BrowserError(msg)
 
 		# File System Actions
-		@self.registry.action('Write content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv.')
+		@self.registry.action(
+			'Write content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
+		)
 		async def write_file(file_name: str, content: str, file_system: FileSystem):
 			result = await file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
