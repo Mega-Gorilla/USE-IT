@@ -60,10 +60,7 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.history_tree_processor.service import (
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
+from browser_use.dom.views import DOMHistoryElement
 from browser_use.exceptions import LLMException
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.observability import observe, observe_debug

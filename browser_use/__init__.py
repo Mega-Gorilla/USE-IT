@@ -18,7 +18,8 @@ from browser_use.agent.service import Agent
 from browser_use.agent.views import ActionModel, ActionResult, AgentHistoryList
 from browser_use.browser import Browser, BrowserConfig, BrowserContext, BrowserContextConfig, BrowserProfile, BrowserSession
 from browser_use.controller.service import Controller
-from browser_use.dom.service import DomService
+
+# from browser_use.dom.service import DomService
 from browser_use.llm import (
 	ChatAnthropic,
 	ChatAzureOpenAI,
@@ -57,7 +58,7 @@ __all__ = [
 	'BrowserSession',
 	'BrowserProfile',
 	'Controller',
-	'DomService',
+	# 'DomService',
 	'SystemPrompt',
 	'ActionResult',
 	'ActionModel',

@@ -14,12 +14,13 @@ from uuid_extensions import uuid7str
 from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
-from browser_use.dom.history_tree_processor.service import (
-	DOMElementNode,
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
-from browser_use.dom.views import SelectorMap
+
+# from browser_use.dom.history_tree_processor.service import (
+# 	DOMElementNode,
+# 	DOMHistoryElement,
+# 	HistoryTreeProcessor,
+# )
+# from browser_use.dom.views import SelectorMap
 from browser_use.filesystem.file_system import FileSystemState
 from browser_use.llm.base import BaseChatModel
 from browser_use.tokens.views import UsageSummary

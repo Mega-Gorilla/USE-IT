@@ -50,9 +50,10 @@ from browser_use.browser.views import (
 	TabInfo,
 	URLNotAllowedError,
 )
-from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
-from browser_use.dom.service import DomService
-from browser_use.dom.views import DOMElementNode, SelectorMap
+
+# from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
+# from browser_use.dom.service import DomService
+# from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import (
 	is_new_tab_page,
 	match_url_with_domain_pattern,
