@@ -2776,8 +2776,8 @@ class BrowserSession(BaseModel):
 					assert await page.evaluate('1'), (
 						f'Page {page.url} crashed after {type(e).__name__} and can no longer be used via CDP: {e}'
 					)
-				except Exception as title_error:
-					self.logger.warning(f'⚠️ Could not get page title after navigation timeout: {title_error}')
+				except Exception as eval_error:
+					self.logger.error(f'❌ Page crashed after navigation timeout: {eval_error}')
 			else:
 				# Re-raise non-timeout errors
 				raise
@@ -2807,6 +2807,14 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
 			self.logger.debug(f'⏮️ Error during go_back: {type(e).__name__}: {e}')
+			# Verify page is still usable after navigation error
+			if 'timeout' in str(e).lower():
+				try:
+					assert await page.evaluate('1'), (
+						f'Page {page.url} crashed after go_back {type(e).__name__} and can no longer be used via CDP: {e}'
+					)
+				except Exception as eval_error:
+					self.logger.error(f'❌ Page crashed after go_back timeout: {eval_error}')
 
 	async def go_forward(self):
 		"""Navigate the agent's tab forward in browser history"""
@@ -2816,6 +2824,14 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
 			self.logger.debug(f'⏭️ Error during go_forward: {type(e).__name__}: {e}')
+			# Verify page is still usable after navigation error
+			if 'timeout' in str(e).lower():
+				try:
+					assert await page.evaluate('1'), (
+						f'Page {page.url} crashed after go_forward {type(e).__name__} and can no longer be used via CDP: {e}'
+					)
+				except Exception as eval_error:
+					self.logger.error(f'❌ Page crashed after go_forward timeout: {eval_error}')
 
 	async def close_current_tab(self):
 		"""Close the current tab that the agent is working with.
@@ -3760,6 +3776,14 @@ class BrowserSession(BaseModel):
 				await self._wait_for_page_and_frames_load(timeout_overwrite=1)
 			except Exception as e:
 				self.logger.error(f'❌ Error navigating to {normalized_url}: {type(e).__name__}: {e} (proceeding anyway...)')
+				# Verify page is still usable after navigation error
+				if 'timeout' in str(e).lower():
+					try:
+						assert await new_page.evaluate('1'), (
+							f'Page {new_page.url} crashed after {type(e).__name__} and can no longer be used via CDP: {e}'
+						)
+					except Exception as eval_error:
+						self.logger.error(f'❌ Page crashed after create_new_tab navigation timeout: {eval_error}')
 
 		assert self.human_current_page is not None
 		assert self.agent_current_page is not None
