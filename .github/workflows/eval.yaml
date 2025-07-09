@@ -31,7 +31,7 @@ jobs:
       UKC_METRO: ${{ secrets.UKC_METRO }}
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
-      BROWSER_USE_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.browser_logging_level || secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}
+      LAMINAR_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.laminar_logging_level || secrets.LAMINAR_LOGGING_LEVEL || 'info' }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
       TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
     
@@ -336,7 +336,7 @@ jobs:
           [[ -n "$IMAGES_PER_STEP" ]] && CMD_ARGS+=("--images-per-step" "$IMAGES_PER_STEP")
           [[ -n "$RUN_ID" ]] && CMD_ARGS+=("--run-id" "$RUN_ID")
           [[ -n "$LAMINAR_EVAL_ID" ]] && CMD_ARGS+=("--laminar-eval-id" "$LAMINAR_EVAL_ID")
-          [[ -n "$BROWSER_LOGGING_LEVEL" ]] && CMD_ARGS+=("--browser-logging-level" "$BROWSER_LOGGING_LEVEL")
+          [[ -n "$LAMINAR_LOGGING_LEVEL" ]] && CMD_ARGS+=("--laminar-logging-level" "$LAMINAR_LOGGING_LEVEL")
           
           # Add browser timeout parameters
           [[ -n "$DEFAULT_NAVIGATION_TIMEOUT" ]] && CMD_ARGS+=("--default-navigation-timeout" "$DEFAULT_NAVIGATION_TIMEOUT")
