@@ -1602,7 +1602,11 @@ class BrowserSession(BaseModel):
 			if is_new_tab_page(page.url):
 				# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
 				if page.url.startswith('chrome://new-tab-page'):
-					await page.goto('about:blank')
+					try:
+						# can raise exception if nav is interrupted by another agent nav or human, harmless but annoying
+						await page.goto('about:blank', wait_until='domcontentloaded', timeout=1000)
+					except Exception:
+						pass
 				await self._show_dvd_screensaver_loading_animation(page)
 
 		page = page or (await self.browser_context.new_page())
