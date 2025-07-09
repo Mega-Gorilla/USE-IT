@@ -99,7 +99,6 @@ class MessageManager:
 		task: str,
 		system_message: SystemMessage,
 		file_system: FileSystem,
-		available_file_paths: list[str] | None = None,
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
 		include_attributes: list[str] | None = None,
@@ -114,7 +113,6 @@ class MessageManager:
 		self.system_prompt = system_message
 		self.file_system = file_system
 		self.sensitive_data_description = ''
-		self.available_file_paths = available_file_paths
 		self.use_thinking = use_thinking
 		self.max_history_items = max_history_items
 		self.images_per_step = images_per_step
@@ -259,6 +257,7 @@ class MessageManager:
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
 		agent_history_list: AgentHistoryList | None = None,  # Pass AgentHistoryList from agent
+		available_file_paths: list[str] | None = None,  # Always pass current available_file_paths
 	) -> None:
 		"""Add browser state as human message"""
 
@@ -289,7 +288,7 @@ class MessageManager:
 			step_info=step_info,
 			page_filtered_actions=page_filtered_actions,
 			sensitive_data=self.sensitive_data_description,
-			available_file_paths=self.available_file_paths,
+			available_file_paths=available_file_paths,
 			screenshots=screenshots,
 		).get_user_message(use_vision)
 
