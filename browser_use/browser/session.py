@@ -2742,7 +2742,7 @@ class BrowserSession(BaseModel):
 
 		page = await self.get_current_page()
 		try:
-			await asyncio.wait_for(page.evaluate('1'), timeout=1)
+			await asyncio.wait_for(page.evaluate('1'), timeout=3)
 		except Exception as e:
 			# new tab to recover
 			self.logger.warning(f'🚨 Page {_log_pretty_url(normalized_url)} is unresponsive, creating new tab...')
