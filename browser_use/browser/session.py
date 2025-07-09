@@ -2140,17 +2140,18 @@ class BrowserSession(BaseModel):
 				title = await self._get_page_title(page)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
-
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
 				# but we should preserve the real URL and not mislead the LLM about tab availability
-				self.logger.debug(f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (using fallback title)')
-				
+				self.logger.debug(
+					f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (using fallback title)'
+				)
+
 				# Only mark as unusable if it's actually about:blank, otherwise preserve the real URL
 				if page.url == 'about:blank':
 					tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 				else:
 					# Preserve the real URL and use a descriptive fallback title
-					fallback_title = f'(title unavailable)'
+					fallback_title = '(title unavailable)'
 					tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
 
 			tabs_info.append(tab_info)
