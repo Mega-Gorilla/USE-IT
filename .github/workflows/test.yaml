@@ -89,7 +89,7 @@ jobs:
       - name: Install Chrome stable binary
         run: |
           sudo apt-get update -qq \
-          && curl -o "/tmp/google-chrome-stable_current_amd64.deb" -z "/tmp/google-chrome-stable_current_amd64.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
+          && sudo curl -o "/tmp/google-chrome-stable_current_amd64.deb" -z "/tmp/google-chrome-stable_current_amd64.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
           && sudo apt-get install -y "/tmp/google-chrome-stable_current_amd64.deb" -f
       - run: patchright install chrome --with-deps
       - run: playwright install chrome --with-deps
@@ -140,7 +140,7 @@ jobs:
         run: |
           sudo apt-get update -qq \
           && sudo apt-get install -y "/tmp/google-chrome-stable_current_amd64.deb" -f
-          && curl -o "/tmp/google-chrome-stable_current_amd64.deb" -z "/tmp/google-chrome-stable_current_amd64.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
+          && sudo curl -o "/tmp/google-chrome-stable_current_amd64.deb" -z "/tmp/google-chrome-stable_current_amd64.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
       - run: patchright install chrome --with-deps
       - run: playwright install chrome --with-deps
 
