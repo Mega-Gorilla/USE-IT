@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import base64
 import json
 import logging
 import os
@@ -739,26 +738,43 @@ class BrowserSession(BaseModel):
 		except Exception:
 			pass
 
+		screenshot_b64 = None
+		cdp_session = None
 		try:
 			# Use a shorter timeout for screenshots to prevent semaphore starvation
 			# 10 seconds should be enough for most screenshots
-			screenshot_timeout = min(10000, self.browser_profile.default_timeout or 10000)
-			screenshot = await page.screenshot(
-				full_page=False,
-				# scale='css',
-				timeout=screenshot_timeout,
-				# clip=FloatRect(**clip) if clip else None,
-				animations='allow',
-				caret='initial',
+			# screenshot = await page.screenshot(
+			# 	full_page=False,
+			# 	# scale='css',
+			# 	timeout=screenshot_timeout,
+			# 	# clip=FloatRect(**clip) if clip else None,
+			# 	animations='allow',
+			# 	caret='initial',
+			#
+			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
+			screenshot = await cdp_session.send(
+				'Page.captureScreenshot',
+				{
+					'captureBeyondViewport': False,
+					'fromSurface': True,
+					'format': 'png',
+					# 'clip': clip,
+				},
 			)
+			screenshot_b64 = screenshot['data']
 		except Exception as err:
 			# Don't reset browser on timeout - this can cause semaphore deadlocks
 			# Just re-raise the error and let the retry decorator handle it
 			if 'timeout' in str(err).lower():
 				self.logger.warning(f'⏱️ Screenshot timed out on page {page.url}: {err}')
 			raise err
+		finally:
+			try:
+				assert cdp_session
+				await cdp_session.detach()
+			except Exception:
+				pass
 		assert await page.evaluate('() => true'), 'Page is not usable after screenshot!'
-		screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
 		assert screenshot_b64, 'Playwright page.screenshot() returned empty base64'
 		return screenshot_b64
 
