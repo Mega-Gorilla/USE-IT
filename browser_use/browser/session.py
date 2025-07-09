@@ -305,7 +305,8 @@ class BrowserSession(BaseModel):
 		try:
 			# Setup
 			self.browser_profile.detect_display_configuration()
-			self.prepare_user_data_dir()
+			# Note: prepare_user_data_dir() is called later in _unsafe_setup_new_browser_context()
+			# after the temp directory is created. Calling it here is premature.
 
 			# Get playwright object (has its own retry/semaphore)
 			await self.setup_playwright()
