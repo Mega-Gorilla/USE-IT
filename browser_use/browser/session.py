@@ -2985,13 +2985,13 @@ class BrowserSession(BaseModel):
 	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
 		"""Update and return state."""
 
+		# Check if current page is still valid, if not switch to another available page
 		page = await self.get_current_page()
 
-		# Check if current page is still valid, if not switch to another available page
 		try:
 			# Test if page is still accessible
 			# NOTE: This also happens on invalid urls like www.sadfdsafdssdafd.com
-			await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
+			await asyncio.wait_for(page.evaluate('1'), timeout=2.5)
 		except Exception as e:
 			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
 			raise BrowserError('Page is not accessible')
