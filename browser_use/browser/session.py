@@ -2213,6 +2213,10 @@ class BrowserSession(BaseModel):
 				self.logger.warning(
 					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {(self.browser_profile.default_navigation_timeout or 30_000) / 1000}s, continuing anyway..."
 				)
+				if self.agent_current_page:
+					assert await self.agent_current_page.evaluate('1'), (
+						f'Page {self.agent_current_page.url} crashed after {e} and can no longer be used via CDP'
+					)
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 			else:
 				# Re-raise non-timeout errors
@@ -2757,10 +2761,25 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			await asyncio.wait_for(page.goto(normalized_url), timeout=0.1)
+			# Use the browser's default navigation timeout or 30 seconds
+			navigation_timeout = self.browser_profile.default_navigation_timeout or 30_000
+			await page.goto(normalized_url, wait_until='domcontentloaded', timeout=navigation_timeout)
 		except Exception as e:
-			# NOTE we dont have to wait since we will wait later when we get the new page state
-			pass
+			if 'timeout' in str(e).lower():
+				self.logger.warning(
+					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {navigation_timeout / 1000}s, continuing anyway..."
+				)
+				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
+				# Verify the page is still usable by getting its title
+				try:
+					assert await page.evaluate('1'), (
+						f'Page {page.url} crashed after {type(e).__name__} and can no longer be used via CDP: {e}'
+					)
+				except Exception as title_error:
+					self.logger.warning(f'⚠️ Could not get page title after navigation timeout: {title_error}')
+			else:
+				# Re-raise non-timeout errors
+				raise
 
 	@observe_debug()
 	async def refresh_page(self):
@@ -2772,6 +2791,9 @@ class BrowserSession(BaseModel):
 			await page.wait_for_load_state()
 		except Exception as e:
 			self.logger.warning(f'⚠️ Page {_log_pretty_url(page.url)} failed to fully load after refresh: {type(e).__name__}: {e}')
+			assert await page.evaluate('1'), (
+				f'Page {page.url} crashed after {type(e).__name__} and can no longer be used via CDP: {e}'
+			)
 
 	async def go_back(self):
 		"""Navigate the agent's tab back in browser history"""
