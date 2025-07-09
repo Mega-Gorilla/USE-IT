@@ -2933,7 +2933,7 @@ class BrowserSession(BaseModel):
 
 		return self._cached_browser_state_summary
 
-	@observe_debug(name='get_minimal_state_summary')
+	@observe_debug(name='get_minimal_state_summary', ignore_output=True)
 	@require_initialization
 	@time_execution_async('--get_minimal_state_summary')
 	async def get_minimal_state_summary(self) -> BrowserStateSummary:
@@ -2981,7 +2981,7 @@ class BrowserSession(BaseModel):
 			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
 		)
 
-	@observe_debug(name='get_updated_state')
+	@observe_debug(name='get_updated_state', ignore_output=True)
 	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
 		"""Update and return state."""
 
@@ -4111,7 +4111,7 @@ class BrowserSession(BaseModel):
 			str(self.id)[-4:],
 		)
 
-	@observe_debug(name='get_state_summary_with_fallback')
+	@observe_debug(name='get_state_summary_with_fallback', ignore_output=True)
 	@require_initialization
 	@time_execution_async('--get_state_summary_with_fallback')
 	async def get_state_summary_with_fallback(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:

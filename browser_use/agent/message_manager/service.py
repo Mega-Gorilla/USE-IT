@@ -247,7 +247,7 @@ class MessageManager:
 
 		return ''
 
-	@observe_debug(name='add_state_message')
+	@observe_debug(name='add_state_message', ignore_input=True)
 	@time_execution_sync('--add_state_message')
 	def add_state_message(
 		self,

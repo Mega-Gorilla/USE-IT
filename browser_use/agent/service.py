@@ -615,7 +615,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
-	@observe_debug(name='get_browser_state_with_recovery')
+	@observe_debug(name='get_browser_state_with_recovery', ignore_output=True)
 	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
 		"""Get browser state with multiple fallback strategies for error recovery"""
 
