@@ -4031,99 +4031,102 @@ class BrowserSession(BaseModel):
 
 		# all in one JS function for speed, we want as few roundtrip CDP calls as possible
 		# between opening the tab and showing the animation
-		await page.evaluate(
-			"""(browser_session_label) => {
-			const animated_title = `Starting agent ${browser_session_label}...`;
-			if (document.title === animated_title) {
-				return;      // already run on this tab, dont run again
-			}
-			document.title = animated_title;
-
-			// Create the main overlay
-			const loadingOverlay = document.createElement('div');
-			loadingOverlay.id = 'pretty-loading-animation';
-			loadingOverlay.style.position = 'fixed';
-			loadingOverlay.style.top = '0';
-			loadingOverlay.style.left = '0';
-			loadingOverlay.style.width = '100vw';
-			loadingOverlay.style.height = '100vh';
-			loadingOverlay.style.background = '#000';
-			loadingOverlay.style.zIndex = '99999';
-			loadingOverlay.style.overflow = 'hidden';
-
-			// Create the image element
-			const img = document.createElement('img');
-			img.src = 'https://cf.browser-use.com/logo.svg';
-			img.alt = 'Browser-Use';
-			img.style.width = '200px';
-			img.style.height = 'auto';
-			img.style.position = 'absolute';
-			img.style.left = '0px';
-			img.style.top = '0px';
-			img.style.zIndex = '2';
-			img.style.opacity = '0.8';
-
-			loadingOverlay.appendChild(img);
-			document.body.appendChild(loadingOverlay);
-
-			// DVD screensaver bounce logic
-			let x = Math.random() * (window.innerWidth - 300);
-			let y = Math.random() * (window.innerHeight - 300);
-			let dx = 1.2 + Math.random() * 0.4; // px per frame
-			let dy = 1.2 + Math.random() * 0.4;
-			// Randomize direction
-			if (Math.random() > 0.5) dx = -dx;
-			if (Math.random() > 0.5) dy = -dy;
-
-			function animate() {
-				const imgWidth = img.offsetWidth || 300;
-				const imgHeight = img.offsetHeight || 300;
-				x += dx;
-				y += dy;
-
-				if (x <= 0) {
-					x = 0;
-					dx = Math.abs(dx);
-				} else if (x + imgWidth >= window.innerWidth) {
-					x = window.innerWidth - imgWidth;
-					dx = -Math.abs(dx);
+		try:
+			await page.evaluate(
+				"""(browser_session_label) => {
+				const animated_title = `Starting agent ${browser_session_label}...`;
+				if (document.title === animated_title) {
+					return;      // already run on this tab, dont run again
 				}
-				if (y <= 0) {
-					y = 0;
-					dy = Math.abs(dy);
-				} else if (y + imgHeight >= window.innerHeight) {
-					y = window.innerHeight - imgHeight;
-					dy = -Math.abs(dy);
+				document.title = animated_title;
+
+				// Create the main overlay
+				const loadingOverlay = document.createElement('div');
+				loadingOverlay.id = 'pretty-loading-animation';
+				loadingOverlay.style.position = 'fixed';
+				loadingOverlay.style.top = '0';
+				loadingOverlay.style.left = '0';
+				loadingOverlay.style.width = '100vw';
+				loadingOverlay.style.height = '100vh';
+				loadingOverlay.style.background = '#000';
+				loadingOverlay.style.zIndex = '99999';
+				loadingOverlay.style.overflow = 'hidden';
+
+				// Create the image element
+				const img = document.createElement('img');
+				img.src = 'https://cf.browser-use.com/logo.svg';
+				img.alt = 'Browser-Use';
+				img.style.width = '200px';
+				img.style.height = 'auto';
+				img.style.position = 'absolute';
+				img.style.left = '0px';
+				img.style.top = '0px';
+				img.style.zIndex = '2';
+				img.style.opacity = '0.8';
+
+				loadingOverlay.appendChild(img);
+				document.body.appendChild(loadingOverlay);
+
+				// DVD screensaver bounce logic
+				let x = Math.random() * (window.innerWidth - 300);
+				let y = Math.random() * (window.innerHeight - 300);
+				let dx = 1.2 + Math.random() * 0.4; // px per frame
+				let dy = 1.2 + Math.random() * 0.4;
+				// Randomize direction
+				if (Math.random() > 0.5) dx = -dx;
+				if (Math.random() > 0.5) dy = -dy;
+
+				function animate() {
+					const imgWidth = img.offsetWidth || 300;
+					const imgHeight = img.offsetHeight || 300;
+					x += dx;
+					y += dy;
+
+					if (x <= 0) {
+						x = 0;
+						dx = Math.abs(dx);
+					} else if (x + imgWidth >= window.innerWidth) {
+						x = window.innerWidth - imgWidth;
+						dx = -Math.abs(dx);
+					}
+					if (y <= 0) {
+						y = 0;
+						dy = Math.abs(dy);
+					} else if (y + imgHeight >= window.innerHeight) {
+						y = window.innerHeight - imgHeight;
+						dy = -Math.abs(dy);
+					}
+
+					img.style.left = `${x}px`;
+					img.style.top = `${y}px`;
+
+					requestAnimationFrame(animate);
 				}
+				animate();
 
-				img.style.left = `${x}px`;
-				img.style.top = `${y}px`;
+				// Responsive: update bounds on resize
+				window.addEventListener('resize', () => {
+					x = Math.min(x, window.innerWidth - img.offsetWidth);
+					y = Math.min(y, window.innerHeight - img.offsetHeight);
+				});
 
-				requestAnimationFrame(animate);
-			}
-			animate();
-
-			// Responsive: update bounds on resize
-			window.addEventListener('resize', () => {
-				x = Math.min(x, window.innerWidth - img.offsetWidth);
-				y = Math.min(y, window.innerHeight - img.offsetHeight);
-			});
-
-			// Add a little CSS for smoothness
-			const style = document.createElement('style');
-			style.textContent = `
-				#pretty-loading-animation {
-					/*backdrop-filter: blur(2px) brightness(0.9);*/
-				}
-				#pretty-loading-animation img {
-					user-select: none;
-					pointer-events: none;
-				}
-			`;
-			document.head.appendChild(style);
-		}""",
-			str(self.id)[-4:],
-		)
+				// Add a little CSS for smoothness
+				const style = document.createElement('style');
+				style.textContent = `
+					#pretty-loading-animation {
+						/*backdrop-filter: blur(2px) brightness(0.9);*/
+					}
+					#pretty-loading-animation img {
+						user-select: none;
+						pointer-events: none;
+					}
+				`;
+				document.head.appendChild(style);
+			}""",
+				str(self.id)[-4:],
+			)
+		except Exception as e:
+			self.logger.debug(f'❌ Failed to show 📀 DVD loading animation: {type(e).__name__}: {e}')
 
 	@observe_debug(name='get_state_summary_with_fallback', ignore_output=True)
 	@require_initialization
