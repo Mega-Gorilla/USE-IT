@@ -19,14 +19,12 @@ llm = ChatOpenAI(
 )
 
 
-task = 'Open 3 tabs with random wikipedia pages'
+task = 'Find the founders of browser-use'
 agent = Agent(task=task, llm=llm)
 
 
 async def main():
-	history = await agent.run()
-	# token usage
-	print(history.usage)
+	await agent.run()
 
 
 if __name__ == '__main__':

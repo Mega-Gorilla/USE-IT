@@ -19,6 +19,8 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
 
+ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
+
 
 @dataclass
 class ChatOpenAI(BaseChatModel):
@@ -94,8 +96,15 @@ class ChatOpenAI(BaseChatModel):
 		return str(self.model)
 
 	def _get_usage(self, response: ChatCompletion) -> ChatInvokeUsage | None:
-		usage = (
-			ChatInvokeUsage(
+		if response.usage is not None:
+			completion_tokens = response.usage.completion_tokens
+			completion_token_details = response.usage.completion_tokens_details
+			if completion_token_details is not None:
+				reasoning_tokens = completion_token_details.reasoning_tokens
+				if reasoning_tokens is not None:
+					completion_tokens += reasoning_tokens
+
+			usage = ChatInvokeUsage(
 				prompt_tokens=response.usage.prompt_tokens,
 				prompt_cached_tokens=response.usage.prompt_tokens_details.cached_tokens
 				if response.usage.prompt_tokens_details is not None
@@ -103,12 +112,12 @@ class ChatOpenAI(BaseChatModel):
 				prompt_cache_creation_tokens=None,
 				prompt_image_tokens=None,
 				# Completion
-				completion_tokens=response.usage.completion_tokens,
+				completion_tokens=completion_tokens,
 				total_tokens=response.usage.total_tokens,
 			)
-			if response.usage is not None
-			else None
-		)
+		else:
+			usage = None
+
 		return usage
 
 	@overload
@@ -134,13 +143,19 @@ class ChatOpenAI(BaseChatModel):
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
 		try:
+			reasoning_effort_dict: dict = {}
+			if self.model in ReasoningModels:
+				reasoning_effort_dict = {
+					'reasoning_effort': self.reasoning_effort,
+				}
+
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=self.reasoning_effort,
+					**reasoning_effort_dict,
 				)
 
 				usage = self._get_usage(response)
@@ -161,8 +176,8 @@ class ChatOpenAI(BaseChatModel):
 					model=self.model,
 					messages=openai_messages,
 					temperature=self.temperature,
-					reasoning_effort=self.reasoning_effort,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
+					**reasoning_effort_dict,
 				)
 
 				if response.choices[0].message.content is None:
