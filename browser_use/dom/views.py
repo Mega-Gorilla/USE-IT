@@ -54,7 +54,7 @@ class NodeType(int, Enum):
 # 	text: str | None
 
 
-@dataclass
+@dataclass(slots=True)
 class EnhancedAXProperty:
 	"""we don't need `sources` and `related_nodes` for now (not sure how to use them)
 
@@ -66,7 +66,7 @@ class EnhancedAXProperty:
 	# related_nodes: list[EnchancedAXRelatedNode] | None
 
 
-@dataclass
+@dataclass(slots=True)
 class EnhancedAXNode:
 	ax_node_id: str
 	"""Not to be confused the DOM node_id. Only useful for AX node tree"""
@@ -79,7 +79,7 @@ class EnhancedAXNode:
 	properties: list[EnhancedAXProperty] | None
 
 
-@dataclass
+@dataclass(slots=True)
 class EnhancedDOMTreeNode:
 	"""
 	Enchanced DOM tree node that contains information from AX, DOM, and Snapshot trees. It's mostly based on the types on DOM node type with enchanced data from AX and Snapshot trees.
