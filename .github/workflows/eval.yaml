@@ -90,10 +90,10 @@ jobs:
       - name: Install Chrome stable binary
         run: |
           sudo apt-get update -qq \
-          && sudo curl -o "/tmp/google-chrome-stable_current_amd64.deb" -z "/tmp/google-chrome-stable_current_amd64.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
+          && sudo curl -o "/tmp/google-chrome-stable_current_amd64.deb" --no-clobber "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
           && sudo apt-get install -y "/tmp/google-chrome-stable_current_amd64.deb" -f
       - run: patchright install chrome --with-deps
-      - run: playwright install chrome --with-deps
+      # - run: playwright install chrome --with-deps
       # could use $(uname -m) instead of hardcoding amd64
 
       - name: Cache chromium binaries
@@ -104,7 +104,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
       - run: playwright install chromium --with-deps
-      - run: patchright install chromium --with-deps
+      # - run: patchright install chromium --with-deps
 
       - name: Install Xvfb for headed mode
         if: github.event.client_payload.script_args.headless == 'false'
