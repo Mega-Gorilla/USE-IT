@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            /tmp
+            /tmp/google-chrome-stable_current_amd64.deb
           key: ${{ runner.os }}-${{ runner.arch }}-chrome-stable
 
       - name: Install Chrome stable binary
