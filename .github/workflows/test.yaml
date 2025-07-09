@@ -84,7 +84,7 @@ jobs:
         with:
           path: |
             /tmp
-          key: ${{ runner.os }}-chrome-stable
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-stable
 
       - name: Install Chrome stable binary
         run: |
@@ -99,7 +99,7 @@ jobs:
         with:
           path: |
             ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
       - run: playwright install chromium --with-deps
       - run: patchright install chromium --with-deps
@@ -134,7 +134,7 @@ jobs:
         with:
           path: |
             /tmp/google-chrome-stable_current_amd64.deb
-          key: ${{ runner.os }}-chrome-stable
+          key: ${{ runner.os }}-${{ runner.arch }}-chrome-stable
 
       - name: Install Chrome stable binary
         run: |
@@ -149,7 +149,7 @@ jobs:
         with:
           path: |
             ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
       - run: playwright install chromium --with-deps
       - run: patchright install chromium --with-deps
