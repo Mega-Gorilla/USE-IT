@@ -2762,14 +2762,12 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			# Use the browser's default navigation timeout or 30 seconds
-			navigation_timeout = self.browser_profile.default_navigation_timeout or 30_000
-			await page.goto(normalized_url, wait_until='domcontentloaded', timeout=navigation_timeout)
+			# Use a short timeout to avoid getting stuck on pages with blocking JavaScript
+			# We'll verify the page is usable after the timeout
+			await page.goto(normalized_url, wait_until='domcontentloaded', timeout=5000)  # 5 seconds
 		except Exception as e:
 			if 'timeout' in str(e).lower():
-				self.logger.warning(
-					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {navigation_timeout / 1000}s, continuing anyway..."
-				)
+				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 5s, continuing anyway...")
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 				# Verify the page is still usable by getting its title
 				try:
