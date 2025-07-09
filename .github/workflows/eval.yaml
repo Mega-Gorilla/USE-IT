@@ -32,6 +32,7 @@ jobs:
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       LMNR_PROJECT_API_KEY: ${{ secrets.LMNR_PROJECT_API_KEY }}
       LAMINAR_LOGGING_LEVEL: ${{ github.event.client_payload.script_args.laminar_logging_level || secrets.LAMINAR_LOGGING_LEVEL || 'info' }}
+      BROWSER_USE_LOGGING_LEVEL: ${{ secrets.BROWSER_USE_LOGGING_LEVEL || 'info' }}
       EVAL_START_INDEX: ${{ github.event.client_payload.script_args.start_index }}
       TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
     
