@@ -5,7 +5,7 @@ from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXNode, AXPropertyName
 from cdp_use.cdp.dom.commands import GetDocumentReturns
-from cdp_use.cdp.dom.types import Node
+from cdp_use.cdp.dom.types import Node, ShadowRootType
 from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 
 from browser_use.browser import Browser
@@ -62,6 +62,7 @@ class DOMService:
 
 				await cdp_client.send.DOM.enable(session_id=session_id)
 				await cdp_client.send.Accessibility.enable(session_id=session_id)
+				await cdp_client.send.DOMSnapshot.enable(session_id=session_id)
 
 				return session_id
 
@@ -123,6 +124,13 @@ class DOMService:
 				for i in range(0, len(node['attributes']), 2):
 					attributes[node['attributes'][i]] = node['attributes'][i + 1]
 
+			shadow_root_type = None
+			if 'shadowRootType' in node and node['shadowRootType']:
+				try:
+					shadow_root_type = ShadowRootType(node['shadowRootType'])
+				except ValueError:
+					pass
+
 			dom_tree_node = EnhancedDOMTreeNode(
 				node_id=node['nodeId'],
 				backend_node_id=node['backendNodeId'],
@@ -133,7 +141,7 @@ class DOMService:
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
 				content_document=None,
-				shadow_root_type=node.get('shadowRootType', None),
+				shadow_root_type=shadow_root_type,
 				shadow_roots=None,
 				parent_node=None,
 				children_nodes=None,
@@ -166,14 +174,49 @@ class DOMService:
 
 		return enhanced_dom_tree_node
 
-	async def get_dom_tree(self) -> EnhancedDOMTreeNode:
+	async def _get_all_trees(self) -> tuple[CaptureSnapshotReturns, GetDocumentReturns, GetFullAXTreeReturns]:
 		if not self.browser.cdp_url:
 			raise ValueError('CDP URL is not set')
 
 		session_id = await self._get_current_page_session_id()
 		cdp_client = await self._get_cdp_client()
 
-		snapshot_request = cdp_client.send.DOMSnapshot.captureSnapshot(params={'computedStyles': []}, session_id=session_id)
+		snapshot_request = cdp_client.send.DOMSnapshot.captureSnapshot(
+			params={
+				'computedStyles': [
+					'display',
+					'visibility',
+					'opacity',
+					'position',
+					'z-index',
+					'pointer-events',
+					'cursor',
+					'overflow',
+					'overflow-x',
+					'overflow-y',
+					'width',
+					'height',
+					'top',
+					'left',
+					'right',
+					'bottom',
+					'transform',
+					'clip',
+					'clip-path',
+					'user-select',
+					'background-color',
+					'color',
+					'border',
+					'margin',
+					'padding',
+				],
+				'includePaintOrder': True,
+				'includeDOMRects': True,
+				'includeBlendedBackgroundColors': False,
+				'includeTextColorOpacities': False,
+			},
+			session_id=session_id,
+		)
 
 		dom_tree_request = cdp_client.send.DOM.getDocument(params={'depth': -1, 'pierce': True}, session_id=session_id)
 
@@ -183,6 +226,11 @@ class DOMService:
 		snapshot, dom_tree, ax_tree = await asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request)
 		end = time.time()
 		print(f'Time taken to get dom tree: {end - start} seconds')
+
+		return snapshot, dom_tree, ax_tree
+
+	async def get_dom_tree(self) -> EnhancedDOMTreeNode:
+		snapshot, dom_tree, ax_tree = await self._get_all_trees()
 
 		start = time.time()
 		enhanced_dom_tree = self._build_enhanced_dom_tree(dom_tree, ax_tree, snapshot)

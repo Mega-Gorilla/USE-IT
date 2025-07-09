@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 
 from cdp_use.cdp.accessibility.types import AXPropertyName
@@ -80,6 +80,11 @@ class EnhancedAXNode:
 
 
 @dataclass(slots=True)
+class EnhancedSnapshotNode:
+	pass
+
+
+@dataclass(slots=True)
 class EnhancedDOMTreeNode:
 	"""
 	Enchanced DOM tree node that contains information from AX, DOM, and Snapshot trees. It's mostly based on the types on DOM node type with enchanced data from AX and Snapshot trees.
@@ -131,15 +136,28 @@ class EnhancedDOMTreeNode:
 	# region - AX Node data
 	ax_node: EnhancedAXNode | None
 
-	# endregion - AX Node data
-
-	# region - Snapshot Node data
-
-	# endregion - Snapshot Node data
+	def __json__(self) -> dict:
+		"""Serializes the node and its descendants to a dictionary, omitting parent references."""
+		return {
+			'node_id': self.node_id,
+			'backend_node_id': self.backend_node_id,
+			'node_type': self.node_type.name,
+			'node_name': self.node_name,
+			'node_value': self.node_value,
+			'attributes': self.attributes,
+			'is_scrollable': self.is_scrollable,
+			'frame_id': self.frame_id,
+			'content_document': self.content_document.__json__() if self.content_document else None,
+			'shadow_root_type': self.shadow_root_type.value if self.shadow_root_type else None,
+			'ax_node': asdict(self.ax_node) if self.ax_node else None,
+			# these two in the end, so it's easier to read json
+			'children_nodes': [c.__json__() for c in self.children_nodes] if self.children_nodes else [],
+			'shadow_roots': [r.__json__() for r in self.shadow_roots] if self.shadow_roots else [],
+		}
 
 
 @dataclass
-class DOMState:
+class DOMState:  #
 	root: EnhancedDOMTreeNode
 
 
