@@ -1104,6 +1104,16 @@ class BrowserSession(BaseModel):
 				self.browser_profile.user_data_dir = self.browser_profile.user_data_dir or Path(
 					tempfile.mkdtemp(prefix='browseruse-tmp-')
 				)
+			# If we're reconnecting and using a temp directory, create a new one
+			# This avoids conflicts with the previous browser process that might still be shutting down
+			elif self.browser_profile.user_data_dir and Path(self.browser_profile.user_data_dir).name.startswith(
+				'browseruse-tmp-'
+			):
+				old_dir = self.browser_profile.user_data_dir
+				self.browser_profile.user_data_dir = Path(tempfile.mkdtemp(prefix='browseruse-tmp-'))
+				self.logger.debug(
+					f'🔄 Reconnecting: replacing old temp dir {_log_pretty_path(old_dir)} with new {_log_pretty_path(self.browser_profile.user_data_dir)}'
+				)
 
 			# user data dir was provided, prepare it for use (handles conflicts automatically)
 			self.prepare_user_data_dir()
@@ -2762,20 +2772,25 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			# Use a short timeout to avoid getting stuck on pages with blocking JavaScript
-			# We'll verify the page is usable after the timeout
-			await page.goto(normalized_url, wait_until='domcontentloaded', timeout=5000)  # 5 seconds
-		except Exception as e:
-			if 'timeout' in str(e).lower():
+			# Use asyncio.wait_for with a short timeout to ensure we don't get stuck
+			# This prevents blocking JavaScript from hanging the entire operation
+			await asyncio.wait_for(
+				page.goto(normalized_url, wait_until='domcontentloaded'),
+				timeout=2.0,  # 2 seconds max wait
+			)
+		except (TimeoutError, Exception) as e:
+			if 'timeout' in str(e).lower() or isinstance(e, asyncio.TimeoutError):
 				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 5s, continuing anyway...")
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 				# Verify the page is still usable by getting its title
 				try:
-					assert await page.evaluate('1'), (
-						f'Page {page.url} crashed after {type(e).__name__} and can no longer be used via CDP: {e}'
+					# Try to verify the page is still usable with a short timeout
+					await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
+					self.logger.debug('✅ Page is still responsive after navigation timeout')
+				except (TimeoutError, Exception) as eval_error:
+					self.logger.warning(
+						f'⚠️ Page may be unresponsive after navigation timeout (blocked by JavaScript?): {type(eval_error).__name__}'
 					)
-				except Exception as eval_error:
-					self.logger.error(f'❌ Page crashed after navigation timeout: {eval_error}')
 			else:
 				# Re-raise non-timeout errors
 				raise
