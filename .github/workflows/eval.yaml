@@ -91,7 +91,7 @@ jobs:
         run: |
           sudo apt-get update -qq \
           && curl -o "/tmp/google-chrome-stable.deb" -z "/tmp/google-chrome-stable.deb" "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" \
-          && apt-get install -y "/tmp/google-chrome-stable.deb" -f
+          && sudo apt-get install -y "/tmp/google-chrome-stable.deb" -f
       - run: patchright install chrome --with-deps
       - run: playwright install chrome --with-deps
       # could use $(uname -m) instead of hardcoding amd64
