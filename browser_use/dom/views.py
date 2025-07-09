@@ -81,7 +81,15 @@ class EnhancedAXNode:
 
 @dataclass(slots=True)
 class EnhancedSnapshotNode:
-	pass
+	"""Snapshot data extracted from DOMSnapshot for enhanced functionality."""
+
+	is_clickable: bool | None
+	is_visible: bool | None
+	cursor_style: str | None
+	bounding_box: dict[str, float] | None
+	"""Bounding box with x, y, width, height in viewport coordinates"""
+	computed_styles: dict[str, str] | None
+	"""Computed styles from the layout tree"""
 
 
 @dataclass(slots=True)
@@ -136,6 +144,13 @@ class EnhancedDOMTreeNode:
 	# region - AX Node data
 	ax_node: EnhancedAXNode | None
 
+	# endregion - AX Node data
+
+	# region - Snapshot Node data
+	snapshot_node: EnhancedSnapshotNode | None
+
+	# endregion - Snapshot Node data
+
 	def __json__(self) -> dict:
 		"""Serializes the node and its descendants to a dictionary, omitting parent references."""
 		return {
@@ -150,9 +165,10 @@ class EnhancedDOMTreeNode:
 			'content_document': self.content_document.__json__() if self.content_document else None,
 			'shadow_root_type': self.shadow_root_type.value if self.shadow_root_type else None,
 			'ax_node': asdict(self.ax_node) if self.ax_node else None,
+			'snapshot_node': asdict(self.snapshot_node) if self.snapshot_node else None,
 			# these two in the end, so it's easier to read json
-			'children_nodes': [c.__json__() for c in self.children_nodes] if self.children_nodes else [],
 			'shadow_roots': [r.__json__() for r in self.shadow_roots] if self.shadow_roots else [],
+			'children_nodes': [c.__json__() for c in self.children_nodes] if self.children_nodes else [],
 		}
 
 

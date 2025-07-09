@@ -9,6 +9,10 @@ from cdp_use.cdp.dom.types import Node, ShadowRootType
 from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 
 from browser_use.browser import Browser
+from browser_use.dom.enhanced_snapshot import (
+	REQUIRED_COMPUTED_STYLES,
+	build_snapshot_lookup,
+)
 from browser_use.dom.views import EnhancedAXNode, EnhancedAXProperty, EnhancedDOMTreeNode, NodeType
 
 
@@ -63,6 +67,7 @@ class DOMService:
 				await cdp_client.send.DOM.enable(session_id=session_id)
 				await cdp_client.send.Accessibility.enable(session_id=session_id)
 				await cdp_client.send.DOMSnapshot.enable(session_id=session_id)
+				await cdp_client.send.Page.enable(session_id=session_id)
 
 				return session_id
 
@@ -96,7 +101,25 @@ class DOMService:
 		)
 		return enhanced_ax_node
 
-	def _build_enhanced_dom_tree(
+	async def _get_viewport_size(self) -> tuple[float, float]:
+		"""Get viewport dimensions using CDP."""
+		try:
+			cdp_client = await self._get_cdp_client()
+			session_id = await self._get_current_page_session_id()
+
+			# Get the layout metrics which includes the visual viewport
+			metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			visual_viewport = metrics.get('visualViewport', {})
+
+			width = visual_viewport.get('clientWidth', 1920.0)
+			height = visual_viewport.get('clientHeight', 1080.0)
+
+			return float(width), float(height)
+		except Exception:
+			# Fallback to default viewport size
+			return 1920.0, 1080.0
+
+	async def _build_enhanced_dom_tree(
 		self, dom_tree: GetDocumentReturns, ax_tree: GetFullAXTreeReturns, snapshot: CaptureSnapshotReturns
 	) -> EnhancedDOMTreeNode:
 		ax_tree_lookup: dict[int, AXNode] = {
@@ -105,6 +128,12 @@ class DOMService:
 
 		enhanced_dom_tree_node_lookup: dict[int, EnhancedDOMTreeNode] = {}
 		""" NodeId (NOT backend node id) -> enhanced dom tree node"""  # way to get the parent/content node
+
+		# Get viewport dimensions first for visibility calculation
+		viewport_width, viewport_height = await self._get_viewport_size()
+
+		# Parse snapshot data with everything calculated upfront
+		snapshot_lookup = build_snapshot_lookup(snapshot, viewport_width, viewport_height)
 
 		def _construct_enhanced_node(node: Node) -> EnhancedDOMTreeNode:
 			# memoize the mf (I don't know if some nodes are duplicated)
@@ -146,6 +175,7 @@ class DOMService:
 				parent_node=None,
 				children_nodes=None,
 				ax_node=enhanced_ax_node,
+				snapshot_node=snapshot_lookup.get(node['backendNodeId'], None),
 			)
 
 			enhanced_dom_tree_node_lookup[node['nodeId']] = dom_tree_node
@@ -183,33 +213,7 @@ class DOMService:
 
 		snapshot_request = cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
-				'computedStyles': [
-					'display',
-					'visibility',
-					'opacity',
-					'position',
-					'z-index',
-					'pointer-events',
-					'cursor',
-					'overflow',
-					'overflow-x',
-					'overflow-y',
-					'width',
-					'height',
-					'top',
-					'left',
-					'right',
-					'bottom',
-					'transform',
-					'clip',
-					'clip-path',
-					'user-select',
-					'background-color',
-					'color',
-					'border',
-					'margin',
-					'padding',
-				],
+				'computedStyles': REQUIRED_COMPUTED_STYLES,
 				'includePaintOrder': True,
 				'includeDOMRects': True,
 				'includeBlendedBackgroundColors': False,
@@ -233,7 +237,7 @@ class DOMService:
 		snapshot, dom_tree, ax_tree = await self._get_all_trees()
 
 		start = time.time()
-		enhanced_dom_tree = self._build_enhanced_dom_tree(dom_tree, ax_tree, snapshot)
+		enhanced_dom_tree = await self._build_enhanced_dom_tree(dom_tree, ax_tree, snapshot)
 		end = time.time()
 		print(f'Time taken to build enhanced dom tree: {end - start} seconds')
 

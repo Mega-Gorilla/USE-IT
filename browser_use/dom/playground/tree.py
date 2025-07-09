@@ -35,6 +35,27 @@ async def main():
 
 		print('Saved enhanced dom tree to tmp/enhanced_dom_tree.json')
 
+		# Print some sample information about visible/clickable elements
+		visible_clickable_count = 0
+		total_with_snapshot = 0
+
+		def count_elements(node):
+			nonlocal visible_clickable_count, total_with_snapshot
+			if node.snapshot_node:
+				total_with_snapshot += 1
+				if node.snapshot_node.is_visible and node.snapshot_node.is_clickable:
+					visible_clickable_count += 1
+					print(f'Visible clickable element: {node.node_name} (cursor: {node.snapshot_node.cursor_style})')
+
+			if node.children_nodes:
+				for child in node.children_nodes:
+					count_elements(child)
+
+		count_elements(dom_tree)
+		print(
+			f'Found {visible_clickable_count} visible clickable elements out of {total_with_snapshot} elements with snapshot data'
+		)
+
 		# start = time.time()
 		# snapshot, dom_tree, ax_tree = await dom_service._get_all_trees()
 		# end = time.time()
