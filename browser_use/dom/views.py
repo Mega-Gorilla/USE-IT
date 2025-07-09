@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from cdp_use.cdp.accessibility.types import AXPropertyName
 from cdp_use.cdp.dom.types import ShadowRootType
 from pydantic import BaseModel
 
+################## TO BE REMOVED
 DEFAULT_INCLUDE_ATTRIBUTES = [
 	'title',
 	'type',
@@ -19,6 +21,14 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'data-state',
 	'aria-checked',
 ]
+
+
+class DOMNodeAttributes(BaseModel):
+	name: str
+	value: str
+
+
+################## END TO BE REMOVED
 
 
 class NodeType(int, Enum):
@@ -38,9 +48,35 @@ class NodeType(int, Enum):
 	NOTATION_NODE = 12
 
 
-class DOMNodeAttributes(BaseModel):
-	name: str
-	value: str
+# @dataclass
+# class EnchancedAXRelatedNode:
+# 	node: 'EnhancedDOMTreeNode'
+# 	text: str | None
+
+
+@dataclass
+class EnhancedAXProperty:
+	"""we don't need `sources` and `related_nodes` for now (not sure how to use them)
+
+	TODO: there is probably some way to determine whether it has a value or related nodes or not, but for now it's kinda fine idk
+	"""
+
+	name: AXPropertyName
+	value: str | bool | None
+	# related_nodes: list[EnchancedAXRelatedNode] | None
+
+
+@dataclass
+class EnhancedAXNode:
+	ax_node_id: str
+	"""Not to be confused the DOM node_id. Only useful for AX node tree"""
+	ignored: bool
+	# we don't need ignored_reasons as we anyway ignore the node otherwise
+	role: str | None
+	name: str | None
+	description: str | None
+
+	properties: list[EnhancedAXProperty] | None
 
 
 @dataclass
@@ -60,7 +96,7 @@ class EnhancedDOMTreeNode:
 	node_id: int
 	backend_node_id: int
 
-	_node_type: NodeType
+	node_type: NodeType
 	"""Node types, defined in `NodeType` enum."""
 	node_name: str
 	"""Only applicable for `NodeType.ELEMENT_NODE`"""
@@ -93,6 +129,7 @@ class EnhancedDOMTreeNode:
 	# endregion - DOM Node data
 
 	# region - AX Node data
+	ax_node: EnhancedAXNode | None
 
 	# endregion - AX Node data
 
@@ -101,8 +138,9 @@ class EnhancedDOMTreeNode:
 	# endregion - Snapshot Node data
 
 
+@dataclass
 class DOMState:
-	pass
+	root: EnhancedDOMTreeNode
 
 
 class DOMHistoryElement:

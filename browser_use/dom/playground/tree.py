@@ -1,8 +1,6 @@
 import asyncio
-import json
 import time
 
-import aiofiles
 import httpx
 from playwright.async_api import async_playwright
 
@@ -25,22 +23,22 @@ async def main():
 		dom_service = DOMService(browser)
 
 		start = time.time()
-		snapshot, dom_tree, ax_tree = await dom_service.get_dom_tree()
+		dom_tree = await dom_service.get_dom_tree()
 		end = time.time()
 		print(f'Time taken: {end - start} seconds')
 
-		async with aiofiles.open('tmp/snapshot.json', 'w') as f:
-			await f.write(json.dumps(snapshot, indent=1))
+		# async with aiofiles.open('tmp/snapshot.json', 'w') as f:
+		# 	await f.write(json.dumps(snapshot, indent=1))
 
-		async with aiofiles.open('tmp/dom_tree.json', 'w') as f:
-			await f.write(json.dumps(dom_tree, indent=1))
+		# async with aiofiles.open('tmp/dom_tree.json', 'w') as f:
+		# 	await f.write(json.dumps(dom_tree, indent=1))
 
-		async with aiofiles.open('tmp/ax_tree.json', 'w') as f:
-			await f.write(json.dumps(ax_tree, indent=1))
+		# async with aiofiles.open('tmp/ax_tree.json', 'w') as f:
+		# 	await f.write(json.dumps(ax_tree, indent=1))
 
-		print('saved dom tree to tmp/dom_tree.json')
-		print('saved snapshot to tmp/snapshot.json')
-		print('saved ax tree to tmp/ax_tree.json')
+		# print('saved dom tree to tmp/dom_tree.json')
+		# print('saved snapshot to tmp/snapshot.json')
+		# print('saved ax tree to tmp/ax_tree.json')
 
 		print('Done')
 
