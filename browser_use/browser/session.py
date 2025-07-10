@@ -2182,18 +2182,33 @@ class BrowserSession(BaseModel):
 
 		try:
 			if self.agent_current_page:
-				await self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded')
+				# Use asyncio.wait to prevent hanging on slow page loads
+				nav_task = asyncio.create_task(self.agent_current_page.goto(normalized_url, wait_until='domcontentloaded'))
+				done, pending = await asyncio.wait([nav_task], timeout=2.0)
+
+				if nav_task in pending:
+					# Navigation timed out after 2s
+					self.logger.warning(
+						f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 2s, continuing anyway..."
+					)
+					nav_task.cancel()
+					try:
+						await nav_task
+					except asyncio.CancelledError:
+						pass
+					# Verify page is still usable
+					if self.agent_current_page:
+						assert await self.agent_current_page.evaluate('1'), (
+							f'Page {self.agent_current_page.url} crashed and can no longer be used via CDP'
+						)
+				elif nav_task in done:
+					# Navigation completed, check if it succeeded
+					await nav_task  # This will raise if navigation failed
 			else:
 				await self.create_new_tab(normalized_url)
 		except Exception as e:
 			if 'timeout' in str(e).lower():
-				self.logger.warning(
-					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {(self.browser_profile.default_navigation_timeout or 30_000) / 1000}s, continuing anyway..."
-				)
-				if self.agent_current_page:
-					assert await self.agent_current_page.evaluate('1'), (
-						f'Page {self.agent_current_page.url} crashed after {e} and can no longer be used via CDP'
-					)
+				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 2s, continuing anyway...")
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 			else:
 				# Re-raise non-timeout errors
