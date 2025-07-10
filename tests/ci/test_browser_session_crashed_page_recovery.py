@@ -236,7 +236,11 @@ class TestBrowserSessionRecovery:
 		# Navigate to the permanently blocking page
 		blocking_url = httpserver.url_for('/permanent-block')
 		print(f'1️⃣ Navigating to blocking page: {blocking_url}')
-		await browser_session.navigate(blocking_url)
+		try:
+			await browser_session.navigate(blocking_url)
+		except Exception as e:
+			# Expected - the page is unresponsive
+			print(f'   Navigation raised expected error: {type(e).__name__}')
 		await asyncio.sleep(0.5)  # Let blocking script start
 
 		# We need to patch goto on any new pages created during recovery

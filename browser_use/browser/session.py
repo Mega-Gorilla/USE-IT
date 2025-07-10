@@ -2269,7 +2269,7 @@ class BrowserSession(BaseModel):
 						self.logger.debug(f'✅ Page is responsive despite navigation timeout on: {_log_pretty_url(current_url)})')
 					else:
 						self.logger.error(
-							f'❌ Page is unresponsive after navigation timeout on: {_log_pretty_url(current_url)} uh oh!'
+							f'❌ Page is unresponsive after navigation timeout on: {_log_pretty_url(current_url)} uh oh! subsequent operations may fail on this page...'
 						)
 						raise Exception(
 							f'Page JS engine is unresponsive after navigation / loading timeout on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
@@ -2278,11 +2278,13 @@ class BrowserSession(BaseModel):
 				# Navigation completed, check if it succeeded
 				await nav_task  # This will raise if navigation failed
 		except Exception as e:
-			# if 'timeout' in str(e).lower():
-			# 	self.logger.warning(
-			# 		f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after timeout, continuing anyway..."
-			# 	)
-			raise
+			if 'timeout' in str(e).lower():
+				# self.logger.warning(
+				# 	f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish and further operations may fail on this page..."
+				# )
+				pass  # allow agent to attempt to continue without raising hard error, it can use tools to work around it
+			else:
+				raise
 
 		# Show DVD animation on new tab pages if no URL specified
 		if new_tab and is_new_tab_page(page.url):
