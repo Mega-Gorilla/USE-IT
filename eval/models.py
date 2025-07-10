@@ -107,6 +107,12 @@ SUPPORTED_MODELS = {
 		'base_url': 'https://api.x.ai/v1',
 		'api_key_env': 'XAI_API_KEY',
 	},
+	'grok-4': {
+		'provider': 'openai_compatible',
+		'model_name': 'grok-4-0709',
+		'base_url': 'https://api.x.ai/v1',
+		'api_key_env': 'XAI_API_KEY',
+	},
 	# Groq
 	'gemma2-9b-it': {
 		'provider': 'groq',
