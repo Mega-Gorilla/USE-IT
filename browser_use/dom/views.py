@@ -86,10 +86,26 @@ class EnhancedSnapshotNode:
 	is_clickable: bool | None
 	is_visible: bool | None
 	cursor_style: str | None
-	bounding_box: dict[str, float] | None
-	"""Bounding box with x, y, width, height in viewport coordinates"""
+	bounds: dict[str, float] | None
+	"""
+	Document coordinates (origin = top-left of the page, ignores current scroll).
+	Equivalent JS API: layoutNode.boundingBox in the older API.
+	Typical use: Quick hit-test that doesn’t care about scroll position.
+	"""
+
+	clientRects: dict[str, float] | None
+	"""
+	Viewport coordinates (origin = top-left of the visible scrollport).
+	Equivalent JS API: element.getClientRects() / getBoundingClientRect().
+	Typical use: Pixel-perfect hit-testing on screen, taking current scroll into account.
+	"""
+
 	computed_styles: dict[str, str] | None
 	"""Computed styles from the layout tree"""
+	paint_order: int | None
+	"""Paint order from the layout tree"""
+	stacking_contexts: int | None
+	"""Stacking contexts from the layout tree"""
 
 
 @dataclass(slots=True)

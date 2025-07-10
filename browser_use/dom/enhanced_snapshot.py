@@ -124,6 +124,9 @@ def build_snapshot_lookup(
 		computed_styles = {}
 
 		# Look for layout tree node that corresponds to this snapshot node
+		paint_order = None
+		client_rects = None
+		stacking_contexts = None
 		for layout_idx, node_index in enumerate(layout.get('nodeIndex', [])):
 			if node_index == snapshot_index and layout_idx < len(layout.get('bounds', [])):
 				# Parse bounding box
@@ -137,6 +140,26 @@ def build_snapshot_lookup(
 					computed_styles = _parse_computed_styles(strings, style_indices)
 					cursor_style = computed_styles.get('cursor')
 
+				# Extract paint order if available
+				if layout_idx < len(layout.get('paintOrders', [])):
+					paint_order = layout.get('paintOrders', [])[layout_idx]
+
+				# Extract client rects if available
+				client_rects_data = layout.get('clientRects', [])
+				if layout_idx < len(client_rects_data):
+					client_rect_data = client_rects_data[layout_idx]
+					if client_rect_data and len(client_rect_data) >= 4:
+						client_rects = {
+							'x': client_rect_data[0],
+							'y': client_rect_data[1],
+							'width': client_rect_data[2],
+							'height': client_rect_data[3],
+						}
+
+				# Extract stacking contexts if available
+				if layout_idx < len(layout.get('stackingContexts', [])):
+					stacking_contexts = layout.get('stackingContexts', {}).get('index', [])[layout_idx]
+
 				# Calculate visibility immediately if we have bounding box
 				if bounding_box and computed_styles:
 					is_visible = _is_element_visible(bounding_box, computed_styles, viewport_width, viewport_height)
@@ -147,8 +170,11 @@ def build_snapshot_lookup(
 			is_clickable=is_clickable,
 			cursor_style=cursor_style,
 			is_visible=is_visible,
-			bounding_box=bounding_box,
+			bounds=bounding_box,
+			clientRects=client_rects,
 			computed_styles=computed_styles if computed_styles else None,
+			paint_order=paint_order,
+			stacking_contexts=stacking_contexts,
 		)
 
 	return snapshot_lookup
