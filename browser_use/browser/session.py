@@ -17,6 +17,7 @@ from typing import Any, Self
 from urllib.parse import urlparse
 
 from browser_use.config import CONFIG
+from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
@@ -1996,14 +1997,14 @@ class BrowserSession(BaseModel):
 			# Don't raise the error since this is not critical functionality
 
 	@require_initialization
-	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
+	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
 		"""Get DOM element by index."""
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
 
 	@require_initialization
 	@time_execution_async('--click_element_node')
-	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
+	async def _click_element_node(self, element_node: EnhancedDOMTreeNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
 		"""
@@ -2089,7 +2090,7 @@ class BrowserSession(BaseModel):
 						raise e
 					except Exception as e:
 						# Final fallback - try clicking by coordinates if available
-						if element_node.viewport_coordinates and element_node.viewport_coordinates.center:
+						if element_node.snapshot_node and element_node.snapshot_node.clientRects:
 							try:
 								self.logger.warning(
 									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.viewport_coordinates.center.x}, {element_node.viewport_coordinates.center.y})'
@@ -3722,7 +3723,7 @@ class BrowserSession(BaseModel):
 	# region - Helper methods for easier access to the DOM
 	@observe_debug(name='get_selector_map')
 	@require_initialization
-	async def get_selector_map(self) -> SelectorMap:
+	async def get_selector_map(self) -> DOMSelectorMap:
 		if self._cached_browser_state_summary is None:
 			return {}
 		return self._cached_browser_state_summary.selector_map

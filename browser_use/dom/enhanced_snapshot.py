@@ -13,7 +13,7 @@ from cdp_use.cdp.domsnapshot.types import (
 	RareBooleanData,
 )
 
-from browser_use.dom.views import EnhancedSnapshotNode
+from browser_use.dom.views import DOMRect, EnhancedSnapshotNode
 
 # Only the essential computed styles we actually need
 REQUIRED_COMPUTED_STYLES = [
@@ -60,11 +60,11 @@ def _parse_computed_styles(strings: list[str], style_indices: list[int]) -> dict
 
 
 def _is_element_visible(
-	bounding_box: dict[str, float], computed_styles: dict[str, str], viewport_width: float, viewport_height: float
+	bounding_box: DOMRect, computed_styles: dict[str, str], viewport_width: float, viewport_height: float
 ) -> bool:
 	"""Determine if an element is visible. More permissive - considers elements visible if they start anywhere on the page."""
 	# Check if element has zero dimensions
-	if bounding_box['width'] <= 0 or bounding_box['height'] <= 0:
+	if bounding_box.width <= 0 or bounding_box.height <= 0:
 		return False
 
 	# Check CSS visibility properties
@@ -83,12 +83,12 @@ def _is_element_visible(
 
 	# More permissive visibility - element is visible if it has any presence on the page
 	# and intersects with the viewport area (including elements that start at the beginning)
-	elem_right = bounding_box['x'] + bounding_box['width']
-	elem_bottom = bounding_box['y'] + bounding_box['height']
+	elem_right = bounding_box.x + bounding_box.width
+	elem_bottom = bounding_box.y + bounding_box.height
 
 	# Element is visible if it has any intersection with the page area
 	# This includes elements that start at x=0, y=0 (beginning of page)
-	return elem_right > 0 and elem_bottom > 0 and bounding_box['x'] < viewport_width and bounding_box['y'] < viewport_height
+	return elem_right > 0 and elem_bottom > 0 and bounding_box.x < viewport_width and bounding_box.y < viewport_height
 
 
 def build_snapshot_lookup(
@@ -132,7 +132,7 @@ def build_snapshot_lookup(
 				# Parse bounding box
 				bounds = layout['bounds'][layout_idx]
 				if len(bounds) >= 4:
-					bounding_box = {'x': bounds[0], 'y': bounds[1], 'width': bounds[2], 'height': bounds[3]}
+					bounding_box = DOMRect(x=bounds[0], y=bounds[1], width=bounds[2], height=bounds[3])
 
 				# Parse computed styles for this layout node
 				if layout_idx < len(layout.get('styles', [])):
@@ -149,12 +149,12 @@ def build_snapshot_lookup(
 				if layout_idx < len(client_rects_data):
 					client_rect_data = client_rects_data[layout_idx]
 					if client_rect_data and len(client_rect_data) >= 4:
-						client_rects = {
-							'x': client_rect_data[0],
-							'y': client_rect_data[1],
-							'width': client_rect_data[2],
-							'height': client_rect_data[3],
-						}
+						client_rects = DOMRect(
+							x=client_rect_data[0],
+							y=client_rect_data[1],
+							width=client_rect_data[2],
+							height=client_rect_data[3],
+						)
 
 				# Extract stacking contexts if available
 				if layout_idx < len(layout.get('stackingContexts', [])):

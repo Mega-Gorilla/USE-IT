@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from browser_use.dom.views import DOMHistoryElement, DOMState
+from browser_use.dom.views import DOMInteractedElement, DOMState
 
 
 # Pydantic
@@ -67,7 +67,7 @@ class BrowserStateHistory:
 	url: str
 	title: str
 	tabs: list[TabInfo]
-	interacted_element: list[DOMHistoryElement | None] | list[None]
+	interacted_element: list[DOMInteractedElement | None] | list[None]
 	screenshot: str | None = None
 
 	def to_dict(self) -> dict[str, Any]:

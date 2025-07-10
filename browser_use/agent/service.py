@@ -21,7 +21,7 @@ from browser_use.agent.cloud_events import (
 	CreateAgentTaskEvent,
 	UpdateAgentTaskEvent,
 )
-from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
+from browser_use.dom.serializer import DEFAULT_INCLUDE_ATTRIBUTES
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.tokens.service import TokenCost
@@ -60,7 +60,7 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
 from browser_use.controller.service import Controller
-from browser_use.dom.views import DOMHistoryElement
+from browser_use.dom.views import DOMInteractedElement
 from browser_use.exceptions import LLMException
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.observability import observe, observe_debug
@@ -1485,7 +1485,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def _update_action_indices(
 		self,
-		historical_element: DOMHistoryElement | None,
+		historical_element: DOMInteractedElement | None,
 		action: ActionModel,  # Type this properly based on your action model
 		browser_state_summary: BrowserStateSummary,
 	) -> ActionModel | None:

@@ -1,34 +1,9 @@
 from dataclasses import asdict, dataclass
 from enum import Enum
+from typing import Any
 
 from cdp_use.cdp.accessibility.types import AXPropertyName
 from cdp_use.cdp.dom.types import ShadowRootType
-from pydantic import BaseModel
-
-################## TO BE REMOVED
-DEFAULT_INCLUDE_ATTRIBUTES = [
-	'title',
-	'type',
-	'checked',
-	'name',
-	'role',
-	'value',
-	'placeholder',
-	'data-date-format',
-	'alt',
-	'aria-label',
-	'aria-expanded',
-	'data-state',
-	'aria-checked',
-]
-
-
-class DOMNodeAttributes(BaseModel):
-	name: str
-	value: str
-
-
-################## END TO BE REMOVED
 
 
 class NodeType(int, Enum):
@@ -80,20 +55,28 @@ class EnhancedAXNode:
 
 
 @dataclass(slots=True)
+class DOMRect:
+	x: float
+	y: float
+	width: float
+	height: float
+
+
+@dataclass(slots=True)
 class EnhancedSnapshotNode:
 	"""Snapshot data extracted from DOMSnapshot for enhanced functionality."""
 
 	is_clickable: bool | None
 	is_visible: bool | None
 	cursor_style: str | None
-	bounds: dict[str, float] | None
+	bounds: DOMRect | None
 	"""
 	Document coordinates (origin = top-left of the page, ignores current scroll).
 	Equivalent JS API: layoutNode.boundingBox in the older API.
 	Typical use: Quick hit-test that doesn’t care about scroll position.
 	"""
 
-	clientRects: dict[str, float] | None
+	clientRects: DOMRect | None
 	"""
 	Viewport coordinates (origin = top-left of the visible scrollport).
 	Equivalent JS API: element.getClientRects() / getBoundingClientRect().
@@ -233,10 +216,28 @@ class EnhancedDOMTreeNode:
 		}
 
 
+DOMSelectorMap = dict[int, EnhancedDOMTreeNode]
+
+
 @dataclass
 class DOMState:  #
 	root: EnhancedDOMTreeNode
 
 
-class DOMHistoryElement:
-	pass
+@dataclass
+class DOMInteractedElement:
+	node_type: NodeType
+	node_value: str
+	node_name: str
+	attributes: dict[str, str] | None
+
+	x_path: str
+
+	def to_dict(self) -> dict[str, Any]:
+		return {
+			'node_type': self.node_type.value,
+			'node_value': self.node_value,
+			'node_name': self.node_name,
+			'attributes': self.attributes,
+			'x_path': self.x_path,
+		}

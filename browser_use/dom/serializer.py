@@ -4,7 +4,23 @@ from dataclasses import dataclass, field
 
 from cdp_use.cdp.accessibility.types import AXPropertyName
 
-from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, EnhancedDOMTreeNode, NodeType
+from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType
+
+DEFAULT_INCLUDE_ATTRIBUTES = [
+	'title',
+	'type',
+	'checked',
+	'name',
+	'role',
+	'value',
+	'placeholder',
+	'data-date-format',
+	'alt',
+	'aria-label',
+	'aria-expanded',
+	'data-state',
+	'aria-checked',
+]
 
 
 @dataclass(slots=True)
@@ -40,12 +56,12 @@ class DOMTreeSerializer:
 		self.root_node = root_node
 
 		self._interactive_counter = 1
-		self._selector_map: dict[int, EnhancedDOMTreeNode] = {}
+		self._selector_map: DOMSelectorMap = {}
 
-	def serialize_accessible_elements(
-		self, include_attributes: list[str] | None = None
-	) -> tuple[str, dict[int, EnhancedDOMTreeNode]]:
+	def serialize_accessible_elements(self, include_attributes: list[str] | None = None) -> tuple[str, DOMSelectorMap]:
 		"""Convert the enhanced DOM tree to string format, showing accessible elements and text content.
+
+		include_attributes: list[str] = include_attributes or `DEFAULT_INCLUDE_ATTRIBUTES`
 
 		Returns:
 			- Serialized string representation
