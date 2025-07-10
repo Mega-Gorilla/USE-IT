@@ -1,0 +1,651 @@
+"""
+Comprehensive tests for browser session recovery when pages become unresponsive due to blocking JavaScript.
+
+This test module covers:
+1. Permanent blocking JavaScript that never unblocks
+2. Transient blocking JavaScript that unblocks after a delay
+3. Page recovery mechanisms via CDP force-close
+4. Minimal demonstrations of Playwright hanging on blocking JS
+5. Multiple concurrent sessions handling blocking pages
+"""
+
+import asyncio
+import time
+import warnings
+
+import pytest
+from playwright.async_api import async_playwright
+from pytest_httpserver import HTTPServer
+from werkzeug.wrappers import Response
+
+from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.session import BrowserSession
+
+# Suppress TargetClosedError warnings during tests
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*TargetClosedError.*')
+
+
+@pytest.fixture(scope='module')
+async def playwright():
+	async with async_playwright() as p:
+		yield p
+
+
+class TestPlaywrightBlockingJavaScript:
+	"""Minimal demonstrations showing that Playwright hangs on blocking JavaScript"""
+
+	async def test_playwright_hangs_on_infinite_loop(self, playwright):
+		"""Demonstrate that Playwright operations hang indefinitely on pages with blocking JavaScript"""
+
+		browser = await playwright.chromium.launch(headless=True)
+		page = await browser.new_page()
+
+		# Navigate to a page with an infinite loop
+		print('1. Navigating to page with infinite JavaScript loop...')
+		try:
+			await page.goto('data:text/html,<script>while(true){}</script>', wait_until='domcontentloaded', timeout=1000)
+		except Exception as e:
+			print(f'   Navigation timed out as expected: {type(e).__name__}')
+		print('2. Navigation complete (page is now blocked)')
+
+		# Try to evaluate simple JavaScript with asyncio timeout
+		print("3. Attempting page.evaluate('1+1') with 2 second timeout...")
+		print('   Expected: Should timeout after 2 seconds')
+		print('   Reality: In some versions, this may hang forever!\n')
+
+		try:
+			# In older Playwright versions, this could hang forever!
+			# In newer versions, it may properly timeout
+			result = await asyncio.wait_for(page.evaluate('1 + 1'), timeout=2.0)
+			print(f'✅ Result: {result} (Playwright handled it properly)')
+			assert False, (
+				'Playwright is expected to time out here, otherwise congrats, you can remove all the complexity around handling crashed pages!'
+			)
+		except TimeoutError:
+			print('✅ Timed out after 2 seconds as expected because page is crashed (asyncio timeout worked)')
+		except Exception as e:
+			print(f'⚠️  Other error: {type(e).__name__}: {e}')
+			assert False, 'Playwright is expected to time out during all operations on crashed pages, not raise an exception'
+
+	async def test_all_playwright_operations_hang(self, playwright):
+		"""Show that ALL Playwright operations hang on a blocked page"""
+
+		browser = await playwright.chromium.launch(headless=True)
+		page = await browser.new_page()
+
+		# Navigate to blocking page
+		try:
+			await page.goto('data:text/html,<script>while(true){}</script>', wait_until='domcontentloaded', timeout=500)
+		except Exception:
+			pass  # Expected timeout
+		print('✅ Page is now blocked by infinite loop')
+
+		# List of operations that will ALL hang forever
+		operations = [
+			('page.title()', lambda: page.title()),
+			('page.content()', lambda: page.content()),
+			('page.screenshot()', lambda: page.screenshot()),
+			("page.evaluate('1')", lambda: page.evaluate('1')),
+			("page.query_selector('body')", lambda: page.query_selector('body')),
+		]
+
+		for op_name, op_func in operations:
+			print(f'\n🧪 Testing {op_name} with 1s timeout...')
+			try:
+				await asyncio.wait_for(op_func(), timeout=1.0)
+				print(f'✅ {op_name} succeeded')
+			except TimeoutError:
+				print(f'⏱️  {op_name} timed out after 1s (expected for blocked page)')
+			except Exception as e:
+				print(f'❌ {op_name} failed: {type(e).__name__}')
+
+	async def test_transient_vs_permanent_blocking(self, playwright):
+		"""Demonstrate the difference between transient and permanent blocking"""
+
+		browser = await playwright.chromium.launch(headless=True)
+
+		# Test 1: Transient blocking (blocks for 2 seconds)
+		print('=== Test 1: Transient Blocking ===')
+		page1 = await browser.new_page()
+
+		transient_html = """
+		<html><body>
+		<h1>Transient Block</h1>
+		<script>
+			const start = Date.now();
+			while (Date.now() - start < 2000) {} // Block for 2 seconds
+			document.body.innerHTML += '<p>Now responsive!</p>';
+		</script>
+		</body></html>
+		"""
+
+		await page1.goto(f'data:text/html,{transient_html}')
+		print('Page loaded with transient blocking script')
+
+		# Wait for block to end
+		await asyncio.sleep(2.5)
+
+		# This should work now
+		try:
+			result = await asyncio.wait_for(page1.evaluate('2 + 2'), timeout=1.0)
+			print(f'✅ Transient block ended, evaluate worked: {result}')
+		except TimeoutError:
+			print('❌ Still blocked after transient period')
+
+		# Test 2: Permanent blocking
+		print('\n=== Test 2: Permanent Blocking ===')
+		page2 = await browser.new_page()
+
+		try:
+			await page2.goto('data:text/html,<script>while(true){}</script>', wait_until='domcontentloaded', timeout=1000)
+		except Exception:
+			pass  # Expected timeout
+		print('Page loaded with permanent blocking script')
+
+		# This will always timeout
+		try:
+			await asyncio.wait_for(page2.evaluate('3 + 3'), timeout=1.0)
+			print('❌ Should not succeed on permanently blocked page')
+		except TimeoutError:
+			print('✅ Permanently blocked page timed out as expected')
+
+		del page1, page2
+
+
+def slow_response_handler(request):
+	"""Handler that delays response by 5 seconds"""
+	time.sleep(5)  # 5 second delay
+	return Response("""<html><body>Finally loaded!</body></html>""", content_type='text/html')
+
+
+class TestBrowserSessionRecovery:
+	"""Test browser-use's recovery mechanisms for unresponsive pages"""
+
+	@pytest.fixture(scope='function')
+	async def browser_session(self, playwright):
+		"""Create a browser session for testing"""
+		session = BrowserSession(
+			browser_profile=BrowserProfile(
+				headless=True,
+				keep_alive=True,
+				default_navigation_timeout=30_000,
+				minimum_wait_page_load_time=0.1,  # Short wait for testing
+				user_data_dir=None,  # No user data dir to avoid race conditions with other tests
+			),
+			playwright=playwright,
+		)
+		await session.start()
+		yield session
+		# Small delay to let pending operations complete before cleanup
+		await asyncio.sleep(0.1)
+		await session.kill()
+
+	@pytest.mark.timeout(60)  # 60 second timeout
+	async def test_permanent_blocking_forces_cdp_recovery(self, httpserver: HTTPServer, browser_session: BrowserSession):
+		"""Test critical behaviors:
+		1. Crashed pages should never crash the entire agent
+		2. Pages should be retried once on the original URL
+		3. Then reset to about:blank to prevent browser from becoming unusable
+		"""
+
+		# Create a page with permanent blocking JavaScript
+		httpserver.expect_request('/permanent-block').respond_with_data(
+			"""
+			<html>
+			<head><title>Permanent Block</title></head>
+			<body>
+				<h1>This page blocks forever</h1>
+				<script>
+					console.log('Starting infinite loop...');
+					while (true) {
+						// Infinite loop - page will never recover
+					}
+				</script>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Track recovery attempts
+		cdp_force_close_count = 0
+		reopen_attempts = 0
+
+		# Ensure browser_context is available
+		assert browser_session.browser_context is not None, 'Browser context must be initialized'
+		original_new_cdp_session = browser_session.browser_context.new_cdp_session
+		original_goto = None
+
+		async def track_cdp_force_close(page):
+			nonlocal cdp_force_close_count
+			cdp_force_close_count += 1
+			print(f'🔨 CDP force-close recovery attempted (count: {cdp_force_close_count})')
+			return await original_new_cdp_session(page)
+
+		async def track_goto(page_instance, url, **kwargs):
+			nonlocal reopen_attempts
+			if 'permanent-block' in url and cdp_force_close_count > 0:
+				reopen_attempts += 1
+				print(f'🔄 Reopening blocked URL attempt #{reopen_attempts}: {url[:50]}...')
+			# Get the original goto method for this specific page
+			original = page_instance.__class__.goto
+			return await original(page_instance, url, **kwargs)
+
+		browser_session.browser_context.new_cdp_session = track_cdp_force_close  # type: ignore[assignment]
+
+		# Navigate to the permanently blocking page
+		blocking_url = httpserver.url_for('/permanent-block')
+		print(f'1️⃣ Navigating to blocking page: {blocking_url}')
+		await browser_session.navigate(blocking_url)
+		await asyncio.sleep(0.5)  # Let blocking script start
+
+		# We need to patch goto on any new pages created during recovery
+		pages_patched = set()
+
+		def patch_page_goto(page):
+			if page not in pages_patched:
+				pages_patched.add(page)
+				# Create a bound method that properly tracks goto calls
+				import types
+
+				page.goto = types.MethodType(track_goto, page)
+
+		# Patch the current page
+		page = await browser_session.get_current_page()
+		patch_page_goto(page)
+
+		# Also patch browser context's new_page to catch pages created during recovery
+		original_new_page = browser_session.browser_context.new_page
+
+		async def patched_new_page():
+			new_page = await original_new_page()
+			patch_page_goto(new_page)
+			return new_page
+
+		browser_session.browser_context.new_page = patched_new_page  # type: ignore[assignment]
+
+		# Try to take a screenshot - should trigger recovery
+		print('\n2️⃣ Attempting screenshot on blocked page (should trigger recovery)...')
+		try:
+			# Use a longer timeout since recovery takes time
+			screenshot = await asyncio.wait_for(
+				browser_session.take_screenshot(),
+				timeout=40.0,  # 40 seconds should be enough for recovery
+			)
+			assert screenshot is not None, 'Screenshot should succeed after recovery'
+			assert len(screenshot) > 100, 'Screenshot should have content'
+		except TimeoutError:
+			pytest.fail('Screenshot timed out after 40 seconds - recovery may have failed')
+
+		# Verify current page is on about:blank after recovery
+		current_page = await browser_session.get_current_page()
+		current_url = current_page.url
+		print(f'\n3️⃣ Current URL after recovery: {current_url}')
+		assert current_url == 'about:blank', 'Page should be on about:blank after recovery'
+
+		# Verify recovery behavior
+		print('\n📊 Recovery statistics:')
+		print(f'   - CDP force-close attempts: {cdp_force_close_count}')
+		print(f'   - Reopen attempts: {reopen_attempts}')
+
+		assert cdp_force_close_count >= 1, 'CDP force-close should have been attempted at least once'
+		assert reopen_attempts == 1, 'Should attempt to reopen the URL exactly once'
+
+		# Verify browser still works by navigating to a normal page
+		print('\n4️⃣ Testing browser still works with normal pages...')
+		httpserver.expect_request('/normal').respond_with_data(
+			'<html><body><h1>Normal Page</h1></body></html>',
+			content_type='text/html',
+		)
+
+		await browser_session.navigate_to(httpserver.url_for('/normal'))
+
+		# Take a screenshot to verify browser works
+		screenshot2 = await browser_session.take_screenshot()
+		assert screenshot2 is not None
+		assert len(screenshot2) > 100, 'Browser should still work after recovery'
+
+		print('\n✅ All critical behaviors verified:')
+		print('   - Crashed page did not crash the entire agent')
+		print('   - Page was retried once on the original URL')
+		print('   - Page was reset to about:blank to remain usable')
+
+	async def test_transient_blocking_recovers_naturally(self, httpserver: HTTPServer, browser_session: BrowserSession):
+		"""Test that transiently blocked pages recover without intervention"""
+
+		# Create a page that blocks for 3 seconds then recovers
+		httpserver.expect_request('/transient-block').respond_with_data(
+			"""
+			<html>
+			<head><title>Transient Block</title></head>
+			<body>
+				<h1>Blocking temporarily...</h1>
+				<script>
+					console.log('Starting 3 second block...');
+					const start = Date.now();
+					while (Date.now() - start < 3000) {
+						// Block for 3 seconds
+					}
+					document.body.innerHTML += '<p>Page recovered!</p>';
+					console.log('Block ended');
+				</script>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the transient blocking page
+		await browser_session.navigate_to(httpserver.url_for('/transient-block'))
+
+		# Wait for the block to end
+		await asyncio.sleep(3.5)
+
+		# Operations should work without triggering recovery
+		screenshot = await browser_session.take_screenshot()
+		assert screenshot is not None, 'Screenshot should work after transient block'
+		assert len(screenshot) > 100, 'Screenshot should have content'
+
+		# Verify page shows recovery message
+		page = await browser_session.get_current_page()
+		content = await page.content()
+		assert 'Page recovered!' in content, 'Page should show recovery message'
+
+	async def test_multiple_blocking_recovery_cycles(self, httpserver: HTTPServer, browser_session: BrowserSession):
+		"""Test multiple cycles of blocking and recovery"""
+
+		# Create pages
+		httpserver.expect_request('/block1').respond_with_data(
+			'<html><body><script>while(true){}</script></body></html>',
+			content_type='text/html',
+		)
+
+		httpserver.expect_request('/normal1').respond_with_data(
+			'<html><body><h1>Normal Page 1</h1></body></html>',
+			content_type='text/html',
+		)
+
+		httpserver.expect_request('/block2').respond_with_data(
+			'<html><body><script>while(true){}</script></body></html>',
+			content_type='text/html',
+		)
+
+		httpserver.expect_request('/normal2').respond_with_data(
+			'<html><body><h1>Normal Page 2</h1></body></html>',
+			content_type='text/html',
+		)
+
+		# First blocking cycle
+		print('=== Cycle 1: Navigate to blocking page ===')
+		await browser_session.navigate_to(httpserver.url_for('/block1'))
+
+		# Try screenshot (may trigger recovery)
+		try:
+			await browser_session.take_screenshot()
+		except Exception:
+			pass
+
+		# Navigate to normal page
+		print('=== Cycle 1: Navigate to normal page ===')
+		await browser_session.navigate_to(httpserver.url_for('/normal1'))
+		page = await browser_session.get_current_page()
+		content = await page.content()
+		assert 'Normal Page 1' in content
+
+		# Second blocking cycle
+		print('=== Cycle 2: Navigate to another blocking page ===')
+		await browser_session.navigate_to(httpserver.url_for('/block2'))
+
+		# Try screenshot again
+		try:
+			await browser_session.take_screenshot()
+		except Exception:
+			pass
+
+		# Navigate to second normal page
+		print('=== Cycle 2: Navigate to another normal page ===')
+		await browser_session.navigate_to(httpserver.url_for('/normal2'))
+		page = await browser_session.get_current_page()
+		content = await page.content()
+		assert 'Normal Page 2' in content
+
+		print('✅ Multiple recovery cycles completed successfully')
+
+	# class TestConcurrentBlockingSessions:
+	# 	"""Test multiple browser sessions dealing with blocking pages concurrently"""
+
+	# 	async def test_concurrent_sessions_isolation(self, httpserver: HTTPServer):
+	# 		"""Test that blocking in one session doesn't affect others"""
+
+	# 		# Create test pages
+	# 		httpserver.expect_request('/blocking').respond_with_data(
+	# 			"<html><body><script>while(true){}</script></body></html>",
+	# 			content_type='text/html',
+	# 		)
+
+	# 		httpserver.expect_request('/normal').respond_with_data(
+	# 			"<html><body><h1>Normal Page</h1></body></html>",
+	# 			content_type='text/html',
+	# 		)
+
+	# 		# Create multiple sessions
+	# 		sessions = []
+	# 		for i in range(3):
+	# 			session = BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					headless=True,
+	# 					keep_alive=False,
+	# 					default_navigation_timeout=2000,
+	# 				)
+	# 			)
+	# 			sessions.append(session)
+
+	# 		try:
+	# 			# Start all sessions
+	# 			await asyncio.gather(*[s.start() for s in sessions])
+
+	# 			# Session 0: Navigate to blocking page
+	# 			# Sessions 1-2: Navigate to normal pages
+	# 			nav_tasks = [
+	# 				sessions[0].navigate_to(httpserver.url_for('/blocking')),
+	# 				sessions[1].navigate_to(httpserver.url_for('/normal')),
+	# 				sessions[2].navigate_to(httpserver.url_for('/normal')),
+	# 			]
+	# 			await asyncio.gather(*nav_tasks)
+
+	# 			# Sessions 1-2 should be able to take screenshots
+	# 			# Session 0 might timeout or trigger recovery
+	# 			results = []
+	# 			for i, session in enumerate(sessions):
+	# 				try:
+	# 					screenshot = await asyncio.wait_for(
+	# 						session.take_screenshot(),
+	# 						timeout=3.0
+	# 					)
+	# 					results.append((i, True, len(screenshot) if screenshot else 0))
+	# 				except Exception as e:
+	# 					results.append((i, False, str(e)))
+
+	# 			# Verify sessions 1-2 worked fine
+	# 			assert results[1][1], f"Session 1 should work: {results[1][2]}"
+	# 			assert results[2][1], f"Session 2 should work: {results[2][2]}"
+
+	# 			# Session 0 may have failed or recovered - either is OK
+	# 			print(f"Session 0 (blocking page): {'success' if results[0][1] else 'failed/recovered'}")
+
+	# 		finally:
+	# 			# Clean up all sessions
+	# 			await asyncio.gather(*[s.kill() for s in sessions])
+
+	# class TestBrowserUseScenarios:
+	# 	"""Test scenarios that mimic real browser-use patterns"""
+
+	# 	async def test_browser_use_responsiveness_check_pattern(self, httpserver: HTTPServer):
+	# 		"""Test the browser-use pattern of checking page responsiveness"""
+
+	# 		# Create a blocking page
+	# 		httpserver.expect_request('/app-with-bug').respond_with_data(
+	# 			"""
+	# 			<html>
+	# 			<head><title>Buggy App</title></head>
+	# 			<body>
+	# 				<h1>App with Bug</h1>
+	# 				<button onclick="while(true){}">Click me to freeze!</button>
+	# 				<script>
+	# 					// Simulate a bug that freezes after user interaction
+	# 					setTimeout(() => {
+	# 						console.log('Bug triggered - entering infinite loop');
+	# 						while(true) {}
+	# 					}, 2000);
+	# 				</script>
+	# 			</body>
+	# 			</html>
+	# 			""",
+	# 			content_type='text/html',
+	# 		)
+
+	# 		session = BrowserSession(
+	# 			browser_profile=BrowserProfile(
+	# 				headless=True,
+	# 				keep_alive=False,
+	# 			)
+	# 		)
+
+	# 		try:
+	# 			await session.start()
+
+	# 			# Navigate to the buggy app
+	# 			print("1. Navigating to app with bug...")
+	# 			await session.navigate_to(httpserver.url_for('/app-with-bug'))
+
+	# 			# App works initially
+	# 			print("2. Taking initial screenshot (app still responsive)...")
+	# 			screenshot1 = await session.take_screenshot()
+	# 			assert screenshot1 is not None, "Initial screenshot should work"
+
+	# 			# Wait for the bug to trigger
+	# 			print("3. Waiting for bug to trigger...")
+	# 			await asyncio.sleep(2.5)
+
+	# 			# Now the page is frozen - browser-use would check responsiveness
+	# 			print("4. Checking page responsiveness (browser-use pattern)...")
+	# 			page = await session.get_current_page()
+
+	# 			async def check_page_responsive() -> bool:
+	# 				"""Check if page is responsive - mimics browser-use"""
+	# 				try:
+	# 					await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
+	# 					return True
+	# 				except:
+	# 					return False
+
+	# 			is_responsive = await check_page_responsive()
+	# 			print(f"5. Page responsive: {is_responsive}")
+	# 			assert not is_responsive, "Page should be unresponsive after bug triggers"
+
+	# 			# Browser-use would attempt recovery here
+	# 			print("6. Attempting recovery...")
+	# 			try:
+	# 				screenshot2 = await session.take_screenshot()
+	# 				print(f"   Recovery successful: {len(screenshot2) if screenshot2 else 0} bytes")
+	# 			except Exception as e:
+	# 				print(f"   Recovery needed: {type(e).__name__}")
+
+	# 		finally:
+	# 			await session.kill()
+
+	async def test_transient_blocking_javascript_recovers(self, httpserver: HTTPServer, browser_session: BrowserSession):
+		"""Test that pages with transient blocking JavaScript recover after the block ends"""
+		# Create a page that blocks for 3 seconds then becomes responsive
+		httpserver.expect_request('/transient-blocking').respond_with_data(
+			"""<html><body>
+			<h1>This page will block temporarily</h1>
+			<script>
+				const start = Date.now();
+				while (Date.now() - start < 3000) {} // Block for 3 seconds
+				document.body.innerHTML += '<p>Page is now responsive!</p>';
+			</script>
+			</body></html>""",
+			content_type='text/html',
+		)
+
+		await browser_session.navigate(httpserver.url_for('/transient-blocking'))
+		await asyncio.sleep(2)  # Wait for block to end
+
+		# Operations should work without triggering recovery
+		screenshot = await browser_session.take_screenshot()
+		assert screenshot is not None and len(screenshot) > 100
+
+		page = await browser_session.get_current_page()
+		content = await page.content()
+		assert 'Page is now responsive!' in content
+
+	async def test_navigation_timeout_warning_appears(self, httpserver: HTTPServer, browser_session: BrowserSession):
+		"""Test that timeout warning appears in logs when navigation times out"""
+		httpserver.expect_request('/delayed').respond_with_handler(slow_response_handler)
+
+		# Track warning in logs
+		warning_logged = False
+		old_navigate = browser_session.navigate
+
+		async def navigate_with_log_check(url: str = 'about:blank', new_tab: bool = False):
+			nonlocal warning_logged
+			import logging
+
+			class WarningHandler(logging.Handler):
+				def emit(self, record):
+					if "didn't finish after" in record.getMessage() and 'continuing anyway' in record.getMessage():
+						nonlocal warning_logged
+						warning_logged = True
+
+			handler = WarningHandler()
+			browser_session.logger.addHandler(handler)
+			try:
+				return await old_navigate(url, new_tab)
+			finally:
+				browser_session.logger.removeHandler(handler)
+
+		browser_session.navigate = navigate_with_log_check  # type: ignore[assignment]
+		await browser_session.navigate(httpserver.url_for('/delayed'))
+
+		# Page should still be accessible
+		page = await browser_session.get_current_page()
+		assert page is not None
+		assert warning_logged, 'Navigation timeout warning was not logged'
+
+
+async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
+	"""Test multiple browser sessions with blocking pages simultaneously"""
+	httpserver.expect_request('/infinite-loop').respond_with_data(
+		"""<html><body><script>while(true){}</script></body></html>""",
+		content_type='text/html',
+	)
+
+	sessions = []
+	for i in range(3):
+		session = BrowserSession(
+			browser_profile=BrowserProfile(
+				headless=True,
+				keep_alive=False,
+				default_navigation_timeout=1000,
+			)
+		)
+		sessions.append(session)
+
+	try:
+		await asyncio.gather(*[s.start() for s in sessions])
+
+		# Navigate to blocking pages - should handle without crashing
+		nav_tasks = []
+		for s in sessions:
+			nav_tasks.append(s.navigate(httpserver.url_for('/infinite-loop')))
+
+		# All navigations should complete (even if pages are blocked)
+		await asyncio.gather(*nav_tasks, return_exceptions=True)
+
+		# Sessions should still be functional
+		for i, session in enumerate(sessions):
+			assert await session.is_connected(), f'Session {i} disconnected'
+
+	finally:
+		await asyncio.gather(*[s.kill() for s in sessions])

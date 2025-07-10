@@ -206,8 +206,9 @@ class TestHeadlessScreenshots:
 			results = await asyncio.gather(*screenshot_tasks, return_exceptions=True)
 			total_time = time.time() - start_time
 
-			# Verify timing - maximum should be 200s (20s × 10)
-			assert total_time < 200, f'Screenshots took too long: {total_time:.1f}s (should be < 200s)'
+			# Verify timing - with semaphore_limit=1, screenshots execute sequentially
+			# Each screenshot should take ~1.5s, so 10 × 1.5s = 15s, allow up to 30s for overhead
+			assert total_time < 30, f'Screenshots took too long: {total_time:.1f}s (should be < 30s)'
 			print(f'All screenshot attempts completed in {total_time:.1f}s')
 
 			# Separate successful screenshots from failures
@@ -258,7 +259,7 @@ class TestHeadlessScreenshots:
 				*[session.take_screenshot() for session in browser_sessions], return_exceptions=True
 			)
 			viewport_time = time.time() - start_time
-			assert viewport_time < 200, f'Viewport screenshots took too long: {viewport_time:.1f}s (should be < 200s)'
+			assert viewport_time < 30, f'Viewport screenshots took too long: {viewport_time:.1f}s (should be < 30s)'
 			print(f'All viewport screenshot attempts completed in {viewport_time:.1f}s')
 
 			# Check for failures
