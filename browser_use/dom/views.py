@@ -151,6 +151,51 @@ class EnhancedDOMTreeNode:
 
 	# endregion - Snapshot Node data
 
+	@property
+	def x_path(self) -> str:
+		"""Generate XPath for this DOM node, stopping at shadow boundaries or iframes."""
+		segments = []
+		current_element = self
+
+		while current_element and current_element.node_type == NodeType.ELEMENT_NODE:
+			# Stop if we hit a shadow root or iframe
+			if current_element.parent_node and (
+				current_element.parent_node.shadow_root_type is not None
+				or current_element.parent_node.node_name.lower() == 'iframe'
+			):
+				break
+
+			position = self._get_element_position(current_element)
+			tag_name = current_element.node_name.lower()
+			xpath_index = f'[{position}]' if position > 0 else ''
+			segments.insert(0, f'{tag_name}{xpath_index}')
+
+			current_element = current_element.parent_node
+
+		return '/'.join(segments)
+
+	def _get_element_position(self, element: 'EnhancedDOMTreeNode') -> int:
+		"""Get the position of an element among its siblings with the same tag name.
+		Returns 0 if it's the only element of its type, otherwise returns 1-based index."""
+		if not element.parent_node or not element.parent_node.children_nodes:
+			return 0
+
+		same_tag_siblings = [
+			child
+			for child in element.parent_node.children_nodes
+			if child.node_type == NodeType.ELEMENT_NODE and child.node_name.lower() == element.node_name.lower()
+		]
+
+		if len(same_tag_siblings) <= 1:
+			return 0  # No index needed if it's the only one
+
+		try:
+			# XPath is 1-indexed
+			position = same_tag_siblings.index(element) + 1
+			return position
+		except ValueError:
+			return 0
+
 	def __json__(self) -> dict:
 		"""Serializes the node and its descendants to a dictionary, omitting parent references."""
 		return {

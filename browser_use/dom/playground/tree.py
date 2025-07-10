@@ -7,6 +7,7 @@ import httpx
 from playwright.async_api import async_playwright
 
 from browser_use.browser import Browser
+from browser_use.dom.serializer import DOMTreeSerializer
 from browser_use.dom.service import DOMService
 
 
@@ -20,61 +21,73 @@ async def main():
 			browser.cdp_url = version_info.json()['webSocketDebuggerUrl']
 
 		# await browser.create_new_tab('https://en.wikipedia.org/wiki/Apple_Inc.')
-		await browser.create_new_tab('https://semantic-ui.com/modules/dropdown.html#/definition')
+		# await browser.create_new_tab('https://semantic-ui.com/modules/dropdown.html#/definition')
+		await browser.create_new_tab('https://select2.org/data-sources/ajax')
 		await browser._wait_for_page_and_frames_load()
 
 		dom_service = DOMService(browser)
 
-		start = time.time()
-		dom_tree = await dom_service.get_dom_tree()
-		end = time.time()
-		print(f'Time taken: {end - start} seconds')
+		while True:
+			start = time.time()
+			dom_tree = await dom_service.get_dom_tree()
+			end = time.time()
+			print(f'Time taken: {end - start} seconds')
 
-		async with aiofiles.open('tmp/enhanced_dom_tree.json', 'w') as f:
-			await f.write(json.dumps(dom_tree.__json__(), indent=1))
+			async with aiofiles.open('tmp/enhanced_dom_tree.json', 'w') as f:
+				await f.write(json.dumps(dom_tree.__json__(), indent=1))
 
-		print('Saved enhanced dom tree to tmp/enhanced_dom_tree.json')
+			print('Saved enhanced dom tree to tmp/enhanced_dom_tree.json')
 
-		# Print some sample information about visible/clickable elements
-		visible_clickable_count = 0
-		total_with_snapshot = 0
+			# Print some sample information about visible/clickable elements
+			visible_clickable_count = 0
+			total_with_snapshot = 0
 
-		def count_elements(node):
-			nonlocal visible_clickable_count, total_with_snapshot
-			if node.snapshot_node:
-				total_with_snapshot += 1
-				if node.snapshot_node.is_visible and node.snapshot_node.is_clickable:
-					visible_clickable_count += 1
-					print(f'Visible clickable element: {node.node_name} (cursor: {node.snapshot_node.cursor_style})')
+			def count_elements(node):
+				nonlocal visible_clickable_count, total_with_snapshot
+				if node.snapshot_node:
+					total_with_snapshot += 1
+					if node.snapshot_node.is_visible and node.snapshot_node.is_clickable:
+						visible_clickable_count += 1
+						# print(f'Visible clickable element: {node.node_name} (cursor: {node.snapshot_node.cursor_style})')
 
-			if node.children_nodes:
-				for child in node.children_nodes:
-					count_elements(child)
+				if node.children_nodes:
+					for child in node.children_nodes:
+						count_elements(child)
 
-		count_elements(dom_tree)
-		print(
-			f'Found {visible_clickable_count} visible clickable elements out of {total_with_snapshot} elements with snapshot data'
-		)
+			count_elements(dom_tree)
+			print(
+				f'Found {visible_clickable_count} visible clickable elements out of {total_with_snapshot} elements with snapshot data'
+			)
 
-		# start = time.time()
-		# snapshot, dom_tree, ax_tree = await dom_service._get_all_trees()
-		# end = time.time()
-		# print(f'Time taken: {end - start} seconds')
+			serialized, selector_map = DOMTreeSerializer(dom_tree).serialize_accessible_elements()
 
-		# async with aiofiles.open('tmp/snapshot.json', 'w') as f:
-		# 	await f.write(json.dumps(snapshot, indent=1))
+			async with aiofiles.open('tmp/serialized_dom_tree.txt', 'w') as f:
+				await f.write(serialized)
 
-		# async with aiofiles.open('tmp/dom_tree.json', 'w') as f:
-		# 	await f.write(json.dumps(dom_tree, indent=1))
+			# print(serialized)
+			print('Saved serialized dom tree to tmp/serialized_dom_tree.txt')
 
-		# async with aiofiles.open('tmp/ax_tree.json', 'w') as f:
-		# 	await f.write(json.dumps(ax_tree, indent=1))
+			# print(selector_map)
 
-		# print('saved dom tree to tmp/dom_tree.json')
-		# print('saved snapshot to tmp/snapshot.json')
-		# print('saved ax tree to tmp/ax_tree.json')
+			# start = time.time()
+			# snapshot, dom_tree, ax_tree = await dom_service._get_all_trees()
+			# end = time.time()
+			# print(f'Time taken: {end - start} seconds')
 
-		print('Done')
+			# async with aiofiles.open('tmp/snapshot.json', 'w') as f:
+			# 	await f.write(json.dumps(snapshot, indent=1))
+
+			# async with aiofiles.open('tmp/dom_tree.json', 'w') as f:
+			# 	await f.write(json.dumps(dom_tree, indent=1))
+
+			# async with aiofiles.open('tmp/ax_tree.json', 'w') as f:
+			# 	await f.write(json.dumps(ax_tree, indent=1))
+
+			# print('saved dom tree to tmp/dom_tree.json')
+			# print('saved snapshot to tmp/snapshot.json')
+			# print('saved ax tree to tmp/ax_tree.json')
+
+			input('Done. Press Enter to continue...')
 
 
 if __name__ == '__main__':

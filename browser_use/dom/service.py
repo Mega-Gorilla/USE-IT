@@ -13,6 +13,7 @@ from browser_use.dom.enhanced_snapshot import (
 	REQUIRED_COMPUTED_STYLES,
 	build_snapshot_lookup,
 )
+from browser_use.dom.serializer import DOMTreeSerializer
 from browser_use.dom.views import EnhancedAXNode, EnhancedAXProperty, EnhancedDOMTreeNode, NodeType
 
 
@@ -242,3 +243,21 @@ class DOMService:
 		print(f'Time taken to build enhanced dom tree: {end - start} seconds')
 
 		return enhanced_dom_tree
+
+	async def get_serialized_dom_tree(
+		self, include_attributes: list[str] | None = None
+	) -> tuple[str, dict[int, EnhancedDOMTreeNode]]:
+		"""Get the serialized DOM tree representation for LLM consumption.
+
+		Returns:
+			- Serialized string representation
+			- Selector map mapping interactive indices to DOM nodes
+		"""
+		enhanced_dom_tree = await self.get_dom_tree()
+
+		start = time.time()
+		serialized, selector_map = DOMTreeSerializer(enhanced_dom_tree).serialize_accessible_elements(include_attributes)
+		end = time.time()
+		print(f'Time taken to serialize dom tree: {end - start} seconds')
+
+		return serialized, selector_map

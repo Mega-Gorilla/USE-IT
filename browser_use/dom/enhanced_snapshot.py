@@ -17,10 +17,31 @@ from browser_use.dom.views import EnhancedSnapshotNode
 
 # Only the essential computed styles we actually need
 REQUIRED_COMPUTED_STYLES = [
-	'display',  # For visibility detection
-	'visibility',  # For visibility detection
-	'opacity',  # For visibility detection
-	'cursor',  # For cursor style extraction
+	'display',
+	'visibility',
+	'opacity',
+	'position',
+	'z-index',
+	'pointer-events',
+	'cursor',
+	'overflow',
+	'overflow-x',
+	'overflow-y',
+	'width',
+	'height',
+	'top',
+	'left',
+	'right',
+	'bottom',
+	'transform',
+	'clip',
+	'clip-path',
+	'user-select',
+	'background-color',
+	'color',
+	'border',
+	'margin',
+	'padding',
 ]
 
 
