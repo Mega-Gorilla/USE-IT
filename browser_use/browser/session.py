@@ -158,13 +158,13 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 							try:
 								await self._recover_unresponsive_page(func.__name__)
 								self.logger.debug(
-									f'🤕 Crashed page recovery completed for {func.__name__}(), page is now on {_log_pretty_url(self.agent_current_page.url)}...'
+									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(self.agent_current_page.url)}...'
 								)
 							except Exception as e:
 								self.logger.warning(
-									f'❌ Crashed page recovery failed for {func.__name__}(), page is stuck unresponsive on {_log_pretty_url(self.agent_current_page.url)}...'
+									f'❌ Crashed page recovery failed, could not run {func.__name__}(), page is stuck unresponsive on {_log_pretty_url(self.agent_current_page.url)}...'
 								)
-								raise  # Re-raise to let retry decorator handle it
+								raise  # Re-raise to let retry decorator / callsite handle it
 
 				return await func(self, *args, **kwargs)
 
@@ -1648,7 +1648,7 @@ class BrowserSession(BaseModel):
 					pass
 
 				self.logger.warning(
-					f'⚠️ Failed to resize browser window to {_log_size(self.browser_profile.window_size)} using CDP setWindowBounds: {type(e).__name__}: {e}'
+					f'⚠️ Failed to resize browser window to {_log_size(self.browser_profile.window_size)} via CDP setWindowBounds: {type(e).__name__}: {e}'
 				)
 
 	def _set_browser_keep_alive(self, keep_alive: bool | None) -> None:
@@ -2271,8 +2271,8 @@ class BrowserSession(BaseModel):
 						self.logger.error(
 							f'❌ Page is unresponsive after navigation timeout on: {_log_pretty_url(current_url)} uh oh! subsequent operations may fail on this page...'
 						)
-						raise Exception(
-							f'Page JS engine is unresponsive after navigation / loading timeout on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
+						raise RuntimeError(
+							f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
 						)
 			elif nav_task in done:
 				# Navigation completed, check if it succeeded
@@ -3185,12 +3185,12 @@ class BrowserSession(BaseModel):
 			# 	)
 
 			try:
-				self.logger.debug('📸 Starting screenshot...')
+				self.logger.debug('📸 Capturing screenshot...')
 				# Reasonable timeout for screenshot
 				screenshot_b64 = await self.take_screenshot()
-				self.logger.debug('✅ Screenshot completed')
+				# self.logger.debug('✅ Screenshot completed')
 			except Exception as e:
-				self.logger.warning(f'Screenshot failed for {page.url}: {type(e).__name__}')
+				self.logger.warning(f'❌ Screenshot failed for {_log_pretty_url(page.url)}: {type(e).__name__} {e}')
 				screenshot_b64 = None
 
 			# Get comprehensive page information
@@ -3293,7 +3293,7 @@ class BrowserSession(BaseModel):
 
 				if blocked_target_id:
 					# Force close the target
-					self.logger.warning(f'🪓 Force-closing crashed page target_id={blocked_target_id} using CDP')
+					self.logger.warning(f'🪓 Force-closing crashed page target_id={blocked_target_id} via CDP')
 					await asyncio.wait_for(cdp_session.send('Target.closeTarget', {'targetId': blocked_target_id}), timeout=2.0)
 					self.logger.debug('☠️ Successfully force-closed crashed page via CDP')
 					return True
@@ -3372,7 +3372,7 @@ class BrowserSession(BaseModel):
 					closed = await self._force_close_page_via_cdp(new_page.url)
 				except Exception as e:
 					self.logger.error(
-						f'❌ Failed to close crashed page {_log_pretty_url(url)} using CDP: {type(e).__name__}: {e} (something is very wrong or system is extremely overloaded)'
+						f'❌ Failed to close crashed page {_log_pretty_url(url)} via CDP: {type(e).__name__}: {e} (something is very wrong or system is extremely overloaded)'
 					)
 				self.agent_current_page = None  # Clear reference to closed page
 				return False
@@ -3381,9 +3381,11 @@ class BrowserSession(BaseModel):
 			self.logger.error(f'❌ Retrying crashed page {_log_pretty_url(url)} failed: {type(e).__name__}: {e}')
 			return False
 
-	async def _create_blank_fallback_page(self) -> None:
+	async def _create_blank_fallback_page(self, url: str) -> None:
 		"""Create a new blank page as a fallback when recovery fails."""
-		self.logger.warning('⚠️ Resetting to about:blank as fallback because browser is unable to load the original URL')
+		self.logger.warning(
+			f'⚠️ Resetting to about:blank as fallback because browser is unable to load the original URL: {_log_pretty_url(url)}'
+		)
 		# self.logger.debug(f'Current agent_current_page: {self.agent_current_page}')
 
 		# Close any existing broken page
@@ -3453,7 +3455,7 @@ class BrowserSession(BaseModel):
 			self.logger.debug(
 				'❌ Page Recovery Step 3/3: Loading the page a 2nd time failed as well, browser seems unable to load this URL without getting stuck, retreating to a safe page...'
 			)
-			await self._create_blank_fallback_page()
+			await self._create_blank_fallback_page(current_url)
 
 		finally:
 			# Always clear recovery flag
@@ -3473,7 +3475,7 @@ class BrowserSession(BaseModel):
 	)
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--take_screenshot')
-	async def take_screenshot(self, full_page: bool = False) -> str:
+	async def take_screenshot(self, full_page: bool = False) -> str | None:
 		"""
 		Returns a base64 encoded screenshot of the current page using CDP.
 
@@ -3488,6 +3490,15 @@ class BrowserSession(BaseModel):
 
 		page = self.agent_current_page
 
+		if is_new_tab_page(page.url):
+			self.logger.warning(
+				f'⚠️ Sending LLM a 1px white square instead of real screenshot, page is empty: {_log_pretty_url(page.url)}'
+			)
+			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
+			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
+			# return a 1px*1px white png to avoid wasting tokens
+			return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
+
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
 			await page.bring_to_front()
@@ -3498,7 +3509,7 @@ class BrowserSession(BaseModel):
 		cdp_session = None
 		try:
 			# Create CDP session for the screenshot
-			self.logger.debug(f'Creating CDP session for page: {page.url}')
+			self.logger.debug(f'📸 Taking viewport screenshot of page via CDP: {_log_pretty_url(page.url)}')
 			cdp_session = await self.browser_context.new_cdp_session(page)  # type: ignore
 
 			# Capture screenshot via CDP
@@ -4228,11 +4239,11 @@ class BrowserSession(BaseModel):
 				await asyncio.wait_for(cdp_session.detach(), timeout=1.0)
 			except (TimeoutError, Exception):
 				pass
-			self.logger.debug(f'📄 Scrolled using CDP gesture: {pixels}px')
+			self.logger.debug(f'📄 Scrolled via CDP Input.synthesizeScrollGesture: {pixels}px')
 			return True
 
 		except Exception as e:
-			self.logger.debug(f'CDP scroll failed: {e}')
+			self.logger.warning(f'❌ Scrolling via CDP Input.synthesizeScrollGesture failed: {type(e).__name__}: {e}')
 			return False
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
