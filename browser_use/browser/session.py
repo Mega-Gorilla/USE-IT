@@ -2110,7 +2110,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 
-	@require_healthy_browser(usable_page=True, reopen_page=True)
+	@require_healthy_browser(usable_page=False, reopen_page=False)
 	@time_execution_async('--get_tabs_info')
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
@@ -2739,14 +2739,23 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 
 		try:
-			# Use asyncio.wait_for with a short timeout to ensure we don't get stuck
-			# This prevents blocking JavaScript from hanging the entire operation
-			await asyncio.wait_for(
-				page.goto(normalized_url, wait_until='domcontentloaded'),
-				timeout=2.0,  # 2 seconds max wait
-			)
-		except (TimeoutError, Exception) as e:
-			if 'timeout' in str(e).lower() or isinstance(e, asyncio.TimeoutError):
+			# Use asyncio.wait to prevent hanging on blocking JavaScript
+			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='domcontentloaded'))
+			done, pending = await asyncio.wait([nav_task], timeout=2.0)
+
+			if nav_task in pending:
+				# Navigation timed out
+				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 2s, continuing anyway...")
+				nav_task.cancel()
+				try:
+					await nav_task
+				except asyncio.CancelledError:
+					pass
+			elif nav_task in done:
+				# Navigation completed, check if it succeeded
+				await nav_task  # This will raise if navigation failed
+		except Exception as e:
+			if 'timeout' in str(e).lower():
 				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 2s, continuing anyway...")
 				# Don't re-raise timeout errors - the page is likely still usable and will continue to load in the background
 				# The @require_healthy_browser decorator will handle recovery if the page becomes unresponsive
