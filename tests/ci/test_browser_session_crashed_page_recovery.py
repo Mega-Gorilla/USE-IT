@@ -312,44 +312,29 @@ class TestBrowserSessionRecovery:
 
 	async def test_transient_blocking_recovers_naturally(self, httpserver: HTTPServer, browser_session: BrowserSession):
 		"""Test that transiently blocked pages recover without intervention"""
-
-		# Create a page that blocks for 3 seconds then recovers
+		# Create page that blocks for 3 seconds
 		httpserver.expect_request('/transient-block').respond_with_data(
-			"""
-			<html>
-			<head><title>Transient Block</title></head>
-			<body>
-				<h1>Blocking temporarily...</h1>
-				<script>
-					console.log('Starting 3 second block...');
-					const start = Date.now();
-					while (Date.now() - start < 3000) {
-						// Block for 3 seconds
-					}
-					document.body.innerHTML += '<p>Page recovered!</p>';
-					console.log('Block ended');
-				</script>
-			</body>
-			</html>
-			""",
+			"""<html><body>
+			<h1>Blocking temporarily...</h1>
+			<script>
+				const start = Date.now();
+				while (Date.now() - start < 3000) {}
+				document.body.innerHTML += '<p>Page recovered!</p>';
+			</script>
+			</body></html>""",
 			content_type='text/html',
 		)
 
-		# Navigate to the transient blocking page
 		await browser_session.navigate_to(httpserver.url_for('/transient-block'))
+		await asyncio.sleep(3.5)  # Wait for block to end
 
-		# Wait for the block to end
-		await asyncio.sleep(3.5)
-
-		# Operations should work without triggering recovery
+		# Should work without recovery
 		screenshot = await browser_session.take_screenshot()
-		assert screenshot is not None, 'Screenshot should work after transient block'
-		assert len(screenshot) > 100, 'Screenshot should have content'
+		assert screenshot is not None and len(screenshot) > 100
 
-		# Verify page shows recovery message
 		page = await browser_session.get_current_page()
 		content = await page.content()
-		assert 'Page recovered!' in content, 'Page should show recovery message'
+		assert 'Page recovered!' in content
 
 	async def test_multiple_blocking_recovery_cycles(self, httpserver: HTTPServer, browser_session: BrowserSession):
 		"""Test multiple cycles of blocking and recovery"""
@@ -410,175 +395,6 @@ class TestBrowserSessionRecovery:
 		assert 'Normal Page 2' in content
 
 		print('✅ Multiple recovery cycles completed successfully')
-
-	# class TestConcurrentBlockingSessions:
-	# 	"""Test multiple browser sessions dealing with blocking pages concurrently"""
-
-	# 	async def test_concurrent_sessions_isolation(self, httpserver: HTTPServer):
-	# 		"""Test that blocking in one session doesn't affect others"""
-
-	# 		# Create test pages
-	# 		httpserver.expect_request('/blocking').respond_with_data(
-	# 			"<html><body><script>while(true){}</script></body></html>",
-	# 			content_type='text/html',
-	# 		)
-
-	# 		httpserver.expect_request('/normal').respond_with_data(
-	# 			"<html><body><h1>Normal Page</h1></body></html>",
-	# 			content_type='text/html',
-	# 		)
-
-	# 		# Create multiple sessions
-	# 		sessions = []
-	# 		for i in range(3):
-	# 			session = BrowserSession(
-	# 				browser_profile=BrowserProfile(
-	# 					headless=True,
-	# 					keep_alive=False,
-	# 					default_navigation_timeout=2000,
-	# 				)
-	# 			)
-	# 			sessions.append(session)
-
-	# 		try:
-	# 			# Start all sessions
-	# 			await asyncio.gather(*[s.start() for s in sessions])
-
-	# 			# Session 0: Navigate to blocking page
-	# 			# Sessions 1-2: Navigate to normal pages
-	# 			nav_tasks = [
-	# 				sessions[0].navigate_to(httpserver.url_for('/blocking')),
-	# 				sessions[1].navigate_to(httpserver.url_for('/normal')),
-	# 				sessions[2].navigate_to(httpserver.url_for('/normal')),
-	# 			]
-	# 			await asyncio.gather(*nav_tasks)
-
-	# 			# Sessions 1-2 should be able to take screenshots
-	# 			# Session 0 might timeout or trigger recovery
-	# 			results = []
-	# 			for i, session in enumerate(sessions):
-	# 				try:
-	# 					screenshot = await asyncio.wait_for(
-	# 						session.take_screenshot(),
-	# 						timeout=3.0
-	# 					)
-	# 					results.append((i, True, len(screenshot) if screenshot else 0))
-	# 				except Exception as e:
-	# 					results.append((i, False, str(e)))
-
-	# 			# Verify sessions 1-2 worked fine
-	# 			assert results[1][1], f"Session 1 should work: {results[1][2]}"
-	# 			assert results[2][1], f"Session 2 should work: {results[2][2]}"
-
-	# 			# Session 0 may have failed or recovered - either is OK
-	# 			print(f"Session 0 (blocking page): {'success' if results[0][1] else 'failed/recovered'}")
-
-	# 		finally:
-	# 			# Clean up all sessions
-	# 			await asyncio.gather(*[s.kill() for s in sessions])
-
-	# class TestBrowserUseScenarios:
-	# 	"""Test scenarios that mimic real browser-use patterns"""
-
-	# 	async def test_browser_use_responsiveness_check_pattern(self, httpserver: HTTPServer):
-	# 		"""Test the browser-use pattern of checking page responsiveness"""
-
-	# 		# Create a blocking page
-	# 		httpserver.expect_request('/app-with-bug').respond_with_data(
-	# 			"""
-	# 			<html>
-	# 			<head><title>Buggy App</title></head>
-	# 			<body>
-	# 				<h1>App with Bug</h1>
-	# 				<button onclick="while(true){}">Click me to freeze!</button>
-	# 				<script>
-	# 					// Simulate a bug that freezes after user interaction
-	# 					setTimeout(() => {
-	# 						console.log('Bug triggered - entering infinite loop');
-	# 						while(true) {}
-	# 					}, 2000);
-	# 				</script>
-	# 			</body>
-	# 			</html>
-	# 			""",
-	# 			content_type='text/html',
-	# 		)
-
-	# 		session = BrowserSession(
-	# 			browser_profile=BrowserProfile(
-	# 				headless=True,
-	# 				keep_alive=False,
-	# 			)
-	# 		)
-
-	# 		try:
-	# 			await session.start()
-
-	# 			# Navigate to the buggy app
-	# 			print("1. Navigating to app with bug...")
-	# 			await session.navigate_to(httpserver.url_for('/app-with-bug'))
-
-	# 			# App works initially
-	# 			print("2. Taking initial screenshot (app still responsive)...")
-	# 			screenshot1 = await session.take_screenshot()
-	# 			assert screenshot1 is not None, "Initial screenshot should work"
-
-	# 			# Wait for the bug to trigger
-	# 			print("3. Waiting for bug to trigger...")
-	# 			await asyncio.sleep(2.5)
-
-	# 			# Now the page is frozen - browser-use would check responsiveness
-	# 			print("4. Checking page responsiveness (browser-use pattern)...")
-	# 			page = await session.get_current_page()
-
-	# 			async def check_page_responsive() -> bool:
-	# 				"""Check if page is responsive - mimics browser-use"""
-	# 				try:
-	# 					await asyncio.wait_for(page.evaluate('1'), timeout=1.0)
-	# 					return True
-	# 				except:
-	# 					return False
-
-	# 			is_responsive = await check_page_responsive()
-	# 			print(f"5. Page responsive: {is_responsive}")
-	# 			assert not is_responsive, "Page should be unresponsive after bug triggers"
-
-	# 			# Browser-use would attempt recovery here
-	# 			print("6. Attempting recovery...")
-	# 			try:
-	# 				screenshot2 = await session.take_screenshot()
-	# 				print(f"   Recovery successful: {len(screenshot2) if screenshot2 else 0} bytes")
-	# 			except Exception as e:
-	# 				print(f"   Recovery needed: {type(e).__name__}")
-
-	# 		finally:
-	# 			await session.kill()
-
-	async def test_transient_blocking_javascript_recovers(self, httpserver: HTTPServer, browser_session: BrowserSession):
-		"""Test that pages with transient blocking JavaScript recover after the block ends"""
-		# Create a page that blocks for 3 seconds then becomes responsive
-		httpserver.expect_request('/transient-blocking').respond_with_data(
-			"""<html><body>
-			<h1>This page will block temporarily</h1>
-			<script>
-				const start = Date.now();
-				while (Date.now() - start < 3000) {} // Block for 3 seconds
-				document.body.innerHTML += '<p>Page is now responsive!</p>';
-			</script>
-			</body></html>""",
-			content_type='text/html',
-		)
-
-		await browser_session.navigate(httpserver.url_for('/transient-blocking'))
-		await asyncio.sleep(2)  # Wait for block to end
-
-		# Operations should work without triggering recovery
-		screenshot = await browser_session.take_screenshot()
-		assert screenshot is not None and len(screenshot) > 100
-
-		page = await browser_session.get_current_page()
-		content = await page.content()
-		assert 'Page is now responsive!' in content
 
 	async def test_navigation_timeout_warning_appears(self, httpserver: HTTPServer, browser_session: BrowserSession):
 		"""Test that timeout warning appears in logs when navigation times out"""

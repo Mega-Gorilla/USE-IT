@@ -152,7 +152,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ env.PLAYWRIGHT_VERSION }}-chromium
 
       - run: playwright install chromium --with-deps
-      # - run: patchright install chromium --with-deps
+      - run: patchright install chromium --with-deps
 
       - name: Run agent tasks evaluation and capture score
         id: eval
