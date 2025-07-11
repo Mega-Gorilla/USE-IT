@@ -157,7 +157,7 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 							)
 						else:
 							try:
-								await self._recover_unresponsive_page(func.__name__)
+								await self._recover_unresponsive_page(func.__name__, timeout=12.0)
 								self.logger.debug(
 									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(self.agent_current_page.url)}...'
 								)
@@ -3310,12 +3310,16 @@ class BrowserSession(BaseModel):
 
 				if blocked_target_id:
 					# Force close the target
-					self.logger.warning(f'🪓 Force-closing crashed page target_id={blocked_target_id} via CDP')
+					self.logger.warning(
+						f'🪓 Force-closing crashed page target_id={blocked_target_id} via CDP: {_log_pretty_url(page_url)}...'
+					)
 					await asyncio.wait_for(cdp_session.send('Target.closeTarget', {'targetId': blocked_target_id}), timeout=2.0)
-					self.logger.debug('☠️ Successfully force-closed crashed page via CDP')
+					# self.logger.debug(f'☠️ Successfully force-closed crashed page target_id={blocked_target_id} via CDP: {_log_pretty_url(page_url)}')
 					return True
 				else:
-					self.logger.debug('❌ Could not find CDP page target ID to force-close')
+					self.logger.debug(
+						f'❌ Could not find CDP page target_id to force-close: {_log_pretty_url(page_url)} (concurrency issues?)'
+					)
 					return False
 
 			finally:
@@ -3330,13 +3334,13 @@ class BrowserSession(BaseModel):
 			self.logger.error(f'❌ Using raw CDP to force-close crashed page failed: {type(e).__name__}: {e}')
 			return False
 
-	async def _try_reopen_url(self, url: str) -> bool:
+	async def _try_reopen_url(self, url: str, timeout: float = 14.0) -> bool:
 		"""Try to reopen a URL in a new page and check if it's responsive."""
 		if not url or is_new_tab_page(url):
 			return False
 
 		try:
-			self.logger.debug(f'🔄 Attempting to reopen URL that crashed: {_log_pretty_url(url)}')
+			self.logger.debug(f'🔄 Attempting to reload URL that crashed: {_log_pretty_url(url)}')
 
 			# Create new page directly to avoid circular dependency
 			assert self.browser_context is not None, 'Browser context is not set'
@@ -3352,12 +3356,14 @@ class BrowserSession(BaseModel):
 				await new_page.set_viewport_size(self.browser_profile.viewport)
 
 			# Navigate with timeout using asyncio.wait
-			nav_task = asyncio.create_task(new_page.goto(url, wait_until='domcontentloaded'))
-			done, pending = await asyncio.wait([nav_task], timeout=5.0)
+			nav_task = asyncio.create_task(new_page.goto(url, wait_until='domcontentloaded', timeout=min(timeout * 1000, 18000)))
+			done, pending = await asyncio.wait([nav_task], timeout=min(timeout * 1000, 18000) + 500)
 
 			if nav_task in pending:
 				# Navigation timed out
-				self.logger.debug(f'⚠️ Attempting to visit previously crashed URL {_log_pretty_url(url)} failed again, timed out')
+				self.logger.debug(
+					f'⚠️ Attempting to reload previously crashed URL {_log_pretty_url(url)} failed again, timed out again after {min(timeout * 1000, 18000) / 1000}s'
+				)
 				nav_task.cancel()
 				try:
 					await nav_task
@@ -3368,7 +3374,7 @@ class BrowserSession(BaseModel):
 					await nav_task  # This will raise if navigation failed
 				except Exception as e:
 					self.logger.debug(
-						f'⚠️ Attempting to visit previously crashed URL {_log_pretty_url(url)} failed again: {type(e).__name__}'
+						f'⚠️ Attempting to reload previously crashed URL {_log_pretty_url(url)} failed again: {type(e).__name__}'
 					)
 
 			# Wait a bit for any transient blocking to resolve
@@ -3401,7 +3407,7 @@ class BrowserSession(BaseModel):
 	async def _create_blank_fallback_page(self, url: str) -> None:
 		"""Create a new blank page as a fallback when recovery fails."""
 		self.logger.warning(
-			f'⚠️ Resetting to about:blank as fallback because browser is unable to load the original URL: {_log_pretty_url(url)}'
+			f'⚠️ Resetting to about:blank as fallback because browser is unable to load the original URL without crashing: {_log_pretty_url(url)}'
 		)
 		# self.logger.debug(f'Current agent_current_page: {self.agent_current_page}')
 
@@ -3440,7 +3446,7 @@ class BrowserSession(BaseModel):
 				'Browser is unable to load any new about:blank pages (something is very wrong or browser is extremely overloaded)'
 			)
 
-	async def _recover_unresponsive_page(self, calling_method: str) -> None:
+	async def _recover_unresponsive_page(self, calling_method: str, timeout: float = 12.0) -> None:
 		"""Recover from an unresponsive page by closing and reopening it."""
 		self.logger.warning(f'⚠️ Page JS engine became unresponsive in {calling_method}(), attempting recovery...')
 
@@ -3481,7 +3487,7 @@ class BrowserSession(BaseModel):
 
 			# Try to reopen the URL (in case blocking was transient)
 			self.logger.debug('🍼 Page Recovery Step 2/3: Trying to reopen the URL again...')
-			if await self._try_reopen_url(current_url):
+			if await self._try_reopen_url(current_url, timeout=timeout + 2):
 				self.logger.debug('✅ Page Recovery Step 3/3: Page loading succeeded after 2nd attempt!')
 				return  # Success!
 
