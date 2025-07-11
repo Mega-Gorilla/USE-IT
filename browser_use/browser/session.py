@@ -2142,8 +2142,9 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
 
-	@require_healthy_browser(usable_page=False, reopen_page=False)
 	@time_execution_async('--get_tabs_info')
+	@retry(timeout=6, retries=1)
+	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
 		assert self.browser_context is not None, 'BrowserContext is not set up'
@@ -2154,7 +2155,7 @@ class BrowserSession(BaseModel):
 				continue
 
 			try:
-				title = await self._get_page_title(page)
+				title = await retry(timeout=3, retries=0)(page.title)()
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
@@ -2168,18 +2169,21 @@ class BrowserSession(BaseModel):
 					tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 				else:
 					# Preserve the real URL and use a descriptive fallback title
-					fallback_title = '(title unavailable)'
+					fallback_title = '(title unavailable, page possibly crashed / unresponsive)'
 					tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
+
+					# harsh but good, just close the page here because if we cant get the title then we certainly cant do anything else useful with it, no point keeping it open
+					try:
+						await page.close()
+						self.logger.debug(
+							f'🪓 Force-closed 🅟 {str(id(page))[-2:]} because its JS engine is unresponsive via CDP: {_log_pretty_url(page.url)}'
+						)
+					except Exception:
+						pass
 
 			tabs_info.append(tab_info)
 
 		return tabs_info
-
-	@retry(timeout=3, retries=0)  # Single attempt with 3s timeout, no retries
-	@require_healthy_browser(usable_page=True, reopen_page=False)
-	async def _get_page_title(self, page: Page) -> str:
-		"""Get page title with timeout protection."""
-		return await page.title()
 
 	@retry(timeout=20, retries=1, semaphore_limit=1, semaphore_scope='self')
 	async def _set_viewport_size(self, page: Page, viewport: dict[str, int] | ViewportSize) -> None:
@@ -2347,6 +2351,7 @@ class BrowserSession(BaseModel):
 			return [dict(x) for x in await self.browser_context.cookies()]
 		return []
 
+	@deprecated('Use BrowserSession.save_storage_state() instead')
 	async def save_cookies(self, *args, **kwargs) -> None:
 		"""
 		Old name for the new save_storage_state() function.
@@ -2416,7 +2421,9 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.warning(f'❌ Failed to save cookies to storage_state= {_log_pretty_path(path)}: {type(e).__name__}: {e}')
 
-	@retry(timeout=5, retries=1, semaphore_limit=1, semaphore_scope='self')
+	@retry(
+		timeout=5, retries=1, semaphore_limit=1, semaphore_scope='self'
+	)  # users can share JSON between browsers, this should really be 'multiprocess' not 'self
 	async def save_storage_state(self, path: Path | None = None) -> None:
 		"""
 		Save cookies to the specified path or the configured cookies_file and/or storage_state.
@@ -3075,14 +3082,14 @@ class BrowserSession(BaseModel):
 		# Try to get title safely
 		try:
 			# timeout after 2 seconds
-			title = await asyncio.wait_for(page.title(), timeout=2.0)
+			title = await retry(timeout=2, retries=0)(page.title)()
 		except Exception:
 			title = 'Page Load Error'
 
 		# Try to get tabs info safely
 		try:
 			# timeout after 2 seconds
-			tabs_info = await asyncio.wait_for(self.get_tabs_info(), timeout=2.0)
+			tabs_info = await retry(timeout=2, retries=0)(self.get_tabs_info)()
 		except Exception:
 			tabs_info = []
 
@@ -3214,7 +3221,7 @@ class BrowserSession(BaseModel):
 				pixels_above, pixels_below = 0, 0
 
 			try:
-				title = await self._get_page_title(page)
+				title = await retry(timeout=3, retries=0)(page.title)()
 			except Exception:
 				title = 'Title unavailable'
 
@@ -3457,8 +3464,20 @@ class BrowserSession(BaseModel):
 
 			# Remove the closed page from browser_context.pages by forcing a refresh
 			# This prevents TargetClosedError when iterating through pages later
-			if self.browser_context:
-				_ = list(self.browser_context.pages)  # Force refresh of the pages list
+			if self.browser_context and self.browser_context.pages:
+				# Additional cleanup: close any page objects that have the same url as the crashed page
+				# (could close too many pages by accident if we have a few different tabs on the same URL)
+				# Sometimes playwright doesn't immediately remove force-closed pages from the list
+				for page in self.browser_context.pages[:]:  # Use slice to avoid modifying list during iteration
+					if page.url == current_url and not page.is_closed():
+						try:
+							# Try to close it via playwright as well
+							await page.close()
+							self.logger.debug(
+								f'🪓 Closed 🅟 {str(id(page))[-2:]} because it has a known crash-causing URL: {_log_pretty_url(page.url)}'
+							)
+						except Exception:
+							pass  # Page might already be closed via CDP
 
 			# Try to reopen the URL (in case blocking was transient)
 			self.logger.debug('🍼 Page Recovery Step 2/3: Trying to reopen the URL again...')
