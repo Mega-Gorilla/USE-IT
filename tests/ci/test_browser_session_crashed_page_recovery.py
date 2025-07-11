@@ -154,7 +154,7 @@ class TestPlaywrightBlockingJavaScript:
 
 def slow_response_handler(request):
 	"""Handler that delays response by 15 seconds to ensure navigation timeout"""
-	time.sleep(25)  # 15 second delay to exceed any reasonable timeout
+	time.sleep(35)  # 15 second delay to exceed any reasonable timeout
 	return Response("""<html><body>Finally loaded!</body></html>""", content_type='text/html')
 
 
