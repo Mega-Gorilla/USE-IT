@@ -1139,8 +1139,8 @@ class BrowserSession(BaseModel):
 							s.listen(1)
 							debug_port = s.getsockname()[1]
 
-						# Get chromium executable path from playwright
-						chromium_path = self.playwright.chromium.executable_path
+						# Get chromium executable path from browser profile or fall back to to playwright default
+						chromium_path = self.browser_profile.executable_path or self.playwright.chromium.executable_path
 
 						# Build chrome launch command with all args
 						chrome_args = self.browser_profile.get_args()
