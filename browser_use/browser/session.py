@@ -321,11 +321,17 @@ class BrowserSession(BaseModel):
 
 	def __repr__(self) -> str:
 		is_copy = '©' if self._original_browser_session else '#'
-		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} ({self._connection_str}, profile={self.browser_profile})'
+		port_number_or_pid = (
+			(self.cdp_url or self.wss_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
+		)
+		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} {is_copy}{str(id(self))[-2:]} ({self._connection_str}, profile={self.browser_profile})'
 
 	def __str__(self) -> str:
 		is_copy = '©' if self._original_browser_session else '#'
-		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} ({self._connection_str})'  # ' 🅟 {str(id(self.agent_current_page))[-2:]}'
+		port_number_or_pid = (
+			(self.cdp_url or self.wss_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
+		)
+		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} {is_copy}{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.agent_current_page))[-2:]}'
 
 	# better to force people to get it from the right object, "only one way to do it" is better python
 	# def __getattr__(self, key: str) -> Any:
@@ -2221,7 +2227,7 @@ class BrowserSession(BaseModel):
 
 	# --- Page navigation ---
 	@observe_debug()
-	@retry(retries=1, timeout=90, wait=1)
+	@retry(retries=0, timeout=30, wait=1)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout_ms: int | None = None) -> Page:
 		"""
@@ -2266,6 +2272,7 @@ class BrowserSession(BaseModel):
 		try:
 			# Use asyncio.wait to prevent hanging on slow page loads
 			# Don't cap the timeout - respect what was requested
+			self.logger.debug(f'🧭 Starting navigation to {_log_pretty_url(normalized_url)} with timeout {timeout_ms}ms')
 			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=timeout_ms))
 			done, pending = await asyncio.wait([nav_task], timeout=(timeout_ms + 500) / 1000)
 

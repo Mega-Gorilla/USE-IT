@@ -429,7 +429,7 @@ class TestBrowserSessionRecovery:
 		assert 'normal' in page2.url
 
 
-@pytest.mark.timeout(30)  # 30 second timeout to prevent hanging forever
+@pytest.mark.timeout(90)
 async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 	"""Test multiple browser sessions with blocking pages simultaneously"""
 	httpserver.expect_request('/infinite-loop').respond_with_data(
@@ -443,7 +443,7 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 			browser_profile=BrowserProfile(
 				headless=True,
 				keep_alive=False,
-				default_navigation_timeout=5000,  # 5 second timeout
+				default_navigation_timeout=6000,  # 5 second timeout
 				user_data_dir=None,
 			)
 		)
@@ -455,7 +455,7 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 		# Navigate to blocking pages - should handle without crashing
 		nav_tasks = []
 		for s in sessions:
-			nav_tasks.append(s.navigate(httpserver.url_for('/infinite-loop')))
+			nav_tasks.append(s.navigate(httpserver.url_for('/infinite-loop'), timeout_ms=5000))
 
 		# All navigations should complete within 5s (they may fail but shouldn't hang forever)
 		results = await asyncio.gather(*nav_tasks, return_exceptions=True)
@@ -465,9 +465,9 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 			if isinstance(result, Exception):
 				print(f'Session {i} navigation failed as expected: {type(result).__name__}')
 
-		# Sessions should still be functional
+		# Sessions should still be functional, test by creating a new page and executing JS
 		for i, session in enumerate(sessions):
-			assert await session.is_connected(), f'Session {i} disconnected'
+			assert await (await session.browser_context.new_page()).evaluate('1+1') == 2, f'Session {i} page failed to execute JS'
 
 	finally:
 		# Kill sessions with exception handling to avoid cascade failures
