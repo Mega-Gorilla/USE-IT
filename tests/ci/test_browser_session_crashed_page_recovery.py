@@ -444,6 +444,7 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 				headless=True,
 				keep_alive=False,
 				default_navigation_timeout=1000,
+				user_data_dir=None,
 			)
 		)
 		sessions.append(session)
