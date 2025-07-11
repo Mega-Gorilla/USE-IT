@@ -2227,7 +2227,7 @@ class BrowserSession(BaseModel):
 
 	# --- Page navigation ---
 	@observe_debug()
-	@retry(retries=0, timeout=30, wait=1)
+	@retry(retries=0, timeout=30, wait=1, semaphore_timeout=10, semaphore_limit=1, semaphore_scope='self', semaphore_lax=True)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout_ms: int | None = None) -> Page:
 		"""
@@ -3496,7 +3496,7 @@ class BrowserSession(BaseModel):
 				# (could close too many pages by accident if we have a few different tabs on the same URL)
 				# Sometimes playwright doesn't immediately remove force-closed pages from the list
 				for page in self.browser_context.pages[:]:  # Use slice to avoid modifying list during iteration
-					if page.url == current_url and not page.is_closed():
+					if page.url == current_url and not page.is_closed() and not is_new_tab_page(page.url):
 						try:
 							# Try to close it via playwright as well
 							await page.close()
