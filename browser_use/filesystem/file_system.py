@@ -326,6 +326,9 @@ class FileSystem:
 		if not self._is_valid_filename(full_filename):
 			return INVALID_FILENAME_ERROR_MESSAGE
 
+		if not old_str:
+			return 'Error: Cannot replace empty string. Please provide a non-empty string to replace.'
+
 		file_obj = self.get_file(full_filename)
 		if not file_obj:
 			return f"File '{full_filename}' not found."
