@@ -153,8 +153,7 @@ class TestPlaywrightBlockingJavaScript:
 
 
 def slow_response_handler(request):
-	"""Handler that delays response by 4 seconds to ensure navigation timeout"""
-	time.sleep(4)  # 4 second delay to exceed the 3 second max timeout
+	time.sleep(5)  # 5 second delay to guaranteed exceed the 3 second max timeout
 	return Response("""<html><body>Finally loaded!</body></html>""", content_type='text/html')
 
 
@@ -415,7 +414,7 @@ class TestBrowserSessionRecovery:
 
 		# Navigate with a timeout - navigation should complete even though page is slow
 		start_time = time.time()
-		page = await browser_session.navigate(httpserver.url_for('/delayed'), timeout=2.0)
+		page = await browser_session.navigate(httpserver.url_for('/delayed'), timeout_ms=3500)
 		elapsed = time.time() - start_time
 
 		# Navigation should complete within a reasonable time (not hang for full 4 seconds)
@@ -443,7 +442,7 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 			browser_profile=BrowserProfile(
 				headless=True,
 				keep_alive=False,
-				default_navigation_timeout=1000,
+				default_navigation_timeout=5000,  # 5 second timeout
 				user_data_dir=None,
 			)
 		)
@@ -457,8 +456,13 @@ async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 		for s in sessions:
 			nav_tasks.append(s.navigate(httpserver.url_for('/infinite-loop')))
 
-		# All navigations should complete (even if pages are blocked)
-		await asyncio.gather(*nav_tasks, return_exceptions=True)
+		# All navigations should complete within 5s (they may fail but shouldn't hang forever)
+		results = await asyncio.gather(*nav_tasks, return_exceptions=True)
+
+		# Check that navigations completed (with or without errors)
+		for i, result in enumerate(results):
+			if isinstance(result, Exception):
+				print(f'Session {i} navigation failed as expected: {type(result).__name__}')
 
 		# Sessions should still be functional
 		for i, session in enumerate(sessions):

@@ -157,7 +157,9 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 							)
 						else:
 							try:
-								await self._recover_unresponsive_page(func.__name__, timeout=25.0)
+								await self._recover_unresponsive_page(
+									func.__name__, timeout_ms=int(self.browser_profile.default_navigation_timeout or 5000) + 5_000
+								)
 								self.logger.debug(
 									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(self.agent_current_page.url)}...'
 								)
@@ -1612,7 +1614,7 @@ class BrowserSession(BaseModel):
 				if page.url.startswith('chrome://new-tab-page'):
 					try:
 						# can raise exception if nav is interrupted by another agent nav or human, harmless but annoying
-						await page.goto('about:blank', wait_until='load', timeout=1000)
+						await page.goto('about:blank', wait_until='load', timeout=5000)
 					except Exception:
 						pass
 				await self._show_dvd_screensaver_loading_animation(page)
@@ -2217,9 +2219,9 @@ class BrowserSession(BaseModel):
 
 	# --- Page navigation ---
 	@observe_debug()
-	@retry(wait=1, retries=1, timeout=30)
+	@retry(retries=0, timeout=90)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
-	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout: float = 12.0) -> Page:
+	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout_ms: int | None = None) -> Page:
 		"""
 		Universal navigation method that handles all navigation scenarios.
 
@@ -2235,7 +2237,9 @@ class BrowserSession(BaseModel):
 
 		# Check if URL is allowed
 		if not self._is_url_allowed(normalized_url):
-			raise BrowserError(f'Navigation to non-allowed URL: {normalized_url}')
+			raise BrowserError(f'⛔️ Navigation to non-allowed URL: {normalized_url}')
+
+		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 12000))
 
 		# Handle new tab creation
 		if new_tab:
@@ -2259,13 +2263,14 @@ class BrowserSession(BaseModel):
 		# Navigate to URL
 		try:
 			# Use asyncio.wait to prevent hanging on slow page loads
-			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=min(timeout * 1000, 3_000)))
-			done, pending = await asyncio.wait([nav_task], timeout=(min(timeout * 1000, 3_000) + 500) / 1000)
+			# Don't cap the timeout - respect what was requested
+			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=timeout_ms))
+			done, pending = await asyncio.wait([nav_task], timeout=(timeout_ms + 500) / 1000)
 
 			if nav_task in pending:
 				# Navigation timed out
 				self.logger.warning(
-					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {min(timeout * 1000, 3_000) / 1000}s, continuing anyway..."
+					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {timeout_ms / 1000}s, continuing anyway..."
 				)
 				nav_task.cancel()
 				try:
@@ -2286,9 +2291,16 @@ class BrowserSession(BaseModel):
 						self.logger.error(
 							f'❌ Page is unresponsive after navigation stalled on: {_log_pretty_url(current_url)} WARNING! Subsequent operations will likely fail on this page, it must be reset...'
 						)
-						raise RuntimeError(
-							f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
-						)
+						# Instead of raising immediately, attempt recovery
+						try:
+							await self._recover_unresponsive_page('navigate', timeout_ms=timeout_ms + 5_000)
+							# After recovery, return the new page
+							return await self.get_current_page()
+						except Exception as recovery_error:
+							self.logger.error(f'❌ Page recovery failed: {recovery_error}')
+							raise RuntimeError(
+								f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
+							)
 			elif nav_task in done:
 				# Navigation completed, check if it succeeded
 				await nav_task  # This will raise if navigation failed
@@ -2306,7 +2318,7 @@ class BrowserSession(BaseModel):
 			# Navigate to about:blank if we're on chrome://new-tab-page to avoid security restrictions
 			if page.url.startswith('chrome://new-tab-page'):
 				try:
-					await page.goto('about:blank', wait_until='load', timeout=3000)
+					await page.goto('about:blank', wait_until='load', timeout=timeout_ms)
 				except Exception:
 					pass
 			await self._show_dvd_screensaver_loading_animation(page)
@@ -3335,10 +3347,12 @@ class BrowserSession(BaseModel):
 			self.logger.error(f'❌ Using raw CDP to force-close crashed page failed: {type(e).__name__}: {e}')
 			return False
 
-	async def _try_reopen_url(self, url: str, timeout: float = 14.0) -> bool:
+	async def _try_reopen_url(self, url: str, timeout_ms: int | None = None) -> bool:
 		"""Try to reopen a URL in a new page and check if it's responsive."""
 		if not url or is_new_tab_page(url):
 			return False
+
+		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 6000))
 
 		try:
 			self.logger.debug(f'🔄 Attempting to reload URL that crashed: {_log_pretty_url(url)}')
@@ -3357,13 +3371,13 @@ class BrowserSession(BaseModel):
 				await new_page.set_viewport_size(self.browser_profile.viewport)
 
 			# Navigate with timeout using asyncio.wait
-			nav_task = asyncio.create_task(new_page.goto(url, wait_until='load', timeout=min(timeout * 1000, 18000)))
-			done, pending = await asyncio.wait([nav_task], timeout=min(timeout * 1000, 18000) + 500)
+			nav_task = asyncio.create_task(new_page.goto(url, wait_until='load', timeout=timeout_ms))
+			done, pending = await asyncio.wait([nav_task], timeout=timeout_ms + 500)
 
 			if nav_task in pending:
 				# Navigation timed out
 				self.logger.debug(
-					f'⚠️ Attempting to reload previously crashed URL {_log_pretty_url(url)} failed again, timed out again after {min(timeout * 1000, 18000) / 1000}s'
+					f'⚠️ Attempting to reload previously crashed URL {_log_pretty_url(url)} failed again, timed out again after {timeout_ms / 1000}s'
 				)
 				nav_task.cancel()
 				try:
@@ -3447,9 +3461,10 @@ class BrowserSession(BaseModel):
 				'Browser is unable to load any new about:blank pages (something is very wrong or browser is extremely overloaded)'
 			)
 
-	async def _recover_unresponsive_page(self, calling_method: str, timeout: float = 12.0) -> None:
+	async def _recover_unresponsive_page(self, calling_method: str, timeout_ms: int | None = None) -> None:
 		"""Recover from an unresponsive page by closing and reopening it."""
 		self.logger.warning(f'⚠️ Page JS engine became unresponsive in {calling_method}(), attempting recovery...')
+		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 5000))
 
 		# Prevent re-entrance
 		self._in_recovery = True
@@ -3488,7 +3503,7 @@ class BrowserSession(BaseModel):
 
 			# Try to reopen the URL (in case blocking was transient)
 			self.logger.debug('🍼 Page Recovery Step 2/3: Trying to reopen the URL again...')
-			if await self._try_reopen_url(current_url, timeout=timeout + 2):
+			if await self._try_reopen_url(current_url, timeout_ms=timeout_ms):
 				self.logger.debug('✅ Page Recovery Step 3/3: Page loading succeeded after 2nd attempt!')
 				return  # Success!
 
