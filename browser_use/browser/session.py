@@ -2149,6 +2149,10 @@ class BrowserSession(BaseModel):
 		assert self.browser_context is not None, 'BrowserContext is not set up'
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
+			# Skip closed pages to avoid TargetClosedError
+			if page.is_closed():
+				continue
+
 			try:
 				title = await self._get_page_title(page)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
@@ -2172,6 +2176,7 @@ class BrowserSession(BaseModel):
 		return tabs_info
 
 	@retry(timeout=3, retries=0)  # Single attempt with 3s timeout, no retries
+	@require_healthy_browser(usable_page=True, reopen_page=False)
 	async def _get_page_title(self, page: Page) -> str:
 		"""Get page title with timeout protection."""
 		return await page.title()
@@ -3449,6 +3454,11 @@ class BrowserSession(BaseModel):
 			# Force-close the crashed page via CDP
 			self.logger.debug('🪓 Page Recovery Step 1/3: Force-closing crashed page via CDP...')
 			await self._force_close_page_via_cdp(current_url)
+
+			# Remove the closed page from browser_context.pages by forcing a refresh
+			# This prevents TargetClosedError when iterating through pages later
+			if self.browser_context:
+				_ = list(self.browser_context.pages)  # Force refresh of the pages list
 
 			# Try to reopen the URL (in case blocking was transient)
 			self.logger.debug('🍼 Page Recovery Step 2/3: Trying to reopen the URL again...')
