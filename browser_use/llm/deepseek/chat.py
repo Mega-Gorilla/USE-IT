@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
 import httpx
-from openai import AsyncOpenAI, APIError, APIConnectionError, APITimeoutError, APIStatusError, RateLimitError
+from openai import (
+    AsyncOpenAI,
+    APIError,
+    APIConnectionError,
+    APITimeoutError,
+    APIStatusError,
+    RateLimitError,
+)
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
@@ -99,7 +106,7 @@ class ChatDeepSeek(BaseChatModel):
                 common["stop"] = stop
 
         # ① 普通多轮对话/文本输出
-        if output_format is None and (not tools):
+        if output_format is None and not tools:
             try:
                 resp = await client.chat.completions.create(  # type: ignore
                     model=self.model,
@@ -117,12 +124,12 @@ class ChatDeepSeek(BaseChatModel):
             except Exception as e:
                 raise ModelProviderError(str(e), model=self.name) from e
 
-        # ② Function Calling 路径（有 tools 或 output_format 为 pydantic 模型）
-        if tools or (output_format and hasattr(output_format, "model_json_schema")):
+        # ② Function Calling 路径（有 tools 或 output_format）
+        if tools or (output_format is not None and hasattr(output_format, "model_json_schema")):
             try:
                 call_tools = tools
                 tool_choice = None
-                if output_format and hasattr(output_format, "model_json_schema"):
+                if output_format is not None and hasattr(output_format, "model_json_schema"):
                     tool_name = output_format.__name__
                     schema = SchemaOptimizer.create_optimized_json_schema(output_format)
                     schema.pop("title", None)
@@ -152,10 +159,18 @@ class ChatDeepSeek(BaseChatModel):
                     parsed = json.loads(raw_args)
                 else:
                     parsed = raw_args
-                return ChatInvokeCompletion(
-                    completion=output_format.model_validate(parsed),
-                    usage=None,
-                )
+                # --------- 修复点: 只有 output_format 不为 None 才能用 model_validate ----------
+                if output_format is not None:
+                    return ChatInvokeCompletion(
+                        completion=output_format.model_validate(parsed),
+                        usage=None,
+                    )
+                else:
+                    # 若无 output_format，直接返回 dict
+                    return ChatInvokeCompletion(
+                        completion=parsed,
+                        usage=None,
+                    )
             except RateLimitError as e:
                 raise ModelRateLimitError(str(e), model=self.name) from e
             except (APIError, APIConnectionError, APITimeoutError, APIStatusError) as e:
