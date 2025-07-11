@@ -22,6 +22,7 @@ from browser_use.controller.views import (
 	ClickElementAction,
 	CloseTabAction,
 	DoneAction,
+	FileStrReplaceAction,
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
@@ -31,6 +32,7 @@ from browser_use.controller.views import (
 	StructuredOutputAction,
 	SwitchTabAction,
 	UploadFileAction,
+	WriteFileAction,
 )
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
@@ -744,16 +746,26 @@ Explain the content of the page and that the requested information is not availa
 
 		# File System Actions
 		@self.registry.action(
-			'Write content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
+			'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
 		)
-		async def write_file(file_name: str, content: str, file_system: FileSystem):
-			result = await file_system.write_file(file_name, content)
+		async def write_file(params: WriteFileAction, file_system: FileSystem):
+			content = params.content
+			if params.trailing_newline:
+				content += '\n'
+			if params.leading_newline:
+				content = '\n' + content
+			if params.append:
+				result = await file_system.append_file(params.file_name, content)
+			else:
+				result = await file_system.write_file(params.file_name, content)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-		@self.registry.action('Append content to file_name in file system')
-		async def append_file(file_name: str, content: str, file_system: FileSystem):
-			result = await file_system.append_file(file_name, content)
+		@self.registry.action(
+			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
+		)
+		async def file_str_replace(params: FileStrReplaceAction, file_system: FileSystem):
+			result = await file_system.replace_file_str(params.file_name, params.old_str, params.new_str)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 

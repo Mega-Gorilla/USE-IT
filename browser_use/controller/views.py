@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 # Action Input Models
@@ -73,28 +73,15 @@ class NoParamsAction(BaseModel):
 	# No fields defined - all inputs are ignored automatically
 
 
-class Position(BaseModel):
-	x: int
-	y: int
+class WriteFileAction(BaseModel):
+	file_name: str
+	content: str
+	append: bool = False
+	trailing_newline: bool = True
+	leading_newline: bool = False
 
 
-class DragDropAction(BaseModel):
-	# Element-based approach
-	element_source: str | None = Field(None, description='CSS selector or XPath of the element to drag from')
-	element_target: str | None = Field(None, description='CSS selector or XPath of the element to drop onto')
-	element_source_offset: Position | None = Field(
-		None, description='Precise position within the source element to start drag (in pixels from top-left corner)'
-	)
-	element_target_offset: Position | None = Field(
-		None, description='Precise position within the target element to drop (in pixels from top-left corner)'
-	)
-
-	# Coordinate-based approach (used if selectors not provided)
-	coord_source_x: int | None = Field(None, description='Absolute X coordinate on page to start drag from (in pixels)')
-	coord_source_y: int | None = Field(None, description='Absolute Y coordinate on page to start drag from (in pixels)')
-	coord_target_x: int | None = Field(None, description='Absolute X coordinate on page to drop at (in pixels)')
-	coord_target_y: int | None = Field(None, description='Absolute Y coordinate on page to drop at (in pixels)')
-
-	# Common options
-	steps: int | None = Field(10, description='Number of intermediate points for smoother movement (5-20 recommended)')
-	delay_ms: int | None = Field(5, description='Delay in milliseconds between steps (0 for fastest, 10-20 for more natural)')
+class FileStrReplaceAction(BaseModel):
+	file_name: str
+	old_str: str
+	new_str: str
