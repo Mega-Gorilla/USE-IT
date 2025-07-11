@@ -2151,7 +2151,7 @@ class BrowserSession(BaseModel):
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
 			try:
-				title = await retry(timeout=3, retries=0)(page.title)()
+				title = await asyncio.wait_for(page.title(), timeout=3.0)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
@@ -3079,7 +3079,7 @@ class BrowserSession(BaseModel):
 		# Try to get title safely
 		try:
 			# timeout after 2 seconds
-			title = await retry(timeout=2, retries=0)(page.title)()
+			title = await asyncio.wait_for(page.title(), timeout=2.0)
 		except Exception:
 			title = 'Page Load Error'
 
@@ -3218,7 +3218,7 @@ class BrowserSession(BaseModel):
 				pixels_above, pixels_below = 0, 0
 
 			try:
-				title = await retry(timeout=3, retries=0)(page.title)()
+				title = await asyncio.wait_for(page.title(), timeout=3.0)
 			except Exception:
 				title = 'Title unavailable'
 

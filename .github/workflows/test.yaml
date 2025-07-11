@@ -45,6 +45,7 @@ jobs:
     env:
       IN_DOCKER: 'True'
       ANONYMIZED_TELEMETRY: 'false'
+      BROWSER_USE_LOGGING_LEVEL: 'DEBUG'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -112,6 +113,7 @@ jobs:
       IN_DOCKER: 'true'
       BROWSER_USE_CLOUD_SYNC: 'false'
       ANONYMIZED_TELEMETRY: 'false'
+      BROWSER_USE_LOGGING_LEVEL: 'DEBUG'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
