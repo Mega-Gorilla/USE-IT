@@ -2293,30 +2293,12 @@ class BrowserSession(BaseModel):
 						self.logger.error(
 							f'❌ Page is unresponsive after navigation stalled on: {_log_pretty_url(current_url)} WARNING! Subsequent operations will likely fail on this page, it must be reset...'
 						)
-						# Attempt recovery but don't retry the same URL if we're already in a retry
-						try:
-							# Check if we're in a retry by looking for retry context
-							is_retry = hasattr(self, '_navigate_retry_count') and self._navigate_retry_count > 0
-
-							if is_retry:
-								# Don't try to reload the same URL again, just go to blank
-								self.logger.warning('⚠️ Already in retry, falling back to blank page instead of reloading')
-								await self._create_blank_fallback_page(current_url)
-							else:
-								# First attempt - try full recovery (reload then fallback)
-								self._navigate_retry_count = getattr(self, '_navigate_retry_count', 0) + 1
-								await self._recover_unresponsive_page('navigate', timeout_ms=timeout_ms)
-
-							# After recovery, return the current page
-							return await self.get_current_page()
-						except Exception as recovery_error:
-							self.logger.error(f'❌ Page recovery failed: {recovery_error}')
-							raise RuntimeError(
-								f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
-							)
-						finally:
-							# Reset retry count
-							self._navigate_retry_count = 0
+						# Don't try complex recovery during navigate - just raise the error
+						# The retry decorator will handle retries, and other methods with
+						# @require_healthy_browser(reopen_page=True) will trigger proper recovery
+						raise RuntimeError(
+							f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
+						)
 			elif nav_task in done:
 				# Navigation completed, check if it succeeded
 				await nav_task  # This will raise if navigation failed
