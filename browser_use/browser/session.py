@@ -157,7 +157,7 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 							)
 						else:
 							try:
-								await self._recover_unresponsive_page(func.__name__, timeout=12.0)
+								await self._recover_unresponsive_page(func.__name__, timeout=25.0)
 								self.logger.debug(
 									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(self.agent_current_page.url)}...'
 								)
