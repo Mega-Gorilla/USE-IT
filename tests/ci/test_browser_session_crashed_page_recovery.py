@@ -429,6 +429,7 @@ class TestBrowserSessionRecovery:
 		assert 'normal' in page2.url
 
 
+@pytest.mark.timeout(30)  # 30 second timeout to prevent hanging forever
 async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
 	"""Test multiple browser sessions with blocking pages simultaneously"""
 	httpserver.expect_request('/infinite-loop').respond_with_data(
