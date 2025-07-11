@@ -1105,8 +1105,12 @@ class BrowserSession(BaseModel):
 				old_dir = self.browser_profile.user_data_dir
 				self.browser_profile.user_data_dir = Path(tempfile.mkdtemp(prefix='browseruse-tmp-'))
 				self.logger.debug(
-					f'🔄 Reconnecting: replacing old temp dir {_log_pretty_path(old_dir)} with new {_log_pretty_path(self.browser_profile.user_data_dir)}'
+					f'🗑️ Cleaning up old tmp user_data_dir= {_log_pretty_path(old_dir)} and using fresh one:{_log_pretty_path(self.browser_profile.user_data_dir)}'
 				)
+				try:
+					shutil.rmtree(old_dir)
+				except Exception:
+					self.logger.warning(f'🗑️ Failed to cleanup old tmp user_data_dir= {_log_pretty_path(old_dir)}')
 
 			# user data dir was provided, prepare it for use (handles conflicts automatically)
 			self.prepare_user_data_dir()
@@ -1608,7 +1612,7 @@ class BrowserSession(BaseModel):
 				if page.url.startswith('chrome://new-tab-page'):
 					try:
 						# can raise exception if nav is interrupted by another agent nav or human, harmless but annoying
-						await page.goto('about:blank', wait_until='domcontentloaded', timeout=1000)
+						await page.goto('about:blank', wait_until='load', timeout=1000)
 					except Exception:
 						pass
 				await self._show_dvd_screensaver_loading_animation(page)
@@ -2878,7 +2882,7 @@ class BrowserSession(BaseModel):
 		try:
 			# 10 ms timeout
 			page = await self.get_current_page()
-			await page.go_back(timeout=10_000, wait_until='domcontentloaded')
+			await page.go_back(timeout=10_000, wait_until='load')
 
 			# await self._wait_for_page_and_frames_load(timeout_overwrite=1.0)
 		except Exception as e:
@@ -2897,7 +2901,7 @@ class BrowserSession(BaseModel):
 		"""Navigate the agent's tab forward in browser history"""
 		try:
 			page = await self.get_current_page()
-			await page.go_forward(timeout=10_000, wait_until='domcontentloaded')
+			await page.go_forward(timeout=10_000, wait_until='load')
 		except Exception as e:
 			# Continue even if its not fully loaded, because we wait later for the page to load
 			self.logger.debug(f'⏭️ Error during go_forward: {type(e).__name__}: {e}')
@@ -3353,7 +3357,7 @@ class BrowserSession(BaseModel):
 				await new_page.set_viewport_size(self.browser_profile.viewport)
 
 			# Navigate with timeout using asyncio.wait
-			nav_task = asyncio.create_task(new_page.goto(url, wait_until='domcontentloaded', timeout=min(timeout * 1000, 18000)))
+			nav_task = asyncio.create_task(new_page.goto(url, wait_until='load', timeout=min(timeout * 1000, 18000)))
 			done, pending = await asyncio.wait([nav_task], timeout=min(timeout * 1000, 18000) + 500)
 
 			if nav_task in pending:

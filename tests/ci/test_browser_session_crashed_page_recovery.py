@@ -75,7 +75,7 @@ class TestPlaywrightBlockingJavaScript:
 
 		# Navigate to blocking page
 		try:
-			await page.goto('data:text/html,<script>while(true){}</script>', wait_until='domcontentloaded', timeout=500)
+			await page.goto('data:text/html,<script>while(true){}</script>', wait_until='domcontentloaded', timeout=1500)
 		except Exception:
 			pass  # Expected timeout
 		print('✅ Page is now blocked by infinite loop')
@@ -153,8 +153,8 @@ class TestPlaywrightBlockingJavaScript:
 
 
 def slow_response_handler(request):
-	"""Handler that delays response by 15 seconds to ensure navigation timeout"""
-	time.sleep(35)  # 15 second delay to exceed any reasonable timeout
+	"""Handler that delays response by 5 seconds to ensure navigation timeout"""
+	time.sleep(5)  # 5 second delay to exceed the 3 second max timeout
 	return Response("""<html><body>Finally loaded!</body></html>""", content_type='text/html')
 
 
@@ -408,38 +408,46 @@ class TestBrowserSessionRecovery:
 
 		print('✅ Multiple recovery cycles completed successfully')
 
-	async def test_navigation_timeout_warning_appears(self, httpserver: HTTPServer, browser_session: BrowserSession):
+	async def test_navigation_timeout_warning_appears(self, httpserver: HTTPServer, browser_session: BrowserSession, caplog):
 		"""Test that timeout warning appears in logs when navigation times out"""
+		import logging
+
 		httpserver.expect_request('/delayed').respond_with_handler(slow_response_handler)
 
-		# Track warning in logs
-		warning_logged = False
-		old_navigate = browser_session.navigate
+		# Set browser session logger to emit warnings
+		browser_session.logger.setLevel(logging.DEBUG)
 
-		async def navigate_with_log_check(url: str = 'about:blank', new_tab: bool = False):
-			nonlocal warning_logged
-			import logging
+		# Navigate with a short timeout
+		delayed_url = httpserver.url_for('/delayed')
+		print(f'DEBUG: Navigating to {delayed_url} with timeout=2.0')
 
-			class WarningHandler(logging.Handler):
-				def emit(self, record):
-					if 'continuing anyway' in record.getMessage():
-						nonlocal warning_logged
-						warning_logged = True
-
-			handler = WarningHandler()
-			browser_session.logger.addHandler(handler)
+		with caplog.at_level(logging.DEBUG):  # Capture all log levels
+			start_time = time.time()
 			try:
-				return await old_navigate(url, new_tab)
-			finally:
-				browser_session.logger.removeHandler(handler)
-
-		browser_session.navigate = navigate_with_log_check  # type: ignore[assignment]
-		await browser_session.navigate(httpserver.url_for('/delayed'), timeout=2.0)  # 2 second timeout
+				result = await browser_session.navigate(delayed_url, timeout=2.0)  # 2 second timeout
+				print(f'DEBUG: Navigation returned page: {result.url}')
+			except Exception as e:
+				print(f'DEBUG: Navigation raised exception: {type(e).__name__}: {e}')
+			elapsed = time.time() - start_time
+			print(f'DEBUG: Navigation took {elapsed:.2f} seconds')
 
 		# Page should still be accessible
 		page = await browser_session.get_current_page()
 		assert page is not None
-		assert warning_logged, 'Navigation timeout warning was not logged'
+		print(f'DEBUG: Page URL after navigation: {page.url}')
+
+		# Check if warning was logged
+		warning_found = any('continuing anyway' in record.message for record in caplog.records)
+		print(f'DEBUG: Warning found in logs: {warning_found}')
+		print(f'DEBUG: Total log records: {len(caplog.records)}')
+		for record in caplog.records:
+			print(f'  [{record.levelname}] {record.name}: {record.message}')
+
+		# Also check if the message appears at WARNING level specifically
+		warning_records = [r for r in caplog.records if r.levelname == 'WARNING']
+		print(f'DEBUG: WARNING level records: {len(warning_records)}')
+
+		assert warning_found, 'Navigation timeout warning was not logged'
 
 
 async def test_multiple_sessions_with_blocking_pages(httpserver: HTTPServer):
