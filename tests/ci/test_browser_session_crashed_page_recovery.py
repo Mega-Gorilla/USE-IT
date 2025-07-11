@@ -422,7 +422,7 @@ class TestBrowserSessionRecovery:
 
 			class WarningHandler(logging.Handler):
 				def emit(self, record):
-					if "didn't finish after" in record.getMessage() and 'continuing anyway' in record.getMessage():
+					if 'continuing anyway' in record.getMessage():
 						nonlocal warning_logged
 						warning_logged = True
 

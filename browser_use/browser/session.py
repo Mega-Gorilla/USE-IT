@@ -147,7 +147,8 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 					# Check if page is responsive
 					# self.logger.debug(f'Checking page responsiveness for {func.__name__}...')
 					if await self._is_page_responsive(self.agent_current_page):
-						self.logger.debug('✅ Confirmed page is still responsive despite not waiting for loading to finish')
+						# self.logger.debug('✅ Confirmed page is responsive')
+						pass
 					else:
 						# Page is unresponsive - handle recovery
 						if not reopen_page:
@@ -2208,7 +2209,7 @@ class BrowserSession(BaseModel):
 	@observe_debug()
 	@retry(wait=1, retries=1, timeout=30)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
-	async def navigate(self, url: str = 'about:blank', new_tab: bool = False) -> Page:
+	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout: float = 12.0) -> Page:
 		"""
 		Universal navigation method that handles all navigation scenarios.
 
@@ -2248,12 +2249,14 @@ class BrowserSession(BaseModel):
 		# Navigate to URL
 		try:
 			# Use asyncio.wait to prevent hanging on slow page loads
-			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=5000))
-			done, pending = await asyncio.wait([nav_task], timeout=5.0)
+			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=min(timeout * 1000, 3_000)))
+			done, pending = await asyncio.wait([nav_task], timeout=(min(timeout * 1000, 3_000) + 500) / 1000)
 
 			if nav_task in pending:
 				# Navigation timed out
-				self.logger.warning(f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after 5s, continuing anyway...")
+				self.logger.warning(
+					f"⚠️ Loading {_log_pretty_url(normalized_url)} didn't finish after {min(timeout * 1000, 3_000) / 1000}s, continuing anyway..."
+				)
 				nav_task.cancel()
 				try:
 					await nav_task
@@ -2264,12 +2267,14 @@ class BrowserSession(BaseModel):
 				if page and not page.is_closed():
 					current_url = page.url
 					# self.logger.debug(f'🤌 Checking responsiveness after navigation timeout (current URL: {current_url})')
-					is_responsive = await self._is_page_responsive(page, timeout=1.0)
+					is_responsive = await self._is_page_responsive(page, timeout=3.0)
 					if is_responsive:
-						self.logger.debug(f'✅ Page is responsive despite navigation timeout on: {_log_pretty_url(current_url)})')
+						self.logger.debug(
+							f'✅ Page is responsive and usable despite navigation loading timeout on: {_log_pretty_url(current_url)})'
+						)
 					else:
 						self.logger.error(
-							f'❌ Page is unresponsive after navigation timeout on: {_log_pretty_url(current_url)} uh oh! subsequent operations may fail on this page...'
+							f'❌ Page is unresponsive after navigation stalled on: {_log_pretty_url(current_url)} WARNING! Subsequent operations will likely fail on this page, it must be reset...'
 						)
 						raise RuntimeError(
 							f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
@@ -3492,7 +3497,7 @@ class BrowserSession(BaseModel):
 
 		if is_new_tab_page(page.url):
 			self.logger.warning(
-				f'⚠️ Sending LLM a 1px white square instead of real screenshot, page is empty: {_log_pretty_url(page.url)}'
+				f'▫️ Sending LLM a 1px white square instead of real screenshot of: {_log_pretty_url(page.url)} (page is empty)'
 			)
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
@@ -3509,7 +3514,9 @@ class BrowserSession(BaseModel):
 		cdp_session = None
 		try:
 			# Create CDP session for the screenshot
-			self.logger.debug(f'📸 Taking viewport screenshot of page via CDP: {_log_pretty_url(page.url)}')
+			self.logger.debug(
+				f'📸 Taking viewport-only PNG screenshot of page via fresh CDP session: {_log_pretty_url(page.url)}'
+			)
 			cdp_session = await self.browser_context.new_cdp_session(page)  # type: ignore
 
 			# Capture screenshot via CDP
@@ -3524,7 +3531,9 @@ class BrowserSession(BaseModel):
 
 			screenshot_b64 = screenshot_response.get('data')
 			if not screenshot_b64:
-				raise Exception(f'CDP returned empty screenshot data for page {_log_pretty_url(page.url)}? (expected png base64)')
+				raise Exception(
+					f'CDP returned empty screenshot data for page {_log_pretty_url(page.url)}? (expected png base64)'
+				)  # have never seen this happen in practice
 
 			return screenshot_b64
 
