@@ -14,7 +14,7 @@ from browser_use.dom.enhanced_snapshot import (
 	REQUIRED_COMPUTED_STYLES,
 	build_snapshot_lookup,
 )
-from browser_use.dom.serializer import DOMTreeSerializer
+from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.views import (
 	EnhancedAXNode,
 	EnhancedAXProperty,

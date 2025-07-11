@@ -36,14 +36,6 @@ class DOMTreeSerializer:
 		self._previous_cached_selector_map = previous_cached_state.selector_map if previous_cached_state else None
 
 	def serialize_accessible_elements(self) -> SerializedDOMState:
-		"""Convert the enhanced DOM tree to string format, showing accessible elements and text content.
-
-
-		Returns:
-			- Serialized string representation
-			- Selector map mapping interactive indices to DOM nodes
-		"""
-
 		# Reset state
 		self._interactive_counter = 1
 		self._selector_map = {}
@@ -276,7 +268,7 @@ class DOMTreeSerializer:
 				del attributes_to_include[key]
 
 		# Remove attributes that duplicate accessibility data
-		role = DOMTreeSerializer._get_accessibility_role(node)
+		role = node.ax_node.role if node.ax_node else None
 		if role and node.node_name == role:
 			attributes_to_include.pop('role', None)
 
@@ -289,10 +281,3 @@ class DOMTreeSerializer:
 			return ' '.join(f'{key}={cap_text_length(value, 15)}' for key, value in attributes_to_include.items())
 
 		return ''
-
-	@staticmethod
-	def _get_accessibility_role(node: EnhancedDOMTreeNode) -> str | None:
-		"""Get the accessibility role from the AX node."""
-		if node.ax_node:
-			return node.ax_node.role
-		return None
