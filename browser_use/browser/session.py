@@ -2150,10 +2150,6 @@ class BrowserSession(BaseModel):
 		assert self.browser_context is not None, 'BrowserContext is not set up'
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
-			# Skip closed pages to avoid TargetClosedError
-			if page.is_closed():
-				continue
-
 			try:
 				title = await retry(timeout=3, retries=0)(page.title)()
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
@@ -2169,8 +2165,8 @@ class BrowserSession(BaseModel):
 					tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
 				else:
 					# Preserve the real URL and use a descriptive fallback title
-					fallback_title = '(title unavailable, page possibly crashed / unresponsive)'
-					tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
+					# fallback_title = '(title unavailable, page possibly crashed / unresponsive)'
+					# tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
 
 					# harsh but good, just close the page here because if we cant get the title then we certainly cant do anything else useful with it, no point keeping it open
 					try:
@@ -2180,6 +2176,7 @@ class BrowserSession(BaseModel):
 						)
 					except Exception:
 						pass
+					continue
 
 			tabs_info.append(tab_info)
 
