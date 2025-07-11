@@ -7,6 +7,23 @@ from browser_use.dom.utils import cap_text_length
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
 
 
+class ClickableElementDetector:
+	@staticmethod
+	def is_interactive(node: EnhancedDOMTreeNode) -> bool:
+		"""Check if this node is clickable/interactive."""
+		has_focusable_property = (
+			any(property.name == AXPropertyName.FOCUSABLE and property.value for property in node.ax_node.properties)
+			if node.ax_node and node.ax_node.properties
+			else False
+		)
+
+		cursor_pointer = node.snapshot_node and node.snapshot_node.cursor_style == 'pointer'
+
+		is_clickable = node.snapshot_node and node.snapshot_node.is_clickable or has_focusable_property or cursor_pointer
+
+		return is_clickable or False
+
+
 class DOMTreeSerializer:
 	"""Serializes enhanced DOM trees to string format."""
 
@@ -129,7 +146,7 @@ class DOMTreeSerializer:
 
 		# Keep the node if it's meaningful or has meaningful children
 		if (
-			node.is_clickable()
+			ClickableElementDetector.is_interactive(node.original_node)
 			or node.original_node.is_scrollable
 			or node.original_node.node_type == NodeType.TEXT_NODE
 			or node.children
@@ -145,19 +162,19 @@ class DOMTreeSerializer:
 			return
 
 		# Assign index to clickable elements
-		if node.is_clickable():
+		if ClickableElementDetector.is_interactive(node.original_node):
 			node.interactive_index = self._interactive_counter
 			self._selector_map[self._interactive_counter] = node.original_node
 			self._interactive_counter += 1
 
 			# If we provided previous cached selector map, check if the node is new
 			# TODO: maybe we can also check for more than just 1 step
-			previous_backend_node_ids: set[int] | None = set()
+			previous_backend_node_ids: set[int] | None = None
 			if self._previous_cached_selector_map:
 				previous_backend_node_ids = {node.backend_node_id for node in self._previous_cached_selector_map.values()}
 
 			if previous_backend_node_ids:
-				if node.original_node.backend_node_id in previous_backend_node_ids:
+				if node.original_node.backend_node_id not in previous_backend_node_ids:
 					node.is_new = True
 
 		# Process children
@@ -198,7 +215,7 @@ class DOMTreeSerializer:
 					# Clickable (and possibly scrollable)
 					new_prefix = '*' if node.is_new else ''
 					scroll_prefix = '|SCROLL+' if node.original_node.is_scrollable else '['
-					line = f'{depth_str}{scroll_prefix}{new_prefix}{node.interactive_index}]<{node.original_node.node_name}'
+					line = f'{depth_str}{new_prefix}{scroll_prefix}{node.interactive_index}]<{node.original_node.node_name}'
 				else:
 					line = f'{depth_str}<{node.original_node.node_name}'
 

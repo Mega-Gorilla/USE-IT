@@ -37,25 +37,6 @@ class SimplifiedNode:
 
 	is_new: bool = False
 
-	def is_clickable(self) -> bool:
-		"""Check if this node is clickable/interactive."""
-		if self.original_node.snapshot_node:
-			return self.original_node.snapshot_node.is_clickable or False
-		return False
-
-	def count_direct_clickable_children(self) -> int:
-		"""Count how many direct children are clickable."""
-		return sum(1 for child in self.children if child.is_clickable())
-
-	def has_any_clickable_descendant(self) -> bool:
-		"""Check if this node or any descendant is clickable."""
-		if self.is_clickable():
-			return True
-		return any(child.has_any_clickable_descendant() for child in self.children)
-
-
-###
-
 
 class NodeType(int, Enum):
 	"""DOM node types based on the DOM specification."""

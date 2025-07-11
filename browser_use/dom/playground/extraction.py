@@ -61,11 +61,13 @@ async def test_focus_vs_all_elements():
 		last_clicked_index = None  # Track the index for text input
 		while True:
 			try:
-				await remove_highlighting_script(browser_session)
-
 				page = await browser_session.get_current_page()
 				async with DomService(browser_session, page) as dom_service:
+					await remove_highlighting_script(dom_service)
+
 					all_elements_state = await dom_service.get_serialized_dom_tree()
+
+					await inject_highlighting_script(dom_service, all_elements_state.selector_map)
 
 				print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
 
@@ -118,8 +120,6 @@ async def test_focus_vs_all_elements():
 				# with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:
 				# 	f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
 				# print('Clickable elements written to ./tmp/clickable_elements.json')
-
-				await inject_highlighting_script(browser_session, selector_map)
 
 				answer = input(
 					"Enter element index to click, 'index,text' to input, 'c,index' to copy element JSON, or 'q' to quit: "
