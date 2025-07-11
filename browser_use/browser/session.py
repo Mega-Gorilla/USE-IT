@@ -173,7 +173,7 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 				# Check if this is a TargetClosedError or similar connection error
 				if 'TargetClosedError' in str(type(e)) or 'browser has been closed' in str(e):
 					self.logger.warning(
-						f'✂️ Browser {self._connection_str} disconnected before BrowserSession.{func.__name__} could run... (error: {type(e).__name__}: {e})'
+						f'✂️ Browser {self._connection_str} disconnected before BrowserSession.{func.__name__}() could run... (error: {type(e).__name__}: {e})'
 					)
 					self._reset_connection_state()
 				# Re-raise all hard errors so the caller can handle them appropriately

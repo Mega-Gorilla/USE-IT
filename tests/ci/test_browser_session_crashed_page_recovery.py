@@ -434,7 +434,7 @@ class TestBrowserSessionRecovery:
 				browser_session.logger.removeHandler(handler)
 
 		browser_session.navigate = navigate_with_log_check  # type: ignore[assignment]
-		await browser_session.navigate(httpserver.url_for('/delayed'))
+		await browser_session.navigate(httpserver.url_for('/delayed'), timeout=2.0)  # 2 second timeout
 
 		# Page should still be accessible
 		page = await browser_session.get_current_page()
