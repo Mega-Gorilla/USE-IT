@@ -12,19 +12,19 @@ from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.groq.chat import ChatGroq
 from browser_use.llm.messages import (
-	AssistantMessage,
-	BaseMessage,
-	SystemMessage,
-	UserMessage,
+    AssistantMessage,
+    BaseMessage,
+    SystemMessage,
+    UserMessage,
 )
 from browser_use.llm.messages import (
-	ContentPartImageParam as ContentImage,
+    ContentPartImageParam as ContentImage,
 )
 from browser_use.llm.messages import (
-	ContentPartRefusalParam as ContentRefusal,
+    ContentPartRefusalParam as ContentRefusal,
 )
 from browser_use.llm.messages import (
-	ContentPartTextParam as ContentText,
+    ContentPartTextParam as ContentText,
 )
 from browser_use.llm.ollama.chat import ChatOllama
 from browser_use.llm.openai.chat import ChatOpenAI
@@ -34,25 +34,25 @@ from browser_use.llm.openrouter.chat import ChatOpenRouter
 # Make better names for the message
 
 __all__ = [
-	# Message types -> for easier transition from langchain
-	'BaseMessage',
-	'UserMessage',
-	'SystemMessage',
-	'AssistantMessage',
-	# Content parts with better names
-	'ContentText',
-	'ContentRefusal',
-	'ContentImage',
-	# Chat models
-	'BaseChatModel',
-	'ChatOpenAI',
-	'ChatDeepSeek',
-	'ChatGoogle',
-	'ChatAnthropic',
-	'ChatAnthropicBedrock',
-	'ChatAWSBedrock',
-	'ChatGroq',
-	'ChatAzureOpenAI',
-	'ChatOllama',
-	'ChatOpenRouter',
+    # Message types -> for easier transition from langchain
+    'BaseMessage',
+    'UserMessage',
+    'SystemMessage',
+    'AssistantMessage',
+    # Content parts with better names
+    'ContentText',
+    'ContentRefusal',
+    'ContentImage',
+    # Chat models
+    'BaseChatModel',
+    'ChatOpenAI',
+    'ChatDeepSeek',
+    'ChatGoogle',
+    'ChatAnthropic',
+    'ChatAnthropicBedrock',
+    'ChatAWSBedrock',
+    'ChatGroq',
+    'ChatAzureOpenAI',
+    'ChatOllama',
+    'ChatOpenRouter',
 ]
