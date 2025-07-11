@@ -27,26 +27,26 @@ class DeepSeekMessageSerializer:
 	@staticmethod
 	def _serialize_image_part(part: ContentPartImageParam) -> dict[str, Any]:
 		url = part.image_url.url
-		if url.startswith("data:"):
-			return {"type": "image_url", "image_url": {"url": url}}
-		return {"type": "image_url", "image_url": {"url": url}}
+		if url.startswith('data:'):
+			return {'type': 'image_url', 'image_url': {'url': url}}
+		return {'type': 'image_url', 'image_url': {'url': url}}
 
 	@staticmethod
 	def _serialize_content(content: Any) -> str | list[dict[str, Any]]:
 		if content is None:
-			return ""
+			return ''
 		if isinstance(content, str):
 			return content
 		serialized: list[dict[str, Any]] = []
 		for part in content:
-			if part.type == "text":
+			if part.type == 'text':
 				serialized.append(
-					{"type": "text", "text": DeepSeekMessageSerializer._serialize_text_part(part)}
+					{'type': 'text', 'text': DeepSeekMessageSerializer._serialize_text_part(part)}
 				)
-			elif part.type == "image_url":
+			elif part.type == 'image_url':
 				serialized.append(DeepSeekMessageSerializer._serialize_image_part(part))
-			elif part.type == "refusal":
-				serialized.append({"type": "text", "text": f"[Refusal] {part.refusal}"})
+			elif part.type == 'refusal':
+				serialized.append({'type': 'text', 'text': f'[Refusal] {part.refusal}'})
 		return serialized
 
 	# -------- Tool-call 处理 -------------------------------------------------
@@ -57,14 +57,14 @@ class DeepSeekMessageSerializer:
 			try:
 				arguments = json.loads(tc.function.arguments)
 			except json.JSONDecodeError:
-				arguments = {"arguments": tc.function.arguments}
+				arguments = {'arguments': tc.function.arguments}
 			deepseek_tool_calls.append(
 				{
-					"id": tc.id,
-					"type": "function",
-					"function": {
-						"name": tc.function.name,
-						"arguments": arguments,
+					'id': tc.id,
+					'type': 'function',
+					'function': {
+						'name': tc.function.name,
+						'arguments': arguments,
 					},
 				}
 			)
@@ -90,23 +90,23 @@ class DeepSeekMessageSerializer:
 	def serialize(message: BaseMessage) -> MessageDict:
 		if isinstance(message, UserMessage):
 			return {
-				"role": "user",
-				"content": DeepSeekMessageSerializer._serialize_content(message.content),
+				'role': 'user',
+				'content': DeepSeekMessageSerializer._serialize_content(message.content),
 			}
 		if isinstance(message, SystemMessage):
 			return {
-				"role": "system",
-				"content": DeepSeekMessageSerializer._serialize_content(message.content),
+				'role': 'system',
+				'content': DeepSeekMessageSerializer._serialize_content(message.content),
 			}
 		if isinstance(message, AssistantMessage):
 			msg: MessageDict = {
-				"role": "assistant",
-				"content": DeepSeekMessageSerializer._serialize_content(message.content),
+				'role': 'assistant',
+				'content': DeepSeekMessageSerializer._serialize_content(message.content),
 			}
 			if message.tool_calls:
-				msg["tool_calls"] = DeepSeekMessageSerializer._serialize_tool_calls(message.tool_calls)
+				msg['tool_calls'] = DeepSeekMessageSerializer._serialize_tool_calls(message.tool_calls)
 			return msg
-		raise ValueError(f"Unknown message type: {type(message)}")
+		raise ValueError(f'Unknown message type: {type(message)}')
 
 	# -------- 列表序列化 -----------------------------------------------------
 	@staticmethod
