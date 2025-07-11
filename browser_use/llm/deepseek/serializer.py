@@ -94,15 +94,18 @@ class DeepSeekMessageSerializer:
 
     @overload
     @staticmethod
-    def serialize(message: UserMessage) -> MessageDict: ...
+    def serialize(message: UserMessage) -> MessageDict:
+        ...
 
     @overload
     @staticmethod
-    def serialize(message: SystemMessage) -> MessageDict: ...
+    def serialize(message: SystemMessage) -> MessageDict:
+        ...
 
     @overload
     @staticmethod
-    def serialize(message: AssistantMessage) -> MessageDict: ...
+    def serialize(message: AssistantMessage) -> MessageDict:
+        ...
 
     @staticmethod
     def serialize(message: BaseMessage) -> MessageDict:

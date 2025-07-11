@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.deepseek.serializer import DeepSeekMessageSerializer
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
-from browser_use.llm.schema import SchemaOptimizer          # ✅ 与 Anthropic 共用
+from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion
 
@@ -34,9 +34,8 @@ class ChatDeepSeek(BaseChatModel):
     timeout: float | httpx.Timeout | None = None
     client_params: dict[str, Any] | None = None
 
-    # ------------------------------------------------------------------ #
     @property
-    def provider(self) -> str:  # 供 browser-use 判断
+    def provider(self) -> str:
         return "deepseek"
 
     def _client(self) -> AsyncOpenAI:
@@ -51,13 +50,13 @@ class ChatDeepSeek(BaseChatModel):
     def name(self) -> str:
         return self.model
 
-    # ---------------------- 核心调用接口 -------------------------------- #
     @overload
     async def ainvoke(
         self,
         messages: list[BaseMessage],
         output_format: None = None,
         tools: list[dict[str, Any]] | None = None,
+        stop: list[str] | None = None,
     ) -> ChatInvokeCompletion[str]: ...
 
     @overload
@@ -66,6 +65,7 @@ class ChatDeepSeek(BaseChatModel):
         messages: list[BaseMessage],
         output_format: type[T],
         tools: list[dict[str, Any]] | None = None,
+        stop: list[str] | None = None,
     ) -> ChatInvokeCompletion[T]: ...
 
     async def ainvoke(
@@ -73,7 +73,7 @@ class ChatDeepSeek(BaseChatModel):
         messages: list[BaseMessage],
         output_format: type[T] | None = None,
         tools: list[dict[str, Any]] | None = None,
-        stop: list[str] | None = None,          # beta 对话前缀支持
+        stop: list[str] | None = None,
     ) -> ChatInvokeCompletion[T] | ChatInvokeCompletion[str]:
         """
         DeepSeek ainvoke 支持:
@@ -90,20 +90,20 @@ class ChatDeepSeek(BaseChatModel):
         if self.max_tokens is not None:
             common["max_tokens"] = self.max_tokens
 
-        # 若检测到 beta 对话前缀续写
+        # Beta 对话前缀续写（见官方文档）
         if self.base_url and str(self.base_url).endswith("/beta"):
             # 最后一个 assistant 必须 prefix
-            if ds_messages and ds_messages[-1].get("role") == "assistant":
+            if ds_messages and isinstance(ds_messages[-1], dict) and ds_messages[-1].get("role") == "assistant":
                 ds_messages[-1]["prefix"] = True
             if stop:
                 common["stop"] = stop
 
-        # 普通 Function Calling 路径
+        # ① 普通多轮对话/文本输出
         if output_format is None and (not tools):
             try:
-                resp = await client.chat.completions.create(
+                resp = await client.chat.completions.create(  # type: ignore
                     model=self.model,
-                    messages=ds_messages,
+                    messages=ds_messages,  # type: ignore
                     **common,
                 )
                 return ChatInvokeCompletion(
@@ -117,13 +117,12 @@ class ChatDeepSeek(BaseChatModel):
             except Exception as e:
                 raise ModelProviderError(str(e), model=self.name) from e
 
-        # 若 Function Calling 路径 (有 tools/自动工具推理)
+        # ② Function Calling 路径（有 tools 或 output_format 为 pydantic 模型）
         if tools or (output_format and hasattr(output_format, "model_json_schema")):
             try:
                 call_tools = tools
                 tool_choice = None
                 if output_format and hasattr(output_format, "model_json_schema"):
-                    # output_format 存在，构造 function 工具 (自动推理工具名和 schema)
                     tool_name = output_format.__name__
                     schema = SchemaOptimizer.create_optimized_json_schema(output_format)
                     schema.pop("title", None)
@@ -138,11 +137,11 @@ class ChatDeepSeek(BaseChatModel):
                         }
                     ]
                     tool_choice = {"type": "function", "function": {"name": tool_name}}
-                resp = await client.chat.completions.create(
+                resp = await client.chat.completions.create(  # type: ignore
                     model=self.model,
-                    messages=ds_messages,
-                    tools=call_tools,
-                    tool_choice=tool_choice,
+                    messages=ds_messages,  # type: ignore
+                    tools=call_tools,  # type: ignore
+                    tool_choice=tool_choice,  # type: ignore
                     **common,
                 )
                 msg = resp.choices[0].message
@@ -164,13 +163,12 @@ class ChatDeepSeek(BaseChatModel):
             except Exception as e:
                 raise ModelProviderError(str(e), model=self.name) from e
 
-        # JSON Output 路径 (官方 response_format)
+        # ③ JSON Output 路径（官方 response_format）
         if output_format is not None and hasattr(output_format, "model_json_schema"):
-            # 符合 deepseek 官方 JSON Output
             try:
-                resp = await client.chat.completions.create(
+                resp = await client.chat.completions.create(  # type: ignore
                     model=self.model,
-                    messages=ds_messages,
+                    messages=ds_messages,  # type: ignore
                     response_format={"type": "json_object"},
                     **common,
                 )
@@ -188,3 +186,6 @@ class ChatDeepSeek(BaseChatModel):
                 raise ModelProviderError(str(e), model=self.name) from e
             except Exception as e:
                 raise ModelProviderError(str(e), model=self.name) from e
+
+        # 所有路径兜底
+        raise ModelProviderError("No valid ainvoke execution path for DeepSeek LLM", model=self.name)
