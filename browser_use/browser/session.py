@@ -313,7 +313,9 @@ class BrowserSession(BaseModel):
 	@property
 	def logger(self) -> logging.Logger:
 		"""Get instance-specific logger with session ID in the name"""
-		if self._logger is None:
+		if (
+			self._logger is None or self.browser_context is None
+		):  # keep updating the name pre-init because our id and str(self) can change
 			self._logger = logging.getLogger(f'browser_use.{self}')
 		return self._logger
 
@@ -323,7 +325,7 @@ class BrowserSession(BaseModel):
 
 	def __str__(self) -> str:
 		is_copy = '©' if self._original_browser_session else '#'
-		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} 🅟 {str(id(self.agent_current_page))[-2:]}'
+		return f'BrowserSession🆂 {self.id[-4:]} {is_copy}{str(id(self))[-2:]} ({self._connection_str})'  # ' 🅟 {str(id(self.agent_current_page))[-2:]}'
 
 	# better to force people to get it from the right object, "only one way to do it" is better python
 	# def __getattr__(self, key: str) -> Any:
@@ -2219,7 +2221,7 @@ class BrowserSession(BaseModel):
 
 	# --- Page navigation ---
 	@observe_debug()
-	@retry(retries=0, timeout=90)
+	@retry(retries=1, timeout=90, wait=1)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout_ms: int | None = None) -> Page:
 		"""
@@ -2291,16 +2293,30 @@ class BrowserSession(BaseModel):
 						self.logger.error(
 							f'❌ Page is unresponsive after navigation stalled on: {_log_pretty_url(current_url)} WARNING! Subsequent operations will likely fail on this page, it must be reset...'
 						)
-						# Instead of raising immediately, attempt recovery
+						# Attempt recovery but don't retry the same URL if we're already in a retry
 						try:
-							await self._recover_unresponsive_page('navigate', timeout_ms=timeout_ms + 5_000)
-							# After recovery, return the new page
+							# Check if we're in a retry by looking for retry context
+							is_retry = hasattr(self, '_navigate_retry_count') and self._navigate_retry_count > 0
+
+							if is_retry:
+								# Don't try to reload the same URL again, just go to blank
+								self.logger.warning('⚠️ Already in retry, falling back to blank page instead of reloading')
+								await self._create_blank_fallback_page(current_url)
+							else:
+								# First attempt - try full recovery (reload then fallback)
+								self._navigate_retry_count = getattr(self, '_navigate_retry_count', 0) + 1
+								await self._recover_unresponsive_page('navigate', timeout_ms=timeout_ms)
+
+							# After recovery, return the current page
 							return await self.get_current_page()
 						except Exception as recovery_error:
 							self.logger.error(f'❌ Page recovery failed: {recovery_error}')
 							raise RuntimeError(
 								f'Page JS engine is unresponsive after navigation / loading issue on: {_log_pretty_url(current_url)}). Agent cannot proceed with this page because its JS event loop is unresponsive.'
 							)
+						finally:
+							# Reset retry count
+							self._navigate_retry_count = 0
 			elif nav_task in done:
 				# Navigation completed, check if it succeeded
 				await nav_task  # This will raise if navigation failed
@@ -3352,7 +3368,7 @@ class BrowserSession(BaseModel):
 		if not url or is_new_tab_page(url):
 			return False
 
-		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 6000))
+		timeout_ms = int(timeout_ms or self.browser_profile.default_navigation_timeout or 6000)
 
 		try:
 			self.logger.debug(f'🔄 Attempting to reload URL that crashed: {_log_pretty_url(url)}')
@@ -3372,7 +3388,7 @@ class BrowserSession(BaseModel):
 
 			# Navigate with timeout using asyncio.wait
 			nav_task = asyncio.create_task(new_page.goto(url, wait_until='load', timeout=timeout_ms))
-			done, pending = await asyncio.wait([nav_task], timeout=timeout_ms + 500)
+			done, pending = await asyncio.wait([nav_task], timeout=(timeout_ms + 500) / 1000)
 
 			if nav_task in pending:
 				# Navigation timed out
