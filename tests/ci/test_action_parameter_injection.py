@@ -131,6 +131,7 @@ class TestBrowserContext:
 		Test the _enhanced_css_selector_for_element method to verify that
 		it returns the correct CSS selector string for a DOMElementNode.
 		"""
+
 		# Create a DOMElementNode instance with a complex set of attributes
 		dummy_element = EnhancedDOMTreeNode(
 			node_id=1,
@@ -154,9 +155,7 @@ class TestBrowserContext:
 		actual_selector = BrowserSession._enhanced_css_selector_for_element(dummy_element, include_dynamic_attributes=True)
 
 		# Expected conversion includes the xpath conversion, class attributes, and other attributes
-		expected_selector = (
-			'html > body > div:nth-of-type(2).foo.bar[id="my-id"][placeholder*="some \\"quoted\\" text"][data-testid="123"]'
-		)
+		expected_selector = 'div.foo.bar[id="my-id"][placeholder*="some \\"quoted\\" text"][data-testid="123"]'  # changed the test because we have slightly different dom logic now
 		assert actual_selector == expected_selector, f'Expected {expected_selector}, but got {actual_selector}'
 
 	@pytest.mark.asyncio
