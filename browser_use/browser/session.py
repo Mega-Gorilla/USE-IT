@@ -3323,7 +3323,7 @@ class BrowserSession(BaseModel):
 				# Clean up
 				try:
 					await asyncio.wait_for(cdp_session.detach(), timeout=1.0)
-				except (TimeoutError, Exception):
+				except Exception:
 					pass
 				await temp_page.close()
 
@@ -3389,7 +3389,7 @@ class BrowserSession(BaseModel):
 				# Close the unresponsive page before returning
 				# This is critical to prevent the recovery flow from hanging
 				try:
-					closed = await self._force_close_page_via_cdp(new_page.url)
+					await self._force_close_page_via_cdp(new_page.url)
 				except Exception as e:
 					self.logger.error(
 						f'❌ Failed to close crashed page {_log_pretty_url(url)} via CDP: {type(e).__name__}: {e} (something is very wrong or system is extremely overloaded)'
@@ -3539,7 +3539,7 @@ class BrowserSession(BaseModel):
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
 			await page.bring_to_front()
-		except (Exception, TimeoutError):
+		except Exception:
 			pass
 
 		# Take screenshot using CDP to get around playwright's unnecessary slowness and weird behavior
@@ -3580,7 +3580,7 @@ class BrowserSession(BaseModel):
 			if cdp_session:
 				try:
 					await asyncio.wait_for(cdp_session.detach(), timeout=1.0)
-				except (TimeoutError, Exception):
+				except Exception:
 					pass
 
 	# region - User Actions
