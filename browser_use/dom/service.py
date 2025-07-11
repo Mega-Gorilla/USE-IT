@@ -140,23 +140,42 @@ class DomService:
 		)
 		return enhanced_ax_node
 
-	async def _get_viewport_size(self) -> tuple[float, float]:
-		"""Get viewport dimensions using CDP."""
+	async def _get_viewport_size(self) -> tuple[float, float, float, float, float]:
+		"""Get viewport dimensions, device pixel ratio, and scroll position using CDP."""
 		try:
 			cdp_client = await self._get_cdp_client()
 			session_id = await self._get_current_page_session_id()
 
 			# Get the layout metrics which includes the visual viewport
 			metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+
 			visual_viewport = metrics.get('visualViewport', {})
+			layout_viewport = metrics.get('layoutViewport', {})
+			content_size = metrics.get('contentSize', {})
 
-			width = visual_viewport.get('clientWidth', 1920.0)
-			height = visual_viewport.get('clientHeight', 1080.0)
+			# IMPORTANT: Use CSS viewport instead of device pixel viewport
+			# This fixes the coordinate mismatch on high-DPI displays
+			css_visual_viewport = metrics.get('cssVisualViewport', {})
+			css_layout_viewport = metrics.get('cssLayoutViewport', {})
 
-			return float(width), float(height)
-		except Exception:
+			# Use CSS pixels (what JavaScript sees) instead of device pixels
+			width = css_visual_viewport.get('clientWidth', css_layout_viewport.get('clientWidth', 1920.0))
+			height = css_visual_viewport.get('clientHeight', css_layout_viewport.get('clientHeight', 1080.0))
+
+			# Calculate device pixel ratio
+			device_width = visual_viewport.get('clientWidth', width)
+			css_width = css_visual_viewport.get('clientWidth', width)
+			device_pixel_ratio = device_width / css_width if css_width > 0 else 1.0
+
+			# Get current scroll position from the visual viewport
+			scroll_x = css_visual_viewport.get('pageX', 0)
+			scroll_y = css_visual_viewport.get('pageY', 0)
+
+			return float(width), float(height), float(device_pixel_ratio), float(scroll_x), float(scroll_y)
+		except Exception as e:
+			print(f'⚠️  Viewport size detection failed: {e}')
 			# Fallback to default viewport size
-			return 1920.0, 1080.0
+			return 1920.0, 1080.0, 1.0, 0.0, 0.0
 
 	async def _build_enhanced_dom_tree(
 		self, dom_tree: GetDocumentReturns, ax_tree: GetFullAXTreeReturns, snapshot: CaptureSnapshotReturns
@@ -169,10 +188,11 @@ class DomService:
 		""" NodeId (NOT backend node id) -> enhanced dom tree node"""  # way to get the parent/content node
 
 		# Get viewport dimensions first for visibility calculation
-		viewport_width, viewport_height = await self._get_viewport_size()
+		viewport_width, viewport_height, device_pixel_ratio, scroll_x, scroll_y = await self._get_viewport_size()
 
 		# Parse snapshot data with everything calculated upfront
-		snapshot_lookup = build_snapshot_lookup(snapshot, viewport_width, viewport_height)
+		# Parse snapshot data with everything calculated upfront
+		snapshot_lookup = build_snapshot_lookup(snapshot, viewport_width, viewport_height, device_pixel_ratio, scroll_x, scroll_y)
 
 		def _construct_enhanced_node(node: Node) -> EnhancedDOMTreeNode:
 			# memoize the mf (I don't know if some nodes are duplicated)

@@ -226,7 +226,7 @@ class BrowserSession(BaseModel):
 	)
 
 	_cached_browser_state_summary: BrowserStateSummary | None = PrivateAttr(default=None)
-	# _cached_clickable_element_hashes: CachedClickableElementHashes | None = PrivateAttr(default=None)
+	_cached_clickable_element_hashes: CachedClickableElementHashes | None = PrivateAttr(default=None)
 	_tab_visibility_callback: Any = PrivateAttr(default=None)
 	_logger: logging.Logger | None = PrivateAttr(default=None)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)

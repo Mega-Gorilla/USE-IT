@@ -69,7 +69,7 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 			# Try bounds first, then clientRects
 			rect = node.snapshot_node.bounds or node.snapshot_node.clientRects
 			if rect:
-				bbox = {'x': rect.x / 2, 'y': rect.y / 2, 'width': rect.width / 2, 'height': rect.height / 2}
+				bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
 
 		# Only include elements with valid bounding boxes (following working implementation)
 		if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:

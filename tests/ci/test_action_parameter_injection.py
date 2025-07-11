@@ -293,46 +293,47 @@ class TestBrowserContext:
 		tabs_info = await browser_session.get_tabs_info()
 		assert len(tabs_info) == 1, 'Should have one tab open after closing the second'
 
-	@pytest.mark.asyncio
-	async def test_remove_highlights(self, browser_session, base_url):
-		"""Test that remove_highlights successfully removes highlight elements."""
-		# Navigate to a test page
-		await browser_session.navigate(f'{base_url}/')
+	# TODO: highlighting doesn't exist anymore
+	# @pytest.mark.asyncio
+	# async def test_remove_highlights(self, browser_session, base_url):
+	# 	"""Test that remove_highlights successfully removes highlight elements."""
+	# 	# Navigate to a test page
+	# 	await browser_session.navigate(f'{base_url}/')
 
-		# Add a highlight via JavaScript
-		await browser_session.execute_javascript("""
-            const container = document.createElement('div');
-            container.id = 'playwright-highlight-container';
-            document.body.appendChild(container);
-            
-            const highlight = document.createElement('div');
-            highlight.id = 'playwright-highlight-1';
-            container.appendChild(highlight);
-            
-            const element = document.querySelector('h1');
-            element.setAttribute('browser-user-highlight-id', 'playwright-highlight-1');
-        """)
+	# 	# Add a highlight via JavaScript
+	# 	await browser_session.execute_javascript("""
+	#         const container = document.createElement('div');
+	#         container.id = 'playwright-highlight-container';
+	#         document.body.appendChild(container);
 
-		# Verify the highlight container exists
-		container_exists = await browser_session.execute_javascript(
-			"document.getElementById('playwright-highlight-container') !== null"
-		)
-		assert container_exists, 'Highlight container should exist before removal'
+	#         const highlight = document.createElement('div');
+	#         highlight.id = 'playwright-highlight-1';
+	#         container.appendChild(highlight);
 
-		# Call remove_highlights
-		await browser_session.remove_highlights()
+	#         const element = document.querySelector('h1');
+	#         element.setAttribute('browser-user-highlight-id', 'playwright-highlight-1');
+	#     """)
 
-		# Verify the highlight container was removed
-		container_exists_after = await browser_session.execute_javascript(
-			"document.getElementById('playwright-highlight-container') !== null"
-		)
-		assert not container_exists_after, 'Highlight container should be removed'
+	# 	# Verify the highlight container exists
+	# 	container_exists = await browser_session.execute_javascript(
+	# 		"document.getElementById('playwright-highlight-container') !== null"
+	# 	)
+	# 	assert container_exists, 'Highlight container should exist before removal'
 
-		# Verify the highlight attribute was removed from the element
-		attribute_exists = await browser_session.execute_javascript(
-			"document.querySelector('h1').hasAttribute('browser-user-highlight-id')"
-		)
-		assert not attribute_exists, 'browser-user-highlight-id attribute should be removed'
+	# 	# Call remove_highlights
+	# 	await browser_session.remove_highlights()
+
+	# 	# Verify the highlight container was removed
+	# 	container_exists_after = await browser_session.execute_javascript(
+	# 		"document.getElementById('playwright-highlight-container') !== null"
+	# 	)
+	# 	assert not container_exists_after, 'Highlight container should be removed'
+
+	# 	# Verify the highlight attribute was removed from the element
+	# 	attribute_exists = await browser_session.execute_javascript(
+	# 		"document.querySelector('h1').hasAttribute('browser-user-highlight-id')"
+	# 	)
+	# 	assert not attribute_exists, 'browser-user-highlight-id attribute should be removed'
 
 	@pytest.mark.asyncio
 	async def test_custom_action_with_no_arguments(self, browser_session, base_url):
