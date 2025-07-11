@@ -200,6 +200,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task_id: str = self.id
 		self.session_id: str = uuid7str()
 
+		# Initialize available file paths as direct attribute
+		self.available_file_paths = available_file_paths
+
 		# Create instance-specific logger
 		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-3:]}]')
 
@@ -229,7 +232,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			validate_output=validate_output,
 			message_context=message_context,
 			generate_gif=generate_gif,
-			available_file_paths=available_file_paths,
 			include_attributes=include_attributes,
 			max_actions_per_step=max_actions_per_step,
 			use_thinking=use_thinking,
@@ -301,7 +303,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				use_thinking=self.settings.use_thinking,
 			).get_system_message(),
 			file_system=self.file_system,
-			available_file_paths=self.settings.available_file_paths,
 			state=self.state.message_manager_state,
 			use_thinking=self.settings.use_thinking,
 			# Settings that were previously in MessageManagerSettings
@@ -471,21 +472,37 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		return self.browser_session.browser_profile
 
+	async def _check_and_update_downloads(self, context: str = '') -> None:
+		"""Check for new downloads and update available file paths."""
+		if not self.has_downloads_path:
+			return
+
+		assert self.browser_session is not None, 'BrowserSession is not set up'
+
+		try:
+			current_downloads = self.browser_session.downloaded_files
+			if current_downloads != self._last_known_downloads:
+				self._update_available_file_paths(current_downloads)
+				self._last_known_downloads = current_downloads
+				if context:
+					self.logger.debug(f'📁 {context}: Updated available files')
+		except Exception as e:
+			error_context = f' {context}' if context else ''
+			self.logger.debug(f'📁 Failed to check for downloads{error_context}: {type(e).__name__}: {e}')
+
 	def _update_available_file_paths(self, downloads: list[str]) -> None:
 		"""Update available_file_paths with downloaded files."""
 		if not self.has_downloads_path:
 			return
 
-		current_files = set(self.settings.available_file_paths or [])
+		current_files = set(self.available_file_paths or [])
 		new_files = set(downloads) - current_files
 
 		if new_files:
-			self.settings.available_file_paths = list(current_files | new_files)
-			# Update message manager with new file paths
-			self._message_manager.available_file_paths = self.settings.available_file_paths
+			self.available_file_paths = list(current_files | new_files)
 
 			self.logger.info(
-				f'📁 Added {len(new_files)} downloaded files to available_file_paths (total: {len(self.settings.available_file_paths)} files)'
+				f'📁 Added {len(new_files)} downloaded files to available_file_paths (total: {len(self.available_file_paths)} files)'
 			)
 			for file_path in new_files:
 				self.logger.info(f'📄 New file available: {file_path}')
@@ -670,6 +687,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
 		current_page = await self.browser_session.get_current_page()
 
+		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
+		await self._check_and_update_downloads(f'Step {self.state.n_steps + 1}: after getting browser state')
+
 		self._log_step_context(current_page, browser_state_summary)
 		await self._raise_if_stopped_or_paused()
 
@@ -695,6 +715,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			page_filtered_actions=page_filtered_actions if page_filtered_actions else None,
 			sensitive_data=self.sensitive_data,
 			agent_history_list=self.state.history,  # Pass AgentHistoryList for screenshots
+			available_file_paths=self.available_file_paths,  # Always pass current available_file_paths
 		)
 
 		await self._handle_final_step(step_info)
@@ -738,14 +759,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		# Check for new downloads after executing actions
-		if self.has_downloads_path:
-			try:
-				current_downloads = self.browser_session.downloaded_files
-				if current_downloads != self._last_known_downloads:
-					self._update_available_file_paths(current_downloads)
-					self._last_known_downloads = current_downloads
-			except Exception as e:
-				self.logger.debug(f'📁 Failed to check for new downloads: {type(e).__name__}: {e}')
+		await self._check_and_update_downloads('after executing actions')
 
 		self.state.consecutive_failures = 0
 		self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures reset to: {self.state.consecutive_failures}')
@@ -1401,7 +1415,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					file_system=self.file_system,
 					page_extraction_llm=self.settings.page_extraction_llm,
 					sensitive_data=self.sensitive_data,
-					available_file_paths=self.settings.available_file_paths,
+					available_file_paths=self.available_file_paths,
 					context=self.context,
 				)
 
