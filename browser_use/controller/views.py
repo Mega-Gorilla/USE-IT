@@ -71,17 +71,3 @@ class NoParamsAction(BaseModel):
 
 	model_config = ConfigDict(extra='ignore')
 	# No fields defined - all inputs are ignored automatically
-
-
-class WriteFileAction(BaseModel):
-	file_name: str
-	content: str
-	append: bool = False
-	trailing_newline: bool = True
-	leading_newline: bool = False
-
-
-class FileStrReplaceAction(BaseModel):
-	file_name: str
-	old_str: str
-	new_str: str
