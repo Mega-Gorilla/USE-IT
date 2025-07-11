@@ -21,7 +21,6 @@ from browser_use.agent.cloud_events import (
 	CreateAgentTaskEvent,
 	UpdateAgentTaskEvent,
 )
-from browser_use.dom.serializer import DEFAULT_INCLUDE_ATTRIBUTES
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.tokens.service import TokenCost
@@ -150,7 +149,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		message_context: str | None = None,
 		generate_gif: bool | str = False,
 		available_file_paths: list[str] | None = None,
-		include_attributes: list[str] = DEFAULT_INCLUDE_ATTRIBUTES,
+		include_attributes: list[str] | None = None,
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
 		max_history_items: int = 40,
@@ -898,7 +897,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Create and store history item"""
 
 		if model_output:
-			interacted_elements = AgentHistory.get_interacted_element(model_output, browser_state_summary.selector_map)
+			interacted_elements = AgentHistory.get_interacted_element(model_output, browser_state_summary.dom_state.selector_map)
 		else:
 			interacted_elements = [None]
 
@@ -957,10 +956,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
-	def _log_step_context(self, current_page, browser_state_summary) -> None:
+	def _log_step_context(self, current_page: Page, browser_state_summary: BrowserStateSummary) -> None:
 		"""Log step context information"""
 		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
-		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
+		interactive_count = len(browser_state_summary.dom_state.selector_map) if browser_state_summary else 0
 		self.logger.info(
 			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
 		)
@@ -1314,7 +1313,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		cached_selector_map = await self.browser_session.get_selector_map()
-		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
+		cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
 
 		await self.browser_session.remove_highlights()
 
@@ -1327,13 +1326,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
-				new_selector_map = new_browser_state_summary.selector_map
+				new_selector_map = new_browser_state_summary.dom_state.selector_map
 
 				# Detect index change after previous action
 				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
-				orig_target_hash = orig_target.hash.branch_path_hash if orig_target else None
+				orig_target_hash = hash(orig_target) if orig_target else None
 				new_target = new_selector_map.get(action.get_index())  # type: ignore
-				new_target_hash = new_target.hash.branch_path_hash if new_target else None
+				new_target_hash = hash(new_target) if new_target else None
+
 				if orig_target_hash != new_target_hash:
 					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
 					logger.info(msg)
@@ -1346,8 +1346,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
-				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
+				new_element_hashes = {hash(e) for e in new_selector_map.values()}
+				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
 					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
 					logger.info(msg)
@@ -1493,20 +1493,27 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Update action indices based on current page state.
 		Returns updated action or None if element cannot be found.
 		"""
-		if not historical_element or not browser_state_summary.element_tree:
+		if not historical_element or not browser_state_summary.dom_state.selector_map:
 			return action
 
-		current_element = HistoryTreeProcessor.find_history_element_in_tree(
-			historical_element, browser_state_summary.element_tree
+		# selector_hash_map = {hash(e): e for e in browser_state_summary.dom_state.selector_map.values()}
+
+		highlight_index, current_element = next(
+			(
+				(highlight_index, element)
+				for highlight_index, element in browser_state_summary.dom_state.selector_map.items()
+				if element.element_hash == historical_element.element_hash
+			),
+			(None, None),
 		)
 
-		if not current_element or current_element.highlight_index is None:
+		if not current_element or highlight_index is None:
 			return None
 
 		old_index = action.get_index()
-		if old_index != current_element.highlight_index:
-			action.set_index(current_element.highlight_index)
-			self.logger.info(f'Element moved in DOM, updated index from {old_index} to {current_element.highlight_index}')
+		if old_index != highlight_index:
+			action.set_index(highlight_index)
+			self.logger.info(f'Element moved in DOM, updated index from {old_index} to {highlight_index}')
 
 		return action
 

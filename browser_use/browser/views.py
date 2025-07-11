@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from browser_use.dom.views import DOMInteractedElement, DOMState
+from browser_use.dom.views import DOMInteractedElement, SerializedDOMState
 
 
 # Pydantic
@@ -41,12 +41,11 @@ class PageInfo(BaseModel):
 
 
 @dataclass
-class BrowserStateSummary(DOMState):
+class BrowserStateSummary:
 	"""The summary of the browser's current state designed for an LLM to process"""
 
-	# provided by DOMState:
-	# element_tree: DOMElementNode
-	# selector_map: SelectorMap
+	# provided by SerializedDOMState:
+	dom_state: SerializedDOMState
 
 	url: str
 	title: str

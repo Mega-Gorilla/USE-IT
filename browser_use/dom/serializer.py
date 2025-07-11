@@ -1,74 +1,31 @@
 # @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
 
-from dataclasses import dataclass, field
 
 from cdp_use.cdp.accessibility.types import AXPropertyName
 
-from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType
-
-DEFAULT_INCLUDE_ATTRIBUTES = [
-	'title',
-	'type',
-	'checked',
-	'name',
-	'role',
-	'value',
-	'placeholder',
-	'data-date-format',
-	'alt',
-	'aria-label',
-	'aria-expanded',
-	'data-state',
-	'aria-checked',
-]
-
-
-@dataclass(slots=True)
-class SimplifiedNode:
-	"""Simplified tree node for optimization."""
-
-	original_node: EnhancedDOMTreeNode
-	children: list['SimplifiedNode'] = field(default_factory=list)
-	should_display: bool = True
-	interactive_index: int | None = None
-
-	def is_clickable(self) -> bool:
-		"""Check if this node is clickable/interactive."""
-		if self.original_node.snapshot_node:
-			return self.original_node.snapshot_node.is_clickable or False
-		return False
-
-	def count_direct_clickable_children(self) -> int:
-		"""Count how many direct children are clickable."""
-		return sum(1 for child in self.children if child.is_clickable())
-
-	def has_any_clickable_descendant(self) -> bool:
-		"""Check if this node or any descendant is clickable."""
-		if self.is_clickable():
-			return True
-		return any(child.has_any_clickable_descendant() for child in self.children)
+from browser_use.dom.utils import cap_text_length
+from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
 
 
 class DOMTreeSerializer:
 	"""Serializes enhanced DOM trees to string format."""
 
-	def __init__(self, root_node: EnhancedDOMTreeNode):
+	def __init__(self, root_node: EnhancedDOMTreeNode, previous_cached_state: SerializedDOMState | None = None):
 		self.root_node = root_node
 
 		self._interactive_counter = 1
 		self._selector_map: DOMSelectorMap = {}
 
-	def serialize_accessible_elements(self, include_attributes: list[str] | None = None) -> tuple[str, DOMSelectorMap]:
+		self._previous_cached_selector_map = previous_cached_state.selector_map if previous_cached_state else None
+
+	def serialize_accessible_elements(self) -> SerializedDOMState:
 		"""Convert the enhanced DOM tree to string format, showing accessible elements and text content.
 
-		include_attributes: list[str] = include_attributes or `DEFAULT_INCLUDE_ATTRIBUTES`
 
 		Returns:
 			- Serialized string representation
 			- Selector map mapping interactive indices to DOM nodes
 		"""
-		if not include_attributes:
-			include_attributes = DEFAULT_INCLUDE_ATTRIBUTES
 
 		# Reset state
 		self._interactive_counter = 1
@@ -81,12 +38,9 @@ class DOMTreeSerializer:
 		optimized_tree = self._optimize_tree(simplified_tree)
 
 		# Step 3: Assign interactive indices to clickable elements
-		self._assign_interactive_indices(optimized_tree)
+		self._assign_interactive_indices_and_mark_new_nodes(optimized_tree)
 
-		# Step 4: Serialize optimized tree
-		serialized = self._serialize_tree(optimized_tree, include_attributes)
-
-		return serialized, self._selector_map
+		return SerializedDOMState(_root=optimized_tree, selector_map=self._selector_map)
 
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with relevant elements."""
@@ -185,7 +139,7 @@ class DOMTreeSerializer:
 		# Remove empty nodes
 		return None
 
-	def _assign_interactive_indices(self, node: SimplifiedNode | None) -> None:
+	def _assign_interactive_indices_and_mark_new_nodes(self, node: SimplifiedNode | None) -> None:
 		"""Assign interactive indices to clickable elements."""
 		if not node:
 			return
@@ -196,12 +150,23 @@ class DOMTreeSerializer:
 			self._selector_map[self._interactive_counter] = node.original_node
 			self._interactive_counter += 1
 
+			# If we provided previous cached selector map, check if the node is new
+			# TODO: maybe we can also check for more than just 1 step
+			previous_backend_node_ids: set[int] | None = set()
+			if self._previous_cached_selector_map:
+				previous_backend_node_ids = {node.backend_node_id for node in self._previous_cached_selector_map.values()}
+
+			if previous_backend_node_ids:
+				if node.original_node.backend_node_id in previous_backend_node_ids:
+					node.is_new = True
+
 		# Process children
 		for child in node.children:
-			self._assign_interactive_indices(child)
+			self._assign_interactive_indices_and_mark_new_nodes(child)
 
-	def _serialize_tree(self, node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
-		"""Step 3: Serialize the optimized tree to string format."""
+	@staticmethod
+	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
+		"""Serialize the optimized tree to string format."""
 		if not node:
 			return ''
 
@@ -213,7 +178,7 @@ class DOMTreeSerializer:
 			# Skip displaying nodes marked as should_display=False (virtual nodes)
 			if not node.should_display:
 				for child in node.children:
-					child_text = self._serialize_tree(child, include_attributes, depth)
+					child_text = DOMTreeSerializer.serialize_tree(child, include_attributes, depth)
 					if child_text:
 						formatted_text.append(child_text)
 				return '\n'.join(formatted_text)
@@ -223,7 +188,7 @@ class DOMTreeSerializer:
 				next_depth += 1
 
 				# Build attributes string
-				attributes_html_str = self._build_attributes_string(node.original_node, include_attributes, '')
+				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, '')
 
 				# Build the line
 				if node.original_node.is_scrollable and node.interactive_index is None:
@@ -231,8 +196,9 @@ class DOMTreeSerializer:
 					line = f'{depth_str}|SCROLL|<{node.original_node.node_name}'
 				elif node.interactive_index is not None:
 					# Clickable (and possibly scrollable)
+					new_prefix = '*' if node.is_new else ''
 					scroll_prefix = '|SCROLL+' if node.original_node.is_scrollable else '['
-					line = f'{depth_str}{scroll_prefix}{node.interactive_index}]<{node.original_node.node_name}'
+					line = f'{depth_str}{scroll_prefix}{new_prefix}{node.interactive_index}]<{node.original_node.node_name}'
 				else:
 					line = f'{depth_str}<{node.original_node.node_name}'
 
@@ -256,13 +222,14 @@ class DOMTreeSerializer:
 
 		# Process children
 		for child in node.children:
-			child_text = self._serialize_tree(child, include_attributes, next_depth)
+			child_text = DOMTreeSerializer.serialize_tree(child, include_attributes, next_depth)
 			if child_text:
 				formatted_text.append(child_text)
 
 		return '\n'.join(formatted_text)
 
-	def _build_attributes_string(self, node: EnhancedDOMTreeNode, include_attributes: list[str], text: str) -> str:
+	@staticmethod
+	def _build_attributes_string(node: EnhancedDOMTreeNode, include_attributes: list[str], text: str) -> str:
 		"""Build the attributes string for an element."""
 		if not node.attributes:
 			return ''
@@ -292,7 +259,7 @@ class DOMTreeSerializer:
 				del attributes_to_include[key]
 
 		# Remove attributes that duplicate accessibility data
-		role = self._get_accessibility_role(node)
+		role = DOMTreeSerializer._get_accessibility_role(node)
 		if role and node.node_name == role:
 			attributes_to_include.pop('role', None)
 
@@ -302,18 +269,13 @@ class DOMTreeSerializer:
 				del attributes_to_include[attr]
 
 		if attributes_to_include:
-			return ' '.join(f'{key}={self._cap_text_length(value, 15)}' for key, value in attributes_to_include.items())
+			return ' '.join(f'{key}={cap_text_length(value, 15)}' for key, value in attributes_to_include.items())
 
 		return ''
 
-	def _get_accessibility_role(self, node: EnhancedDOMTreeNode) -> str | None:
+	@staticmethod
+	def _get_accessibility_role(node: EnhancedDOMTreeNode) -> str | None:
 		"""Get the accessibility role from the AX node."""
 		if node.ax_node:
 			return node.ax_node.role
 		return None
-
-	def _cap_text_length(self, text: str, max_length: int) -> str:
-		"""Cap text length for display."""
-		if len(text) <= max_length:
-			return text
-		return text[:max_length] + '...'

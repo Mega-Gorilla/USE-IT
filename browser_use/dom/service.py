@@ -1,6 +1,8 @@
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
+import httpx
 from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXNode, AXPropertyName
@@ -8,33 +10,69 @@ from cdp_use.cdp.dom.commands import GetDocumentReturns
 from cdp_use.cdp.dom.types import Node, ShadowRootType
 from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 
-from browser_use.browser import Browser
 from browser_use.dom.enhanced_snapshot import (
 	REQUIRED_COMPUTED_STYLES,
 	build_snapshot_lookup,
 )
 from browser_use.dom.serializer import DOMTreeSerializer
-from browser_use.dom.views import EnhancedAXNode, EnhancedAXProperty, EnhancedDOMTreeNode, NodeType
+from browser_use.dom.views import (
+	EnhancedAXNode,
+	EnhancedAXProperty,
+	EnhancedDOMTreeNode,
+	NodeType,
+	SerializedDOMState,
+)
+
+if TYPE_CHECKING:
+	from browser_use.browser.session import BrowserSession
+	from browser_use.browser.types import Page
 
 
-class DOMService:
-	def __init__(self, browser: Browser):
+class DomService:
+	"""
+	Service for getting the DOM tree and other DOM-related information.
+
+	Either browser or page must be provided.
+
+	TODO: currently we start a new websocket connection PER STEP, we should definitely keep this persistent
+	"""
+
+	def __init__(self, browser: 'BrowserSession', page: 'Page'):
 		self.browser = browser
+		self.page = page
 
 		self.cdp_client: CDPClient | None = None
 		self.playwright_page_to_session_id_store: dict[str, str] = {}
 
 	async def _get_cdp_client(self) -> CDPClient:
-		if self.cdp_client is None:
-			if not self.browser.cdp_url:
-				raise ValueError('CDP URL is not set')
+		if not self.browser.cdp_url:
+			raise ValueError('CDP URL is not set')
 
-			self.cdp_client = CDPClient(self.browser.cdp_url)
+		# TODO: MOVE THIS TO BROWSER SESSION (or sth idk)
+		# If the cdp_url is already a websocket URL, use it as-is.
+		if self.browser.cdp_url.startswith('ws'):
+			ws_url = self.browser.cdp_url
+		else:
+			# Otherwise, treat it as the DevTools HTTP root and fetch the websocket URL.
+			url = self.browser.cdp_url.rstrip('/')
+			if not url.endswith('/json/version'):
+				url = url + '/json/version'
+			async with httpx.AsyncClient() as client:
+				version_info = await client.get(url)
+				ws_url = version_info.json()['webSocketDebuggerUrl']
+
+		if self.cdp_client is None:
+			self.cdp_client = CDPClient(ws_url)
 			await self.cdp_client.start()
+
 		return self.cdp_client
 
+	async def __aenter__(self):
+		await self._get_cdp_client()
+		return self
+
 	# on self destroy -> stop the cdp client
-	async def __del__(self):
+	async def __aexit__(self, exc_type, exc_value, traceback):
 		if self.cdp_client:
 			await self.cdp_client.stop()
 			self.cdp_client = None
@@ -44,8 +82,7 @@ class DOMService:
 
 		TODO: this is a REALLY hacky way -> if multiple same urls are open then this will break
 		"""
-		page = await self.browser.get_current_page()
-		page_guid = page._impl_obj._guid
+		page_guid = self.page._impl_obj._guid
 
 		# if page_guid in self.page_to_session_id_store:
 		# 	return self.page_to_session_id_store[page_guid]
@@ -54,7 +91,7 @@ class DOMService:
 
 		targets = await cdp_client.send.Target.getTargets()
 		for target in targets['targetInfos']:
-			if target['type'] == 'page' and target['url'] == page.url:
+			if target['type'] == 'page' and target['url'] == self.page.url:
 				# cache the session id for this playwright page
 				self.playwright_page_to_session_id_store[page_guid] = target['targetId']
 
@@ -72,7 +109,7 @@ class DOMService:
 
 				return session_id
 
-		raise ValueError(f'No session id found for page {page.url}')
+		raise ValueError(f'No session id found for page {self.page.url}')
 
 	def _build_enhanced_ax_node(self, ax_node: AXNode) -> EnhancedAXNode:
 		properties: list[EnhancedAXProperty] | None = None
@@ -167,7 +204,7 @@ class DOMService:
 				node_type=NodeType(node['nodeType']),
 				node_name=node['nodeName'],
 				node_value=node['nodeValue'],
-				attributes=attributes,
+				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
 				content_document=None,
@@ -244,20 +281,17 @@ class DOMService:
 
 		return enhanced_dom_tree
 
-	async def get_serialized_dom_tree(
-		self, include_attributes: list[str] | None = None
-	) -> tuple[str, dict[int, EnhancedDOMTreeNode]]:
+	async def get_serialized_dom_tree(self, previous_cached_state: SerializedDOMState | None = None) -> SerializedDOMState:
 		"""Get the serialized DOM tree representation for LLM consumption.
 
-		Returns:
-			- Serialized string representation
-			- Selector map mapping interactive indices to DOM nodes
+		TODO: this is a bit of a hack, we should probably have a better way to do this
 		"""
 		enhanced_dom_tree = await self.get_dom_tree()
 
 		start = time.time()
-		serialized, selector_map = DOMTreeSerializer(enhanced_dom_tree).serialize_accessible_elements(include_attributes)
+		serialized_dom_state = DOMTreeSerializer(enhanced_dom_tree, previous_cached_state).serialize_accessible_elements()
+
 		end = time.time()
 		print(f'Time taken to serialize dom tree: {end - start} seconds')
 
-		return serialized, selector_map
+		return serialized_dom_state

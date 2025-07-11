@@ -14,6 +14,7 @@ from uuid_extensions import uuid7str
 from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.controller.registry.views import ActionModel
+from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedElement, DOMSelectorMap
 
 # from browser_use.dom.history_tree_processor.service import (
 # 	DOMElementNode,
@@ -41,18 +42,7 @@ class AgentSettings(BaseModel):
 	available_file_paths: list[str] | None = None
 	override_system_message: str | None = None
 	extend_system_message: str | None = None
-	include_attributes: list[str] = [
-		'title',
-		'type',
-		'name',
-		'role',
-		'tabindex',
-		'aria-label',
-		'placeholder',
-		'value',
-		'alt',
-		'aria-expanded',
-	]
+	include_attributes: list[str] | None = DEFAULT_INCLUDE_ATTRIBUTES
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
 	max_history_items: int = 40
@@ -228,13 +218,13 @@ class AgentHistory(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
 	@staticmethod
-	def get_interacted_element(model_output: AgentOutput, selector_map: SelectorMap) -> list[DOMHistoryElement | None]:
+	def get_interacted_element(model_output: AgentOutput, selector_map: DOMSelectorMap) -> list[DOMInteractedElement | None]:
 		elements = []
 		for action in model_output.action:
 			index = action.get_index()
 			if index is not None and index in selector_map:
-				el: DOMElementNode = selector_map[index]
-				elements.append(HistoryTreeProcessor.convert_dom_element_to_history_element(el))
+				el = selector_map[index]
+				elements.append(DOMInteractedElement.load_from_enhanced_dom_tree(el))
 			else:
 				elements.append(None)
 		return elements

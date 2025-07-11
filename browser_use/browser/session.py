@@ -17,7 +17,8 @@ from typing import Any, Self
 from urllib.parse import urlparse
 
 from browser_use.config import CONFIG
-from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode
+from browser_use.dom.service import DomService
+from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, SerializedDOMState
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, _log_pretty_url
 
@@ -225,7 +226,7 @@ class BrowserSession(BaseModel):
 	)
 
 	_cached_browser_state_summary: BrowserStateSummary | None = PrivateAttr(default=None)
-	_cached_clickable_element_hashes: CachedClickableElementHashes | None = PrivateAttr(default=None)
+	# _cached_clickable_element_hashes: CachedClickableElementHashes | None = PrivateAttr(default=None)
 	_tab_visibility_callback: Any = PrivateAttr(default=None)
 	_logger: logging.Logger | None = PrivateAttr(default=None)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
@@ -1968,33 +1969,14 @@ class BrowserSession(BaseModel):
 	@retry(timeout=10, retries=0)
 	async def remove_highlights(self):
 		"""
+		DEPRECATED
+
 		Removes all highlight overlays and labels created by the highlightElement function.
 		Handles cases where the page might be closed or inaccessible.
-		"""
-		page = await self.get_current_page()
-		try:
-			await page.evaluate(
-				"""
-				try {
-					// Remove the highlight container and all its contents
-					const container = document.getElementById('playwright-highlight-container');
-					if (container) {
-						container.remove();
-					}
 
-					// Remove highlight attributes from elements
-					const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
-					highlightedElements.forEach(el => {
-						el.removeAttribute('browser-user-highlight-id');
-					});
-				} catch (e) {
-					console.error('Failed to remove highlights:', e);
-				}
-				"""
-			)
-		except Exception as e:
-			self.logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
-			# Don't raise the error since this is not critical functionality
+		TODO: this function has been deprecated, we will create new debug method
+		"""
+		return
 
 	@require_initialization
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
@@ -2092,11 +2074,13 @@ class BrowserSession(BaseModel):
 						# Final fallback - try clicking by coordinates if available
 						if element_node.snapshot_node and element_node.snapshot_node.clientRects:
 							try:
+								# TODO: instead of using the cached center, we should use the actual center of the element (easy, just get it by nodeBackendId)
 								self.logger.warning(
-									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.viewport_coordinates.center.x}, {element_node.viewport_coordinates.center.y})'
+									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.snapshot_node.clientRects.center.x}, {element_node.snapshot_node.clientRects.center.y})'
 								)
 								await page.mouse.click(
-									element_node.viewport_coordinates.center.x, element_node.viewport_coordinates.center.y
+									element_node.snapshot_node.clientRects.center.x,
+									element_node.snapshot_node.clientRects.center.y,
 								)
 								try:
 									await page.wait_for_load_state()
@@ -2885,26 +2869,6 @@ class BrowserSession(BaseModel):
 		await self._wait_for_page_and_frames_load()
 		updated_state = await self._get_updated_state()
 
-		# Find out which elements are new
-		# Do this only if url has not changed
-		if cache_clickable_elements_hashes:
-			# if we are on the same url as the last state, we can use the cached hashes
-			if self._cached_clickable_element_hashes and self._cached_clickable_element_hashes.url == updated_state.url:
-				# Pointers, feel free to edit in place
-				updated_state_clickable_elements = ClickableElementProcessor.get_clickable_elements(updated_state.element_tree)
-
-				for dom_element in updated_state_clickable_elements:
-					dom_element.is_new = (
-						ClickableElementProcessor.hash_dom_element(dom_element)
-						not in self._cached_clickable_element_hashes.hashes  # see which elements are new from the last state where we cached the hashes
-					)
-			# in any case, we need to cache the new hashes
-			self._cached_clickable_element_hashes = CachedClickableElementHashes(
-				url=updated_state.url,
-				hashes=ClickableElementProcessor.get_clickable_elements_hashes(updated_state.element_tree),
-			)
-
-		assert updated_state
 		self._cached_browser_state_summary = updated_state
 
 		return self._cached_browser_state_summary
@@ -2915,7 +2879,6 @@ class BrowserSession(BaseModel):
 	async def get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
-		from browser_use.dom.views import DOMElementNode
 
 		page = await self.get_current_page()
 
@@ -2936,19 +2899,8 @@ class BrowserSession(BaseModel):
 		except Exception:
 			tabs_info = []
 
-		# Create minimal DOM element for error state
-		minimal_element_tree = DOMElementNode(
-			tag_name='body',
-			xpath='/body',
-			attributes={},
-			children=[],
-			is_visible=True,
-			parent=None,
-		)
-
 		return BrowserStateSummary(
-			element_tree=minimal_element_tree,  # Minimal DOM tree
-			selector_map={},  # Empty selector map
+			dom_state=SerializedDOMState(_root=None, selector_map={}),
 			url=url,
 			title=title,
 			tabs=tabs_info,
@@ -2976,36 +2928,26 @@ class BrowserSession(BaseModel):
 			self.logger.debug('🧹 Removing highlights...')
 			await self.remove_highlights()
 			self.logger.debug('🌳 Starting DOM processing...')
-			dom_service = DomService(page, logger=self.logger)
-			try:
-				content = await asyncio.wait_for(
-					dom_service.get_clickable_elements(
-						focus_element=focus_element,
-						viewport_expansion=self.browser_profile.viewport_expansion,
-						highlight_elements=self.browser_profile.highlight_elements,
-					),
-					timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
-				)
-				self.logger.debug('✅ DOM processing completed')
-			except TimeoutError:
-				self.logger.warning(f'DOM processing timed out after 45 seconds for {page.url}')
-				self.logger.warning('🔄 Falling back to minimal DOM state to allow basic navigation...')
+			async with DomService(self, page) as dom_service:
+				try:
+					dom_state = await asyncio.wait_for(
+						dom_service.get_serialized_dom_tree(
+							previous_cached_state=self._cached_browser_state_summary.dom_state
+							if self._cached_browser_state_summary
+							else None,
+						),
+						timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
+					)
+					self.logger.debug('✅ DOM processing completed')
+				except TimeoutError:
+					self.logger.warning(f'DOM processing timed out after 45 seconds for {page.url}')
+					self.logger.warning('🔄 Falling back to minimal DOM state to allow basic navigation...')
 
-				# Create minimal DOM state for basic navigation
-				from browser_use.dom.views import DOMElementNode
+					# Create minimal DOM state for basic navigation
 
-				minimal_element_tree = DOMElementNode(
-					tag_name='body',
-					xpath='/body',
-					attributes={},
-					children=[],
-					is_visible=True,
-					parent=None,
-				)
+					from browser_use.dom.views import SerializedDOMState
 
-				from browser_use.dom.views import DOMState
-
-				content = DOMState(element_tree=minimal_element_tree, selector_map={})
+					dom_state = SerializedDOMState(_root=None, selector_map={})
 
 			self.logger.debug('📋 Getting tabs info...')
 			tabs_info = await self.get_tabs_info()
@@ -3058,14 +3000,13 @@ class BrowserSession(BaseModel):
 
 			# Check if this is a minimal fallback state
 			browser_errors = []
-			if not content.selector_map:  # Empty selector map indicates fallback state
+			if not dom_state.selector_map:  # Empty selector map indicates fallback state
 				browser_errors.append(
 					f'DOM processing timed out for {page.url} - using minimal state. Basic navigation still available via go_to_url, scroll, and search actions.'
 				)
 
 			self.browser_state_summary = BrowserStateSummary(
-				element_tree=content.element_tree,
-				selector_map=content.selector_map,
+				dom_state=dom_state,
 				url=page.url,
 				title=title,
 				tabs=tabs_info,
@@ -3216,7 +3157,7 @@ class BrowserSession(BaseModel):
 
 	@classmethod
 	@time_execution_sync('--enhanced_css_selector_for_element')
-	def _enhanced_css_selector_for_element(cls, element: DOMElementNode, include_dynamic_attributes: bool = True) -> str:
+	def _enhanced_css_selector_for_element(cls, element: EnhancedDOMTreeNode, include_dynamic_attributes: bool = True) -> str:
 		"""
 		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
 
@@ -3320,9 +3261,8 @@ class BrowserSession(BaseModel):
 			return css_selector
 
 		except Exception:
-			# Fallback to a more basic selector if something goes wrong
-			tag_name = element.tag_name or '*'
-			return f"{tag_name}[highlight_index='{element.highlight_index}']"
+			# Fallback: use XPath as a CSS selector (via Playwright's "xpath=" pseudo-selector)
+			return f'xpath={element.xpath or "//" + (element.tag_name or "*")}'
 
 	@require_initialization
 	@time_execution_async('--is_visible')
@@ -3342,12 +3282,12 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	@time_execution_async('--get_locate_element')
-	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
+	async def get_locate_element(self, element: EnhancedDOMTreeNode) -> ElementHandle | None:
 		page = await self.get_current_page()
 		current_frame = page
 
 		# Start with the target element and collect all parents
-		parents: list[DOMElementNode] = []
+		parents: list[EnhancedDOMTreeNode] = []
 		current = element
 		while current.parent is not None:
 			parent = current.parent
@@ -3513,7 +3453,7 @@ class BrowserSession(BaseModel):
 
 	@require_initialization
 	@time_execution_async('--input_text_element_node')
-	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
+	async def _input_text_element_node(self, element_node: EnhancedDOMTreeNode, text: str):
 		"""
 		Input text into an element with proper error handling and state management.
 		Handles different types of input fields and ensures proper element state before input.
@@ -3576,7 +3516,7 @@ class BrowserSession(BaseModel):
 			self.logger.debug(
 				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
 			)
-			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
+			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
 
 	@require_initialization
 	@time_execution_async('--switch_to_tab')
@@ -3726,7 +3666,7 @@ class BrowserSession(BaseModel):
 	async def get_selector_map(self) -> DOMSelectorMap:
 		if self._cached_browser_state_summary is None:
 			return {}
-		return self._cached_browser_state_summary.selector_map
+		return self._cached_browser_state_summary.dom_state.selector_map
 
 	@observe_debug(name='get_element_by_index')
 	@require_initialization
@@ -3746,17 +3686,13 @@ class BrowserSession(BaseModel):
 			return False
 
 	@staticmethod
-	def is_file_input(node: DOMElementNode) -> bool:
-		return (
-			isinstance(node, DOMElementNode)
-			and getattr(node, 'tag_name', '').lower() == 'input'
-			and node.attributes.get('type', '').lower() == 'file'
-		)
+	def is_file_input(node: EnhancedDOMTreeNode) -> bool:
+		return node.tag_name == 'input' and node.attributes.get('type', '').lower() == 'file'
 
 	@require_initialization
 	async def find_file_upload_element_by_index(
 		self, index: int, max_height: int = 3, max_descendant_depth: int = 3
-	) -> DOMElementNode | None:
+	) -> EnhancedDOMTreeNode | None:
 		"""
 		Find the closest file input to the selected element by traversing the DOM bottom-up.
 		At each level (up to max_height ancestors):
@@ -3772,12 +3708,12 @@ class BrowserSession(BaseModel):
 
 			candidate_element = selector_map[index]
 
-			def find_file_input_in_descendants(node: DOMElementNode, depth: int) -> DOMElementNode | None:
-				if depth < 0 or not isinstance(node, DOMElementNode):
+			def find_file_input_in_descendants(node: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
+				if depth < 0 or not isinstance(node, EnhancedDOMTreeNode):
 					return None
 				if self.is_file_input(node):
 					return node
-				for child in getattr(node, 'children', []):
+				for child in node.children:
 					result = find_file_input_in_descendants(child, depth - 1)
 					if result:
 						return result
@@ -3793,9 +3729,9 @@ class BrowserSession(BaseModel):
 				if result:
 					return result
 				# 3. Check all siblings and their descendants
-				parent = getattr(current, 'parent', None)
+				parent = current.parent
 				if parent:
-					for sibling in getattr(parent, 'children', []):
+					for sibling in parent.children:
 						if sibling is current:
 							continue
 						if self.is_file_input(sibling):

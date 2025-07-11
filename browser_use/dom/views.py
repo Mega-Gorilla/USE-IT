@@ -1,9 +1,60 @@
-from dataclasses import asdict, dataclass
+import hashlib
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
 from cdp_use.cdp.accessibility.types import AXPropertyName
 from cdp_use.cdp.dom.types import ShadowRootType
+
+from browser_use.dom.utils import cap_text_length
+
+### Serializer types
+DEFAULT_INCLUDE_ATTRIBUTES = [
+	'title',
+	'type',
+	'checked',
+	'name',
+	'role',
+	'value',
+	'placeholder',
+	'data-date-format',
+	'alt',
+	'aria-label',
+	'aria-expanded',
+	'data-state',
+	'aria-checked',
+]
+
+
+@dataclass(slots=True)
+class SimplifiedNode:
+	"""Simplified tree node for optimization."""
+
+	original_node: 'EnhancedDOMTreeNode'
+	children: list['SimplifiedNode'] = field(default_factory=list)
+	should_display: bool = True
+	interactive_index: int | None = None
+
+	is_new: bool = False
+
+	def is_clickable(self) -> bool:
+		"""Check if this node is clickable/interactive."""
+		if self.original_node.snapshot_node:
+			return self.original_node.snapshot_node.is_clickable or False
+		return False
+
+	def count_direct_clickable_children(self) -> int:
+		"""Count how many direct children are clickable."""
+		return sum(1 for child in self.children if child.is_clickable())
+
+	def has_any_clickable_descendant(self) -> bool:
+		"""Check if this node or any descendant is clickable."""
+		if self.is_clickable():
+			return True
+		return any(child.has_any_clickable_descendant() for child in self.children)
+
+
+###
 
 
 class NodeType(int, Enum):
@@ -23,12 +74,6 @@ class NodeType(int, Enum):
 	NOTATION_NODE = 12
 
 
-# @dataclass
-# class EnchancedAXRelatedNode:
-# 	node: 'EnhancedDOMTreeNode'
-# 	text: str | None
-
-
 @dataclass(slots=True)
 class EnhancedAXProperty:
 	"""we don't need `sources` and `related_nodes` for now (not sure how to use them)
@@ -38,7 +83,7 @@ class EnhancedAXProperty:
 
 	name: AXPropertyName
 	value: str | bool | None
-	# related_nodes: list[EnchancedAXRelatedNode] | None
+	# related_nodes: list[EnhancedAXRelatedNode] | None
 
 
 @dataclass(slots=True)
@@ -54,12 +99,22 @@ class EnhancedAXNode:
 	properties: list[EnhancedAXProperty] | None
 
 
+@dataclass
+class DOMCoordinates:
+	x: float
+	y: float
+
+
 @dataclass(slots=True)
 class DOMRect:
 	x: float
 	y: float
 	width: float
 	height: float
+
+	@property
+	def center(self) -> DOMCoordinates:
+		return DOMCoordinates(x=self.x + self.width / 2, y=self.y + self.height / 2)
 
 
 @dataclass(slots=True)
@@ -94,7 +149,7 @@ class EnhancedSnapshotNode:
 @dataclass(slots=True)
 class EnhancedDOMTreeNode:
 	"""
-	Enchanced DOM tree node that contains information from AX, DOM, and Snapshot trees. It's mostly based on the types on DOM node type with enchanced data from AX and Snapshot trees.
+	Enhanced DOM tree node that contains information from AX, DOM, and Snapshot trees. It's mostly based on the types on DOM node type with enhanced data from AX and Snapshot trees.
 
 	@dev when serializing check if the value is a valid value first!
 
@@ -114,7 +169,7 @@ class EnhancedDOMTreeNode:
 	"""Only applicable for `NodeType.ELEMENT_NODE`"""
 	node_value: str
 	"""this is where the value from `NodeType.TEXT_NODE` is stored usually"""
-	attributes: dict[str, str] | None
+	attributes: dict[str, str]
 	"""slightly changed from the original attributes to be more readable"""
 	is_scrollable: bool | None
 	"""
@@ -151,7 +206,19 @@ class EnhancedDOMTreeNode:
 	# endregion - Snapshot Node data
 
 	@property
-	def x_path(self) -> str:
+	def parent(self) -> 'EnhancedDOMTreeNode | None':
+		return self.parent_node
+
+	@property
+	def children(self) -> list['EnhancedDOMTreeNode']:
+		return self.children_nodes or []
+
+	@property
+	def tag_name(self) -> str:
+		return self.node_name.lower()
+
+	@property
+	def xpath(self) -> str:
 		"""Generate XPath for this DOM node, stopping at shadow boundaries or iframes."""
 		segments = []
 		current_element = self
@@ -215,23 +282,134 @@ class EnhancedDOMTreeNode:
 			'children_nodes': [c.__json__() for c in self.children_nodes] if self.children_nodes else [],
 		}
 
+	def get_all_children_text(self, max_depth: int = -1) -> str:
+		text_parts = []
+
+		def collect_text(node: EnhancedDOMTreeNode, current_depth: int) -> None:
+			if max_depth != -1 and current_depth > max_depth:
+				return
+
+			# Skip this branch if we hit a highlighted element (except for the current node)
+			# TODO: think whether if makese sense to add text until the next clickable element or everything from children
+			# if node.node_type == NodeType.ELEMENT_NODE
+			# if isinstance(node, DOMElementNode) and node != self and node.highlight_index is not None:
+			# 	return
+
+			if node.node_type == NodeType.TEXT_NODE:
+				text_parts.append(node.node_value)
+			elif node.node_type == NodeType.ELEMENT_NODE:
+				for child in node.children:
+					collect_text(child, current_depth + 1)
+
+		collect_text(self, 0)
+		return '\n'.join(text_parts).strip()
+
+	def __repr__(self) -> str:
+		"""
+		@DEV ! don't display this to the LLM, it's SUPER long
+		"""
+		attributes = ', '.join([f'{k}={v}' for k, v in self.attributes.items()])
+		is_scrollable = getattr(self, 'is_scrollable', False)
+		num_children = len(self.children_nodes or [])
+		return (
+			f'<{self.tag_name} {attributes} is_scrollable={is_scrollable} '
+			f'num_children={num_children} >{self.node_value}</{self.tag_name}>'
+		)
+
+	def llm_representation(self, max_text_length: int = 25) -> str:
+		"""
+		Token friendly representation of the node, used in the LLM
+		"""
+
+		return f'<{self.tag_name}>{cap_text_length(self.get_all_children_text(), max_text_length) or ""}'
+
+	@property
+	def element_hash(self) -> int:
+		return hash(self)
+
+	def __hash__(self) -> int:
+		"""
+		Hash the element based on its parent branch path and attributes.
+
+		TODO: migrate this to use only backendNodeId + current SessionId
+		"""
+
+		# Get parent branch path
+		parent_branch_path = self._get_parent_branch_path()
+		parent_branch_path_string = '/'.join(parent_branch_path)
+
+		# Get attributes hash
+		attributes_string = ''.join(f'{key}={value}' for key, value in self.attributes.items())
+
+		# Combine both for final hash
+		combined_string = f'{parent_branch_path_string}|{attributes_string}'
+		element_hash = hashlib.sha256(combined_string.encode()).hexdigest()
+
+		# Convert to int for __hash__ return type - use first 16 chars and convert from hex to int
+		return int(element_hash[:16], 16)
+
+	def _get_parent_branch_path(self) -> list[str]:
+		"""Get the parent branch path as a list of tag names from root to current element."""
+		parents: list['EnhancedDOMTreeNode'] = []
+		current_element: 'EnhancedDOMTreeNode | None' = self
+
+		while current_element is not None:
+			if current_element.node_type == NodeType.ELEMENT_NODE:
+				parents.append(current_element)
+			current_element = current_element.parent_node
+
+		parents.reverse()
+		return [parent.tag_name for parent in parents]
+
 
 DOMSelectorMap = dict[int, EnhancedDOMTreeNode]
 
 
 @dataclass
-class DOMState:  #
-	root: EnhancedDOMTreeNode
+class SerializedDOMState:
+	_root: SimplifiedNode | None
+	"""Not meant to be used directly, use `llm_representation` instead"""
+
+	selector_map: DOMSelectorMap
+
+	def llm_representation(
+		self,
+		include_attributes: list[str] | None = None,
+	) -> str:
+		"""Kinda ugly, but leaving this as an internal method because include_attributes are a parameter on the agent, so we need to leave it as a 2 step process"""
+		from browser_use.dom.serializer import DOMTreeSerializer
+
+		if not self._root:
+			return 'Empty DOM tree'
+
+		include_attributes = include_attributes or DEFAULT_INCLUDE_ATTRIBUTES
+
+		return DOMTreeSerializer.serialize_tree(self._root, include_attributes)
 
 
 @dataclass
 class DOMInteractedElement:
+	"""
+	DOMInteractedElement is a class that represents a DOM element that has been interacted with.
+	It is used to store the DOM element that has been interacted with and to store the DOM element that has been interacted with.
+
+	TODO: this is a bit of a hack, we should probably have a better way to do this
+	"""
+
+	node_id: int
+	backend_node_id: int
+	frame_id: str | None
+
 	node_type: NodeType
 	node_value: str
 	node_name: str
 	attributes: dict[str, str] | None
 
+	bounds: DOMRect | None
+
 	x_path: str
+
+	element_hash: int
 
 	def to_dict(self) -> dict[str, Any]:
 		return {
@@ -241,3 +419,18 @@ class DOMInteractedElement:
 			'attributes': self.attributes,
 			'x_path': self.x_path,
 		}
+
+	@classmethod
+	def load_from_enhanced_dom_tree(cls, enhanced_dom_tree: EnhancedDOMTreeNode) -> 'DOMInteractedElement':
+		return cls(
+			node_id=enhanced_dom_tree.node_id,
+			backend_node_id=enhanced_dom_tree.backend_node_id,
+			frame_id=enhanced_dom_tree.frame_id,
+			node_type=enhanced_dom_tree.node_type,
+			node_value=enhanced_dom_tree.node_value,
+			node_name=enhanced_dom_tree.node_name,
+			attributes=enhanced_dom_tree.attributes,
+			bounds=enhanced_dom_tree.snapshot_node.bounds if enhanced_dom_tree.snapshot_node else None,
+			x_path=enhanced_dom_tree.xpath,
+			element_hash=hash(enhanced_dom_tree),
+		)

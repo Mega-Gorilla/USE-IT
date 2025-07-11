@@ -5,7 +5,7 @@ import pytest
 from pytest_httpserver import HTTPServer
 
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.dom.views import DOMElementNode
+from browser_use.dom.views import EnhancedDOMTreeNode, NodeType
 
 
 class TestBrowserContext:
@@ -132,13 +132,22 @@ class TestBrowserContext:
 		it returns the correct CSS selector string for a DOMElementNode.
 		"""
 		# Create a DOMElementNode instance with a complex set of attributes
-		dummy_element = DOMElementNode(
-			tag_name='div',
-			is_visible=True,
-			parent=None,
-			xpath='/html/body/div[2]',
+		dummy_element = EnhancedDOMTreeNode(
+			node_id=1,
+			backend_node_id=1,
+			node_type=NodeType.ELEMENT_NODE,
+			node_name='div',
+			node_value='',
 			attributes={'class': 'foo bar', 'id': 'my-id', 'placeholder': 'some "quoted" text', 'data-testid': '123'},
-			children=[],
+			is_scrollable=False,
+			frame_id=None,
+			content_document=None,
+			shadow_root_type=None,
+			shadow_roots=None,
+			parent_node=None,
+			children_nodes=None,
+			ax_node=None,
+			snapshot_node=None,
 		)
 
 		# Call the method with include_dynamic_attributes=True
