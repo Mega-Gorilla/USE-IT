@@ -42,7 +42,7 @@ class DomService:
 		self.page = page
 
 		self.cdp_client: CDPClient | None = None
-		self.playwright_page_to_session_id_store: dict[str, str] = {}
+		# self.playwright_page_to_session_id_store: dict[str, str] = {}
 
 	async def _get_cdp_client(self) -> CDPClient:
 		if not self.browser.cdp_url:
@@ -82,7 +82,8 @@ class DomService:
 
 		TODO: this is a REALLY hacky way -> if multiple same urls are open then this will break
 		"""
-		page_guid = self.page._impl_obj._guid
+		# page_guid = self.page._impl_obj._guid
+		# TODO: add cache for page to sessionId
 
 		# if page_guid in self.page_to_session_id_store:
 		# 	return self.page_to_session_id_store[page_guid]
@@ -93,7 +94,7 @@ class DomService:
 		for target in targets['targetInfos']:
 			if target['type'] == 'page' and target['url'] == self.page.url:
 				# cache the session id for this playwright page
-				self.playwright_page_to_session_id_store[page_guid] = target['targetId']
+				# self.playwright_page_to_session_id_store[page_guid] = target['targetId']
 
 				session = await cdp_client.send.Target.attachToTarget(params={'targetId': target['targetId'], 'flatten': True})
 				session_id = session['sessionId']
