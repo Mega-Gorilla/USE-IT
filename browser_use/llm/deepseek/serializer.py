@@ -40,9 +40,7 @@ class DeepSeekMessageSerializer:
 		serialized: list[dict[str, Any]] = []
 		for part in content:
 			if part.type == 'text':
-				serialized.append(
-					{'type': 'text', 'text': DeepSeekMessageSerializer._serialize_text_part(part)}
-				)
+				serialized.append({'type': 'text', 'text': DeepSeekMessageSerializer._serialize_text_part(part)})
 			elif part.type == 'image_url':
 				serialized.append(DeepSeekMessageSerializer._serialize_image_part(part))
 			elif part.type == 'refusal':
@@ -73,18 +71,15 @@ class DeepSeekMessageSerializer:
 	# -------- 单条消息序列化 -------------------------------------------------
 	@overload
 	@staticmethod
-	def serialize(message: UserMessage) -> MessageDict:
-		...
+	def serialize(message: UserMessage) -> MessageDict: ...
 
 	@overload
 	@staticmethod
-	def serialize(message: SystemMessage) -> MessageDict:
-		...
+	def serialize(message: SystemMessage) -> MessageDict: ...
 
 	@overload
 	@staticmethod
-	def serialize(message: AssistantMessage) -> MessageDict:
-		...
+	def serialize(message: AssistantMessage) -> MessageDict: ...
 
 	@staticmethod
 	def serialize(message: BaseMessage) -> MessageDict:
