@@ -68,7 +68,11 @@ def _is_element_visible(
 	scroll_x: float = 0.0,
 	scroll_y: float = 0.0,
 ) -> bool:
-	"""Determine if an element is visible in the current scrolled viewport."""
+	"""Determine if an element is visible in the current scrolled viewport with robust edge case handling."""
+
+	# Validate inputs - handle edge cases gracefully
+	if not bounding_box or viewport_width <= 0 or viewport_height <= 0:
+		return False
 
 	# Check CSS visibility properties
 	display = computed_styles.get('display', '').lower()
