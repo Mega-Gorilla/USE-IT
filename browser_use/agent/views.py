@@ -53,6 +53,7 @@ class AgentSettings(BaseModel):
 	]
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
+	flash_mode: bool = False  # If enabled, disables evaluation_previous_goal and next_goal, and sets use_thinking = False
 	max_history_items: int = 40
 	images_per_step: int = 1
 
@@ -155,23 +156,29 @@ class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
 	thinking: str | None = None
-	evaluation_previous_goal: str
-	memory: str
-	next_goal: str
+	evaluation_previous_goal: str | None = None
+	memory: str | None = None
+	next_goal: str | None = None
 	action: list[ActionModel] = Field(
 		...,
 		description='List of actions to execute',
 		json_schema_extra={'min_items': 1},  # Ensure at least one action is provided
 	)
 
+	@classmethod
+	def model_json_schema(cls, **kwargs):
+		schema = super().model_json_schema(**kwargs)
+		schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
+		return schema
+
 	@property
 	def current_state(self) -> AgentBrain:
 		"""For backward compatibility - returns an AgentBrain with the flattened properties"""
 		return AgentBrain(
 			thinking=self.thinking,
-			evaluation_previous_goal=self.evaluation_previous_goal,
-			memory=self.memory,
-			next_goal=self.next_goal,
+			evaluation_previous_goal=self.evaluation_previous_goal if self.evaluation_previous_goal else '',
+			memory=self.memory if self.memory else '',
+			next_goal=self.next_goal if self.next_goal else '',
 		)
 
 	@staticmethod
@@ -199,6 +206,7 @@ class AgentOutput(BaseModel):
 			def model_json_schema(cls, **kwargs):
 				schema = super().model_json_schema(**kwargs)
 				del schema['properties']['thinking']
+				schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
 				return schema
 
 		model = create_model(
@@ -209,6 +217,35 @@ class AgentOutput(BaseModel):
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
 			__module__=AgentOutputNoThinking.__module__,
+		)
+
+		model.__doc__ = 'AgentOutput model with custom actions'
+		return model
+
+	@staticmethod
+	def type_with_custom_actions_flash_mode(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions for flash mode - memory and action fields only"""
+
+		class AgentOutputFlashMode(AgentOutput):
+			@classmethod
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
+				# Remove thinking, evaluation_previous_goal, and next_goal fields
+				del schema['properties']['thinking']
+				del schema['properties']['evaluation_previous_goal']
+				del schema['properties']['next_goal']
+				# Update required fields to only include remaining properties
+				schema['required'] = ['memory', 'action']
+				return schema
+
+		model = create_model(
+			'AgentOutput',
+			__base__=AgentOutputFlashMode,
+			action=(
+				list[custom_actions],  # type: ignore
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutputFlashMode.__module__,
 		)
 
 		model.__doc__ = 'AgentOutput model with custom actions'

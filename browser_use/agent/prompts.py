@@ -20,10 +20,12 @@ class SystemPrompt:
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
 		use_thinking: bool = True,
+		flash_mode: bool = False,
 	):
 		self.default_action_description = action_description
 		self.max_actions_per_step = max_actions_per_step
 		self.use_thinking = use_thinking
+		self.flash_mode = flash_mode
 		prompt = ''
 		if override_system_message:
 			prompt = override_system_message
@@ -39,8 +41,13 @@ class SystemPrompt:
 	def _load_prompt_template(self) -> None:
 		"""Load the prompt template from the markdown file."""
 		try:
-			# Choose the appropriate template based on use_thinking setting
-			template_filename = 'system_prompt.md' if self.use_thinking else 'system_prompt_no_thinking.md'
+			# Choose the appropriate template based on flash_mode and use_thinking settings
+			if self.flash_mode:
+				template_filename = 'system_prompt_flash.md'
+			elif self.use_thinking:
+				template_filename = 'system_prompt.md'
+			else:
+				template_filename = 'system_prompt_no_thinking.md'
 
 			# This works both in development and when installed as a package
 			with importlib.resources.files('browser_use.agent').joinpath(template_filename).open('r', encoding='utf-8') as f:
