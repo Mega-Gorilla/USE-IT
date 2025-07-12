@@ -161,6 +161,10 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			console.log('=== BROWSER-USE HIGHLIGHTING ===');
 			console.log('Highlighting', interactiveElements.length, 'interactive elements');
 			
+			// Using maximum safe z-index values to ensure highlights are always visible
+			// above consent popups, modals, and any other page content
+			const MAX_Z_INDEX = 2147483647; // Maximum safe CSS z-index value (2^31 - 1)
+			
 			// Create container for all highlights
 			const container = document.createElement('div');
 			container.id = 'browser-use-debug-highlights';
@@ -172,7 +176,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				width: 100%;
 				height: 100%;
 				pointer-events: none;
-				z-index: 999999;
+				z-index: ${{MAX_Z_INDEX}};
 				overflow: hidden;
 				margin: 0;
 				padding: 0;
@@ -227,7 +231,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					font-weight: bold;
 					border-radius: 3px;
 					white-space: nowrap;
-					z-index: 1000001;
+					z-index: ${{MAX_Z_INDEX - 1}};
 					box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 					border: none;
 					outline: none;
@@ -250,7 +254,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 					border-radius: 8px;
 					white-space: nowrap;
-					z-index: 1000002;
+					z-index: ${{MAX_Z_INDEX - 2}};
 					opacity: 0;
 					visibility: hidden;
 					transition: all 0.3s ease;
