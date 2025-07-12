@@ -262,7 +262,7 @@ class DomService:
 
 		return enhanced_dom_tree_node
 
-	async def _get_all_trees(self) -> tuple[CaptureSnapshotReturns, GetDocumentReturns, GetFullAXTreeReturns]:
+	async def _get_all_trees(self) -> tuple[CaptureSnapshotReturns, GetDocumentReturns, GetFullAXTreeReturns, dict[str, float]]:
 		if not self.browser.cdp_url:
 			raise ValueError('CDP URL is not set')
 
@@ -287,31 +287,43 @@ class DomService:
 		start = time.time()
 		snapshot, dom_tree, ax_tree = await asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request)
 		end = time.time()
+		cdp_timing = {'cdp_calls_total': end - start}
 		print(f'Time taken to get dom tree: {end - start} seconds')
 
-		return snapshot, dom_tree, ax_tree
+		return snapshot, dom_tree, ax_tree, cdp_timing
 
-	async def get_dom_tree(self) -> EnhancedDOMTreeNode:
-		snapshot, dom_tree, ax_tree = await self._get_all_trees()
+	async def get_dom_tree(self) -> tuple[EnhancedDOMTreeNode, dict[str, float]]:
+		snapshot, dom_tree, ax_tree, cdp_timing = await self._get_all_trees()
 
 		start = time.time()
 		enhanced_dom_tree = await self._build_enhanced_dom_tree(dom_tree, ax_tree, snapshot)
 		end = time.time()
+
+		build_tree_timing = {'build_enhanced_dom_tree': end - start}
 		print(f'Time taken to build enhanced dom tree: {end - start} seconds')
 
-		return enhanced_dom_tree
+		# Combine timing info
+		all_timing = {**cdp_timing, **build_tree_timing}
+		return enhanced_dom_tree, all_timing
 
-	async def get_serialized_dom_tree(self, previous_cached_state: SerializedDOMState | None = None) -> SerializedDOMState:
+	async def get_serialized_dom_tree(
+		self, previous_cached_state: SerializedDOMState | None = None
+	) -> tuple[SerializedDOMState, dict[str, float]]:
 		"""Get the serialized DOM tree representation for LLM consumption.
 
 		TODO: this is a bit of a hack, we should probably have a better way to do this
 		"""
-		enhanced_dom_tree = await self.get_dom_tree()
+		enhanced_dom_tree, dom_timing = await self.get_dom_tree()
 
 		start = time.time()
-		serialized_dom_state = DOMTreeSerializer(enhanced_dom_tree, previous_cached_state).serialize_accessible_elements()
+		serialized_dom_state, serializer_timing = DOMTreeSerializer(
+			enhanced_dom_tree, previous_cached_state
+		).serialize_accessible_elements()
 
 		end = time.time()
+		serialize_total_timing = {'serialize_dom_tree_total': end - start}
 		print(f'Time taken to serialize dom tree: {end - start} seconds')
 
-		return serialized_dom_state
+		# Combine all timing info
+		all_timing = {**dom_timing, **serializer_timing, **serialize_total_timing}
+		return serialized_dom_state, all_timing

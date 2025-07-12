@@ -31,7 +31,7 @@ async def main():
 
 	while True:
 		start = time.time()
-		dom_tree = await dom_service.get_dom_tree()
+		dom_tree, dom_timing = await dom_service.get_dom_tree()
 		end = time.time()
 		print(f'Time taken: {end - start} seconds')
 
@@ -61,7 +61,7 @@ async def main():
 			f'Found {visible_clickable_count} visible clickable elements out of {total_with_snapshot} elements with snapshot data'
 		)
 
-		serialized_dom_state = await dom_service.get_serialized_dom_tree()
+		serialized_dom_state, timing_info = await dom_service.get_serialized_dom_tree()
 
 		async with aiofiles.open('tmp/serialized_dom_tree.txt', 'w') as f:
 			await f.write(serialized_dom_state.llm_representation())

@@ -130,7 +130,16 @@ async def test_focus_vs_all_elements():
 				start_time = time.time()
 				all_elements_state = await browser_session.get_state_summary(True)
 				end_time = time.time()
-				print(f'get_state_summary took {end_time - start_time:.2f} seconds')
+				get_state_time = end_time - start_time
+				print(f'get_state_summary took {get_state_time:.2f} seconds')
+
+				# Get detailed timing info from DOM service
+				print('\nGetting detailed DOM timing...')
+				async with DomService(browser_session, page) as dom_service:
+					serialized_state, timing_info = await dom_service.get_serialized_dom_tree()
+
+				# Combine all timing info
+				all_timing = {'get_state_summary_total': get_state_time, **timing_info}
 
 				async with DomService(browser_session, page) as dom_service:
 					await inject_highlighting_script(dom_service, all_elements_state.dom_state.selector_map)
@@ -171,6 +180,42 @@ async def test_focus_vs_all_elements():
 
 				print('User message written to ./tmp/user_message.txt')
 				print('Element tree written to ./tmp/element_tree.json')
+
+				# Save timing information
+				timing_text = '🔍 DOM EXTRACTION PERFORMANCE ANALYSIS\n'
+				timing_text += f'{"=" * 50}\n\n'
+				timing_text += f'📄 Website: {website}\n'
+				timing_text += f'📊 Total Elements: {total_elements}\n'
+				timing_text += f'🎯 Token Count: {token_count}\n\n'
+
+				timing_text += '⏱️  TIMING BREAKDOWN:\n'
+				timing_text += f'{"─" * 30}\n'
+				for key, value in all_timing.items():
+					timing_text += f'{key:<35}: {value * 1000:>8.2f} ms\n'
+
+				# Calculate percentages
+				total_time = all_timing.get('get_state_summary_total', 0)
+				if total_time > 0:
+					timing_text += '\n📈 PERCENTAGE BREAKDOWN:\n'
+					timing_text += f'{"─" * 30}\n'
+					for key, value in all_timing.items():
+						if key != 'get_state_summary_total':
+							percentage = (value / total_time) * 100
+							timing_text += f'{key:<35}: {percentage:>7.1f}%\n'
+
+				timing_text += '\n🎯 CLICKABLE DETECTION ANALYSIS:\n'
+				timing_text += f'{"─" * 35}\n'
+				clickable_time = all_timing.get('clickable_detection_time', 0)
+				if clickable_time > 0:
+					avg_per_element = (clickable_time / total_elements) * 1000000  # microseconds
+					timing_text += f'Total clickable detection time: {clickable_time * 1000:.2f} ms\n'
+					timing_text += f'Average per element: {avg_per_element:.2f} μs\n'
+					timing_text += f'Clickable detection calls: ~{total_elements} (approx)\n'
+
+				async with await anyio.open_file('./tmp/timing_analysis.txt', 'w', encoding='utf-8') as f:
+					await f.write(timing_text)
+
+				print('Timing analysis written to ./tmp/timing_analysis.txt')
 
 				# also save all_elements_state.element_tree.clickable_elements_to_string() to a file
 				# with open('./tmp/clickable_elements.json', 'w', encoding='utf-8') as f:

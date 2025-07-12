@@ -2937,7 +2937,7 @@ class BrowserSession(BaseModel):
 			async with DomService(self, page) as dom_service:
 				await self.remove_highlights(dom_service)
 				try:
-					dom_state = await asyncio.wait_for(
+					dom_state, timing_info = await asyncio.wait_for(
 						dom_service.get_serialized_dom_tree(
 							previous_cached_state=self._cached_browser_state_summary.dom_state
 							if self._cached_browser_state_summary

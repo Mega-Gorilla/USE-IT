@@ -14,30 +14,50 @@ class DOMTreeSerializer:
 		self._interactive_counter = 1
 		self._selector_map: DOMSelectorMap = {}
 		self._previous_cached_selector_map = previous_cached_state.selector_map if previous_cached_state else None
+		# Add timing tracking
+		self.timing_info: dict[str, float] = {}
 
-	def serialize_accessible_elements(self) -> SerializedDOMState:
+	def serialize_accessible_elements(self) -> tuple[SerializedDOMState, dict[str, float]]:
+		import time
+
+		start_total = time.time()
+
 		# Reset state
 		self._interactive_counter = 1
 		self._selector_map = {}
 		self._semantic_groups = []
 
-		# Step 1: Create simplified tree
+		# Step 1: Create simplified tree (includes clickable element detection)
+		start_step1 = time.time()
 		simplified_tree = self._create_simplified_tree(self.root_node)
+		end_step1 = time.time()
+		self.timing_info['create_simplified_tree'] = end_step1 - start_step1
 
 		# Step 2: Optimize tree (remove unnecessary parents)
+		start_step2 = time.time()
 		optimized_tree = self._optimize_tree(simplified_tree)
+		end_step2 = time.time()
+		self.timing_info['optimize_tree'] = end_step2 - start_step2
 
 		# # Step 3: Detect and group semantic elements
 		# if optimized_tree:
 		# 	self._detect_semantic_groups(optimized_tree)
 
 		# Step 4: Assign interactive indices to clickable elements
+		start_step4 = time.time()
 		self._assign_interactive_indices_and_mark_new_nodes(optimized_tree)
+		end_step4 = time.time()
+		self.timing_info['assign_interactive_indices'] = end_step4 - start_step4
 
-		return SerializedDOMState(_root=optimized_tree, selector_map=self._selector_map)
+		end_total = time.time()
+		self.timing_info['serialize_accessible_elements_total'] = end_total - start_total
+
+		return SerializedDOMState(_root=optimized_tree, selector_map=self._selector_map), self.timing_info
 
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
+		import time
+
 		if node.node_type == NodeType.DOCUMENT_NODE:
 			if node.children_nodes:
 				for child in node.children_nodes:
@@ -60,7 +80,13 @@ class DOMTreeSerializer:
 				return None
 
 			# Use enhanced scoring for inclusion decision
+			start_clickable = time.time()
 			is_interactive = ClickableElementDetector.is_interactive(node)
+			end_clickable = time.time()
+			if 'clickable_detection_time' not in self.timing_info:
+				self.timing_info['clickable_detection_time'] = 0
+			self.timing_info['clickable_detection_time'] += end_clickable - start_clickable
+
 			is_visible = node.snapshot_node and node.snapshot_node.is_visible
 			is_scrollable = node.is_scrollable
 
@@ -105,8 +131,18 @@ class DOMTreeSerializer:
 		node.children = optimized_children
 
 		# Keep meaningful nodes
+		import time
+
+		start_clickable_opt = time.time()
+		is_interactive_opt = ClickableElementDetector.is_interactive(node.original_node)
+		end_clickable_opt = time.time()
+		if hasattr(self, 'timing_info'):
+			if 'clickable_detection_time' not in self.timing_info:
+				self.timing_info['clickable_detection_time'] = 0
+			self.timing_info['clickable_detection_time'] += end_clickable_opt - start_clickable_opt
+
 		if (
-			ClickableElementDetector.is_interactive(node.original_node)
+			is_interactive_opt
 			or node.original_node.is_scrollable
 			or node.original_node.node_type == NodeType.TEXT_NODE
 			or node.children
@@ -129,7 +165,17 @@ class DOMTreeSerializer:
 			return
 
 		# Assign index to clickable elements
-		if ClickableElementDetector.is_interactive(node.original_node):
+		import time
+
+		start_clickable_assign = time.time()
+		is_interactive_assign = ClickableElementDetector.is_interactive(node.original_node)
+		end_clickable_assign = time.time()
+		if hasattr(self, 'timing_info'):
+			if 'clickable_detection_time' not in self.timing_info:
+				self.timing_info['clickable_detection_time'] = 0
+			self.timing_info['clickable_detection_time'] += end_clickable_assign - start_clickable_assign
+
+		if is_interactive_assign:
 			node.interactive_index = self._interactive_counter
 			self._selector_map[self._interactive_counter] = node.original_node
 			self._interactive_counter += 1
