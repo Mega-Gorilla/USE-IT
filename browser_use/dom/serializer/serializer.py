@@ -90,8 +90,8 @@ class DOMTreeSerializer:
 			is_visible = node.snapshot_node and node.snapshot_node.is_visible
 			is_scrollable = node.is_scrollable
 
-			# Include if interactive and visible, or scrollable, or has children to process
-			should_include = (is_interactive and is_visible) or is_scrollable or node.children_nodes
+			# Include if interactive (regardless of visibility), or scrollable, or has children to process
+			should_include = is_interactive or is_scrollable or node.children_nodes
 
 			if should_include:
 				simplified = SimplifiedNode(original_node=node)
@@ -105,7 +105,7 @@ class DOMTreeSerializer:
 							simplified.children.append(simplified_child)
 
 				# Return if meaningful or has meaningful children
-				if (is_interactive and is_visible) or is_scrollable or simplified.children:
+				if is_interactive or is_scrollable or simplified.children:
 					return simplified
 
 		elif node.node_type == NodeType.TEXT_NODE:
