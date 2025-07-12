@@ -37,6 +37,14 @@ class SimplifiedNode:
 
 	is_new: bool = False
 
+	def __json__(self) -> dict:
+		return {
+			'should_display': self.should_display,
+			'interactive_index': self.interactive_index,
+			'original_node': self.original_node.__json__(),
+			'children': [c.__json__() for c in self.children],
+		}
+
 
 class NodeType(int, Enum):
 	"""DOM node types based on the DOM specification."""

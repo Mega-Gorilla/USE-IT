@@ -32,7 +32,8 @@ async def test_focus_vs_all_elements():
 
 	websites = [
 		# 'https://demos.telerik.com/kendo-react-ui/treeview/overview/basic/func?theme=default-ocean-blue-a11y',
-		'https://google.com',
+		# 'https://v0-simple-landing-page-seven-xi.vercel.app',
+		'https://www.google.com/travel/flights',
 		'https://www.ycombinator.com/companies',
 		'https://kayak.com/flights',
 		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
@@ -107,7 +108,7 @@ async def test_focus_vs_all_elements():
 				# save pure clickable elements to a file
 				if all_elements_state.dom_state._root:
 					async with await anyio.open_file('./tmp/element_tree.json', 'w', encoding='utf-8') as f:
-						await f.write(json.dumps(all_elements_state.dom_state._root.original_node.__json__(), indent=0))
+						await f.write(json.dumps(all_elements_state.dom_state._root.__json__(), indent=0))
 
 				# copy the user message to the clipboard
 				# pyperclip.copy(text_to_save)
