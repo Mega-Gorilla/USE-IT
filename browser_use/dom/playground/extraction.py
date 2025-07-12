@@ -32,7 +32,8 @@ async def test_focus_vs_all_elements():
 
 	websites = [
 		# 'https://demos.telerik.com/kendo-react-ui/treeview/overview/basic/func?theme=default-ocean-blue-a11y',
-		'https://google.com',
+		# 'https://v0-simple-landing-page-seven-xi.vercel.app',
+		'https://www.google.com/travel/flights',
 		'https://www.ycombinator.com/companies',
 		'https://kayak.com/flights',
 		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
