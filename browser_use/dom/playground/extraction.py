@@ -51,6 +51,8 @@ async def test_focus_vs_all_elements():
 		'https://www.dezlearn.com/nested-iframes-example/',  # Cross-origin nested iframes
 		'https://codepen.io/towc/pen/mJzOWJ',  # Canvas elements with interactions
 		'https://jqueryui.com/accordion/',  # Complex accordion/dropdown widgets
+		'https://v0-simple-landing-page-seven-xi.vercel.app/',  # Simple landing page with iframe
+		'https://www.unesco.org/en',
 	]
 
 	# Descriptions for difficult websites
