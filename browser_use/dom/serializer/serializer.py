@@ -16,6 +16,8 @@ class DOMTreeSerializer:
 		self._previous_cached_selector_map = previous_cached_state.selector_map if previous_cached_state else None
 		# Add timing tracking
 		self.timing_info: dict[str, float] = {}
+		# Cache for clickable element detection to avoid redundant calls
+		self._clickable_cache: dict[int, bool] = {}
 
 	def serialize_accessible_elements(self) -> tuple[SerializedDOMState, dict[str, float]]:
 		import time
@@ -26,6 +28,7 @@ class DOMTreeSerializer:
 		self._interactive_counter = 1
 		self._selector_map = {}
 		self._semantic_groups = []
+		self._clickable_cache = {}  # Clear cache for new serialization
 
 		# Step 1: Create simplified tree (includes clickable element detection)
 		start_step1 = time.time()
@@ -54,9 +57,25 @@ class DOMTreeSerializer:
 
 		return SerializedDOMState(_root=optimized_tree, selector_map=self._selector_map), self.timing_info
 
+	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
+		"""Cached version of clickable element detection to avoid redundant calls."""
+		if node.node_id not in self._clickable_cache:
+			import time
+
+			start_time = time.time()
+			result = ClickableElementDetector.is_interactive(node)
+			end_time = time.time()
+
+			if 'clickable_detection_time' not in self.timing_info:
+				self.timing_info['clickable_detection_time'] = 0
+			self.timing_info['clickable_detection_time'] += end_time - start_time
+
+			self._clickable_cache[node.node_id] = result
+
+		return self._clickable_cache[node.node_id]
+
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
-		import time
 
 		if node.node_type == NodeType.DOCUMENT_NODE:
 			if node.children_nodes:
@@ -80,12 +99,7 @@ class DOMTreeSerializer:
 				return None
 
 			# Use enhanced scoring for inclusion decision
-			start_clickable = time.time()
-			is_interactive = ClickableElementDetector.is_interactive(node)
-			end_clickable = time.time()
-			if 'clickable_detection_time' not in self.timing_info:
-				self.timing_info['clickable_detection_time'] = 0
-			self.timing_info['clickable_detection_time'] += end_clickable - start_clickable
+			is_interactive = self._is_interactive_cached(node)
 
 			is_visible = node.snapshot_node and node.snapshot_node.is_visible
 			is_scrollable = node.is_scrollable
@@ -131,15 +145,7 @@ class DOMTreeSerializer:
 		node.children = optimized_children
 
 		# Keep meaningful nodes
-		import time
-
-		start_clickable_opt = time.time()
-		is_interactive_opt = ClickableElementDetector.is_interactive(node.original_node)
-		end_clickable_opt = time.time()
-		if hasattr(self, 'timing_info'):
-			if 'clickable_detection_time' not in self.timing_info:
-				self.timing_info['clickable_detection_time'] = 0
-			self.timing_info['clickable_detection_time'] += end_clickable_opt - start_clickable_opt
+		is_interactive_opt = self._is_interactive_cached(node.original_node)
 
 		if (
 			is_interactive_opt
@@ -153,7 +159,7 @@ class DOMTreeSerializer:
 
 	def _collect_interactive_elements(self, node: SimplifiedNode, elements: list[SimplifiedNode]) -> None:
 		"""Recursively collect interactive elements."""
-		if ClickableElementDetector.is_interactive(node.original_node):
+		if self._is_interactive_cached(node.original_node):
 			elements.append(node)
 
 		for child in node.children:
@@ -165,15 +171,7 @@ class DOMTreeSerializer:
 			return
 
 		# Assign index to clickable elements
-		import time
-
-		start_clickable_assign = time.time()
-		is_interactive_assign = ClickableElementDetector.is_interactive(node.original_node)
-		end_clickable_assign = time.time()
-		if hasattr(self, 'timing_info'):
-			if 'clickable_detection_time' not in self.timing_info:
-				self.timing_info['clickable_detection_time'] = 0
-			self.timing_info['clickable_detection_time'] += end_clickable_assign - start_clickable_assign
+		is_interactive_assign = self._is_interactive_cached(node.original_node)
 
 		if is_interactive_assign:
 			node.interactive_index = self._interactive_counter
