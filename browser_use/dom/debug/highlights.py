@@ -153,6 +153,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		await remove_highlighting_script(dom_service)
 
 		# Create CSP-safe highlighting script using DOM methods instead of innerHTML
+		# Uses outline-only highlights with reasonable z-index to avoid blocking page content
 		script = f"""
 		(function() {{
 			// Interactive elements data with reasoning
@@ -161,23 +162,40 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			console.log('=== BROWSER-USE HIGHLIGHTING ===');
 			console.log('Highlighting', interactiveElements.length, 'interactive elements');
 			
-			// Using maximum safe z-index values to ensure highlights are always visible
-			// above consent popups, modals, and any other page content
-			const MAX_Z_INDEX = 2147483647; // Maximum safe CSS z-index value (2^31 - 1)
+			// Use a high but reasonable z-index to be visible without covering important content
+			// High enough for most content but not maximum to avoid blocking critical popups/modals
+			const HIGHLIGHT_Z_INDEX = 999999; // High but reasonable z-index
 			
-			// Create container for all highlights
+			// Create container for all highlights - use absolute positioning to cover entire document
 			const container = document.createElement('div');
 			container.id = 'browser-use-debug-highlights';
 			container.setAttribute('data-browser-use-highlight', 'container');
+			
+			// Get document dimensions to ensure container covers entire scrollable area
+			const docHeight = Math.max(
+				document.body.scrollHeight,
+				document.body.offsetHeight,
+				document.documentElement.clientHeight,
+				document.documentElement.scrollHeight,
+				document.documentElement.offsetHeight
+			);
+			const docWidth = Math.max(
+				document.body.scrollWidth,
+				document.body.offsetWidth,
+				document.documentElement.clientWidth,
+				document.documentElement.scrollWidth,
+				document.documentElement.offsetWidth
+			);
+			
 			container.style.cssText = `
-				position: fixed;
+				position: absolute;
 				top: 0;
 				left: 0;
-				width: 100%;
-				height: 100%;
+				width: ${{docWidth}}px;
+				height: ${{docHeight}}px;
 				pointer-events: none;
-				z-index: ${{MAX_Z_INDEX}};
-				overflow: hidden;
+				z-index: ${{HIGHLIGHT_Z_INDEX}};
+				overflow: visible;
 				margin: 0;
 				padding: 0;
 				border: none;
@@ -208,14 +226,13 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					height: ${{element.height}}px;
 					outline: 2px solid #4a90e2;
 					outline-offset: -2px;
-					background-color: rgba(74, 144, 226, 0.1);
+					background: transparent;
 					pointer-events: none;
 					box-sizing: content-box;
-					transition: all 0.2s ease;
+					transition: outline 0.2s ease;
 					margin: 0;
 					padding: 0;
 					border: none;
-					box-shadow: inset 0 0 0 2px #4a90e2;
 				`;
 				
 				// Enhanced label with interactive index
@@ -231,7 +248,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					font-weight: bold;
 					border-radius: 3px;
 					white-space: nowrap;
-					z-index: ${{MAX_Z_INDEX - 1}};
+					z-index: ${{HIGHLIGHT_Z_INDEX + 1}};
 					box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 					border: none;
 					outline: none;
@@ -254,7 +271,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 					border-radius: 8px;
 					white-space: nowrap;
-					z-index: ${{MAX_Z_INDEX - 2}};
+					z-index: ${{HIGHLIGHT_Z_INDEX + 2}};
 					opacity: 0;
 					visibility: hidden;
 					transition: all 0.3s ease;
@@ -384,17 +401,14 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				tooltip.appendChild(reasonsContainer);
 				tooltip.appendChild(boundsDiv);
 				
-				// Set highlight colors based on confidence
+				// Set highlight colors based on confidence (outline only)
 				highlight.style.outline = `2px solid ${{outlineColor}}`;
-				highlight.style.boxShadow = `inset 0 0 0 2px ${{shadowColor}}`;
 				label.style.backgroundColor = outlineColor;
 				
-				// Add hover effects
+				// Add subtle hover effects (outline only, no background)
 				highlight.addEventListener('mouseenter', () => {{
 					highlight.style.outline = '3px solid #ff6b6b';
-					highlight.style.outlineOffset = '-3px';
-					highlight.style.backgroundColor = 'rgba(255, 107, 107, 0.2)';
-					highlight.style.boxShadow = 'inset 0 0 0 3px #ff6b6b, 0 0 10px rgba(255, 107, 107, 0.5)';
+					highlight.style.outlineOffset = '-1px';
 					tooltip.style.opacity = '1';
 					tooltip.style.visibility = 'visible';
 					label.style.backgroundColor = '#ff6b6b';
@@ -404,8 +418,6 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				highlight.addEventListener('mouseleave', () => {{
 					highlight.style.outline = `2px solid ${{outlineColor}}`;
 					highlight.style.outlineOffset = '-2px';
-					highlight.style.backgroundColor = 'rgba(74, 144, 226, 0.1)';
-					highlight.style.boxShadow = `inset 0 0 0 2px ${{shadowColor}}`;
 					tooltip.style.opacity = '0';
 					tooltip.style.visibility = 'hidden';
 					label.style.backgroundColor = outlineColor;
