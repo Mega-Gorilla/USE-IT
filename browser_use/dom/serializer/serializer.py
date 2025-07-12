@@ -3,8 +3,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-from cdp_use.cdp.accessibility.types import AXPropertyName
-
 from browser_use.dom.utils import cap_text_length
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
 
@@ -285,8 +283,8 @@ class ElementAnalysis:
 		score_boost = 0
 
 		if cls._is_ax_focusable(node):
-			score_boost += 30
-			evidence.append('Accessibility tree marked as focusable (+30)')
+			score_boost += 200  # ALWAYS detected - score guaranteed to exceed any threshold
+			evidence.append('ALWAYS DETECTED: Accessibility tree marked as focusable (+200)')
 
 		if node.ax_node and node.ax_node.role:
 			role = node.ax_node.role.lower()
@@ -312,7 +310,7 @@ class ElementAnalysis:
 		"""Check if element is focusable according to accessibility tree."""
 		if node.ax_node and node.ax_node.properties:
 			for prop in node.ax_node.properties:
-				if prop.name == AXPropertyName.FOCUSABLE and prop.value:
+				if prop.name == 'focusable' and prop.value:
 					return True
 		return False
 

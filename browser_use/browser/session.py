@@ -17,6 +17,7 @@ from typing import Any, Self
 from urllib.parse import urlparse
 
 from browser_use.config import CONFIG
+from browser_use.dom.debug.highlights import inject_highlighting_script, remove_highlighting_script
 from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, SerializedDOMState
 from browser_use.observability import observe_debug
@@ -1963,20 +1964,26 @@ class BrowserSession(BaseModel):
 		page = await self.get_current_page()
 		await page.wait_for_selector(selector, state='visible', timeout=timeout)
 
+	@observe_debug(name='inject_highlights', ignore_output=True, ignore_input=True)
+	@require_initialization
+	@time_execution_async('--inject_highlights')
+	@retry(timeout=10, retries=0)
+	async def inject_highlights(self, dom_service: DomService, selector_map: DOMSelectorMap):
+		"""Inject highlights into the page."""
+		await inject_highlighting_script(dom_service, selector_map)
+
 	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
 	@require_initialization
 	@time_execution_async('--remove_highlights')
 	@retry(timeout=10, retries=0)
-	async def remove_highlights(self):
+	async def remove_highlights(self, dom_service: DomService):
 		"""
 		DEPRECATED
 
 		Removes all highlight overlays and labels created by the highlightElement function.
 		Handles cases where the page might be closed or inaccessible.
-
-		TODO: this function has been deprecated, we will create new debug method
 		"""
-		return
+		await remove_highlighting_script(dom_service)
 
 	@require_initialization
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
@@ -2072,15 +2079,15 @@ class BrowserSession(BaseModel):
 						raise e
 					except Exception as e:
 						# Final fallback - try clicking by coordinates if available
-						if element_node.snapshot_node and element_node.snapshot_node.clientRects:
+						if element_node.snapshot_node and element_node.snapshot_node.bounds:
 							try:
 								# TODO: instead of using the cached center, we should use the actual center of the element (easy, just get it by nodeBackendId)
 								self.logger.warning(
-									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.snapshot_node.clientRects.center.x}, {element_node.snapshot_node.clientRects.center.y})'
+									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.snapshot_node.bounds.center.x}, {element_node.snapshot_node.bounds.center.y})'
 								)
 								await page.mouse.click(
-									element_node.snapshot_node.clientRects.center.x,
-									element_node.snapshot_node.clientRects.center.y,
+									element_node.snapshot_node.bounds.center.x,
+									element_node.snapshot_node.bounds.center.y,
 								)
 								try:
 									await page.wait_for_load_state()
@@ -2926,9 +2933,9 @@ class BrowserSession(BaseModel):
 
 		try:
 			self.logger.debug('🧹 Removing highlights...')
-			await self.remove_highlights()
 			self.logger.debug('🌳 Starting DOM processing...')
 			async with DomService(self, page) as dom_service:
+				await self.remove_highlights(dom_service)
 				try:
 					dom_state = await asyncio.wait_for(
 						dom_service.get_serialized_dom_tree(
@@ -2938,6 +2945,9 @@ class BrowserSession(BaseModel):
 						),
 						timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
 					)
+
+					await self.inject_highlights(dom_service, dom_state.selector_map)
+
 					self.logger.debug('✅ DOM processing completed')
 				except TimeoutError:
 					self.logger.warning(f'DOM processing timed out after 45 seconds for {page.url}')
@@ -3025,6 +3035,8 @@ class BrowserSession(BaseModel):
 			if hasattr(self, 'browser_state_summary'):
 				return self.browser_state_summary
 			raise
+		finally:
+			await self.remove_highlights(dom_service)
 
 	# region - Browser Actions
 	@observe_debug(name='take_screenshot')

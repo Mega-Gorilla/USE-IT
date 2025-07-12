@@ -67,7 +67,7 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 		bbox = None
 		if node.snapshot_node:
 			# Try bounds first, then clientRects
-			rect = node.snapshot_node.bounds or node.snapshot_node.clientRects
+			rect = node.snapshot_node.bounds
 			if rect:
 				bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
 
@@ -98,27 +98,6 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 
 			elements.append(element)
 		else:
-			# Handle elements without valid bounding boxes (fallback for highlighting)
-			# print(f'⚠️ Element {interactive_index} ({node.node_name}) has no valid bounding box, using fallback positioning')
-			# element = {
-			# 	'x': 0,
-			# 	'y': 0,
-			# 	'width': 50,
-			# 	'height': 20,
-			# 	'interactive_index': interactive_index,
-			# 	'element_name': node.node_name,
-			# 	'is_clickable': node.snapshot_node.is_clickable if node.snapshot_node else True,
-			# 	'is_scrollable': getattr(node, 'is_scrollable', False),
-			# 	'attributes': node.attributes or {},
-			# 	'frame_id': getattr(node, 'frame_id', None),
-			# 	'node_id': node.node_id,
-			# 	'backend_node_id': node.backend_node_id,
-			# 	'xpath': node.xpath,
-			# 	'text_content': node.get_all_children_text()[:50]
-			# 	if hasattr(node, 'get_all_children_text')
-			# 	else node.node_value[:50],
-			# }
-
 			# Skip elements without valid bounding boxes for now
 			# Could add fallback positioning here if needed
 			pass
@@ -187,13 +166,21 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			container.id = 'browser-use-debug-highlights';
 			container.setAttribute('data-browser-use-highlight', 'container');
 			container.style.cssText = `
-				position: absolute;
+				position: fixed;
 				top: 0;
 				left: 0;
 				width: 100%;
 				height: 100%;
 				pointer-events: none;
 				z-index: 999999;
+				overflow: hidden;
+				margin: 0;
+				padding: 0;
+				border: none;
+				outline: none;
+				box-shadow: none;
+				background: none;
+				font-family: inherit;
 			`;
 			
 			// Helper function to create text nodes safely (CSP-friendly)
@@ -215,11 +202,16 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					top: ${{element.y}}px;
 					width: ${{element.width}}px;
 					height: ${{element.height}}px;
-					border: 2px solid #4a90e2;
+					outline: 2px solid #4a90e2;
+					outline-offset: -2px;
 					background-color: rgba(74, 144, 226, 0.1);
 					pointer-events: none;
-					box-sizing: border-box;
+					box-sizing: content-box;
 					transition: all 0.2s ease;
+					margin: 0;
+					padding: 0;
+					border: none;
+					box-shadow: inset 0 0 0 2px #4a90e2;
 				`;
 				
 				// Enhanced label with interactive index
@@ -237,6 +229,10 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					white-space: nowrap;
 					z-index: 1000001;
 					box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+					border: none;
+					outline: none;
+					margin: 0;
+					line-height: 1.2;
 				`);
 				
 				// Enhanced tooltip with detailed reasoning (CSP-safe)
@@ -264,6 +260,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 					white-space: normal;
 					line-height: 1.4;
 					min-width: 200px;
+					margin: 0;
 				`;
 				
 				// Build detailed tooltip content with reasoning (CSP-safe DOM creation)
@@ -276,20 +273,24 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				// Determine confidence color and styling
 				let confidenceColor = '#4a90e2';
 				let confidenceIcon = '🔍';
-				let borderColor = '#4a90e2';
+				let outlineColor = '#4a90e2';
+				let shadowColor = '#4a90e2';
 				
 				if (confidence === 'HIGH') {{
 					confidenceColor = '#28a745';
 					confidenceIcon = '✅';
-					borderColor = '#28a745';
+					outlineColor = '#28a745';
+					shadowColor = '#28a745';
 				}} else if (confidence === 'MEDIUM') {{
 					confidenceColor = '#ffc107';
 					confidenceIcon = '⚠️';
-					borderColor = '#ffc107';
+					outlineColor = '#ffc107';
+					shadowColor = '#ffc107';
 				}} else {{
 					confidenceColor = '#fd7e14';
 					confidenceIcon = '❓';
-					borderColor = '#fd7e14';
+					outlineColor = '#fd7e14';
+					shadowColor = '#fd7e14';
 				}}
 				
 				// Create tooltip header
@@ -379,16 +380,17 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				tooltip.appendChild(reasonsContainer);
 				tooltip.appendChild(boundsDiv);
 				
-				// Set highlight border color based on confidence
-				highlight.style.borderColor = borderColor;
-				label.style.backgroundColor = borderColor;
+				// Set highlight colors based on confidence
+				highlight.style.outline = `2px solid ${{outlineColor}}`;
+				highlight.style.boxShadow = `inset 0 0 0 2px ${{shadowColor}}`;
+				label.style.backgroundColor = outlineColor;
 				
 				// Add hover effects
 				highlight.addEventListener('mouseenter', () => {{
-					highlight.style.borderColor = '#ff6b6b';
+					highlight.style.outline = '3px solid #ff6b6b';
+					highlight.style.outlineOffset = '-3px';
 					highlight.style.backgroundColor = 'rgba(255, 107, 107, 0.2)';
-					highlight.style.borderWidth = '3px';
-					highlight.style.boxShadow = '0 0 10px rgba(255, 107, 107, 0.5)';
+					highlight.style.boxShadow = 'inset 0 0 0 3px #ff6b6b, 0 0 10px rgba(255, 107, 107, 0.5)';
 					tooltip.style.opacity = '1';
 					tooltip.style.visibility = 'visible';
 					label.style.backgroundColor = '#ff6b6b';
@@ -396,13 +398,13 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 				}});
 				
 				highlight.addEventListener('mouseleave', () => {{
-					highlight.style.borderColor = borderColor;
+					highlight.style.outline = `2px solid ${{outlineColor}}`;
+					highlight.style.outlineOffset = '-2px';
 					highlight.style.backgroundColor = 'rgba(74, 144, 226, 0.1)';
-					highlight.style.borderWidth = '2px';
-					highlight.style.boxShadow = 'none';
+					highlight.style.boxShadow = `inset 0 0 0 2px ${{shadowColor}}`;
 					tooltip.style.opacity = '0';
 					tooltip.style.visibility = 'hidden';
-					label.style.backgroundColor = borderColor;
+					label.style.backgroundColor = outlineColor;
 					label.style.transform = 'scale(1)';
 				}});
 				

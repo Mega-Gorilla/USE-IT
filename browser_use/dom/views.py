@@ -112,7 +112,7 @@ class EnhancedSnapshotNode:
 	Typical use: Quick hit-test that doesn’t care about scroll position.
 	"""
 
-	clientRects: DOMRect | None
+	# clientRects: DOMRect | None
 	"""
 	Viewport coordinates (origin = top-left of the visible scrollport).
 	Equivalent JS API: element.getClientRects() / getBoundingClientRect().
@@ -255,7 +255,7 @@ class EnhancedDOMTreeNode:
 			'is_scrollable': self.is_scrollable,
 			'frame_id': self.frame_id,
 			'content_document': self.content_document.__json__() if self.content_document else None,
-			'shadow_root_type': self.shadow_root_type.value if self.shadow_root_type else None,
+			'shadow_root_type': self.shadow_root_type,
 			'ax_node': asdict(self.ax_node) if self.ax_node else None,
 			'snapshot_node': asdict(self.snapshot_node) if self.snapshot_node else None,
 			# these two in the end, so it's easier to read json

@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 import httpx
 from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
-from cdp_use.cdp.accessibility.types import AXNode, AXPropertyName
+from cdp_use.cdp.accessibility.types import AXNode
 from cdp_use.cdp.dom.commands import GetDocumentReturns
-from cdp_use.cdp.dom.types import Node, ShadowRootType
+from cdp_use.cdp.dom.types import Node
 from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 
 from browser_use.dom.enhanced_snapshot import (
@@ -119,7 +119,6 @@ class DomService:
 			for property in ax_node['properties']:
 				try:
 					# test whether property name can go into the enum (sometimes Chrome returns some random properties)
-					AXPropertyName(property['name'])
 					properties.append(
 						EnhancedAXProperty(
 							name=property['name'],
@@ -215,7 +214,7 @@ class DomService:
 			shadow_root_type = None
 			if 'shadowRootType' in node and node['shadowRootType']:
 				try:
-					shadow_root_type = ShadowRootType(node['shadowRootType'])
+					shadow_root_type = node['shadowRootType']
 				except ValueError:
 					pass
 

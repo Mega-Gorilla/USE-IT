@@ -205,7 +205,7 @@ def build_snapshot_lookup(
 			cursor_style=cursor_style,
 			is_visible=is_visible,
 			bounds=bounding_box,
-			clientRects=client_rects,
+			# clientRects=client_rects,
 			computed_styles=computed_styles if computed_styles else None,
 			paint_order=paint_order,
 			stacking_contexts=stacking_contexts,

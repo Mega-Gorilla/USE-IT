@@ -65,9 +65,9 @@ async def test_focus_vs_all_elements():
 				async with DomService(browser_session, page) as dom_service:
 					await remove_highlighting_script(dom_service)
 
-					all_elements_state = await dom_service.get_serialized_dom_tree()
+				# 	all_elements_state = await dom_service.get_serialized_dom_tree()
 
-					await inject_highlighting_script(dom_service, all_elements_state.selector_map)
+				# 	await inject_highlighting_script(dom_service, all_elements_state.selector_map)
 
 				print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
 
@@ -78,6 +78,9 @@ async def test_focus_vs_all_elements():
 				all_elements_state = await browser_session.get_state_summary(True)
 				end_time = time.time()
 				print(f'get_state_summary took {end_time - start_time:.2f} seconds')
+
+				async with DomService(browser_session, page) as dom_service:
+					await inject_highlighting_script(dom_service, all_elements_state.dom_state.selector_map)
 
 				selector_map = all_elements_state.dom_state.selector_map
 				total_elements = len(selector_map.keys())
