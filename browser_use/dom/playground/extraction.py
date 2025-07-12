@@ -234,8 +234,8 @@ async def test_focus_vs_all_elements():
 					current_website_index += 1
 					break  # Break inner loop to go to next website
 				elif answer.strip() == '':
-					print('Re-running extraction on current website...')
-					break  # Break inner loop to re-run extraction
+					print('Re-running extraction on current page state...')
+					continue  # Continue inner loop to re-extract DOM without reloading page
 				elif answer.strip().isdigit():
 					# Jump to specific website (1-15)
 					try:
