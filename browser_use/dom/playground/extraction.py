@@ -30,31 +30,78 @@ async def test_focus_vs_all_elements():
 		),
 	)
 
-	websites = [
-		# 'https://demos.telerik.com/kendo-react-ui/treeview/overview/basic/func?theme=default-ocean-blue-a11y',
-		# 'https://v0-simple-landing-page-seven-xi.vercel.app',
+	# 10 Sample websites with various interactive elements
+	sample_websites = [
 		'https://www.google.com/travel/flights',
+		'https://www.amazon.com/s?k=laptop',
+		'https://github.com/trending',
+		'https://www.reddit.com',
 		'https://www.ycombinator.com/companies',
-		'https://kayak.com/flights',
-		# 'https://en.wikipedia.org/wiki/Humanist_Party_of_Ontario',
-		# 'https://www.google.com/travel/flights?tfs=CBwQARoJagcIARIDTEpVGglyBwgBEgNMSlVAAUgBcAGCAQsI____________AZgBAQ&tfu=KgIIAw&hl=en-US&gl=US',
-		# # 'https://www.concur.com/?&cookie_preferences=cpra',
-		# 'https://immobilienscout24.de',
-		'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit',
-		'https://www.zeiss.com/career/en/job-search.html?page=1',
-		'https://www.mlb.com/yankees/stats/',
-		'https://www.amazon.com/s?k=laptop&s=review-rank&crid=1RZCEJ289EUSI&qid=1740202453&sprefix=laptop%2Caps%2C166&ref=sr_st_review-rank&ds=v1%3A4EnYKXVQA7DIE41qCvRZoNB4qN92Jlztd3BPsTFXmxU',
-		'https://reddit.com',
-		'https://codepen.io/geheimschriftstift/pen/mPLvQz',
-		'https://www.google.com/search?q=google+hi&oq=google+hi&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhA0gEIMjI2NmowajSoAgCwAgE&sourceid=chrome&ie=UTF-8',
-		'https://amazon.com',
-		'https://github.com',
+		'https://www.kayak.com/flights',
+		'https://www.booking.com',
+		'https://www.airbnb.com',
+		'https://www.linkedin.com/jobs',
+		'https://stackoverflow.com/questions',
 	]
+
+	# 5 Difficult websites with complex elements (iframes, canvas, dropdowns, etc.)
+	difficult_websites = [
+		'https://www.w3schools.com/html/tryit.asp?filename=tryhtml_iframe',  # Nested iframes
+		'https://semantic-ui.com/modules/dropdown.html',  # Complex dropdowns
+		'https://www.dezlearn.com/nested-iframes-example/',  # Cross-origin nested iframes
+		'https://codepen.io/towc/pen/mJzOWJ',  # Canvas elements with interactions
+		'https://jqueryui.com/accordion/',  # Complex accordion/dropdown widgets
+	]
+
+	# Descriptions for difficult websites
+	difficult_descriptions = {
+		'https://www.w3schools.com/html/tryit.asp?filename=tryhtml_iframe': '🔸 NESTED IFRAMES: Multiple iframe layers',
+		'https://semantic-ui.com/modules/dropdown.html': '🔸 COMPLEX DROPDOWNS: Custom dropdown components',
+		'https://www.dezlearn.com/nested-iframes-example/': '🔸 CROSS-ORIGIN IFRAMES: Different domain iframes',
+		'https://codepen.io/towc/pen/mJzOWJ': '🔸 CANVAS ELEMENTS: Interactive canvas graphics',
+		'https://jqueryui.com/accordion/': '🔸 ACCORDION WIDGETS: Collapsible content sections',
+	}
+
+	websites = sample_websites + difficult_websites
+	current_website_index = 0
+
+	def get_website_list_for_prompt() -> str:
+		"""Get a compact website list for the input prompt."""
+		lines = []
+		lines.append('📋 Websites:')
+
+		# Sample websites (1-10)
+		for i, site in enumerate(sample_websites, 1):
+			current_marker = ' ←' if (i - 1) == current_website_index else ''
+			domain = site.replace('https://', '').split('/')[0]
+			lines.append(f'  {i:2d}.{domain[:15]:<15}{current_marker}')
+
+		# Difficult websites (11-15)
+		for i, site in enumerate(difficult_websites, len(sample_websites) + 1):
+			current_marker = ' ←' if (i - 1) == current_website_index else ''
+			domain = site.replace('https://', '').split('/')[0]
+			desc = difficult_descriptions.get(site, '')
+			challenge = desc.split(': ')[1][:15] if ': ' in desc else ''
+			lines.append(f'  {i:2d}.{domain[:15]:<15} ({challenge}){current_marker}')
+
+		return '\n'.join(lines)
 
 	await browser_session.start()
 	page = await browser_session.get_current_page()
 
-	for website in websites:
+	# Show startup info
+	print('\n🌐 BROWSER-USE DOM EXTRACTION TESTER')
+	print(f'📊 {len(websites)} websites total: {len(sample_websites)} standard + {len(difficult_websites)} complex')
+	print('🔧 Controls: Type 1-15 to jump | Enter to re-run | "n" next | "q" quit')
+	print('💾 Outputs: tmp/user_message.txt & tmp/element_tree.json\n')
+
+	while True:
+		# Cycle through websites
+		if current_website_index >= len(websites):
+			current_website_index = 0
+			print('Cycled back to first website!')
+
+		website = websites[current_website_index]
 		# sleep 2
 		await page.goto(website)
 		await asyncio.sleep(1)
@@ -70,7 +117,12 @@ async def test_focus_vs_all_elements():
 
 				# 	await inject_highlighting_script(dom_service, all_elements_state.selector_map)
 
-				print(f'\n{"=" * 50}\nTesting {website}\n{"=" * 50}')
+				website_type = 'DIFFICULT' if website in difficult_websites else 'SAMPLE'
+				print(f'\n{"=" * 60}')
+				print(f'[{current_website_index + 1}/{len(websites)}] [{website_type}] Testing: {website}')
+				if website in difficult_descriptions:
+					print(f'{difficult_descriptions[website]}')
+				print(f'{"=" * 60}')
 
 				# Get/refresh the state (includes removing old highlights)
 				print('\nGetting page state...')
@@ -125,12 +177,35 @@ async def test_focus_vs_all_elements():
 				# 	f.write(json.dumps(all_elements_state.element_tree.__json__(), indent=2))
 				# print('Clickable elements written to ./tmp/clickable_elements.json')
 
+				website_list = get_website_list_for_prompt()
 				answer = input(
-					"Enter element index to click, 'index,text' to input, 'c,index' to copy element JSON, or 'q' to quit: "
+					f"\n{website_list}\n\n🎮 Enter: element index | 'index,text' input | 'c,index' copy | 1-15 jump | Enter re-run | 'n' next | 'q' quit: "
 				)
 
 				if answer.lower() == 'q':
-					break
+					return  # Exit completely
+				elif answer.lower() == 'n':
+					print('Moving to next website...')
+					current_website_index += 1
+					break  # Break inner loop to go to next website
+				elif answer.strip() == '':
+					print('Re-running extraction on current website...')
+					break  # Break inner loop to re-run extraction
+				elif answer.strip().isdigit():
+					# Jump to specific website (1-15)
+					try:
+						target_website = int(answer.strip())
+						if 1 <= target_website <= len(websites):
+							current_website_index = target_website - 1  # Convert to 0-based index
+							target_url = websites[current_website_index]
+							website_type = 'DIFFICULT' if target_url in difficult_websites else 'SAMPLE'
+							print(f'Jumping to website {target_website}: [{website_type}] {target_url}')
+							break  # Break inner loop to go to new website
+						else:
+							print(f'Invalid website number. Enter 1-{len(websites)}.')
+					except ValueError:
+						print(f'Invalid input: {answer}')
+					continue
 
 				try:
 					if answer.lower().startswith('c,'):
