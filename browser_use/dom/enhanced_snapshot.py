@@ -69,9 +69,6 @@ def _is_element_visible(
 	scroll_y: float = 0.0,
 ) -> bool:
 	"""Determine if an element is visible in the current scrolled viewport."""
-	# Check if element has zero dimensions
-	if bounding_box.width <= 0 or bounding_box.height <= 0:
-		return False
 
 	# Check CSS visibility properties
 	display = computed_styles.get('display', '').lower()
