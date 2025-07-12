@@ -1,8 +1,7 @@
 # @file purpose: Serializes enhanced DOM trees to string format for LLM consumption
 
 
-from dom.serializer.clickable_elements import ClickableElementDetector
-
+from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.utils import cap_text_length
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
 

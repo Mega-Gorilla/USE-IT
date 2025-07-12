@@ -108,7 +108,7 @@ async def test_focus_vs_all_elements():
 				# save pure clickable elements to a file
 				if all_elements_state.dom_state._root:
 					async with await anyio.open_file('./tmp/element_tree.json', 'w', encoding='utf-8') as f:
-						await f.write(json.dumps(all_elements_state.dom_state._root.original_node.__json__(), indent=0))
+						await f.write(json.dumps(all_elements_state.dom_state._root.__json__(), indent=0))
 
 				# copy the user message to the clipboard
 				# pyperclip.copy(text_to_save)

@@ -1,4 +1,4 @@
-from dom.views import EnhancedDOMTreeNode
+from browser_use.dom.views import EnhancedDOMTreeNode
 
 
 class ClickableElementDetector:
