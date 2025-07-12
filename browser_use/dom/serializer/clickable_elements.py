@@ -10,13 +10,48 @@ class ClickableElementDetector:
 		if node.node_type != NodeType.ELEMENT_NODE:
 			return False
 
-		# if ax ignored skip
-		if node.ax_node and node.ax_node.ignored:
-			return False
+		# # if ax ignored skip
+		# if node.ax_node and node.ax_node.ignored:
+		# 	return False
 
 		# remove html and body nodes
 		if node.tag_name in {'html', 'body'}:
 			return False
+
+		# Primary check: Chrome's own clickable detection (most reliable for DIV buttons, etc.)
+		# if node.snapshot_node and node.snapshot_node.is_clickable:
+		# 	return True
+		# Enhanced accessibility property checks - direct clear indicators only
+		if node.ax_node and node.ax_node.properties:
+			for prop in node.ax_node.properties:
+				try:
+					# aria disabled
+					if prop.name == 'disabled' and prop.value:
+						return False
+
+					# aria hidden
+					if prop.name == 'hidden' and prop.value:
+						return False
+
+					# Direct interactiveness indicators
+					if prop.name in ['focusable', 'editable', 'settable'] and prop.value:
+						return True
+
+					# Interactive state properties (presence indicates interactive widget)
+					if prop.name in ['checked', 'expanded', 'pressed', 'selected']:
+						# These properties only exist on interactive elements
+						return True
+
+					# Form-related interactiveness
+					if prop.name in ['required', 'autocomplete'] and prop.value:
+						return True
+
+					# Elements with keyboard shortcuts are interactive
+					if prop.name == 'keyshortcuts' and prop.value:
+						return True
+				except (AttributeError, ValueError):
+					# Skip properties we can't process
+					continue
 
 		# Secondary check: intrinsically interactive HTML elements
 		interactive_tags = {'button', 'input', 'select', 'textarea', 'a', 'label', 'details', 'summary', 'option', 'optgroup'}
@@ -67,32 +102,7 @@ class ClickableElementDetector:
 			if node.ax_node.role in interactive_ax_roles:
 				return True
 
-		# Enhanced accessibility property checks - direct clear indicators only
-		if node.ax_node and node.ax_node.properties:
-			for prop in node.ax_node.properties:
-				try:
-					# Direct interactiveness indicators
-					if prop.name in ['focusable', 'editable', 'settable'] and prop.value:
-						return True
-
-					# Interactive state properties (presence indicates interactive widget)
-					if prop.name in ['checked', 'expanded', 'pressed', 'selected']:
-						# These properties only exist on interactive elements
-						return True
-
-					# Form-related interactiveness
-					if prop.name in ['required', 'autocomplete'] and prop.value:
-						return True
-
-					# Elements with keyboard shortcuts are interactive
-					if prop.name == 'keyshortcuts' and prop.value:
-						return True
-
-				except (AttributeError, ValueError):
-					# Skip properties we can't process
-					continue
-
-		# Final check: cursor style indicates interactivity
+		# Final fallback: cursor style indicates interactivity (for cases Chrome missed)
 		if node.snapshot_node and node.snapshot_node.cursor_style and node.snapshot_node.cursor_style == 'pointer':
 			return True
 
