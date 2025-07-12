@@ -8,7 +8,7 @@ from cdp_use.cdp.dom.types import ShadowRootType
 
 from browser_use.dom.utils import cap_text_length
 
-### Serializer types
+# Serializer types
 DEFAULT_INCLUDE_ATTRIBUTES = [
 	'title',
 	'type',
@@ -64,6 +64,14 @@ class NodeType(int, Enum):
 
 
 @dataclass(slots=True)
+class DOMRect:
+	x: float
+	y: float
+	width: float
+	height: float
+
+
+@dataclass(slots=True)
 class EnhancedAXProperty:
 	"""we don't need `sources` and `related_nodes` for now (not sure how to use them)
 
@@ -88,24 +96,6 @@ class EnhancedAXNode:
 	properties: list[EnhancedAXProperty] | None
 
 
-@dataclass
-class DOMCoordinates:
-	x: float
-	y: float
-
-
-@dataclass(slots=True)
-class DOMRect:
-	x: float
-	y: float
-	width: float
-	height: float
-
-	@property
-	def center(self) -> DOMCoordinates:
-		return DOMCoordinates(x=self.x + self.width / 2, y=self.y + self.height / 2)
-
-
 @dataclass(slots=True)
 class EnhancedSnapshotNode:
 	"""Snapshot data extracted from DOMSnapshot for enhanced functionality."""
@@ -117,7 +107,7 @@ class EnhancedSnapshotNode:
 	"""
 	Document coordinates (origin = top-left of the page, ignores current scroll).
 	Equivalent JS API: layoutNode.boundingBox in the older API.
-	Typical use: Quick hit-test that doesn’t care about scroll position.
+	Typical use: Quick hit-test that doesn't care about scroll position.
 	"""
 
 	# clientRects: DOMRect | None
@@ -165,20 +155,20 @@ class EnhancedDOMTreeNode:
 	Whether the node is scrollable.
 	"""
 
-	## frames
+	# frames
 	frame_id: str | None
 	content_document: 'EnhancedDOMTreeNode | None'
 	"""
 	Content document is the document inside a new iframe.
 	"""
-	## Shadow DOM
+	# Shadow DOM
 	shadow_root_type: ShadowRootType | None
 	shadow_roots: list['EnhancedDOMTreeNode'] | None
 	"""
 	Shadow roots are the shadow DOMs of the element.
 	"""
 
-	## Navigation
+	# Navigation
 	parent_node: 'EnhancedDOMTreeNode | None'
 	children_nodes: list['EnhancedDOMTreeNode'] | None
 

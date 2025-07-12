@@ -11,8 +11,8 @@ class ClickableElementDetector:
 			return False
 
 		# Primary check: snapshot data from Chrome's heuristics
-		if node.snapshot_node and node.snapshot_node.is_clickable:
-			return True
+		# if node.snapshot_node and node.snapshot_node.is_clickable:
+		# 	return True
 
 		# remove html and body nodes
 		if node.tag_name in {'html', 'body'}:
@@ -66,6 +66,31 @@ class ClickableElementDetector:
 			}
 			if node.ax_node.role in interactive_ax_roles:
 				return True
+
+		# Enhanced accessibility property checks - direct clear indicators only
+		if node.ax_node and node.ax_node.properties:
+			for prop in node.ax_node.properties:
+				try:
+					# Direct interactiveness indicators
+					if prop.name in ['focusable', 'editable', 'settable'] and prop.value:
+						return True
+
+					# Interactive state properties (presence indicates interactive widget)
+					if prop.name in ['checked', 'expanded', 'pressed', 'selected']:
+						# These properties only exist on interactive elements
+						return True
+
+					# Form-related interactiveness
+					if prop.name in ['required', 'autocomplete'] and prop.value:
+						return True
+
+					# Elements with keyboard shortcuts are interactive
+					if prop.name == 'keyshortcuts' and prop.value:
+						return True
+
+				except (AttributeError, ValueError):
+					# Skip properties we can't process
+					continue
 
 		# Final check: cursor style indicates interactivity
 		if node.snapshot_node and node.snapshot_node.cursor_style and node.snapshot_node.cursor_style == 'pointer':
