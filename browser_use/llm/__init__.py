@@ -9,6 +9,7 @@ from browser_use.llm.aws.chat_anthropic import ChatAnthropicBedrock
 from browser_use.llm.aws.chat_bedrock import ChatAWSBedrock
 from browser_use.llm.azure.chat import ChatAzureOpenAI
 from browser_use.llm.base import BaseChatModel
+from browser_use.llm.deepseek.chat import ChatDeepSeek
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.groq.chat import ChatGroq
 from browser_use.llm.messages import (
@@ -45,6 +46,7 @@ __all__ = [
 	# Chat models
 	'BaseChatModel',
 	'ChatOpenAI',
+	'ChatDeepSeek',
 	'ChatGoogle',
 	'ChatAnthropic',
 	'ChatAnthropicBedrock',
