@@ -10,9 +10,9 @@ class ClickableElementDetector:
 		if node.node_type != NodeType.ELEMENT_NODE:
 			return False
 
-		# Primary check: snapshot data from Chrome's heuristics
-		# if node.snapshot_node and node.snapshot_node.is_clickable:
-		# 	return True
+		# if ax ignored skip
+		if node.ax_node and node.ax_node.ignored:
+			return False
 
 		# remove html and body nodes
 		if node.tag_name in {'html', 'body'}:
