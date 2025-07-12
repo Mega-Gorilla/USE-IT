@@ -1315,7 +1315,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		cached_selector_map = await self.browser_session.get_selector_map()
 		cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
 
-		await self.browser_session.remove_highlights()
+		# await self.browser_session.remove_highlights()
 
 		for i, action in enumerate(actions):
 			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
