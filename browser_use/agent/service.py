@@ -165,7 +165,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_attributes: list[str] = DEFAULT_INCLUDE_ATTRIBUTES,
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
-		flash_mode: bool = False,
+		flash_mode: bool = True,
 		max_history_items: int = 40,
 		images_per_step: int = 1,
 		page_extraction_llm: BaseChatModel | None = None,
