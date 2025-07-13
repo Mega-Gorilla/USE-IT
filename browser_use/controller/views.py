@@ -71,10 +71,3 @@ class NoParamsAction(BaseModel):
 
 	model_config = ConfigDict(extra='ignore')
 	# No fields defined - all inputs are ignored automatically
-
-
-class OpenAICUAAction(BaseModel):
-	"""Parameters for OpenAI Computer Use Assistant action."""
-
-	description: str = Field(..., description='Description of your next goal')
-
