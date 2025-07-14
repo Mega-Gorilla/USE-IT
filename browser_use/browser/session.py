@@ -3282,7 +3282,7 @@ class BrowserSession(BaseModel):
 			raise
 
 	# region - Page Health Check Helpers
-	@observe_debug(ignore_output=True)
+	@observe_debug(ignore_input=True)
 	async def _is_page_responsive(self, page: Page, timeout: float = 5.0) -> bool:
 		"""Check if a page is responsive by trying to evaluate simple JavaScript."""
 		eval_task = None
