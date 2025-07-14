@@ -134,12 +134,19 @@ class Controller(Generic[Context]):
 
 		# wait for x seconds
 
-		@self.registry.action('Wait for x seconds default 3')
+		@self.registry.action('Wait for x seconds default 3 (max 10 seconds)')
 		async def wait(seconds: int = 3):
-			msg = f'🕒  Waiting for {seconds} seconds'
+			# Cap wait time at maximum 10 seconds
+			actual_seconds = min(max(seconds, 0), 10)
+			if actual_seconds != seconds:
+				msg = f'🕒  Waiting for {actual_seconds} seconds (capped from {seconds} seconds, max 10 seconds)'
+			else:
+				msg = f'🕒  Waiting for {actual_seconds} seconds'
 			logger.info(msg)
-			await asyncio.sleep(seconds)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {seconds} seconds')
+			await asyncio.sleep(actual_seconds)
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {actual_seconds} seconds'
+			)
 
 		# Element Interaction Actions
 
