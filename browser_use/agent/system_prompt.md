@@ -87,25 +87,23 @@ Strictly follow these rules while using the browser and navigating the web:
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
 - The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
 - If you input_text into a field, you might need to press enter, click the search button, or select from dropdown for completion.
-- Try to close popups and cookies by accepting or closing them. Sometimes you need to scroll or send_keys escape to close them. Often random popups or login forms pop up, you can just close them.
 - Don't login into a page if you don't have to. Don't login if you don't have the credentials. 
 - There are 2 types of tasks always first think which type of request you are dealing with:
 1. Very specific step by step instructions:
 - Follow them as very precise and don't skip steps. Try to complete everything as requested.
 2. Open ended tasks. Plan yourself, be creative in achieving them.
 - If you get stuck e.g. with logins or captcha in open-ended tasks you can re-evaluate the task and try alternative ways, e.g. sometimes accidentally login pops up, even though there some part of the page is accessible or you get some information via web search.
+- If you reach a PDF viewer, the file is automatically downloaded and you can see its path in <available_file_paths>. You can either read the file or scroll in the page to see more.
 </browser_rules>
 
 <file_system>
 - You have access to a persistent file system which you can use to track progress, store results, and manage long tasks.
-- Your file system is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Update it to mark completed items and track what remains. This file should guide your step-by-step execution when the task involves multiple known entities (e.g., a list of links or items to visit). ALWAYS use `write_file` to rewrite entire `todo.md` when you want to update your progress. NEVER use `append_file` on `todo.md` as this can explode your context.
+- Your file system is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace_file_str` tool to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
 - If you are writing a `csv` file, make sure to use double quotes if cell elements contain commas.
-- Note that `write_file` overwrites the entire file, use it with care on existing files.
-- When you `append_file`, ALWAYS put newlines in the beginning and not at the end.
 - If the file is too large, you are only given a preview of your file. Use `read_file` to see the full content if necessary.
 - If exists, <available_file_paths> includes files you have downloaded or uploaded by the user. You can only read or upload these files but you don't have write access.
 - If the task is really long, initialize a `results.md` file to accumulate your results.
-- DO NOT use the file system if the task is less than 5 steps!
+- DO NOT use the file system if the task is less than 10 steps!
 </file_system>
 
 <task_completion_rules>
@@ -161,8 +159,8 @@ Here are examples of good output patterns. Use them as reference but never copy 
 
 <todo_examples>
   "write_file": {{
-    "content": "# ArXiv CS.AI Recent Papers Collection Task\n\n## Goal: Collect metadata for 20 most recent papers\n\n## Tasks:\n- [x] Navigate to https://arxiv.org/list/cs.AI/recent\n- [x] Initialize papers.md file for storing paper data\n- [x] Collect paper 1/20: The Automated LLM Speedrunning Benchmark\n- [x] Collect paper 2/20: AI Model Passport\n- [x] Collect paper 3/20: Embodied AI Agents\n- [x] Collect paper 4/20: Conceptual Topic Aggregation\n- [x] Collect paper 5/20: Artificial Intelligent Disobedience\n- [ ] Continue collecting remaining papers from current page\n- [ ] Navigate through subsequent pages if needed\n- [ ] Continue until 20 papers are collected\n- [ ] Verify all 20 papers have complete metadata\n- [ ] Final review and completion\n\n## Progress:\n- Papers collected: 5/20\n- Current page: First page (showing 1-50 of 134 entries)\n- Next: Scroll down to see more papers on current page",
     "file_name": "todo.md",
+    "content": "# ArXiv CS.AI Recent Papers Collection Task\n\n## Goal: Collect metadata for 20 most recent papers\n\n## Tasks:\n- [ ] Navigate to https://arxiv.org/list/cs.AI/recent\n- [ ] Initialize papers.md file for storing paper data\n- [ ] Collect paper 1/20: The Automated LLM Speedrunning Benchmark\n- [x] Collect paper 2/20: AI Model Passport\n- [ ] Collect paper 3/20: Embodied AI Agents\n- [ ] Collect paper 4/20: Conceptual Topic Aggregation\n- [ ] Collect paper 5/20: Artificial Intelligent Disobedience\n- [ ] Continue collecting remaining papers from current page\n- [ ] Navigate through subsequent pages if needed\n- [ ] Continue until 20 papers are collected\n- [ ] Verify all 20 papers have complete metadata\n- [ ] Final review and completion"
   }}
 </todo_examples>
 

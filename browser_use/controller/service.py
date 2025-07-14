@@ -134,12 +134,19 @@ class Controller(Generic[Context]):
 
 		# wait for x seconds
 
-		@self.registry.action('Wait for x seconds default 3')
+		@self.registry.action('Wait for x seconds default 3 (max 10 seconds)')
 		async def wait(seconds: int = 3):
-			msg = f'🕒  Waiting for {seconds} seconds'
+			# Cap wait time at maximum 10 seconds
+			actual_seconds = min(max(seconds, 0), 10)
+			if actual_seconds != seconds:
+				msg = f'🕒  Waiting for {actual_seconds} seconds (capped from {seconds} seconds, max 10 seconds)'
+			else:
+				msg = f'🕒  Waiting for {actual_seconds} seconds'
 			logger.info(msg)
-			await asyncio.sleep(seconds)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {seconds} seconds')
+			await asyncio.sleep(actual_seconds)
+			return ActionResult(
+				extracted_content=msg, include_in_memory=True, long_term_memory=f'Waited for {actual_seconds} seconds'
+			)
 
 		# Element Interaction Actions
 
@@ -375,9 +382,10 @@ Only use this for specific queries for information retrieval from the page. Don'
 			# replace multiple sequential \n with a single \n
 			content = re.sub(r'\n+', '\n', content)
 
-			# limit to 40000 characters - remove text in the middle this is approx 20000 tokens
-			max_chars = 40000
+			# limit to 30000 characters - remove text in the middle (≈15000 tokens)
+			max_chars = 30000
 			if len(content) > max_chars:
+				logger.info(f'Content is too long, removing middle {len(content) - max_chars} characters')
 				content = (
 					content[: max_chars // 2]
 					+ '\n... left out the middle because it was too long ...\n'
@@ -395,7 +403,7 @@ Explain the content of the page and that the requested information is not availa
 				# Aggressive timeout for LLM call
 				response = await asyncio.wait_for(
 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
-					timeout=60.0,  # 30 second aggressive timeout for LLM call
+					timeout=120.0,  # 120 second aggressive timeout for LLM call
 				)
 
 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
@@ -742,15 +750,33 @@ Explain the content of the page and that the requested information is not availa
 				raise BrowserError(msg)
 
 		# File System Actions
-		@self.registry.action('Write content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv.')
-		async def write_file(file_name: str, content: str, file_system: FileSystem):
-			result = await file_system.write_file(file_name, content)
+		@self.registry.action(
+			'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
+		)
+		async def write_file(
+			file_name: str,
+			content: str,
+			file_system: FileSystem,
+			append: bool = False,
+			trailing_newline: bool = True,
+			leading_newline: bool = False,
+		):
+			if trailing_newline:
+				content += '\n'
+			if leading_newline:
+				content = '\n' + content
+			if append:
+				result = await file_system.append_file(file_name, content)
+			else:
+				result = await file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-		@self.registry.action('Append content to file_name in file system')
-		async def append_file(file_name: str, content: str, file_system: FileSystem):
-			result = await file_system.append_file(file_name, content)
+		@self.registry.action(
+			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
+		)
+		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
+			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
 			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
@@ -1147,7 +1173,7 @@ Explain the content of the page and that the requested information is not availa
 		return self.registry.action(description, **kwargs)
 
 	# Act --------------------------------------------------------------------
-	@observe_debug(name='act')
+	@observe_debug(ignore_input=True, ignore_output=True, name='act')
 	@time_execution_sync('--act')
 	async def act(
 		self,
