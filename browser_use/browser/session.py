@@ -2235,7 +2235,7 @@ class BrowserSession(BaseModel):
 		await self.get_current_page()
 
 	# --- Page navigation ---
-	@observe_debug()
+	@observe_debug(ignore_input=True, ignore_output=True)
 	@retry(retries=0, timeout=30, wait=1, semaphore_timeout=10, semaphore_limit=1, semaphore_scope='self', semaphore_lax=True)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def navigate(self, url: str = 'about:blank', new_tab: bool = False, timeout_ms: int | None = None) -> Page:
