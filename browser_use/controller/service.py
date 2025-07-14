@@ -137,7 +137,7 @@ class Controller(Generic[Context]):
 		@self.registry.action('Wait for x seconds default 3 (max 10 seconds)')
 		async def wait(seconds: int = 3):
 			# Cap wait time at maximum 10 seconds
-			actual_seconds = min(seconds, 10)
+			actual_seconds = min(max(seconds, 0), 10)
 			if actual_seconds != seconds:
 				msg = f'🕒  Waiting for {actual_seconds} seconds (capped from {seconds} seconds, max 10 seconds)'
 			else:
