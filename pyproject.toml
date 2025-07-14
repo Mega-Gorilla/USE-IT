@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.4.4"
+version = "0.5.4"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -13,7 +13,7 @@ classifiers = [
 dependencies = [
     "aiofiles>=24.1.0",
     "anyio>=4.9.0",
-    "bubus>=1.2.2",
+    "bubus>=1.4.5",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
     "markdownify==1.1.0",
@@ -39,7 +39,9 @@ dependencies = [
     "google-api-python-client>=2.174.0",
     "google-auth>=2.40.3",
     "google-auth-oauthlib>=1.2.2",
+    "mcp>=1.10.1",
     "pypdf>=5.7.0",
+    "markdown-pdf>=1.7",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -122,6 +124,8 @@ skip-magic-trailing-comma = false
 [tool.pyright]
 typeCheckingMode = "basic"
 exclude = ["tests/old/", ".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/"]
+venvPath = "."
+venv = ".venv"
 
 
 [tool.hatch.build]
@@ -131,6 +135,7 @@ include = [
     "!browser_use/**/tests.py",
     "browser_use/agent/system_prompt.md",
     "browser_use/agent/system_prompt_no_thinking.md",
+    "browser_use/agent/system_prompt_flash.md",
     "browser_use/dom/**/*.js",
     "!tests/**/*.py",
 ]
@@ -186,7 +191,7 @@ dev-dependencies = [
     "ipdb>=0.13.13",
     "pre-commit>=4.2.0",
     "codespell>=2.4.1",
-    "pyright>=1.1.399",
+    "pyright>=1.1.403",
     "ty>=0.0.1a1",
     "pytest-xdist>=3.7.0",
     "pillow>=11.2.1",
