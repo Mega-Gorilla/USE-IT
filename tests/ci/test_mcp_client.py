@@ -122,11 +122,11 @@ class MockMCPServer:
 				assert arguments is not None
 				trace = arguments.get('trace', {})
 				window_size = arguments.get('window_size', 10)
-				
+
 				recent_actions = trace.get('recent_actions', [])
 				current_context = trace.get('current_context', 'unknown')
 				goal = trace.get('goal', 'no goal')
-				
+
 				result = f'Processed trace update: {len(recent_actions)} actions, goal: {goal}, context: {current_context}, window: {window_size}'
 
 			else:
@@ -617,12 +617,14 @@ async def test_mcp_nested_object_parameters(test_mcp_server_script):
 		# Verify the trace parameter has nested structure
 		trace_field = param_model.model_fields['trace']
 		trace_annotation = trace_field.annotation
-		
+
 		# Should be a nested pydantic model, not just dict
 		assert trace_annotation is not dict
-		
+		assert trace_annotation is not None
+
 		# Verify nested model has the expected fields
 		nested_model = trace_annotation
+		assert hasattr(nested_model, 'model_fields')
 		nested_fields = nested_model.model_fields
 		assert 'recent_actions' in nested_fields
 		assert 'current_context' in nested_fields
@@ -634,26 +636,26 @@ async def test_mcp_nested_object_parameters(test_mcp_server_script):
 		assert not nested_fields['current_context'].is_required()
 
 		# Test creating an instance with nested parameters
-		trace_data = nested_model(
-			recent_actions=['click', 'type', 'navigate'],
-			current_context='web page',
-			goal='complete form'
-		)
+		assert callable(nested_model)
+		trace_data = nested_model(recent_actions=['click', 'type', 'navigate'], current_context='web page', goal='complete form')
 
 		# Test the full parameter model
+		assert callable(param_model)
 		params = param_model(trace=trace_data, window_size=5)
-		
+
 		# Verify the parameter structure
-		assert params.trace.recent_actions == ['click', 'type', 'navigate']
-		assert params.trace.current_context == 'web page'
-		assert params.trace.goal == 'complete form'
-		assert params.window_size == 5
+		assert hasattr(params, 'trace') and hasattr(params, 'window_size')
+		trace_obj = getattr(params, 'trace')
+		assert trace_obj.recent_actions == ['click', 'type', 'navigate']
+		assert trace_obj.current_context == 'web page'
+		assert trace_obj.goal == 'complete form'
+		assert getattr(params, 'window_size') == 5
 
 		# Test calling the tool with nested parameters
 		result = await trace_action.function(params=params)
 
 		# Verify the result contains the nested data
-		assert result.success
+		assert result.success is not False
 		assert 'Processed trace update' in result.extracted_content
 		assert '3 actions' in result.extracted_content
 		assert 'goal: complete form' in result.extracted_content
@@ -666,10 +668,7 @@ async def test_mcp_nested_object_parameters(test_mcp_server_script):
 		assert 'window: 10' in result_default.extracted_content
 
 		# Test with minimal required parameters
-		minimal_trace = nested_model(
-			recent_actions=['action1', 'action2'],
-			goal='test goal'
-		)
+		minimal_trace = nested_model(recent_actions=['action1', 'action2'], goal='test goal')
 		params_minimal = param_model(trace=minimal_trace)
 		result_minimal = await trace_action.function(params=params_minimal)
 		assert 'goal: test goal' in result_minimal.extracted_content

@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field, create_model, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from browser_use.agent.views import ActionResult
 from browser_use.controller.registry.service import Registry
@@ -286,7 +286,7 @@ class MCPClient:
 			# Create a BaseModel class with proper configuration
 			class ConfiguredBaseModel(BaseModel):
 				model_config = ConfigDict(extra='forbid', validate_by_name=True, validate_by_alias=True)
-			
+
 			param_model = create_model(f'{action_name}_Params', __base__=ConfiguredBaseModel, **param_fields)
 		else:
 			# No parameters - create empty model
@@ -313,7 +313,7 @@ class MCPClient:
 					return ActionResult(error=f"MCP server '{self.server_name}' not connected", success=False)
 
 				# Convert pydantic model to dict for MCP call
-				tool_params = params.model_dump()
+				tool_params = params.model_dump(exclude_none=True)
 
 				logger.debug(f"🔧 Calling MCP tool '{tool.name}' with params: {tool_params}")
 
@@ -480,11 +480,11 @@ class MCPClient:
 				# Create nested pydantic model for objects with properties
 				nested_fields = {}
 				required_fields = set(schema.get('required', []))
-				
+
 				for prop_name, prop_schema in properties.items():
 					# Recursively process nested properties
 					prop_type = self._json_schema_to_python_type(prop_schema, f'{model_name}_{prop_name}')
-					
+
 					# Determine if field is required and handle defaults
 					if prop_name in required_fields:
 						default = ...  # Required field
@@ -495,24 +495,24 @@ class MCPClient:
 							default = prop_schema['default']
 						else:
 							default = None
-					
+
 					# Add field with description if available
 					field_kwargs = {}
 					if 'description' in prop_schema:
 						field_kwargs['description'] = prop_schema['description']
-					
+
 					nested_fields[prop_name] = (prop_type, Field(default, **field_kwargs))
-				
+
 				# Create a BaseModel class with proper configuration
 				class ConfiguredBaseModel(BaseModel):
 					model_config = ConfigDict(extra='forbid', validate_by_name=True, validate_by_alias=True)
-				
+
 				try:
 					# Create and return nested pydantic model
 					return create_model(model_name, __base__=ConfiguredBaseModel, **nested_fields)
 				except Exception as e:
-					logger.error(f"Failed to create nested model {model_name}: {e}")
-					logger.debug(f"Fields: {nested_fields}")
+					logger.error(f'Failed to create nested model {model_name}: {e}')
+					logger.debug(f'Fields: {nested_fields}')
 					# Fallback to basic dict if model creation fails
 					return dict
 			else:
