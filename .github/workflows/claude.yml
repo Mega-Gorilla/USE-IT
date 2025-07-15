@@ -23,6 +23,8 @@ jobs:
       pull-requests: read
       issues: read
       id-token: write
+    env:
+      IS_SANDBOX: 1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,12 +37,34 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_tools: |
-            Bash(pytest)
-            Bash(sed)
-            Bash(grep)
-            Bash(python)
-            Bash(uv)
+            Bash(uv:*)
+            Bash(uv run pytest:*)
+            Bash(uv run ruff:*)
+            Bash(uv run pyright:*)
+            Bash(uv run pre-commit:*)
+            Bash(sed:*)
+            Bash(rg:*)
+            Bash(jq:*)
+            Bash(find:*)
+            Bash(grep:*)
+            Bash(python:*)
+            Bash(chmod:*)
+            Bash(rm:*)
+            Bash(playwright:*)
+            Bash(uv run playwright:*)
             Bash(./bin/lint.sh)
             Bash(./bin/test.sh)
-            Edit
-            Replace
+            WebFetch(*)
+            WebSearch(*)
+            # Edit  # included by default
+            # Glob
+            # Grep
+            # LS
+            # MultiEdit
+            # NotebookEdit
+            # NotebookRead
+            # Read
+            # Task
+            # TodoWrite
+            # Write
+            # Replace
