@@ -101,8 +101,8 @@ class TestBrowserSessionReuse:
 				# Take screenshot after regeneration
 				screenshot_after = await session.take_screenshot()
 				assert screenshot_after is not None
-				assert len(screenshot_after) > 0 and len(screenshot_after) < 100, (
-					'expected white 1px screenshot of about:blank when browser is reset after disconnection'
+				assert len(screenshot_after) > 0 and len(screenshot_after) < 200, (
+					'expected white 4px screenshot of about:blank when browser is reset after disconnection'
 				)
 
 		finally:

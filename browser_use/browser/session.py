@@ -3562,12 +3562,12 @@ class BrowserSession(BaseModel):
 
 		if is_new_tab_page(page.url):
 			self.logger.warning(
-				f'▫️ Sending LLM 1px placeholder instead of real screenshot of: {_log_pretty_url(page.url)} (page empty)'
+				f'▫️ Sending LLM 4px placeholder instead of real screenshot of: {_log_pretty_url(page.url)} (page empty)'
 			)
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
-			# return a 1px*1px white png to avoid wasting tokens
-			return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
+			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was
+			return 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
