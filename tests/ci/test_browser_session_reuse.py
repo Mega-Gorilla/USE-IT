@@ -121,6 +121,7 @@ class TestBrowserSessionReuse:
 
 			# Take a screenshot to verify it works
 			screenshot1 = await session.take_screenshot()
+			assert screenshot1 is not None
 
 			# Store browser PID
 			initial_pid = session.browser_pid
@@ -145,6 +146,7 @@ class TestBrowserSessionReuse:
 				try:
 					screenshot2 = await session.take_screenshot()
 					# If it succeeded, the browser should have been regenerated
+					assert screenshot2 is not None
 				except Exception:
 					# If it failed, that's also OK - the browser state was reset
 					pass
@@ -162,6 +164,9 @@ class TestBrowserSessionReuse:
 
 			# Verify we can still use the browser after regeneration
 			await session.start()  # Ensure browser is started
+			screenshot3 = await session.take_screenshot()
+			assert screenshot3 is not None
+			assert len(screenshot3) > 0
 
 		finally:
 			await session.stop()

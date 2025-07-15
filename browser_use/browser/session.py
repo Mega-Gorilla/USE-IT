@@ -3562,14 +3562,14 @@ class BrowserSession(BaseModel):
 
 		if is_new_tab_page(page.url):
 			self.logger.warning(
-				f'▫️ Sending LLM no screenshot instead of real screenshot of: {_log_pretty_url(page.url)} (page empty)'
+				f'▫️ Sending LLM 4px placeholder instead of real screenshot of: {_log_pretty_url(page.url)} (page empty)'
 			)
-			# Not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
-			# Originally returned a 1x1 white PNG to avoid wasting tokens, but groq LLaMa models do not accept this
-			# So we return None instead, which the LLM can handle more reliably
-			# TODO: this should be decided on an LLM level - now take_screenshot doesnt give you the screenshot if the page is empty
-			# this might be weird behavior for the library overall
-			return None
+			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
+			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
+			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was not accepted by groq LLaMa models
+			return (
+				'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlmMEAQBq1Aqg7XL3KQAAAABJRU5ErkJggg=='
+			)
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:

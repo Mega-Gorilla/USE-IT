@@ -178,6 +178,8 @@ class TestBrowserOwnership:
 		# Try to use the copy - it should recover
 		await copied_session.start()  # Should reconnect
 		screenshot = await copied_session.take_screenshot()
+		assert screenshot is not None
+		assert len(screenshot) > 0
 
 		# Clean up
 		await original_session.kill()
