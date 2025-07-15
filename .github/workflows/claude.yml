@@ -78,6 +78,8 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          #model: "claude-3-5-sonnet-20241022"
+          model: "claude-opus-4-20250514"
           allowed_tools: |
             Bash(uv:*)
             Bash(uv run pytest:*)
