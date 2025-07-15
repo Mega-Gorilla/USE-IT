@@ -41,6 +41,8 @@ uv sync
 * ✅ **Type-safe coding**
   Use **Pydantic v2 models** for all internal action schemas, task inputs/outputs, and controller I/O. This ensures robust validation and LLM-call integrity.
 
+* ✅ **Pre-commit formatting**
+ALWAYS make sure to run pre-commit before making PRs.
 ---
 
 ## ⚙️ Adding New Actions
