@@ -3566,10 +3566,8 @@ class BrowserSession(BaseModel):
 			)
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
-			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was not accepted by groq LLaMa models
-			return (
-				'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlmMEAQBq1Aqg7XL3KQAAAABJRU5ErkJggg=='
-			)
+			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was
+			return 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
