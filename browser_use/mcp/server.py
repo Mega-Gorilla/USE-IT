@@ -45,16 +45,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import and configure logging to use stderr before other imports
 from browser_use.logging_config import setup_logging
 
-# Import browser_use modules
-from browser_use import ActionModel, Agent
-from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
-from browser_use.controller.service import Controller
-from browser_use.filesystem.file_system import FileSystem
-from browser_use.llm.openai.chat import ChatOpenAI
-
-logger = logging.getLogger(__name__)
-
 
 def _configure_mcp_server_logging():
 	"""Configure logging for MCP server mode - redirect all logs to stderr to prevent JSON RPC interference."""
@@ -79,6 +69,20 @@ def _configure_mcp_server_logging():
 		logger_obj.addHandler(stderr_handler)
 		logger_obj.setLevel(logging.ERROR)
 		logger_obj.propagate = False
+
+
+# Configure MCP server logging before any browser_use imports to capture early log lines
+_configure_mcp_server_logging()
+
+# Import browser_use modules
+from browser_use import ActionModel, Agent
+from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
+from browser_use.controller.service import Controller
+from browser_use.filesystem.file_system import FileSystem
+from browser_use.llm.openai.chat import ChatOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_all_loggers_use_stderr():
@@ -169,10 +173,7 @@ class BrowserUseServer:
 	"""MCP Server for browser-use capabilities."""
 
 	def __init__(self):
-		# Configure logging for MCP server mode (redirect to stderr to prevent JSON RPC interference)
-		_configure_mcp_server_logging()
-		
-		# Ensure all logging goes to stderr
+		# Ensure all logging goes to stderr (in case new loggers were created)
 		_ensure_all_loggers_use_stderr()
 
 		self.server = Server('browser-use')
