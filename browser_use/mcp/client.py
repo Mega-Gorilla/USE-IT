@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, ConfigDict
 
 from browser_use.agent.views import ActionResult
 from browser_use.controller.registry.service import Registry
@@ -263,11 +263,16 @@ class MCPClient:
 				# Convert JSON Schema type to Python type
 				param_type = self._json_schema_to_python_type(param_schema, f'{action_name}_{param_name}')
 
-				# Determine if field is required
+				# Determine if field is required and handle defaults
 				if param_name in required:
 					default = ...  # Required field
 				else:
-					default = param_schema.get('default', None)
+					# Optional field - make type optional and handle default
+					param_type = param_type | None
+					if 'default' in param_schema:
+						default = param_schema['default']
+					else:
+						default = None
 
 				# Add field with description if available
 				field_kwargs = {}
@@ -278,7 +283,11 @@ class MCPClient:
 
 		# Create Pydantic model for the tool parameters
 		if param_fields:
-			param_model = create_model(f'{action_name}_Params', __base__=BaseModel, **param_fields)
+			# Create a BaseModel class with proper configuration
+			class ConfiguredBaseModel(BaseModel):
+				model_config = ConfigDict(extra='forbid', validate_by_name=True, validate_by_alias=True)
+			
+			param_model = create_model(f'{action_name}_Params', __base__=ConfiguredBaseModel, **param_fields)
 		else:
 			# No parameters - create empty model
 			param_model = None
@@ -476,11 +485,16 @@ class MCPClient:
 					# Recursively process nested properties
 					prop_type = self._json_schema_to_python_type(prop_schema, f'{model_name}_{prop_name}')
 					
-					# Determine if field is required
+					# Determine if field is required and handle defaults
 					if prop_name in required_fields:
 						default = ...  # Required field
 					else:
-						default = prop_schema.get('default', None)
+						# Optional field - make type optional and handle default
+						prop_type = prop_type | None
+						if 'default' in prop_schema:
+							default = prop_schema['default']
+						else:
+							default = None
 					
 					# Add field with description if available
 					field_kwargs = {}
@@ -489,8 +503,18 @@ class MCPClient:
 					
 					nested_fields[prop_name] = (prop_type, Field(default, **field_kwargs))
 				
-				# Create and return nested pydantic model
-				return create_model(model_name, __base__=BaseModel, **nested_fields)
+				# Create a BaseModel class with proper configuration
+				class ConfiguredBaseModel(BaseModel):
+					model_config = ConfigDict(extra='forbid', validate_by_name=True, validate_by_alias=True)
+				
+				try:
+					# Create and return nested pydantic model
+					return create_model(model_name, __base__=ConfiguredBaseModel, **nested_fields)
+				except Exception as e:
+					logger.error(f"Failed to create nested model {model_name}: {e}")
+					logger.debug(f"Fields: {nested_fields}")
+					# Fallback to basic dict if model creation fails
+					return dict
 			else:
 				# Object without properties - just return dict
 				return dict
