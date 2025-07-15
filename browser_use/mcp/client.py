@@ -261,7 +261,7 @@ class MCPClient:
 
 			for param_name, param_schema in properties.items():
 				# Convert JSON Schema type to Python type
-				param_type = self._json_schema_to_python_type(param_schema)
+				param_type = self._json_schema_to_python_type(param_schema, f'{action_name}_{param_name}')
 
 				# Determine if field is required
 				if param_name in required:
@@ -438,11 +438,12 @@ class MCPClient:
 			# Direct result or unknown format
 			return str(result)
 
-	def _json_schema_to_python_type(self, schema: dict) -> Any:
+	def _json_schema_to_python_type(self, schema: dict, model_name: str = 'NestedModel') -> Any:
 		"""Convert JSON Schema type to Python type.
 
 		Args:
 			schema: JSON Schema definition
+			model_name: Name for nested models
 
 		Returns:
 			Python type corresponding to the schema
@@ -456,7 +457,6 @@ class MCPClient:
 			'integer': int,
 			'boolean': bool,
 			'array': list,
-			'object': dict,
 			'null': type(None),
 		}
 
@@ -464,7 +464,38 @@ class MCPClient:
 		if 'enum' in schema:
 			return str
 
-		# Get base type
+		# Handle objects with nested properties
+		if json_type == 'object':
+			properties = schema.get('properties', {})
+			if properties:
+				# Create nested pydantic model for objects with properties
+				nested_fields = {}
+				required_fields = set(schema.get('required', []))
+				
+				for prop_name, prop_schema in properties.items():
+					# Recursively process nested properties
+					prop_type = self._json_schema_to_python_type(prop_schema, f'{model_name}_{prop_name}')
+					
+					# Determine if field is required
+					if prop_name in required_fields:
+						default = ...  # Required field
+					else:
+						default = prop_schema.get('default', None)
+					
+					# Add field with description if available
+					field_kwargs = {}
+					if 'description' in prop_schema:
+						field_kwargs['description'] = prop_schema['description']
+					
+					nested_fields[prop_name] = (prop_type, Field(default, **field_kwargs))
+				
+				# Create and return nested pydantic model
+				return create_model(model_name, __base__=BaseModel, **nested_fields)
+			else:
+				# Object without properties - just return dict
+				return dict
+
+		# Get base type for non-object types
 		base_type = type_mapping.get(json_type, str)
 
 		# Handle arrays with specific item types
