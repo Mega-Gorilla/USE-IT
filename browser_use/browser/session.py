@@ -3228,7 +3228,7 @@ class BrowserSession(BaseModel):
 							if self._cached_browser_state_summary
 							else None,
 						),
-						timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
+						timeout=120.0,  # 45 second timeout for DOM processing - generous for complex pages
 					)
 
 					await self.inject_highlights(dom_service, dom_state.selector_map)
