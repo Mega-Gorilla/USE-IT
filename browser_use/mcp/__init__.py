@@ -13,5 +13,6 @@ def __getattr__(name):
 	"""Lazy import to avoid importing server module when only client is needed."""
 	if name == 'BrowserUseServer':
 		from browser_use.mcp.server import BrowserUseServer
+
 		return BrowserUseServer
 	raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
