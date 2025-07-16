@@ -559,7 +559,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
-		default=False,
+		default=True,
 		description="Enable default extensions for ad blocking (uBlock Origin) and cookie handling (I don't care about cookies). Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
