@@ -39,34 +39,40 @@ try:
 except ImportError:
 	PSUTIL_AVAILABLE = False
 
-# Set environment to suppress browser-use logging during import
-os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'error'
-os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'  # Prevent automatic logging setup
-
 # Add browser-use to path if running from source
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import and configure logging to use stderr before other imports
 from browser_use.logging_config import setup_logging
 
-# Configure logging to stderr for MCP mode
-setup_logging(stream=sys.stderr, log_level='error', force_setup=True)
 
-# Also configure the root logger and all existing loggers to use stderr
-logging.root.handlers = []
-stderr_handler = logging.StreamHandler(sys.stderr)
-stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logging.root.addHandler(stderr_handler)
-logging.root.setLevel(logging.ERROR)
+def _configure_mcp_server_logging():
+	"""Configure logging for MCP server mode - redirect all logs to stderr to prevent JSON RPC interference."""
+	# Set environment to suppress browser-use logging during server mode
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'error'
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'  # Prevent automatic logging setup
 
-# Configure all existing loggers to use stderr
-for name in list(logging.root.manager.loggerDict.keys()):
-	logger = logging.getLogger(name)
-	logger.handlers = []
-	logger.addHandler(stderr_handler)
-	logger.setLevel(logging.ERROR)
-	logger.propagate = False
+	# Configure logging to stderr for MCP mode
+	setup_logging(stream=sys.stderr, log_level='error', force_setup=True)
 
+	# Also configure the root logger and all existing loggers to use stderr
+	logging.root.handlers = []
+	stderr_handler = logging.StreamHandler(sys.stderr)
+	stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+	logging.root.addHandler(stderr_handler)
+	logging.root.setLevel(logging.ERROR)
+
+	# Configure all existing loggers to use stderr
+	for name in list(logging.root.manager.loggerDict.keys()):
+		logger_obj = logging.getLogger(name)
+		logger_obj.handlers = []
+		logger_obj.addHandler(stderr_handler)
+		logger_obj.setLevel(logging.ERROR)
+		logger_obj.propagate = False
+
+
+# Configure MCP server logging before any browser_use imports to capture early log lines
+_configure_mcp_server_logging()
 
 # Import browser_use modules
 from browser_use import ActionModel, Agent
@@ -167,7 +173,7 @@ class BrowserUseServer:
 	"""MCP Server for browser-use capabilities."""
 
 	def __init__(self):
-		# Ensure all logging goes to stderr
+		# Ensure all logging goes to stderr (in case new loggers were created)
 		_ensure_all_loggers_use_stderr()
 
 		self.server = Server('browser-use')
