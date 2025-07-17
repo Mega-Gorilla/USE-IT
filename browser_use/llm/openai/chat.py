@@ -28,7 +28,7 @@ class ChatOpenAI(BaseChatModel):
 	A wrapper around AsyncOpenAI that implements the BaseLLM protocol.
 
 	This class accepts all AsyncOpenAI parameters while adding model
-	and temperature parameters for the LLM interface.
+	and temperature parameters for the LLM interface (if temperature it not `None`).
 	"""
 
 	# Model configuration
@@ -149,12 +149,14 @@ class ChatOpenAI(BaseChatModel):
 					'reasoning_effort': self.reasoning_effort,
 				}
 
+			if self.temperature is not None:
+				reasoning_effort_dict['temperature'] = self.temperature
+
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
-					temperature=self.temperature,
 					**reasoning_effort_dict,
 				)
 
@@ -175,7 +177,6 @@ class ChatOpenAI(BaseChatModel):
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
-					temperature=self.temperature,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
 					**reasoning_effort_dict,
 				)
