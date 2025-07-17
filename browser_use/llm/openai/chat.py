@@ -145,9 +145,7 @@ class ChatOpenAI(BaseChatModel):
 		try:
 			reasoning_effort_dict: dict = {}
 			if self.model in ReasoningModels:
-				reasoning_effort_dict = {
-					'reasoning_effort': self.reasoning_effort,
-				}
+				reasoning_effort_dict['reasoning_effort'] = self.reasoning_effort
 
 			if self.temperature is not None:
 				reasoning_effort_dict['temperature'] = self.temperature
