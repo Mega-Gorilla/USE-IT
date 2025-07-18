@@ -744,8 +744,9 @@ Explain the content of the page and that the requested information is not availa
 		async def get_dropdown_options(index: int, browser_session: BrowserSession) -> ActionResult:
 			"""Get all options from a native dropdown"""
 			page = await browser_session.get_current_page()
-			selector_map = await browser_session.get_selector_map()
-			dom_element = selector_map[index]
+			dom_element = await browser_session.get_dom_element_by_index(index)
+			if dom_element is None:
+				raise Exception(f'Element index {index} does not exist - retry or use alternative actions')
 
 			try:
 				# Frame-aware approach since we know it works
@@ -825,8 +826,9 @@ Explain the content of the page and that the requested information is not availa
 		) -> ActionResult:
 			"""Select dropdown option by the text of the option you want to select"""
 			page = await browser_session.get_current_page()
-			selector_map = await browser_session.get_selector_map()
-			dom_element = selector_map[index]
+			dom_element = await browser_session.get_dom_element_by_index(index)
+			if dom_element is None:
+				raise Exception(f'Element index {index} does not exist - retry or use alternative actions')
 
 			# Validate that we're working with a select element
 			if dom_element.tag_name != 'select':
