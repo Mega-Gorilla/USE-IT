@@ -3,11 +3,9 @@ Cloud sync service for sending events to the Browser Use cloud.
 """
 
 import asyncio
-import json
 import logging
 import shutil
 
-import anyio
 import httpx
 from bubus import BaseEvent
 
