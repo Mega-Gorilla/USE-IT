@@ -2808,12 +2808,137 @@ class BrowserSession(BaseModel):
 		if elapsed > 1:
 			self.logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='wait_for_page_and_frames_load')
-	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
+	async def _wait_for_dom_stability(self, max_wait: float = 3.0, stability_time: float = 0.5):
 		"""
-		Ensures page is fully loaded before continuing.
-		Waits for either network to be idle or minimum WAIT_TIME, whichever is longer.
+		Wait for DOM mutations to stop, indicating the page has stabilized.
+
+		This prevents race conditions where:
+		- User types in input → network idle → but dropdown still loading via JS
+		- Click happens → page updates → but animations/transitions still running
+		- Form submission → success response → but redirect/updates still pending
+
+		Parameters:
+		-----------
+		max_wait: float
+			Maximum time to wait for stability (prevents infinite waiting)
+		stability_time: float
+			How long DOM must be stable before considering it "done"
+		"""
+		page = await self.get_current_page()
+
+		# JavaScript to monitor DOM mutations
+		monitor_script = """
+		() => {
+			return new Promise((resolve) => {
+				let mutationCount = 0;
+				let lastMutationTime = Date.now();
+				let stabilityTimeout;
+				const maxWaitMs = arguments[0] * 1000;
+				const stabilityMs = arguments[1] * 1000;
+				
+				// Create mutation observer
+				const observer = new MutationObserver((mutations) => {
+					// Filter out irrelevant mutations (like style changes from highlights)
+					const relevantMutations = mutations.filter(mutation => {
+						// Ignore changes to highlighting-related attributes
+						if (mutation.type === 'attributes') {
+							const attrName = mutation.attributeName;
+							if (attrName && (
+								attrName.includes('highlight') ||
+								attrName.includes('border') ||
+								attrName.includes('outline') ||
+								attrName === 'style' && mutation.target.style.outline
+							)) {
+								return false;
+							}
+						}
+						return true;
+					});
+					
+					if (relevantMutations.length > 0) {
+						mutationCount += relevantMutations.length;
+						lastMutationTime = Date.now();
+						
+						// Clear existing stability timeout
+						if (stabilityTimeout) {
+							clearTimeout(stabilityTimeout);
+						}
+						
+						// Set new stability timeout
+						stabilityTimeout = setTimeout(() => {
+							observer.disconnect();
+							resolve({
+								stable: true,
+								mutationCount,
+								waitTime: Date.now() - lastMutationTime
+							});
+						}, stabilityMs);
+					}
+				});
+				
+				// Start observing
+				observer.observe(document.body, {
+					childList: true,
+					subtree: true,
+					attributes: true,
+					attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-expanded']
+				});
+				
+				// Max wait timeout
+				setTimeout(() => {
+					observer.disconnect();
+					if (stabilityTimeout) clearTimeout(stabilityTimeout);
+					resolve({
+						stable: false,
+						mutationCount,
+						waitTime: maxWaitMs,
+						timeout: true
+					});
+				}, maxWaitMs);
+				
+				// Initial stability timeout (in case DOM is already stable)
+				stabilityTimeout = setTimeout(() => {
+					observer.disconnect();
+					resolve({
+						stable: true,
+						mutationCount: 0,
+						waitTime: stabilityMs,
+						initiallyStable: true
+					});
+				}, stabilityMs);
+			});
+		}
+		"""
+
+		try:
+			start_time = time.time()
+			result = await page.evaluate(monitor_script, max_wait, stability_time)
+
+			elapsed = time.time() - start_time
+			if result.get('stable'):
+				if result.get('initiallyStable'):
+					self.logger.debug('🎯 DOM was already stable')
+				else:
+					self.logger.debug(f'🎯 DOM stabilized after {elapsed:.2f}s ({result.get("mutationCount", 0)} mutations)')
+			else:
+				self.logger.debug(f'⏰ DOM stability timeout after {elapsed:.2f}s ({result.get("mutationCount", 0)} mutations)')
+
+		except Exception as e:
+			self.logger.debug(f'🔍 DOM stability check failed: {type(e).__name__}: {e}')
+
+	@observe_debug(ignore_input=True, ignore_output=True, name='wait_for_page_and_frames_load')
+	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None, wait_for_dom_stability: bool = True):
+		"""
+		Ensures page is fully loaded and stable before continuing.
+		Waits for network idle, DOM stability, and minimum WAIT_TIME.
 		Also checks if the loaded URL is allowed.
+
+		Parameters:
+		-----------
+		timeout_overwrite: float | None
+			Override the minimum wait time
+		wait_for_dom_stability: bool
+			If True, also wait for DOM mutations to stop (prevents race conditions with dropdowns, etc.)
 		"""
 		# Start timing
 		start_time = time.time()
@@ -2829,6 +2954,10 @@ class BrowserSession(BaseModel):
 
 		try:
 			await self._wait_for_stable_network()
+
+			# Wait for DOM stability if requested (prevents race conditions with JS-driven changes)
+			if wait_for_dom_stability:
+				await self._wait_for_dom_stability()
 
 			# Check if the loaded URL is allowed
 			await self._check_and_handle_navigation(page)
@@ -3496,6 +3625,7 @@ class BrowserSession(BaseModel):
 				'Browser is unable to load any new about:blank pages (something is very wrong or browser is extremely overloaded)'
 			)
 
+	@observe_debug(ignore_input=True, name='recover_unresponsive_page')
 	async def _recover_unresponsive_page(self, calling_method: str, timeout_ms: int | None = None) -> None:
 		"""Recover from an unresponsive page by closing and reopening it."""
 		self.logger.warning(f'⚠️ Page JS engine became unresponsive in {calling_method}(), attempting recovery...')
@@ -4507,10 +4637,10 @@ class BrowserSession(BaseModel):
 			If True, include screenshot in the state summary. Set to False to improve performance
 			when screenshots are not needed (e.g., in multi_act element validation).
 		"""
-		await self._wait_for_page_and_frames_load()
 
 		# Try 1: Full state summary (current implementation) - like main branch
 		try:
+			await self._wait_for_page_and_frames_load()
 			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
 		except Exception as e:
 			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
