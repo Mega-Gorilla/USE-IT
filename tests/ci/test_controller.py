@@ -288,8 +288,9 @@ class TestControllerIntegration:
 			click_element_by_index: ClickElementAction | None = None
 
 		# This should fail since the element doesn't exist
-		result = await controller.act(ClickActionModel(**invalid_action), browser_session)
-		assert result.success is False
+		result: ActionResult = await controller.act(ClickActionModel(**invalid_action), browser_session)
+
+		assert result.error is not None
 
 	async def test_wait_action(self, controller, browser_session):
 		"""Test that the wait action correctly waits for the specified duration."""
