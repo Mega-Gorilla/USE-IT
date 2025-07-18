@@ -2808,120 +2808,53 @@ class BrowserSession(BaseModel):
 		if elapsed > 1:
 			self.logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
-	async def _wait_for_dom_stability(self, max_wait: float = 3.0, stability_time: float = 0.5):
+	async def _wait_for_dom_stability(self, max_wait: float = 2.0, stability_checks: int = 3):
 		"""
-		Wait for DOM mutations to stop, indicating the page has stabilized.
+		Wait for DOM to stabilize by checking element counts remain constant.
 
 		This prevents race conditions where:
-		- User types in input → network idle → but dropdown still loading via JS
-		- Click happens → page updates → but animations/transitions still running
-		- Form submission → success response → but redirect/updates still pending
+		- User types in input → dropdown appears after state capture
+		- Click happens → content updates after state capture
+		- Form submission → UI changes after state capture
 
 		Parameters:
 		-----------
 		max_wait: float
-			Maximum time to wait for stability (prevents infinite waiting)
-		stability_time: float
-			How long DOM must be stable before considering it "done"
+			Maximum time to wait for stability
+		stability_checks: int
+			Number of consistent checks needed to consider DOM stable
 		"""
 		page = await self.get_current_page()
 
-		# JavaScript to monitor DOM mutations
-		monitor_script = """
-		() => {
-			return new Promise((resolve) => {
-				let mutationCount = 0;
-				let lastMutationTime = Date.now();
-				let stabilityTimeout;
-				const maxWaitMs = arguments[0] * 1000;
-				const stabilityMs = arguments[1] * 1000;
-				
-				// Create mutation observer
-				const observer = new MutationObserver((mutations) => {
-					// Filter out irrelevant mutations (like style changes from highlights)
-					const relevantMutations = mutations.filter(mutation => {
-						// Ignore changes to highlighting-related attributes
-						if (mutation.type === 'attributes') {
-							const attrName = mutation.attributeName;
-							if (attrName && (
-								attrName.includes('highlight') ||
-								attrName.includes('border') ||
-								attrName.includes('outline') ||
-								attrName === 'style' && mutation.target.style.outline
-							)) {
-								return false;
-							}
-						}
-						return true;
-					});
-					
-					if (relevantMutations.length > 0) {
-						mutationCount += relevantMutations.length;
-						lastMutationTime = Date.now();
-						
-						// Clear existing stability timeout
-						if (stabilityTimeout) {
-							clearTimeout(stabilityTimeout);
-						}
-						
-						// Set new stability timeout
-						stabilityTimeout = setTimeout(() => {
-							observer.disconnect();
-							resolve({
-								stable: true,
-								mutationCount,
-								waitTime: Date.now() - lastMutationTime
-							});
-						}, stabilityMs);
-					}
-				});
-				
-				// Start observing
-				observer.observe(document.body, {
-					childList: true,
-					subtree: true,
-					attributes: true,
-					attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-expanded']
-				});
-				
-				// Max wait timeout
-				setTimeout(() => {
-					observer.disconnect();
-					if (stabilityTimeout) clearTimeout(stabilityTimeout);
-					resolve({
-						stable: false,
-						mutationCount,
-						waitTime: maxWaitMs,
-						timeout: true
-					});
-				}, maxWaitMs);
-				
-				// Initial stability timeout (in case DOM is already stable)
-				stabilityTimeout = setTimeout(() => {
-					observer.disconnect();
-					resolve({
-						stable: true,
-						mutationCount: 0,
-						waitTime: stabilityMs,
-						initiallyStable: true
-					});
-				}, stabilityMs);
-			});
-		}
-		"""
-
 		try:
 			start_time = time.time()
-			result = await page.evaluate(monitor_script, max_wait, stability_time)
+			check_interval = 0.2  # Check every 200ms
+			consistent_checks = 0
+			last_element_count = 0
+
+			while time.time() - start_time < max_wait:
+				try:
+					# Get current element count as a simple stability metric
+					current_count = await page.evaluate("() => document.querySelectorAll('*').length")
+
+					if current_count == last_element_count:
+						consistent_checks += 1
+						if consistent_checks >= stability_checks:
+							elapsed = time.time() - start_time
+							self.logger.debug(f'🎯 DOM stabilized after {elapsed:.2f}s (element count: {current_count})')
+							return
+					else:
+						consistent_checks = 0
+						last_element_count = current_count
+
+					await asyncio.sleep(check_interval)
+
+				except Exception:
+					# If page becomes inaccessible, consider it stable
+					break
 
 			elapsed = time.time() - start_time
-			if result.get('stable'):
-				if result.get('initiallyStable'):
-					self.logger.debug('🎯 DOM was already stable')
-				else:
-					self.logger.debug(f'🎯 DOM stabilized after {elapsed:.2f}s ({result.get("mutationCount", 0)} mutations)')
-			else:
-				self.logger.debug(f'⏰ DOM stability timeout after {elapsed:.2f}s ({result.get("mutationCount", 0)} mutations)')
+			self.logger.debug(f'⏰ DOM stability timeout after {elapsed:.2f}s')
 
 		except Exception as e:
 			self.logger.debug(f'🔍 DOM stability check failed: {type(e).__name__}: {e}')
@@ -2938,7 +2871,7 @@ class BrowserSession(BaseModel):
 		timeout_overwrite: float | None
 			Override the minimum wait time
 		wait_for_dom_stability: bool
-			If True, also wait for DOM mutations to stop (prevents race conditions with dropdowns, etc.)
+			If True, wait for DOM mutations to stop (prevents race conditions with dropdowns, etc.)
 		"""
 		# Start timing
 		start_time = time.time()
