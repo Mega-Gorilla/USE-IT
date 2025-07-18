@@ -837,6 +837,7 @@ class BrowserSession(BaseModel):
 
 		atexit.register(shudown_playwright)
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='setup_browser_via_passed_objects')
 	async def setup_browser_via_passed_objects(self) -> None:
 		"""Override to customize the set up of the connection to an existing browser"""
 
