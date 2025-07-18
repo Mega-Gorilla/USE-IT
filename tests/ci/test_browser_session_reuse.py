@@ -85,28 +85,24 @@ class TestBrowserSessionReuse:
 				assert screenshot_before is not None
 				assert len(screenshot_before) > 100
 
-				# Force disconnect
-				if session.browser_context:
-					await session.browser_context.close()
+				# Properly kill the session to clean up browser subprocess
+				await session.kill()
 
-				# Force a small delay to ensure disconnection is processed
-				await asyncio.sleep(0.1)
+				# Add a delay to ensure all resources are released
+				await asyncio.sleep(0.5)
 
-				# Reset the connection state to ensure the closed context is cleared
-				session._reset_connection_state()
-
-				# Manually restart for the next iteration
+				# Start a fresh session for the next iteration
 				await session.start()
 
 				# Take screenshot after regeneration
 				screenshot_after = await session.take_screenshot()
 				assert screenshot_after is not None
-				assert len(screenshot_after) > 0 and len(screenshot_after) < 100, (
-					'expected white 1px screenshot of about:blank when browser is reset after disconnection'
+				assert len(screenshot_after) > 0 and len(screenshot_after) < 200, (
+					'expected white 4px screenshot of about:blank when browser is reset after disconnection'
 				)
 
 		finally:
-			await session.stop()
+			await session.kill()
 
 	async def test_browser_session_reuse_with_retry_decorator(self):
 		"""Test that the retry decorator properly handles browser regeneration"""

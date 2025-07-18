@@ -85,19 +85,31 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	if logger is None:
 		logger = logging.getLogger(__name__)
 
-	if 'success' in response.current_state.evaluation_previous_goal.lower():
-		emoji = '👍'
-	elif 'failure' in response.current_state.evaluation_previous_goal.lower():
-		emoji = '⚠️'
-	else:
-		emoji = '❔'
-
 	# Only log thinking if it's present
 	if response.current_state.thinking:
 		logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
-	logger.info(f'{emoji} Eval: {response.current_state.evaluation_previous_goal}')
-	logger.info(f'🧠 Memory: {response.current_state.memory}')
-	logger.info(f'🎯 Next goal: {response.current_state.next_goal}\n')
+
+	# Only log evaluation if it's not empty
+	eval_goal = response.current_state.evaluation_previous_goal
+	if eval_goal:
+		if 'success' in eval_goal.lower():
+			emoji = '👍'
+		elif 'failure' in eval_goal.lower():
+			emoji = '⚠️'
+		else:
+			emoji = '❔'
+		logger.info(f'{emoji} Eval: {eval_goal}')
+
+	# Always log memory if present
+	if response.current_state.memory:
+		logger.info(f'🧠 Memory: {response.current_state.memory}')
+
+	# Only log next goal if it's not empty
+	next_goal = response.current_state.next_goal
+	if next_goal:
+		logger.info(f'🎯 Next goal: {next_goal}\n')
+	else:
+		logger.info('')  # Add empty line for spacing
 
 
 Context = TypeVar('Context')
@@ -154,6 +166,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_attributes: list[str] = DEFAULT_INCLUDE_ATTRIBUTES,
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
+		flash_mode: bool = False,
 		max_history_items: int = 40,
 		images_per_step: int = 1,
 		page_extraction_llm: BaseChatModel | None = None,
@@ -236,6 +249,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			include_attributes=include_attributes,
 			max_actions_per_step=max_actions_per_step,
 			use_thinking=use_thinking,
+			flash_mode=flash_mode,
 			max_history_items=max_history_items,
 			images_per_step=images_per_step,
 			page_extraction_llm=page_extraction_llm,
@@ -302,6 +316,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				override_system_message=override_system_message,
 				extend_system_message=extend_system_message,
 				use_thinking=self.settings.use_thinking,
+				flash_mode=self.settings.flash_mode,
 			).get_system_message(),
 			file_system=self.file_system,
 			state=self.state.message_manager_state,
@@ -603,14 +618,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Initially only include actions with no filters
 		self.ActionModel = self.controller.registry.create_action_model()
 		# Create output model with the dynamic actions
-		if self.settings.use_thinking:
+		if self.settings.flash_mode:
+			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
+		elif self.settings.use_thinking:
 			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
 		else:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
 		# used to force the done action when max_steps is reached
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'])
-		if self.settings.use_thinking:
+		if self.settings.flash_mode:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
+		elif self.settings.use_thinking:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 		else:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
@@ -633,7 +652,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
 
-	@observe_debug(name='get_browser_state_with_recovery', ignore_output=True)
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_with_recovery')
 	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
 		"""Get browser state with multiple fallback strategies for error recovery"""
 
@@ -1346,7 +1365,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
-	@observe_debug()
+	@observe_debug(ignore_input=True, ignore_output=True)
 	@time_execution_async('--multi_act')
 	async def multi_act(
 		self,
@@ -1676,14 +1695,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Create new action model with current page's filtered actions
 		self.ActionModel = self.controller.registry.create_action_model(page=page)
 		# Update output model with the new actions
-		if self.settings.use_thinking:
+		if self.settings.flash_mode:
+			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
+		elif self.settings.use_thinking:
 			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
 		else:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
 		# Update done action model too
 		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'], page=page)
-		if self.settings.use_thinking:
+		if self.settings.flash_mode:
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
+		elif self.settings.use_thinking:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 		else:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)

@@ -43,11 +43,19 @@ class HistoryItem(BaseModel):
 {self.system_message}
 </sys>"""
 		else:
-			content_parts = [
-				f'Evaluation of Previous Step: {self.evaluation_previous_goal}',
-				f'Memory: {self.memory}',
-				f'Next Goal: {self.next_goal}',
-			]
+			content_parts = []
+
+			# Only include evaluation_previous_goal if it's not None/empty
+			if self.evaluation_previous_goal:
+				content_parts.append(f'Evaluation of Previous Step: {self.evaluation_previous_goal}')
+
+			# Always include memory
+			if self.memory:
+				content_parts.append(f'Memory: {self.memory}')
+
+			# Only include next_goal if it's not None/empty
+			if self.next_goal:
+				content_parts.append(f'Next Goal: {self.next_goal}')
 
 			if self.action_results:
 				content_parts.append(self.action_results)
