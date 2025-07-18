@@ -384,10 +384,13 @@ class BrowserSession(BaseModel):
 			# Ensure we have a context
 			assert self.browser_context, f'Failed to create BrowserContext for browser={self.browser}'
 
-			# Configure browser
-			await self._setup_viewports()
-			await self._setup_current_page_change_listeners()
-			await self._start_context_tracing()
+			# Configure browser - run some setup tasks in parallel for speed
+			await asyncio.gather(
+				self._setup_viewports(),
+				self._setup_current_page_change_listeners(),
+				self._start_context_tracing(),
+				return_exceptions=True,
+			)
 
 			self.initialized = True
 			return self
@@ -2810,6 +2813,13 @@ class BrowserSession(BaseModel):
 
 		# Wait for page load
 		page = await self.get_current_page()
+
+		# Skip network waiting for new tab pages (about:blank, chrome://new-tab-page, etc.)
+		# These pages load instantly and don't need network idle time
+		if is_new_tab_page(page.url):
+			self.logger.debug(f'⚡ Skipping page load wait for new tab page: {page.url}')
+			return
+
 		try:
 			await self._wait_for_stable_network()
 
