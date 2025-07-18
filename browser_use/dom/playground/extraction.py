@@ -24,9 +24,10 @@ async def test_focus_vs_all_elements():
 		browser_profile=BrowserProfile(
 			# executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 			window_size=ViewportSize(width=1100, height=1000),
-			disable_security=True,
+			disable_security=False,
 			wait_for_network_idle_page_load_time=1,
 			headless=False,
+			args=['--incognito'],
 		),
 	)
 

@@ -215,12 +215,16 @@ class EnhancedDOMTreeNode:
 		segments = []
 		current_element = self
 
-		while current_element and current_element.node_type == NodeType.ELEMENT_NODE:
-			# Stop if we hit a shadow root or iframe
-			if current_element.parent_node and (
-				current_element.parent_node.shadow_root_type is not None
-				or current_element.parent_node.node_name.lower() == 'iframe'
-			):
+		while current_element and (
+			current_element.node_type == NodeType.ELEMENT_NODE or current_element.node_type == NodeType.DOCUMENT_FRAGMENT_NODE
+		):
+			# just pass through shadow roots
+			if current_element.node_type == NodeType.DOCUMENT_FRAGMENT_NODE:
+				current_element = current_element.parent_node
+				continue
+
+			# stop ONLY if we hit iframe
+			if current_element.parent_node and current_element.parent_node.node_name.lower() == 'iframe':
 				break
 
 			position = self._get_element_position(current_element)

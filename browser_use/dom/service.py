@@ -249,7 +249,10 @@ class DomService:
 			if 'shadowRoots' in node and node['shadowRoots']:
 				dom_tree_node.shadow_roots = []
 				for shadow_root in node['shadowRoots']:
-					dom_tree_node.shadow_roots.append(_construct_enhanced_node(shadow_root))
+					shadow_root_node = _construct_enhanced_node(shadow_root)
+					# forcefully set the parent node to the shadow root node (helps traverse the tree)
+					shadow_root_node.parent_node = dom_tree_node
+					dom_tree_node.shadow_roots.append(shadow_root_node)
 
 			if 'children' in node and node['children']:
 				dom_tree_node.children_nodes = []
