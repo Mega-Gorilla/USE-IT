@@ -152,23 +152,8 @@ class Controller(Generic[Context]):
 
 		@self.registry.action('Click element by index', param_model=ClickElementAction)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
-			# Browser is now a BrowserSession itself
-
-			# Check if element exists in current selector map
-			selector_map = await browser_session.get_selector_map()
-			if params.index not in selector_map:
-				# Force a state refresh in case the cache is stale
-				logger.info(f'Element with index {params.index} not found in selector map, refreshing state...')
-				await browser_session.get_state_summary(
-					cache_clickable_elements_hashes=True
-				)  # This will refresh the cached state
-				selector_map = await browser_session.get_selector_map()
-
-				if params.index not in selector_map:
-					# Return informative message with the new state instead of error
-					max_index = max(selector_map.keys()) if selector_map else -1
-					msg = f'Element with index {params.index} does not exist. Page has {len(selector_map)} interactive elements (indices 0-{max_index}). State has been refreshed - please use the updated element indices or scroll to see more elements'
-					return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
+			if params.index not in await browser_session.get_selector_map():
+				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
 			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
