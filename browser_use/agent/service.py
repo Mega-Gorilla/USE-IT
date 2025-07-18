@@ -11,6 +11,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Generic, TypeVar
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -438,8 +439,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
-		wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}', wal_path=wal_path)
+		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
+		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
 
 		# Cloud sync service
 		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
@@ -1116,6 +1117,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
+				cdp_url=urlparse(self.browser_session.cdp_url).hostname
+				if self.browser_session and self.browser_session.cdp_url
+				else None,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
