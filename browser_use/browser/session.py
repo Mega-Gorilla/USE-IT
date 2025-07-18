@@ -2062,6 +2062,7 @@ class BrowserSession(BaseModel):
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--click_element_node')
+	@observe_debug(ignore_input=True, name='click_element_node')
 	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
@@ -3842,6 +3843,7 @@ class BrowserSession(BaseModel):
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--get_locate_element')
+	@observe_debug(ignore_input=True, name='get_locate_element')
 	async def get_locate_element(self, element: DOMElementNode) -> ElementHandle | None:
 		page = await self.get_current_page()
 		current_frame = page
