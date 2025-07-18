@@ -1361,52 +1361,63 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		results: list[ActionResult] = []
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		cached_selector_map = await self.browser_session.get_selector_map()
-		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
-
-		for i, action in enumerate(actions):
-			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
-			if i > 0 and action.model_dump(exclude_unset=True).get('done') is not None:
-				msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
-				logger.info(msg)
+		cached_selector_map = {}
+		cached_path_hashes = set()
+		# check all actions if any has index, if so, get the selector map
+		for action in actions:
+			if action.get_index() is not None:
+				cached_selector_map = await self.browser_session.get_selector_map()
+				cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 				break
 
-			if action.get_index() is not None and i != 0:
-				new_browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
-					cache_clickable_elements_hashes=False, include_screenshot=False
-				)
-				new_selector_map = new_browser_state_summary.selector_map
-
-				# Detect index change after previous action
-				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
-				orig_target_hash = orig_target.hash.branch_path_hash if orig_target else None
-				new_target = new_selector_map.get(action.get_index())  # type: ignore
-				new_target_hash = new_target.hash.branch_path_hash if new_target else None
-				if orig_target_hash != new_target_hash:
-					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
+		# loop over actions and execute them
+		for i, action in enumerate(actions):
+			if i > 0:
+				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
+				if action.model_dump(exclude_unset=True).get('done') is not None:
+					msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
 					logger.info(msg)
-					results.append(
-						ActionResult(
-							extracted_content=msg,
-							include_in_memory=True,
-							long_term_memory=msg,
-						)
-					)
 					break
 
-				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
-					logger.info(msg)
-					results.append(
-						ActionResult(
-							extracted_content=msg,
-							include_in_memory=True,
-							long_term_memory=msg,
-						)
+				if action.get_index() is not None:
+					new_browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
+						cache_clickable_elements_hashes=False, include_screenshot=False
 					)
-					break
+					new_selector_map = new_browser_state_summary.selector_map
+
+					# Detect index change after previous action
+					orig_target = cached_selector_map.get(action.get_index())  # type: ignore
+					orig_target_hash = orig_target.hash.branch_path_hash if orig_target else None
+					new_target = new_selector_map.get(action.get_index())  # type: ignore
+					new_target_hash = new_target.hash.branch_path_hash if new_target else None
+					if orig_target_hash != new_target_hash:
+						msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
+						logger.info(msg)
+						results.append(
+							ActionResult(
+								extracted_content=msg,
+								include_in_memory=True,
+								long_term_memory=msg,
+							)
+						)
+						break
+
+					new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
+					if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
+						# next action requires index but there are new elements on the page
+						msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
+						logger.info(msg)
+						results.append(
+							ActionResult(
+								extracted_content=msg,
+								include_in_memory=True,
+								long_term_memory=msg,
+							)
+						)
+						break
+
+				# wait between actions
+				await asyncio.sleep(self.browser_profile.wait_between_actions)
 
 			try:
 				await self._raise_if_stopped_or_paused()
