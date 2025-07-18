@@ -2022,7 +2022,6 @@ class BrowserSession(BaseModel):
 		await page.wait_for_selector(selector, state='visible', timeout=timeout)
 
 	@observe_debug(name='remove_highlights', ignore_output=True, ignore_input=True)
-	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--remove_highlights')
 	@retry(timeout=2, retries=0)
 	async def remove_highlights(self):
@@ -3085,7 +3084,7 @@ class BrowserSession(BaseModel):
 			If True, include screenshot in the state summary. Set to False to improve performance
 			when screenshots are not needed (e.g., in multi_act element validation).
 		"""
-		await self._wait_for_page_and_frames_load()
+
 		updated_state = await self._get_updated_state(include_screenshot=include_screenshot)
 
 		# Find out which elements are new
@@ -3166,14 +3165,6 @@ class BrowserSession(BaseModel):
 
 		# Check if current page is still valid, if not switch to another available page
 		page = await self.get_current_page()
-
-		try:
-			# Test if page is still accessible
-			# NOTE: This also happens on invalid urls like www.sadfdsafdssdafd.com
-			await asyncio.wait_for(page.evaluate('1'), timeout=2.5)
-		except Exception as e:
-			self.logger.debug(f'👋 Current page is not accessible: {type(e).__name__}: {e}')
-			raise BrowserError('Page is not accessible')
 
 		try:
 			self.logger.debug('🧹 Removing highlights...')
@@ -4493,38 +4484,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.debug(f'❌ Failed to show 📀 DVD loading animation: {type(e).__name__}: {e}')
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_state_summary_with_fallback')
-	@require_healthy_browser(usable_page=True, reopen_page=True)
-	@time_execution_async('--get_state_summary_with_fallback')
-	async def get_state_summary_with_fallback(
-		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True
-	) -> BrowserStateSummary:
-		"""Get browser state with fallback to minimal state on errors
-
-		This method first tries to get a full state summary. If that fails,
-		it falls back to a minimal state summary to allow basic navigation.
-
-		Parameters:
-		-----------
-		cache_clickable_elements_hashes: bool
-			If True, cache the clickable elements hashes for the current state.
-		include_screenshot: bool
-			If True, include screenshot in the state summary.
-
-		Returns:
-		--------
-		BrowserStateSummary: Either full state or minimal fallback state
-		"""
-		# Try 1: Full state summary (current implementation)
-		try:
-			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
-		except Exception as e:
-			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
-			self.logger.warning('🔄 Falling back to minimal state summary')
-
-		# Try 2: Minimal state summary as fallback
-		return await self.get_minimal_state_summary()
-
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_with_recovery')
 	async def get_browser_state_with_recovery(
 		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True
@@ -4539,6 +4498,7 @@ class BrowserSession(BaseModel):
 			If True, include screenshot in the state summary. Set to False to improve performance
 			when screenshots are not needed (e.g., in multi_act element validation).
 		"""
+		await self._wait_for_page_and_frames_load()
 
 		# Try 1: Full state summary (current implementation) - like main branch
 		try:
