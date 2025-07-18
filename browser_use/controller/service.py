@@ -152,15 +152,15 @@ class Controller(Generic[Context]):
 
 		@self.registry.action('Click element by index', param_model=ClickElementAction)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
-			if params.index not in await browser_session.get_selector_map():
+			element_node = await browser_session.get_dom_element_by_index(params.index)
+			if element_node is None:
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = await browser_session.get_dom_element_by_index(params.index)
 			initial_pages = len(browser_session.tabs)
 
 			# if element has file uploader then dont click
 			# Check if element is actually a file input (not just contains file-related keywords)
-			if element_node is not None and browser_session.is_file_input(element_node):
+			if browser_session.is_file_input(element_node):
 				msg = f'Index {params.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files '
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True, success=False, long_term_memory=msg)
@@ -168,7 +168,6 @@ class Controller(Generic[Context]):
 			msg = None
 
 			try:
-				assert element_node is not None, f'Element with index {params.index} does not exist'
 				download_path = await browser_session._click_element_node(element_node)
 				if download_path:
 					emoji = '💾'
@@ -195,11 +194,10 @@ class Controller(Generic[Context]):
 			param_model=InputTextAction,
 		)
 		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
-			if params.index not in await browser_session.get_selector_map():
+			element_node = await browser_session.get_dom_element_by_index(params.index)
+			if element_node is None:
 				raise Exception(f'Element index {params.index} does not exist - retry or use alternative actions')
 
-			element_node = await browser_session.get_dom_element_by_index(params.index)
-			assert element_node is not None, f'Element with index {params.index} does not exist'
 			try:
 				await browser_session._input_text_element_node(element_node, params.text)
 			except Exception:
