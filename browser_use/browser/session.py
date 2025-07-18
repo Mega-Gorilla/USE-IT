@@ -385,12 +385,18 @@ class BrowserSession(BaseModel):
 			assert self.browser_context, f'Failed to create BrowserContext for browser={self.browser}'
 
 			# Configure browser - run some setup tasks in parallel for speed
-			await asyncio.gather(
+			setup_results = await asyncio.gather(
 				self._setup_viewports(),
 				self._setup_current_page_change_listeners(),
 				self._start_context_tracing(),
 				return_exceptions=True,
 			)
+
+			# Check for exceptions in setup results
+			for i, result in enumerate(setup_results):
+				if isinstance(result, Exception):
+					setup_task_names = ['_setup_viewports', '_setup_current_page_change_listeners', '_start_context_tracing']
+					raise Exception(f'Browser setup failed in {setup_task_names[i]}: {result}') from result
 
 			self.initialized = True
 			return self
