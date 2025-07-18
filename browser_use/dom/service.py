@@ -16,6 +16,7 @@ from browser_use.dom.enhanced_snapshot import (
 )
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.views import (
+	DOMRect,
 	EnhancedAXNode,
 	EnhancedAXProperty,
 	EnhancedDOMTreeNode,
@@ -176,6 +177,123 @@ class DomService:
 			# Fallback to default viewport size
 			return 1920.0, 1080.0, 1.0, 0.0, 0.0
 
+	@classmethod
+	def is_element_visible_according_to_all_parents(
+		cls, node: EnhancedDOMTreeNode, html_frames: list[EnhancedDOMTreeNode]
+	) -> bool:
+		"""Check if the element is visible according to all its parent HTML frames."""
+
+		if not node.snapshot_node:
+			return False
+
+		computed_styles = node.snapshot_node.computed_styles or {}
+
+		display = computed_styles.get('display', '').lower()
+		visibility = computed_styles.get('visibility', '').lower()
+		opacity = computed_styles.get('opacity', '1')
+
+		if display == 'none' or visibility == 'hidden':
+			return False
+
+		try:
+			if float(opacity) <= 0:
+				return False
+		except (ValueError, TypeError):
+			pass
+
+		# Start with the element's local bounds (in its own frame's coordinate system)
+		current_bounds = node.snapshot_node.bounds
+
+		if not current_bounds:
+			return False  # If there are no bounds, the element is not visible
+
+		# Find the main document frame (the one not inside an iframe)
+		main_frame = None
+		for frame in html_frames:
+			# Check if this frame has a parent iframe
+			current_node = frame.parent_node
+			is_in_iframe = False
+			while current_node:
+				if current_node.node_type == NodeType.ELEMENT_NODE and current_node.node_name.upper() == 'IFRAME':
+					is_in_iframe = True
+					break
+				current_node = current_node.parent_node
+
+			# If this frame is not inside an iframe, it's likely the main document
+			if not is_in_iframe:
+				main_frame = frame
+				break
+
+		# Check visibility against main document viewport and all relevant iframe viewports
+		if not node.absolute_position:
+			return False  # Need absolute position for accurate visibility checking
+
+		elem_bounds = node.absolute_position
+		elem_left = elem_bounds.x
+		elem_top = elem_bounds.y
+		elem_right = elem_bounds.x + elem_bounds.width
+		elem_bottom = elem_bounds.y + elem_bounds.height
+
+		# First: Check against main document viewport
+		if (
+			main_frame
+			and main_frame.snapshot_node
+			and main_frame.snapshot_node.scrollRects
+			and main_frame.snapshot_node.clientRects
+		):
+			scroll_rects = main_frame.snapshot_node.scrollRects
+			client_rects = main_frame.snapshot_node.clientRects
+
+			# Main document viewport: currently visible area
+			main_viewport_left = scroll_rects.x
+			main_viewport_top = scroll_rects.y
+			main_viewport_right = scroll_rects.x + client_rects.width
+			main_viewport_bottom = scroll_rects.y + client_rects.height
+
+			# Check if element is within main viewport
+			main_viewport_intersects = (
+				elem_right > main_viewport_left
+				and elem_left < main_viewport_right
+				and elem_bottom > main_viewport_top
+				and elem_top < main_viewport_bottom
+			)
+
+			if not main_viewport_intersects:
+				return False
+
+		# Second: Check against each iframe's viewport that contains this element
+		# Work through the frame hierarchy to ensure element is visible in all containing iframes
+		current_node = node.parent_node
+		while current_node:
+			# If we find an iframe ancestor, check if element is visible within that iframe
+			if (
+				current_node.node_type == NodeType.ELEMENT_NODE
+				and current_node.node_name.upper() == 'IFRAME'
+				and current_node.snapshot_node
+				and current_node.snapshot_node.bounds
+			):
+				iframe_bounds = current_node.snapshot_node.bounds
+				iframe_left = iframe_bounds.x
+				iframe_top = iframe_bounds.y
+				iframe_right = iframe_bounds.x + iframe_bounds.width
+				iframe_bottom = iframe_bounds.y + iframe_bounds.height
+
+				# Check if element (in absolute coordinates) intersects with iframe bounds
+				iframe_intersects = (
+					elem_right > iframe_left
+					and elem_left < iframe_right
+					and elem_bottom > iframe_top
+					and elem_top < iframe_bottom
+				)
+
+				if not iframe_intersects:
+					return False
+
+			current_node = current_node.parent_node
+
+		# If we reach here, element is visible in main viewport and all containing iframes
+		return True
+
 	async def _build_enhanced_dom_tree(
 		self, dom_tree: GetDocumentReturns, ax_tree: GetFullAXTreeReturns, snapshot: CaptureSnapshotReturns
 	) -> EnhancedDOMTreeNode:
@@ -190,10 +308,25 @@ class DomService:
 		viewport_width, viewport_height, device_pixel_ratio, scroll_x, scroll_y = await self._get_viewport_size()
 
 		# Parse snapshot data with everything calculated upfront
-		# Parse snapshot data with everything calculated upfront
-		snapshot_lookup = build_snapshot_lookup(snapshot, viewport_width, viewport_height, device_pixel_ratio, scroll_x, scroll_y)
+		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
 
-		def _construct_enhanced_node(node: Node) -> EnhancedDOMTreeNode:
+		def _construct_enhanced_node(
+			node: Node, html_frames: list[EnhancedDOMTreeNode] | None = None, accumulated_iframe_offset: DOMRect | None = None
+		) -> EnhancedDOMTreeNode:
+			"""
+			Recursively construct enhanced DOM tree nodes.
+
+			Args:
+				node: The DOM node to construct
+				html_frames: List of HTML frame nodes encountered so far
+				accumulated_iframe_offset: Accumulated coordinate translation from parent iframes (includes scroll corrections)
+			"""
+			# Initialize lists if not provided
+			if html_frames is None:
+				html_frames = []
+			if accumulated_iframe_offset is None:
+				accumulated_iframe_offset = DOMRect(x=0.0, y=0.0, width=0.0, height=0.0)
+
 			# memoize the mf (I don't know if some nodes are duplicated)
 			if node['nodeId'] in enhanced_dom_tree_node_lookup:
 				return enhanced_dom_tree_node_lookup[node['nodeId']]
@@ -218,6 +351,17 @@ class DomService:
 				except ValueError:
 					pass
 
+			# Get snapshot data and calculate absolute position
+			snapshot_data = snapshot_lookup.get(node['backendNodeId'], None)
+			absolute_position = None
+			if snapshot_data and snapshot_data.bounds:
+				absolute_position = DOMRect(
+					x=snapshot_data.bounds.x + accumulated_iframe_offset.x,
+					y=snapshot_data.bounds.y + accumulated_iframe_offset.y,
+					width=snapshot_data.bounds.width,
+					height=snapshot_data.bounds.height,
+				)
+
 			dom_tree_node = EnhancedDOMTreeNode(
 				node_id=node['nodeId'],
 				backend_node_id=node['backendNodeId'],
@@ -233,7 +377,9 @@ class DomService:
 				parent_node=None,
 				children_nodes=None,
 				ax_node=enhanced_ax_node,
-				snapshot_node=snapshot_lookup.get(node['backendNodeId'], None),
+				snapshot_node=snapshot_data,
+				is_visible=None,
+				absolute_position=absolute_position,
 			)
 
 			enhanced_dom_tree_node_lookup[node['nodeId']] = dom_tree_node
@@ -243,16 +389,51 @@ class DomService:
 					node['parentId']
 				]  # parents should always be in the lookup
 
-			if 'contentDocument' in node and node['contentDocument']:
-				dom_tree_node.content_document = _construct_enhanced_node(node['contentDocument'])  # maybe new maybe not, idk
-				dom_tree_node.content_document.parent_node = (
-					dom_tree_node  # forcefully set the parent node to the content document node (helps traverse the tree)
+			# Check if this is an HTML frame node and add it to the list
+			updated_html_frames = html_frames.copy()
+			if node['nodeType'] == NodeType.ELEMENT_NODE.value and node['nodeName'] == 'HTML' and node.get('frameId') is not None:
+				updated_html_frames.append(dom_tree_node)
+
+			# Calculate new iframe offset for content documents, accounting for iframe scroll
+			new_iframe_offset = accumulated_iframe_offset
+			if node['nodeName'].upper() == 'IFRAME' and snapshot_data and snapshot_data.bounds:
+				# Start with iframe position in parent frame
+				iframe_x_offset = accumulated_iframe_offset.x + snapshot_data.bounds.x
+				iframe_y_offset = accumulated_iframe_offset.y + snapshot_data.bounds.y
+
+				# Account for iframe content scroll if we have content document
+				if 'contentDocument' in node and node['contentDocument']:
+					# Look for the HTML node in the content document to get its scroll position
+					content_doc = node['contentDocument']
+					if 'children' in content_doc:
+						for child in content_doc['children']:
+							if child.get('nodeType') == NodeType.ELEMENT_NODE.value and child.get('nodeName') == 'HTML':
+								# Get HTML frame's snapshot data for scroll info
+								html_snapshot = snapshot_lookup.get(child['backendNodeId'], None)
+								if html_snapshot and html_snapshot.scrollRects:
+									# Subtract scroll position (scrollRects.x/y represents current scroll offset)
+									iframe_x_offset -= html_snapshot.scrollRects.x
+									iframe_y_offset -= html_snapshot.scrollRects.y
+								break
+
+				new_iframe_offset = DOMRect(
+					x=iframe_x_offset,
+					y=iframe_y_offset,
+					width=0.0,  # width/height not needed for offset calculation
+					height=0.0,
 				)
+
+			if 'contentDocument' in node and node['contentDocument']:
+				dom_tree_node.content_document = _construct_enhanced_node(
+					node['contentDocument'], updated_html_frames, new_iframe_offset
+				)
+				dom_tree_node.content_document.parent_node = dom_tree_node
+				# forcefully set the parent node to the content document node (helps traverse the tree)
 
 			if 'shadowRoots' in node and node['shadowRoots']:
 				dom_tree_node.shadow_roots = []
 				for shadow_root in node['shadowRoots']:
-					shadow_root_node = _construct_enhanced_node(shadow_root)
+					shadow_root_node = _construct_enhanced_node(shadow_root, updated_html_frames, accumulated_iframe_offset)
 					# forcefully set the parent node to the shadow root node (helps traverse the tree)
 					shadow_root_node.parent_node = dom_tree_node
 					dom_tree_node.shadow_roots.append(shadow_root_node)
@@ -260,7 +441,12 @@ class DomService:
 			if 'children' in node and node['children']:
 				dom_tree_node.children_nodes = []
 				for child in node['children']:
-					dom_tree_node.children_nodes.append(_construct_enhanced_node(child))
+					dom_tree_node.children_nodes.append(
+						_construct_enhanced_node(child, updated_html_frames, accumulated_iframe_offset)
+					)
+
+			# Set visibility using the collected HTML frames
+			dom_tree_node.is_visible = self.is_element_visible_according_to_all_parents(dom_tree_node, updated_html_frames)
 
 			return dom_tree_node
 

@@ -114,7 +114,7 @@ class DOMTreeSerializer:
 			# Use enhanced scoring for inclusion decision
 			is_interactive = self._is_interactive_cached(node)
 
-			is_visible = node.snapshot_node and node.snapshot_node.is_visible
+			is_visible = node.snapshot_node and node.is_visible
 			is_scrollable = node.is_scrollable
 
 			# Include if interactive (regardless of visibility), or scrollable, or has children to process
@@ -136,7 +136,7 @@ class DOMTreeSerializer:
 
 		elif node.node_type == NodeType.TEXT_NODE:
 			# Include meaningful text nodes
-			is_visible = node.snapshot_node and node.snapshot_node.is_visible
+			is_visible = node.snapshot_node and node.is_visible
 			if is_visible and node.node_value and node.node_value.strip() and len(node.node_value.strip()) > 1:
 				return SimplifiedNode(original_node=node, children=[])
 
@@ -246,7 +246,7 @@ class DOMTreeSerializer:
 
 		elif node.original_node.node_type == NodeType.TEXT_NODE:
 			# Include visible text
-			is_visible = node.original_node.snapshot_node and node.original_node.snapshot_node.is_visible
+			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 			if (
 				is_visible
 				and node.original_node.node_value

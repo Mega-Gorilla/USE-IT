@@ -104,7 +104,6 @@ class EnhancedSnapshotNode:
 	"""Snapshot data extracted from DOMSnapshot for enhanced functionality."""
 
 	is_clickable: bool | None
-	is_visible: bool | None
 	cursor_style: str | None
 	bounds: DOMRect | None
 	"""
@@ -161,6 +160,15 @@ class EnhancedDOMTreeNode:
 	is_scrollable: bool | None
 	"""
 	Whether the node is scrollable.
+	"""
+	is_visible: bool | None
+	"""
+	Whether the node is visible according to the upper most frame node.
+	"""
+
+	absolute_position: DOMRect | None
+	"""
+	Absolute position of the node in the document according to the top-left of the page.
 	"""
 
 	# frames

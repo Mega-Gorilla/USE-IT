@@ -59,62 +59,9 @@ def _parse_computed_styles(strings: list[str], style_indices: list[int]) -> dict
 	return styles
 
 
-def _is_element_visible(
-	bounding_box: DOMRect,
-	computed_styles: dict[str, str],
-	viewport_width: float,
-	viewport_height: float,
-	scroll_x: float = 0.0,
-	scroll_y: float = 0.0,
-) -> bool:
-	"""Determine if an element is visible in the current scrolled viewport with robust edge case handling."""
-
-	# Validate inputs - handle edge cases gracefully
-	if not bounding_box or viewport_width <= 0 or viewport_height <= 0:
-		return False
-
-	# Check CSS visibility properties
-	display = computed_styles.get('display', '').lower()
-	visibility = computed_styles.get('visibility', '').lower()
-	opacity = computed_styles.get('opacity', '1')
-
-	if display == 'none' or visibility == 'hidden':
-		return False
-
-	try:
-		if float(opacity) <= 0:
-			return False
-	except (ValueError, TypeError):
-		pass
-
-	# SCROLL-AWARE VISIBILITY: Check if element intersects with current scrolled viewport
-	# Current viewport rectangle in document coordinates
-	viewport_left = scroll_x
-	viewport_top = scroll_y
-	viewport_right = scroll_x + viewport_width
-	viewport_bottom = scroll_y + viewport_height
-
-	# Element rectangle in document coordinates
-	elem_left = bounding_box.x
-	elem_top = bounding_box.y
-	elem_right = bounding_box.x + bounding_box.width
-	elem_bottom = bounding_box.y + bounding_box.height
-
-	# Check if rectangles intersect (element is visible in current viewport)
-	intersects = (
-		elem_right > viewport_left and elem_left < viewport_right and elem_bottom > viewport_top and elem_top < viewport_bottom
-	)
-
-	return intersects
-
-
 def build_snapshot_lookup(
 	snapshot: CaptureSnapshotReturns,
-	viewport_width: float,
-	viewport_height: float,
 	device_pixel_ratio: float = 1.0,
-	scroll_x: float = 0.0,
-	scroll_y: float = 0.0,
 ) -> dict[int, EnhancedSnapshotNode]:
 	"""Build a lookup table of backend node ID to enhanced snapshot data with everything calculated upfront."""
 	snapshot_lookup: dict[int, EnhancedSnapshotNode] = {}
@@ -206,18 +153,11 @@ def build_snapshot_lookup(
 					if layout_idx < len(layout.get('stackingContexts', [])):
 						stacking_contexts = layout.get('stackingContexts', {}).get('index', [])[layout_idx]
 
-					# Calculate scroll-aware visibility if we have bounding box
-					if bounding_box and computed_styles:
-						is_visible = _is_element_visible(
-							bounding_box, computed_styles, viewport_width, viewport_height, scroll_x, scroll_y
-						)
-
 					break
 
 			snapshot_lookup[backend_node_id] = EnhancedSnapshotNode(
 				is_clickable=is_clickable,
 				cursor_style=cursor_style,
-				is_visible=is_visible,
 				bounds=bounding_box,
 				clientRects=client_rects,
 				scrollRects=scroll_rects,

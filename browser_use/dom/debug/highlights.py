@@ -12,13 +12,16 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 	elements = []
 
 	for interactive_index, node in selector_map.items():
-		# Get bounding box from snapshot_node if available (adapted from working implementation)
+		# Get bounding box using absolute position (includes iframe translations) if available
 		bbox = None
-		if node.snapshot_node:
-			# Try bounds first, then clientRects
+		if node.absolute_position:
+			# Use absolute position which includes iframe coordinate translations
+			rect = node.absolute_position
+			bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
+		elif node.snapshot_node and node.snapshot_node.bounds:
+			# Fallback to local bounds if absolute position is not available
 			rect = node.snapshot_node.bounds
-			if rect:
-				bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
+			bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
 
 		# Only include elements with valid bounding boxes (following working implementation)
 		if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:

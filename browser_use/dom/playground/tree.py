@@ -8,6 +8,7 @@ from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.types import ViewportSize
 from browser_use.dom.debug.highlights import inject_highlighting_script, remove_highlighting_script
 from browser_use.dom.service import DomService
+from browser_use.dom.views import EnhancedDOMTreeNode
 
 
 async def main():
@@ -32,7 +33,8 @@ async def main():
 
 	# await browser.create_new_tab('https://en.wikipedia.org/wiki/Apple_Inc.')
 	# await browser.create_new_tab('https://semantic-ui.com/modules/dropdown.html#/definition')
-	await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/iframe-buttons')
+	# await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/iframe-buttons')
+	await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/nested-iframe')
 
 	await browser._wait_for_page_and_frames_load()
 
@@ -57,11 +59,11 @@ async def main():
 			visible_clickable_count = 0
 			total_with_snapshot = 0
 
-			def count_elements(node):
+			def count_elements(node: EnhancedDOMTreeNode):
 				nonlocal visible_clickable_count, total_with_snapshot
 				if node.snapshot_node:
 					total_with_snapshot += 1
-					if node.snapshot_node.is_visible and node.snapshot_node.is_clickable:
+					if node.is_visible and node.snapshot_node.is_clickable:
 						visible_clickable_count += 1
 						# print(f'Visible clickable element: {node.node_name} (cursor: {node.snapshot_node.cursor_style})')
 
