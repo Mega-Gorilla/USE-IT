@@ -879,6 +879,7 @@ class BrowserSession(BaseModel):
 			self.logger.info(f'🎭 Connected to existing user-provided browser: {self.browser_context}')
 			self._set_browser_keep_alive(True)  # we connected to an existing browser, dont kill it at the end
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='setup_browser_via_browser_pid')
 	async def setup_browser_via_browser_pid(self) -> None:
 		"""if browser_pid is provided, calcuclate its CDP URL by looking for --remote-debugging-port=... in its CLI args, then connect to it"""
 
@@ -923,8 +924,7 @@ class BrowserSession(BaseModel):
 		# Wait for CDP port to become available (Chrome might still be starting)
 		import httpx
 
-		# Add initial delay to give Chrome time to start up before first check
-		await asyncio.sleep(2)
+		# No initial sleep needed - the polling loop below handles waiting if Chrome isn't ready yet
 
 		async with httpx.AsyncClient() as client:
 			for i in range(30):  # 30 second timeout
@@ -1011,6 +1011,7 @@ class BrowserSession(BaseModel):
 		)
 		self._set_browser_keep_alive(True)  # we connected to an existing browser, dont kill it at the end
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='setup_browser_via_wss_url')
 	async def setup_browser_via_wss_url(self) -> None:
 		"""check for a passed wss_url, connect to a remote playwright browser server via WSS"""
 
@@ -1045,6 +1046,7 @@ class BrowserSession(BaseModel):
 		)
 		self._set_browser_keep_alive(True)  # we connected to an existing browser, dont kill it at the end
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='setup_new_browser_context')
 	@retry(wait=1, retries=2, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
 	async def setup_new_browser_context(self) -> None:
 		"""Launch a new browser and browser_context"""
@@ -1060,6 +1062,7 @@ class BrowserSession(BaseModel):
 				pass
 		await self._unsafe_setup_new_browser_context()
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='_unsafe_setup_new_browser_context')
 	async def _unsafe_setup_new_browser_context(self) -> None:
 		"""Unsafe browser context setup without retry protection."""
 
