@@ -3053,7 +3053,9 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_input=True, ignore_output=True)
 	@time_execution_async('--get_state_summary')
 	@require_healthy_browser(usable_page=True, reopen_page=True)
-	async def get_state_summary(self, cache_clickable_elements_hashes: bool) -> BrowserStateSummary:
+	async def get_state_summary(
+		self, cache_clickable_elements_hashes: bool, include_screenshot: bool = True
+	) -> BrowserStateSummary:
 		self.logger.debug('🔄 Starting get_state_summary...')
 		"""Get a summary of the current browser state
 
@@ -3066,9 +3068,12 @@ class BrowserSession(BaseModel):
 			If True, cache the clickable elements hashes for the current state.
 			This is used to calculate which elements are new to the LLM since the last message,
 			which helps reduce token usage.
+		include_screenshot: bool
+			If True, include screenshot in the state summary. Set to False to improve performance
+			when screenshots are not needed (e.g., in multi_act element validation).
 		"""
 		await self._wait_for_page_and_frames_load()
-		updated_state = await self._get_updated_state()
+		updated_state = await self._get_updated_state(include_screenshot=include_screenshot)
 
 		# Find out which elements are new
 		# Do this only if url has not changed
@@ -3143,7 +3148,7 @@ class BrowserSession(BaseModel):
 		)
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_updated_state')
-	async def _get_updated_state(self, focus_element: int = -1) -> BrowserStateSummary:
+	async def _get_updated_state(self, focus_element: int = -1, include_screenshot: bool = True) -> BrowserStateSummary:
 		"""Update and return state."""
 
 		# Check if current page is still valid, if not switch to another available page
@@ -3229,13 +3234,16 @@ class BrowserSession(BaseModel):
 			# 		)
 			# 	)
 
-			try:
-				self.logger.debug('📸 Capturing screenshot...')
-				# Reasonable timeout for screenshot
-				screenshot_b64 = await self.take_screenshot()
-				# self.logger.debug('✅ Screenshot completed')
-			except Exception as e:
-				self.logger.warning(f'❌ Screenshot failed for {_log_pretty_url(page.url)}: {type(e).__name__} {e}')
+			if include_screenshot:
+				try:
+					self.logger.debug('📸 Capturing screenshot...')
+					# Reasonable timeout for screenshot
+					screenshot_b64 = await self.take_screenshot()
+					# self.logger.debug('✅ Screenshot completed')
+				except Exception as e:
+					self.logger.warning(f'❌ Screenshot failed for {_log_pretty_url(page.url)}: {type(e).__name__} {e}')
+					screenshot_b64 = None
+			else:
 				screenshot_b64 = None
 
 			# Get comprehensive page information
@@ -4475,7 +4483,9 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_state_summary_with_fallback')
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--get_state_summary_with_fallback')
-	async def get_state_summary_with_fallback(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
+	async def get_state_summary_with_fallback(
+		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True
+	) -> BrowserStateSummary:
 		"""Get browser state with fallback to minimal state on errors
 
 		This method first tries to get a full state summary. If that fails,
@@ -4485,6 +4495,8 @@ class BrowserSession(BaseModel):
 		-----------
 		cache_clickable_elements_hashes: bool
 			If True, cache the clickable elements hashes for the current state.
+		include_screenshot: bool
+			If True, include screenshot in the state summary.
 
 		Returns:
 		--------
@@ -4492,12 +4504,36 @@ class BrowserSession(BaseModel):
 		"""
 		# Try 1: Full state summary (current implementation)
 		try:
-			return await self.get_state_summary(cache_clickable_elements_hashes)
+			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
 		except Exception as e:
 			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
 			self.logger.warning('🔄 Falling back to minimal state summary')
 
 		# Try 2: Minimal state summary as fallback
+		return await self.get_minimal_state_summary()
+
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_with_recovery')
+	async def get_browser_state_with_recovery(
+		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True
+	) -> BrowserStateSummary:
+		"""Get browser state with multiple fallback strategies for error recovery
+
+		Parameters:
+		-----------
+		cache_clickable_elements_hashes: bool
+			If True, cache the clickable elements hashes for the current state.
+		include_screenshot: bool
+			If True, include screenshot in the state summary. Set to False to improve performance
+			when screenshots are not needed (e.g., in multi_act element validation).
+		"""
+
+		# Try 1: Full state summary (current implementation) - like main branch
+		try:
+			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
+		except Exception as e:
+			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
+
+		self.logger.warning('🔄 Falling back to minimal state summary')
 		return await self.get_minimal_state_summary()
 
 	async def _is_pdf_viewer(self, page: Page) -> bool:
