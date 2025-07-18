@@ -1117,7 +1117,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
-				cdp_url=urlparse(self.browser_session.cdp_url).hostname if self.browser_session and self.browser_session.cdp_url else None,
+				cdp_url=urlparse(self.browser_session.cdp_url).hostname
+				if self.browser_session and self.browser_session.cdp_url
+				else None,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
