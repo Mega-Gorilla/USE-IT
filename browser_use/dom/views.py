@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
@@ -31,17 +31,20 @@ class SimplifiedNode:
 	"""Simplified tree node for optimization."""
 
 	original_node: 'EnhancedDOMTreeNode'
-	children: list['SimplifiedNode'] = field(default_factory=list)
+	children: list['SimplifiedNode']
 	should_display: bool = True
 	interactive_index: int | None = None
 
 	is_new: bool = False
 
 	def __json__(self) -> dict:
+		original_node_json = self.original_node.__json__()
+		del original_node_json['children_nodes']
+		del original_node_json['shadow_roots']
 		return {
 			'should_display': self.should_display,
 			'interactive_index': self.interactive_index,
-			'original_node': self.original_node.__json__(),
+			'original_node': original_node_json,
 			'children': [c.__json__() for c in self.children],
 		}
 
@@ -191,6 +194,16 @@ class EnhancedDOMTreeNode:
 	@property
 	def children(self) -> list['EnhancedDOMTreeNode']:
 		return self.children_nodes or []
+
+	@property
+	def children_and_shadow_roots(self) -> list['EnhancedDOMTreeNode']:
+		"""
+		Returns all children nodes, including shadow roots
+		"""
+		children = self.children_nodes or []
+		if self.shadow_roots:
+			children.extend(self.shadow_roots)
+		return children
 
 	@property
 	def tag_name(self) -> str:

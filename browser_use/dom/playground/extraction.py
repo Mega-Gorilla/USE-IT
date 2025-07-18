@@ -32,6 +32,7 @@ async def test_focus_vs_all_elements():
 
 	# 10 Sample websites with various interactive elements
 	sample_websites = [
+		'https://v0-website-with-clickable-elements.vercel.app/shadow-dom',
 		'https://www.google.com/travel/flights',
 		'https://www.amazon.com/s?k=laptop',
 		'https://github.com/trending',
@@ -170,8 +171,11 @@ async def test_focus_vs_all_elements():
 
 				# save pure clickable elements to a file
 				if all_elements_state.dom_state._root:
-					async with await anyio.open_file('./tmp/element_tree.json', 'w', encoding='utf-8') as f:
+					async with await anyio.open_file('./tmp/simplified_element_tree.json', 'w', encoding='utf-8') as f:
 						await f.write(json.dumps(all_elements_state.dom_state._root.__json__(), indent=2))
+
+					async with await anyio.open_file('./tmp/original_element_tree.json', 'w', encoding='utf-8') as f:
+						await f.write(json.dumps(all_elements_state.dom_state._root.original_node.__json__(), indent=2))
 
 				# copy the user message to the clipboard
 				# pyperclip.copy(text_to_save)
@@ -181,7 +185,8 @@ async def test_focus_vs_all_elements():
 				print(f'Token count: {token_count}')
 
 				print('User message written to ./tmp/user_message.txt')
-				print('Element tree written to ./tmp/element_tree.json')
+				print('Element tree written to ./tmp/simplified_element_tree.json')
+				print('Original element tree written to ./tmp/original_element_tree.json')
 
 				# Save timing information
 				timing_text = '🔍 DOM EXTRACTION PERFORMANCE ANALYSIS\n'
@@ -226,7 +231,7 @@ async def test_focus_vs_all_elements():
 
 				website_list = get_website_list_for_prompt()
 				answer = input(
-					f"\n{website_list}\n\n🎮 Enter: element index | 'index,text' input | 'c,index' copy | 1-15 jump | Enter re-run | 'n' next | 'q' quit: "
+					"🎮 Enter: element index | 'index' click (clickable) | 'index,text' input | 'c,index' copy | Enter re-run | 'n' next | 'q' quit: "
 				)
 
 				if answer.lower() == 'q':
@@ -239,19 +244,16 @@ async def test_focus_vs_all_elements():
 					print('Re-running extraction on current page state...')
 					continue  # Continue inner loop to re-extract DOM without reloading page
 				elif answer.strip().isdigit():
-					# Jump to specific website (1-15)
+					# Click element format: index
 					try:
-						target_website = int(answer.strip())
-						if 1 <= target_website <= len(websites):
-							current_website_index = target_website - 1  # Convert to 0-based index
-							target_url = websites[current_website_index]
-							website_type = 'DIFFICULT' if target_url in difficult_websites else 'SAMPLE'
-							print(f'Jumping to website {target_website}: [{website_type}] {target_url}')
-							break  # Break inner loop to go to new website
-						else:
-							print(f'Invalid website number. Enter 1-{len(websites)}.')
+						clicked_index = int(answer)
+						if clicked_index in selector_map:
+							element_node = selector_map[clicked_index]
+							print(f'Clicking element {clicked_index}: {element_node.tag_name}')
+							await browser_session._click_element_node(element_node)
+							print('Click successful.')
 					except ValueError:
-						print(f'Invalid input: {answer}')
+						print(f"Invalid input: '{answer}'. Enter an index, 'index,text', 'c,index', or 'q'.")
 					continue
 
 				try:
@@ -292,19 +294,6 @@ async def test_focus_vs_all_elements():
 								print(f'Invalid index format: {parts[0]}')
 						else:
 							print("Invalid input format. Use 'index,text'.")
-					else:
-						# Click element format: index
-						try:
-							clicked_index = int(answer)
-							if clicked_index in selector_map:
-								element_node = selector_map[clicked_index]
-								print(f'Clicking element {clicked_index}: {element_node.tag_name}')
-								await browser_session._click_element_node(element_node)
-								print('Click successful.')
-							else:
-								print(f'Invalid index: {clicked_index}')
-						except ValueError:
-							print(f"Invalid input: '{answer}'. Enter an index, 'index,text', 'c,index', or 'q'.")
 
 				except Exception as action_e:
 					print(f'Action failed: {action_e}')

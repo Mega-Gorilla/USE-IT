@@ -5,6 +5,8 @@ from browser_use.dom.serializer.clickable_elements import ClickableElementDetect
 from browser_use.dom.utils import cap_text_length
 from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
 
+DISABLED_ELEMENTS = {'style', 'script', 'head', 'meta', 'link', 'title'}
+
 
 class DOMTreeSerializer:
 	"""Serializes enhanced DOM trees to string format."""
@@ -78,24 +80,26 @@ class DOMTreeSerializer:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
 
 		if node.node_type == NodeType.DOCUMENT_NODE:
-			if node.children_nodes:
-				for child in node.children_nodes:
-					simplified_child = self._create_simplified_tree(child)
-					if simplified_child:
-						return simplified_child
+			# for all children including shadow roots
+			for child in node.children_and_shadow_roots:
+				simplified_child = self._create_simplified_tree(child)
+				if simplified_child:
+					return simplified_child
+
 			return None
 
-		elif node.node_type == NodeType.ELEMENT_NODE:
-			if node.node_name == '#document':
-				if node.children_nodes:
-					for child in node.children_nodes:
-						simplified_child = self._create_simplified_tree(child)
-						if simplified_child:
-							return simplified_child
-				return None
+		if node.node_type == NodeType.DOCUMENT_FRAGMENT_NODE:
+			# Super simple pass-through for shadow DOM elements
+			simplified = SimplifiedNode(original_node=node, children=[])
+			for child in node.children_and_shadow_roots:
+				simplified_child = self._create_simplified_tree(child)
+				if simplified_child:
+					simplified.children.append(simplified_child)
+			return simplified
 
+		elif node.node_type == NodeType.ELEMENT_NODE:
 			# Skip non-content elements
-			if node.node_name.lower() in ['style', 'script', 'head', 'meta', 'link', 'title']:
+			if node.node_name.lower() in DISABLED_ELEMENTS:
 				return None
 
 			# Use enhanced scoring for inclusion decision
@@ -105,18 +109,17 @@ class DOMTreeSerializer:
 			is_scrollable = node.is_scrollable
 
 			# Include if interactive (regardless of visibility), or scrollable, or has children to process
-			should_include = (is_interactive and is_visible) or is_scrollable or node.children_nodes
+			should_include = (is_interactive and is_visible) or is_scrollable or node.children_and_shadow_roots
 
 			if should_include:
-				simplified = SimplifiedNode(original_node=node)
+				simplified = SimplifiedNode(original_node=node, children=[])
 				# simplified._analysis = analysis  # Store analysis for grouping
 
 				# Process children
-				if node.children_nodes:
-					for child in node.children_nodes:
-						simplified_child = self._create_simplified_tree(child)
-						if simplified_child:
-							simplified.children.append(simplified_child)
+				for child in node.children_and_shadow_roots:
+					simplified_child = self._create_simplified_tree(child)
+					if simplified_child:
+						simplified.children.append(simplified_child)
 
 				# Return if meaningful or has meaningful children
 				if (is_interactive and is_visible) or is_scrollable or simplified.children:
@@ -126,7 +129,7 @@ class DOMTreeSerializer:
 			# Include meaningful text nodes
 			is_visible = node.snapshot_node and node.snapshot_node.is_visible
 			if is_visible and node.node_value and node.node_value.strip() and len(node.node_value.strip()) > 1:
-				return SimplifiedNode(original_node=node)
+				return SimplifiedNode(original_node=node, children=[])
 
 		return None
 
