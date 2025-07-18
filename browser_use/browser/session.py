@@ -992,7 +992,7 @@ class BrowserSession(BaseModel):
 				except (httpx.ConnectError, httpx.TimeoutException):
 					if i == 0:
 						self.logger.debug(f'⏳ Waiting for Chrome CDP port {debug_port} to become available...')
-					await asyncio.sleep(1)
+					await asyncio.sleep(0.5)
 			else:
 				self.logger.error(f'❌ Chrome CDP port {debug_port} did not become available after 30 seconds')
 				self.browser_pid = None
