@@ -930,7 +930,7 @@ class BrowserSession(BaseModel):
 		# No initial sleep needed - the polling loop below handles waiting if Chrome isn't ready yet
 
 		async with httpx.AsyncClient() as client:
-			for i in range(30):  # 30 second timeout
+			for i in range(30):  # timeout
 				# First check if the Chrome process has exited
 				try:
 					chrome_process = psutil.Process(pid=self.browser_pid)
@@ -1050,7 +1050,7 @@ class BrowserSession(BaseModel):
 		self._set_browser_keep_alive(True)  # we connected to an existing browser, dont kill it at the end
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='setup_new_browser_context')
-	@retry(wait=1, retries=2, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
+	@retry(wait=0.1, retries=5, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
 	async def setup_new_browser_context(self) -> None:
 		"""Launch a new browser and browser_context"""
 		# Double-check after semaphore acquisition to prevent duplicate browser launches
