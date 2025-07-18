@@ -2075,7 +2075,8 @@ class BrowserSession(BaseModel):
 			element_handle = await self.get_locate_element(element_node)
 
 			if element_handle is None:
-				raise Exception(f'Element: {repr(element_node)} not found')
+				self.logger.debug(f'Element: {repr(element_node)} not found')
+				raise Exception('Element not found')
 
 			async def perform_click(click_func):
 				"""Performs the actual click, handling both download and navigation scenarios."""
@@ -2169,7 +2170,7 @@ class BrowserSession(BaseModel):
 		except URLNotAllowedError as e:
 			raise e
 		except Exception as e:
-			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
+			raise Exception(f'Failed to click element. Error: {str(e)}')
 
 	@time_execution_async('--get_tabs_info')
 	@retry(timeout=6, retries=1)
