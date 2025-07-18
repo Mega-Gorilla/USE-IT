@@ -33,7 +33,7 @@ async def test_focus_vs_all_elements():
 
 	# 10 Sample websites with various interactive elements
 	sample_websites = [
-		'https://v0-website-with-clickable-elements.vercel.app/shadow-dom',
+		'https://v0-website-with-clickable-elements.vercel.app/iframe-buttons',
 		'https://www.google.com/travel/flights',
 		'https://www.amazon.com/s?k=laptop',
 		'https://github.com/trending',

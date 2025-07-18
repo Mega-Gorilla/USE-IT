@@ -102,6 +102,15 @@ class DOMTreeSerializer:
 			if node.node_name.lower() in DISABLED_ELEMENTS:
 				return None
 
+			if node.node_name == 'IFRAME':
+				if node.content_document:
+					simplified = SimplifiedNode(original_node=node, children=[])
+					for child in node.content_document.children:
+						simplified_child = self._create_simplified_tree(child)
+						if simplified_child:
+							simplified.children.append(simplified_child)
+					return simplified
+
 			# Use enhanced scoring for inclusion decision
 			is_interactive = self._is_interactive_cached(node)
 

@@ -113,11 +113,16 @@ class EnhancedSnapshotNode:
 	Typical use: Quick hit-test that doesn't care about scroll position.
 	"""
 
-	# clientRects: DOMRect | None
+	clientRects: DOMRect | None
 	"""
 	Viewport coordinates (origin = top-left of the visible scrollport).
 	Equivalent JS API: element.getClientRects() / getBoundingClientRect().
 	Typical use: Pixel-perfect hit-testing on screen, taking current scroll into account.
+	"""
+
+	scrollRects: DOMRect | None
+	"""
+	Scrollable area of the element.
 	"""
 
 	computed_styles: dict[str, str] | None

@@ -245,6 +245,9 @@ class DomService:
 
 			if 'contentDocument' in node and node['contentDocument']:
 				dom_tree_node.content_document = _construct_enhanced_node(node['contentDocument'])  # maybe new maybe not, idk
+				dom_tree_node.content_document.parent_node = (
+					dom_tree_node  # forcefully set the parent node to the content document node (helps traverse the tree)
+				)
 
 			if 'shadowRoots' in node and node['shadowRoots']:
 				dom_tree_node.shadow_roots = []
@@ -264,6 +267,39 @@ class DomService:
 		enhanced_dom_tree_node = _construct_enhanced_node(dom_tree['root'])
 
 		return enhanced_dom_tree_node
+
+	async def _get_ax_tree_for_all_frames(self, cdp_client: CDPClient, session_id: str) -> GetFullAXTreeReturns:
+		"""Recursively collect all frames and merge their accessibility trees into a single array."""
+		frame_tree = await cdp_client.send.Page.getFrameTree(session_id=session_id)
+
+		def collect_all_frame_ids(frame_tree_node) -> list[str]:
+			"""Recursively collect all frame IDs from the frame tree."""
+			frame_ids = [frame_tree_node['frame']['id']]
+
+			if 'childFrames' in frame_tree_node and frame_tree_node['childFrames']:
+				for child_frame in frame_tree_node['childFrames']:
+					frame_ids.extend(collect_all_frame_ids(child_frame))
+
+			return frame_ids
+
+		# Collect all frame IDs recursively
+		all_frame_ids = collect_all_frame_ids(frame_tree['frameTree'])
+
+		# Get accessibility tree for each frame
+		ax_tree_requests = []
+		for frame_id in all_frame_ids:
+			ax_tree_request = cdp_client.send.Accessibility.getFullAXTree(params={'frameId': frame_id}, session_id=session_id)
+			ax_tree_requests.append(ax_tree_request)
+
+		# Wait for all requests to complete
+		ax_trees = await asyncio.gather(*ax_tree_requests)
+
+		# Merge all AX nodes into a single array
+		merged_nodes: list[AXNode] = []
+		for ax_tree in ax_trees:
+			merged_nodes.extend(ax_tree['nodes'])
+
+		return {'nodes': merged_nodes}
 
 	async def _get_all_trees(self) -> tuple[CaptureSnapshotReturns, GetDocumentReturns, GetFullAXTreeReturns, dict[str, float]]:
 		if not self.browser.cdp_url:
@@ -285,7 +321,7 @@ class DomService:
 
 		dom_tree_request = cdp_client.send.DOM.getDocument(params={'depth': -1, 'pierce': True}, session_id=session_id)
 
-		ax_tree_request = cdp_client.send.Accessibility.getFullAXTree(session_id=session_id)
+		ax_tree_request = self._get_ax_tree_for_all_frames(cdp_client, session_id)
 
 		start = time.time()
 		snapshot, dom_tree, ax_tree = await asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request)

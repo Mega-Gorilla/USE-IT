@@ -7,57 +7,6 @@ from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMSelectorMap
 
 
-def analyze_element_interactivity(element: dict) -> dict:
-	"""Analyze why an element is considered interactive and assign confidence level."""
-	element_type = element['element_name'].lower()
-	attributes = element.get('attributes', {})
-
-	# Default reasoning structure
-	reasoning = {'confidence': 'LOW', 'primary_reason': 'unknown', 'element_type': element_type, 'reasons': []}
-
-	# High confidence elements
-	if element_type in ['button', 'a', 'input', 'select', 'textarea']:
-		reasoning['confidence'] = 'HIGH'
-		reasoning['primary_reason'] = 'semantic_element'
-		reasoning['reasons'].append(f'Semantic interactive element: {element_type}')
-
-	# Check for interactive attributes
-	interactive_attrs = ['onclick', 'onchange', 'href', 'type', 'role']
-	found_attrs = [attr for attr in interactive_attrs if attr in attributes]
-	if found_attrs:
-		if reasoning['confidence'] != 'HIGH':
-			reasoning['confidence'] = 'HIGH' if element_type in ['button', 'a'] else 'MEDIUM'
-		reasoning['primary_reason'] = 'interactive_attributes'
-		reasoning['reasons'].append(f'Interactive attributes: {", ".join(found_attrs)}')
-
-	# Check for ARIA roles
-	role = attributes.get('role', '').lower()
-	if role in ['button', 'link', 'checkbox', 'radio', 'menuitem', 'tab']:
-		reasoning['confidence'] = 'HIGH'
-		reasoning['primary_reason'] = 'aria_role'
-		reasoning['reasons'].append(f'Interactive ARIA role: {role}')
-
-	# Check if marked as clickable from snapshot
-	if element.get('is_clickable'):
-		if reasoning['confidence'] == 'LOW':
-			reasoning['confidence'] = 'MEDIUM'
-		reasoning['reasons'].append('Marked as clickable in DOM snapshot')
-
-	# Check for valid bounding box
-	if element.get('width', 0) > 0 and element.get('height', 0) > 0:
-		reasoning['reasons'].append(f'Valid bounding box: {element["width"]}x{element["height"]}')
-	else:
-		reasoning['confidence'] = 'LOW'
-		reasoning['reasons'].append('Invalid or missing bounding box')
-
-	# Fallback reasoning
-	if not reasoning['reasons']:
-		reasoning['reasons'].append('Element found in selector map')
-		reasoning['primary_reason'] = 'selector_mapped'
-
-	return reasoning
-
-
 def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -> list[dict]:
 	"""Convert DOMSelectorMap to the format expected by the highlighting script."""
 	elements = []
@@ -91,10 +40,6 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 				if hasattr(node, 'get_all_children_text')
 				else node.node_value[:50],
 			}
-
-			# Analyze why this element is interactive
-			reasoning = analyze_element_interactivity(element)
-			element['reasoning'] = reasoning
 
 			elements.append(element)
 		else:
