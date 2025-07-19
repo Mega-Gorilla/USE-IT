@@ -131,6 +131,7 @@ async def browser_session():
 			headless=True,
 			user_data_dir=None,
 			keep_alive=True,
+			chromium_sandbox=False,  # Disable sandbox for CI environment
 		)
 	)
 	await browser_session.start()
@@ -170,13 +171,17 @@ class TestARIAMenuDropdown:
 		# Find the ARIA menu element in the selector map
 		menu_index = None
 		for idx, element in selector_map.items():
-			# Look for the UL with role="menu"
-			if element.tag_name.lower() == 'ul' and 'menu' in str(element.attributes.get('role', '')):
+			# Look for the main UL with role="menu" and id="pyNavigation1752753375773"
+			if (
+				element.tag_name.lower() == 'ul'
+				and element.attributes.get('role') == 'menu'
+				and element.attributes.get('id') == 'pyNavigation1752753375773'
+			):
 				menu_index = idx
 				break
 
 		assert menu_index is not None, (
-			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name} id={element.attributes.get('id', 'None')} role={element.attributes.get('role', 'None')}" for idx, element in selector_map.items()]}'
 		)
 
 		# Create a model for the get_dropdown_options action
@@ -226,13 +231,17 @@ class TestARIAMenuDropdown:
 		# Find the ARIA menu element in the selector map
 		menu_index = None
 		for idx, element in selector_map.items():
-			# Look for the UL with role="menu"
-			if element.tag_name.lower() == 'ul' and 'menu' in str(element.attributes.get('role', '')):
+			# Look for the main UL with role="menu" and id="pyNavigation1752753375773"
+			if (
+				element.tag_name.lower() == 'ul'
+				and element.attributes.get('role') == 'menu'
+				and element.attributes.get('id') == 'pyNavigation1752753375773'
+			):
 				menu_index = idx
 				break
 
 		assert menu_index is not None, (
-			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name}" for idx, element in selector_map.items()]}'
+			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name} id={element.attributes.get('id', 'None')} role={element.attributes.get('role', 'None')}" for idx, element in selector_map.items()]}'
 		)
 
 		# Create a model for the select_dropdown_option action

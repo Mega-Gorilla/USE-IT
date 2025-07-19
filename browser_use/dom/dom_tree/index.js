@@ -710,7 +710,9 @@
     const interactiveRoles = new Set([
       'button',           // Directly clickable element
       // 'link',            // Clickable link
-      // 'menuitem',        // Clickable menu item
+      'menu',            // Menu container (ARIA menus)
+      'menubar',         // Menu bar container
+      'menuitem',        // Clickable menu item
       'menuitemradio',   // Radio-style menu item (selectable)
       'menuitemcheckbox', // Checkbox-style menu item (toggleable)
       'radio',           // Radio button (selectable)
@@ -722,7 +724,7 @@
       'combobox',        // Dropdown with text input
       'searchbox',       // Search input field
       'textbox',         // Text input field
-      // 'listbox',         // Selectable list
+      'listbox',         // Selectable list
       'option',          // Selectable option in a list
       'scrollbar'        // Scrollable control
     ]);
