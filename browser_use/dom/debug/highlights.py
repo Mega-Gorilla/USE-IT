@@ -18,10 +18,6 @@ def convert_dom_selector_map_to_highlight_format(selector_map: DOMSelectorMap) -
 			# Use absolute position which includes iframe coordinate translations
 			rect = node.absolute_position
 			bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
-		elif node.snapshot_node and node.snapshot_node.bounds:
-			# Fallback to local bounds if absolute position is not available
-			rect = node.snapshot_node.bounds
-			bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
 
 		# Only include elements with valid bounding boxes (following working implementation)
 		if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:
@@ -114,33 +110,17 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			// High enough for most content but not maximum to avoid blocking critical popups/modals
 			const HIGHLIGHT_Z_INDEX = 999999; // High but reasonable z-index
 			
-			// Create container for all highlights - use absolute positioning to cover entire document
+			// Create container for all highlights - use fixed positioning without scroll calculations
 			const container = document.createElement('div');
 			container.id = 'browser-use-debug-highlights';
 			container.setAttribute('data-browser-use-highlight', 'container');
 			
-			// Get document dimensions to ensure container covers entire scrollable area
-			const docHeight = Math.max(
-				document.body.scrollHeight,
-				document.body.offsetHeight,
-				document.documentElement.clientHeight,
-				document.documentElement.scrollHeight,
-				document.documentElement.offsetHeight
-			);
-			const docWidth = Math.max(
-				document.body.scrollWidth,
-				document.body.offsetWidth,
-				document.documentElement.clientWidth,
-				document.documentElement.scrollWidth,
-				document.documentElement.offsetWidth
-			);
-			
 			container.style.cssText = `
-				position: absolute;
+				position: fixed;
 				top: 0;
 				left: 0;
-				width: ${{docWidth}}px;
-				height: ${{docHeight}}px;
+				width: 100vw;
+				height: 100vh;
 				pointer-events: none;
 				z-index: ${{HIGHLIGHT_Z_INDEX}};
 				overflow: visible;

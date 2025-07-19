@@ -267,7 +267,7 @@ class DomService:
 		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
 
 		def _construct_enhanced_node(
-			node: Node, html_frames: list[EnhancedDOMTreeNode] | None = None, total_iframe_offset: DOMRect | None = None
+			node: Node, html_frames: list[EnhancedDOMTreeNode] | None, total_frame_offset: DOMRect | None
 		) -> EnhancedDOMTreeNode:
 			"""
 			Recursively construct enhanced DOM tree nodes.
@@ -281,8 +281,13 @@ class DomService:
 			if html_frames is None:
 				html_frames = []
 
-			if total_iframe_offset is None:
-				total_iframe_offset = DOMRect(x=0.0, y=0.0, width=0.0, height=0.0)
+			# to get rid of the pointer references
+			if total_frame_offset is None:
+				total_frame_offset = DOMRect(x=0.0, y=0.0, width=0.0, height=0.0)
+			else:
+				total_frame_offset = DOMRect(
+					total_frame_offset.x, total_frame_offset.y, total_frame_offset.width, total_frame_offset.height
+				)
 
 			# memoize the mf (I don't know if some nodes are duplicated)
 			if node['nodeId'] in enhanced_dom_tree_node_lookup:
@@ -313,8 +318,8 @@ class DomService:
 			absolute_position = None
 			if snapshot_data and snapshot_data.bounds:
 				absolute_position = DOMRect(
-					x=snapshot_data.bounds.x + total_iframe_offset.x,
-					y=snapshot_data.bounds.y + total_iframe_offset.y,
+					x=snapshot_data.bounds.x + total_frame_offset.x,
+					y=snapshot_data.bounds.y + total_frame_offset.y,
 					width=snapshot_data.bounds.width,
 					height=snapshot_data.bounds.height,
 				)
@@ -351,20 +356,30 @@ class DomService:
 			if node['nodeType'] == NodeType.ELEMENT_NODE.value and node['nodeName'] == 'HTML' and node.get('frameId') is not None:
 				updated_html_frames.append(dom_tree_node)
 
+				# and adjust the total frame offset by scroll
+				if snapshot_data and snapshot_data.scrollRects:
+					total_frame_offset.x -= snapshot_data.scrollRects.x
+					total_frame_offset.y -= snapshot_data.scrollRects.y
+
 			# Calculate new iframe offset for content documents, accounting for iframe scroll
 			if node['nodeName'].upper() == 'IFRAME' and snapshot_data and snapshot_data.bounds:
 				if snapshot_data.bounds:
 					updated_html_frames.append(dom_tree_node)
 
+					total_frame_offset.x += snapshot_data.bounds.x
+					total_frame_offset.y += snapshot_data.bounds.y
+
 			if 'contentDocument' in node and node['contentDocument']:
-				dom_tree_node.content_document = _construct_enhanced_node(node['contentDocument'], updated_html_frames)
+				dom_tree_node.content_document = _construct_enhanced_node(
+					node['contentDocument'], updated_html_frames, total_frame_offset
+				)
 				dom_tree_node.content_document.parent_node = dom_tree_node
 				# forcefully set the parent node to the content document node (helps traverse the tree)
 
 			if 'shadowRoots' in node and node['shadowRoots']:
 				dom_tree_node.shadow_roots = []
 				for shadow_root in node['shadowRoots']:
-					shadow_root_node = _construct_enhanced_node(shadow_root, updated_html_frames)
+					shadow_root_node = _construct_enhanced_node(shadow_root, updated_html_frames, total_frame_offset)
 					# forcefully set the parent node to the shadow root node (helps traverse the tree)
 					shadow_root_node.parent_node = dom_tree_node
 					dom_tree_node.shadow_roots.append(shadow_root_node)
@@ -372,14 +387,14 @@ class DomService:
 			if 'children' in node and node['children']:
 				dom_tree_node.children_nodes = []
 				for child in node['children']:
-					dom_tree_node.children_nodes.append(_construct_enhanced_node(child, updated_html_frames))
+					dom_tree_node.children_nodes.append(_construct_enhanced_node(child, updated_html_frames, total_frame_offset))
 
 			# Set visibility using the collected HTML frames
 			dom_tree_node.is_visible = self.is_element_visible_according_to_all_parents(dom_tree_node, updated_html_frames)
 
 			return dom_tree_node
 
-		enhanced_dom_tree_node = _construct_enhanced_node(dom_tree['root'])
+		enhanced_dom_tree_node = _construct_enhanced_node(dom_tree['root'], None, None)
 
 		return enhanced_dom_tree_node
 
