@@ -742,7 +742,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			)
 		except TimeoutError:
 			raise TimeoutError(
-				f'LLM call timed out after {self.settings.llm_timeout} seconds. Generate less tokens and try again.'
+				f'LLM call timed out after {self.settings.llm_timeout} seconds. Keep your thinking and output short.'
 			)
 
 		self.state.last_model_output = model_output
