@@ -11,6 +11,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Generic, TypeVar
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -438,8 +439,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
-		wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}', wal_path=wal_path)
+		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
+		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
 
 		# Cloud sync service
 		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
@@ -640,6 +641,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task = new_task
 		self._message_manager.add_new_task(new_task)
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='_raise_if_stopped_or_paused')
 	async def _raise_if_stopped_or_paused(self) -> None:
 		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
 
@@ -650,24 +652,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if self.state.stopped or self.state.paused:
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
-
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_with_recovery')
-	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
-		"""Get browser state with multiple fallback strategies for error recovery"""
-
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-
-		# Try 1: Full state summary (current implementation) - like main branch
-		try:
-			return await self.browser_session.get_state_summary(cache_clickable_elements_hashes)
-		except Exception as e:
-			if self.state.last_result is None:
-				self.state.last_result = []
-			self.state.last_result.append(ActionResult(error=str(e)))
-			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
-
-		self.logger.warning('🔄 Falling back to minimal state summary')
-		return await self.browser_session.get_minimal_state_summary()
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
@@ -703,7 +687,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
-		browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
+		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
 		current_page = await self.browser_session.get_current_page()
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
@@ -1116,6 +1100,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
+				cdp_url=urlparse(self.browser_session.cdp_url).hostname
+				if self.browser_session and self.browser_session.cdp_url
+				else None,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
@@ -1374,56 +1361,63 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		results: list[ActionResult] = []
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		cached_selector_map = await self.browser_session.get_selector_map()
-		cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
-
-		try:
-			await self.browser_session.remove_highlights()
-		except TimeoutError:
-			# we don't care if this times out
-			self.logger.debug('Timeout to remove highlights')
-
-		for i, action in enumerate(actions):
-			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
-			if i > 0 and action.model_dump(exclude_unset=True).get('done') is not None:
-				msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
-				logger.info(msg)
+		cached_selector_map = {}
+		cached_path_hashes = set()
+		# check all actions if any has index, if so, get the selector map
+		for action in actions:
+			if action.get_index() is not None:
+				cached_selector_map = await self.browser_session.get_selector_map()
+				cached_path_hashes = {e.hash.branch_path_hash for e in cached_selector_map.values()}
 				break
 
-			if action.get_index() is not None and i != 0:
-				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
-				new_selector_map = new_browser_state_summary.selector_map
-
-				# Detect index change after previous action
-				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
-				orig_target_hash = orig_target.hash.branch_path_hash if orig_target else None
-				new_target = new_selector_map.get(action.get_index())  # type: ignore
-				new_target_hash = new_target.hash.branch_path_hash if new_target else None
-				if orig_target_hash != new_target_hash:
-					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
+		# loop over actions and execute them
+		for i, action in enumerate(actions):
+			if i > 0:
+				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
+				if action.model_dump(exclude_unset=True).get('done') is not None:
+					msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
 					logger.info(msg)
-					results.append(
-						ActionResult(
-							extracted_content=msg,
-							include_in_memory=True,
-							long_term_memory=msg,
-						)
-					)
 					break
 
-				new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
-				if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
-					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
-					logger.info(msg)
-					results.append(
-						ActionResult(
-							extracted_content=msg,
-							include_in_memory=True,
-							long_term_memory=msg,
-						)
+				if action.get_index() is not None:
+					new_browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
+						cache_clickable_elements_hashes=False, include_screenshot=False
 					)
-					break
+					new_selector_map = new_browser_state_summary.selector_map
+
+					# Detect index change after previous action
+					orig_target = cached_selector_map.get(action.get_index())  # type: ignore
+					orig_target_hash = orig_target.hash.branch_path_hash if orig_target else None
+					new_target = new_selector_map.get(action.get_index())  # type: ignore
+					new_target_hash = new_target.hash.branch_path_hash if new_target else None
+					if orig_target_hash != new_target_hash:
+						msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
+						logger.info(msg)
+						results.append(
+							ActionResult(
+								extracted_content=msg,
+								include_in_memory=True,
+								long_term_memory=msg,
+							)
+						)
+						break
+
+					new_path_hashes = {e.hash.branch_path_hash for e in new_selector_map.values()}
+					if check_for_new_elements and not new_path_hashes.issubset(cached_path_hashes):
+						# next action requires index but there are new elements on the page
+						msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
+						logger.info(msg)
+						results.append(
+							ActionResult(
+								extracted_content=msg,
+								include_in_memory=True,
+								long_term_memory=msg,
+							)
+						)
+						break
+
+				# wait between actions
+				await asyncio.sleep(self.browser_profile.wait_between_actions)
 
 			try:
 				await self._raise_if_stopped_or_paused()
@@ -1447,9 +1441,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}({action_params})')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
-
-				await asyncio.sleep(self.browser_profile.wait_between_actions)
-				# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
 			except Exception as e:
 				# Handle any exceptions during action execution
@@ -1528,7 +1519,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await self.browser_session.get_browser_state_with_recovery(
+			cache_clickable_elements_hashes=False, include_screenshot=False
+		)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []
