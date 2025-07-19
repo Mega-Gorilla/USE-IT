@@ -560,7 +560,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
 		default=True,
-		description="Enable default extensions for ad blocking (uBlock Origin) and cookie handling (I don't care about cookies). Extensions are automatically downloaded and loaded when enabled.",
+		description="Enable default extensions for ad blocking (uBlock Origin) and cookie handling (I still don't care about cookies). Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -742,9 +742,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
 			},
 			{
-				'name': "I don't care about cookies",
-				'id': 'fihnjjcciajhdojfnbdddfaoknhalnja',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dfihnjjcciajhdojfnbdddfaoknhalnja%26uc',
+				'name': "I still don't care about cookies",
+				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
 			},
 		]
 
