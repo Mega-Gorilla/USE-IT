@@ -739,7 +739,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			model_output = await asyncio.wait_for(
 				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
 			)
-		except asyncio.TimeoutError:
+		except TimeoutError:
 			raise TimeoutError(
 				f'LLM call timed out after {self.settings.llm_timeout} seconds. Generate less tokens and try again.'
 			)
