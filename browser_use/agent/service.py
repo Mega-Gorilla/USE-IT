@@ -728,6 +728,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		await self._handle_final_step(step_info)
 		return browser_state_summary
 
+	@observe_debug(ignore_input=True, name='get_next_action')
 	async def _get_next_action(self, browser_state_summary: BrowserStateSummary) -> None:
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
@@ -980,6 +981,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return text.strip()
 
 	@time_execution_async('--get_next_action')
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
