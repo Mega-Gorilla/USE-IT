@@ -65,6 +65,7 @@ class AgentSettings(BaseModel):
 	calculate_cost: bool = False
 	include_tool_call_examples: bool = False
 	llm_timeout: int = 60  # Timeout in seconds for LLM calls
+	step_timeout: int = 180  # Timeout in seconds for each step
 
 
 class AgentState(BaseModel):

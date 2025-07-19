@@ -184,6 +184,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
 		llm_timeout: int = 60,
+		step_timeout: int = 180,
 		**kwargs,
 	):
 		# Check for deprecated planner parameters
@@ -261,6 +262,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			calculate_cost=calculate_cost,
 			include_tool_call_examples=include_tool_call_examples,
 			llm_timeout=llm_timeout,
+			step_timeout=step_timeout,
 		)
 
 		# Token cost service
@@ -1239,7 +1241,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				try:
 					await asyncio.wait_for(
 						self.step(step_info),
-						timeout=300,  # 5 minute step timeout - more generous for slow LLM calls
+						timeout=self.settings.step_timeout,
 					)
 					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 				except TimeoutError:
@@ -1247,7 +1249,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					error_msg = f'Step {step + 1} timed out after 300 seconds'
 					self.logger.error(f'⏰ {error_msg}')
 					self.state.consecutive_failures += 1
-					self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
+					self.state.last_result = [ActionResult(error=error_msg)]
 
 				if on_step_end is not None:
 					await on_step_end(self)
