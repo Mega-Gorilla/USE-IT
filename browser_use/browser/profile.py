@@ -565,7 +565,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
 		default=True,
-		description="Enable minimal essential extensions: ad blocking (uBlock Origin) and cookie handling (I still don't care about cookies). These core extensions work automatically without welcome tabs. Extensions are automatically downloaded and loaded when enabled.",
+		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), URL cleaning (ClearURLs), and content extraction (Reader View). Note: Reader View requires manual activation or Playwright automation to trigger. Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -739,7 +739,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 		from pathlib import Path
 
-		# Extension definitions - minimal essential set to avoid welcome tab issues
+		# Extension definitions - optimized for automation and content extraction
 		extensions = [
 			{
 				'name': 'uBlock Origin',
@@ -750,6 +750,16 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'name': "I still don't care about cookies",
 				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
+			},
+			{
+				'name': 'ClearURLs',
+				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
+			},
+			{
+				'name': 'Reader View',
+				'id': 'ecabifbgmdmgdllomnfinbmaellmclnh',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Decabifbgmdmgdllomnfinbmaellmclnh%26uc',
 			},
 		]
 
@@ -786,7 +796,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 		if extension_paths:
 			logger.info(
-				f"✅ Essential extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies)"
+				f"✅ Extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies, ClearURLs, Reader View)"
 			)
 		else:
 			logger.warning('⚠️ No default extensions could be loaded')
