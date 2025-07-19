@@ -3,8 +3,12 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
+from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXPropertyName
+from cdp_use.cdp.dom.commands import GetDocumentReturns
 from cdp_use.cdp.dom.types import ShadowRootType
+from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
+from cdp_use.cdp.target.types import TargetInfo
 
 from browser_use.dom.utils import cap_text_length
 
@@ -24,6 +28,24 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'data-state',
 	'aria-checked',
 ]
+
+
+@dataclass
+class CurrentPageTargets:
+	page_session: TargetInfo
+	iframe_sessions: list[TargetInfo]
+	"""
+	Iframe sessions are ALL the iframes sessions of all the pages (not just the current page)
+	"""
+
+
+@dataclass
+class TargetAllTrees:
+	snapshot: CaptureSnapshotReturns
+	dom_tree: GetDocumentReturns
+	ax_tree: GetFullAXTreeReturns
+	device_pixel_ratio: float
+	cdp_timing: dict[str, float]
 
 
 @dataclass(slots=True)

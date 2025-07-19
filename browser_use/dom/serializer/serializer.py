@@ -219,8 +219,12 @@ class DOMTreeSerializer:
 						formatted_text.append(child_text)
 				return '\n'.join(formatted_text)
 
-			# Add element with interactive_index if clickable or scrollable
-			if node.interactive_index is not None or node.original_node.is_scrollable:
+			# Add element with interactive_index if clickable, scrollable, or iframe
+			if (
+				node.interactive_index is not None
+				or node.original_node.is_scrollable
+				or node.original_node.tag_name.upper() == 'IFRAME'
+			):
 				next_depth += 1
 
 				# Build attributes string
@@ -235,6 +239,9 @@ class DOMTreeSerializer:
 					new_prefix = '*' if node.is_new else ''
 					scroll_prefix = '|SCROLL+' if node.original_node.is_scrollable else '['
 					line = f'{depth_str}{new_prefix}{scroll_prefix}{node.interactive_index}]<{node.original_node.tag_name}'
+				elif node.original_node.tag_name.upper() == 'IFRAME':
+					# Iframe element (not interactive)
+					line = f'{depth_str}|IFRAME|<{node.original_node.tag_name}'
 				else:
 					line = f'{depth_str}<{node.original_node.tag_name}'
 
