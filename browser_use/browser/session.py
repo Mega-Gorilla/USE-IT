@@ -2061,6 +2061,7 @@ class BrowserSession(BaseModel):
 			# Don't raise the error since this is not critical functionality
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
+	@observe_debug(ignore_output=True, name='get_dom_element_by_index')
 	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
 		"""Get DOM element by index."""
 		selector_map = await self.get_selector_map()
@@ -3915,7 +3916,7 @@ class BrowserSession(BaseModel):
 				if element_handle:
 					is_visible = await self._is_visible(element_handle)
 					if is_visible:
-						await element_handle.scroll_into_view_if_needed()
+						await element_handle.scroll_into_view_if_needed(timeout=1_000)
 					return element_handle
 				return None
 		except Exception as e:
@@ -3931,7 +3932,7 @@ class BrowserSession(BaseModel):
 					if element_handle:
 						is_visible = await self._is_visible(element_handle)
 						if is_visible:
-							await element_handle.scroll_into_view_if_needed()
+							await element_handle.scroll_into_view_if_needed(timeout=1_000)
 						return element_handle
 				except Exception as xpath_e:
 					self.logger.error(
@@ -3958,7 +3959,7 @@ class BrowserSession(BaseModel):
 			if element_handle:
 				is_visible = await self._is_visible(element_handle)
 				if is_visible:
-					await element_handle.scroll_into_view_if_needed()
+					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 				return element_handle
 			return None
 		except Exception as e:
@@ -3979,7 +3980,7 @@ class BrowserSession(BaseModel):
 			if element_handle:
 				is_visible = await self._is_visible(element_handle)
 				if is_visible:
-					await element_handle.scroll_into_view_if_needed()
+					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 				return element_handle
 			return None
 		except Exception as e:
@@ -4023,7 +4024,7 @@ class BrowserSession(BaseModel):
 
 			is_visible = await self._is_visible(element_handle)
 			if is_visible:
-				await element_handle.scroll_into_view_if_needed()
+				await element_handle.scroll_into_view_if_needed(timeout=1_000)
 			return element_handle
 		except Exception as e:
 			self.logger.error(
@@ -4033,6 +4034,7 @@ class BrowserSession(BaseModel):
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--input_text_element_node')
+	@observe_debug(ignore_input=True, name='input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		"""
 		Input text into an element with proper error handling and state management.
@@ -4056,7 +4058,7 @@ class BrowserSession(BaseModel):
 			# let's first try to click and type
 			try:
 				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-				await element_handle.click()
+				await element_handle.click(timeout=2_000)  # Add 2 second timeout
 				await asyncio.sleep(0.1)  # Increased sleep time
 				page = await self.get_current_page()
 				await page.keyboard.type(text)
@@ -4078,9 +4080,9 @@ class BrowserSession(BaseModel):
 			try:
 				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
 					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-					await element_handle.type(text, delay=5)
+					await element_handle.type(text, delay=5, timeout=5_000)  # Add 5 second timeout
 				else:
-					await element_handle.fill(text)
+					await element_handle.fill(text, timeout=3_000)  # Add 3 second timeout
 			except Exception as e:
 				self.logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
 				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
