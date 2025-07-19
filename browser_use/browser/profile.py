@@ -560,7 +560,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
 		default=True,
-		description="Enable default extensions for ad blocking (uBlock Origin) and cookie handling (I still don't care about cookies). Extensions are automatically downloaded and loaded when enabled.",
+		description="Enable default extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), privacy protection (Decentraleyes, ClearURLs), and navigation optimization (FastForward). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -746,6 +746,21 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
 			},
+			{
+				'name': 'Decentraleyes',
+				'id': 'ldpochfccmkkmhdbclfhpagapcfdljkj',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dldpochfccmkkmhdbclfhpagapcfdljkj%26uc',
+			},
+			{
+				'name': 'ClearURLs',
+				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
+			},
+			{
+				'name': 'FastForward',
+				'id': 'icallnadddjmdinamnolclfjanhfoafe',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dicallnadddjmdinamnolclfjanhfoafe%26uc',
+			},
 		]
 
 		# Create extensions cache directory
@@ -780,7 +795,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				continue
 
 		if extension_paths:
-			logger.info(f'✅ Default extensions ready: {len(extension_paths)} extensions loaded')
+			logger.info(
+				f"✅ Default extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies, Decentraleyes, ClearURLs, FastForward)"
+			)
 		else:
 			logger.warning('⚠️ No default extensions could be loaded')
 
