@@ -2808,59 +2808,8 @@ class BrowserSession(BaseModel):
 		if elapsed > 1:
 			self.logger.debug(f'💤 Page network traffic calmed down after {now - start_time:.2f} seconds')
 
-	async def _wait_for_dom_stability(self, max_wait: float = 2.0, stability_checks: int = 3):
-		"""
-		Wait for DOM to stabilize by checking element counts remain constant.
-
-		This prevents race conditions where:
-		- User types in input → dropdown appears after state capture
-		- Click happens → content updates after state capture
-		- Form submission → UI changes after state capture
-
-		Parameters:
-		-----------
-		max_wait: float
-			Maximum time to wait for stability
-		stability_checks: int
-			Number of consistent checks needed to consider DOM stable
-		"""
-		page = await self.get_current_page()
-
-		try:
-			start_time = time.time()
-			check_interval = 0.2  # Check every 200ms
-			consistent_checks = 0
-			last_element_count = 0
-
-			while time.time() - start_time < max_wait:
-				try:
-					# Get current element count as a simple stability metric
-					current_count = await page.evaluate("() => document.querySelectorAll('*').length")
-
-					if current_count == last_element_count:
-						consistent_checks += 1
-						if consistent_checks >= stability_checks:
-							elapsed = time.time() - start_time
-							self.logger.debug(f'🎯 DOM stabilized after {elapsed:.2f}s (element count: {current_count})')
-							return
-					else:
-						consistent_checks = 0
-						last_element_count = current_count
-
-					await asyncio.sleep(check_interval)
-
-				except Exception:
-					# If page becomes inaccessible, consider it stable
-					break
-
-			elapsed = time.time() - start_time
-			self.logger.debug(f'⏰ DOM stability timeout after {elapsed:.2f}s')
-
-		except Exception as e:
-			self.logger.debug(f'🔍 DOM stability check failed: {type(e).__name__}: {e}')
-
 	@observe_debug(ignore_input=True, ignore_output=True, name='wait_for_page_and_frames_load')
-	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None, wait_for_dom_stability: bool = True):
+	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
 		"""
 		Ensures page is fully loaded and stable before continuing.
 		Waits for network idle, DOM stability, and minimum WAIT_TIME.
@@ -2870,8 +2819,6 @@ class BrowserSession(BaseModel):
 		-----------
 		timeout_overwrite: float | None
 			Override the minimum wait time
-		wait_for_dom_stability: bool
-			If True, wait for DOM mutations to stop (prevents race conditions with dropdowns, etc.)
 		"""
 		# Start timing
 		start_time = time.time()
@@ -2887,10 +2834,6 @@ class BrowserSession(BaseModel):
 
 		try:
 			await self._wait_for_stable_network()
-
-			# Wait for DOM stability if requested (prevents race conditions with JS-driven changes)
-			if wait_for_dom_stability:
-				await self._wait_for_dom_stability()
 
 			# Check if the loaded URL is allowed
 			await self._check_and_handle_navigation(page)
