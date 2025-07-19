@@ -2180,7 +2180,7 @@ class BrowserSession(BaseModel):
 			raise Exception(f'Failed to click element. Error: {str(e)}')
 
 	@time_execution_async('--get_tabs_info')
-	@retry(timeout=6, retries=1)
+	@retry(timeout=3, retries=1)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
@@ -2188,7 +2188,7 @@ class BrowserSession(BaseModel):
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
 			try:
-				title = await asyncio.wait_for(page.title(), timeout=3.0)
+				title = await asyncio.wait_for(page.title(), timeout=2.0)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
@@ -2269,8 +2269,14 @@ class BrowserSession(BaseModel):
 		# Check if URL is allowed
 		if not self._is_url_allowed(normalized_url):
 			raise BrowserError(f'⛔️ Navigation to non-allowed URL: {normalized_url}')
-
-		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 12000))
+		# If timeout_ms is not None, use it (even if 0); else try profile.default_navigation_timeout (even if 0); else 12000
+		if timeout_ms is not None:
+			user_timeout_ms = int(timeout_ms)
+		elif self.browser_profile.default_navigation_timeout is not None:
+			user_timeout_ms = int(self.browser_profile.default_navigation_timeout)
+		else:
+			user_timeout_ms = 12000
+		timeout_ms = min(3000, user_timeout_ms)
 
 		# Handle new tab creation
 		if new_tab:
