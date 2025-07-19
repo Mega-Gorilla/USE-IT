@@ -183,6 +183,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
+		llm_timeout: int = 60,
 		**kwargs,
 	):
 		# Check for deprecated planner parameters
@@ -259,6 +260,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			extend_planner_system_message=None,  # Always None now (deprecated)
 			calculate_cost=calculate_cost,
 			include_tool_call_examples=include_tool_call_examples,
+			llm_timeout=llm_timeout,
 		)
 
 		# Token cost service
@@ -731,7 +733,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
 		)
 
-		model_output = await self._get_model_output_with_retry(input_messages)
+		try:
+			model_output = await asyncio.wait_for(
+				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
+			)
+		except asyncio.TimeoutError:
+			raise TimeoutError(
+				f'LLM call timed out after {self.settings.llm_timeout} seconds. Generate less tokens and try again.'
+			)
+
 		self.state.last_model_output = model_output
 
 		# Check again for paused/stopped state after getting model output

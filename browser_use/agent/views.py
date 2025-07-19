@@ -64,6 +64,7 @@ class AgentSettings(BaseModel):
 	extend_planner_system_message: str | None = None
 	calculate_cost: bool = False
 	include_tool_call_examples: bool = False
+	llm_timeout: int = 60  # Timeout in seconds for LLM calls
 
 
 class AgentState(BaseModel):
