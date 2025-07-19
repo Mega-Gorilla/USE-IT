@@ -564,8 +564,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
-		default=False,
-		description="Enable default extensions for ad blocking (uBlock Origin) and cookie handling (I still don't care about cookies). Extensions are automatically downloaded and loaded when enabled.",
+		default=True,
+		description="Enable minimal essential extensions: ad blocking (uBlock Origin) and cookie handling (I still don't care about cookies). These core extensions work automatically without welcome tabs. Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -739,7 +739,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 		from pathlib import Path
 
-		# Extension definitions
+		# Extension definitions - minimal essential set to avoid welcome tab issues
 		extensions = [
 			{
 				'name': 'uBlock Origin',
@@ -750,21 +750,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'name': "I still don't care about cookies",
 				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
-			},
-			{
-				'name': 'Decentraleyes',
-				'id': 'ldpochfccmkkmhdbclfhpagapcfdljkj',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dldpochfccmkkmhdbclfhpagapcfdljkj%26uc',
-			},
-			{
-				'name': 'ClearURLs',
-				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
-			},
-			{
-				'name': 'FastForward',
-				'id': 'icallnadddjmdinamnolclfjanhfoafe',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dicallnadddjmdinamnolclfjanhfoafe%26uc',
 			},
 		]
 
@@ -801,7 +786,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 		if extension_paths:
 			logger.info(
-				f"✅ Default extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies, Decentraleyes, ClearURLs, FastForward)"
+				f"✅ Essential extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies)"
 			)
 		else:
 			logger.warning('⚠️ No default extensions could be loaded')
