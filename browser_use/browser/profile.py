@@ -169,6 +169,11 @@ CHROME_DEFAULT_ARGS = [
 	'--disable-desktop-notifications',
 	'--noerrdialogs',
 	'--silent-debugger-extension-api',
+	# Extension welcome tab suppression for automation
+	'--disable-extensions-http-throttling',
+	'--disable-extension-activity-logging',
+	'--extensions-on-chrome-urls',
+	'--disable-default-apps',
 	f'--disable-features={",".join(CHROME_DISABLED_COMPONENTS)}',
 ]
 
