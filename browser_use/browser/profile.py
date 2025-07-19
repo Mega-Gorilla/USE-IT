@@ -171,7 +171,6 @@ CHROME_DEFAULT_ARGS = [
 	'--silent-debugger-extension-api',
 	# Extension welcome tab suppression for automation
 	'--disable-extensions-http-throttling',
-	'--disable-extension-activity-logging',
 	'--extensions-on-chrome-urls',
 	'--disable-default-apps',
 	f'--disable-features={",".join(CHROME_DISABLED_COMPONENTS)}',
@@ -565,7 +564,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 	enable_default_extensions: bool = Field(
 		default=True,
-		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), URL cleaning (ClearURLs), and content extraction (Reader View). Note: Reader View requires manual activation or Playwright automation to trigger. Extensions are automatically downloaded and loaded when enabled.",
+		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
 	window_size: ViewportSize | None = Field(
 		default=None,
