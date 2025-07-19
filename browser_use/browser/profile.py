@@ -756,11 +756,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
 			},
-			{
-				'name': 'Reader View',
-				'id': 'ecabifbgmdmgdllomnfinbmaellmclnh',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Decabifbgmdmgdllomnfinbmaellmclnh%26uc',
-			},
 		]
 
 		# Create extensions cache directory
