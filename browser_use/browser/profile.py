@@ -763,6 +763,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		cache_dir.mkdir(parents=True, exist_ok=True)
 
 		extension_paths = []
+		loaded_extension_names = []
 
 		for ext in extensions:
 			ext_dir = cache_dir / ext['id']
@@ -771,6 +772,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			# Check if extension is already extracted
 			if ext_dir.exists() and (ext_dir / 'manifest.json').exists():
 				extension_paths.append(str(ext_dir))
+				loaded_extension_names.append(ext['name'])
 				continue
 
 			try:
@@ -784,15 +786,14 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 					logger.info(f'📂 Extracting {ext["name"]} extension...')
 					self._extract_extension(crx_file, ext_dir)
 					extension_paths.append(str(ext_dir))
+					loaded_extension_names.append(ext['name'])
 
 			except Exception as e:
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
 				continue
 
 		if extension_paths:
-			logger.info(
-				f"✅ Extensions ready: {len(extension_paths)} extensions loaded (uBlock Origin, I still don't care about cookies, ClearURLs, Reader View)"
-			)
+			logger.info(f'✅ Extensions ready: {len(extension_paths)} extensions loaded ({", ".join(loaded_extension_names)})')
 		else:
 			logger.warning('⚠️ No default extensions could be loaded')
 
