@@ -20,6 +20,16 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 T = TypeVar('T', bound=BaseModel)
 
 ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
+UnsupportedReasoningParams: list[str] = [
+	'temperature',
+	'frequency_penalty',
+	'top_p',
+	'presence_penalty',
+	'logprobs',
+	'top_logprobs',
+	'logit_bias',
+	'max_tokens',
+]
 
 
 @dataclass
@@ -36,6 +46,7 @@ class ChatOpenAI(BaseChatModel):
 
 	# Model params
 	temperature: float | None = 0.2
+	frequency_penalty: float | None = 0.05
 	reasoning_effort: ReasoningEffort = 'low'
 
 	# Client initialization parameters
@@ -50,7 +61,7 @@ class ChatOpenAI(BaseChatModel):
 	default_query: Mapping[str, object] | None = None
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
-	max_completion_tokens: int | None = None
+	max_completion_tokens: int | None = 8000
 	top_p: float | None = None
 
 	# Static
@@ -146,17 +157,23 @@ class ChatOpenAI(BaseChatModel):
 
 		try:
 			model_params: dict[str, Any] = {}
-			if self.model in ReasoningModels:
-				model_params['reasoning_effort'] = self.reasoning_effort
 
 			if self.temperature is not None:
 				model_params['temperature'] = self.temperature
+
+			if self.frequency_penalty is not None:
+				model_params['frequency_penalty'] = self.frequency_penalty
 
 			if self.max_completion_tokens is not None:
 				model_params['max_completion_tokens'] = self.max_completion_tokens
 
 			if self.top_p is not None:
 				model_params['top_p'] = self.top_p
+
+			if self.model in ReasoningModels:
+				model_params['reasoning_effort'] = self.reasoning_effort
+				for param in UnsupportedReasoningParams:
+					model_params.pop(param, None)
 
 			if output_format is None:
 				# Return string response
