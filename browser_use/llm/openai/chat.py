@@ -20,16 +20,6 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 T = TypeVar('T', bound=BaseModel)
 
 ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
-UnsupportedReasoningParams: list[str] = [
-	'temperature',
-	'frequency_penalty',
-	'top_p',
-	'presence_penalty',
-	'logprobs',
-	'top_logprobs',
-	'logit_bias',
-	'max_tokens',
-]
 
 
 @dataclass
@@ -172,8 +162,8 @@ class ChatOpenAI(BaseChatModel):
 
 			if self.model in ReasoningModels:
 				model_params['reasoning_effort'] = self.reasoning_effort
-				for param in UnsupportedReasoningParams:
-					model_params.pop(param, None)
+				model_params['temperature'] = 1
+				model_params['frequency_penalty'] = 0
 
 			if output_format is None:
 				# Return string response
