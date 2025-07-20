@@ -328,7 +328,7 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert 'Waiting for' in result.extracted_content
 
-		# Verify that less than 0.1 second has passed (because we substract 3 seconds to account for the llm call)
+		# Verify that less than 0.1 second has passed (because we deducted 3 seconds to account for the llm call)
 		assert end_time - start_time <= 0.1  # Allow some timing margin
 
 		# longer wait

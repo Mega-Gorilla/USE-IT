@@ -137,7 +137,8 @@ class Controller(Generic[Context]):
 		)
 		async def wait(seconds: int = 3):
 			# Cap wait time at maximum 10 seconds
-			# 3 seconds already waited by calling the llm
+			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
+			# So if the model decides to wait for 5 seconds, the llm call took at least 3 seconds, so we only need to wait for 2 seconds
 			actual_seconds = min(max(seconds - 3, 0), 10)
 
 			if actual_seconds != seconds:
