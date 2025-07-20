@@ -335,9 +335,6 @@ class TestControllerIntegration:
 		# Create wait action for 1 second - fix to use a dictionary
 		wait_action = {'wait': {'seconds': 5}}  # Corrected format
 
-		class WaitActionModel(ActionModel):
-			wait: dict | None = None
-
 		# Record start time
 		start_time = time.time()
 
