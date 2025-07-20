@@ -1,9 +1,10 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
 
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from openai.types.chat import ChatCompletionContentPartTextParam
 from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.shared.chat_model import ChatModel
 from openai.types.shared_params.reasoning_effort import ReasoningEffort
@@ -20,6 +21,8 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 T = TypeVar('T', bound=BaseModel)
 
 ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
+
+CustomModels: list[ChatModel | str] = ['browser-use/BrowserUse_Qwen3_8B_160725']
 
 
 @dataclass
@@ -170,6 +173,60 @@ class ChatOpenAI(BaseChatModel):
 					'strict': True,
 					'schema': SchemaOptimizer.create_optimized_json_schema(output_format),
 				}
+
+				if self.model in CustomModels:
+					print(f'[CUSTOM MODEL] Using custom model logic for: {self.model}')
+					# we need to make a custom call and parse the response
+					# 1. find the system prompt message and	add the json schema to system prompt with \n<json_schema>\njson_schema\n</json_schema>
+					# 2. do a normal call instead of with structured output
+					# 3. split the response by </think> and take the last part
+					# 4. send it to parsing
+					if openai_messages[0]['role'] == 'system':
+						print('[CUSTOM MODEL] Found system message, adding JSON schema')
+						if isinstance(openai_messages[0]['content'], str):
+							print('[CUSTOM MODEL] System content is string, appending schema')
+							openai_messages[0]['content'] += f'\n<json_schema>\n{response_format}\n</json_schema>'
+						elif isinstance(openai_messages[0]['content'], Iterable):
+							print('[CUSTOM MODEL] System content is iterable, adding schema as new part')
+							openai_messages[0]['content'] = list(openai_messages[0]['content']) + [
+								ChatCompletionContentPartTextParam(
+									text=f'\n<json_schema>\n{response_format}\n</json_schema>', type='text'
+								)
+							]
+					else:
+						print(f'[CUSTOM MODEL] Warning: First message is not system role: {openai_messages[0]["role"]}')
+
+					print('[CUSTOM MODEL] Making API call without structured output')
+					response = await self.get_client().chat.completions.create(
+						model=self.model,
+						messages=openai_messages,
+						temperature=self.temperature,
+					)
+
+					content = response.choices[0].message.content
+					print(f'[CUSTOM MODEL] Received response content length: {len(content) if content else 0}')
+
+					if content is None:
+						print('[CUSTOM MODEL] Error: Response content is None')
+						raise ModelProviderError(
+							message='Failed to parse structured output from model response',
+							status_code=500,
+							model=self.name,
+						)
+
+					print("[CUSTOM MODEL] Splitting response by '</think>' tag")
+					content = content.split('</think>')[-1].strip('\n').strip()
+					print(f'[CUSTOM MODEL] Parsed content length after split: {len(content)}')
+					print(f'[CUSTOM MODEL] Parsed content preview: {content[:200]}...')
+
+					usage = self._get_usage(response)
+					print('[CUSTOM MODEL] Attempting to validate JSON against output format')
+					parsed = output_format.model_validate_json(content)
+					print('[CUSTOM MODEL] Successfully parsed and validated response')
+					return ChatInvokeCompletion(
+						completion=parsed,
+						usage=usage,
+					)
 
 				# Return structured response
 				response = await self.get_client().chat.completions.create(
