@@ -34,7 +34,8 @@ from bubus import EventBus
 from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
-from browser_use.agent.gif import create_history_gif
+# Lazy import for gif to avoid heavy agent.views import at startup
+# from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -1342,6 +1343,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				output_path: str = 'agent_history.gif'
 				if isinstance(self.settings.generate_gif, str):
 					output_path = self.settings.generate_gif
+
+				# Lazy import gif module to avoid heavy startup cost
+				from browser_use.agent.gif import create_history_gif
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
