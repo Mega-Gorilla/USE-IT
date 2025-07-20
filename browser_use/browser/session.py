@@ -2300,7 +2300,7 @@ class BrowserSession(BaseModel):
 
 		# Navigate to URL
 		try:
-			# Use asyncio.wait to prevent hanging on slow page loads
+			# Use asyncio.wait to prevent hanging on a slow page loads
 			# Don't cap the timeout - respect what was requested
 			self.logger.debug(f'🧭 Starting navigation to {_log_pretty_url(normalized_url)} with timeout {timeout_ms}ms')
 			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=timeout_ms))
