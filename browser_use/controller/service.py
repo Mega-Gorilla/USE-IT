@@ -140,11 +140,7 @@ class Controller(Generic[Context]):
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
 			# So if the model decides to wait for 5 seconds, the llm call took at least 3 seconds, so we only need to wait for 2 seconds
 			actual_seconds = min(max(seconds - 3, 0), 10)
-
-			if actual_seconds != seconds:
-				msg = f'🕒  Waiting for {actual_seconds + 3} seconds (capped from {seconds} seconds, max 10 seconds)'
-			else:
-				msg = f'🕒  Waiting for {actual_seconds + 3} seconds'
+			msg = f'🕒  Waiting for {actual_seconds + 3} seconds'
 			logger.info(msg)
 			await asyncio.sleep(actual_seconds)
 			return ActionResult(extracted_content=msg)
