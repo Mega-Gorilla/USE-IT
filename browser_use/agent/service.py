@@ -184,6 +184,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
+		llm_timeout: int = 60,
+		step_timeout: int = 180,
 		**kwargs,
 	):
 		# Check for deprecated planner parameters
@@ -260,6 +262,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			extend_planner_system_message=None,  # Always None now (deprecated)
 			calculate_cost=calculate_cost,
 			include_tool_call_examples=include_tool_call_examples,
+			llm_timeout=llm_timeout,
+			step_timeout=step_timeout,
 		)
 
 		# Token cost service
@@ -727,6 +731,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		await self._handle_final_step(step_info)
 		return browser_state_summary
 
+	@observe_debug(ignore_input=True, name='get_next_action')
 	async def _get_next_action(self, browser_state_summary: BrowserStateSummary) -> None:
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
@@ -734,7 +739,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
 		)
 
-		model_output = await self._get_model_output_with_retry(input_messages)
+		try:
+			model_output = await asyncio.wait_for(
+				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
+			)
+		except TimeoutError:
+			raise TimeoutError(
+				f'LLM call timed out after {self.settings.llm_timeout} seconds. Keep your thinking and output short.'
+			)
+
 		self.state.last_model_output = model_output
 
 		# Check again for paused/stopped state after getting model output
@@ -971,6 +984,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return text.strip()
 
 	@time_execution_async('--get_next_action')
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
@@ -1232,15 +1246,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				try:
 					await asyncio.wait_for(
 						self.step(step_info),
-						timeout=300,  # 5 minute step timeout - more generous for slow LLM calls
+						timeout=self.settings.step_timeout,
 					)
 					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 				except TimeoutError:
 					# Handle step timeout gracefully
-					error_msg = f'Step {step + 1} timed out after 300 seconds'
+					error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
 					self.logger.error(f'⏰ {error_msg}')
 					self.state.consecutive_failures += 1
-					self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
+					self.state.last_result = [ActionResult(error=error_msg)]
 
 				if on_step_end is not None:
 					await on_step_end(self)

@@ -2062,15 +2062,16 @@ class BrowserSession(BaseModel):
 			self.logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
 			# Don't raise the error since this is not critical functionality
 
+	@observe_debug(ignore_output=True, name='get_dom_element_by_index')
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
 		"""Get DOM element by index."""
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
 
-	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--click_element_node')
 	@observe_debug(ignore_input=True, name='click_element_node')
+	@require_healthy_browser(usable_page=True, reopen_page=True)
 	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
@@ -2182,7 +2183,7 @@ class BrowserSession(BaseModel):
 			raise Exception(f'Failed to click element. Error: {str(e)}')
 
 	@time_execution_async('--get_tabs_info')
-	@retry(timeout=6, retries=1)
+	@retry(timeout=3, retries=1)
 	@require_healthy_browser(usable_page=False, reopen_page=False)
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all tabs"""
@@ -2190,7 +2191,7 @@ class BrowserSession(BaseModel):
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
 			try:
-				title = await asyncio.wait_for(page.title(), timeout=3.0)
+				title = await asyncio.wait_for(page.title(), timeout=2.0)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
 			except Exception:
 				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
@@ -2271,8 +2272,14 @@ class BrowserSession(BaseModel):
 		# Check if URL is allowed
 		if not self._is_url_allowed(normalized_url):
 			raise BrowserError(f'⛔️ Navigation to non-allowed URL: {normalized_url}')
-
-		timeout_ms = min(3000, int(timeout_ms or self.browser_profile.default_navigation_timeout or 12000))
+		# If timeout_ms is not None, use it (even if 0); else try profile.default_navigation_timeout (even if 0); else 12000
+		if timeout_ms is not None:
+			user_timeout_ms = int(timeout_ms)
+		elif self.browser_profile.default_navigation_timeout is not None:
+			user_timeout_ms = int(self.browser_profile.default_navigation_timeout)
+		else:
+			user_timeout_ms = 12000
+		timeout_ms = min(3000, user_timeout_ms)
 
 		# Handle new tab creation
 		if new_tab:
@@ -2295,7 +2302,7 @@ class BrowserSession(BaseModel):
 
 		# Navigate to URL
 		try:
-			# Use asyncio.wait to prevent hanging on slow page loads
+			# Use asyncio.wait to prevent hanging on a slow page loads
 			# Don't cap the timeout - respect what was requested
 			self.logger.debug(f'🧭 Starting navigation to {_log_pretty_url(normalized_url)} with timeout {timeout_ms}ms')
 			nav_task = asyncio.create_task(page.goto(normalized_url, wait_until='load', timeout=timeout_ms))
@@ -3916,7 +3923,7 @@ class BrowserSession(BaseModel):
 				if element_handle:
 					is_visible = await self._is_visible(element_handle)
 					if is_visible:
-						await element_handle.scroll_into_view_if_needed()
+						await element_handle.scroll_into_view_if_needed(timeout=1_000)
 					return element_handle
 				return None
 		except Exception as e:
@@ -3932,7 +3939,7 @@ class BrowserSession(BaseModel):
 					if element_handle:
 						is_visible = await self._is_visible(element_handle)
 						if is_visible:
-							await element_handle.scroll_into_view_if_needed()
+							await element_handle.scroll_into_view_if_needed(timeout=1_000)
 						return element_handle
 				except Exception as xpath_e:
 					self.logger.error(
@@ -3959,7 +3966,7 @@ class BrowserSession(BaseModel):
 			if element_handle:
 				is_visible = await self._is_visible(element_handle)
 				if is_visible:
-					await element_handle.scroll_into_view_if_needed()
+					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 				return element_handle
 			return None
 		except Exception as e:
@@ -3980,7 +3987,7 @@ class BrowserSession(BaseModel):
 			if element_handle:
 				is_visible = await self._is_visible(element_handle)
 				if is_visible:
-					await element_handle.scroll_into_view_if_needed()
+					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 				return element_handle
 			return None
 		except Exception as e:
@@ -4024,7 +4031,7 @@ class BrowserSession(BaseModel):
 
 			is_visible = await self._is_visible(element_handle)
 			if is_visible:
-				await element_handle.scroll_into_view_if_needed()
+				await element_handle.scroll_into_view_if_needed(timeout=1_000)
 			return element_handle
 		except Exception as e:
 			self.logger.error(
@@ -4034,6 +4041,7 @@ class BrowserSession(BaseModel):
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--input_text_element_node')
+	@observe_debug(ignore_input=True, name='input_text_element_node')
 	async def _input_text_element_node(self, element_node: DOMElementNode, text: str):
 		"""
 		Input text into an element with proper error handling and state management.
@@ -4057,7 +4065,7 @@ class BrowserSession(BaseModel):
 			# let's first try to click and type
 			try:
 				await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-				await element_handle.click()
+				await element_handle.click(timeout=2_000)  # Add 2 second timeout
 				await asyncio.sleep(0.1)  # Increased sleep time
 				page = await self.get_current_page()
 				await page.keyboard.type(text)
@@ -4079,9 +4087,9 @@ class BrowserSession(BaseModel):
 			try:
 				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
 					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-					await element_handle.type(text, delay=5)
+					await element_handle.type(text, delay=5, timeout=5_000)  # Add 5 second timeout
 				else:
-					await element_handle.fill(text)
+					await element_handle.fill(text, timeout=3_000)  # Add 3 second timeout
 			except Exception as e:
 				self.logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
 				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
