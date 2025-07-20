@@ -51,8 +51,10 @@ from browser_use.browser.views import (
 	TabInfo,
 	URLNotAllowedError,
 )
-from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
-from browser_use.dom.service import DomService
+
+# Lazy imports for heavy DOM services to improve startup time
+# from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
+# from browser_use.dom.service import DomService
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import (
 	is_new_tab_page,
@@ -3103,6 +3105,9 @@ class BrowserSession(BaseModel):
 		# Find out which elements are new
 		# Do this only if url has not changed
 		if cache_clickable_elements_hashes:
+			# Lazy import heavy DOM service
+			from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
+
 			# if we are on the same url as the last state, we can use the cached hashes
 			if self._cached_clickable_element_hashes and self._cached_clickable_element_hashes.url == updated_state.url:
 				# Pointers, feel free to edit in place
@@ -3195,6 +3200,8 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'PDF auto-download check failed: {type(e).__name__}: {e}')
 
 			self.logger.debug('🌳 Starting DOM processing...')
+			from browser_use.dom.service import DomService
+
 			dom_service = DomService(page, logger=self.logger)
 			try:
 				content = await asyncio.wait_for(
