@@ -1248,7 +1248,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 				except TimeoutError:
 					# Handle step timeout gracefully
-					error_msg = f'Step {step + 1} timed out after 300 seconds'
+					error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
 					self.logger.error(f'⏰ {error_msg}')
 					self.state.consecutive_failures += 1
 					self.state.last_result = [ActionResult(error=error_msg)]
