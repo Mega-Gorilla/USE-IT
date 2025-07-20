@@ -162,12 +162,14 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 								await self._recover_unresponsive_page(
 									func.__name__, timeout_ms=int(self.browser_profile.default_navigation_timeout or 5000) + 5_000
 								)
+								page_url = self.agent_current_page.url if self.agent_current_page else 'unknown page'
 								self.logger.debug(
-									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(self.agent_current_page.url)}...'
+									f'🤕 Crashed page recovery finished, attempting to continue with {func.__name__}() on {_log_pretty_url(page_url)}...'
 								)
 							except Exception as e:
+								page_url = self.agent_current_page.url if self.agent_current_page else 'unknown page'
 								self.logger.warning(
-									f'❌ Crashed page recovery failed, could not run {func.__name__}(), page is stuck unresponsive on {_log_pretty_url(self.agent_current_page.url)}...'
+									f'❌ Crashed page recovery failed, could not run {func.__name__}(), page is stuck unresponsive on {_log_pretty_url(page_url)}...'
 								)
 								raise  # Re-raise to let retry decorator / callsite handle it
 
