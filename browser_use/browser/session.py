@@ -2060,16 +2060,16 @@ class BrowserSession(BaseModel):
 			self.logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
 			# Don't raise the error since this is not critical functionality
 
-	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@observe_debug(ignore_output=True, name='get_dom_element_by_index')
+	@require_healthy_browser(usable_page=True, reopen_page=True)
 	async def get_dom_element_by_index(self, index: int) -> DOMElementNode | None:
 		"""Get DOM element by index."""
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
 
-	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--click_element_node')
 	@observe_debug(ignore_input=True, name='click_element_node')
+	@require_healthy_browser(usable_page=True, reopen_page=True)
 	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
 		"""
 		Optimized method to click an element using xpath.
