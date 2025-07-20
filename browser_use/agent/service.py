@@ -282,7 +282,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self._set_browser_use_version_and_source(source)
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 
-		# Verify we can connect to the LLM and setup the tool calling method
+		# Verify we can connect to the model
 		self._verify_and_setup_llm()
 
 		# TODO: move this logic to the LLMs
@@ -691,7 +691,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
-		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
+		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
+			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision
+		)
 		current_page = await self.browser_session.get_current_page()
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
