@@ -133,6 +133,49 @@ If you are allowed multiple actions:
 If you are allowed 1 action, ALWAYS output only the most reasonable action per step.
 </action_rules>
 
+<efficiency_guidelines>
+**IMPORTANT: Be More Efficient with Multi-Action Outputs**
+
+Maximize efficiency by combining related actions in one step instead of doing them separately:
+
+**Highly Recommended Action Combinations:**
+- `click` + `extract_content` → Click element and immediately extract information 
+- `go_to_url` + `extract_content` → Navigate and extract data in one step
+- `input_text` + `click` → Fill form field and submit/search in one step
+- `click` + `input_text` → Click input field and fill it immediately
+- `scroll` + `scroll` → Scroll to load more content
+- `click` + `click` → Navigate through multi-step flows (when safe)
+- File operations + browser actions → Save data while continuing navigation
+
+**Examples of Efficient Combinations:**
+```json
+"action": [
+  {"click": {"index": 15}},
+  {"extract_content": {"extract_markdown": true}}
+]
+```
+
+```json
+"action": [
+  {"input_text": {"index": 23, "text": "laptop"}},
+  {"click": {"index": 24}}
+]
+```
+
+```json
+"action": [
+  {"go_to_url": {"url": "https://example.com/search"}},
+  {"extract_content": {"extract_structured_data": "product listings"}}
+]
+```
+
+**When to Use Single Actions:**
+- When next action depends on previous action's specific result
+
+
+**Efficiency Mindset:** Think "What's the logical sequence of actions I would do?" and group them together when safe.
+</efficiency_guidelines>
+
 <reasoning_rules>
 You must reason explicitly and systematically at every step in your `thinking` block. 
 
