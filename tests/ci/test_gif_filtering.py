@@ -2,20 +2,14 @@
 
 import base64
 import io
-from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from browser_use import Agent, AgentHistoryList
+from browser_use import AgentHistoryList
 from browser_use.agent.gif import create_history_gif
-from browser_use.agent.views import AgentHistory, AgentOutput, ActionResult, StepMetadata
-from browser_use.browser.views import BrowserStateHistory, TabInfo
-from tests.ci.conftest import create_mock_llm
-
-
-# Known placeholder image data for about:blank pages
-PLACEHOLDER_4PX = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+from browser_use.agent.views import ActionResult, AgentHistory, AgentOutput
+from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT, BrowserStateHistory, TabInfo
 
 
 @pytest.fixture
@@ -57,7 +51,7 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 	"""Test that 4px placeholder screenshots from about:blank pages are filtered out of GIFs."""
 	# Create a history with mixed screenshots: real and placeholder
 	history_items = []
-	
+
 	# First item: about:blank placeholder (should be filtered)
 	history_items.append(
 		AgentHistory(
@@ -69,7 +63,7 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 			),
 			result=[ActionResult()],
 			state=BrowserStateHistory(
-				screenshot=PLACEHOLDER_4PX,
+				screenshot=PLACEHOLDER_4PX_SCREENSHOT,
 				url='about:blank',
 				title='New Tab',
 				tabs=[TabInfo(page_id=1, url='about:blank', title='New Tab')],
@@ -77,7 +71,7 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 			),
 		)
 	)
-	
+
 	# Second item: real screenshot
 	history_items.append(
 		AgentHistory(
@@ -97,7 +91,7 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 			),
 		)
 	)
-	
+
 	# Third item: another about:blank placeholder (should be filtered)
 	history_items.append(
 		AgentHistory(
@@ -109,15 +103,15 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 			),
 			result=[ActionResult()],
 			state=BrowserStateHistory(
-				screenshot=PLACEHOLDER_4PX,
-				url='about:blank', 
+				screenshot=PLACEHOLDER_4PX_SCREENSHOT,
+				url='about:blank',
 				title='New Tab',
 				tabs=[TabInfo(page_id=2, url='about:blank', title='New Tab')],
 				interacted_element=[None],
 			),
 		)
 	)
-	
+
 	# Fourth item: another real screenshot
 	history_items.append(
 		AgentHistory(
@@ -137,10 +131,10 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 			),
 		)
 	)
-	
+
 	# Create history list
 	history = AgentHistoryList(history=history_items)
-	
+
 	# Generate GIF
 	gif_path = test_dir / 'test_filtered.gif'
 	create_history_gif(
@@ -151,10 +145,10 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 		show_goals=True,
 		show_task=True,
 	)
-	
+
 	# Verify GIF was created
 	assert gif_path.exists(), 'GIF was not created'
-	
+
 	# Open the GIF and check the frames
 	with Image.open(gif_path) as img:
 		# Count frames
@@ -167,14 +161,14 @@ async def test_gif_filters_out_placeholder_screenshots(test_dir):
 				img.seek(img.tell() + 1)
 		except EOFError:
 			pass
-		
+
 		# We should have 3 frames total:
 		# 1. Task frame (created from first real screenshot)
-		# 2. Second real screenshot  
+		# 2. Second real screenshot
 		# 3. Fourth real screenshot
 		# The two placeholder screenshots should be filtered out
 		assert frame_count == 3, f'Expected 3 frames (1 task + 2 real screenshots), got {frame_count}'
-		
+
 		# All frames should have the same size (800x600), not 4x4
 		for size in frame_sizes:
 			assert size == (800, 600), f'Frame has incorrect size: {size}. Placeholder images may not have been filtered.'
@@ -184,19 +178,19 @@ async def test_gif_handles_all_placeholders(test_dir):
 	"""Test that GIF generation handles case where all screenshots are placeholders."""
 	# Create a history with only placeholder screenshots
 	history_items = []
-	
+
 	for i in range(3):
 		history_items.append(
 			AgentHistory(
 				model_output=AgentOutput(
 					evaluation_previous_goal='',
 					memory='',
-					next_goal=f'Step {i+1}',
+					next_goal=f'Step {i + 1}',
 					action=[],
 				),
 				result=[ActionResult()],
 				state=BrowserStateHistory(
-					screenshot=PLACEHOLDER_4PX,
+					screenshot=PLACEHOLDER_4PX_SCREENSHOT,
 					url='about:blank',
 					title='New Tab',
 					tabs=[TabInfo(page_id=1, url='about:blank', title='New Tab')],
@@ -204,9 +198,9 @@ async def test_gif_handles_all_placeholders(test_dir):
 				),
 			)
 		)
-	
+
 	history = AgentHistoryList(history=history_items)
-	
+
 	# Generate GIF - should handle gracefully
 	gif_path = test_dir / 'test_all_placeholders.gif'
 	create_history_gif(
@@ -215,7 +209,7 @@ async def test_gif_handles_all_placeholders(test_dir):
 		output_path=str(gif_path),
 		duration=500,
 	)
-	
+
 	# With all placeholders filtered, no GIF should be created
 	assert not gif_path.exists(), 'GIF should not be created when all screenshots are placeholders'
 

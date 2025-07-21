@@ -45,6 +45,7 @@ from browser_use.browser.types import (
 	async_playwright,
 )
 from browser_use.browser.views import (
+	PLACEHOLDER_4PX_SCREENSHOT,
 	BrowserError,
 	BrowserStateSummary,
 	PageInfo,
@@ -3610,7 +3611,7 @@ class BrowserSession(BaseModel):
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
 			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was
-			return 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+			return PLACEHOLDER_4PX_SCREENSHOT
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:

@@ -6,6 +6,11 @@ from pydantic import BaseModel
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement
 from browser_use.dom.views import DOMState
 
+# Known placeholder image data for about:blank pages - a 4x4 white PNG
+PLACEHOLDER_4PX_SCREENSHOT = (
+	'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+)
+
 
 # Pydantic
 class TabInfo(BaseModel):
