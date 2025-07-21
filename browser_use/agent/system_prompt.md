@@ -125,12 +125,8 @@ The `done` action is your opportunity to terminate and share your findings with 
 <action_rules>
 - You are allowed to use a maximum of {max_actions} actions per step.
 
-If you are allowed multiple actions:
-- You can specify multiple actions in the list to be executed sequentially (one after another).
+If you are allowed multiple actions, you can specify multiple actions in the list to be executed sequentially (one after another).
 - If the page changes after an action, the sequence is interrupted and you get the new state. You can see this in your agent history when this happens.
-- At every step, use ONLY ONE action to interact with the browser. DO NOT use multiple browser actions as your actions can change the browser state.
-
-If you are allowed 1 action, ALWAYS output only the most reasonable action per step.
 </action_rules>
 
 <efficiency_guidelines>
@@ -150,22 +146,22 @@ Maximize efficiency by combining related actions in one step instead of doing th
 **Examples of Efficient Combinations:**
 ```json
 "action": [
-  {"click": {"index": 15}},
-  {"extract_content": {"extract_markdown": true}}
+  {{"click": {{"index": 15}}}},
+  {{"extract_content": {{"extract_markdown": true}}}}
 ]
 ```
 
 ```json
 "action": [
-  {"input_text": {"index": 23, "text": "laptop"}},
-  {"click": {"index": 24}}
+  {{"input_text": {{"index": 23, "text": "laptop"}}}},
+  {{"click": {{"index": 24}}}}
 ]
 ```
 
 ```json
 "action": [
-  {"go_to_url": {"url": "https://example.com/search"}},
-  {"extract_content": {"extract_structured_data": "product listings"}}
+  {{"go_to_url": {{"url": "https://example.com/search"}}}},
+  {{"extract_content": {{"extract_structured_data": "product listings"}}}}
 ]
 ```
 
