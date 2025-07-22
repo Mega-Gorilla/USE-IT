@@ -39,6 +39,8 @@ class ChatAnthropic(BaseChatModel):
 	model: str | ModelParam
 	max_tokens: int = 8192
 	temperature: float | None = None
+	top_p: float | None = None
+	seed: int | None = None
 
 	# Client initialization parameters
 	api_key: str | None = None
@@ -65,6 +67,8 @@ class ChatAnthropic(BaseChatModel):
 			'max_retries': self.max_retries,
 			'default_headers': self.default_headers,
 			'default_query': self.default_query,
+			'top_p': self.top_p,
+			'seed': self.seed,
 		}
 
 		# Create client_params dict with non-None values and non-NotGiven values
@@ -85,6 +89,12 @@ class ChatAnthropic(BaseChatModel):
 
 		if self.max_tokens is not None:
 			client_params['max_tokens'] = self.max_tokens
+
+		if self.top_p is not None:
+			client_params['top_p'] = self.top_p
+
+		if self.seed is not None:
+			client_params['seed'] = self.seed
 
 		return client_params
 
