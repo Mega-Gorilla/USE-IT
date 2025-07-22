@@ -67,8 +67,6 @@ class ChatAnthropic(BaseChatModel):
 			'max_retries': self.max_retries,
 			'default_headers': self.default_headers,
 			'default_query': self.default_query,
-			'top_p': self.top_p,
-			'seed': self.seed,
 		}
 
 		# Create client_params dict with non-None values and non-NotGiven values
