@@ -289,7 +289,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 		return UserMessage(content=browser_state_content, cache=False)
 
 	def get_read_state_message(self) -> UserMessage | None:
-		"""Get read state as a separate cached message"""
+		"""Get read state as a separate message"""
 		if not self.read_state_description:
 			return None
 		if not self.read_state_description.strip('\n').strip():
