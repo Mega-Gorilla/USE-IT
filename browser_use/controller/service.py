@@ -4,7 +4,10 @@ import json
 import logging
 import os
 import re
-from typing import Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, TypeVar, cast
+
+if TYPE_CHECKING:
+	from browser_use.browser.types import Page
 
 try:
 	from lmnr import Laminar  # type: ignore
@@ -15,7 +18,6 @@ from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
-from browser_use.browser.types import Page
 from browser_use.browser.views import BrowserError
 from browser_use.controller.registry.service import Registry
 from browser_use.controller.views import (
@@ -296,7 +298,7 @@ Only use this for specific queries for information retrieval from the page. Don'
 		async def extract_structured_data(
 			query: str,
 			extract_links: bool,
-			page: Page,
+			page: 'Page',
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
 		):
@@ -609,7 +611,7 @@ Explain the content of the page and that the requested information is not availa
 			'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
 			param_model=SendKeysAction,
 		)
-		async def send_keys(params: SendKeysAction, page: Page):
+		async def send_keys(params: SendKeysAction, page: 'Page'):
 			try:
 				await page.keyboard.press(params.keys)
 			except Exception as e:
@@ -630,7 +632,7 @@ Explain the content of the page and that the requested information is not availa
 		@self.registry.action(
 			description='Scroll to a text in the current page',
 		)
-		async def scroll_to_text(text: str, page: Page):  # type: ignore
+		async def scroll_to_text(text: str, page: 'Page'):  # type: ignore
 			try:
 				# Try different locator strategies
 				locators = [
@@ -913,7 +915,7 @@ Explain the content of the page and that the requested information is not availa
 				raise BrowserError(msg)
 
 		@self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
-		async def read_sheet_contents(page: Page):
+		async def read_sheet_contents(page: 'Page'):
 			# select all cells
 			await page.keyboard.press('Enter')
 			await page.keyboard.press('Escape')
@@ -979,7 +981,7 @@ Explain the content of the page and that the requested information is not availa
 			)
 
 		@self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
-		async def select_cell_or_range(cell_or_range: str, page: Page):
+		async def select_cell_or_range(cell_or_range: str, page: 'Page'):
 			await page.keyboard.press('Enter')  # make sure we dont delete current cell contents if we were last editing
 			await page.keyboard.press('Escape')  # to clear current focus (otherwise select range popup is additive)
 			await asyncio.sleep(0.1)
@@ -1003,7 +1005,7 @@ Explain the content of the page and that the requested information is not availa
 			'Google Sheets: Fallback method to type text into (only one) currently selected cell',
 			domains=['https://docs.google.com'],
 		)
-		async def fallback_input_into_single_selected_cell(text: str, page: Page):
+		async def fallback_input_into_single_selected_cell(text: str, page: 'Page'):
 			await page.keyboard.type(text, delay=0.1)
 			await page.keyboard.press('Enter')  # make sure to commit the input so it doesn't get overwritten by the next action
 			await page.keyboard.press('ArrowUp')
