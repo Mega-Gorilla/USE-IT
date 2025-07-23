@@ -181,7 +181,7 @@ class TestARIAMenuDropdown:
 				break
 
 		available_elements = [
-			f"{idx}: {element.tag_name} id={element.attributes.get('id', 'None')} role={element.attributes.get('role', 'None')}"
+			f'{idx}: {element.tag_name} id={element.attributes.get("id", "None")} role={element.attributes.get("role", "None")}'
 			for idx, element in selector_map.items()
 		]
 
