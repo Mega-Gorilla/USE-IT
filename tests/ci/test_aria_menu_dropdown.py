@@ -245,8 +245,13 @@ class TestARIAMenuDropdown:
 				menu_index = idx
 				break
 
+		available_elements = [
+			f'{idx}: {element.tag_name} id={element.attributes.get("id", "None")} role={element.attributes.get("role", "None")}'
+			for idx, element in selector_map.items()
+		]
+
 		assert menu_index is not None, (
-			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name} id={element.attributes.get('id', 'None')} role={element.attributes.get('role', 'None')}" for idx, element in selector_map.items()]}'
+			f'Could not find ARIA menu element in selector map. Available elements: {available_elements}'
 		)
 
 		# Create a model for the select_dropdown_option action
