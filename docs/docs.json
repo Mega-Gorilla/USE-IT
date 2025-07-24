@@ -59,6 +59,7 @@
             "pages": [
               "cloud/quickstart",
               "cloud/implementation",
+              "cloud/custom-sdk",
               "cloud/webhooks",
               "cloud/authentication"
             ]
