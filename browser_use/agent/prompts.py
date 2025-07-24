@@ -197,11 +197,16 @@ class AgentMessagePrompt:
 
 		current_tab_text = f'Current tab: {current_tab_id}' if current_tab_id is not None else ''
 
+		# Check if current page is a PDF viewer and add appropriate message
+		pdf_message = ''
+		if self.browser_state.is_pdf_viewer:
+			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the extract_structured_data action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
+
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
 {page_info_text}
-Interactive elements from top layer of the current page inside the viewport{truncated_text}:
+{pdf_message}Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
 		return browser_state
