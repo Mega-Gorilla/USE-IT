@@ -78,7 +78,7 @@ BASE_URL = 'https://api.browser-use.com/api/v1'
 HEADERS = {'Authorization': f'Bearer {API_KEY}'}
 
 profile_id = 'profile_1234567890abcdef'
-update_data = {"ad_blocker": false}
+update_data = {"ad_blocker": False}
 response = requests.put(f'{BASE_URL}/browser-profiles/{profile_id}', headers=HEADERS, json=update_data)
 print(response.json())
 
