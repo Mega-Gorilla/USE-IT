@@ -3175,6 +3175,9 @@ class BrowserSession(BaseModel):
 			parent=None,
 		)
 
+		# Check if current page is a PDF viewer
+		is_pdf_viewer = await self._is_pdf_viewer(page)
+
 		return BrowserStateSummary(
 			element_tree=minimal_element_tree,  # Minimal DOM tree
 			selector_map={},  # Empty selector map
@@ -3184,6 +3187,7 @@ class BrowserSession(BaseModel):
 			pixels_above=0,
 			pixels_below=0,
 			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
+			is_pdf_viewer=is_pdf_viewer,
 		)
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_updated_state')
@@ -3301,6 +3305,9 @@ class BrowserSession(BaseModel):
 					f'DOM processing timed out for {page.url} - using minimal state. Basic navigation still available via go_to_url, scroll, and search actions.'
 				)
 
+			# Check if current page is a PDF viewer
+			is_pdf_viewer = await self._is_pdf_viewer(page)
+
 			self.browser_state_summary = BrowserStateSummary(
 				element_tree=content.element_tree,
 				selector_map=content.selector_map,
@@ -3312,6 +3319,7 @@ class BrowserSession(BaseModel):
 				pixels_above=pixels_above,
 				pixels_below=pixels_below,
 				browser_errors=browser_errors,
+				is_pdf_viewer=is_pdf_viewer,
 			)
 
 			self.logger.debug('✅ get_state_summary completed successfully')
