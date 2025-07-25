@@ -26,6 +26,11 @@ from .utils import normalize_url
 
 os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/microsoft/playwright/issues/35972
 
+# 4x4 white PNG placeholder for about:blank pages to save tokens
+BLANK_PAGE_SCREENSHOT_PLACEHOLDER = (
+	'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+)
+
 import psutil
 from bubus.helpers import retry
 from playwright._impl._api_structures import ViewportSize
@@ -3618,7 +3623,7 @@ class BrowserSession(BaseModel):
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
 			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was
-			return 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+			return BLANK_PAGE_SCREENSHOT_PLACEHOLDER
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
@@ -4099,7 +4104,17 @@ class BrowserSession(BaseModel):
 					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
 					await element_handle.type(text, delay=5, timeout=5_000)  # Add 5 second timeout
 				else:
-					await element_handle.fill(text, timeout=3_000)  # Add 3 second timeout
+					# Try fill() first for supported elements
+					try:
+						await element_handle.fill(text, timeout=3_000)  # Add 3 second timeout
+					except Exception as fill_error:
+						# If fill() fails because element doesn't support it, try type() instead
+						if 'not an <input>, <textarea>, <select>' in str(fill_error):
+							self.logger.debug(f'Element does not support fill(), using type() instead: {fill_error}')
+							await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
+							await element_handle.type(text, delay=5, timeout=5_000)
+						else:
+							raise
 			except Exception as e:
 				self.logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
 				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
