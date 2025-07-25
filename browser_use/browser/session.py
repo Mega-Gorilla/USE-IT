@@ -4431,6 +4431,15 @@ class BrowserSession(BaseModel):
 		try:
 			await page.evaluate(
 				"""(browser_session_label) => {
+				// Ensure document.body exists before proceeding
+				if (!document.body) {
+					// Try again after DOM is ready
+					if (document.readyState === 'loading') {
+						document.addEventListener('DOMContentLoaded', () => arguments.callee(browser_session_label));
+					}
+					return;
+				}
+				
 				const animated_title = `Starting agent ${browser_session_label}...`;
 				if (document.title === animated_title) {
 					return;      // already run on this tab, dont run again
