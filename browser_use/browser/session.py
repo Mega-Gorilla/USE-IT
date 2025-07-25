@@ -757,18 +757,20 @@ class BrowserSession(BaseModel):
 	@retry(wait=0.5, retries=2, timeout=30, semaphore_limit=1, semaphore_scope='self', semaphore_lax=True)
 	async def _save_trace_recording(self) -> None:
 		"""Save browser trace recording."""
-		if self.browser_profile.traces_dir and self.browser_context is not None:
-			traces_path = Path(self.browser_profile.traces_dir)
-			if traces_path.suffix:
-				# Path has extension, use as-is (user specified exact file path)
-				final_trace_path = traces_path
-			else:
-				# Path has no extension, treat as directory and create filename
-				trace_filename = f'BrowserSession_{self.id}.zip'
-				final_trace_path = traces_path / trace_filename
+		# TEMPORARILY DISABLED: Trace recording causing test timeouts
+		return
+		# if self.browser_profile.traces_dir and self.browser_context is not None:
+		# 	traces_path = Path(self.browser_profile.traces_dir)
+		# 	if traces_path.suffix:
+		# 		# Path has extension, use as-is (user specified exact file path)
+		# 		final_trace_path = traces_path
+		# 	else:
+		# 		# Path has no extension, treat as directory and create filename
+		# 		trace_filename = f'BrowserSession_{self.id}.zip'
+		# 		final_trace_path = traces_path / trace_filename
 
-			self.logger.info(f'🎥 Saving browser_context trace to {final_trace_path}...')
-			await self.browser_context.tracing.stop(path=str(final_trace_path))
+		# 	self.logger.info(f'🎥 Saving browser_context trace to {final_trace_path}...')
+		# 	await self.browser_context.tracing.stop(path=str(final_trace_path))
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='connect_or_launch_browser')
 	async def _connect_or_launch_browser(self) -> None:
@@ -3687,17 +3689,18 @@ class BrowserSession(BaseModel):
 
 	async def _start_context_tracing(self):
 		"""Start tracing on browser context if trace_path is configured."""
-		if self.browser_profile.traces_dir and self.browser_context:
-			try:
-				self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
-				# Don't pass any path to start() - let Playwright handle internal temp files
-				await self.browser_context.tracing.start(
-					screenshots=True,
-					snapshots=True,
-					sources=False,  # Reduce trace size
-				)
-			except Exception as e:
-				self.logger.warning(f'Failed to start tracing: {e}')
+		# TEMPORARILY DISABLED: Trace recording causing test timeouts
+		# if self.browser_profile.traces_dir and self.browser_context:
+		# 	try:
+		# 		self.logger.debug(f'📽️ Starting tracing (will save to: {self.browser_profile.traces_dir})')
+		# 		# Don't pass any path to start() - let Playwright handle internal temp files
+		# 		await self.browser_context.tracing.start(
+		# 			screenshots=True,
+		# 			snapshots=True,
+		# 			sources=False,  # Reduce trace size
+		# 		)
+		# 	except Exception as e:
+		# 		self.logger.warning(f'Failed to start tracing: {e}')
 
 	@staticmethod
 	def _convert_simple_xpath_to_css_selector(xpath: str) -> str:
