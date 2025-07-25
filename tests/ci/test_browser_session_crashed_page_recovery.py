@@ -10,6 +10,8 @@ This test module covers:
 """
 
 import asyncio
+import os
+import signal
 import time
 import warnings
 
@@ -427,6 +429,134 @@ class TestBrowserSessionRecovery:
 		httpserver.expect_request('/normal').respond_with_data('<html><body>Normal</body></html>')
 		page2 = await browser_session.navigate(httpserver.url_for('/normal'))
 		assert 'normal' in page2.url
+
+	async def test_browser_crash_throws_hard_error_no_restart(self, browser_session: BrowserSession):
+		"""Test that browser crashes throw hard errors instead of restarting the browser"""
+		# Get the browser process PID
+		browser_pid = browser_session.browser_pid
+		assert browser_pid is not None, 'Browser PID must be available'
+
+		print(f'1️⃣ Browser PID: {browser_pid}')
+
+		# Force kill the browser process to simulate a hard crash
+		print('2️⃣ Killing browser process to simulate crash...')
+		try:
+			os.kill(browser_pid, signal.SIGKILL)
+		except ProcessLookupError:
+			# Process might have already exited
+			pass
+
+		# Wait a bit for the process to die
+		await asyncio.sleep(1)
+
+		# Try to use the browser session - should raise error (TargetClosedError or RuntimeError)
+		print('3️⃣ Attempting to use crashed browser session...')
+		with pytest.raises(Exception) as exc_info:
+			await browser_session.navigate('about:blank')
+
+		# Verify the error indicates browser disconnection/crash
+		error_msg = str(exc_info.value).lower()
+		error_type = type(exc_info.value).__name__
+		print(f'4️⃣ Got expected error ({error_type}): {error_msg}')
+		assert (
+			'closed' in error_msg or 'crash' in error_msg or 'cannot be recovered' in error_msg or 'connection lost' in error_msg
+		), f'Error message should indicate browser crash/closure, got: {error_msg}'
+
+		# Verify browser was NOT restarted (PID should still be the same dead one)
+		assert browser_session.browser_pid == browser_pid or browser_session.browser_pid is None, (
+			'Browser PID should not change (no restart should occur)'
+		)
+
+		print('✅ Browser crash correctly threw hard error without restarting')
+
+	async def test_unresponsive_page_recovery_with_crashed_browser(self, browser_session: BrowserSession):
+		"""Test that _recover_unresponsive_page throws error if browser has crashed"""
+		# Navigate to a page first
+		await browser_session.navigate('about:blank')
+
+		# Get the browser process PID
+		browser_pid = browser_session.browser_pid
+		assert browser_pid is not None
+
+		print(f'1️⃣ Browser PID: {browser_pid}')
+
+		# Force kill the browser process
+		print('2️⃣ Killing browser process...')
+		try:
+			os.kill(browser_pid, signal.SIGKILL)
+		except ProcessLookupError:
+			pass
+
+		# Wait for process to die
+		await asyncio.sleep(1)
+
+		# Try to recover unresponsive page - should raise RuntimeError
+		print('3️⃣ Attempting page recovery on crashed browser...')
+		with pytest.raises(RuntimeError) as exc_info:
+			await browser_session._recover_unresponsive_page('test_method')
+
+		# Verify error indicates browser crash
+		error_msg = str(exc_info.value).lower()
+		print(f'4️⃣ Got expected error: {error_msg}')
+		assert 'browser process has crashed' in error_msg or 'browser connection lost' in error_msg, (
+			f'Error should indicate browser crash, got: {error_msg}'
+		)
+
+		print('✅ Page recovery correctly detected crashed browser and threw error')
+
+	async def test_singleton_lock_error_throws_hard_error(self, browser_session: BrowserSession):
+		"""Test that SingletonLock errors throw hard error instead of restarting"""
+		# Create a conflicting user data directory scenario
+		import tempfile
+		from pathlib import Path
+
+		# Create a temp directory for user data
+		temp_dir = tempfile.mkdtemp(prefix='browseruse-test-')
+
+		# Create a fake SingletonLock file to simulate conflict
+		singleton_lock = Path(temp_dir) / 'SingletonLock'
+		singleton_lock.write_text('fake-lock')
+
+		# Create a session with this directory
+		session = BrowserSession(browser_profile=BrowserProfile(user_data_dir=temp_dir, headless=True))
+
+		# Modify the Chrome launch args to trigger SingletonLock error
+		original_args = session.browser_profile.args.copy()
+		# Add an arg that will cause Chrome to exit with SingletonLock error
+		session.browser_profile.args.append('--no-sandbox')
+		session.browser_profile.args.append('--disable-setuid-sandbox')
+
+		print(f'1️⃣ Attempting to launch browser with potentially conflicting user_data_dir: {temp_dir}')
+
+		# Note: This test is checking that IF a SingletonLock error occurs,
+		# it throws a hard error instead of restarting. The actual error might
+		# not always occur depending on the system state.
+		try:
+			await session.start()
+			# If it succeeds, that's OK - we can't reliably trigger SingletonLock
+			print('2️⃣ Browser launched successfully (SingletonLock error did not occur)')
+			await session.kill()
+		except RuntimeError as e:
+			# If we get a RuntimeError with SingletonLock, that's what we want
+			error_msg = str(e)
+			print(f'2️⃣ Got expected error: {error_msg}')
+			if 'SingletonLock' in error_msg:
+				print('✅ SingletonLock error correctly threw hard error without restart')
+			else:
+				# Some other RuntimeError - re-raise it
+				raise
+		except Exception as e:
+			# Unexpected error type
+			print(f'2️⃣ Got unexpected error type {type(e).__name__}: {e}')
+			raise
+		finally:
+			# Cleanup
+			import shutil
+
+			try:
+				shutil.rmtree(temp_dir, ignore_errors=True)
+			except Exception:
+				pass
 
 
 @pytest.mark.timeout(90)

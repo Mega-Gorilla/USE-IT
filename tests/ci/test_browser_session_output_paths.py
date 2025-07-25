@@ -24,20 +24,24 @@ def test_dir(tmp_path):
 @pytest.fixture
 async def httpserver_url(httpserver):
 	"""Simple test page."""
-	httpserver.expect_request('/').respond_with_data(
-		"""
-		<!DOCTYPE html>
-		<html>
-		<head><title>Test Page</title></head>
-		<body>
-			<h1>Test Recording Page</h1>
-			<input type="text" id="search" placeholder="Search here">
-			<button id="submit">Submit</button>
-		</body>
-		</html>
-		""",
-		content_type='text/html',
-	)
+	# Use expect_ordered_request with multiple handlers to handle repeated requests
+	for _ in range(10):  # Allow up to 10 requests to the same URL
+		httpserver.expect_ordered_request('/').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Test Page</title>
+			</head>
+			<body>
+				<h1>Test Recording Page</h1>
+				<input type="text" id="search" placeholder="Search here" />
+				<button type="button" id="submit">Submit</button>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
 	return httpserver.url_for('/')
 
 
@@ -112,6 +116,23 @@ def interactive_llm(httpserver_url):
 				{
 					"click_element_by_index": {
 						"index": 1
+					}
+				}
+			]
+		}
+		""",
+		# Fifth action: Done - task completed
+		"""
+		{
+			"thinking": "null",
+			"evaluation_previous_goal": "Clicked the submit button",
+			"memory": "Successfully navigated to the page, typed 'test' in the search box, and clicked submit",
+			"next_goal": "Task completed",
+			"action": [
+				{
+					"done": {
+						"text": "Task completed - typed 'test' in search box and clicked submit",
+						"success": true
 					}
 				}
 			]
@@ -451,8 +472,9 @@ class TestCombinedRecordings:
 			conversation_files = list(conversation_path.glob('conversation_*.txt'))
 			assert len(conversation_files) > 0, 'Conversation file was not created'
 
-			# Check GIF
+			# Check GIF - should be created since we navigate to a real page
 			assert gif_path.exists(), 'GIF was not created'
+			assert gif_path.stat().st_size > 10000, 'GIF file is too small'
 
 			# Check video directory
 			assert video_dir.exists(), 'Video directory was not created'
