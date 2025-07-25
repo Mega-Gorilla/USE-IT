@@ -64,8 +64,7 @@ def create_history_gif(
 	# Find the first non-placeholder screenshot
 	first_real_screenshot = None
 	for item in history.history:
-		if item.state.screenshot and item.state.screenshot != 
-    :
+		if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
 			first_real_screenshot = item.state.screenshot
 			break
 
