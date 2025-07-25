@@ -8,7 +8,7 @@ import platform
 from typing import TYPE_CHECKING
 
 from browser_use.agent.views import AgentHistoryList
-from browser_use.browser.session import BLANK_PAGE_SCREENSHOT_PLACEHOLDER
+from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT
 from browser_use.config import CONFIG
 
 if TYPE_CHECKING:
@@ -64,7 +64,8 @@ def create_history_gif(
 	# Find the first non-placeholder screenshot
 	first_real_screenshot = None
 	for item in history.history:
-		if item.state.screenshot and item.state.screenshot != BLANK_PAGE_SCREENSHOT_PLACEHOLDER:
+		if item.state.screenshot and item.state.screenshot != 
+    :
 			first_real_screenshot = item.state.screenshot
 			break
 
@@ -126,15 +127,25 @@ def create_history_gif(
 
 	# Create task frame if requested
 	if show_task and task:
-		task_frame = _create_task_frame(
-			task,
-			first_real_screenshot,
-			title_font,  # type: ignore
-			regular_font,  # type: ignore
-			logo,
-			line_spacing,
-		)
-		images.append(task_frame)
+		# Find the first non-placeholder screenshot for the task frame
+		first_real_screenshot = None
+		for item in history.history:
+			if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
+				first_real_screenshot = item.state.screenshot
+				break
+
+		if first_real_screenshot:
+			task_frame = _create_task_frame(
+				task,
+				first_real_screenshot,
+				title_font,  # type: ignore
+				regular_font,  # type: ignore
+				logo,
+				line_spacing,
+			)
+			images.append(task_frame)
+		else:
+			logger.warning('No real screenshots found for task frame, skipping task frame')
 
 	# Process each history item
 	for i, item in enumerate(history.history, 1):
@@ -142,7 +153,9 @@ def create_history_gif(
 			continue
 
 		# Skip placeholder screenshots from about:blank pages
-		if item.state.screenshot == BLANK_PAGE_SCREENSHOT_PLACEHOLDER:
+		# These are 4x4 white PNGs encoded as a specific base64 string
+		if item.state.screenshot == PLACEHOLDER_4PX_SCREENSHOT:
+			logger.debug(f'Skipping placeholder screenshot from about:blank page at step {i}')
 			continue
 
 		# Convert base64 screenshot to PIL Image
