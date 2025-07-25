@@ -1351,9 +1351,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
-				# Emit output file generated event for GIF
-				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-				self.eventbus.dispatch(output_event)
+				# Only emit output file event if GIF was actually created
+				if Path(output_path).exists():
+					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
+					self.eventbus.dispatch(output_event)
 
 			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
