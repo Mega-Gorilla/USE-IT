@@ -10,7 +10,7 @@ from browser_use.llm import ChatOpenAI
 
 load_dotenv()
 
-''
+
 SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
 agent_dir = SCRIPT_DIR / 'file_system'
 agent_dir.mkdir(exist_ok=True)
@@ -34,10 +34,7 @@ Finally, share the file with me.
 NOTE: DO NOT USE extract_structured_data action - everything is visible in browser state.
 """.strip('\n')
 
-llm = ChatOpenAI(
-	model='gpt-4.1-mini',
-)
-
+llm = ChatOpenAI(model='gpt-4.1-mini')
 
 agent = Agent(
 	task=task,
