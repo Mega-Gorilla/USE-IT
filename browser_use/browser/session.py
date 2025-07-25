@@ -45,6 +45,7 @@ from browser_use.browser.types import (
 	async_playwright,
 )
 from browser_use.browser.views import (
+	PLACEHOLDER_4PX_SCREENSHOT,
 	BrowserError,
 	BrowserStateSummary,
 	PageInfo,
@@ -2202,9 +2203,9 @@ class BrowserSession(BaseModel):
 					f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (using fallback title)'
 				)
 
-				# Only mark as unusable if it's actually about:blank, otherwise preserve the real URL
-				if page.url == 'about:blank':
-					tab_info = TabInfo(page_id=page_id, url='about:blank', title='ignore this tab and do not use it')
+				# Only mark as unusable if it's actually a new tab page, otherwise preserve the real URL
+				if is_new_tab_page(page.url):
+					tab_info = TabInfo(page_id=page_id, url=page.url, title='ignore this tab and do not use it')
 				else:
 					# Preserve the real URL and use a descriptive fallback title
 					# fallback_title = '(title unavailable, page possibly crashed / unresponsive)'
@@ -3618,7 +3619,7 @@ class BrowserSession(BaseModel):
 			# not an exception because there's no point in retrying if we hit this, its always pointless to screenshot about:blank
 			# raise ValueError('Refusing to take unneeded screenshot of empty new tab page')
 			# return a 4px*4px white png to avoid wasting tokens - instead of 1px*1px white png that was
-			return 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+			return PLACEHOLDER_4PX_SCREENSHOT
 
 		# Always bring page to front before rendering, otherwise it crashes in some cases, not sure why
 		try:
