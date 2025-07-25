@@ -6,6 +6,11 @@ from pydantic import BaseModel
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement
 from browser_use.dom.views import DOMState
 
+# Known placeholder image data for about:blank pages - a 4x4 white PNG
+PLACEHOLDER_4PX_SCREENSHOT = (
+	'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+)
+
 
 # Pydantic
 class TabInfo(BaseModel):
@@ -59,6 +64,7 @@ class BrowserStateSummary(DOMState):
 	pixels_above: int = 0
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)
+	is_pdf_viewer: bool = False  # Whether the current page is a PDF viewer
 
 
 @dataclass

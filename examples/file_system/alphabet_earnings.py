@@ -6,16 +6,15 @@ import shutil
 from dotenv import load_dotenv
 
 from browser_use import Agent
+from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.llm import ChatOpenAI
 
 load_dotenv()
 
-
+''
 SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
-agent_dir = SCRIPT_DIR / 'file_system'
+agent_dir = SCRIPT_DIR / 'alphabet_earnings'
 agent_dir.mkdir(exist_ok=True)
-conversation_dir = agent_dir / 'conversations' / 'conversation'
-print(f'Agent logs directory: {agent_dir}')
 
 try:
 	from lmnr import Laminar
@@ -24,30 +23,30 @@ try:
 except Exception as e:
 	print(f'Error initializing Laminar: {e}')
 
+llm = ChatOpenAI(
+	model='o4-mini',
+)
+
+browser_session = BrowserSession(
+	browser_profile=BrowserProfile(downloads_path=str(agent_dir / 'downloads')),
+)
+
 task = """
-Go to https://mertunsall.github.io/posts/post1.html
-Save the title of the article in "data.md"
-Then, use append_file to add the first sentence of the article to "data.md"
-Then, read the file to see its content and make sure it's correct.
-Finally, share the file with me.
-
-NOTE: DO NOT USE extract_structured_data action - everything is visible in browser state.
+Go to https://abc.xyz/assets/cc/27/3ada14014efbadd7a58472f1f3f4/2025q2-alphabet-earnings-release.pdf.
+Read the PDF and save 3 interesting data points in "alphabet_earnings.pdf" and share it with me!
 """.strip('\n')
-
-llm = ChatOpenAI(model='gpt-4.1-mini')
 
 agent = Agent(
 	task=task,
 	llm=llm,
-	save_conversation_path=str(conversation_dir),
+	browser_session=browser_session,
 	file_system_path=str(agent_dir / 'fs'),
+	flash_mode=True,
 )
 
 
 async def main():
 	agent_history = await agent.run()
-	print(f'Final result: {agent_history.final_result()}', flush=True)
-
 	input('Press Enter to clean the file system...')
 	# clean the file system
 	shutil.rmtree(str(agent_dir / 'fs'))
