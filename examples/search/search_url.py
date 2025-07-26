@@ -20,9 +20,16 @@ load_dotenv()
 
 
 async def search_url(url: str, query: str, depth: int = 2):
+	# Validate API key exists
+	api_key = os.getenv('BROWSER_USE_API_KEY')
+	if not api_key:
+		print('❌ Error: BROWSER_USE_API_KEY environment variable is not set.')
+		print('Please set your API key: export BROWSER_USE_API_KEY="your_api_key_here"')
+		return None
+
 	payload = {'url': url, 'query': query, 'depth': depth}
 
-	headers = {'Authorization': f'Bearer {os.getenv("BROWSER_USE_API_KEY")}', 'Content-Type': 'application/json'}
+	headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
 
 	print('Testing Search URL API...')
 	print(f'URL: {url}')

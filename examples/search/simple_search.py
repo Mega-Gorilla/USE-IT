@@ -20,9 +20,16 @@ load_dotenv()
 
 
 async def simple_search(query: str, max_websites: int = 5, depth: int = 2):
+	# Validate API key exists
+	api_key = os.getenv('BROWSER_USE_API_KEY')
+	if not api_key:
+		print('❌ Error: BROWSER_USE_API_KEY environment variable is not set.')
+		print('Please set your API key: export BROWSER_USE_API_KEY="your_api_key_here"')
+		return None
+
 	payload = {'query': query, 'max_websites': max_websites, 'depth': depth}
 
-	headers = {'Authorization': f'Bearer {os.getenv("BROWSER_USE_API_KEY")}', 'Content-Type': 'application/json'}
+	headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
 
 	print('Testing Simple Search API...')
 	print(f'Query: {query}')
