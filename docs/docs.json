@@ -60,6 +60,7 @@
               "cloud/quickstart",
               "cloud/search",
               "cloud/implementation",
+              "cloud/custom-sdk",
               "cloud/webhooks",
               "cloud/authentication"
             ]
