@@ -9,6 +9,18 @@ The Search API allows you to quickly extract relevant content from websites usin
 
 💡 **Complete working examples** are available in the [examples/search](https://github.com/browser-use/browser-use/tree/main/examples/search) folder.
 
+## 🔥 Why Browser Use Over Traditional Search?
+
+**Actually browses websites like a human.** While other tools return cached data from landing pages, Browser Use navigates deep into sites in real-time:
+
+- 🔍 **Deep navigation**: Clicks through menus, forms, and multiple pages to find buried content
+- 🚀 **Always current**: Live prices, breaking news, real-time analytics - not cached results
+- 🎯 **No stale data**: See exactly what's on the page right now  
+- 🌐 **Dynamic content**: Handles JavaScript, forms, and interactive elements
+- 🏠 **No surface limitations**: Gets data from pages that require navigation or interaction
+
+**Other tools see yesterday's front door. Browser Use explores today's whole house.**
+
 ### Simple Search
 Search Google and extract content from multiple top results:
 
@@ -71,7 +83,10 @@ asyncio.run(search_url())
 ## Parameters
 
 - **query**: Search query or content to extract
-- **depth**: How deep to navigate (2-5, default: 2)
+- **depth**: How deep to navigate within each website (2-5, default: 2)
+  - `depth=2`: Checks main page + 1 click deeper
+  - `depth=3`: Checks main page + 2 clicks deeper  
+  - `depth=5`: Thoroughly explores multiple navigation levels
 - **max_websites**: Number of websites to process (simple-search only, default: 5)
 - **url**: Target URL to extract from (search-url only)
 
