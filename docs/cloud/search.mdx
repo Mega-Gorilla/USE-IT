@@ -1,0 +1,88 @@
+---
+title: "Search API Quickstart"
+description: "Get started with Browser Use's search endpoints to extract content from websites"
+---
+
+## Quick Start
+
+The Search API allows you to quickly extract relevant content from websites using AI. There are two main endpoints:
+
+💡 **Complete working examples** are available in the [examples/search](https://github.com/browser-use/browser-use/tree/main/examples/search) folder.
+
+### Simple Search
+Search Google and extract content from multiple top results:
+
+```python
+import aiohttp
+import asyncio
+
+async def simple_search():
+    payload = {
+        "query": "latest AI news",
+        "max_websites": 5,
+        "depth": 2
+    }
+    
+    headers = {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.browser-use.com/api/v1/simple-search",
+            json=payload,
+            headers=headers
+        ) as response:
+            result = await response.json()
+            return result
+
+asyncio.run(simple_search())
+```
+
+### Search URL
+Extract content from a specific URL:
+
+```python
+async def search_url():
+    payload = {
+        "url": "https://browser-use.com/#pricing",
+        "query": "Find pricing information for Browser Use", 
+        "depth": 2
+    }
+    
+    headers = {
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.browser-use.com/api/v1/search-url",
+            json=payload,
+            headers=headers
+        ) as response:
+            result = await response.json()
+            return result
+
+asyncio.run(search_url())
+```
+
+## Parameters
+
+- **query**: Search query or content to extract
+- **depth**: How deep to navigate (2-5, default: 2)
+- **max_websites**: Number of websites to process (simple-search only, default: 5)
+- **url**: Target URL to extract from (search-url only)
+
+## Pricing
+
+### Simple Search
+**Cost per request**: `1 cent × depth × max_websites`
+
+Example: depth=2, max_websites=3 = 6 cents per request
+
+### Search URL  
+**Cost per request**: `1 cent × depth`
+
+Example: depth=2 = 2 cents per request 

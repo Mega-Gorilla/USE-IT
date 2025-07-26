@@ -58,9 +58,17 @@
             "group": "Cloud API v1",
             "pages": [
               "cloud/quickstart",
+              "cloud/search",
               "cloud/implementation",
               "cloud/webhooks",
               "cloud/authentication"
+            ]
+          },
+          {
+            "group": "Search API",
+            "pages": [
+              "api-reference/simple-search",
+              "api-reference/search-url"
             ]
           },
           {
