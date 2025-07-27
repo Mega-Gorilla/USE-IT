@@ -446,11 +446,10 @@ class Registry(Generic[Context]):
 
 				for placeholder in matches:
 					if placeholder in applicable_secrets:
-
 					    # generate a totp code if secret is a 2fa secret
-						if "otp_key" in placeholder:
+						if "otp_secret" in placeholder:
 							totp = pyotp.TOTP(applicable_secrets[placeholder], digits=6)
-						    applicable_secrets[placeholder] = totp.now()
+							applicable_secrets[placeholder] = totp.now()
 
 						value = value.replace(f'<secret>{placeholder}</secret>', applicable_secrets[placeholder])
 						replaced_placeholders.add(placeholder)
