@@ -363,6 +363,7 @@ class ChatGoogle(BaseChatModel):
 							key == 'properties'
 							and isinstance(cleaned_value, dict)
 							and len(cleaned_value) == 0
+							and isinstance(obj.get('type', ''), str)
 							and obj.get('type', '').upper() == 'OBJECT'
 						):
 							# Convert empty object to have at least one property
@@ -372,7 +373,8 @@ class ChatGoogle(BaseChatModel):
 
 				# If this is an object type with empty properties, add a placeholder
 				if (
-					cleaned.get('type', '').upper() == 'OBJECT'
+					isinstance(cleaned.get('type', ''), str)
+					and cleaned.get('type', '').upper() == 'OBJECT'
 					and 'properties' in cleaned
 					and isinstance(cleaned['properties'], dict)
 					and len(cleaned['properties']) == 0
