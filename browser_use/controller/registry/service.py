@@ -24,6 +24,8 @@ from browser_use.observability import observe_debug
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.utils import is_new_tab_page, match_url_with_domain_pattern, time_execution_async
 
+import pyotp
+
 Context = TypeVar('Context')
 
 logger = logging.getLogger(__name__)
@@ -444,6 +446,12 @@ class Registry(Generic[Context]):
 
 				for placeholder in matches:
 					if placeholder in applicable_secrets:
+
+					    # generate a totp code if secret is a 2fa secret
+						if "otp_key" in placeholder:
+							totp = pyotp.TOTP(applicable_secrets[placeholder], digits=6)
+						    applicable_secrets[placeholder] = totp.now()
+
 						value = value.replace(f'<secret>{placeholder}</secret>', applicable_secrets[placeholder])
 						replaced_placeholders.add(placeholder)
 					else:
