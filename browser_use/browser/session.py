@@ -785,8 +785,12 @@ class BrowserSession(BaseModel):
 		# 	await self.browser_context.tracing.stop(path=str(final_trace_path))
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='connect_or_launch_browser')
-	async def _connect_or_launch_browser(self) -> None:
-		"""Try all connection methods in order of precedence."""
+	async def _connect_or_launch_browser(self, retry_count: int = 0) -> None:
+		"""Try all connection methods in order of precedence.
+
+		Args:
+			retry_count: Number of retries already attempted (max 2)
+		"""
 		# Try connecting via passed objects first
 		await self.setup_browser_via_passed_objects()
 		if self.browser_context:
@@ -808,7 +812,7 @@ class BrowserSession(BaseModel):
 			return
 
 		# Launch new browser as last resort
-		await self.setup_new_browser_context()
+		await self.setup_new_browser_context(retry_count)
 
 	# Removed _take_screenshot_hybrid - merged into take_screenshot
 
@@ -1081,8 +1085,12 @@ class BrowserSession(BaseModel):
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='setup_new_browser_context')
 	@retry(wait=0.1, retries=5, timeout=45, semaphore_limit=1, semaphore_scope='self', semaphore_lax=False)
-	async def setup_new_browser_context(self) -> None:
-		"""Launch a new browser and browser_context"""
+	async def setup_new_browser_context(self, retry_count: int = 0) -> None:
+		"""Launch a new browser and browser_context
+
+		Args:
+			retry_count: Number of retries already attempted (max 2)
+		"""
 		# Double-check after semaphore acquisition to prevent duplicate browser launches
 		if self.browser_context:
 			try:
@@ -1093,11 +1101,15 @@ class BrowserSession(BaseModel):
 			except Exception:
 				# If we can't check pages, assume context is invalid and continue with launch
 				pass
-		await self._unsafe_setup_new_browser_context()
+		await self._unsafe_setup_new_browser_context(retry_count)
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_unsafe_setup_new_browser_context')
-	async def _unsafe_setup_new_browser_context(self) -> None:
-		"""Unsafe browser context setup without retry protection."""
+	async def _unsafe_setup_new_browser_context(self, retry_count: int = 0) -> None:
+		"""Unsafe browser context setup without retry protection.
+
+		Args:
+			retry_count: Number of retries already attempted (max 2)
+		"""
 
 		# Note: cdp_url might be set from a previous attempt that failed and is being retried
 		# Only assert if we don't own browser resources (meaning cdp_url was user-provided for external browser)
@@ -1289,8 +1301,8 @@ class BrowserSession(BaseModel):
 									await self._subprocess.wait()
 								except Exception:
 									pass
-							# Throw hard error instead of restarting
-							raise RuntimeError(f'Chrome process crashed and cannot be recovered: {str(e)}')
+							# Re-raise to be caught by outer exception handler for fallback
+							raise
 						# Re-raise if not a timeout
 						elif not isinstance(e, asyncio.TimeoutError):
 							raise
@@ -1298,14 +1310,34 @@ class BrowserSession(BaseModel):
 				self.logger.error(
 					'❌ Browser operation timed out. This may indicate the playwright instance is invalid or the browser has crashed.'
 				)
-				# Throw hard error instead of retrying
-				raise RuntimeError('Browser operation timed out - browser may have crashed or become unresponsive')
+				# Try fallback to temp profile in case it's a profile lock issue
+				# But only if we're trying to launch a local browser (not connecting to external)
+				if retry_count < 2 and self._owns_browser_resources:
+					self.logger.warning(
+						f'⚠️ Chrome subprocess failed to start (timeout). Profile at {_log_pretty_path(self.browser_profile.user_data_dir)} may be locked. Using temporary profile instead.'
+					)
+					self._fallback_to_temp_profile('Chrome subprocess timeout')
+					# Retry with temp profile
+					return await self.setup_new_browser_context(retry_count + 1)
+				else:
+					# Max retries reached or external browser - throw hard error
+					raise RuntimeError('Browser operation timed out - browser may have crashed or become unresponsive')
 			except Exception as e:
-				# Check if it's a SingletonLock error from the subprocess
-				if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e):
-					# Chrome crashed due to SingletonLock - throw hard error
-					self.logger.error(f'❌ Chrome launch failed due to SingletonLock error: {str(e)}')
-					raise RuntimeError(f'Chrome launch failed due to SingletonLock error: {str(e)}')
+				# Check if it's a SingletonLock error or any Chrome subprocess failure
+				if 'SingletonLock' in str(e) or 'ProcessSingleton' in str(e) or isinstance(e, RuntimeError):
+					# Chrome crashed - fallback to temp profile
+					# But only if we're trying to launch a local browser (not connecting to external)
+					if retry_count < 2 and self._owns_browser_resources:
+						self.logger.warning(
+							f'⚠️ Chrome subprocess failed to start detected. Profile at {_log_pretty_path(self.browser_profile.user_data_dir)} is locked. Using temporary profile instead.'
+						)
+						self._fallback_to_temp_profile()
+						# Retry with temp profile
+						return await self._connect_or_launch_browser(retry_count + 1)
+					else:
+						# Max retries reached or external browser - throw error
+						self.logger.error(f'❌ Chrome launch failed after {retry_count} retries: {str(e)}')
+						raise RuntimeError(f'Chrome launch failed: {str(e)}')
 
 				# show a nice logger hint explaining what went wrong with the user_data_dir
 				# calculate the version of the browser that the user_data_dir is for, and the version of the browser we are running with
@@ -2208,6 +2240,18 @@ class BrowserSession(BaseModel):
 		assert self.browser_context is not None, 'BrowserContext is not set up'
 		tabs_info = []
 		for page_id, page in enumerate(self.browser_context.pages):
+			# Skip JS execution for chrome:// pages and new tab pages
+			if is_new_tab_page(page.url) or page.url.startswith('chrome://'):
+				# Use URL as title for chrome pages, or mark new tabs as unusable
+				if is_new_tab_page(page.url):
+					tab_info = TabInfo(page_id=page_id, url=page.url, title='ignore this tab and do not use it')
+				else:
+					# For chrome:// pages, use the URL itself as the title
+					tab_info = TabInfo(page_id=page_id, url=page.url, title=page.url)
+				tabs_info.append(tab_info)
+				continue
+
+			# Normal pages - try to get title with timeout
 			try:
 				title = await asyncio.wait_for(page.title(), timeout=2.0)
 				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
