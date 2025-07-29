@@ -3257,7 +3257,65 @@ class BrowserSession(BaseModel):
 		# Check if current page is still valid, if not switch to another available page
 		page = await self.get_current_page()
 
+		# Check if this is a new tab or chrome:// page early for optimization
+		is_empty_page = is_new_tab_page(page.url) or page.url.startswith('chrome://')
+
 		try:
+			# Fast path for empty pages - skip all expensive operations
+			if is_empty_page:
+				self.logger.debug(f'⚡ Fast path for empty page: {page.url}')
+
+				# Create minimal DOM state immediately
+				from browser_use.dom.views import DOMElementNode, DOMState
+
+				minimal_element_tree = DOMElementNode(
+					tag_name='body',
+					xpath='',
+					attributes={},
+					children=[],
+					is_visible=False,
+					parent=None,
+				)
+				content = DOMState(element_tree=minimal_element_tree, selector_map={})
+
+				# Get minimal tab info
+				tabs_info = await self.get_tabs_info()
+
+				# Skip screenshot for empty pages
+				screenshot_b64 = None
+
+				# Use default viewport dimensions from browser profile
+				viewport = self.browser_profile.viewport or {'width': 1280, 'height': 720}
+				page_info = PageInfo(
+					viewport_width=viewport['width'],
+					viewport_height=viewport['height'],
+					page_width=viewport['width'],
+					page_height=viewport['height'],
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				)
+
+				# Return minimal state immediately
+				self.browser_state_summary = BrowserStateSummary(
+					element_tree=content.element_tree,
+					selector_map=content.selector_map,
+					url=page.url,
+					title='New Tab' if is_new_tab_page(page.url) else 'Chrome Page',
+					tabs=tabs_info,
+					screenshot=screenshot_b64,
+					page_info=page_info,
+					pixels_above=0,
+					pixels_below=0,
+					browser_errors=[],
+					is_pdf_viewer=False,
+				)
+				return self.browser_state_summary
+
+			# Normal path for regular pages
 			self.logger.debug('🧹 Removing highlights...')
 			try:
 				await self.remove_highlights()
