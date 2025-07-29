@@ -17,7 +17,13 @@ Creates a new browser automation task and returns the task ID that can be used t
 </ParamField>
 
 <ParamField body="allowed_domains" type="array">
-  List of domains that the agent is allowed to visit. If not set, the agent will be allowed to visit all domains (not recommended if you are using secrets).
+  List of domains that the agent is allowed to visit (e.g. ["google.com", "amazon.com", "*.skyscanner.com"]). <br/>
+  We recommend using a wildcard to allow all subdomains of a domain (e.g. "*.skyscanner.com"). <br/>
+  If not set, the agent will be allowed to visit all domains (not recommended if you are using secrets).
+</ParamField>
+
+<ParamField body="browser_profile_id" type="string">
+  ID of the browser profile to use. If not set, the default profile will be used.
 </ParamField>
 
 <ParamField body="save_browser_data" type="boolean" default="false">
