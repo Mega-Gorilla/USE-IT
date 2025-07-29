@@ -189,6 +189,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		step_timeout: int = 180,
 		**kwargs,
 	):
+		if not isinstance(llm, BaseChatModel):
+			raise ValueError('invalid llm, must be from browser_use.llm')
 		# Check for deprecated planner parameters
 		planner_params = [planner_llm, use_vision_for_planner, is_planner_reasoning, extend_planner_system_message]
 		if any(param is not None and param is not False for param in planner_params) or planner_interval != 1:
@@ -1352,9 +1354,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
-				# Emit output file generated event for GIF
-				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-				self.eventbus.dispatch(output_event)
+				# Only emit output file event if GIF was actually created
+				if Path(output_path).exists():
+					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
+					self.eventbus.dispatch(output_event)
 
 			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):

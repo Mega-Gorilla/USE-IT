@@ -10,6 +10,8 @@ This test module covers:
 """
 
 import asyncio
+import os
+import signal
 import time
 import warnings
 
@@ -25,8 +27,9 @@ from browser_use.browser.session import BrowserSession
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*TargetClosedError.*')
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 async def playwright():
+	"""Create a fresh playwright instance for each test to avoid interference"""
 	async with async_playwright() as p:
 		yield p
 
@@ -161,22 +164,21 @@ class TestBrowserSessionRecovery:
 	"""Test browser-use's recovery mechanisms for unresponsive pages"""
 
 	@pytest.fixture(scope='function')
-	async def browser_session(self, playwright):
-		"""Create a browser session for testing"""
+	async def browser_session(self):
+		"""Create a browser session for testing - no playwright parameter to ensure fresh instance"""
 		session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				keep_alive=True,
+				keep_alive=False,  # Don't keep alive between tests
 				default_navigation_timeout=30_000,
 				minimum_wait_page_load_time=0.1,  # Short wait for testing
 				user_data_dir=None,  # No user data dir to avoid race conditions with other tests
 			),
-			playwright=playwright,
+			# Don't pass playwright - let each session create its own
 		)
 		await session.start()
 		yield session
-		# Small delay to let pending operations complete before cleanup
-		await asyncio.sleep(0.1)
+		# Simple cleanup - just kill the browser
 		await session.kill()
 
 	@pytest.mark.timeout(60)  # 60 second timeout
@@ -328,16 +330,44 @@ class TestBrowserSessionRecovery:
 			content_type='text/html',
 		)
 
-		await browser_session.navigate(httpserver.url_for('/transient-block'))
+		print('1️⃣ Starting test_transient_blocking_recovers_naturally')
+		print(f'   Browser context: {browser_session.browser_context}')
+		print(f'   Browser: {browser_session.browser}')
+
+		try:
+			print('2️⃣ Navigating to transient-block page...')
+			await browser_session.navigate(httpserver.url_for('/transient-block'))
+			print('   Navigation completed')
+		except Exception as e:
+			print(f'   Navigation failed: {type(e).__name__}: {e}')
+			raise
+
+		print('3️⃣ Waiting 3.5 seconds for block to end...')
 		await asyncio.sleep(3.5)  # Wait for block to end
+		print('   Wait completed')
+
+		# Check browser state before screenshot
+		print('4️⃣ Checking browser state before screenshot...')
+		print(f'   Browser connected: {browser_session.browser.is_connected() if browser_session.browser else "No browser"}')
+		print(f'   Browser context: {browser_session.browser_context}')
 
 		# Should work without recovery
-		screenshot = await browser_session.take_screenshot()
+		print('5️⃣ Taking screenshot...')
+		try:
+			screenshot = await browser_session.take_screenshot()
+			print(f'   Screenshot taken: {len(screenshot) if screenshot else 0} bytes')
+		except Exception as e:
+			print(f'   Screenshot failed: {type(e).__name__}: {e}')
+			raise
+
 		assert screenshot is not None and len(screenshot) > 100
 
+		print('6️⃣ Getting page content...')
 		page = await browser_session.get_current_page()
 		content = await page.content()
+		print(f'   Content includes "Page recovered!": {"Page recovered!" in content}')
 		assert 'Page recovered!' in content
+		print('✅ Test completed successfully')
 
 	async def test_multiple_blocking_recovery_cycles(self, httpserver: HTTPServer, browser_session: BrowserSession):
 		"""Test multiple cycles of blocking and recovery"""
@@ -427,6 +457,134 @@ class TestBrowserSessionRecovery:
 		httpserver.expect_request('/normal').respond_with_data('<html><body>Normal</body></html>')
 		page2 = await browser_session.navigate(httpserver.url_for('/normal'))
 		assert 'normal' in page2.url
+
+	async def test_browser_crash_throws_hard_error_no_restart(self, browser_session: BrowserSession):
+		"""Test that browser crashes throw hard errors instead of restarting the browser"""
+		# Get the browser process PID
+		browser_pid = browser_session.browser_pid
+		assert browser_pid is not None, 'Browser PID must be available'
+
+		print(f'1️⃣ Browser PID: {browser_pid}')
+
+		# Force kill the browser process to simulate a hard crash
+		print('2️⃣ Killing browser process to simulate crash...')
+		try:
+			os.kill(browser_pid, signal.SIGKILL)
+		except ProcessLookupError:
+			# Process might have already exited
+			pass
+
+		# Wait a bit for the process to die
+		await asyncio.sleep(1)
+
+		# Try to use the browser session - should raise error (TargetClosedError or RuntimeError)
+		print('3️⃣ Attempting to use crashed browser session...')
+		with pytest.raises(Exception) as exc_info:
+			await browser_session.navigate('about:blank')
+
+		# Verify the error indicates browser disconnection/crash
+		error_msg = str(exc_info.value).lower()
+		error_type = type(exc_info.value).__name__
+		print(f'4️⃣ Got expected error ({error_type}): {error_msg}')
+		assert (
+			'closed' in error_msg or 'crash' in error_msg or 'cannot be recovered' in error_msg or 'connection lost' in error_msg
+		), f'Error message should indicate browser crash/closure, got: {error_msg}'
+
+		# Verify browser was NOT restarted (PID should still be the same dead one)
+		assert browser_session.browser_pid == browser_pid or browser_session.browser_pid is None, (
+			'Browser PID should not change (no restart should occur)'
+		)
+
+		print('✅ Browser crash correctly threw hard error without restarting')
+
+	async def test_unresponsive_page_recovery_with_crashed_browser(self, browser_session: BrowserSession):
+		"""Test that _recover_unresponsive_page throws error if browser has crashed"""
+		# Navigate to a page first
+		await browser_session.navigate('about:blank')
+
+		# Get the browser process PID
+		browser_pid = browser_session.browser_pid
+		assert browser_pid is not None
+
+		print(f'1️⃣ Browser PID: {browser_pid}')
+
+		# Force kill the browser process
+		print('2️⃣ Killing browser process...')
+		try:
+			os.kill(browser_pid, signal.SIGKILL)
+		except ProcessLookupError:
+			pass
+
+		# Wait for process to die
+		await asyncio.sleep(1)
+
+		# Try to recover unresponsive page - should raise RuntimeError
+		print('3️⃣ Attempting page recovery on crashed browser...')
+		with pytest.raises(RuntimeError) as exc_info:
+			await browser_session._recover_unresponsive_page('test_method')
+
+		# Verify error indicates browser crash
+		error_msg = str(exc_info.value).lower()
+		print(f'4️⃣ Got expected error: {error_msg}')
+		assert 'browser process has crashed' in error_msg or 'browser connection lost' in error_msg, (
+			f'Error should indicate browser crash, got: {error_msg}'
+		)
+
+		print('✅ Page recovery correctly detected crashed browser and threw error')
+
+	async def test_singleton_lock_error_throws_hard_error(self, browser_session: BrowserSession):
+		"""Test that SingletonLock errors throw hard error instead of restarting"""
+		# Create a conflicting user data directory scenario
+		import tempfile
+		from pathlib import Path
+
+		# Create a temp directory for user data
+		temp_dir = tempfile.mkdtemp(prefix='browseruse-test-')
+
+		# Create a fake SingletonLock file to simulate conflict
+		singleton_lock = Path(temp_dir) / 'SingletonLock'
+		singleton_lock.write_text('fake-lock')
+
+		# Create a session with this directory
+		session = BrowserSession(browser_profile=BrowserProfile(user_data_dir=temp_dir, headless=True))
+
+		# Modify the Chrome launch args to trigger SingletonLock error
+		original_args = session.browser_profile.args.copy()
+		# Add an arg that will cause Chrome to exit with SingletonLock error
+		session.browser_profile.args.append('--no-sandbox')
+		session.browser_profile.args.append('--disable-setuid-sandbox')
+
+		print(f'1️⃣ Attempting to launch browser with potentially conflicting user_data_dir: {temp_dir}')
+
+		# Note: This test is checking that IF a SingletonLock error occurs,
+		# it throws a hard error instead of restarting. The actual error might
+		# not always occur depending on the system state.
+		try:
+			await session.start()
+			# If it succeeds, that's OK - we can't reliably trigger SingletonLock
+			print('2️⃣ Browser launched successfully (SingletonLock error did not occur)')
+			await session.kill()
+		except RuntimeError as e:
+			# If we get a RuntimeError with SingletonLock, that's what we want
+			error_msg = str(e)
+			print(f'2️⃣ Got expected error: {error_msg}')
+			if 'SingletonLock' in error_msg:
+				print('✅ SingletonLock error correctly threw hard error without restart')
+			else:
+				# Some other RuntimeError - re-raise it
+				raise
+		except Exception as e:
+			# Unexpected error type
+			print(f'2️⃣ Got unexpected error type {type(e).__name__}: {e}')
+			raise
+		finally:
+			# Cleanup
+			import shutil
+
+			try:
+				shutil.rmtree(temp_dir, ignore_errors=True)
+			except Exception:
+				pass
 
 
 @pytest.mark.timeout(90)

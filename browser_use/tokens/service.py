@@ -407,6 +407,7 @@ class TokenCost:
 				# Calculate cost record by record using the updated calculate_cost function
 				cost = await self.calculate_cost(entry.model, entry.usage)
 				if cost:
+					stats.cost += cost.total_cost
 					total_prompt_cost += cost.prompt_cost
 					total_completion_cost += cost.completion_cost
 					total_prompt_cached_cost += cost.prompt_read_cached_cost or 0
