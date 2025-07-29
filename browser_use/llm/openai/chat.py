@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import Any, Literal, TypeVar, overload
 
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
@@ -39,6 +39,7 @@ class ChatOpenAI(BaseChatModel):
 	frequency_penalty: float | None = 0.05
 	reasoning_effort: ReasoningEffort = 'low'
 	seed: int | None = None
+	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
 	top_p: float | None = None
 
 	# Client initialization parameters
@@ -163,6 +164,9 @@ class ChatOpenAI(BaseChatModel):
 
 			if self.seed is not None:
 				model_params['seed'] = self.seed
+
+			if self.service_tier is not None:
+				model_params['service_tier'] = self.service_tier
 
 			if self.model in ReasoningModels:
 				model_params['reasoning_effort'] = self.reasoning_effort
