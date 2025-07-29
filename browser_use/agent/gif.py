@@ -56,9 +56,9 @@ def create_history_gif(
 
 	images = []
 
-	# if history is empty or first screenshot is None, we can't create a gif
-	if not history.history or not history.history[0].state.screenshot:
-		logger.warning('No history or first screenshot to create GIF from')
+	# if history is empty, we can't create a gif
+	if not history.history:
+		logger.warning('No history to create GIF from')
 		return
 
 	# Find the first non-placeholder screenshot
