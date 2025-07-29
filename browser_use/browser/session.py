@@ -514,6 +514,10 @@ class BrowserSession(BaseModel):
 		if self.browser_profile.user_data_dir and Path(self.browser_profile.user_data_dir).name.startswith('browseruse-tmp'):
 			shutil.rmtree(self.browser_profile.user_data_dir, ignore_errors=True)
 
+		# Clear CDP/WSS URLs when stopping the browser
+		self.cdp_url = None
+		self.wss_url = None
+
 		self._reset_connection_state()
 
 	async def close(self) -> None:
@@ -1084,7 +1088,10 @@ class BrowserSession(BaseModel):
 	async def _unsafe_setup_new_browser_context(self) -> None:
 		"""Unsafe browser context setup without retry protection."""
 
-		assert self.cdp_url is None, 'Should never try to set up a new local browser when a cdp_url is provided'
+		# Note: cdp_url might be set from a previous attempt that failed and is being retried
+		# Only assert if we don't have a browser_pid (meaning this is not a retry of a local browser launch)
+		if self.cdp_url and not self.browser_pid:
+			raise AssertionError('Should never try to set up a new local browser when a cdp_url is provided')
 
 		# if we have a browser object but no browser_context, use the first context discovered or make a new one
 		if self.browser and not self.browser_context:
