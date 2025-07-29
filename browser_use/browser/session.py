@@ -124,6 +124,9 @@ def require_healthy_browser(usable_page=True, reopen_page=True):
 				if not self.agent_current_page or self.agent_current_page.is_closed():
 					# Create new page directly to avoid circular dependency
 					assert self.browser_context is not None, 'Browser context is not set'
+					self.logger.debug(
+						f'@require_healthy_browser: Creating new page in {func.__name__} because agent_current_page is closed/missing'
+					)
 					new_page = await self.browser_context.new_page()
 					self.agent_current_page = new_page
 					if (not self.human_current_page) or self.human_current_page.is_closed():
@@ -314,6 +317,14 @@ class BrowserSession(BaseModel):
 		# FOR REPL DEBUGGING ONLY, NEVER ALLOW CIRCULAR REFERENCES IN REAL CODE:
 		# self.browser_profile._in_use_by_session = self
 
+		return self
+
+	@model_validator(mode='after')
+	def set_browser_ownership(self) -> Self:
+		"""Set _owns_browser_resources based on whether we're connecting to an external browser"""
+		# If user provided CDP URL, WSS URL, or existing browser/context, we don't own the browser
+		if self.cdp_url or self.wss_url or self.browser or self.browser_context:
+			self._owns_browser_resources = False
 		return self
 
 	@property
@@ -1089,9 +1100,12 @@ class BrowserSession(BaseModel):
 		"""Unsafe browser context setup without retry protection."""
 
 		# Note: cdp_url might be set from a previous attempt that failed and is being retried
-		# Only assert if we don't have a browser_pid (meaning this is not a retry of a local browser launch)
-		if self.cdp_url and not self.browser_pid:
-			raise AssertionError('Should never try to set up a new local browser when a cdp_url is provided')
+		# Only assert if we don't own browser resources (meaning cdp_url was user-provided for external browser)
+		# AND we don't already have a browser (which means we need to get/create a context)
+		if self.cdp_url and not self._owns_browser_resources and not self.browser:
+			raise AssertionError(
+				'Should never try to set up a new local browser when connecting to an external browser via cdp_url'
+			)
 
 		# if we have a browser object but no browser_context, use the first context discovered or make a new one
 		if self.browser and not self.browser_context:
@@ -1214,6 +1228,7 @@ class BrowserSession(BaseModel):
 						# Store the browser PID
 						self.browser_pid = process.pid
 						self._set_browser_keep_alive(False)  # We launched it, so we should close it
+						self._owns_browser_resources = True  # We launched it, so we own it
 						# self.logger.debug(f'👶 Chrome subprocess launched with browser_pid={process.pid}')
 
 						# Use the existing setup_browser_via_browser_pid method to connect
