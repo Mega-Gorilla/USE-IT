@@ -736,7 +736,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		Ensure default extensions are downloaded and cached locally.
 		Returns list of paths to extension directories.
 		"""
-		from pathlib import Path
 
 		# Extension definitions - optimized for automation and content extraction
 		extensions = [
@@ -758,7 +757,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		]
 
 		# Create extensions cache directory
-		cache_dir = Path.home() / '.browser-use' / 'extensions'
+		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
 		cache_dir.mkdir(parents=True, exist_ok=True)
 
 		extension_paths = []
