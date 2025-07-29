@@ -31,17 +31,60 @@ This will create a Python package with full type hints, modern dataclasses, and 
 
 ### TypeScript/JavaScript
 
-For TypeScript projects, use [openapi-typescript](https://www.npmjs.com/package/openapi-typescript) to generate type definitions:
+Use [OpenAPI TS](https://openapi-ts.dev/) library to generate a type safe TypeScript client for the Browser Use API. 
 
-```bash
-# Install the generator
-npm install -D openapi-typescript
+The following guide shows how to create a simple type-safe `fetch` client, but you can also use other generators.
 
-# Generate the types
-npx openapi-typescript http://api.browser-use.com/openapi.json -o browser-use-api.ts
+- React Query - https://openapi-ts.dev/openapi-react-query/
+- SWR - https://openapi-ts.dev/swr-openapi/
+
+
+<CodeGroup>
+```bash npm
+npm install openapi-fetch 
+npm install -D openapi-typescript typescript
 ```
 
-This will create TypeScript definitions you can use with your preferred HTTP client.
+```bash yarn
+yarn add openapi-fetch
+yarn add -D openapi-typescript typescript
+```
+```bash pnpm
+pnpm add openapi-fetch
+pnpm add -D openapi-typescript typescript
+```
+</CodeGroup>
+
+```json title="package.json"
+{
+  "scripts": {
+    "openapi:gen": "openapi-typescript https://api.browser-use.com/openapi.json -o ./src/lib/api/v1.d.ts"
+  }
+}
+```
+
+```bash
+pnpm openapi:gen
+```
+
+```ts
+// client.ts
+
+'use client'
+
+import createClient from 'openapi-fetch'
+import { paths } from '@/lib/api/v1'
+
+export type Client = ReturnType<typeof createClient<paths>>
+
+export const client = createClient<paths>({
+    baseUrl: 'https://api.browser-use.com/',
+
+    // NOTE: You can get your API key from https://cloud.browser-use.com/billing!
+    headers: { Authorization: `Bearer ${apiKey}` },
+})
+
+```
 
 <Note>
   Need help? Contact our support team at support@browser-use.com or join our
