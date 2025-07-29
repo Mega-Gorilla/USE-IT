@@ -1084,6 +1084,8 @@ class BrowserSession(BaseModel):
 	async def _unsafe_setup_new_browser_context(self) -> None:
 		"""Unsafe browser context setup without retry protection."""
 
+		assert self.cdp_url is None, 'Should never try to set up a new local browser when a cdp_url is provided'
+
 		# if we have a browser object but no browser_context, use the first context discovered or make a new one
 		if self.browser and not self.browser_context:
 			# If HAR recording or video recording is requested, we need to create a new context with recording enabled
@@ -1760,7 +1762,6 @@ class BrowserSession(BaseModel):
 		self.human_current_page = None
 		self._cached_clickable_element_hashes = None
 		# Reset CDP connection info when browser is stopped
-		self.cdp_url = None
 		self.browser_pid = None
 		self._cached_browser_state_summary = None
 		# Don't clear self.playwright here - it should be cleared explicitly in kill()
