@@ -145,6 +145,14 @@ class ChatAnthropic(BaseChatModel):
 					**self._get_client_params_for_invoke(),
 				)
 
+				# Ensure we have a valid Message object before accessing attributes
+				if not isinstance(response, Message):
+					raise ModelProviderError(
+						message=f'Unexpected response type from Anthropic API: {type(response).__name__}. Response: {str(response)[:200]}',
+						status_code=502,
+						model=self.name,
+					)
+
 				usage = self._get_usage(response)
 
 				# Extract text from the first content block
@@ -188,6 +196,14 @@ class ChatAnthropic(BaseChatModel):
 					tool_choice=tool_choice,
 					**self._get_client_params_for_invoke(),
 				)
+
+				# Ensure we have a valid Message object before accessing attributes
+				if not isinstance(response, Message):
+					raise ModelProviderError(
+						message=f'Unexpected response type from Anthropic API: {type(response).__name__}. Response: {str(response)[:200]}',
+						status_code=502,
+						model=self.name,
+					)
 
 				usage = self._get_usage(response)
 
