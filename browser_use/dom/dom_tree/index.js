@@ -853,10 +853,10 @@
     const checkPoints = [
       // Initially only this was used, but it was not enough
       { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
-      { x: rect.left + margin, y: rect.top + margin },
-      { x: rect.right - margin, y: rect.top + margin },
-      { x: rect.left + margin, y: rect.bottom - margin },
-      { x: rect.right - margin, y: rect.bottom - margin }
+      { x: rect.left + margin, y: rect.top + margin },        // top left
+      // { x: rect.right - margin, y: rect.top + margin },    // top right
+      // { x: rect.left + margin, y: rect.bottom - margin },  // bottom left
+      { x: rect.right - margin, y: rect.bottom - margin },    // bottom right
     ];
 
     return checkPoints.some(({ x, y }) => {
