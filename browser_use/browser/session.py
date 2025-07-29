@@ -3599,11 +3599,11 @@ class BrowserSession(BaseModel):
 		retries=1,  # try up to 1 time to take the screenshot (2 total attempts)
 		timeout=30,  # allow up to 30s for each attempt (includes recovery time)
 		wait=1,  # wait 1s between each attempt
-		semaphore_limit=2,  # Allow 2 screenshots at a time to better utilize resources
-		semaphore_name='screenshot_global',
-		semaphore_scope='multiprocess',
-		semaphore_lax=True,  # Continue without semaphore if it can't be acquired
-		semaphore_timeout=15,  # Wait up to 15s for semaphore acquisition
+		# semaphore_limit=2,  # Allow 2 screenshots at a time to better utilize resources
+		# semaphore_name='screenshot_global',
+		# semaphore_scope='multiprocess',
+		# semaphore_lax=True,  # Continue without semaphore if it can't be acquired
+		# semaphore_timeout=15,  # Wait up to 15s for semaphore acquisition
 	)
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--take_screenshot')
