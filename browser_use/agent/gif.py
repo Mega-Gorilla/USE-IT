@@ -61,6 +61,17 @@ def create_history_gif(
 		logger.warning('No history or first screenshot to create GIF from')
 		return
 
+	# Find the first non-placeholder screenshot
+	first_real_screenshot = None
+	for item in history.history:
+		if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
+			first_real_screenshot = item.state.screenshot
+			break
+
+	if not first_real_screenshot:
+		logger.warning('No valid screenshots found (all are placeholders)')
+		return
+
 	# Try to load nicer fonts
 	try:
 		# Try different font options in order of preference
