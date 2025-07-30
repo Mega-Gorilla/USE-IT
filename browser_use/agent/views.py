@@ -488,6 +488,27 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 					outputs.append(output)
 		return outputs
 
+	def action_history(self) -> list[list[dict]]:
+		"""Get action history structured by steps, including results"""
+		step_outputs = []
+		
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(
+					h.model_output.action, 
+					h.state.interacted_element, 
+					h.result
+				):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					action_output['result'] = result.model_dump(exclude_none=True) if result else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+		
+		return step_outputs
+
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""
 		results = []

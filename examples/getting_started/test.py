@@ -45,6 +45,8 @@ async def main():
 	# Create and run the agent
 	agent = Agent(task=task, llm=llm)
 	await agent.run()
+	
+    
 
 
 if __name__ == '__main__':
