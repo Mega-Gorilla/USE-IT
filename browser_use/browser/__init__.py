@@ -42,4 +42,13 @@ def __getattr__(name: str):
 	raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-__all__ = ['Browser', 'BrowserConfig', 'BrowserContext', 'BrowserContextConfig', 'BrowserSession', 'BrowserProfile', 'LocalBrowserConnection', 'RemoteBrowserConnection']
+__all__ = [
+	'Browser',
+	'BrowserConfig',
+	'BrowserContext',
+	'BrowserContextConfig',
+	'BrowserSession',
+	'BrowserProfile',
+	'LocalBrowserConnection',
+	'RemoteBrowserConnection',
+]
