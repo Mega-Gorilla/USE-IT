@@ -519,14 +519,19 @@ class MCPClient:
 				# Object without properties - just return dict
 				return dict
 
+		# Handle arrays with specific item types
+		if json_type == 'array':
+			if 'items' in schema:
+				# Get the item type recursively
+				item_type = self._json_schema_to_python_type(schema['items'], f'{model_name}_item')
+				# Return properly typed list
+				return list[item_type]
+			else:
+				# Array without item type specification
+				return list
+
 		# Get base type for non-object types
 		base_type = type_mapping.get(json_type, str)
-
-		# Handle arrays with specific item types
-		if json_type == 'array' and 'items' in schema:
-			# For now, just use generic list
-			# TODO: Could use list[item_type] with proper type inference
-			return list
 
 		# Handle nullable/optional types
 		if schema.get('nullable', False) or json_type == 'null':

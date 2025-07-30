@@ -94,6 +94,43 @@ class MockMCPServer:
 						'additionalProperties': False,
 					},
 				),
+				types.Tool(
+					name='process_array_data',
+					description='Process various array types',
+					inputSchema={
+						'type': 'object',
+						'properties': {
+							'string_list': {
+								'type': 'array',
+								'items': {'type': 'string'},
+								'description': 'List of strings',
+							},
+							'number_list': {
+								'type': 'array',
+								'items': {'type': 'number'},
+								'description': 'List of numbers',
+							},
+							'config_list': {
+								'type': 'array',
+								'items': {
+									'type': 'object',
+									'properties': {
+										'name': {'type': 'string'},
+										'value': {'type': 'integer'},
+										'enabled': {'type': 'boolean', 'default': True},
+									},
+									'required': ['name', 'value'],
+								},
+								'description': 'List of configuration objects',
+							},
+							'simple_array': {
+								'type': 'array',
+								'description': 'Array without item type specified',
+							},
+						},
+						'required': ['string_list'],
+					},
+				),
 			]
 
 		@self.server.call_tool()
@@ -128,6 +165,16 @@ class MockMCPServer:
 				goal = trace.get('goal', 'no goal')
 
 				result = f'Processed trace update: {len(recent_actions)} actions, goal: {goal}, context: {current_context}, window: {window_size}'
+
+			elif name == 'process_array_data':
+				assert arguments is not None
+				string_list = arguments.get('string_list', [])
+				number_list = arguments.get('number_list', [])
+				config_list = arguments.get('config_list', [])
+				simple_array = arguments.get('simple_array', [])
+
+				config_summary = f'{len(config_list)} configs' if config_list else 'no configs'
+				result = f'Processed arrays: strings={len(string_list)}, numbers={len(number_list)}, {config_summary}, simple={len(simple_array)}'
 
 			else:
 				result = f'Unknown tool: {name}'
@@ -192,11 +239,12 @@ async def test_mcp_client_basic_connection(test_mcp_server_script):
 		await mcp_client.connect()
 
 		# Verify tools were discovered
-		assert len(mcp_client._tools) == 4
+		assert len(mcp_client._tools) == 5
 		assert 'count_to_n' in mcp_client._tools
 		assert 'echo_message' in mcp_client._tools
 		assert 'get_test_data' in mcp_client._tools
 		assert 'process_trace_update' in mcp_client._tools
+		assert 'process_array_data' in mcp_client._tools
 
 		# Register tools to controller
 		await mcp_client.register_to_controller(controller)
@@ -672,6 +720,129 @@ async def test_mcp_nested_object_parameters(test_mcp_server_script):
 		result_minimal = await trace_action.function(params=params_minimal)
 		assert 'goal: test goal' in result_minimal.extracted_content
 		assert 'context: unknown' in result_minimal.extracted_content  # Default from handler
+
+	finally:
+		await mcp_client.disconnect()
+
+
+async def test_mcp_array_type_inference(test_mcp_server_script):
+	"""Test that MCP tools with array parameters have proper type inference."""
+	controller = Controller()
+
+	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
+
+	try:
+		await mcp_client.connect()
+		await mcp_client.register_to_controller(controller)
+
+		# Get the process_array_data action
+		array_action = controller.registry.registry.actions['process_array_data']
+
+		# Verify the parameter model has array types
+		param_model = array_action.param_model
+		assert param_model is not None
+
+		# Verify the main parameters exist
+		assert 'string_list' in param_model.model_fields
+		assert 'number_list' in param_model.model_fields
+		assert 'config_list' in param_model.model_fields
+		assert 'simple_array' in param_model.model_fields
+
+		# Verify string_list is required and others are optional
+		assert param_model.model_fields['string_list'].is_required()
+		assert not param_model.model_fields['number_list'].is_required()
+		assert not param_model.model_fields['config_list'].is_required()
+		assert not param_model.model_fields['simple_array'].is_required()
+
+		# Check array type annotations
+		string_list_field = param_model.model_fields['string_list']
+		number_list_field = param_model.model_fields['number_list']
+		config_list_field = param_model.model_fields['config_list']
+		simple_array_field = param_model.model_fields['simple_array']
+
+		# Import typing_extensions for better type inspection
+		import typing
+		from typing import get_args, get_origin
+
+		# Check string_list is list[str]
+		string_list_type = string_list_field.annotation
+		assert get_origin(string_list_type) is list
+		assert get_args(string_list_type) == (str,)
+
+		# Check number_list is list[float] | None (since it's optional)
+		number_list_type = number_list_field.annotation
+		# For optional fields, the type is Union[list[float], None]
+		assert get_origin(number_list_type) in (typing.Union, type(list[float] | None))
+		union_args = get_args(number_list_type)
+		assert type(None) in union_args
+		# Find the list type in the union
+		list_type = next((arg for arg in union_args if get_origin(arg) is list), None)
+		assert list_type is not None
+		assert get_args(list_type) == (float,)
+
+		# Check config_list is list[ConfigModel] | None
+		config_list_type = config_list_field.annotation
+		assert get_origin(config_list_type) in (typing.Union, type(list[object] | None))
+		union_args = get_args(config_list_type)
+		assert type(None) in union_args
+		# Find the list type in the union
+		list_type = next((arg for arg in union_args if get_origin(arg) is list), None)
+		assert list_type is not None
+		# The item type should be a Pydantic model with the expected fields
+		config_item_type = get_args(list_type)[0]
+		assert hasattr(config_item_type, 'model_fields')
+		config_fields = config_item_type.model_fields
+		assert 'name' in config_fields
+		assert 'value' in config_fields
+		assert 'enabled' in config_fields
+		assert config_fields['name'].is_required()
+		assert config_fields['value'].is_required()
+		assert not config_fields['enabled'].is_required()
+		assert config_fields['enabled'].default is True
+
+		# Check simple_array is just list | None (no item type)
+		simple_array_type = simple_array_field.annotation
+		assert get_origin(simple_array_type) in (typing.Union, type(list | None))
+		union_args = get_args(simple_array_type)
+		assert type(None) in union_args
+		# Should have plain list without type args
+		assert list in union_args
+
+		# Test creating instances with proper types
+		config_item_model = config_item_type
+		config1 = config_item_model(name='setting1', value=42)
+		config2 = config_item_model(name='setting2', value=100, enabled=False)
+
+		# Create full parameter instance
+		params = param_model(
+			string_list=['hello', 'world'],
+			number_list=[1.5, 2.7, 3.14],
+			config_list=[config1, config2],
+			simple_array=['mixed', 123, True],
+		)
+
+		# Verify the parameter structure
+		assert getattr(params, 'string_list') == ['hello', 'world']
+		assert getattr(params, 'number_list') == [1.5, 2.7, 3.14]
+		config_list = getattr(params, 'config_list')
+		assert len(config_list) == 2
+		assert getattr(config_list[0], 'name') == 'setting1'
+		assert getattr(config_list[0], 'value') == 42
+		assert getattr(config_list[0], 'enabled') is True  # default
+		assert getattr(config_list[1], 'name') == 'setting2'
+		assert getattr(config_list[1], 'value') == 100
+		assert getattr(config_list[1], 'enabled') is False
+		assert getattr(params, 'simple_array') == ['mixed', 123, True]
+
+		# Test calling the tool
+		result = await array_action.function(params=params)
+		assert result.success is not False
+		assert 'Processed arrays: strings=2, numbers=3, 2 configs, simple=3' in result.extracted_content
+
+		# Test with minimal parameters (only required string_list)
+		minimal_params = param_model(string_list=['test'])
+		result_minimal = await array_action.function(params=minimal_params)
+		assert 'Processed arrays: strings=1, numbers=0, no configs, simple=0' in result_minimal.extracted_content
 
 	finally:
 		await mcp_client.disconnect()
