@@ -299,6 +299,7 @@ class BrowserSession(BaseModel):
 	_owns_browser_resources: bool = PrivateAttr(default=True)  # True if this instance owns and should clean up browser resources
 	_auto_download_pdfs: bool = PrivateAttr(default=True)  # Auto-download PDFs when detected
 	_subprocess: Any = PrivateAttr(default=None)  # Chrome subprocess reference for error handling
+	_current_page_loading_status: str | None = PrivateAttr(default=None)  # Track loading status for current page
 
 	@model_validator(mode='after')
 	def apply_session_overrides_to_profile(self) -> Self:
@@ -2328,6 +2329,9 @@ class BrowserSession(BaseModel):
 		Returns:
 			Page: The page that was navigated
 		"""
+		# Clear loading status from previous page
+		self._current_page_loading_status = None
+
 		# Normalize the URL
 		normalized_url = normalize_url(url)
 
@@ -2862,12 +2866,16 @@ class BrowserSession(BaseModel):
 					len(pending_requests) == 0
 					and (now - last_activity) >= self.browser_profile.wait_for_network_idle_page_load_time
 				):
+					# Clear loading status when page loads successfully
+					self._current_page_loading_status = None
 					break
 				if now - start_time > self.browser_profile.maximum_wait_page_load_time:
 					self.logger.debug(
 						f'{self} Network timeout after {self.browser_profile.maximum_wait_page_load_time}s with {len(pending_requests)} '
 						f'pending requests: {[r.url for r in pending_requests]}'
 					)
+					# Set loading status for LLM to see
+					self._current_page_loading_status = f'Page loading was aborted after {self.browser_profile.maximum_wait_page_load_time}s with {len(pending_requests)} pending network requests. You may want to use the wait action to allow more time for the page to fully load.'
 					break
 
 		finally:
@@ -3248,6 +3256,7 @@ class BrowserSession(BaseModel):
 			pixels_below=0,
 			browser_errors=[f'Page state retrieval failed, minimal recovery applied for {url}'],
 			is_pdf_viewer=is_pdf_viewer,
+			loading_status=self._current_page_loading_status,
 		)
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_updated_state')
@@ -3312,6 +3321,7 @@ class BrowserSession(BaseModel):
 					pixels_below=0,
 					browser_errors=[],
 					is_pdf_viewer=False,
+					loading_status=self._current_page_loading_status,
 				)
 				return self.browser_state_summary
 
@@ -3438,6 +3448,7 @@ class BrowserSession(BaseModel):
 				pixels_below=pixels_below,
 				browser_errors=browser_errors,
 				is_pdf_viewer=is_pdf_viewer,
+				loading_status=self._current_page_loading_status,
 			)
 
 			self.logger.debug('✅ get_state_summary completed successfully')
