@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 	from browser_use.browser.types import Page
 
 
+# TODO: enable cross origin iframes -> experimental for now
+ENABLE_CROSS_ORIGIN_IFRAMES = False
+
+
 class DomService:
 	"""
 	Service for getting the DOM tree and other DOM-related information.
@@ -500,8 +504,10 @@ class DomService:
 
 			# handle cross origin iframe (just recursively call the main function with the proper target if it exists in iframes)
 			# only do this if the iframe is visible (otherwise it's not worth it)
+
 			if (
-				node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
+				# TODO: hacky way to disable cross origin iframes for now
+				ENABLE_CROSS_ORIGIN_IFRAMES and node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
 			):  # None meaning there is no content
 				targets = await self._get_targets_for_current_page()
 				iframe_document_target = next(
