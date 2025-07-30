@@ -879,6 +879,22 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""Return the kwargs for BrowserType.connect_over_cdp()."""
 		return BrowserLaunchArgs(**self.model_dump(exclude={'args'}), args=self.get_args())
 
+	def kwargs_for_cdp_connection(self) -> dict[str, Any]:
+		"""Return the kwargs for BrowserType.connect_over_cdp()."""
+		# Extract only the fields relevant for CDP connection
+		connect_args = BrowserConnectArgs(**self.model_dump())
+		return connect_args.model_dump(exclude_none=True)
+
+	def kwargs_for_browser_context(self) -> dict[str, Any]:
+		"""Return the kwargs for Browser.new_context()."""
+		# Extract only the fields relevant for browser context
+		context_args = BrowserContextArgs(**self.model_dump())
+		return context_args.model_dump(exclude_none=True)
+
+	def args_for_browser_launch(self) -> list[str]:
+		"""Return the command line args for launching a browser subprocess."""
+		return self.get_args()
+
 	@observe_debug(ignore_input=True, ignore_output=True, name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:
 		"""
