@@ -1,25 +1,24 @@
 """Remote browser connection that connects via CDP."""
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any
 
+from bubus import EventBus
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from browser_use.browser.events import (
-    BrowserErrorEvent,
-    BrowserStartedEvent,
-    BrowserStoppedEvent,
-    NavigationCompleteEvent,
-    PageCrashedEvent,
-    StartBrowserEvent,
-    StopBrowserEvent,
-    TabCreatedEvent,
-    TabClosedEvent,
-    TabsInfoResponse,
-    GetTabsInfoEvent,
+	BrowserErrorEvent,
+	BrowserStartedEvent,
+	BrowserStoppedEvent,
+	GetTabsInfoEvent,
+	NavigationCompleteEvent,
+	PageCrashedEvent,
+	StartBrowserEvent,
+	StopBrowserEvent,
+	TabCreatedEvent,
+	TabsInfoResponse,
 )
 from browser_use.browser.profile import BrowserProfile
-from bubus import EventBus
 
 
 class RemoteBrowserConnection(BaseModel):
@@ -51,12 +50,12 @@ class RemoteBrowserConnection(BaseModel):
 
 	# State tracking
 	_started: bool = PrivateAttr(default=False)
-	
+
 	def __init__(self, **data):
 		"""Initialize and register event handlers."""
 		super().__init__(**data)
 		self._register_handlers()
-	
+
 	def _register_handlers(self) -> None:
 		"""Register event handlers for browser control events."""
 		self.event_bus.on(StartBrowserEvent, self._handle_start)
@@ -66,10 +65,12 @@ class RemoteBrowserConnection(BaseModel):
 	async def _handle_start(self, event: StartBrowserEvent) -> None:
 		"""Handle browser start request."""
 		if self._started:
-			self.event_bus.dispatch(BrowserStartedEvent(
-				cdp_url=self.cdp_url,
-				browser_pid=None,
-			))
+			self.event_bus.dispatch(
+				BrowserStartedEvent(
+					cdp_url=self.cdp_url,
+					browser_pid=None,
+				)
+			)
 			return
 
 		try:
@@ -82,23 +83,27 @@ class RemoteBrowserConnection(BaseModel):
 			await self._setup_browser_context()
 
 			self._started = True
-			
+
 			# Notify that browser has started
-			self.event_bus.dispatch(BrowserStartedEvent(
-				cdp_url=self.cdp_url,
-				browser_pid=None,
-			))
+			self.event_bus.dispatch(
+				BrowserStartedEvent(
+					cdp_url=self.cdp_url,
+					browser_pid=None,
+				)
+			)
 
 		except Exception as e:
 			# Clean up on failure
 			await self._cleanup_playwright()
-			
+
 			# Notify error
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='ConnectionFailed',
-				message=f'Failed to connect to browser: {str(e)}',
-				details={'cdp_url': self.cdp_url},
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='ConnectionFailed',
+					message=f'Failed to connect to browser: {str(e)}',
+					details={'cdp_url': self.cdp_url},
+				)
+			)
 			raise
 
 	async def _connect_via_cdp(self) -> None:
@@ -136,9 +141,11 @@ class RemoteBrowserConnection(BaseModel):
 	async def _handle_stop(self, event: StopBrowserEvent) -> None:
 		"""Handle browser stop request."""
 		if not self._started:
-			self.event_bus.dispatch(BrowserStoppedEvent(
-				reason='Browser was not started',
-			))
+			self.event_bus.dispatch(
+				BrowserStoppedEvent(
+					reason='Browser was not started',
+				)
+			)
 			return
 
 		try:
@@ -159,17 +166,21 @@ class RemoteBrowserConnection(BaseModel):
 			self._pages.clear()
 			self._tab_id_map.clear()
 			self._started = False
-			
+
 			# Notify that browser has stopped
-			self.event_bus.dispatch(BrowserStoppedEvent(
-				reason='Stopped by request',
-			))
+			self.event_bus.dispatch(
+				BrowserStoppedEvent(
+					reason='Stopped by request',
+				)
+			)
 
 		except Exception as e:
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='StopFailed',
-				message=f'Failed to stop browser: {str(e)}',
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='StopFailed',
+					message=f'Failed to stop browser: {str(e)}',
+				)
+			)
 
 	async def _cleanup_playwright(self) -> None:
 		"""Clean up playwright instance."""
@@ -182,18 +193,20 @@ class RemoteBrowserConnection(BaseModel):
 		if not self._started or not self._context:
 			self.event_bus.dispatch(TabsInfoResponse(tabs=[]))
 			return
-		
+
 		tabs = []
 		for i, page in enumerate(self._pages):
 			if not page.is_closed():
-				tab_id = self._tab_id_map.get(i, f"tab_{i}")
-				tabs.append({
-					'id': tab_id,
-					'index': i,
-					'url': page.url,
-					'title': await page.title(),
-				})
-		
+				tab_id = self._tab_id_map.get(i, f'tab_{i}')
+				tabs.append(
+					{
+						'id': tab_id,
+						'index': i,
+						'url': page.url,
+						'title': await page.title(),
+					}
+				)
+
 		self.event_bus.dispatch(TabsInfoResponse(tabs=tabs))
 
 	# Page management methods (used internally by session)
@@ -201,60 +214,75 @@ class RemoteBrowserConnection(BaseModel):
 		"""Navigate a specific tab to a URL."""
 		page = await self._get_page_by_index(tab_index)
 		if not page:
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='InvalidTab',
-				message=f'Tab {tab_index} not found',
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='InvalidTab',
+					message=f'Tab {tab_index} not found',
+				)
+			)
 			return
-		
+
 		try:
 			response = await page.goto(url, wait_until=wait_until)
-			self.event_bus.dispatch(NavigationCompleteEvent(
-				tab_index=tab_index,
-				url=url,
-				status=response.status if response else None,
-			))
+			self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					tab_index=tab_index,
+					url=url,
+					status=response.status if response else None,
+				)
+			)
 		except Exception as e:
 			if 'crash' in str(e).lower():
-				self.event_bus.dispatch(PageCrashedEvent(
-					tab_index=tab_index,
-					error=str(e),
-				))
+				self.event_bus.dispatch(
+					PageCrashedEvent(
+						tab_index=tab_index,
+						error=str(e),
+					)
+				)
 			else:
-				self.event_bus.dispatch(BrowserErrorEvent(
-					error_type='NavigationFailed',
-					message=f'Failed to navigate: {str(e)}',
-					details={'url': url, 'tab_index': tab_index},
-				))
-	
+				self.event_bus.dispatch(
+					BrowserErrorEvent(
+						error_type='NavigationFailed',
+						message=f'Failed to navigate: {str(e)}',
+						details={'url': url, 'tab_index': tab_index},
+					)
+				)
+
 	async def create_tab(self, url: str | None = None) -> None:
 		"""Create a new tab."""
 		if not self._context:
 			return
-		
+
 		page = await self._context.new_page()
 		tab_index = len(self._pages)
 		self._pages.append(page)
-		
+
 		# Generate tab ID
-		tab_id = f"tab_{tab_index}_{id(page)}"
+		tab_id = f'tab_{tab_index}_{id(page)}'
 		self._tab_id_map[tab_index] = tab_id
-		
+
 		# Set up page event handlers
-		page.on('crash', lambda: self.event_bus.dispatch(PageCrashedEvent(
-			tab_index=tab_index,
-			error='Page crashed',
-		)))
-		
+		page.on(
+			'crash',
+			lambda: self.event_bus.dispatch(
+				PageCrashedEvent(
+					tab_index=tab_index,
+					error='Page crashed',
+				)
+			),
+		)
+
 		if url:
 			await page.goto(url)
-		
-		self.event_bus.dispatch(TabCreatedEvent(
-			tab_id=tab_id,
-			tab_index=tab_index,
-			url=url,
-		))
-	
+
+		self.event_bus.dispatch(
+			TabCreatedEvent(
+				tab_id=tab_id,
+				tab_index=tab_index,
+				url=url,
+			)
+		)
+
 	async def _get_page_by_index(self, tab_index: int) -> Page | None:
 		"""Get page by tab index."""
 		if 0 <= tab_index < len(self._pages):
@@ -262,63 +290,68 @@ class RemoteBrowserConnection(BaseModel):
 			if not page.is_closed():
 				return page
 		return None
-	
+
 	async def click_element(self, tab_index: int, element_index: int, **kwargs) -> None:
 		"""Click an element on a page."""
 		page = await self._get_page_by_index(tab_index)
 		if not page:
 			return
-		
+
 		# This would need DOM element tracking implementation
 		# For now, just show the pattern
-		self.event_bus.dispatch(BrowserErrorEvent(
-			error_type='NotImplemented',
-			message='Element clicking needs DOM tracking implementation',
-		))
-	
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type='NotImplemented',
+				message='Element clicking needs DOM tracking implementation',
+			)
+		)
+
 	async def input_text(self, tab_index: int, element_index: int, text: str, **kwargs) -> None:
 		"""Input text into an element."""
 		page = await self._get_page_by_index(tab_index)
 		if not page:
 			return
-		
+
 		# This would need DOM element tracking implementation
-		self.event_bus.dispatch(BrowserErrorEvent(
-			error_type='NotImplemented',
-			message='Text input needs DOM tracking implementation',
-		))
-	
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type='NotImplemented',
+				message='Text input needs DOM tracking implementation',
+			)
+		)
+
 	async def take_screenshot(self, tab_index: int, full_page: bool = False, clip: dict | None = None) -> str:
 		"""Take a screenshot of a page."""
 		page = await self._get_page_by_index(tab_index)
 		if not page:
-			return ""
-		
+			return ''
+
 		screenshot_bytes = await page.screenshot(
 			full_page=full_page,
 			clip=clip,
 		)
-		
+
 		# Convert to base64
 		import base64
+
 		return base64.b64encode(screenshot_bytes).decode('utf-8')
-	
+
 	async def get_browser_state(self, tab_index: int, include_dom: bool = True) -> dict[str, Any]:
 		"""Get the current state of a browser tab."""
 		page = await self._get_page_by_index(tab_index)
 		if not page:
 			return {'error': 'Tab not found'}
-		
+
 		state = {
 			'url': page.url,
 			'title': await page.title(),
 			'viewport': page.viewport_size,
 		}
-		
+
 		if include_dom:
 			# This would need DOM extraction implementation
 			state['dom'] = 'DOM extraction not implemented'
-		
+
 		return state
 
 	@property

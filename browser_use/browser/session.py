@@ -1,12 +1,10 @@
 """Event-driven browser session with backwards compatibility."""
 
-import asyncio
 import base64
-import tempfile
 import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
+from bubus import EventBus
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -32,10 +30,9 @@ from browser_use.browser.events import (
 	TakeScreenshotEvent,
 )
 from browser_use.browser.profile import BrowserProfile
-from bubus import EventBus
 
 if TYPE_CHECKING:
-	from browser_use.browser.local import LocalBrowserHelpers
+	pass
 
 # Default browser profile for convenience
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
@@ -43,11 +40,11 @@ DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
 class BrowserSession(BaseModel):
 	"""Event-driven browser session with backwards compatibility.
-	
+
 	This class provides a 2-layer architecture:
 	- High-level event handling for agents/controllers
 	- Direct CDP/Playwright calls for browser operations
-	
+
 	Supports both event-driven and imperative calling styles.
 	"""
 
@@ -118,17 +115,17 @@ class BrowserSession(BaseModel):
 		# Handle deprecated browser_pid
 		if browser_pid is not None:
 			warnings.warn(
-				'Passing browser_pid to BrowserSession is deprecated. '
-				'Use from_existing_pid() class method instead.',
+				'Passing browser_pid to BrowserSession is deprecated. Use from_existing_pid() class method instead.',
 				DeprecationWarning,
 				stacklevel=2,
 			)
 			if not cdp_url:
 				raise ValueError('cdp_url is required when browser_pid is provided')
-			
+
 			# Convert PID to psutil.Process
 			try:
 				import psutil
+
 				self._subprocess = psutil.Process(browser_pid)
 				self._owns_browser_resources = False
 			except ImportError:
@@ -164,6 +161,7 @@ class BrowserSession(BaseModel):
 		# Convert PID to psutil.Process
 		try:
 			import psutil
+
 			session._subprocess = psutil.Process(pid)
 			session._owns_browser_resources = False
 		except ImportError:
@@ -175,18 +173,18 @@ class BrowserSession(BaseModel):
 		# Browser lifecycle
 		self.event_bus.on(StartBrowserEvent, self._handle_start)
 		self.event_bus.on(StopBrowserEvent, self._handle_stop)
-		
+
 		# Navigation and interaction
 		self.event_bus.on(NavigateToUrlEvent, self._handle_navigate)
 		self.event_bus.on(ClickElementEvent, self._handle_click)
 		self.event_bus.on(InputTextEvent, self._handle_input_text)
 		self.event_bus.on(ScrollEvent, self._handle_scroll)
-		
+
 		# Tab management
 		self.event_bus.on(SwitchTabEvent, self._handle_switch_tab)
 		self.event_bus.on(CreateTabEvent, self._handle_create_tab)
 		self.event_bus.on(CloseTabEvent, self._handle_close_tab)
-		
+
 		# Browser state
 		self.event_bus.on(GetBrowserStateEvent, self._handle_get_state)
 		self.event_bus.on(TakeScreenshotEvent, self._handle_screenshot)
@@ -198,19 +196,20 @@ class BrowserSession(BaseModel):
 		"""Handle browser start request."""
 		if self._browser and self._browser.is_connected():
 			# Already started
-			self.event_bus.dispatch(BrowserStartedEvent(
-				cdp_url=self.cdp_url,
-				browser_pid=self._subprocess.pid if self._subprocess else None,
-			))
+			self.event_bus.dispatch(
+				BrowserStartedEvent(
+					cdp_url=self.cdp_url,
+					browser_pid=self._subprocess.pid if self._subprocess else None,
+				)
+			)
 			return
 
 		try:
 			if self.is_local and not self.cdp_url:
 				# Launch local browser
 				from browser_use.browser.local import LocalBrowserHelpers
-				self._subprocess, self.cdp_url = await LocalBrowserHelpers.launch_browser(
-					self.browser_profile
-				)
+
+				self._subprocess, self.cdp_url = await LocalBrowserHelpers.launch_browser(self.browser_profile)
 
 			# Connect via CDP
 			self._playwright = await async_playwright().start()
@@ -224,9 +223,7 @@ class BrowserSession(BaseModel):
 			if contexts:
 				self._browser_context = contexts[0]
 			else:
-				self._browser_context = await self._browser.new_context(
-					**self.browser_profile.kwargs_for_browser_context()
-				)
+				self._browser_context = await self._browser.new_context(**self.browser_profile.kwargs_for_browser_context())
 
 			# Set initial page if exists
 			pages = self._browser_context.pages
@@ -235,30 +232,36 @@ class BrowserSession(BaseModel):
 				self._current_human_page = pages[0]
 
 			# Notify success
-			self.event_bus.dispatch(BrowserStartedEvent(
-				cdp_url=self.cdp_url,
-				browser_pid=self._subprocess.pid if self._subprocess else None,
-			))
+			self.event_bus.dispatch(
+				BrowserStartedEvent(
+					cdp_url=self.cdp_url,
+					browser_pid=self._subprocess.pid if self._subprocess else None,
+				)
+			)
 
 		except Exception as e:
 			# Clean up on failure
 			if self._playwright:
 				await self._playwright.stop()
 				self._playwright = None
-			
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='StartFailed',
-				message=f'Failed to start browser: {str(e)}',
-				details={'cdp_url': self.cdp_url},
-			))
+
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='StartFailed',
+					message=f'Failed to start browser: {str(e)}',
+					details={'cdp_url': self.cdp_url},
+				)
+			)
 			raise
 
 	async def _handle_stop(self, event: StopBrowserEvent) -> None:
 		"""Handle browser stop request."""
 		if not self._browser:
-			self.event_bus.dispatch(BrowserStoppedEvent(
-				reason='Browser was not started',
-			))
+			self.event_bus.dispatch(
+				BrowserStoppedEvent(
+					reason='Browser was not started',
+				)
+			)
 			return
 
 		try:
@@ -274,6 +277,7 @@ class BrowserSession(BaseModel):
 			# Stop local browser process if we own it
 			if self.is_local and self._owns_browser_resources and self._subprocess:
 				from browser_use.browser.local import LocalBrowserHelpers
+
 				await LocalBrowserHelpers.cleanup_process(self._subprocess)
 
 			# Reset state
@@ -281,17 +285,21 @@ class BrowserSession(BaseModel):
 			self._browser_context = None
 			self._current_agent_page = None
 			self._current_human_page = None
-			
+
 			# Notify stop
-			self.event_bus.dispatch(BrowserStoppedEvent(
-				reason='Stopped by request',
-			))
+			self.event_bus.dispatch(
+				BrowserStoppedEvent(
+					reason='Stopped by request',
+				)
+			)
 
 		except Exception as e:
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='StopFailed',
-				message=f'Failed to stop browser: {str(e)}',
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='StopFailed',
+					message=f'Failed to stop browser: {str(e)}',
+				)
+			)
 
 	# ========== Backwards Compatibility Methods ==========
 	# These all just dispatch events internally
@@ -310,52 +318,64 @@ class BrowserSession(BaseModel):
 	async def _handle_navigate(self, event: NavigateToUrlEvent) -> None:
 		"""Handle navigation request."""
 		if not self._current_agent_page:
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='NoActivePage',
-				message='No active page to navigate',
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NoActivePage',
+					message='No active page to navigate',
+				)
+			)
 			return
-		
+
 		try:
 			response = await self._current_agent_page.goto(
 				event.url,
 				wait_until=event.wait_until,
 			)
-			self.event_bus.dispatch(NavigationCompleteEvent(
-				tab_index=self.tabs.index(self._current_agent_page),
-				url=event.url,
-				status=response.status if response else None,
-			))
+			self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					tab_index=self.tabs.index(self._current_agent_page),
+					url=event.url,
+					status=response.status if response else None,
+				)
+			)
 		except Exception as e:
-			self.event_bus.dispatch(BrowserErrorEvent(
-				error_type='NavigationFailed',
-				message=str(e),
-				details={'url': event.url},
-			))
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NavigationFailed',
+					message=str(e),
+					details={'url': event.url},
+				)
+			)
 
 	async def _handle_click(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
 		# TODO: Implement DOM element tracking
-		self.event_bus.dispatch(BrowserErrorEvent(
-			error_type='NotImplemented',
-			message='Click handling needs DOM element tracking implementation',
-		))
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type='NotImplemented',
+				message='Click handling needs DOM element tracking implementation',
+			)
+		)
 
 	async def _handle_input_text(self, event: InputTextEvent) -> None:
 		"""Handle text input request."""
 		# TODO: Implement DOM element tracking
-		self.event_bus.dispatch(BrowserErrorEvent(
-			error_type='NotImplemented',
-			message='Text input needs DOM element tracking implementation',
-		))
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type='NotImplemented',
+				message='Text input needs DOM element tracking implementation',
+			)
+		)
 
 	async def _handle_scroll(self, event: ScrollEvent) -> None:
 		"""Handle scroll request."""
 		# TODO: Implement scrolling
-		self.event_bus.dispatch(BrowserErrorEvent(
-			error_type='NotImplemented',
-			message='Scrolling needs implementation',
-		))
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type='NotImplemented',
+				message='Scrolling needs implementation',
+			)
+		)
 
 	async def _handle_switch_tab(self, event: SwitchTabEvent) -> None:
 		"""Handle tab switch request."""
@@ -367,17 +387,19 @@ class BrowserSession(BaseModel):
 		"""Handle new tab creation."""
 		if not self._browser_context:
 			return
-		
+
 		page = await self._browser_context.new_page()
 		if event.url:
 			await page.goto(event.url)
-		
+
 		tab_index = len(self.tabs) - 1
-		self.event_bus.dispatch(TabCreatedEvent(
-			tab_id=f"tab_{tab_index}_{id(page)}",
-			tab_index=tab_index,
-			url=event.url,
-		))
+		self.event_bus.dispatch(
+			TabCreatedEvent(
+				tab_id=f'tab_{tab_index}_{id(page)}',
+				tab_index=tab_index,
+				url=event.url,
+			)
+		)
 
 	async def _handle_close_tab(self, event: CloseTabEvent) -> None:
 		"""Handle tab close request."""
@@ -388,15 +410,17 @@ class BrowserSession(BaseModel):
 	async def _handle_get_state(self, event: GetBrowserStateEvent) -> None:
 		"""Handle browser state request."""
 		# TODO: Implement proper state extraction
-		self.event_bus.dispatch(BrowserStateResponse(
-			state={'error': 'State extraction not implemented'},
-		))
+		self.event_bus.dispatch(
+			BrowserStateResponse(
+				state={'error': 'State extraction not implemented'},
+			)
+		)
 
 	async def _handle_screenshot(self, event: TakeScreenshotEvent) -> None:
 		"""Handle screenshot request."""
 		if not self._current_agent_page:
 			return
-		
+
 		screenshot_bytes = await self._current_agent_page.screenshot(
 			full_page=event.full_page,
 			clip=event.clip,
@@ -409,12 +433,14 @@ class BrowserSession(BaseModel):
 		tabs = []
 		for i, page in enumerate(self.tabs):
 			if not page.is_closed():
-				tabs.append({
-					'id': f"tab_{i}",
-					'index': i,
-					'url': page.url,
-					'title': await page.title(),
-				})
+				tabs.append(
+					{
+						'id': f'tab_{i}',
+						'index': i,
+						'url': page.url,
+						'title': await page.title(),
+					}
+				)
 		self.event_bus.dispatch(TabsInfoResponse(tabs=tabs))
 
 	# ========== Backwards Compatibility Methods ==========
@@ -422,7 +448,7 @@ class BrowserSession(BaseModel):
 	async def kill(self) -> None:
 		"""Alias for stop() for backwards compatibility."""
 		await self.stop()
-	
+
 	async def close(self) -> None:
 		"""Alias for stop() for backwards compatibility."""
 		await self.stop()
@@ -447,7 +473,7 @@ class BrowserSession(BaseModel):
 		if self._subprocess:
 			return self._subprocess.pid
 		return None
-	
+
 	@property
 	def browser(self) -> Browser | None:
 		"""Get the browser instance."""
@@ -571,7 +597,7 @@ class BrowserSession(BaseModel):
 		"""Save browser storage state."""
 		if not self._browser_context:
 			return
-		
+
 		save_path = path or self.browser_profile.storage_state
 		if save_path:
 			await self._browser_context.storage_state(path=str(save_path))

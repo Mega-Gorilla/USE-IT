@@ -1,11 +1,7 @@
 """Local browser helpers for process management."""
 
 import asyncio
-import os
-import signal
-import tempfile
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import psutil
 from playwright.async_api import async_playwright
@@ -13,8 +9,7 @@ from playwright.async_api import async_playwright
 from browser_use.browser.profile import BrowserProfile
 
 if TYPE_CHECKING:
-	from playwright.async_api import Playwright
-
+	pass
 
 
 class LocalBrowserHelpers:
@@ -23,10 +18,10 @@ class LocalBrowserHelpers:
 	@staticmethod
 	async def launch_browser(profile: BrowserProfile) -> tuple[psutil.Process, str]:
 		"""Launch browser process and return (process, cdp_url).
-		
+
 		Args:
 			profile: Browser configuration profile
-			
+
 		Returns:
 			Tuple of (psutil.Process, cdp_url)
 		"""
@@ -35,9 +30,11 @@ class LocalBrowserHelpers:
 
 		# Add debugging port
 		debug_port = LocalBrowserHelpers.find_free_port()
-		launch_args.extend([
-			f'--remote-debugging-port={debug_port}',
-		])
+		launch_args.extend(
+			[
+				f'--remote-debugging-port={debug_port}',
+			]
+		)
 
 		# Get browser executable from playwright
 		playwright = await async_playwright().start()
@@ -105,10 +102,10 @@ class LocalBrowserHelpers:
 	@staticmethod
 	async def get_browser_pid_via_cdp(browser) -> int | None:
 		"""Get the browser process ID via CDP SystemInfo.getProcessInfo.
-		
+
 		Args:
 			browser: Playwright Browser instance
-			
+
 		Returns:
 			Process ID or None if failed
 		"""
@@ -126,7 +123,7 @@ class LocalBrowserHelpers:
 	@staticmethod
 	async def cleanup_process(process: psutil.Process) -> None:
 		"""Clean up browser process.
-		
+
 		Args:
 			process: psutil.Process to terminate
 		"""
