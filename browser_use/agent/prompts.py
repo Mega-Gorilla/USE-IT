@@ -1,6 +1,6 @@
 import importlib.resources
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 from browser_use.observability import observe_debug
@@ -75,6 +75,8 @@ class SystemPrompt:
 
 
 class AgentMessagePrompt:
+	vision_detail_level: Literal['auto', 'low', 'high']
+
 	def __init__(
 		self,
 		browser_state_summary: 'BrowserStateSummary',
@@ -89,6 +91,7 @@ class AgentMessagePrompt:
 		sensitive_data: str | None = None,
 		available_file_paths: list[str] | None = None,
 		screenshots: list[str] | None = None,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -102,6 +105,7 @@ class AgentMessagePrompt:
 		self.sensitive_data: str | None = sensitive_data
 		self.available_file_paths: list[str] | None = available_file_paths
 		self.screenshots = screenshots or []
+		self.vision_detail_level = vision_detail_level
 		assert self.browser_state
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_deduplicate_screenshots')
@@ -197,11 +201,16 @@ class AgentMessagePrompt:
 
 		current_tab_text = f'Current tab: {current_tab_id}' if current_tab_id is not None else ''
 
+		# Check if current page is a PDF viewer and add appropriate message
+		pdf_message = ''
+		if self.browser_state.is_pdf_viewer:
+			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the extract_structured_data action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
+
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
 {page_info_text}
-Interactive elements from top layer of the current page inside the viewport{truncated_text}:
+{pdf_message}Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
 		return browser_state
@@ -288,6 +297,7 @@ Interactive elements from top layer of the current page inside the viewport{trun
 						image_url=ImageURL(
 							url=f'data:image/png;base64,{screenshot}',
 							media_type='image/png',
+							detail=self.vision_detail_level,
 						),
 					)
 				)
