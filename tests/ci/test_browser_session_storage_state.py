@@ -30,7 +30,7 @@ class TestBrowserSessionStorageState:
 		"""Create a temporary storage state file with test cookies and local storage."""
 		with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
 			storage_state = {
-				"cookies": [
+				'cookies': [
 					{
 						'name': 'test_cookie',
 						'value': 'test_value',
@@ -52,7 +52,7 @@ class TestBrowserSessionStorageState:
 						'sameSite': 'Lax',
 					},
 				],
-				"origins": []  # Could add localStorage/sessionStorage data here
+				'origins': [],  # Could add localStorage/sessionStorage data here
 			}
 			json.dump(storage_state, f)
 			temp_path = Path(f.name)
@@ -100,18 +100,26 @@ class TestBrowserSessionStorageState:
 
 	async def test_storage_state_loaded_on_start(self, browser_session_with_storage_state, http_server):
 		"""Test that storage state is loaded when browser starts."""
+		# Import event classes
+		from browser_use.browser.events import StorageStateLoadedEvent
+
 		# Start the browser session
 		await browser_session_with_storage_state.start()
+
+		# Wait for storage state to be loaded
+		try:
+			await browser_session_with_storage_state.event_bus.expect(StorageStateLoadedEvent, timeout=5.0)
+		except TimeoutError:
+			pass  # It's okay if the event doesn't fire, we'll check cookies directly
 
 		# Verify cookies were loaded by accessing browser context directly
 		context = browser_session_with_storage_state.browser_context
 		assert context is not None, 'Browser context should be available'
 
-		import asyncio
-		await asyncio.sleep(0.1)  # Give time for async operations
-		
 		cookies = await context.cookies()
-		assert len(cookies) >= 2, f'Expected at least 2 cookies to be loaded from storage state, but got {len(cookies)}: {cookies}'
+		assert len(cookies) >= 2, (
+			f'Expected at least 2 cookies to be loaded from storage state, but got {len(cookies)}: {cookies}'
+		)
 
 		# Check specific cookies
 		cookie_names = {cookie['name'] for cookie in cookies}
@@ -121,7 +129,7 @@ class TestBrowserSessionStorageState:
 		# Verify cookie values
 		test_cookie = next(c for c in cookies if c['name'] == 'test_cookie')
 		assert test_cookie['value'] == 'test_value'
-		assert test_cookie['domain'] == 'localhost'
+		assert test_cookie['domain'] == '127.0.0.1'
 
 	async def test_storage_state_cookies_available_in_page(self, browser_session_with_storage_state, http_server):
 		"""Test that cookies from storage state are available to web pages."""
@@ -133,17 +141,13 @@ class TestBrowserSessionStorageState:
 		test_url = http_server.url_for('/cookies')
 		await page.goto(test_url)
 
-		# Wait a bit for cookies to be available
-		import asyncio
-		await asyncio.sleep(0.1)
-
 		# Check that cookies are available to the page
 		page_cookies = await page.evaluate('document.cookie')
-		
+
 		# The test_cookie should be visible in document.cookie (httpOnly=False)
 		# but session_cookie won't be visible (httpOnly=True)
 		assert 'test_cookie=test_value' in page_cookies
-		
+
 		# Verify all cookies are in the context
 		all_cookies = await browser_session_with_storage_state.browser_context.cookies()
 		cookie_names = {c['name'] for c in all_cookies}
@@ -161,7 +165,7 @@ class TestBrowserSessionStorageState:
 		# Navigate to a page and set a new cookie
 		page = await session.get_current_page()
 		await page.goto('about:blank')
-		await page.context.add_cookies([{'name': 'new_cookie', 'value': 'new_value', 'domain': 'localhost', 'path': '/'}])
+		await page.context.add_cookies([{'name': 'new_cookie', 'value': 'new_value', 'domain': '127.0.0.1', 'path': '/'}])
 
 		# Save storage state (which includes cookies)
 		await session.save_storage_state(save_path)
@@ -193,8 +197,8 @@ class TestBrowserSessionStorageState:
 		context = session.browser_context
 		assert context is not None
 		cookies = await context.cookies()
-		localhost_cookies = [c for c in cookies if c['domain'] in ['localhost', '.localhost']]
-		assert len(localhost_cookies) == 0, f'Expected no localhost cookies, but found: {localhost_cookies}'
+		localhost_cookies = [c for c in cookies if c['domain'] in ['127.0.0.1', '.127.0.0.1']]
+		assert len(localhost_cookies) == 0, f'Expected no 127.0.0.1 cookies, but found: {localhost_cookies}'
 
 		await session.kill()
 
@@ -215,7 +219,7 @@ class TestBrowserSessionStorageState:
 		context = session.browser_context
 		assert context is not None
 		cookies = await context.cookies()
-		localhost_cookies = [c for c in cookies if c['domain'] in ['localhost', '.localhost']]
-		assert len(localhost_cookies) == 0, f'Expected no localhost cookies, but found: {localhost_cookies}'
+		localhost_cookies = [c for c in cookies if c['domain'] in ['127.0.0.1', '.127.0.0.1']]
+		assert len(localhost_cookies) == 0, f'Expected no 127.0.0.1 cookies, but found: {localhost_cookies}'
 
 		await session.kill()

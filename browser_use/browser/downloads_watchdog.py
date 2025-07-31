@@ -11,10 +11,11 @@ from weakref import WeakSet
 import anyio
 from bubus import EventBus
 from playwright.async_api import Download, Page
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from browser_use.browser.events import (
 	FileDownloadedEvent,
+	NavigationCompleteEvent,
 	TabClosedEvent,
 	TabCreatedEvent,
 )
@@ -39,6 +40,7 @@ class DownloadsWatchdog(BaseModel):
 	# Private state
 	_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
 	_active_downloads: dict[str, Download] = PrivateAttr(default_factory=dict)
+	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by page URL
 
 	def __init__(self, event_bus: EventBus, browser_session: 'BrowserSession', **kwargs):
 		"""Initialize watchdog with event bus and browser session."""
@@ -49,6 +51,7 @@ class DownloadsWatchdog(BaseModel):
 		"""Register event handlers."""
 		self.event_bus.on(TabCreatedEvent, self._handle_tab_created)
 		self.event_bus.on(TabClosedEvent, self._handle_tab_closed)
+		self.event_bus.on(NavigationCompleteEvent, self._handle_navigation_complete)
 
 	async def _handle_tab_created(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for downloads."""
@@ -60,6 +63,36 @@ class DownloadsWatchdog(BaseModel):
 		# Tab will be removed automatically via WeakSet
 		pass
 
+	async def _handle_navigation_complete(self, event: NavigationCompleteEvent) -> None:
+		"""Check for PDFs after navigation completes."""
+		# Clear PDF cache for the navigated URL since content may have changed
+		if event.url in self._pdf_viewer_cache:
+			del self._pdf_viewer_cache[event.url]
+
+		# Check if auto-download is enabled
+		if not self._is_auto_download_enabled():
+			return
+
+		# Get the page that navigated
+		try:
+			if not hasattr(self.browser_session, '_browser_context') or not self.browser_session._browser_context:
+				return
+
+			pages = self.browser_session._browser_context.pages
+			if 0 <= event.tab_index < len(pages):
+				page = pages[event.tab_index]
+
+				# Check if it's a PDF and auto-download if needed
+				if await self.check_for_pdf_viewer(page):
+					logger.info(f'[DownloadsWatchdog] PDF detected after navigation to {event.url}')
+					await self.trigger_pdf_download(page)
+		except Exception as e:
+			logger.error(f'[DownloadsWatchdog] Error checking for PDF after navigation: {e}')
+
+	def _is_auto_download_enabled(self) -> bool:
+		"""Check if PDF auto-download is enabled."""
+		return getattr(self.browser_session, '_auto_download_pdfs', True)
+
 	def add_page(self, page: Page) -> None:
 		"""Add a page to monitor for downloads."""
 		self._pages.add(page)
@@ -69,12 +102,14 @@ class DownloadsWatchdog(BaseModel):
 	def _setup_page_listeners(self, page: Page) -> None:
 		"""Set up download listeners for a page."""
 		# Monitor download events
+		logger.info(f'[DownloadsWatchdog] Setting up download listener for page: {page.url}')
 		page.on('download', lambda download: asyncio.create_task(self._handle_download(download)))
 
 	async def _handle_download(self, download: Download) -> None:
 		"""Handle a download event."""
 		download_id = f'{id(download)}'
 		self._active_downloads[download_id] = download
+		logger.info(f'[DownloadsWatchdog] Handling download: {download.suggested_filename} from {download.url[:100]}...')
 
 		try:
 			# Get download info
@@ -85,7 +120,9 @@ class DownloadsWatchdog(BaseModel):
 			downloads_dir = self.browser_session.browser_profile.downloads_path
 			if not downloads_dir:
 				downloads_dir = str(Path.home() / 'Downloads')
-			
+			else:
+				downloads_dir = str(downloads_dir)  # Ensure it's a string
+
 			# Ensure unique filename
 			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
 			download_path = Path(downloads_dir) / unique_filename
@@ -108,8 +145,8 @@ class DownloadsWatchdog(BaseModel):
 
 			# Check if this was a PDF auto-download
 			auto_download = False
-			if file_type == 'pdf' and hasattr(self.browser_session, '_auto_download_pdfs'):
-				auto_download = self.browser_session._auto_download_pdfs
+			if file_type == 'pdf':
+				auto_download = self._is_auto_download_enabled()
 
 			# Emit download event
 			self.event_bus.dispatch(
@@ -129,9 +166,7 @@ class DownloadsWatchdog(BaseModel):
 				f'[DownloadsWatchdog] Download completed: {suggested_filename} ({file_size} bytes) saved to {download_path}'
 			)
 
-			# Track downloaded file in browser session
-			if hasattr(self.browser_session, '_downloaded_files'):
-				self.browser_session._downloaded_files.append(str(download_path))
+			# File is now tracked on filesystem, no need to track in memory
 
 		except Exception as e:
 			logger.error(f'[DownloadsWatchdog] Error handling download: {e}')
@@ -145,6 +180,11 @@ class DownloadsWatchdog(BaseModel):
 
 		Returns True if a PDF is detected and should be downloaded.
 		"""
+		# Check cache first
+		page_url = page.url
+		if page_url in self._pdf_viewer_cache:
+			return self._pdf_viewer_cache[page_url]
+
 		try:
 			# Check if we're in Chrome's PDF viewer
 			is_pdf_viewer = await page.evaluate("""
@@ -206,8 +246,10 @@ class DownloadsWatchdog(BaseModel):
 					f'[DownloadsWatchdog] PDF detected: {is_pdf_viewer.get("url", "unknown")} '
 					f'(type: {"Chrome viewer" if is_pdf_viewer.get("isChromePdfViewer") else "direct PDF"})'
 				)
+				self._pdf_viewer_cache[page_url] = True
 				return True
 
+			self._pdf_viewer_cache[page_url] = False
 			return False
 
 		except Exception as e:
@@ -216,13 +258,13 @@ class DownloadsWatchdog(BaseModel):
 
 	async def trigger_pdf_download(self, page: Page) -> str | None:
 		"""Trigger download of a PDF from Chrome's PDF viewer.
-		
+
 		Returns the download path if successful, None otherwise.
 		"""
 		if not self.browser_session.browser_profile.downloads_path:
 			logger.warning('[DownloadsWatchdog] No downloads path configured')
 			return None
-			
+
 		try:
 			# Try to get the PDF URL
 			pdf_info = await page.evaluate("""
@@ -249,9 +291,11 @@ class DownloadsWatchdog(BaseModel):
 				if not pdf_filename.endswith('.pdf'):
 					pdf_filename += '.pdf'
 
-			# Check if already downloaded
-			if hasattr(self.browser_session, '_downloaded_files'):
-				if any(os.path.basename(downloaded) == pdf_filename for downloaded in self.browser_session._downloaded_files):
+			# Check if already downloaded by looking in the downloads directory
+			downloads_dir = str(self.browser_session.browser_profile.downloads_path)
+			if os.path.exists(downloads_dir):
+				existing_files = os.listdir(downloads_dir)
+				if pdf_filename in existing_files:
 					logger.debug(f'[DownloadsWatchdog] PDF already downloaded: {pdf_filename}')
 					return None
 
@@ -261,7 +305,7 @@ class DownloadsWatchdog(BaseModel):
 			try:
 				# Properly escape the URL to prevent JavaScript injection
 				escaped_pdf_url = json.dumps(pdf_url)
-				
+
 				download_result = await page.evaluate(f"""
 					async () => {{
 						try {{
@@ -297,7 +341,7 @@ class DownloadsWatchdog(BaseModel):
 
 				if download_result and download_result.get('data') and len(download_result['data']) > 0:
 					# Ensure unique filename
-					downloads_dir = self.browser_session.browser_profile.downloads_path
+					downloads_dir = str(self.browser_session.browser_profile.downloads_path)
 					unique_filename = await self._get_unique_filename(downloads_dir, pdf_filename)
 					download_path = os.path.join(downloads_dir, unique_filename)
 
@@ -305,14 +349,14 @@ class DownloadsWatchdog(BaseModel):
 					async with await anyio.open_file(download_path, 'wb') as f:
 						await f.write(bytes(download_result['data']))
 
-					# Track the downloaded file
-					if hasattr(self.browser_session, '_downloaded_files'):
-						self.browser_session._downloaded_files.append(download_path)
+					# File is now tracked on filesystem, no need to track in memory
 
 					# Log cache information
 					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
 					response_size = download_result.get('responseSize', 0)
-					logger.info(f'[DownloadsWatchdog] Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
+					logger.info(
+						f'[DownloadsWatchdog] Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}'
+					)
 
 					# Emit file downloaded event
 					self.event_bus.dispatch(

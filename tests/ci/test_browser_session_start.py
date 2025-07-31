@@ -869,25 +869,29 @@ class TestBrowserSessionReusePatterns:
 			base_url = httpserver.url_for('/')
 			if 'localhost' in base_url:
 				base_url = base_url.replace('localhost', '127.0.0.1')
-			
+
 			await window1.navigate_to(base_url.rstrip('/') + '/set-cookies')
 			await window2.navigate_to(base_url.rstrip('/') + '/page2')
-			
+
 			# Wait for pages to load
 			page1 = await window1.get_current_page()
 			page2 = await window2.get_current_page()
 			await page1.wait_for_load_state('networkidle')
 			await page2.wait_for_load_state('networkidle')
-			
+
 			# Inject cookies directly via CDP to ensure they're set
-			await page1.context.add_cookies([
-				{'name': 'session_id', 'value': 'test123', 'domain': '127.0.0.1', 'path': '/'},
-				{'name': 'auth_token', 'value': 'abc456', 'domain': '127.0.0.1', 'path': '/'},
-			])
-			await page2.context.add_cookies([
-				{'name': 'user_pref', 'value': 'dark_mode', 'domain': '127.0.0.1', 'path': '/'},
-				{'name': 'theme', 'value': 'night', 'domain': '127.0.0.1', 'path': '/'},
-			])
+			await page1.context.add_cookies(
+				[
+					{'name': 'session_id', 'value': 'test123', 'domain': '127.0.0.1', 'path': '/'},
+					{'name': 'auth_token', 'value': 'abc456', 'domain': '127.0.0.1', 'path': '/'},
+				]
+			)
+			await page2.context.add_cookies(
+				[
+					{'name': 'user_pref', 'value': 'dark_mode', 'domain': '127.0.0.1', 'path': '/'},
+					{'name': 'theme', 'value': 'night', 'domain': '127.0.0.1', 'path': '/'},
+				]
+			)
 
 			# Run agents in parallel
 			_results = await asyncio.gather(agent1.run(), agent2.run())
@@ -903,17 +907,17 @@ class TestBrowserSessionReusePatterns:
 			# Check cookies in each context - they should be separate
 			context1_cookies = await page1.context.cookies()
 			context2_cookies = await page2.context.cookies()
-			print(f"Context1 cookies: {[c['name'] for c in context1_cookies]}")
-			print(f"Context2 cookies: {[c['name'] for c in context2_cookies]}")
-			
+			print(f'Context1 cookies: {[c["name"] for c in context1_cookies]}')
+			print(f'Context2 cookies: {[c["name"] for c in context2_cookies]}')
+
 			# Since these are separate browser contexts, they won't share cookies
 			# But let's verify the cookies exist in their respective contexts
 			# We need to get cookies for the specific domain
 			domain_cookies1 = await page1.context.cookies(base_url)
 			domain_cookies2 = await page2.context.cookies(base_url)
-			print(f"Domain cookies window1: {[c['name'] for c in domain_cookies1]}")
-			print(f"Domain cookies window2: {[c['name'] for c in domain_cookies2]}")
-			
+			print(f'Domain cookies window1: {[c["name"] for c in domain_cookies1]}')
+			print(f'Domain cookies window2: {[c["name"] for c in domain_cookies2]}')
+
 			# Save storage state from window1
 			await window1.save_storage_state()
 			storage_state_1 = json.loads(auth_json_path.read_text())
@@ -927,28 +931,28 @@ class TestBrowserSessionReusePatterns:
 			print(f'Cookies saved from window2: {cookies_2}')
 
 			# Verify each window saved its own cookies
-			assert len(cookies_1) >= 2, f"Window1 should have saved at least 2 cookies, got {cookies_1}"
-			assert len(cookies_2) >= 2, f"Window2 should have saved at least 2 cookies, got {cookies_2}"
-			
+			assert len(cookies_1) >= 2, f'Window1 should have saved at least 2 cookies, got {cookies_1}'
+			assert len(cookies_2) >= 2, f'Window2 should have saved at least 2 cookies, got {cookies_2}'
+
 			# Now test that a new session can load the saved cookies
-			print("\nTesting cookie persistence with new session...")
+			print('\nTesting cookie persistence with new session...')
 			await window1.kill()
 			await window2.kill()
-			
+
 			# Create a new session with the same profile
 			window3 = BrowserSession(browser_profile=shared_profile)
 			await window3.start()
-			
+
 			# Check if cookies were loaded
 			page3 = await window3.get_current_page()
 			await page3.goto(base_url)  # Navigate to the domain
 			loaded_cookies = await page3.context.cookies()
 			loaded_cookie_names = {c['name'] for c in loaded_cookies}
-			print(f"Cookies loaded in new session: {loaded_cookie_names}")
-			
+			print(f'Cookies loaded in new session: {loaded_cookie_names}')
+
 			# Should have the cookies from window2 (last save)
-			assert len(loaded_cookie_names) >= 2, f"Expected loaded cookies, got {loaded_cookie_names}"
-			
+			assert len(loaded_cookie_names) >= 2, f'Expected loaded cookies, got {loaded_cookie_names}'
+
 			await window3.kill()
 
 		finally:
@@ -956,17 +960,17 @@ class TestBrowserSessionReusePatterns:
 			try:
 				if 'window1' in locals():
 					await window1.kill()
-			except:
+			except Exception:
 				pass
 			try:
 				if 'window2' in locals():
 					await window2.kill()
-			except:
+			except Exception:
 				pass
 			try:
 				if 'window3' in locals():
 					await window3.kill()
-			except:
+			except Exception:
 				pass
 			auth_json_path.unlink(missing_ok=True)
 

@@ -16,10 +16,15 @@ PLACEHOLDER_4PX_SCREENSHOT = (
 class TabInfo(BaseModel):
 	"""Represents information about a browser tab"""
 
+	# Original fields
 	page_id: int
 	url: str
 	title: str
 	parent_page_id: int | None = None  # parent page that contains this popup or cross-origin iframe
+
+	# Additional fields for compatibility with dictionary format
+	id: str | None = None  # tab ID string like "tab_0"
+	index: int | None = None  # tab index
 
 
 class PageInfo(BaseModel):

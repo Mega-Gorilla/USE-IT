@@ -1,9 +1,11 @@
 """Test to verify download detection timing issue"""
 
+import asyncio
 import os
 import time
 
 import pytest
+from werkzeug.wrappers import Response
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
@@ -29,7 +31,16 @@ async def test_server(httpserver):
 	</html>
 	"""
 	httpserver.expect_request('/').respond_with_data(html_content, content_type='text/html')
-	httpserver.expect_request('/download/test.pdf').respond_with_data(b'PDF content', content_type='application/pdf')
+
+	# Set up PDF download with proper headers to force download
+	def pdf_handler(request):
+		return Response(
+			b'PDF content',
+			content_type='application/pdf',
+			headers={'Content-Disposition': 'attachment; filename="test.pdf"', 'Content-Length': '11'},
+		)
+
+	httpserver.expect_request('/download/test.pdf').respond_with_handler(pdf_handler)
 	return httpserver
 
 
@@ -50,7 +61,7 @@ async def test_download_detection_timing(test_server, tmp_path):
 	await page.goto(test_server.url_for('/'))
 
 	# Get the actual DOM state to find the button
-	state = await browser_with_downloads.get_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_with_downloads.get_browser_state_with_recovery()
 
 	# Find the button element
 	button_node = None
@@ -90,7 +101,7 @@ async def test_download_detection_timing(test_server, tmp_path):
 	await page.evaluate('document.getElementById("result").innerText = ""')
 
 	# Get the DOM state again for the new browser session
-	state = await browser_no_downloads.get_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_no_downloads.get_browser_state_with_recovery()
 
 	# Find the button element again
 	button_node = None
@@ -128,11 +139,17 @@ async def test_actual_download_detection(test_server, tmp_path):
 	downloads_path = tmp_path / 'downloads'
 	downloads_path.mkdir()
 
+	# Create a user data dir for persistent context
+	user_data_dir = tmp_path / 'user_data'
+	user_data_dir.mkdir()
+
 	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=True,
 			downloads_path=str(downloads_path),
-			user_data_dir=None,
+			user_data_dir=str(user_data_dir),  # Use persistent context
+			# Add Chrome flags for download handling
+			args=['--enable-features=DownloadBubble', '--enable-features=DownloadBubbleV2'],
 		)
 	)
 
@@ -141,7 +158,7 @@ async def test_actual_download_detection(test_server, tmp_path):
 	await page.goto(test_server.url_for('/'))
 
 	# Get the DOM state to find the download link
-	state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_session.get_browser_state_with_recovery()
 
 	# Find the download link element
 	download_node = None
@@ -152,17 +169,88 @@ async def test_actual_download_detection(test_server, tmp_path):
 
 	assert download_node is not None, 'Could not find download link element'
 
-	# Click the download link
+	# Debug: Log what we're about to click
+	print(f'Clicking download link with href: {download_node.attributes.get("href")}')
+	print(f'Download link has download attribute: {"download" in download_node.attributes}')
+	print(f'Auto download PDFs enabled: {browser_session._auto_download_pdfs}')
+
+	# Since the link has a download attribute, it will trigger a download, not navigation
+	# We need to intercept the download event
 	start_time = time.time()
-	download_path = await browser_session._click_element_node(download_node)
+
+	# Listen for download event on the page
+	download_started = False
+	received_download = None
+
+	async def handle_download(download):
+		nonlocal download_started, received_download
+		download_started = True
+		received_download = download
+		print(f'Download started: {download.suggested_filename}')
+		# Try saving it manually for debugging
+		try:
+			# First, let's see the download state
+			print(f'Download URL: {download.url}')
+			print(f'Download suggested filename: {download.suggested_filename}')
+
+			# Try to get the path where it's being downloaded
+			path = await download.path()
+			print(f'Download path from browser: {path}')
+
+			# If path exists, copy it to our downloads dir
+			if path and os.path.exists(path):
+				import shutil
+
+				dest_path = downloads_path / download.suggested_filename
+				shutil.copy(path, dest_path)
+				print(f'Copied download from {path} to {dest_path}')
+			else:
+				print(f'Download path does not exist: {path}')
+		except Exception as e:
+			print(f'Error handling download: {e}')
+
+	page.on('download', handle_download)
+
+	# Click the download link
+	await browser_session._click_element_node(download_node)
 	duration = time.time() - start_time
 
-	# Should return the download path
-	assert download_path is not None
-	assert 'test.pdf' in download_path
-	assert os.path.exists(download_path)
+	print(f'Click completed in {duration:.2f}s')
+
+	# Wait for download to be processed
+	await asyncio.sleep(2.0)
+
+	# Check if we're still on the same page (download attribute prevents navigation)
+	current_url = page.url
+	print(f'Current URL after click: {current_url}')
+	print(f'Download started: {download_started}')
+
+	# Wait a bit more
+	await asyncio.sleep(1.0)
+
+	# Check the downloaded files using the browser_session property
+	downloaded_files = browser_session.downloaded_files
+
+	# Debug: check the downloads directory
+	print(f'Downloads directory: {downloads_path}')
+	print(f'Directory exists: {os.path.exists(downloads_path)}')
+	if os.path.exists(downloads_path):
+		files = os.listdir(downloads_path)
+		print(f'Files in downloads directory: {files}')
+
+	# Should have at least one downloaded file
+	assert len(downloaded_files) > 0, f'Should have downloaded files. Downloads dir: {downloads_path}, Files: {downloaded_files}'
+
+	# Check the most recent download
+	latest_download = downloaded_files[0]  # Files are sorted by newest first
+	assert 'test.pdf' in latest_download
+	assert os.path.exists(latest_download)
+
+	# Verify the file size is correct (we sent 'PDF content' which is 11 bytes)
+	file_size = os.path.getsize(latest_download)
+	assert file_size == 11, f'Expected 11 bytes, got {file_size}'
 
 	# Should be relatively fast since download is detected
-	assert duration < 2.0, f'Download detection took {duration:.2f}s, expected <2s'
+	assert duration < 2.0, f'Download click took {duration:.2f}s, expected <2s'
 
 	await browser_session.close()

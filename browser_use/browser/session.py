@@ -5,11 +5,12 @@ import base64
 import json
 import os
 import warnings
-from typing import TYPE_CHECKING, Any, Self
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Self
+from weakref import WeakKeyDictionary, WeakSet
 
-import anyio
 from bubus import EventBus
-from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
+from playwright.async_api import Browser, BrowserContext, FloatRect, Page, Playwright, Request, Response, async_playwright
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from browser_use.browser.events import (
@@ -26,20 +27,21 @@ from browser_use.browser.events import (
 	LoadStorageStateEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
+	NavigationStartedEvent,
 	SaveStorageStateEvent,
 	ScreenshotRequestEvent,
 	ScreenshotResponseEvent,
 	ScrollEvent,
 	StartBrowserEvent,
 	StopBrowserEvent,
-	StorageStateLoadedEvent,
-	StorageStateSavedEvent,
 	SwitchTabEvent,
+	TabClosedEvent,
 	TabCreatedEvent,
 	TabsInfoRequestEvent,
 	TabsInfoResponseEvent,
 )
 from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.views import TabInfo
 from browser_use.utils import logger
 
 if TYPE_CHECKING:
@@ -80,8 +82,6 @@ class BrowserSession(BaseModel):
 	_playwright: Playwright | None = PrivateAttr(default=None)
 	_browser: Browser | None = PrivateAttr(default=None)
 	_browser_context: BrowserContext | None = PrivateAttr(default=None)
-	_current_agent_page: Page | None = PrivateAttr(default=None)
-	_current_human_page: Page | None = PrivateAttr(default=None)
 
 	# Local browser state (only used when cdp_url is None)
 	_subprocess: Any = PrivateAttr(default=None)  # psutil.Process
@@ -89,11 +89,20 @@ class BrowserSession(BaseModel):
 
 	# PDF handling
 	_auto_download_pdfs: bool = PrivateAttr(default=True)
-	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
 
 	# Watchdogs
 	_crash_watchdog: Any = PrivateAttr(default=None)
 	_downloads_watchdog: Any = PrivateAttr(default=None)
+	_aboutblank_watchdog: Any = PrivateAttr(default=None)
+	_human_focus_watchdog: Any = PrivateAttr(default=None)
+	_agent_focus_watchdog: Any = PrivateAttr(default=None)
+	_storage_state_watchdog: Any = PrivateAttr(default=None)
+
+	# Navigation tracking state (merged from NavigationWatchdog)
+	_tracked_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
+	_page_requests: WeakKeyDictionary[Page, set[Request]] = PrivateAttr(default_factory=WeakKeyDictionary)
+	_page_last_activity: WeakKeyDictionary[Page, float] = PrivateAttr(default_factory=WeakKeyDictionary)
+	_monitoring_tasks: WeakKeyDictionary[Page, asyncio.Task] = PrivateAttr(default_factory=WeakKeyDictionary)
 
 	def __init__(
 		self,
@@ -209,9 +218,7 @@ class BrowserSession(BaseModel):
 		self.event_bus.on(ScreenshotRequestEvent, self._handle_screenshot_request)
 		self.event_bus.on(TabsInfoRequestEvent, self._handle_tabs_info_request)
 
-		# Storage state
-		self.event_bus.on(SaveStorageStateEvent, self._handle_save_storage_state)
-		self.event_bus.on(LoadStorageStateEvent, self._handle_load_storage_state)
+		# Storage state is handled by StorageStateWatchdog
 
 	# ========== Event Handlers ==========
 
@@ -219,6 +226,8 @@ class BrowserSession(BaseModel):
 		"""Handle browser start request."""
 		if self._browser and self._browser.is_connected():
 			# Already started
+			if not self.cdp_url:
+				raise ValueError('No CDP URL available for browser connection')
 			self.event_bus.dispatch(
 				BrowserStartedEvent(
 					cdp_url=self.cdp_url,
@@ -233,6 +242,10 @@ class BrowserSession(BaseModel):
 				from browser_use.browser.local import LocalBrowserHelpers
 
 				self._subprocess, self.cdp_url = await LocalBrowserHelpers.launch_browser(self.browser_profile)
+
+			# Ensure we have a CDP URL at this point
+			if not self.cdp_url:
+				raise ValueError('No CDP URL available for browser connection')
 
 			# Connect via CDP
 			self._playwright = await async_playwright().start()
@@ -250,19 +263,54 @@ class BrowserSession(BaseModel):
 				new_context_args = self.browser_profile.kwargs_for_new_context()
 				context_kwargs = new_context_args.model_dump(exclude_none=True)
 
+				# Map downloads_path to downloads_dir for new_context
+				if self.browser_profile.downloads_path:
+					# Ensure downloads directory exists
+					downloads_dir = Path(self.browser_profile.downloads_path)
+					downloads_dir.mkdir(parents=True, exist_ok=True)
+					context_kwargs['downloads_dir'] = str(downloads_dir.absolute())
+					logger.info(f'Setting downloads_dir to: {context_kwargs["downloads_dir"]}')
+
 				# Log storage state info
 				logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
 				logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
 				logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
 				logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
+				logger.info(f'Context kwargs downloads_dir: {context_kwargs.get("downloads_dir")}')
 
 				self._browser_context = await self._browser.new_context(**context_kwargs)
 
+				# Set up downloads directory via CDP if downloads are enabled
+				if self.browser_profile.downloads_path:
+					# Ensure we have at least one page to set downloads on
+					if not self._browser_context.pages:
+						await self._browser_context.new_page()
+
+					# Set downloads for all existing pages
+					for page in self._browser_context.pages:
+						try:
+							# Get CDP session for the page
+							cdp_session = await self._browser_context.new_cdp_session(page)
+
+							# Set download behavior
+							await cdp_session.send(
+								'Browser.setDownloadBehavior',
+								{
+									'behavior': 'allow',
+									'downloadPath': str(Path(self.browser_profile.downloads_path).absolute()),
+									'eventsEnabled': True,
+								},
+							)
+							logger.info(f'Set download behavior via CDP for page {page.url}')
+
+							# Detach the CDP session
+							await cdp_session.detach()
+						except Exception as e:
+							logger.warning(f'Failed to set download behavior via CDP for page: {e}')
+
 			# Set initial page if exists
 			pages = self._browser_context.pages
-			if pages:
-				self._current_agent_page = pages[0]
-				self._current_human_page = pages[0]
+			# Agent focus will be initialized by the watchdog
 
 			# Initialize crash watchdog if not already initialized
 			if not hasattr(self, '_crash_watchdog'):
@@ -281,13 +329,38 @@ class BrowserSession(BaseModel):
 			if not hasattr(self, '_downloads_watchdog'):
 				from browser_use.browser.downloads_watchdog import DownloadsWatchdog
 
-				self._downloads_watchdog = DownloadsWatchdog(
-					event_bus=self.event_bus,
-					browser_session=self
-				)
+				self._downloads_watchdog = DownloadsWatchdog(event_bus=self.event_bus, browser_session=self)
 				# Add initial pages to downloads watchdog
 				for page in pages:
 					self._downloads_watchdog.add_page(page)
+
+			# Add initial pages to navigation tracking
+			for page in pages:
+				self._add_page_tracking(page)
+
+			# Initialize aboutblank watchdog if not already initialized
+			if not hasattr(self, '_aboutblank_watchdog'):
+				from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
+
+				self._aboutblank_watchdog = AboutBlankWatchdog(event_bus=self.event_bus, browser_session=self)
+
+			# Initialize human focus watchdog if not already initialized
+			if not hasattr(self, '_human_focus_watchdog'):
+				from browser_use.browser.human_focus_watchdog import HumanFocusWatchdog
+
+				self._human_focus_watchdog = HumanFocusWatchdog(event_bus=self.event_bus, browser_session=self)
+
+			# Initialize agent focus watchdog if not already initialized
+			if not hasattr(self, '_agent_focus_watchdog'):
+				from browser_use.browser.agent_focus_watchdog import AgentFocusWatchdog
+
+				self._agent_focus_watchdog = AgentFocusWatchdog(event_bus=self.event_bus, browser_session=self)
+
+			# Initialize storage state watchdog if not already initialized
+			if not hasattr(self, '_storage_state_watchdog'):
+				from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
+
+				self._storage_state_watchdog = StorageStateWatchdog(event_bus=self.event_bus, browser_session=self)
 
 			# Notify success
 			self.event_bus.dispatch(
@@ -336,6 +409,17 @@ class BrowserSession(BaseModel):
 				)
 				return
 
+			# Cancel all navigation monitoring tasks
+			for task in list(self._monitoring_tasks.values()):
+				if not task.done():
+					task.cancel()
+
+			# Clear navigation tracking state
+			self._tracked_pages.clear()
+			self._page_requests.clear()
+			self._page_last_activity.clear()
+			self._monitoring_tasks.clear()
+
 			# Automatically save storage state before stopping
 			self.event_bus.dispatch(SaveStorageStateEvent())
 			# Give it a moment to save
@@ -363,8 +447,6 @@ class BrowserSession(BaseModel):
 			# Reset state
 			self._browser = None
 			self._browser_context = None
-			self._current_agent_page = None
-			self._current_human_page = None
 
 			# Clear CDP URL for local browsers since the process is gone
 			if self.is_local and self._owns_browser_resources:
@@ -407,24 +489,35 @@ class BrowserSession(BaseModel):
 		await event
 
 	async def _handle_navigate(self, event: NavigateToUrlEvent) -> None:
-		"""Handle navigation request."""
-		if not self._current_agent_page:
+		"""Handle navigation request with network monitoring (merged from NavigationWatchdog)."""
+		try:
+			# Get the page to navigate
+			page = await self._get_page_for_navigation(event)
+			if not page:
+				self.event_bus.dispatch(
+					BrowserErrorEvent(
+						error_type='NoActivePage',
+						message='No active page to navigate',
+					)
+				)
+				return
+
+			# Dispatch navigation started event
+			tab_index = await self._get_tab_index(page)
 			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NoActivePage',
-					message='No active page to navigate',
+				NavigationStartedEvent(
+					tab_index=tab_index,
+					url=event.url,
 				)
 			)
-			return
 
-		try:
-			response = await self._current_agent_page.goto(
+			# Perform navigation
+			response = await page.goto(
 				event.url,
 				wait_until=event.wait_until,
 			)
 
-			tab_index = self.tabs.index(self._current_agent_page)
-
+			# Dispatch completion event
 			self.event_bus.dispatch(
 				NavigationCompleteEvent(
 					tab_index=tab_index,
@@ -433,12 +526,39 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-			# Check for PDF after navigation and auto-download if enabled
-			if self._auto_download_pdfs and self._downloads_watchdog:
-				if await self._downloads_watchdog.check_for_pdf_viewer(self._current_agent_page):
-					await self._downloads_watchdog.trigger_pdf_download(self._current_agent_page)
+			# Start monitoring network activity for the page
+			await self._monitor_page_network(page)
 
 		except Exception as e:
+			# Handle navigation errors
+			error_message = str(e)
+			loading_status = None
+
+			# Check for timeout errors
+			if 'timeout' in error_message.lower():
+				loading_status = f'Timed out waiting for network idle after {event.wait_until}'
+				if 'exceeded while waiting for event "load"' in error_message:
+					loading_status = 'Network timeout - page load incomplete'
+
+			# Get tab index for error reporting
+			try:
+				page = await self._get_page_for_navigation(event)
+				tab_index = await self._get_tab_index(page) if page else 0
+			except Exception:
+				tab_index = 0
+
+			# Dispatch NavigationCompleteEvent with error details
+			self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					tab_index=tab_index,
+					url=event.url,
+					status=None,
+					error_message=error_message,
+					loading_status=loading_status,
+				)
+			)
+
+			# Also dispatch error event for backwards compatibility
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='NavigationFailed',
@@ -449,8 +569,9 @@ class BrowserSession(BaseModel):
 
 	async def _handle_click(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
-		# TODO: This is a simplified implementation until DOM tracking is ported
-		if not self._current_agent_page:
+		try:
+			page = await self.get_current_page()
+		except ValueError:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='NoActivePage',
@@ -460,45 +581,46 @@ class BrowserSession(BaseModel):
 			return
 
 		try:
-			# For now, we'll implement basic download detection
-			# Full implementation will need DOM element tracking from old session
-			page = self._current_agent_page
+			# Get the DOM element by index
+			element_node = await self.get_dom_element_by_index(event.index)
+			if element_node is None:
+				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
 
-			# Set up download handling if downloads are enabled
-			if self.browser_profile.downloads_path:
-				# Register download listener
-				download_promise = None
+			# Track initial number of tabs to detect new tab opening
+			initial_pages = len(self.tabs)
 
-				async def handle_download(download):
-					nonlocal download_promise
-					download_promise = download
-
-				# Temporarily attach download listener
-				page.on('download', handle_download)
-
-				# TODO: Perform actual click when DOM tracking is implemented
-				# For now this is a placeholder
+			# Check if element is a file input (should not be clicked)
+			if self.is_file_input(element_node):
+				msg = f'Index {event.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
+				logger.info(msg)
 				self.event_bus.dispatch(
 					BrowserErrorEvent(
-						error_type='NotImplemented',
-						message='Click handling needs full DOM element tracking implementation',
+						error_type='FileInputElement',
+						message=msg,
+						details={'index': event.index},
 					)
 				)
+				return
 
-				# Clean up listener
-				page.remove_listener('download', handle_download)
+			# Perform the actual click
+			download_path = await self._click_element_node(element_node)
 
-				# If a download was triggered, handle it
-				if download_promise:
-					await self._handle_download(download_promise)
+			# Build success message
+			if download_path:
+				msg = f'Downloaded file to {download_path}'
+				logger.info(f'💾 {msg}')
 			else:
-				# TODO: Perform click without download handling
-				self.event_bus.dispatch(
-					BrowserErrorEvent(
-						error_type='NotImplemented',
-						message='Click handling needs full DOM element tracking implementation',
-					)
-				)
+				msg = f'Clicked button with index {event.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+				logger.info(f'🖱️ {msg}')
+
+			logger.debug(f'Element xpath: {element_node.xpath}')
+
+			# Check if a new tab was opened
+			if len(self.tabs) > initial_pages:
+				new_tab_msg = 'New tab opened - switching to it'
+				msg += f' - {new_tab_msg}'
+				logger.info(f'🔗 {new_tab_msg}')
+				await self.switch_to_tab(-1)
 
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -511,29 +633,76 @@ class BrowserSession(BaseModel):
 
 	async def _handle_input_text(self, event: InputTextEvent) -> None:
 		"""Handle text input request."""
-		# TODO: Implement DOM element tracking
-		self.event_bus.dispatch(
-			BrowserErrorEvent(
-				error_type='NotImplemented',
-				message='Text input needs DOM element tracking implementation',
+		try:
+			page = await self.get_current_page()
+		except ValueError:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NoActivePage',
+					message='No active page for text input',
+				)
 			)
-		)
+			return
+
+		try:
+			# Get the DOM element by index
+			element_node = await self.get_dom_element_by_index(event.index)
+			if element_node is None:
+				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
+
+			# Perform the actual text input
+			await self._input_text_element_node(element_node, event.text)
+
+			# Log success
+			logger.info(f'⌨️ Typed "{event.text}" into element with index {event.index}')
+			logger.debug(f'Element xpath: {element_node.xpath}')
+
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='InputTextFailed',
+					message=str(e),
+					details={'index': event.index, 'text': event.text},
+				)
+			)
 
 	async def _handle_scroll(self, event: ScrollEvent) -> None:
 		"""Handle scroll request."""
-		# TODO: Implement scrolling
-		self.event_bus.dispatch(
-			BrowserErrorEvent(
-				error_type='NotImplemented',
-				message='Scrolling needs implementation',
+		try:
+			page = await self.get_current_page()
+		except ValueError:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NoActivePage',
+					message='No active page for scrolling',
+				)
 			)
-		)
+			return
+
+		try:
+			# Convert direction and amount to pixels
+			# Positive pixels = scroll down, negative = scroll up
+			pixels = event.amount if event.direction == 'down' else -event.amount
+
+			# Perform the scroll
+			await self._scroll_container(pixels)
+
+			# Log success
+			logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
+
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='ScrollFailed',
+					message=str(e),
+					details={'direction': event.direction, 'amount': event.amount},
+				)
+			)
 
 	async def _handle_switch_tab(self, event: SwitchTabEvent) -> None:
 		"""Handle tab switch request."""
-		pages = self.tabs
-		if 0 <= event.tab_index < len(pages):
-			self._current_agent_page = pages[event.tab_index]
+		# Agent focus watchdog will handle the actual switch via event listener
+		pass
 
 	async def _handle_create_tab(self, event: CreateTabEvent) -> None:
 		"""Handle new tab creation."""
@@ -542,6 +711,27 @@ class BrowserSession(BaseModel):
 
 		page = await self._browser_context.new_page()
 
+		# Set up downloads directory via CDP for this page if downloads are enabled
+		if self.browser_profile.downloads_path:
+			try:
+				# Get CDP session for the page
+				cdp_session = await page.context.new_cdp_session(page)
+
+				# Set download behavior for this page
+				await cdp_session.send(
+					'Browser.setDownloadBehavior',
+					{
+						'behavior': 'allow',
+						'downloadPath': str(Path(self.browser_profile.downloads_path).absolute()),
+						'eventsEnabled': True,
+					},
+				)
+
+				# Detach the CDP session
+				await cdp_session.detach()
+			except Exception as e:
+				logger.warning(f'Failed to set download behavior via CDP for new tab: {e}')
+
 		# Add page to crash watchdog
 		if hasattr(self, '_crash_watchdog') and self._crash_watchdog:
 			self._crash_watchdog.add_page(page)
@@ -549,6 +739,9 @@ class BrowserSession(BaseModel):
 		# Add page to downloads watchdog
 		if hasattr(self, '_downloads_watchdog') and self._downloads_watchdog:
 			self._downloads_watchdog.add_page(page)
+
+		# Add page to navigation tracking
+		self._add_page_tracking(page)
 
 		if event.url:
 			await page.goto(event.url)
@@ -567,6 +760,8 @@ class BrowserSession(BaseModel):
 		pages = self.tabs
 		if 0 <= event.tab_index < len(pages):
 			await pages[event.tab_index].close()
+			# Dispatch tab closed event for watchdogs
+			self.event_bus.dispatch(TabClosedEvent(tab_index=event.tab_index))
 
 	async def _handle_browser_state_request(self, event: BrowserStateRequestEvent) -> None:
 		"""Handle browser state request."""
@@ -583,18 +778,32 @@ class BrowserSession(BaseModel):
 
 	async def _handle_screenshot_request(self, event: ScreenshotRequestEvent) -> None:
 		"""Handle screenshot request."""
-		if not self._current_agent_page:
+		try:
+			page = await self.get_current_page()
+		except ValueError:
 			return
 
-		screenshot_bytes = await self._current_agent_page.screenshot(
+		# Convert clip dict to FloatRect if provided
+		clip_rect: FloatRect | None = None
+		if event.clip:
+			clip_rect = FloatRect(
+				x=event.clip['x'],
+				y=event.clip['y'],
+				width=event.clip['width'],
+				height=event.clip['height'],
+			)
+
+		screenshot_bytes = await page.screenshot(
 			full_page=event.full_page,
-			clip=event.clip,
+			clip=clip_rect,
 		)
 		screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
 		self.event_bus.dispatch(ScreenshotResponseEvent(screenshot=screenshot_b64))
 
 	async def _handle_tabs_info_request(self, event: TabsInfoRequestEvent) -> None:
 		"""Handle tabs info request."""
+		from browser_use.browser.views import TabInfo
+
 		# Auto-start if not initialized
 		if not self.initialized:
 			start_event = self.event_bus.dispatch(StartBrowserEvent())
@@ -603,37 +812,20 @@ class BrowserSession(BaseModel):
 		tabs = []
 		for i, page in enumerate(self.tabs):
 			if not page.is_closed():
-				tabs.append(
-					{
-						'id': f'tab_{i}',
-						'index': i,
-						'url': page.url,
-						'title': await page.title(),
-					}
+				tab_info = TabInfo(
+					page_id=i,
+					url=page.url,
+					title=await page.title(),
+					parent_page_id=None,
+					id=f'tab_{i}',
+					index=i,
 				)
+				tabs.append(tab_info.model_dump())
 		# Dispatch the response event
 		self.event_bus.dispatch(TabsInfoResponseEvent(tabs=tabs))
 
-	async def _handle_save_storage_state(self, event: SaveStorageStateEvent) -> None:
-		"""Handle save storage state request."""
-		if not self._browser_context:
-			logger.warning('_handle_save_storage_state: No browser context available')
-			return
-
-		save_path = event.path or self.browser_profile.storage_state
-		if save_path:
-			storage = await self._browser_context.storage_state(path=str(save_path))
-			self.event_bus.dispatch(
-				StorageStateSavedEvent(
-					path=str(save_path),
-					cookies_count=len(storage.get('cookies', [])),
-					origins_count=len(storage.get('origins', [])),
-				)
-			)
-
 	def _generate_recent_events_summary(self, max_events: int = 10) -> str:
 		"""Generate a JSON summary of recent browser events."""
-		import json
 
 		# Get recent events from the event bus history (it's a dict of UUID -> Event)
 		all_events = list(self.event_bus.event_history.values())
@@ -696,12 +888,45 @@ class BrowserSession(BaseModel):
 	@property
 	def agent_current_page(self) -> Page | None:
 		"""Get the agent's current page."""
-		return self._current_agent_page
+		if self._agent_focus_watchdog:
+			return self._agent_focus_watchdog.current_agent_page
+		return None
+
+	@property
+	def human_current_page(self) -> Page | None:
+		"""Get the human's current page."""
+		if self._human_focus_watchdog:
+			return self._human_focus_watchdog.current_human_page
+		return None
 
 	@property
 	def downloaded_files(self) -> list[str]:
-		"""Get list of downloaded files."""
-		return self._downloaded_files.copy()
+		"""Get list of downloaded files from the downloads directory, sorted by date (newest first)."""
+		if not self.browser_profile.downloads_path:
+			return []
+
+		downloads_dir = self.browser_profile.downloads_path
+		if not os.path.exists(downloads_dir):
+			return []
+
+		# List all files in the downloads directory with their modification times
+		try:
+			files_with_time = []
+			for filename in os.listdir(downloads_dir):
+				filepath = os.path.join(downloads_dir, filename)
+				if os.path.isfile(filepath):
+					# Get modification time
+					mtime = os.path.getmtime(filepath)
+					files_with_time.append((filepath, mtime))
+
+			# Sort by modification time (newest first)
+			files_with_time.sort(key=lambda x: x[1], reverse=True)
+
+			# Return just the file paths
+			return [filepath for filepath, _ in files_with_time]
+		except Exception as e:
+			logger.warning(f'Failed to list downloaded files: {e}')
+			return []
 
 	@property
 	def tabs(self) -> list[Page]:
@@ -713,9 +938,12 @@ class BrowserSession(BaseModel):
 	# Page management
 	async def get_current_page(self) -> Page:
 		"""Get the current active page."""
-		if not self._current_agent_page and self.tabs:
-			self._current_agent_page = self.tabs[0]
-		return self._current_agent_page
+		if self._agent_focus_watchdog:
+			return await self._agent_focus_watchdog.get_or_create_page()
+		# Fallback if watchdog not initialized
+		if self.tabs:
+			return self.tabs[0]
+		raise ValueError('No active page available')
 
 	async def new_page(self, url: str | None = None) -> Page:
 		"""Create a new page."""
@@ -725,6 +953,10 @@ class BrowserSession(BaseModel):
 
 	async def create_new_tab(self, url: str | None = None) -> Page:
 		"""Create a new tab."""
+		return await self.new_page(url)
+
+	async def new_tab(self, url: str | None = None) -> Page:
+		"""Alias for create_new_tab for backward compatibility."""
 		return await self.new_page(url)
 
 	async def switch_to_tab(self, tab_index: int) -> None:
@@ -747,18 +979,21 @@ class BrowserSession(BaseModel):
 
 	async def go_back(self) -> None:
 		"""Go back in the browser history."""
-		if self._current_agent_page:
-			await self._current_agent_page.go_back()
+		page = await self.get_current_page()
+		if page:
+			await page.go_back()
 
 	async def go_forward(self) -> None:
 		"""Go forward in the browser history."""
-		if self._current_agent_page:
-			await self._current_agent_page.go_forward()
+		page = await self.get_current_page()
+		if page:
+			await page.go_forward()
 
 	async def refresh(self) -> None:
 		"""Refresh the current page."""
-		if self._current_agent_page:
-			await self._current_agent_page.reload()
+		page = await self.get_current_page()
+		if page:
+			await page.reload()
 
 	async def take_screenshot(self, full_page: bool = False, clip: dict | None = None) -> bytes:
 		"""Take a screenshot."""
@@ -766,7 +1001,8 @@ class BrowserSession(BaseModel):
 		self.event_bus.dispatch(ScreenshotRequestEvent(full_page=full_page, clip=clip))
 		# Wait for the response event
 		try:
-			response = await self.event_bus.expect(ScreenshotResponseEvent, timeout=10.0)
+			event_result = await self.event_bus.expect(ScreenshotResponseEvent, timeout=10.0)
+			response: ScreenshotResponseEvent = event_result  # type: ignore
 			return base64.b64decode(response.screenshot)
 		except TimeoutError:
 			# No screenshot received
@@ -782,7 +1018,7 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(InputTextEvent(index=index, text=text))
 		await event
 
-	async def scroll(self, direction: str, amount: int) -> None:
+	async def scroll(self, direction: Literal['up', 'down', 'left', 'right'], amount: int) -> None:
 		"""Scroll the page."""
 		event = self.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount))
 		await event
@@ -820,11 +1056,24 @@ class BrowserSession(BaseModel):
 		self.event_bus.dispatch(TabsInfoRequestEvent())
 		# Wait for the response event
 		try:
-			response = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
+			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
+			response: TabsInfoResponseEvent = event_result  # type: ignore
 			return response.tabs
 		except TimeoutError:
 			# No response received
 			return []
+
+	async def get_tabs_info_as_models(self) -> list[TabInfo]:
+		"""Get information about all open tabs as TabInfo models."""
+		tabs_data = await self.get_tabs_info()
+		tab_infos = []
+
+		for tab_dict in tabs_data:
+			# Convert dictionary to TabInfo model
+			tab_info = TabInfo(**tab_dict)  # Now the dict should have all required fields
+			tab_infos.append(tab_info)
+
+		return tab_infos
 
 	# DOM element methods
 	async def get_browser_state_with_recovery(
@@ -851,7 +1100,8 @@ class BrowserSession(BaseModel):
 
 		# Wait for response
 		try:
-			response = await self.event_bus.expect(BrowserStateResponseEvent, timeout=60.0)
+			event_result = await self.event_bus.expect(BrowserStateResponseEvent, timeout=60.0)
+			response: BrowserStateResponseEvent = event_result  # type: ignore
 			return response.state
 		except TimeoutError:
 			# Fall back to minimal state
@@ -885,12 +1135,20 @@ class BrowserSession(BaseModel):
 		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
 			return
 
-		# Basic wait for load state
+		# Wait for page load (previously handled by NavigationWatchdog)
+		await self._wait_for_page_load(page, timeout_overwrite)
+
+	async def _wait_for_page_load(self, page: Page, timeout_overwrite: float | None = None) -> None:
+		"""Wait for page to load completely with network idle."""
+		timeout = timeout_overwrite or 30.0
 		try:
-			await page.wait_for_load_state('networkidle', timeout=timeout_overwrite or 30000)
+			await page.wait_for_load_state('networkidle', timeout=timeout * 1000)
 		except Exception:
-			# Continue even if timeout
-			pass
+			# If networkidle times out, at least wait for domcontentloaded
+			try:
+				await page.wait_for_load_state('domcontentloaded', timeout=10 * 1000)
+			except Exception:
+				pass  # Continue anyway
 
 	async def _get_state_summary(self, cache_clickable_elements_hashes: bool, include_screenshot: bool = True) -> Any:
 		"""Get a summary of the current browser state"""
@@ -930,7 +1188,7 @@ class BrowserSession(BaseModel):
 			content = DOMState(element_tree=minimal_element_tree, selector_map={})
 
 		# Get tabs info
-		tabs_info = await self.get_tabs_info()
+		tabs_info = await self.get_tabs_info_as_models()
 
 		# Get screenshot if requested
 		screenshot_b64 = None
@@ -986,12 +1244,10 @@ class BrowserSession(BaseModel):
 				pixels_right=0,
 			)
 
-		# Check for PDF and auto-download if needed
+		# Check for PDF viewer status from downloads watchdog
 		is_pdf_viewer = False
 		if self._downloads_watchdog:
 			is_pdf_viewer = await self._downloads_watchdog.check_for_pdf_viewer(page)
-			if is_pdf_viewer and self._auto_download_pdfs:
-				await self._downloads_watchdog.trigger_pdf_download(page)
 
 		return BrowserStateSummary(
 			element_tree=content.element_tree,
@@ -1023,7 +1279,7 @@ class BrowserSession(BaseModel):
 			title = 'Page Load Error'
 
 		try:
-			tabs_info = await self.get_tabs_info()
+			tabs_info = await self.get_tabs_info_as_models()
 		except Exception:
 			tabs_info = []
 
@@ -1058,44 +1314,420 @@ class BrowserSession(BaseModel):
 		)
 
 	async def get_selector_map(self) -> dict:
-		"""Get selector map."""
-		# TODO: Implement from old BrowserSession
-		return {}
+		"""Get selector map from the current browser state."""
+		state = await self.get_browser_state_with_recovery()
+		return state.selector_map if hasattr(state, 'selector_map') else {}
 
 	async def get_dom_element_by_index(self, index: int) -> Any:
-		"""Get DOM element by index."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('get_dom_element_by_index needs to be implemented')
+		"""Get DOM element by index from the selector map."""
+		selector_map = await self.get_selector_map()
+		return selector_map.get(index)
 
 	async def find_file_upload_element_by_index(self, index: int) -> Any:
 		"""Find file upload element by index."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('find_file_upload_element_by_index needs to be implemented')
+		element = await self.get_dom_element_by_index(index)
+		if element and self.is_file_input(element):
+			return element
+		return None
 
-	async def get_locate_element(self, dom_element: Any) -> Any:
-		"""Get locate element."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('get_locate_element needs to be implemented')
+	async def get_locate_element(self, element: Any) -> Any:
+		"""Get playwright ElementHandle for a DOM element."""
+		if not element or not hasattr(element, 'xpath'):
+			return None
+
+		page = await self.get_current_page()
+		if not page:
+			return None
+
+		current_frame = page
+
+		# Start with the target element and collect all parents
+		parents = []
+		current = element
+		while hasattr(current, 'parent') and current.parent is not None:
+			parent = current.parent
+			parents.append(parent)
+			current = parent
+
+		# Reverse the parents list to process from top to bottom
+		parents.reverse()
+
+		# Process all iframe parents in sequence
+		iframes = [item for item in parents if hasattr(item, 'tag_name') and item.tag_name == 'iframe']
+		for parent in iframes:
+			css_selector = self._enhanced_css_selector_for_element(
+				parent,
+				include_dynamic_attributes=self.browser_profile.include_dynamic_attributes,
+			)
+			# Use CSS selector if available, otherwise fall back to XPath
+			if css_selector:
+				current_frame = current_frame.frame_locator(css_selector)
+			else:
+				logger.debug(f'Using XPath for iframe: {parent.xpath}')
+				current_frame = current_frame.frame_locator(f'xpath={parent.xpath}')
+
+		css_selector = self._enhanced_css_selector_for_element(
+			element, include_dynamic_attributes=self.browser_profile.include_dynamic_attributes
+		)
+
+		try:
+			if hasattr(current_frame, 'locator'):
+				if css_selector:
+					element_handle = await current_frame.locator(css_selector).element_handle()
+				else:
+					# Fall back to XPath when CSS selector is empty
+					logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+				return element_handle
+			else:
+				# FrameLocator doesn't have query_selector, use locator instead
+				if css_selector:
+					element_handle = await current_frame.locator(css_selector).element_handle()
+				else:
+					# Fall back to XPath
+					logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
+					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+				if element_handle:
+					is_visible = await self._is_visible(element_handle)
+					if is_visible:
+						await element_handle.scroll_into_view_if_needed(timeout=1_000)
+					return element_handle
+				return None
+		except Exception as e:
+			# If CSS selector failed, try XPath as fallback
+			if css_selector and 'CSS.escape' not in str(e):
+				try:
+					logger.debug(f'CSS selector failed ({css_selector}), falling back to XPath: {element.xpath}')
+					if hasattr(current_frame, 'locator'):
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+					else:
+						element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
+					if element_handle:
+						is_visible = await self._is_visible(element_handle)
+						if is_visible:
+							await element_handle.scroll_into_view_if_needed(timeout=1_000)
+						return element_handle
+					return None
+				except Exception:
+					return None
+			return None
 
 	def is_file_input(self, element: Any) -> bool:
 		"""Check if element is a file input."""
-		# TODO: Implement from old BrowserSession
+		if not element or not hasattr(element, 'tag_name') or not hasattr(element, 'attributes'):
+			return False
+
+		# Check if it's an input element with type="file"
+		if element.tag_name.lower() == 'input':
+			input_type = element.attributes.get('type', '').lower()
+			if input_type == 'file':
+				return True
+
+		# Check for file-related attributes or classes that might indicate file upload
+		# This is a more conservative check to avoid false positives
 		return False
 
+	async def _is_visible(self, element) -> bool:
+		"""
+		Checks if an element is visible on the page.
+		We use our own implementation instead of relying solely on Playwright's is_visible() because
+		of edge cases with CSS frameworks like Tailwind. When elements use Tailwind's 'hidden' class,
+		the computed style may return display as '' (empty string) instead of 'none', causing Playwright
+		to incorrectly consider hidden elements as visible. By additionally checking the bounding box
+		dimensions, we catch elements that have zero width/height regardless of how they were hidden.
+		"""
+		is_hidden = await element.is_hidden()
+		bbox = await element.bounding_box()
+		is_visible = not is_hidden and bbox is not None and bbox['width'] > 0 and bbox['height'] > 0
+		return is_visible
+
+	@classmethod
+	def _enhanced_css_selector_for_element(cls, element: Any, include_dynamic_attributes: bool = True) -> str:
+		"""
+		Creates a CSS selector for a DOM element, handling various edge cases and special characters.
+
+		Args:
+						element: The DOM element to create a selector for
+
+		Returns:
+						A valid CSS selector string
+		"""
+		try:
+			# Get base selector from XPath
+			css_selector = cls._convert_simple_xpath_to_css_selector(element.xpath)
+
+			# Handle class attributes
+			if 'class' in element.attributes and element.attributes['class'] and include_dynamic_attributes:
+				# Define a regex pattern for valid class names in CSS
+				import re
+
+				valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*$')
+
+				# Iterate through the class attribute values
+				classes = element.attributes['class'].split()
+				for class_name in classes:
+					# Skip empty class names
+					if not class_name.strip():
+						continue
+
+					# Check if the class name is valid
+					if valid_class_name_pattern.match(class_name):
+						# Append the valid class name to the CSS selector
+						css_selector += f'.{class_name}'
+					else:
+						# Skip invalid class names
+						continue
+
+			# Expanded set of safe attributes that are stable and useful for selection
+			SAFE_ATTRIBUTES = {
+				# Data attributes (if they're stable in your application)
+				'id',
+				# Standard HTML attributes
+				'name',
+				'type',
+				'placeholder',
+				# Accessibility attributes
+				'role',
+				'aria-label',
+				'title',
+				'alt',
+			}
+
+			for attr in SAFE_ATTRIBUTES:
+				if attr in element.attributes and element.attributes[attr] and include_dynamic_attributes:
+					value = element.attributes[attr]
+					# Escape special characters in attribute values
+					value = value.replace('"', '\\"')
+					css_selector += f'[{attr}="{value}"]'
+
+			return css_selector
+		except Exception:
+			# Fallback to empty string
+			return ''
+
+	@staticmethod
+	def _convert_simple_xpath_to_css_selector(xpath: str) -> str:
+		"""Converts simple XPath expressions to CSS selectors."""
+		if not xpath:
+			return ''
+
+		# Remove leading slash if present
+		xpath = xpath.lstrip('/')
+
+		# Split into parts
+		parts = xpath.split('/')
+		css_parts = []
+
+		for part in parts:
+			if not part:
+				continue
+
+			# Handle custom elements with colons by escaping them
+			if ':' in part and '[' not in part:
+				base_part = part.replace(':', r'\:')
+				css_parts.append(base_part)
+				continue
+
+			# Handle index notation [n]
+			if '[' in part:
+				base_part = part[: part.find('[')]
+				# Handle custom elements with colons in the base part
+				if ':' in base_part:
+					base_part = base_part.replace(':', r'\:')
+				index_part = part[part.find('[') :]
+
+				# Handle multiple indices
+				if '][' in index_part:
+					# Multiple conditions, just use the element name
+					css_parts.append(base_part)
+				else:
+					# Extract the index
+					try:
+						index = int(index_part[1:-1])  # Remove [ and ]
+						# CSS uses 1-based :nth-child, XPath uses 1-based indexing
+						css_parts.append(f'{base_part}:nth-child({index})')
+					except ValueError:
+						# Not a simple index, just use the element name
+						css_parts.append(base_part)
+			else:
+				# Handle custom elements with colons
+				if ':' in part:
+					part = part.replace(':', r'\:')
+				css_parts.append(part)
+
+		return ' > '.join(css_parts) if css_parts else ''
+
+	@staticmethod
+	async def _get_unique_filename(directory: str | Path, filename: str) -> str:
+		"""Generate a unique filename for downloads by appending (1), (2), etc., if a file already exists."""
+		base, ext = os.path.splitext(filename)
+		counter = 1
+		new_filename = filename
+		while os.path.exists(os.path.join(directory, new_filename)):
+			new_filename = f'{base} ({counter}){ext}'
+			counter += 1
+		return new_filename
+
 	async def _click_element_node(self, element: Any) -> str | None:
-		"""Click an element node."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('_click_element_node needs to be implemented')
+		"""Click an element node and handle potential downloads.
+
+		Returns the download path if a download was triggered, None otherwise.
+		"""
+		if not element:
+			raise ValueError('No element provided to click')
+
+		page = await self.get_current_page()
+		if not page:
+			raise ValueError('No current page available')
+
+		# Get the playwright locator for the element
+		locator = await self.get_locate_element(element)
+		if not locator:
+			raise ValueError(f'Could not locate element with xpath: {element.xpath}')
+
+		download_path = None
+
+		# Handle potential downloads if downloads are enabled
+		if self.browser_profile.downloads_path:
+			try:
+				# Try short-timeout expect_download to detect a file download
+				async with page.expect_download(timeout=5_000) as download_info:
+					await locator.click()
+				download = await download_info.value
+
+				# Determine file path
+				suggested_filename = download.suggested_filename
+				unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
+				download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
+				await download.save_as(download_path)
+				logger.info(f'⬇️ Downloaded file to: {download_path}')
+
+				# Emit download event for the watchdog
+				self.event_bus.dispatch(
+					FileDownloadedEvent(
+						url=download.url,
+						path=download_path,
+						file_name=suggested_filename,
+						file_size=os.path.getsize(download_path) if os.path.exists(download_path) else 0,
+						file_type=os.path.splitext(suggested_filename)[1].lstrip('.'),
+						mime_type=None,
+						from_cache=False,
+						auto_download=False,
+					)
+				)
+
+			except Exception:
+				# If no download is triggered, just perform normal click
+				await locator.click()
+		else:
+			# If downloads are disabled, just perform the click
+			await locator.click()
+
+		return download_path
 
 	async def _input_text_element_node(self, element: Any, text: str) -> None:
 		"""Input text into an element node."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('_input_text_element_node needs to be implemented')
+		if not element:
+			raise ValueError('No element provided for text input')
 
-	async def _scroll_container(self, dy: int) -> None:
-		"""Scroll container."""
-		# TODO: Implement from old BrowserSession
-		raise NotImplementedError('_scroll_container needs to be implemented')
+		page = await self.get_current_page()
+		if not page:
+			raise ValueError('No current page available')
+
+		# Get the playwright locator for the element
+		locator = await self.get_locate_element(element)
+		if not locator:
+			raise ValueError(f'Could not locate element with xpath: {element.xpath}')
+
+		# Clear existing text and type new text
+		await locator.fill(text)
+
+	async def _scroll_with_cdp_gesture(self, page: Page, pixels: int) -> bool:
+		"""
+		Scroll using CDP Input.synthesizeScrollGesture for universal compatibility.
+
+		Args:
+			page: The page to scroll
+			pixels: Number of pixels to scroll (positive = up, negative = down)
+
+		Returns:
+			True if successful, False if failed
+		"""
+		try:
+			# Use CDP to synthesize scroll gesture - works in all contexts including PDFs
+			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
+
+			# Get viewport center for scroll origin
+			viewport = await page.evaluate("""
+				() => ({
+					width: window.innerWidth,
+					height: window.innerHeight
+				})
+			""")
+
+			center_x = viewport['width'] // 2
+			center_y = viewport['height'] // 2
+
+			await cdp_session.send(
+				'Input.synthesizeScrollGesture',
+				{
+					'x': center_x,
+					'y': center_y,
+					'xDistance': 0,
+					'yDistance': -pixels,  # Negative = scroll down, Positive = scroll up
+					'gestureSourceType': 'mouse',  # Use mouse gestures for better compatibility
+					'speed': 3000,  # Pixels per second
+				},
+			)
+
+			try:
+				await asyncio.wait_for(cdp_session.detach(), timeout=1.0)
+			except (TimeoutError, Exception):
+				# Detach may timeout on some CDP implementations
+				pass
+
+			return True
+		except Exception as e:
+			logger.debug(f'CDP scroll gesture failed: {e}')
+			return False
+
+	async def _scroll_container(self, pixels: int) -> None:
+		"""Scroll using CDP gesture synthesis with JavaScript fallback."""
+
+		page = await self.get_current_page()
+
+		# Try CDP scroll gesture first (works universally including PDFs)
+		if await self._scroll_with_cdp_gesture(page, pixels):
+			return
+
+		# Fallback to JavaScript for older browsers or when CDP fails
+		logger.debug('Falling back to JavaScript scrolling')
+		SMART_SCROLL_JS = """(dy) => {
+			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;
+			const canScroll = el =>
+				el &&
+				/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) &&
+				el.scrollHeight > el.clientHeight &&
+				bigEnough(el);
+
+			let el = document.activeElement;
+			while (el && !canScroll(el) && el !== document.body) el = el.parentElement;
+
+			el = canScroll(el)
+					? el
+					: [...document.querySelectorAll('*')].find(canScroll)
+					|| document.scrollingElement
+					|| document.documentElement;
+
+			if (el === document.scrollingElement ||
+				el === document.documentElement ||
+				el === document.body) {
+				window.scrollBy(0, dy);
+			} else {
+				el.scrollBy({ top: dy, behavior: 'auto' });
+			}
+		}"""
+		await page.evaluate(SMART_SCROLL_JS, pixels)
 
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.
@@ -1168,313 +1800,174 @@ class BrowserSession(BaseModel):
 
 		return False
 
-	# ========== Storage State Handlers ==========
+	# ========== Navigation Helper Methods (merged from NavigationWatchdog) ==========
 
-	async def _handle_save_storage_state(self, event: SaveStorageStateEvent) -> None:
-		"""Handle storage state save request."""
-		if not self._browser_context:
-			logger.warning('save_storage_state: No browser context available')
+	def _add_page_tracking(self, page: Page) -> None:
+		"""Add a page to track for navigation."""
+		self._tracked_pages.add(page)
+		self._setup_page_listeners(page)
+		logger.debug(f'[Session] Added page to navigation tracking: {page.url}')
+
+	def _setup_page_listeners(self, page: Page) -> None:
+		"""Set up network request listeners for a page."""
+		# Initialize tracking structures
+		self._page_requests[page] = set()
+		self._page_last_activity[page] = asyncio.get_event_loop().time()
+
+		# Set up request/response tracking
+		page.on('request', lambda request: self._on_request(page, request))
+		page.on('response', lambda response: self._on_response(page, response))
+		page.on('requestfailed', lambda request: self._on_request_failed(page, request))
+		page.on('requestfinished', lambda request: self._on_request_finished(page, request))
+
+	def _on_request(self, page: Page, request: Request) -> None:
+		"""Track new network request."""
+		if page in self._page_requests:
+			self._page_requests[page].add(request)
+			self._page_last_activity[page] = asyncio.get_event_loop().time()
+			logger.debug(f'[Session] Request started: {request.method} {request.url}')
+
+	def _on_response(self, page: Page, response: Response) -> None:
+		"""Track network response."""
+		if page in self._page_requests and response.request in self._page_requests[page]:
+			self._page_requests[page].discard(response.request)
+			self._page_last_activity[page] = asyncio.get_event_loop().time()
+			logger.debug(f'[Session] Request completed: {response.request.method} {response.url}')
+
+	def _on_request_failed(self, page: Page, request: Request) -> None:
+		"""Handle failed network request."""
+		if page in self._page_requests:
+			self._page_requests[page].discard(request)
+			logger.debug(f'[Session] Request failed: {request.method} {request.url}')
+
+	def _on_request_finished(self, page: Page, request: Request) -> None:
+		"""Handle finished network request."""
+		if page in self._page_requests:
+			self._page_requests[page].discard(request)
+			logger.debug(f'[Session] Request finished: {request.method} {request.url}')
+
+	async def _monitor_page_network(self, page: Page) -> None:
+		"""Monitor network activity for a page after navigation."""
+		# Cancel any existing monitoring task for this page
+		if page in self._monitoring_tasks:
+			old_task = self._monitoring_tasks[page]
+			if not old_task.done():
+				old_task.cancel()
+
+		# Skip monitoring for new tab pages
+		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
 			return
 
-		save_path = event.path or self.browser_profile.storage_state
-		if save_path:
-			logger.info(f'Saving storage state to: {save_path}')
-			storage = await self._browser_context.storage_state(path=str(save_path))
+		# Ensure page is tracked
+		if page not in self._tracked_pages:
+			self._add_page_tracking(page)
 
-			# Dispatch success event
-			self.event_bus.dispatch(
-				StorageStateSavedEvent(
-					path=str(save_path),
-					cookies_count=len(storage.get('cookies', [])),
-					origins_count=len(storage.get('origins', [])),
-				)
-			)
+		# Create new monitoring task
+		task = asyncio.create_task(self._wait_for_stable_network(page))
+		self._monitoring_tasks[page] = task
 
-	async def _handle_load_storage_state(self, event: LoadStorageStateEvent) -> None:
-		"""Handle storage state load request."""
-		if not self._browser_context:
-			logger.warning('_handle_load_storage_state: No browser context available')
-			return
+	async def _wait_for_stable_network(self, page: Page) -> None:
+		"""Wait for network to be stable with no pending requests for a specific page."""
+		logger.info(f'[Session] Monitoring network stability for {page.url}')
 
-		# Load from storage_state file if available
-		load_path = event.path or self.browser_profile.storage_state
-		if load_path and os.path.exists(str(load_path)):
-			try:
-				# Read the storage state file
-				with open(str(load_path)) as f:
-					storage = json.load(f)
-
-				# Apply cookies if present
-				if 'cookies' in storage and storage['cookies']:
-					await self._browser_context.add_cookies(storage['cookies'])
-					logger.info(f'Added {len(storage["cookies"])} cookies from storage state')
-
-				# Apply origins (localStorage/sessionStorage) if present
-				if 'origins' in storage and storage['origins']:
-					for origin in storage['origins']:
-						if 'localStorage' in origin:
-							for item in origin['localStorage']:
-								await self._browser_context.add_init_script(f"""
-									window.localStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
-								""")
-						if 'sessionStorage' in origin:
-							for item in origin['sessionStorage']:
-								await self._browser_context.add_init_script(f"""
-									window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
-								""")
-					logger.info(f'Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
-
-				self.event_bus.dispatch(
-					StorageStateLoadedEvent(
-						path=str(load_path),
-						cookies_count=len(storage.get('cookies', [])),
-						origins_count=len(storage.get('origins', [])),
-					)
-				)
-				logger.info(f'Loaded storage state from: {load_path}')
-			except Exception as e:
-				logger.warning(f'Failed to load storage state: {e}')
-
-	# ========== PDF Methods ==========
-
-	async def _is_pdf_viewer(self, page: Page) -> bool:
-		"""
-		Check if the current page is displaying a PDF in Chrome's PDF viewer.
-		Returns True if PDF is detected, False otherwise.
-		"""
-		try:
-			is_pdf_viewer = await page.evaluate("""
-				() => {
-					// Check for Chrome's built-in PDF viewer (updated selector)
-					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
-									 document.querySelector('embed[type="application/pdf"]');
-					const isPdfViewer = !!pdfEmbed;
-					
-					// Also check if the URL ends with .pdf or has PDF content-type
-					const url = window.location.href;
-					const isPdfUrl = url.toLowerCase().includes('.pdf') || 
-									document.contentType === 'application/pdf';
-					
-					return isPdfViewer || isPdfUrl;
-				}
-			""")
-			return is_pdf_viewer
-		except Exception as e:
-			logger.debug(f'Error checking PDF viewer: {type(e).__name__}: {e}')
-			return False
-
-	async def _auto_download_pdf_if_needed(self, page: Page) -> str | None:
-		"""
-		Check if the current page is a PDF viewer and automatically download the PDF if so.
-		Returns the download path if a PDF was downloaded, None otherwise.
-		"""
-		if not self.browser_profile.downloads_path or not self._auto_download_pdfs:
-			return None
+		start_time = asyncio.get_event_loop().time()
 
 		try:
-			# Check if we're in a PDF viewer
-			is_pdf_viewer = await self._is_pdf_viewer(page)
-			logger.debug(f'is_pdf_viewer: {is_pdf_viewer}')
+			while True:
+				await asyncio.sleep(0.1)
+				now = asyncio.get_event_loop().time()
 
-			if not is_pdf_viewer:
-				return None
+				# Get pending requests for this page
+				pending_requests = self._page_requests.get(page, set())
+				last_activity = self._page_last_activity.get(page, start_time)
 
-			# Get the PDF URL
-			pdf_url = page.url
+				# Check if network is idle
+				idle_time = self.browser_profile.wait_for_network_idle_page_load_time
+				if len(pending_requests) == 0 and (now - last_activity) >= idle_time:
+					# Page loaded successfully
+					logger.info(f'[Session] Network stable for {page.url}')
+					break
 
-			# Check if we've already downloaded this PDF
-			pdf_filename = os.path.basename(pdf_url.split('?')[0])  # Remove query params
-			if not pdf_filename or not pdf_filename.endswith('.pdf'):
-				# Generate filename from URL
-				from urllib.parse import urlparse
-
-				parsed = urlparse(pdf_url)
-				pdf_filename = os.path.basename(parsed.path) or 'document.pdf'
-				if not pdf_filename.endswith('.pdf'):
-					pdf_filename += '.pdf'
-
-			# Check if already downloaded
-			expected_path = os.path.join(self.browser_profile.downloads_path, pdf_filename)
-			if any(os.path.basename(downloaded) == pdf_filename for downloaded in self._downloaded_files):
-				logger.debug(f'📄 PDF already downloaded: {pdf_filename}')
-				return None
-
-			logger.info(f'📄 Auto-downloading PDF from: {pdf_url}')
-
-			# Download the actual PDF file using JavaScript fetch
-			# Note: This should hit the browser cache since Chrome already downloaded the PDF to display it
-			try:
-				logger.debug(f'Downloading PDF from URL: {pdf_url}')
-
-				# Properly escape the URL to prevent JavaScript injection
-				escaped_pdf_url = json.dumps(pdf_url)
-
-				download_result = await page.evaluate(f"""
-					async () => {{
-						try {{
-							// Use fetch with cache: 'force-cache' to prioritize cached version
-							const response = await fetch({escaped_pdf_url}, {{
-								cache: 'force-cache'
-							}});
-							if (!response.ok) {{
-								throw new Error(`HTTP error! status: ${{response.status}}`);
-							}}
-							const blob = await response.blob();
-							const arrayBuffer = await blob.arrayBuffer();
-							const uint8Array = new Uint8Array(arrayBuffer);
-							
-							// Log whether this was served from cache
-							const fromCache = response.headers.has('age') || 
-											 !response.headers.has('date') ||
-											 performance.getEntriesByName({escaped_pdf_url}).some(entry => 
-												 entry.transferSize === 0 || entry.transferSize < entry.encodedBodySize
-											 );
-											 
-							return {{ 
-								data: Array.from(uint8Array),
-								fromCache: fromCache,
-								responseSize: uint8Array.length,
-								transferSize: response.headers.get('content-length') || 'unknown'
-							}};
-						}} catch (error) {{
-							throw new Error(`Fetch failed: ${{error.message}}`);
-						}}
-					}}
-				""")
-
-				if download_result and download_result.get('data') and len(download_result['data']) > 0:
-					# Ensure unique filename
-					unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, pdf_filename)
-					download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
-
-					# Save the PDF asynchronously
-					async with await anyio.open_file(download_path, 'wb') as f:
-						await f.write(bytes(download_result['data']))
-
-					# Track the downloaded file
-					self._track_download(download_path)
-
-					# Log cache information
-					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
-					response_size = download_result.get('responseSize', 0)
-					logger.info(f'📄 Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
-
-					# Emit file downloaded event
-					await self._emit_file_downloaded_event(
-						url=pdf_url,
-						path=download_path,
-						file_size=response_size,
-						file_type='pdf',
-						mime_type='application/pdf',
-						from_cache=download_result.get('fromCache', False),
-						auto_download=True,
+				# Check for timeout
+				max_wait = self.browser_profile.maximum_wait_page_load_time
+				if now - start_time > max_wait:
+					logger.info(
+						f'[Session] Network timeout after {max_wait}s with {len(pending_requests)} '
+						f'pending requests for {page.url}'
 					)
 
-					return download_path
-				else:
-					logger.warning(f'⚠️ No data received when downloading PDF from {pdf_url}')
-					return None
+					# Dispatch NavigationCompleteEvent with loading status
+					loading_status = (
+						f'Page loading was aborted after {max_wait}s with {len(pending_requests)} pending network requests. '
+						f'You may want to use the wait action to allow more time for the page to fully load.'
+					)
 
-			except Exception as e:
-				logger.warning(f'⚠️ Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
-				return None
+					tab_index = await self._get_tab_index(page)
+					self.event_bus.dispatch(
+						NavigationCompleteEvent(
+							tab_index=tab_index,
+							url=page.url,
+							status=None,
+							error_message=f'Network timeout with {len(pending_requests)} pending requests',
+							loading_status=loading_status,
+						)
+					)
+					break
 
-		except Exception as e:
-			logger.warning(f'⚠️ Error in PDF auto-download check: {type(e).__name__}: {e}')
-			return None
-
-	@staticmethod
-	async def _get_unique_filename(directory: str, filename: str) -> str:
-		"""Generate a unique filename for downloads by appending (1), (2), etc., if a file already exists."""
-		base, ext = os.path.splitext(filename)
-		counter = 1
-		new_filename = filename
-		while os.path.exists(os.path.join(directory, new_filename)):
-			new_filename = f'{base} ({counter}){ext}'
-			counter += 1
-		return new_filename
-
-	# ========== Download Tracking Methods ==========
-
-	async def _handle_download(self, download) -> str:
-		"""Handle a Playwright download object and emit appropriate events.
-
-		Args:
-			download: Playwright Download object
-
-		Returns:
-			Path where the file was saved
-		"""
-		try:
-			# Get download info
-			suggested_filename = download.suggested_filename
-			download_url = download.url
-
-			# Ensure unique filename
-			unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
-			download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
-
-			# Save the download
-			await download.save_as(download_path)
-			logger.info(f'⬇️ Downloaded file to: {download_path}')
-
-			# Track the download
-			self._track_download(download_path)
-
-			# Emit download event
-			await self._emit_file_downloaded_event(
-				url=download_url,
-				path=download_path,
-				auto_download=False,  # This is a user-initiated download
-			)
-
-			return download_path
-
-		except Exception as e:
-			logger.error(f'Failed to handle download: {e}')
+		except asyncio.CancelledError:
+			logger.debug(f'[Session] Network monitoring cancelled for {page.url}')
 			raise
+		except Exception as e:
+			logger.error(f'[Session] Error monitoring network: {e}')
 
-	def _track_download(self, download_path: str) -> None:
-		"""Track a downloaded file internally."""
-		self._downloaded_files.append(download_path)
-		logger.debug(f'📁 Added download to session tracking: {download_path} (total: {len(self._downloaded_files)} files)')
+	async def _get_page_for_navigation(self, event: NavigateToUrlEvent) -> Page | None:
+		"""Get the page to navigate based on the event."""
+		# Use agent focus watchdog to get current page
+		if hasattr(self, '_agent_focus_watchdog') and self._agent_focus_watchdog:
+			try:
+				return await self._agent_focus_watchdog.get_or_create_page()
+			except:
+				pass
 
-	async def _emit_file_downloaded_event(
-		self,
-		url: str,
-		path: str,
-		file_size: int | None = None,
-		file_type: str | None = None,
-		mime_type: str | None = None,
-		from_cache: bool = False,
-		auto_download: bool = False,
-	) -> None:
-		"""Emit a FileDownloadedEvent with file information."""
-		from pathlib import Path
+		# Fallback to first page
+		if hasattr(self, '_browser_context') and self._browser_context:
+			pages = self._browser_context.pages
+			if pages:
+				return pages[0]
 
-		file_path = Path(path)
-		file_name = file_path.name
+		return None
 
-		# Try to determine file type from extension if not provided
-		if not file_type and file_path.suffix:
-			file_type = file_path.suffix.lstrip('.')
+	async def _get_tab_index(self, page: Page) -> int:
+		"""Get the tab index for a page."""
+		if hasattr(self, '_browser_context') and self._browser_context:
+			pages = self._browser_context.pages
+			if page in pages:
+				return pages.index(page)
+		return 0
 
-		# Get file size if not provided
-		if file_size is None and file_path.exists():
-			file_size = file_path.stat().st_size
+	def _get_pending_requests(self, page: Page) -> set[Request]:
+		"""Get pending requests for a page."""
+		return self._page_requests.get(page, set()).copy()
 
-		self.event_bus.dispatch(
-			FileDownloadedEvent(
-				url=url,
-				path=str(path),
-				file_name=file_name,
-				file_size=file_size or 0,
-				file_type=file_type,
-				mime_type=mime_type,
-				from_cache=from_cache,
-				auto_download=auto_download,
-			)
-		)
+	def _is_page_loading(self, page: Page) -> bool:
+		"""Check if a page has pending network requests."""
+		return len(self._page_requests.get(page, set())) > 0
+
+	async def wait_for_page_load(self, page: Page, timeout: float | None = None) -> None:
+		"""Wait for a page to finish loading with stable network.
+
+		This method can be called externally to wait for page load completion.
+		"""
+		# Skip wait for new tab pages
+		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
+			return
+
+		# If page not tracked, add it
+		if page not in self._tracked_pages:
+			self._add_page_tracking(page)
+
+		# Wait for stable network
+		await self._wait_for_stable_network(page)
 
 	# ========== PDF API Methods ==========
 

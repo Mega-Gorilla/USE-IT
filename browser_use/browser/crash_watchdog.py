@@ -52,6 +52,7 @@ class CrashWatchdog(BaseModel):
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_cdp_session: Any = PrivateAttr(default=None)
+	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # page_url -> timestamp
 
 	def __init__(self, event_bus: EventBus, **kwargs):
 		"""Initialize watchdog with event bus."""
@@ -108,7 +109,7 @@ class CrashWatchdog(BaseModel):
 		page.on('requestfinished', lambda req: self._on_request_finished(req))
 
 		# Page crash detection
-		page.on('crash', lambda: asyncio.create_task(self._on_page_crash(page)))
+		page.on('crash', lambda _: asyncio.create_task(self._on_page_crash(page)))
 
 	async def _on_request(self, request: Request) -> None:
 		"""Track new network request."""
@@ -310,10 +311,12 @@ class CrashWatchdog(BaseModel):
 				# Check responsiveness for non-blank pages
 				elif not self._is_new_tab_page(page.url):
 					# Only check responsiveness occasionally to avoid overhead
-					if not hasattr(page, '_last_responsive_check') or time.time() - page._last_responsive_check > 10:
+					page_url = page.url
+					last_check = self._last_responsive_checks.get(page_url, 0)
+					if time.time() - last_check > 10:
 						if not await self._is_page_responsive(page, timeout=2.0):
 							unresponsive_pages.append(page)
-						page._last_responsive_check = time.time()
+						self._last_responsive_checks[page_url] = time.time()
 			except Exception:
 				# Page reference might be invalid
 				dead_pages.append(page)

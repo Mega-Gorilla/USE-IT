@@ -166,7 +166,7 @@ class TabCreatedEvent(BaseEvent):
 class TabClosedEvent(BaseEvent):
 	"""A tab was closed."""
 
-	tab_id: str
+	tab_id: str | None = None  # Made optional for compatibility
 	tab_index: int
 
 
@@ -174,9 +174,20 @@ class TabUpdatedEvent(BaseEvent):
 	"""Tab information updated (URL changed, etc.)."""
 
 	tab_id: str
+
+
+class HumanFocusChangedEvent(BaseEvent):
+	"""Human focus changed to a different tab."""
+
 	tab_index: int
-	url: str | None = None
-	title: str | None = None
+	url: str
+
+
+class AgentFocusChangedEvent(BaseEvent):
+	"""Agent focus changed to a different tab."""
+
+	tab_index: int
+	url: str
 
 
 class PageCrashedEvent(BaseEvent):
@@ -184,6 +195,13 @@ class PageCrashedEvent(BaseEvent):
 
 	tab_index: int
 	error: str
+
+
+class NavigationStartedEvent(BaseEvent):
+	"""Navigation started."""
+
+	tab_index: int
+	url: str
 
 
 class NavigationCompleteEvent(BaseEvent):
