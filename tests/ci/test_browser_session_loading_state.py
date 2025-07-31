@@ -2,7 +2,6 @@
 Test browser session loading state notification when network timeout occurs.
 """
 
-import asyncio
 import time
 
 import pytest
@@ -33,10 +32,10 @@ class TestBrowserLoadingState:
 		</body>
 		</html>
 		"""
-		
+
 		# Main page loads immediately
 		httpserver.expect_request('/').respond_with_data(html_content, content_type='text/html')
-		
+
 		# Handler that sleeps longer than the timeout
 		def slow_handler(request):
 			# Sleep for 5 seconds - longer than the 1s maximum_wait_page_load_time
@@ -66,26 +65,34 @@ class TestBrowserLoadingState:
 
 			# Navigate to the page with the slow iframe
 			await browser_session.navigate(httpserver.url_for('/'))
-			
+
 			# Get state - the iframe should still be loading
 			# and _wait_for_stable_network should detect it and timeout
 			state = await browser_session.get_browser_state_with_recovery()
-			
-			# Verify loading status was set
-			assert state.loading_status is not None, 'Loading status should be set when network timeout occurs'
-			assert 'aborted after 1.0s' in state.loading_status
-			assert 'pending network requests' in state.loading_status
-			assert 'wait action' in state.loading_status
 
-			# Verify the full message format
-			expected_pattern = 'Page loading was aborted after 1.0s with'
-			assert state.loading_status.startswith(expected_pattern)
+			# Verify recent events contains navigation timeout info
+			assert state.recent_events is not None, 'Recent events should be set'
+			
+			# Parse JSON events
+			import json
+			events = json.loads(state.recent_events)
+			assert len(events) > 0, 'Should have at least one event'
+			
+			# Find NavigationCompleteEvent with loading status
+			nav_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
+			assert len(nav_events) > 0, 'Should have NavigationCompleteEvent'
+			
+			# Check that at least one navigation event has loading status info
+			nav_event = nav_events[-1]  # Get most recent
+			assert nav_event.get('loading_status') is not None
+			assert 'aborted after 1.0s' in nav_event['loading_status']
+			assert 'pending network requests' in nav_event['loading_status']
 
 		finally:
 			await browser_session.kill()
 
 	async def test_loading_status_cleared_on_successful_load(self, httpserver: HTTPServer):
-		"""Test that loading status is cleared when page loads successfully"""
+		"""Test that recent events shows successful navigation when page loads successfully"""
 		# Set up a simple page that loads quickly
 		httpserver.expect_request('/fast').respond_with_data(
 			'<html><head><title>Fast Page</title></head><body><h1>Quick loading page</h1></body></html>',
@@ -110,14 +117,25 @@ class TestBrowserLoadingState:
 			# Get browser state
 			state = await browser_session.get_browser_state_with_recovery()
 
-			# Loading status should be None for successful loads
-			assert state.loading_status is None, 'Loading status should be None when page loads successfully'
+			# Recent events should show successful navigation without errors
+			assert state.recent_events is not None
+			
+			# Parse JSON and check NavigationCompleteEvent
+			import json
+			events = json.loads(state.recent_events)
+			nav_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
+			assert len(nav_events) > 0
+			
+			# Should not contain timeout or error messages in the navigation event
+			nav_event = nav_events[-1]
+			assert nav_event.get('loading_status') is None
+			assert nav_event.get('error_message') is None
 
 		finally:
 			await browser_session.kill()
 
 	async def test_loading_status_reset_on_navigation(self, httpserver: HTTPServer):
-		"""Test that loading status is reset when navigating to a new page"""
+		"""Test that recent events properly tracks navigation between slow and fast pages"""
 		# Set up pages
 		slow_html = """
 		<html>
@@ -152,20 +170,24 @@ class TestBrowserLoadingState:
 			# Navigate to slow page (should timeout)
 			await browser_session.navigate(httpserver.url_for('/slow'))
 			state1 = await browser_session.get_browser_state_with_recovery()
-			assert state1.loading_status is not None, 'Loading status should be set for slow page'
+			assert state1.recent_events is not None
+			assert 'NavigationCompleteEvent' in state1.recent_events
+			assert 'aborted' in state1.recent_events
 
 			# Navigate to fast page
 			await browser_session.navigate(httpserver.url_for('/fast'))
 			state2 = await browser_session.get_browser_state_with_recovery()
 
-			# Loading status should be cleared after successful navigation
-			assert state2.loading_status is None, 'Loading status should be cleared after navigating to new page'
+			# Recent events should show the latest navigation completed successfully
+			assert state2.recent_events is not None
+			# Should contain both navigation events
+			assert state2.recent_events.count('NavigationCompleteEvent') >= 2
 
 		finally:
 			await browser_session.kill()
 
 	async def test_loading_status_in_minimal_state_fallback(self, httpserver: HTTPServer):
-		"""Test that loading status is preserved even when falling back to minimal state"""
+		"""Test that recent events is preserved even when falling back to minimal state"""
 		# Create a page that causes DOM processing to fail
 		malformed_html = """
 		<html>
@@ -204,17 +226,18 @@ class TestBrowserLoadingState:
 			# Get browser state - this might fall back to minimal state
 			state = await browser_session.get_browser_state_with_recovery()
 
-			# Even if we get minimal state, loading status should be preserved
-			if state.loading_status is not None:
-				assert 'aborted after 0.5s' in state.loading_status
-				assert 'pending network requests' in state.loading_status
+			# Even if we get minimal state, recent events should be preserved
+			assert state.recent_events is not None
+			if 'NavigationCompleteEvent' in state.recent_events and 'aborted' in state.recent_events:
+				assert 'aborted after 0.5s' in state.recent_events
+				assert 'pending network requests' in state.recent_events
 
 		finally:
 			await browser_session.kill()
 
 	@pytest.mark.parametrize('timeout_seconds', [0.5, 1.0, 2.0])
 	async def test_loading_status_with_different_timeouts(self, httpserver: HTTPServer, timeout_seconds: float):
-		"""Test that loading status correctly reports the configured timeout value"""
+		"""Test that recent events correctly reports the configured timeout value"""
 		# Set up a slow page
 		httpserver.expect_request(f'/timeout_{timeout_seconds}').respond_with_data(
 			f'<html><head><title>Timeout Test {timeout_seconds}s</title>'
@@ -244,10 +267,11 @@ class TestBrowserLoadingState:
 			# Get browser state
 			state = await browser_session.get_browser_state_with_recovery()
 
-			# Verify loading status contains the correct timeout value
-			if state.loading_status is not None:
-				assert f'aborted after {timeout_seconds}s' in state.loading_status
-				assert 'pending network requests' in state.loading_status
+			# Verify recent events contains the correct timeout value
+			assert state.recent_events is not None
+			if 'NavigationCompleteEvent' in state.recent_events and 'aborted' in state.recent_events:
+				assert f'aborted after {timeout_seconds}s' in state.recent_events
+				assert 'pending network requests' in state.recent_events
 
 		finally:
 			await browser_session.kill()

@@ -196,6 +196,8 @@ class NavigationCompleteEvent(BaseEvent):
 	tab_index: int
 	url: str
 	status: int | None = None
+	error_message: str | None = None  # Error/timeout message if navigation had issues
+	loading_status: str | None = None  # Detailed loading status (e.g., network timeout info)
 
 
 # ============================================================================
@@ -239,3 +241,36 @@ class EvaluateResponse(BaseEvent):
 
 	result: Any
 	error: str | None = None
+
+
+# ============================================================================
+# Storage State Events
+# ============================================================================
+
+
+class SaveStorageStateEvent(BaseEvent):
+	"""Request to save browser storage state."""
+
+	path: str | None = None  # Optional path, uses profile default if not provided
+
+
+class StorageStateSavedEvent(BaseEvent):
+	"""Notification that storage state was saved."""
+
+	path: str
+	cookies_count: int
+	origins_count: int
+
+
+class LoadStorageStateEvent(BaseEvent):
+	"""Request to load browser storage state."""
+
+	path: str | None = None  # Optional path, uses profile default if not provided
+
+
+class StorageStateLoadedEvent(BaseEvent):
+	"""Notification that storage state was loaded."""
+
+	path: str
+	cookies_count: int
+	origins_count: int

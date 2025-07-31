@@ -65,7 +65,7 @@ class BrowserStateSummary(DOMState):
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)
 	is_pdf_viewer: bool = False  # Whether the current page is a PDF viewer
-	loading_status: str | None = None  # Message about page loading status (e.g., network timeout)
+	recent_events: str | None = None  # Text summary of recent browser events
 
 
 @dataclass
