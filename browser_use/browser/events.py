@@ -2,207 +2,240 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
 from bubus import BaseEvent
-
+from pydantic import Field
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
 # ============================================================================
 
+
 class NavigateToUrlEvent(BaseEvent):
-    """Navigate to a specific URL."""
-    url: str
-    wait_until: Literal['load', 'domcontentloaded', 'networkidle', 'commit'] = 'load'
+	"""Navigate to a specific URL."""
+
+	url: str
+	wait_until: Literal['load', 'domcontentloaded', 'networkidle', 'commit'] = 'load'
 
 
 class ClickElementEvent(BaseEvent):
-    """Click an element by index."""
-    index: int
-    button: Literal['left', 'right', 'middle'] = 'left'
-    click_count: int = 1
+	"""Click an element by index."""
+
+	index: int
+	button: Literal['left', 'right', 'middle'] = 'left'
+	click_count: int = 1
 
 
 class InputTextEvent(BaseEvent):
-    """Input text into an element."""
-    index: int
-    text: str
-    clear_existing: bool = True
+	"""Input text into an element."""
+
+	index: int
+	text: str
+	clear_existing: bool = True
 
 
 class ScrollEvent(BaseEvent):
-    """Scroll the page or element."""
-    direction: Literal['up', 'down', 'left', 'right']
-    amount: int  # pixels
-    element_index: int | None = None  # None means scroll page
+	"""Scroll the page or element."""
+
+	direction: Literal['up', 'down', 'left', 'right']
+	amount: int  # pixels
+	element_index: int | None = None  # None means scroll page
 
 
 class SwitchTabEvent(BaseEvent):
-    """Switch to a different tab."""
-    tab_index: int
+	"""Switch to a different tab."""
+
+	tab_index: int
 
 
 class CreateTabEvent(BaseEvent):
-    """Create a new tab."""
-    url: str | None = None
+	"""Create a new tab."""
+
+	url: str | None = None
 
 
 class CloseTabEvent(BaseEvent):
-    """Close a tab."""
-    tab_index: int
+	"""Close a tab."""
+
+	tab_index: int
 
 
 class ScreenshotRequestEvent(BaseEvent):
-    """Request to take a screenshot."""
-    full_page: bool = False
-    clip: dict[str, float] | None = None  # {x, y, width, height}
+	"""Request to take a screenshot."""
+
+	full_page: bool = False
+	clip: dict[str, float] | None = None  # {x, y, width, height}
 
 
 class BrowserStateRequestEvent(BaseEvent):
-    """Request current browser state."""
-    include_dom: bool = True
-    include_screenshot: bool = False
-    cache_clickable_elements_hashes: bool = True
+	"""Request current browser state."""
+
+	include_dom: bool = True
+	include_screenshot: bool = False
+	cache_clickable_elements_hashes: bool = True
 
 
 class WaitEvent(BaseEvent):
-    """Wait for a condition."""
-    condition: Literal['navigation', 'selector', 'timeout', 'load_state']
-    timeout: float = 30000
-    selector: str | None = None
-    state: Literal['attached', 'detached', 'visible', 'hidden'] | None = None
+	"""Wait for a condition."""
+
+	condition: Literal['navigation', 'selector', 'timeout', 'load_state']
+	timeout: float = 30000
+	selector: str | None = None
+	state: Literal['attached', 'detached', 'visible', 'hidden'] | None = None
 
 
 # ============================================================================
 # BrowserSession -> RemoteBrowserConnection Events (Browser management)
 # ============================================================================
 
+
 class StartBrowserEvent(BaseEvent):
-    """Start/connect to browser."""
-    cdp_url: str | None = None
-    launch_options: dict[str, Any] = Field(default_factory=dict)
+	"""Start/connect to browser."""
+
+	cdp_url: str | None = None
+	launch_options: dict[str, Any] = Field(default_factory=dict)
 
 
 class StopBrowserEvent(BaseEvent):
-    """Stop/disconnect from browser."""
-    force: bool = False
+	"""Stop/disconnect from browser."""
+
+	force: bool = False
 
 
 class TabsInfoRequestEvent(BaseEvent):
-    """Get information about all open tabs."""
-    pass
+	"""Get information about all open tabs."""
+
+	pass
 
 
 class GetPageInfoEvent(BaseEvent):
-    """Get information about a specific page."""
-    tab_index: int
+	"""Get information about a specific page."""
+
+	tab_index: int
 
 
 class EvaluateJavaScriptEvent(BaseEvent):
-    """Evaluate JavaScript in page context."""
-    tab_index: int
-    expression: str
-    await_promise: bool = True
+	"""Evaluate JavaScript in page context."""
+
+	tab_index: int
+	expression: str
+	await_promise: bool = True
 
 
 class SetViewportEvent(BaseEvent):
-    """Set the viewport size."""
-    width: int
-    height: int
-    device_scale_factor: float = 1.0
+	"""Set the viewport size."""
+
+	width: int
+	height: int
+	device_scale_factor: float = 1.0
 
 
 class SetCookiesEvent(BaseEvent):
-    """Set browser cookies."""
-    cookies: list[dict[str, Any]]
+	"""Set browser cookies."""
+
+	cookies: list[dict[str, Any]]
 
 
 class GetCookiesEvent(BaseEvent):
-    """Get browser cookies."""
-    urls: list[str] | None = None
+	"""Get browser cookies."""
+
+	urls: list[str] | None = None
 
 
 # ============================================================================
 # RemoteBrowserConnection -> BrowserSession Events (Status updates)
 # ============================================================================
 
+
 class BrowserStartedEvent(BaseEvent):
-    """Browser has started/connected."""
-    cdp_url: str
-    browser_pid: int | None = None
+	"""Browser has started/connected."""
+
+	cdp_url: str
+	browser_pid: int | None = None
 
 
 class BrowserStoppedEvent(BaseEvent):
-    """Browser has stopped/disconnected."""
-    reason: str | None = None
+	"""Browser has stopped/disconnected."""
+
+	reason: str | None = None
 
 
 class TabCreatedEvent(BaseEvent):
-    """A new tab was created."""
-    tab_id: str
-    tab_index: int
-    url: str | None = None
+	"""A new tab was created."""
+
+	tab_id: str
+	tab_index: int
+	url: str | None = None
 
 
 class TabClosedEvent(BaseEvent):
-    """A tab was closed."""
-    tab_id: str
-    tab_index: int
+	"""A tab was closed."""
+
+	tab_id: str
+	tab_index: int
 
 
 class TabUpdatedEvent(BaseEvent):
-    """Tab information updated (URL changed, etc.)."""
-    tab_id: str
-    tab_index: int
-    url: str | None = None
-    title: str | None = None
+	"""Tab information updated (URL changed, etc.)."""
+
+	tab_id: str
+	tab_index: int
+	url: str | None = None
+	title: str | None = None
 
 
 class PageCrashedEvent(BaseEvent):
-    """A page has crashed."""
-    tab_index: int
-    error: str
+	"""A page has crashed."""
+
+	tab_index: int
+	error: str
 
 
 class NavigationCompleteEvent(BaseEvent):
-    """Navigation completed."""
-    tab_index: int
-    url: str
-    status: int | None = None
+	"""Navigation completed."""
+
+	tab_index: int
+	url: str
+	status: int | None = None
 
 
 # ============================================================================
 # Error Events
 # ============================================================================
 
+
 class BrowserErrorEvent(BaseEvent):
-    """An error occurred in the browser layer."""
-    error_type: str
-    message: str
-    details: dict[str, Any] = Field(default_factory=dict)
+	"""An error occurred in the browser layer."""
+
+	error_type: str
+	message: str
+	details: dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================================
 # Response Events (for request-response pattern)
 # ============================================================================
 
+
 class BrowserStateResponseEvent(BaseEvent):
-    """Response to BrowserStateRequestEvent."""
-    state: Any  # BrowserStateSummary object
+	"""Response to BrowserStateRequestEvent."""
+
+	state: Any  # BrowserStateSummary object
 
 
 class ScreenshotResponseEvent(BaseEvent):
-    """Response to ScreenshotRequestEvent."""
-    screenshot: str  # base64 encoded
+	"""Response to ScreenshotRequestEvent."""
+
+	screenshot: str  # base64 encoded
 
 
 class TabsInfoResponseEvent(BaseEvent):
-    """Response to TabsInfoRequestEvent."""
-    tabs: list[dict[str, Any]]
+	"""Response to TabsInfoRequestEvent."""
+
+	tabs: list[dict[str, Any]]
 
 
 class EvaluateResponse(BaseEvent):
-    """Response to EvaluateJavaScriptEvent."""
-    result: Any
-    error: str | None = None
+	"""Response to EvaluateJavaScriptEvent."""
+
+	result: Any
+	error: str | None = None

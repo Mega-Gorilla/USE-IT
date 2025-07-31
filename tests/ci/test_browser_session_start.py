@@ -83,11 +83,11 @@ class TestBrowserSessionStart:
 		# The session should be initialized after concurrent calls
 		assert browser_session.initialized is True
 		assert browser_session.browser_context is not None
-		
+
 		# Should have a single browser PID
 		final_pid = browser_session.browser_pid
 		assert final_pid is not None
-		
+
 		# Try starting again - should return same PID
 		await browser_session.start()
 		assert browser_session.browser_pid == final_pid
@@ -119,20 +119,20 @@ class TestBrowserSessionStart:
 		await browser_session.start()
 		assert browser_session.initialized is True
 		original_pid = browser_session.browser_pid
-		
+
 		# Force close the browser to simulate a crash
 		if browser_session.browser:
 			await browser_session.browser.close()
-		
+
 		# Check that initialized reflects the disconnected state
 		assert browser_session.initialized is False
-		
+
 		# Start should recover and create a new browser
 		result = await browser_session.start()
 		assert result is browser_session
 		assert browser_session.initialized is True
 		assert browser_session.browser_context is not None
-		
+
 		# Should have a new PID (or same if reusing process)
 		new_pid = browser_session.browser_pid
 		assert new_pid is not None
@@ -144,7 +144,7 @@ class TestBrowserSessionStart:
 		# Create session with invalid CDP URL
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(headless=True),
-			cdp_url='http://localhost:99999'  # Invalid port
+			cdp_url='http://localhost:99999',  # Invalid port
 		)
 
 		try:
@@ -237,18 +237,18 @@ class TestBrowserSessionStart:
 		# Various operations should work without restarting
 		tabs_info = await browser_session.get_tabs_info()
 		assert isinstance(tabs_info, list)
-		
+
 		current_page = await browser_session.get_current_page()
 		assert current_page is not None
-		
+
 		# Create a new tab
 		new_page = await browser_session.create_new_tab()
 		assert new_page is not None
-		
+
 		# Get tabs info again - should show more tabs
 		updated_tabs = await browser_session.get_tabs_info()
 		assert len(updated_tabs) > len(tabs_info)
-		
+
 		# Browser PID should remain the same
 		assert browser_session.browser_pid == initial_pid
 		assert browser_session.initialized is True
@@ -274,7 +274,7 @@ class TestBrowserSessionStart:
 		except Exception:
 			# If it fails, that's also valid behavior
 			pass
-		
+
 		# Explicitly start and verify it works
 		await browser_session.start()
 		assert browser_session.initialized is True
@@ -289,26 +289,26 @@ class TestBrowserSessionStart:
 		await browser_session.start()
 		initial_tabs = await browser_session.get_tabs_info()
 		initial_count = len(initial_tabs)
-		
+
 		current_page = await browser_session.get_current_page()
 		assert current_page is not None
 		assert not current_page.is_closed()
 
 		# Close the current page
 		await current_page.close()
-		
+
 		# Verify page is closed
 		assert current_page.is_closed()
 
 		# Operations should still work - may create new page or use existing
 		tabs_after_close = await browser_session.get_tabs_info()
 		assert isinstance(tabs_after_close, list)
-		
+
 		# Create a new tab explicitly
 		new_page = await browser_session.create_new_tab()
 		assert new_page is not None
 		assert not new_page.is_closed()
-		
+
 		# Should have at least one tab now
 		final_tabs = await browser_session.get_tabs_info()
 		assert len(final_tabs) >= 1

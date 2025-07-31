@@ -10,12 +10,12 @@ from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStartedEvent,
 	BrowserStoppedEvent,
-	TabsInfoRequestEvent,
 	NavigationCompleteEvent,
 	PageCrashedEvent,
 	StartBrowserEvent,
 	StopBrowserEvent,
 	TabCreatedEvent,
+	TabsInfoRequestEvent,
 	TabsInfoResponseEvent,
 )
 from browser_use.browser.profile import BrowserProfile

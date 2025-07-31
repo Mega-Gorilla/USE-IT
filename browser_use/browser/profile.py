@@ -888,7 +888,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		connect_args = BrowserConnectArgs(**self.model_dump())
 		return connect_args.model_dump(exclude_none=True)
 
-
 	def args_for_browser_launch(self) -> list[str]:
 		"""Return the command line args for launching a browser subprocess."""
 		return self.get_args()

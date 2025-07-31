@@ -367,9 +367,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				assert isinstance(browser, Browser), 'Browser is not set up'
 			self.browser_session = BrowserSession(
 				browser_profile=browser_profile,
-				browser=browser,
-				browser_context=browser_context,
-				agent_current_page=page,
 				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
 
