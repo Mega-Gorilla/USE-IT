@@ -19,7 +19,8 @@ T = TypeVar('T', bound=BaseModel)
 
 
 VerifiedGeminiModels = Literal[
-	'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-lite-preview-02-05', 'Gemini-2.0-exp'
+	'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-lite-preview-02-05', 'Gemini-2.0-exp',
+	'gemma-3-27b-it', 'gemma-3-4b', 'gemma-3-12b', 'gemma-3n-e2b', 'gemma-3n-e4b'
 ]
 
 
