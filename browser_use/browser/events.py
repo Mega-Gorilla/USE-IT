@@ -53,16 +53,17 @@ class CloseTabEvent(BaseEvent):
     tab_index: int
 
 
-class TakeScreenshotEvent(BaseEvent):
-    """Take a screenshot."""
+class ScreenshotRequestEvent(BaseEvent):
+    """Request to take a screenshot."""
     full_page: bool = False
     clip: dict[str, float] | None = None  # {x, y, width, height}
 
 
-class GetBrowserStateEvent(BaseEvent):
+class BrowserStateRequestEvent(BaseEvent):
     """Request current browser state."""
     include_dom: bool = True
     include_screenshot: bool = False
+    cache_clickable_elements_hashes: bool = True
 
 
 class WaitEvent(BaseEvent):
@@ -88,7 +89,7 @@ class StopBrowserEvent(BaseEvent):
     force: bool = False
 
 
-class GetTabsInfoEvent(BaseEvent):
+class TabsInfoRequestEvent(BaseEvent):
     """Get information about all open tabs."""
     pass
 
@@ -186,19 +187,18 @@ class BrowserErrorEvent(BaseEvent):
 # Response Events (for request-response pattern)
 # ============================================================================
 
-class BrowserStateResponse(BaseEvent):
-    """Response to GetBrowserStateEvent."""
-    state: dict[str, Any]
-    screenshot: str | None = None  # base64 encoded
+class BrowserStateResponseEvent(BaseEvent):
+    """Response to BrowserStateRequestEvent."""
+    state: Any  # BrowserStateSummary object
 
 
-class ScreenshotResponse(BaseEvent):
-    """Response to TakeScreenshotEvent."""
+class ScreenshotResponseEvent(BaseEvent):
+    """Response to ScreenshotRequestEvent."""
     screenshot: str  # base64 encoded
 
 
-class TabsInfoResponse(BaseEvent):
-    """Response to GetTabsInfoEvent."""
+class TabsInfoResponseEvent(BaseEvent):
+    """Response to TabsInfoRequestEvent."""
     tabs: list[dict[str, Any]]
 
 

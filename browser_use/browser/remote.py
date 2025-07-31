@@ -10,13 +10,13 @@ from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStartedEvent,
 	BrowserStoppedEvent,
-	GetTabsInfoEvent,
+	TabsInfoRequestEvent,
 	NavigationCompleteEvent,
 	PageCrashedEvent,
 	StartBrowserEvent,
 	StopBrowserEvent,
 	TabCreatedEvent,
-	TabsInfoResponse,
+	TabsInfoResponseEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 
@@ -60,7 +60,7 @@ class RemoteBrowserConnection(BaseModel):
 		"""Register event handlers for browser control events."""
 		self.event_bus.on(StartBrowserEvent, self._handle_start)
 		self.event_bus.on(StopBrowserEvent, self._handle_stop)
-		self.event_bus.on(GetTabsInfoEvent, self._handle_get_tabs_info)
+		self.event_bus.on(TabsInfoRequestEvent, self._handle_tabs_info_request)
 
 	async def _handle_start(self, event: StartBrowserEvent) -> None:
 		"""Handle browser start request."""
@@ -130,7 +130,7 @@ class RemoteBrowserConnection(BaseModel):
 			self._context = contexts[0]
 		else:
 			# Create new context with profile settings
-			context_args = self.browser_profile.kwargs_for_browser_context()
+			context_args = self.browser_profile.kwargs_for_new_context().model_dump(exclude_none=True)
 			self._context = await self._browser.new_context(**context_args)
 
 		# Track existing pages
@@ -188,10 +188,10 @@ class RemoteBrowserConnection(BaseModel):
 			await self._playwright.stop()
 			self._playwright = None
 
-	async def _handle_get_tabs_info(self, event: GetTabsInfoEvent) -> None:
+	async def _handle_tabs_info_request(self, event: TabsInfoRequestEvent) -> None:
 		"""Handle request for tabs information."""
 		if not self._started or not self._context:
-			self.event_bus.dispatch(TabsInfoResponse(tabs=[]))
+			self.event_bus.dispatch(TabsInfoResponseEvent(tabs=[]))
 			return
 
 		tabs = []
@@ -207,7 +207,7 @@ class RemoteBrowserConnection(BaseModel):
 					}
 				)
 
-		self.event_bus.dispatch(TabsInfoResponse(tabs=tabs))
+		self.event_bus.dispatch(TabsInfoResponseEvent(tabs=tabs))
 
 	# Page management methods (used internally by session)
 	async def navigate_page(self, tab_index: int, url: str, wait_until: str = 'load') -> None:

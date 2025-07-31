@@ -523,7 +523,7 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 	model_config = ConfigDict(extra='ignore', validate_assignment=False, revalidate_instances='always')
 
 	# Required parameter specific to launch_persistent_context, but can be None to use incognito temp dir
-	user_data_dir: str | Path | None = CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+	user_data_dir: str | Path | None = None
 
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
@@ -759,6 +759,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		# Create extensions cache directory
 		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
 		cache_dir.mkdir(parents=True, exist_ok=True)
+		logger.debug(f'📁 Extensions cache directory: {_log_pretty_path(cache_dir)}')
 
 		extension_paths = []
 		loaded_extension_names = []
@@ -769,6 +770,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 			# Check if extension is already extracted
 			if ext_dir.exists() and (ext_dir / 'manifest.json').exists():
+				logger.debug(f'✅ Using cached {ext["name"]} extension from {_log_pretty_path(ext_dir)}')
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 				continue
@@ -778,13 +780,14 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				if not crx_file.exists():
 					logger.info(f'📦 Downloading {ext["name"]} extension...')
 					self._download_extension(ext['url'], crx_file)
+				else:
+					logger.debug(f'📦 Found cached {ext["name"]} .crx file')
 
 				# Extract extension
-				if crx_file.exists():
-					logger.info(f'📂 Extracting {ext["name"]} extension...')
-					self._extract_extension(crx_file, ext_dir)
-					extension_paths.append(str(ext_dir))
-					loaded_extension_names.append(ext['name'])
+				logger.info(f'📂 Extracting {ext["name"]} extension...')
+				self._extract_extension(crx_file, ext_dir)
+				extension_paths.append(str(ext_dir))
+				loaded_extension_names.append(ext['name'])
 
 			except Exception as e:
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
@@ -885,11 +888,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		connect_args = BrowserConnectArgs(**self.model_dump())
 		return connect_args.model_dump(exclude_none=True)
 
-	def kwargs_for_browser_context(self) -> dict[str, Any]:
-		"""Return the kwargs for Browser.new_context()."""
-		# Extract only the fields relevant for browser context
-		context_args = BrowserContextArgs(**self.model_dump())
-		return context_args.model_dump(exclude_none=True)
 
 	def args_for_browser_launch(self) -> list[str]:
 		"""Return the command line args for launching a browser subprocess."""
