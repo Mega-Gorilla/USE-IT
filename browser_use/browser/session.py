@@ -226,9 +226,17 @@ class BrowserSession(BaseModel):
 			if contexts:
 				self._browser_context = contexts[0]
 			else:
-				self._browser_context = await self._browser.new_context(
-					**self.browser_profile.kwargs_for_new_context().model_dump(exclude_none=True)
-				)
+				# Get context kwargs
+				new_context_args = self.browser_profile.kwargs_for_new_context()
+				context_kwargs = new_context_args.model_dump(exclude_none=True)
+
+				# Log storage state info
+				logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
+				logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
+				logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
+				logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
+
+				self._browser_context = await self._browser.new_context(**context_kwargs)
 
 			# Set initial page if exists
 			pages = self._browser_context.pages
@@ -294,6 +302,10 @@ class BrowserSession(BaseModel):
 				from browser_use.browser.local import LocalBrowserHelpers
 
 				await LocalBrowserHelpers.cleanup_process(self._subprocess)
+
+				# Clean up temp directory if one was created
+				if self.browser_profile.user_data_dir and 'browseruse-tmp-' in str(self.browser_profile.user_data_dir):
+					LocalBrowserHelpers.cleanup_temp_dir(self.browser_profile.user_data_dir)
 
 			# Reset state
 			self._browser = None
@@ -640,11 +652,20 @@ class BrowserSession(BaseModel):
 	async def save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state."""
 		if not self._browser_context:
+			logger.warning('save_storage_state: No browser context available')
 			return
 
 		save_path = path or self.browser_profile.storage_state
 		if save_path:
-			await self._browser_context.storage_state(path=str(save_path))
+			logger.info(f'Saving storage state to: {save_path}')
+			# Get current cookies to debug
+			cookies = await self._browser_context.cookies()
+			logger.info(f'Current cookies before save: {cookies}')
+
+			storage = await self._browser_context.storage_state(path=str(save_path))
+			logger.info(
+				f'Storage state saved: cookies={len(storage.get("cookies", []))}, origins={len(storage.get("origins", []))}'
+			)
 
 	async def get_tabs_info(self) -> list[dict[str, Any]]:
 		"""Get information about all open tabs."""
@@ -909,6 +930,77 @@ class BrowserSession(BaseModel):
 		"""Scroll container."""
 		# TODO: Implement from old BrowserSession
 		raise NotImplementedError('_scroll_container needs to be implemented')
+
+	def _is_url_allowed(self, url: str) -> bool:
+		"""Check if a URL is allowed based on the allowed_domains configuration.
+
+		Args:
+			url: The URL to check
+
+		Returns:
+			True if the URL is allowed, False otherwise
+		"""
+		# If no allowed_domains specified, allow all URLs
+		if not self.browser_profile.allowed_domains:
+			return True
+
+		# Always allow internal browser pages
+		if url in ['about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/']:
+			return True
+
+		# Parse the URL to extract components
+		from urllib.parse import urlparse
+
+		try:
+			parsed = urlparse(url)
+		except Exception:
+			# Invalid URL
+			return False
+
+		# Get the actual host (domain)
+		host = parsed.hostname
+		if not host:
+			return False
+
+		# Full URL for matching (scheme + host)
+		full_url_pattern = f'{parsed.scheme}://{host}'
+
+		# Check each allowed domain pattern
+		for pattern in self.browser_profile.allowed_domains:
+			# Handle glob patterns
+			if '*' in pattern:
+				import fnmatch
+
+				# Check if pattern matches the host
+				if pattern.startswith('*.'):
+					# Pattern like *.example.com should match subdomains and main domain
+					# But only for http/https URLs unless scheme is specified
+					domain_part = pattern[2:]  # Remove *.
+					if host == domain_part or host.endswith('.' + domain_part):
+						# Only match http/https URLs for domain-only patterns
+						if parsed.scheme in ['http', 'https']:
+							return True
+				elif pattern.endswith('/*'):
+					# Pattern like brave://* should match any brave:// URL
+					prefix = pattern[:-1]  # Remove the * at the end
+					if url.startswith(prefix):
+						return True
+				else:
+					# Use fnmatch for other glob patterns
+					if fnmatch.fnmatch(host, pattern):
+						return True
+			else:
+				# Exact match
+				if pattern.startswith(('http://', 'https://', 'chrome://', 'brave://', 'file://')):
+					# Full URL pattern
+					if url.startswith(pattern):
+						return True
+				else:
+					# Domain-only pattern
+					if host == pattern:
+						return True
+
+		return False
 
 
 # Import uuid7str for ID generation
