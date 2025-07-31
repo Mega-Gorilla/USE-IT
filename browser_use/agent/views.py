@@ -482,11 +482,33 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 		for h in self.history:
 			if h.model_output:
-				for action, interacted_element in zip(h.model_output.action, h.state.interacted_element):
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				for action, interacted_element in zip(h.model_output.action, interacted_elements):
 					output = action.model_dump(exclude_none=True)
 					output['interacted_element'] = interacted_element
 					outputs.append(output)
 		return outputs
+
+	def action_history(self) -> list[list[dict]]:
+		"""Get truncated action history with only essential fields"""
+		step_outputs = []
+
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(h.model_output.action, interacted_elements, h.result):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					# Only keep long_term_memory from result
+					action_output['result'] = result.long_term_memory if result and result.long_term_memory else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+
+		return step_outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""
