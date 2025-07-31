@@ -19,8 +19,15 @@ T = TypeVar('T', bound=BaseModel)
 
 
 VerifiedGeminiModels = Literal[
-	'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-lite-preview-02-05', 'Gemini-2.0-exp',
-	'gemma-3-27b-it', 'gemma-3-4b', 'gemma-3-12b', 'gemma-3n-e2b', 'gemma-3n-e4b'
+	'gemini-2.0-flash',
+	'gemini-2.0-flash-exp',
+	'gemini-2.0-flash-lite-preview-02-05',
+	'Gemini-2.0-exp',
+	'gemma-3-27b-it',
+	'gemma-3-4b',
+	'gemma-3-12b',
+	'gemma-3n-e2b',
+	'gemma-3n-e4b',
 ]
 
 
@@ -276,20 +283,28 @@ class ChatGoogle(BaseChatModel):
 						)
 				else:
 					# Fallback: Request JSON in the prompt for models without native JSON mode
+					# Create a copy of messages to modify
+					modified_messages = [m.model_copy(deep=True) for m in messages]
+
 					# Add JSON instruction to the last message
-					if messages and isinstance(messages[-1].content, str):
-						json_instruction = f"\n\nPlease respond with a valid JSON object that matches this schema: {SchemaOptimizer.create_optimized_json_schema(output_format)}"
-						messages[-1].content += json_instruction
+					if modified_messages and isinstance(modified_messages[-1].content, str):
+						json_instruction = f'\n\nPlease respond with a valid JSON object that matches this schema: {SchemaOptimizer.create_optimized_json_schema(output_format)}'
+						modified_messages[-1].content += json_instruction
 
 					# Re-serialize with modified messages
-					contents, _ = GoogleMessageSerializer.serialize_messages(
-						messages, include_system_in_user=self.include_system_in_user
+					fallback_contents, fallback_system = GoogleMessageSerializer.serialize_messages(
+						modified_messages, include_system_in_user=self.include_system_in_user
 					)
+
+					# Update config with fallback system instruction if present
+					fallback_config = config.copy()
+					if fallback_system:
+						fallback_config['system_instruction'] = fallback_system
 
 					response = await self.get_client().aio.models.generate_content(
 						model=self.model,
-						contents=contents,  # type: ignore
-						config=config,
+						contents=fallback_contents,  # type: ignore
+						config=fallback_config,
 					)
 
 					usage = self._get_usage(response)
