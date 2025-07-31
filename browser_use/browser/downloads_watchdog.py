@@ -1,18 +1,22 @@
 """Downloads watchdog for monitoring and handling file downloads."""
 
 import asyncio
+import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 from weakref import WeakSet
 
+import anyio
 from bubus import EventBus
 from playwright.async_api import Download, Page
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from browser_use.browser.events import (
 	FileDownloadedEvent,
-	TabCreatedEvent,
 	TabClosedEvent,
+	TabCreatedEvent,
 )
 from browser_use.utils import logger
 
@@ -31,7 +35,6 @@ class DownloadsWatchdog(BaseModel):
 
 	event_bus: EventBus
 	browser_session: 'BrowserSession'  # Dependency injection instead of private attrs
-	downloads_dir: Path | None = Field(default=None)
 
 	# Private state
 	_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
@@ -70,42 +73,44 @@ class DownloadsWatchdog(BaseModel):
 
 	async def _handle_download(self, download: Download) -> None:
 		"""Handle a download event."""
-		download_id = f"{id(download)}"
+		download_id = f'{id(download)}'
 		self._active_downloads[download_id] = download
-		
+
 		try:
 			# Get download info
 			url = download.url
 			suggested_filename = download.suggested_filename
+
+			# Determine download directory from browser profile
+			downloads_dir = self.browser_session.browser_profile.downloads_path
+			if not downloads_dir:
+				downloads_dir = str(Path.home() / 'Downloads')
 			
-			# Determine download path
-			if self.downloads_dir:
-				download_path = self.downloads_dir / suggested_filename
-			else:
-				# Use default downloads directory
-				download_path = Path.home() / "Downloads" / suggested_filename
-			
-			logger.info(f'[DownloadsWatchdog] Download started: {suggested_filename} from {url[:100]}...')
-			
+			# Ensure unique filename
+			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
+			download_path = Path(downloads_dir) / unique_filename
+
+			logger.info(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
+
 			# Save the download
 			await download.save_as(str(download_path))
-			
+
 			# Get file info
 			file_size = download_path.stat().st_size if download_path.exists() else 0
-			
+
 			# Determine file type from extension
 			file_ext = download_path.suffix.lower().lstrip('.')
 			file_type = file_ext if file_ext else None
-			
+
 			# Try to get MIME type from response headers if available
 			mime_type = None
 			# Note: Playwright doesn't expose response headers directly from Download object
-			
+
 			# Check if this was a PDF auto-download
 			auto_download = False
 			if file_type == 'pdf' and hasattr(self.browser_session, '_auto_download_pdfs'):
 				auto_download = self.browser_session._auto_download_pdfs
-			
+
 			# Emit download event
 			self.event_bus.dispatch(
 				FileDownloadedEvent(
@@ -119,16 +124,15 @@ class DownloadsWatchdog(BaseModel):
 					auto_download=auto_download,
 				)
 			)
-			
+
 			logger.info(
-				f'[DownloadsWatchdog] Download completed: {suggested_filename} '
-				f'({file_size} bytes) saved to {download_path}'
+				f'[DownloadsWatchdog] Download completed: {suggested_filename} ({file_size} bytes) saved to {download_path}'
 			)
-			
+
 			# Track downloaded file in browser session
 			if hasattr(self.browser_session, '_downloaded_files'):
 				self.browser_session._downloaded_files.append(str(download_path))
-			
+
 		except Exception as e:
 			logger.error(f'[DownloadsWatchdog] Error handling download: {e}')
 		finally:
@@ -138,19 +142,20 @@ class DownloadsWatchdog(BaseModel):
 
 	async def check_for_pdf_viewer(self, page: Page) -> bool:
 		"""Check if the current page is Chrome's built-in PDF viewer.
-		
+
 		Returns True if a PDF is detected and should be downloaded.
 		"""
 		try:
 			# Check if we're in Chrome's PDF viewer
 			is_pdf_viewer = await page.evaluate("""
 				() => {
-					// Check for Chrome PDF viewer
-					const embedElement = document.querySelector('embed[type="application/pdf"]');
-					if (embedElement && embedElement.src) {
+					// Check for Chrome's built-in PDF viewer (both old and new selectors)
+					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
+									 document.querySelector('embed[type="application/pdf"]');
+					if (pdfEmbed && pdfEmbed.src) {
 						return {
 							isPdf: true,
-							url: embedElement.src,
+							url: pdfEmbed.src,
 							isChromePdfViewer: true
 						};
 					}
@@ -161,6 +166,17 @@ class DownloadsWatchdog(BaseModel):
 							isPdf: true,
 							url: window.location.href,
 							isDirectPdf: true
+						};
+					}
+					
+					// Also check if the URL ends with .pdf or has PDF in it
+					const url = window.location.href;
+					const isPdfUrl = url.toLowerCase().includes('.pdf');
+					if (isPdfUrl) {
+						return {
+							isPdf: true,
+							url: url,
+							isPdfUrl: true
 						};
 					}
 					
@@ -184,51 +200,154 @@ class DownloadsWatchdog(BaseModel):
 					return { isPdf: false };
 				}
 			""")
-			
+
 			if is_pdf_viewer.get('isPdf', False):
 				logger.info(
 					f'[DownloadsWatchdog] PDF detected: {is_pdf_viewer.get("url", "unknown")} '
 					f'(type: {"Chrome viewer" if is_pdf_viewer.get("isChromePdfViewer") else "direct PDF"})'
 				)
 				return True
-				
+
 			return False
-			
+
 		except Exception as e:
 			logger.debug(f'[DownloadsWatchdog] Error checking for PDF viewer: {e}')
 			return False
 
-	async def trigger_pdf_download(self, page: Page) -> None:
-		"""Trigger download of a PDF from Chrome's PDF viewer."""
+	async def trigger_pdf_download(self, page: Page) -> str | None:
+		"""Trigger download of a PDF from Chrome's PDF viewer.
+		
+		Returns the download path if successful, None otherwise.
+		"""
+		if not self.browser_session.browser_profile.downloads_path:
+			logger.warning('[DownloadsWatchdog] No downloads path configured')
+			return None
+			
 		try:
 			# Try to get the PDF URL
 			pdf_info = await page.evaluate("""
 				() => {
-					const embedElement = document.querySelector('embed[type="application/pdf"]');
+					const embedElement = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
+									   document.querySelector('embed[type="application/pdf"]');
 					if (embedElement && embedElement.src) {
 						return { url: embedElement.src };
 					}
 					return { url: window.location.href };
 				}
 			""")
-			
+
 			pdf_url = pdf_info.get('url', '')
 			if not pdf_url:
 				logger.warning('[DownloadsWatchdog] Could not determine PDF URL for download')
-				return
-			
-			logger.info(f'[DownloadsWatchdog] Triggering PDF download from: {pdf_url[:100]}...')
-			
-			# Navigate to the PDF URL with a download-triggering approach
-			# This should trigger the browser's download mechanism
-			await page.evaluate(f"""
-				() => {{
-					const link = document.createElement('a');
-					link.href = '{pdf_url}';
-					link.download = '';  // Force download
-					link.click();
-				}}
-			""")
-			
+				return None
+
+			# Generate filename from URL
+			pdf_filename = os.path.basename(pdf_url.split('?')[0])  # Remove query params
+			if not pdf_filename or not pdf_filename.endswith('.pdf'):
+				parsed = urlparse(pdf_url)
+				pdf_filename = os.path.basename(parsed.path) or 'document.pdf'
+				if not pdf_filename.endswith('.pdf'):
+					pdf_filename += '.pdf'
+
+			# Check if already downloaded
+			if hasattr(self.browser_session, '_downloaded_files'):
+				if any(os.path.basename(downloaded) == pdf_filename for downloaded in self.browser_session._downloaded_files):
+					logger.debug(f'[DownloadsWatchdog] PDF already downloaded: {pdf_filename}')
+					return None
+
+			logger.info(f'[DownloadsWatchdog] Auto-downloading PDF from: {pdf_url[:100]}...')
+
+			# Download using JavaScript fetch to leverage browser cache
+			try:
+				# Properly escape the URL to prevent JavaScript injection
+				escaped_pdf_url = json.dumps(pdf_url)
+				
+				download_result = await page.evaluate(f"""
+					async () => {{
+						try {{
+							// Use fetch with cache: 'force-cache' to prioritize cached version
+							const response = await fetch({escaped_pdf_url}, {{
+								cache: 'force-cache'
+							}});
+							if (!response.ok) {{
+								throw new Error(`HTTP error! status: ${{response.status}}`);
+							}}
+							const blob = await response.blob();
+							const arrayBuffer = await blob.arrayBuffer();
+							const uint8Array = new Uint8Array(arrayBuffer);
+							
+							// Check if served from cache
+							const fromCache = response.headers.has('age') || 
+											 !response.headers.has('date') ||
+											 performance.getEntriesByName({escaped_pdf_url}).some(entry => 
+												 entry.transferSize === 0 || entry.transferSize < entry.encodedBodySize
+											 );
+											 
+							return {{ 
+								data: Array.from(uint8Array),
+								fromCache: fromCache,
+								responseSize: uint8Array.length,
+								transferSize: response.headers.get('content-length') || 'unknown'
+							}};
+						}} catch (error) {{
+							throw new Error(`Fetch failed: ${{error.message}}`);
+						}}
+					}}
+				""")
+
+				if download_result and download_result.get('data') and len(download_result['data']) > 0:
+					# Ensure unique filename
+					downloads_dir = self.browser_session.browser_profile.downloads_path
+					unique_filename = await self._get_unique_filename(downloads_dir, pdf_filename)
+					download_path = os.path.join(downloads_dir, unique_filename)
+
+					# Save the PDF asynchronously
+					async with await anyio.open_file(download_path, 'wb') as f:
+						await f.write(bytes(download_result['data']))
+
+					# Track the downloaded file
+					if hasattr(self.browser_session, '_downloaded_files'):
+						self.browser_session._downloaded_files.append(download_path)
+
+					# Log cache information
+					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
+					response_size = download_result.get('responseSize', 0)
+					logger.info(f'[DownloadsWatchdog] Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
+
+					# Emit file downloaded event
+					self.event_bus.dispatch(
+						FileDownloadedEvent(
+							url=pdf_url,
+							path=download_path,
+							file_name=unique_filename,
+							file_size=response_size,
+							file_type='pdf',
+							mime_type='application/pdf',
+							from_cache=download_result.get('fromCache', False),
+							auto_download=True,
+						)
+					)
+
+					return download_path
+				else:
+					logger.warning(f'[DownloadsWatchdog] No data received when downloading PDF from {pdf_url}')
+					return None
+
+			except Exception as e:
+				logger.warning(f'[DownloadsWatchdog] Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
+				return None
+
 		except Exception as e:
-			logger.error(f'[DownloadsWatchdog] Error triggering PDF download: {e}')
+			logger.error(f'[DownloadsWatchdog] Error in PDF download: {type(e).__name__}: {e}')
+			return None
+
+	@staticmethod
+	async def _get_unique_filename(directory: str, filename: str) -> str:
+		"""Generate a unique filename for downloads by appending (1), (2), etc., if a file already exists."""
+		base, ext = os.path.splitext(filename)
+		counter = 1
+		new_filename = filename
+		while os.path.exists(os.path.join(directory, new_filename)):
+			new_filename = f'{base} ({counter}){ext}'
+			counter += 1
+		return new_filename

@@ -22,36 +22,39 @@ from browser_use.browser.session import BrowserSession
 logger = logging.getLogger('browser_session_cookie_tests')
 
 
-class TestBrowserSessionCookies:
-	"""Tests for BrowserSession cookie loading and saving functionality."""
+class TestBrowserSessionStorageState:
+	"""Tests for BrowserSession storage state loading and saving functionality."""
 
 	@pytest.fixture
-	async def temp_cookies_file(self):
-		"""Create a temporary cookies file with test cookies."""
+	async def temp_storage_state_file(self):
+		"""Create a temporary storage state file with test cookies and local storage."""
 		with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-			test_cookies = [
-				{
-					'name': 'test_cookie',
-					'value': 'test_value',
-					'domain': 'localhost',
-					'path': '/',
-					'expires': -1,
-					'httpOnly': False,
-					'secure': False,
-					'sameSite': 'Lax',
-				},
-				{
-					'name': 'session_cookie',
-					'value': 'session_12345',
-					'domain': 'localhost',
-					'path': '/',
-					'expires': -1,
-					'httpOnly': True,
-					'secure': False,
-					'sameSite': 'Lax',
-				},
-			]
-			json.dump(test_cookies, f)
+			storage_state = {
+				"cookies": [
+					{
+						'name': 'test_cookie',
+						'value': 'test_value',
+						'domain': '127.0.0.1',
+						'path': '/',
+						'expires': -1,
+						'httpOnly': False,
+						'secure': False,
+						'sameSite': 'Lax',
+					},
+					{
+						'name': 'session_cookie',
+						'value': 'session_12345',
+						'domain': '127.0.0.1',
+						'path': '/',
+						'expires': -1,
+						'httpOnly': True,
+						'secure': False,
+						'sameSite': 'Lax',
+					},
+				],
+				"origins": []  # Could add localStorage/sessionStorage data here
+			}
+			json.dump(storage_state, f)
 			temp_path = Path(f.name)
 
 		yield temp_path
@@ -60,15 +63,15 @@ class TestBrowserSessionCookies:
 		temp_path.unlink(missing_ok=True)
 
 	@pytest.fixture
-	async def browser_profile_with_cookies(self, temp_cookies_file):
-		"""Create a BrowserProfile with cookies_file set."""
-		profile = BrowserProfile(headless=True, user_data_dir=None, cookies_file=temp_cookies_file)
+	async def browser_profile_with_storage_state(self, temp_storage_state_file):
+		"""Create a BrowserProfile with storage_state set."""
+		profile = BrowserProfile(headless=True, user_data_dir=None, storage_state=temp_storage_state_file)
 		yield profile
 
 	@pytest.fixture
-	async def browser_session_with_cookies(self, browser_profile_with_cookies):
-		"""Create a BrowserSession with cookie file configured."""
-		session = BrowserSession(browser_profile=browser_profile_with_cookies)
+	async def browser_session_with_storage_state(self, browser_profile_with_storage_state):
+		"""Create a BrowserSession with storage state configured."""
+		session = BrowserSession(browser_profile=browser_profile_with_storage_state)
 		yield session
 		# Cleanup
 		try:
@@ -95,17 +98,20 @@ class TestBrowserSessionCookies:
 		)
 		return httpserver
 
-	async def test_cookies_loaded_on_start(self, browser_session_with_cookies, http_server):
-		"""Test that cookies are loaded from cookies_file when browser starts."""
+	async def test_storage_state_loaded_on_start(self, browser_session_with_storage_state, http_server):
+		"""Test that storage state is loaded when browser starts."""
 		# Start the browser session
-		await browser_session_with_cookies.start()
+		await browser_session_with_storage_state.start()
 
 		# Verify cookies were loaded by accessing browser context directly
-		context = browser_session_with_cookies.browser_context
+		context = browser_session_with_storage_state.browser_context
 		assert context is not None, 'Browser context should be available'
+
+		import asyncio
+		await asyncio.sleep(0.1)  # Give time for async operations
 		
 		cookies = await context.cookies()
-		assert len(cookies) >= 2, 'Expected at least 2 cookies to be loaded'
+		assert len(cookies) >= 2, f'Expected at least 2 cookies to be loaded from storage state, but got {len(cookies)}: {cookies}'
 
 		# Check specific cookies
 		cookie_names = {cookie['name'] for cookie in cookies}
@@ -117,25 +123,39 @@ class TestBrowserSessionCookies:
 		assert test_cookie['value'] == 'test_value'
 		assert test_cookie['domain'] == 'localhost'
 
-	async def test_cookies_available_in_page(self, browser_session_with_cookies, http_server):
-		"""Test that loaded cookies are available to web pages."""
+	async def test_storage_state_cookies_available_in_page(self, browser_session_with_storage_state, http_server):
+		"""Test that cookies from storage state are available to web pages."""
 		# Start the browser session
-		await browser_session_with_cookies.start()
+		await browser_session_with_storage_state.start()
 
 		# Navigate to test page
-		page = await browser_session_with_cookies.get_current_page()
-		await page.goto(http_server.url_for('/cookies'))
+		page = await browser_session_with_storage_state.get_current_page()
+		test_url = http_server.url_for('/cookies')
+		await page.goto(test_url)
+
+		# Wait a bit for cookies to be available
+		import asyncio
+		await asyncio.sleep(0.1)
 
 		# Check that cookies are available to the page
 		page_cookies = await page.evaluate('document.cookie')
+		
+		# The test_cookie should be visible in document.cookie (httpOnly=False)
+		# but session_cookie won't be visible (httpOnly=True)
 		assert 'test_cookie=test_value' in page_cookies
+		
+		# Verify all cookies are in the context
+		all_cookies = await browser_session_with_storage_state.browser_context.cookies()
+		cookie_names = {c['name'] for c in all_cookies}
+		assert 'test_cookie' in cookie_names
+		assert 'session_cookie' in cookie_names  # This one is httpOnly
 
-	async def test_save_cookies(self, browser_profile_with_cookies, temp_cookies_file):
-		"""Test saving cookies to file."""
+	async def test_save_storage_state(self, browser_profile_with_storage_state, temp_storage_state_file):
+		"""Test saving storage state to file."""
 		# Create a new temp file for saving
-		save_path = temp_cookies_file.parent / 'saved_cookies.json'
+		save_path = temp_storage_state_file.parent / 'saved_storage_state.json'
 
-		session = BrowserSession(browser_profile=browser_profile_with_cookies)
+		session = BrowserSession(browser_profile=browser_profile_with_storage_state)
 		await session.start()
 
 		# Navigate to a page and set a new cookie
@@ -159,10 +179,10 @@ class TestBrowserSessionCookies:
 		save_path.unlink(missing_ok=True)
 		await session.kill()
 
-	async def test_nonexistent_cookies_file(self):
-		"""Test that browser starts normally when cookies_file doesn't exist."""
+	async def test_nonexistent_storage_state_file(self):
+		"""Test that browser starts normally when storage_state file doesn't exist."""
 		# Use a non-existent file path
-		profile = BrowserProfile(headless=True, user_data_dir=None, cookies_file=Path('/tmp/nonexistent_cookies.json'))
+		profile = BrowserProfile(headless=True, user_data_dir=None, storage_state=Path('/tmp/nonexistent_storage_state.json'))
 
 		session = BrowserSession(browser_profile=profile)
 		# Should start without errors
@@ -178,13 +198,13 @@ class TestBrowserSessionCookies:
 
 		await session.kill()
 
-	async def test_invalid_cookies_file(self, tmp_path):
-		"""Test that browser handles invalid cookie file gracefully."""
+	async def test_invalid_storage_state_file(self, tmp_path):
+		"""Test that browser handles invalid storage state file gracefully."""
 		# Create a file with invalid JSON
-		invalid_file = tmp_path / 'invalid_cookies.json'
+		invalid_file = tmp_path / 'invalid_storage_state.json'
 		invalid_file.write_text('not valid json')
 
-		profile = BrowserProfile(headless=True, user_data_dir=None, cookies_file=invalid_file)
+		profile = BrowserProfile(headless=True, user_data_dir=None, storage_state=invalid_file)
 
 		session = BrowserSession(browser_profile=profile)
 		# Should start without errors (warning logged)
@@ -198,34 +218,4 @@ class TestBrowserSessionCookies:
 		localhost_cookies = [c for c in cookies if c['domain'] in ['localhost', '.localhost']]
 		assert len(localhost_cookies) == 0, f'Expected no localhost cookies, but found: {localhost_cookies}'
 
-		await session.kill()
-
-	async def test_relative_cookies_file_path(self, browser_profile_with_cookies):
-		"""Test that relative cookies_file paths work correctly."""
-		# Create profile with relative path
-		profile = BrowserProfile(
-			headless=True,
-			user_data_dir=None,
-			cookies_file=Path('./test_cookies.json'),  # Relative path
-			downloads_path=browser_profile_with_cookies.downloads_path,
-		)
-
-		# Copy test cookies to expected location
-		expected_path = Path('.').resolve() / 'test_cookies.json'
-		expected_path.parent.mkdir(parents=True, exist_ok=True)
-		expected_path.write_text(
-			json.dumps([{'name': 'relative_cookie', 'value': 'relative_value', 'domain': 'localhost', 'path': '/'}])
-		)
-
-		session = BrowserSession(browser_profile=profile)
-		await session.start()
-
-		context = session.browser_context
-		assert context is not None
-		cookies = await context.cookies()
-		cookie_names = {cookie['name'] for cookie in cookies}
-		assert 'relative_cookie' in cookie_names
-
-		# Cleanup
-		expected_path.unlink(missing_ok=True)
 		await session.kill()

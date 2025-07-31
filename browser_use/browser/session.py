@@ -21,8 +21,8 @@ from browser_use.browser.events import (
 	ClickElementEvent,
 	CloseTabEvent,
 	CreateTabEvent,
-	InputTextEvent,
 	FileDownloadedEvent,
+	InputTextEvent,
 	LoadStorageStateEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
@@ -86,11 +86,11 @@ class BrowserSession(BaseModel):
 	# Local browser state (only used when cdp_url is None)
 	_subprocess: Any = PrivateAttr(default=None)  # psutil.Process
 	_owns_browser_resources: bool = PrivateAttr(default=True)
-	
+
 	# PDF handling
 	_auto_download_pdfs: bool = PrivateAttr(default=True)
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)
-	
+
 	# Watchdogs
 	_crash_watchdog: Any = PrivateAttr(default=None)
 	_downloads_watchdog: Any = PrivateAttr(default=None)
@@ -208,7 +208,7 @@ class BrowserSession(BaseModel):
 		self.event_bus.on(BrowserStateRequestEvent, self._handle_browser_state_request)
 		self.event_bus.on(ScreenshotRequestEvent, self._handle_screenshot_request)
 		self.event_bus.on(TabsInfoRequestEvent, self._handle_tabs_info_request)
-		
+
 		# Storage state
 		self.event_bus.on(SaveStorageStateEvent, self._handle_save_storage_state)
 		self.event_bus.on(LoadStorageStateEvent, self._handle_load_storage_state)
@@ -263,21 +263,28 @@ class BrowserSession(BaseModel):
 			if pages:
 				self._current_agent_page = pages[0]
 				self._current_human_page = pages[0]
-				
+
 			# Initialize crash watchdog if not already initialized
 			if not hasattr(self, '_crash_watchdog'):
 				from browser_use.browser.crash_watchdog import CrashWatchdog
+
 				self._crash_watchdog = CrashWatchdog(event_bus=self.event_bus)
 				# Set browser context for crash watchdog
-				self._crash_watchdog.set_browser_context(self._browser, self._browser_context, self._subprocess.pid if self._subprocess else None)
+				self._crash_watchdog.set_browser_context(
+					self._browser, self._browser_context, self._subprocess.pid if self._subprocess else None
+				)
 				# Add initial pages to crash watchdog
 				for page in pages:
 					self._crash_watchdog.add_page(page)
-					
+
 			# Initialize downloads watchdog if not already initialized
 			if not hasattr(self, '_downloads_watchdog'):
 				from browser_use.browser.downloads_watchdog import DownloadsWatchdog
-				self._downloads_watchdog = DownloadsWatchdog(event_bus=self.event_bus)
+
+				self._downloads_watchdog = DownloadsWatchdog(
+					event_bus=self.event_bus,
+					browser_session=self
+				)
 				# Add initial pages to downloads watchdog
 				for page in pages:
 					self._downloads_watchdog.add_page(page)
@@ -289,7 +296,7 @@ class BrowserSession(BaseModel):
 					browser_pid=self._subprocess.pid if self._subprocess else None,
 				)
 			)
-			
+
 			# Automatically load storage state after browser start
 			self.event_bus.dispatch(LoadStorageStateEvent())
 
@@ -328,7 +335,7 @@ class BrowserSession(BaseModel):
 					)
 				)
 				return
-			
+
 			# Automatically save storage state before stopping
 			self.event_bus.dispatch(SaveStorageStateEvent())
 			# Give it a moment to save
@@ -415,9 +422,9 @@ class BrowserSession(BaseModel):
 				event.url,
 				wait_until=event.wait_until,
 			)
-			
+
 			tab_index = self.tabs.index(self._current_agent_page)
-			
+
 			self.event_bus.dispatch(
 				NavigationCompleteEvent(
 					tab_index=tab_index,
@@ -425,13 +432,12 @@ class BrowserSession(BaseModel):
 					status=response.status if response else None,
 				)
 			)
-			
+
 			# Check for PDF after navigation and auto-download if enabled
-			if self._auto_download_pdfs and await self._is_pdf_viewer(self._current_agent_page):
-				pdf_path = await self._auto_download_pdf_if_needed(self._current_agent_page)
-				if pdf_path:
-					logger.info(f'📄 PDF auto-downloaded: {pdf_path}')
-						
+			if self._auto_download_pdfs and self._downloads_watchdog:
+				if await self._downloads_watchdog.check_for_pdf_viewer(self._current_agent_page):
+					await self._downloads_watchdog.trigger_pdf_download(self._current_agent_page)
+
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -452,24 +458,24 @@ class BrowserSession(BaseModel):
 				)
 			)
 			return
-			
+
 		try:
 			# For now, we'll implement basic download detection
 			# Full implementation will need DOM element tracking from old session
 			page = self._current_agent_page
-			
+
 			# Set up download handling if downloads are enabled
 			if self.browser_profile.downloads_path:
 				# Register download listener
 				download_promise = None
-				
+
 				async def handle_download(download):
 					nonlocal download_promise
 					download_promise = download
-				
+
 				# Temporarily attach download listener
 				page.on('download', handle_download)
-				
+
 				# TODO: Perform actual click when DOM tracking is implemented
 				# For now this is a placeholder
 				self.event_bus.dispatch(
@@ -478,10 +484,10 @@ class BrowserSession(BaseModel):
 						message='Click handling needs full DOM element tracking implementation',
 					)
 				)
-				
+
 				# Clean up listener
 				page.remove_listener('download', handle_download)
-				
+
 				# If a download was triggered, handle it
 				if download_promise:
 					await self._handle_download(download_promise)
@@ -493,7 +499,7 @@ class BrowserSession(BaseModel):
 						message='Click handling needs full DOM element tracking implementation',
 					)
 				)
-				
+
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -535,15 +541,15 @@ class BrowserSession(BaseModel):
 			return
 
 		page = await self._browser_context.new_page()
-		
+
 		# Add page to crash watchdog
 		if hasattr(self, '_crash_watchdog') and self._crash_watchdog:
 			self._crash_watchdog.add_page(page)
-			
+
 		# Add page to downloads watchdog
 		if hasattr(self, '_downloads_watchdog') and self._downloads_watchdog:
 			self._downloads_watchdog.add_page(page)
-		
+
 		if event.url:
 			await page.goto(event.url)
 
@@ -613,7 +619,7 @@ class BrowserSession(BaseModel):
 		if not self._browser_context:
 			logger.warning('_handle_save_storage_state: No browser context available')
 			return
-		
+
 		save_path = event.path or self.browser_profile.storage_state
 		if save_path:
 			storage = await self._browser_context.storage_state(path=str(save_path))
@@ -621,22 +627,21 @@ class BrowserSession(BaseModel):
 				StorageStateSavedEvent(
 					path=str(save_path),
 					cookies_count=len(storage.get('cookies', [])),
-					origins_count=len(storage.get('origins', []))
+					origins_count=len(storage.get('origins', [])),
 				)
 			)
-
 
 	def _generate_recent_events_summary(self, max_events: int = 10) -> str:
 		"""Generate a JSON summary of recent browser events."""
 		import json
-		
+
 		# Get recent events from the event bus history (it's a dict of UUID -> Event)
 		all_events = list(self.event_bus.event_history.values())
 		recent_events = all_events[-max_events:] if all_events else []
-		
+
 		if not recent_events:
-			return "[]"
-		
+			return '[]'
+
 		# Convert events to JSON
 		events_data = []
 		for event in recent_events:
@@ -644,7 +649,7 @@ class BrowserSession(BaseModel):
 			# BrowserStateResponseEvent has 'state' which can be circular
 			event_dict = event.model_dump(mode='json', exclude={'state'})
 			events_data.append(event_dict)
-		
+
 		return json.dumps(events_data, indent=2)
 
 	# ========== Backwards Compatibility Methods ==========
@@ -982,11 +987,11 @@ class BrowserSession(BaseModel):
 			)
 
 		# Check for PDF and auto-download if needed
-		is_pdf_viewer = await self._is_pdf_viewer(page)
-		if is_pdf_viewer and self._auto_download_pdfs:
-			pdf_path = await self._auto_download_pdf_if_needed(page)
-			if pdf_path:
-				logger.info(f'📄 PDF auto-downloaded: {pdf_path}')
+		is_pdf_viewer = False
+		if self._downloads_watchdog:
+			is_pdf_viewer = await self._downloads_watchdog.check_for_pdf_viewer(page)
+			if is_pdf_viewer and self._auto_download_pdfs:
+				await self._downloads_watchdog.trigger_pdf_download(page)
 
 		return BrowserStateSummary(
 			element_tree=content.element_tree,
@@ -1034,10 +1039,11 @@ class BrowserSession(BaseModel):
 
 		# Check if current page is a PDF viewer
 		is_pdf_viewer = False
-		try:
-			is_pdf_viewer = await self._is_pdf_viewer(page)
-		except Exception:
-			pass
+		if self._downloads_watchdog:
+			try:
+				is_pdf_viewer = await self._downloads_watchdog.check_for_pdf_viewer(page)
+			except Exception:
+				pass
 
 		return BrowserStateSummary(
 			element_tree=minimal_element_tree,
@@ -1161,53 +1167,76 @@ class BrowserSession(BaseModel):
 						return True
 
 		return False
-	
+
 	# ========== Storage State Handlers ==========
-	
+
 	async def _handle_save_storage_state(self, event: SaveStorageStateEvent) -> None:
 		"""Handle storage state save request."""
 		if not self._browser_context:
 			logger.warning('save_storage_state: No browser context available')
 			return
-		
+
 		save_path = event.path or self.browser_profile.storage_state
 		if save_path:
 			logger.info(f'Saving storage state to: {save_path}')
 			storage = await self._browser_context.storage_state(path=str(save_path))
-			
+
 			# Dispatch success event
 			self.event_bus.dispatch(
 				StorageStateSavedEvent(
 					path=str(save_path),
-					cookies_count=len(storage.get("cookies", [])),
-					origins_count=len(storage.get("origins", []))
+					cookies_count=len(storage.get('cookies', [])),
+					origins_count=len(storage.get('origins', [])),
 				)
 			)
-	
+
 	async def _handle_load_storage_state(self, event: LoadStorageStateEvent) -> None:
 		"""Handle storage state load request."""
-		# Storage state is loaded during browser context creation
-		# This handler is mainly for notification purposes
+		if not self._browser_context:
+			logger.warning('_handle_load_storage_state: No browser context available')
+			return
+
+		# Load from storage_state file if available
 		load_path = event.path or self.browser_profile.storage_state
 		if load_path and os.path.exists(str(load_path)):
-			# Read the file to get counts
 			try:
-				with open(str(load_path), 'r') as f:
+				# Read the storage state file
+				with open(str(load_path)) as f:
 					storage = json.load(f)
-				
+
+				# Apply cookies if present
+				if 'cookies' in storage and storage['cookies']:
+					await self._browser_context.add_cookies(storage['cookies'])
+					logger.info(f'Added {len(storage["cookies"])} cookies from storage state')
+
+				# Apply origins (localStorage/sessionStorage) if present
+				if 'origins' in storage and storage['origins']:
+					for origin in storage['origins']:
+						if 'localStorage' in origin:
+							for item in origin['localStorage']:
+								await self._browser_context.add_init_script(f"""
+									window.localStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
+								""")
+						if 'sessionStorage' in origin:
+							for item in origin['sessionStorage']:
+								await self._browser_context.add_init_script(f"""
+									window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
+								""")
+					logger.info(f'Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
+
 				self.event_bus.dispatch(
 					StorageStateLoadedEvent(
 						path=str(load_path),
-						cookies_count=len(storage.get("cookies", [])),
-						origins_count=len(storage.get("origins", []))
+						cookies_count=len(storage.get('cookies', [])),
+						origins_count=len(storage.get('origins', [])),
 					)
 				)
 				logger.info(f'Loaded storage state from: {load_path}')
 			except Exception as e:
-				logger.warning(f'Failed to read storage state for notification: {e}')
-	
+				logger.warning(f'Failed to load storage state: {e}')
+
 	# ========== PDF Methods ==========
-	
+
 	async def _is_pdf_viewer(self, page: Page) -> bool:
 		"""
 		Check if the current page is displaying a PDF in Chrome's PDF viewer.
@@ -1329,7 +1358,7 @@ class BrowserSession(BaseModel):
 					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
 					response_size = download_result.get('responseSize', 0)
 					logger.info(f'📄 Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}')
-					
+
 					# Emit file downloaded event
 					await self._emit_file_downloaded_event(
 						url=pdf_url,
@@ -1353,7 +1382,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			logger.warning(f'⚠️ Error in PDF auto-download check: {type(e).__name__}: {e}')
 			return None
-	
+
 	@staticmethod
 	async def _get_unique_filename(directory: str, filename: str) -> str:
 		"""Generate a unique filename for downloads by appending (1), (2), etc., if a file already exists."""
@@ -1364,15 +1393,15 @@ class BrowserSession(BaseModel):
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
-	
+
 	# ========== Download Tracking Methods ==========
-	
+
 	async def _handle_download(self, download) -> str:
 		"""Handle a Playwright download object and emit appropriate events.
-		
+
 		Args:
 			download: Playwright Download object
-			
+
 		Returns:
 			Path where the file was saved
 		"""
@@ -1380,67 +1409,60 @@ class BrowserSession(BaseModel):
 			# Get download info
 			suggested_filename = download.suggested_filename
 			download_url = download.url
-			
+
 			# Ensure unique filename
-			unique_filename = await self._get_unique_filename(
-				self.browser_profile.downloads_path, 
-				suggested_filename
-			)
-			download_path = os.path.join(
-				self.browser_profile.downloads_path, 
-				unique_filename
-			)
-			
+			unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
+			download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
+
 			# Save the download
 			await download.save_as(download_path)
 			logger.info(f'⬇️ Downloaded file to: {download_path}')
-			
+
 			# Track the download
 			self._track_download(download_path)
-			
+
 			# Emit download event
 			await self._emit_file_downloaded_event(
 				url=download_url,
 				path=download_path,
 				auto_download=False,  # This is a user-initiated download
 			)
-			
+
 			return download_path
-			
+
 		except Exception as e:
 			logger.error(f'Failed to handle download: {e}')
 			raise
-	
+
 	def _track_download(self, download_path: str) -> None:
 		"""Track a downloaded file internally."""
 		self._downloaded_files.append(download_path)
 		logger.debug(f'📁 Added download to session tracking: {download_path} (total: {len(self._downloaded_files)} files)')
-	
+
 	async def _emit_file_downloaded_event(
-		self, 
-		url: str, 
-		path: str, 
+		self,
+		url: str,
+		path: str,
 		file_size: int | None = None,
 		file_type: str | None = None,
 		mime_type: str | None = None,
 		from_cache: bool = False,
-		auto_download: bool = False
+		auto_download: bool = False,
 	) -> None:
 		"""Emit a FileDownloadedEvent with file information."""
-		import os
 		from pathlib import Path
-		
+
 		file_path = Path(path)
 		file_name = file_path.name
-		
+
 		# Try to determine file type from extension if not provided
 		if not file_type and file_path.suffix:
 			file_type = file_path.suffix.lstrip('.')
-		
+
 		# Get file size if not provided
 		if file_size is None and file_path.exists():
 			file_size = file_path.stat().st_size
-		
+
 		self.event_bus.dispatch(
 			FileDownloadedEvent(
 				url=url,
@@ -1453,13 +1475,13 @@ class BrowserSession(BaseModel):
 				auto_download=auto_download,
 			)
 		)
-	
+
 	# ========== PDF API Methods ==========
-	
+
 	def set_auto_download_pdfs(self, enabled: bool) -> None:
 		"""
 		Enable or disable automatic PDF downloading when PDFs are encountered.
-		
+
 		Args:
 		    enabled: Whether to automatically download PDFs
 		"""
