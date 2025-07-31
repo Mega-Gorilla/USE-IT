@@ -31,8 +31,8 @@ class NetworkRequestTracker:
 		self.resource_type = resource_type
 
 
-class BrowserWatchdog(BaseModel):
-	"""Monitors browser health and emits error events."""
+class CrashWatchdog(BaseModel):
+	"""Monitors browser health for crashes and network timeouts."""
 
 	model_config = ConfigDict(
 		arbitrary_types_allowed=True,

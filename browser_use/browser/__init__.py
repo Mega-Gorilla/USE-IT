@@ -4,9 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from .browser import Browser, BrowserConfig
 	from .context import BrowserContext, BrowserContextConfig
-	from .local import LocalBrowserConnection
 	from .profile import BrowserProfile
-	from .remote import RemoteBrowserConnection
 	from .session import BrowserSession
 
 # Lazy imports mapping for heavy browser components
@@ -17,8 +15,6 @@ _LAZY_IMPORTS = {
 	'BrowserContextConfig': ('.context', 'BrowserContextConfig'),
 	'BrowserProfile': ('.profile', 'BrowserProfile'),
 	'BrowserSession': ('.session', 'BrowserSession'),
-	'LocalBrowserConnection': ('.local', 'LocalBrowserConnection'),
-	'RemoteBrowserConnection': ('.remote', 'RemoteBrowserConnection'),
 }
 
 
@@ -49,6 +45,4 @@ __all__ = [
 	'BrowserContextConfig',
 	'BrowserSession',
 	'BrowserProfile',
-	'LocalBrowserConnection',
-	'RemoteBrowserConnection',
 ]

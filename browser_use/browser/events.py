@@ -84,8 +84,6 @@ class WaitEvent(BaseEvent):
 
 
 # ============================================================================
-# BrowserSession -> RemoteBrowserConnection Events (Browser management)
-# ============================================================================
 
 
 class StartBrowserEvent(BaseEvent):
@@ -141,8 +139,6 @@ class GetCookiesEvent(BaseEvent):
 	urls: list[str] | None = None
 
 
-# ============================================================================
-# RemoteBrowserConnection -> BrowserSession Events (Status updates)
 # ============================================================================
 
 
@@ -274,3 +270,21 @@ class StorageStateLoadedEvent(BaseEvent):
 	path: str
 	cookies_count: int
 	origins_count: int
+
+
+# ============================================================================
+# File Download Events
+# ============================================================================
+
+
+class FileDownloadedEvent(BaseEvent):
+	"""A file has been downloaded."""
+
+	url: str
+	path: str
+	file_name: str
+	file_size: int
+	file_type: str | None = None  # e.g., 'pdf', 'zip', 'docx', etc.
+	mime_type: str | None = None  # e.g., 'application/pdf'
+	from_cache: bool = False
+	auto_download: bool = False  # Whether this was an automatic download (e.g., PDF auto-download)

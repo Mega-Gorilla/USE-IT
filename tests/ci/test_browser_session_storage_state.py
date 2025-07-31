@@ -1,10 +1,10 @@
 """
-Test script for BrowserSession cookie functionality.
+Test script for BrowserSession storage state functionality.
 
 Tests cover:
-- Loading cookies from cookies_file on browser start
-- Saving cookies to cookies_file
-- Verifying cookies are applied to browser context
+- Loading storage state on browser start
+- Saving storage state (including cookies and local storage)
+- Verifying storage state is applied to browser context
 """
 
 import json
@@ -100,8 +100,11 @@ class TestBrowserSessionCookies:
 		# Start the browser session
 		await browser_session_with_cookies.start()
 
-		# Verify cookies were loaded
-		cookies = await browser_session_with_cookies.get_cookies()
+		# Verify cookies were loaded by accessing browser context directly
+		context = browser_session_with_cookies.browser_context
+		assert context is not None, 'Browser context should be available'
+		
+		cookies = await context.cookies()
 		assert len(cookies) >= 2, 'Expected at least 2 cookies to be loaded'
 
 		# Check specific cookies
@@ -140,12 +143,13 @@ class TestBrowserSessionCookies:
 		await page.goto('about:blank')
 		await page.context.add_cookies([{'name': 'new_cookie', 'value': 'new_value', 'domain': 'localhost', 'path': '/'}])
 
-		# Save cookies
-		await session.save_cookies(save_path)
+		# Save storage state (which includes cookies)
+		await session.save_storage_state(save_path)
 
 		# Verify saved file exists and contains cookies
 		assert save_path.exists()
-		saved_cookies = json.loads(save_path.read_text())
+		saved_storage = json.loads(save_path.read_text())
+		saved_cookies = saved_storage.get('cookies', [])
 		assert len(saved_cookies) >= 3  # Original 2 + 1 new
 
 		cookie_names = {cookie['name'] for cookie in saved_cookies}
@@ -166,7 +170,9 @@ class TestBrowserSessionCookies:
 
 		# Should have no cookies from localhost (our test domain)
 		# Note: Browser may have cookies from default pages like Google's new tab page
-		cookies = await session.get_cookies()
+		context = session.browser_context
+		assert context is not None
+		cookies = await context.cookies()
 		localhost_cookies = [c for c in cookies if c['domain'] in ['localhost', '.localhost']]
 		assert len(localhost_cookies) == 0, f'Expected no localhost cookies, but found: {localhost_cookies}'
 
@@ -186,7 +192,9 @@ class TestBrowserSessionCookies:
 
 		# Should have no cookies from localhost (our test domain)
 		# Note: Browser may have cookies from default pages like Google's new tab page
-		cookies = await session.get_cookies()
+		context = session.browser_context
+		assert context is not None
+		cookies = await context.cookies()
 		localhost_cookies = [c for c in cookies if c['domain'] in ['localhost', '.localhost']]
 		assert len(localhost_cookies) == 0, f'Expected no localhost cookies, but found: {localhost_cookies}'
 
@@ -212,7 +220,9 @@ class TestBrowserSessionCookies:
 		session = BrowserSession(browser_profile=profile)
 		await session.start()
 
-		cookies = await session.get_cookies()
+		context = session.browser_context
+		assert context is not None
+		cookies = await context.cookies()
 		cookie_names = {cookie['name'] for cookie in cookies}
 		assert 'relative_cookie' in cookie_names
 
