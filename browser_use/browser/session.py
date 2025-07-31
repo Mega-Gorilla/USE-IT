@@ -326,7 +326,14 @@ class BrowserSession(BaseModel):
 	async def start(self) -> Self:
 		"""Start the browser session."""
 		event = self.event_bus.dispatch(StartBrowserEvent())
+		# Wait for event to complete
 		await event
+
+		# Check if any handler had an error
+		for event_result in event.event_results.values():
+			if event_result.status == 'error' and event_result.error:
+				raise event_result.error
+
 		return self
 
 	async def stop(self) -> None:
@@ -557,6 +564,10 @@ class BrowserSession(BaseModel):
 		"""Navigate the current page to a URL."""
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url))
 		await event
+
+	async def navigate(self, url: str) -> None:
+		"""Alias for navigate_to for backwards compatibility."""
+		await self.navigate_to(url)
 
 	async def go_to_url(self, url: str) -> None:
 		"""Alias for navigate_to."""
