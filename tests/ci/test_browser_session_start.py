@@ -618,7 +618,7 @@ class TestBrowserSessionReusePatterns:
 			)
 			await agent2.run()
 
-			# Verify same browser was used (using __eq__ to check browser_pid, cdp_url, wss_url)
+			# Verify same browser was used (using __eq__ to check browser_pid, cdp_url)
 			assert agent1.browser_session == agent2.browser_session
 			assert agent1.browser_session == reused_session
 			assert reused_session.initialized
@@ -731,7 +731,7 @@ class TestBrowserSessionReusePatterns:
 	# 			if isinstance(result, Exception):
 	# 				raise AssertionError(f'Agent {i + 1} failed with error: {result}')
 
-	# 		# Verify all agents used the same browser session (using __eq__ to check browser_pid, cdp_url, wss_url)
+	# 		# Verify all agents used the same browser session (using __eq__ to check browser_pid, cdp_url)
 	# 		# Debug: print the browser sessions to see what's different
 	# 		print(f'Agent1 session: {agent1.browser_session}')
 	# 		print(f'Agent2 session: {agent2.browser_session}')

@@ -3,8 +3,8 @@ Test browser session recent events tracking functionality.
 """
 
 import asyncio
-import time
 import json
+import time
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -68,32 +68,33 @@ class TestBrowserRecentEvents:
 			# Navigate to the page with the slow iframe
 			# Don't await to allow navigation to start in background
 			nav_task = asyncio.create_task(browser_session.navigate(httpserver.url_for('/')))
-			
+
 			# Give navigation a moment to start loading resources
 			await asyncio.sleep(0.5)
 
 			# Get state while resources are still loading
 			# _wait_for_stable_network should detect pending requests and timeout
 			state = await browser_session.get_browser_state_with_recovery()
-			
+
 			# Wait for navigation to complete
 			await nav_task
 
 			# Verify recent events contains event information
 			assert state.recent_events is not None, 'Recent events should be set'
-			
+
 			# Parse JSON events
 			events = json.loads(state.recent_events)
 			assert len(events) > 0, 'Should have at least one event'
-			
+
 			# Check event types present
 			event_types = [e.get('event_type') for e in events]
-			print(f"Event types in recent_events: {event_types}")
-			
+			print(f'Event types in recent_events: {event_types}')
+
 			# Should have navigation-related events
-			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, \
+			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, (
 				'Should have navigation events in recent events'
-			
+			)
+
 			# Check for any error or timeout information in events
 			error_indicators = []
 			for event in events:
@@ -103,13 +104,13 @@ class TestBrowserRecentEvents:
 				# BrowserErrorEvent indicating timeout
 				elif event.get('event_type') == 'BrowserErrorEvent' and 'timeout' in str(event.get('message', '')).lower():
 					error_indicators.append(event)
-			
+
 			# Since we have slow-loading resources, we should see either:
 			# 1. Navigation completed normally (resources loaded in background)
 			# 2. Navigation reported timeout/error due to slow resources
 			nav_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
 			if nav_events:
-				print(f"Found {len(nav_events)} NavigationCompleteEvent(s)")
+				print(f'Found {len(nav_events)} NavigationCompleteEvent(s)')
 				# Navigation occurred, that's what matters for LLM context
 				assert True
 			else:
@@ -147,14 +148,14 @@ class TestBrowserRecentEvents:
 
 			# Recent events should show successful navigation
 			assert state.recent_events is not None
-			
+
 			# Parse JSON and verify events
 			events = json.loads(state.recent_events)
 			event_types = [e.get('event_type') for e in events]
-			
+
 			# Should have navigation events
 			assert 'NavigationCompleteEvent' in event_types, 'Should have NavigationCompleteEvent'
-			
+
 			# Check the navigation was successful (no errors)
 			nav_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
 			last_nav = nav_events[-1]
@@ -212,14 +213,13 @@ class TestBrowserRecentEvents:
 			# Recent events should show both navigations
 			assert state2.recent_events is not None
 			events2 = json.loads(state2.recent_events)
-			
+
 			# Count navigation events (last 10 events should include both)
 			nav_complete_count = sum(1 for e in events2 if e.get('event_type') == 'NavigationCompleteEvent')
 			nav_url_count = sum(1 for e in events2 if e.get('event_type') == 'NavigateToUrlEvent')
-			
+
 			# Should have events from both navigations
-			assert nav_complete_count >= 1 or nav_url_count >= 2, \
-				'Recent events should show multiple navigation attempts'
+			assert nav_complete_count >= 1 or nav_url_count >= 2, 'Recent events should show multiple navigation attempts'
 
 		finally:
 			await browser_session.kill()
@@ -268,11 +268,12 @@ class TestBrowserRecentEvents:
 			assert state.recent_events is not None
 			events = json.loads(state.recent_events)
 			assert len(events) > 0, 'Should have events even in minimal state'
-			
+
 			# Should have navigation attempt
 			event_types = [e.get('event_type') for e in events]
-			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, \
+			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, (
 				'Should have navigation events even in minimal state'
+			)
 
 		finally:
 			await browser_session.kill()
@@ -313,15 +314,16 @@ class TestBrowserRecentEvents:
 			assert state.recent_events is not None
 			events = json.loads(state.recent_events)
 			event_types = [e.get('event_type') for e in events]
-			
+
 			# Should have navigation events regardless of timeout
-			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, \
+			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, (
 				f'Should have navigation events for {timeout_seconds}s timeout'
-			
+			)
+
 			# If navigation completed with error, it might mention timeout
 			nav_complete_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
 			if nav_complete_events and nav_complete_events[-1].get('error_message'):
-				print(f"Navigation error for {timeout_seconds}s timeout: {nav_complete_events[-1].get('error_message')}")
+				print(f'Navigation error for {timeout_seconds}s timeout: {nav_complete_events[-1].get("error_message")}')
 
 		finally:
 			await browser_session.kill()

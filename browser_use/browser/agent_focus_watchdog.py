@@ -5,14 +5,13 @@ from typing import Any
 
 from bubus import EventBus
 from playwright.async_api import Page
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
 	BrowserStartedEvent,
 	BrowserStoppedEvent,
 	CreateTabEvent,
-	NavigateToUrlEvent,
 	NavigationCompleteEvent,
 	SwitchTabEvent,
 	TabClosedEvent,
@@ -75,7 +74,7 @@ class AgentFocusWatchdog(BaseModel):
 	async def _handle_tab_closed(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure."""
 		logger.debug(f'[AgentFocusWatchdog] Tab closed at index {event.tab_index}')
-		
+
 		# If the closed tab was the agent's current page, find a new one
 		if self._current_agent_tab_index == event.tab_index:
 			await self._find_new_agent_page()
@@ -119,7 +118,6 @@ class AgentFocusWatchdog(BaseModel):
 				logger.info(f'[AgentFocusWatchdog] Initial agent focus set to tab 0: {current_page.url}')
 			except ValueError:
 				logger.info('[AgentFocusWatchdog] Initial agent focus set to tab 0')
-		
 
 	async def _update_agent_focus_to_latest_tab(self) -> None:
 		"""Update agent focus to the latest (most recently created) tab."""
@@ -134,7 +132,9 @@ class AgentFocusWatchdog(BaseModel):
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[AgentFocusWatchdog] Agent focus moved to new tab {self._current_agent_tab_index}: {current_page.url}')
+				logger.info(
+					f'[AgentFocusWatchdog] Agent focus moved to new tab {self._current_agent_tab_index}: {current_page.url}'
+				)
 			except ValueError:
 				logger.info(f'[AgentFocusWatchdog] Agent focus moved to new tab {self._current_agent_tab_index}')
 
@@ -212,7 +212,7 @@ class AgentFocusWatchdog(BaseModel):
 		logger.info('[AgentFocusWatchdog] No active page, creating new tab')
 		self.event_bus.dispatch(CreateTabEvent(url='about:blank'))
 		await asyncio.sleep(0.5)  # Wait for tab creation
-		
+
 		# Try to get the new page
 		if hasattr(self.browser_session, '_browser_context') and self.browser_session._browser_context:
 			pages = self.browser_session._browser_context.pages

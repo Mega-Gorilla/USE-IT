@@ -50,6 +50,9 @@ if TYPE_CHECKING:
 # Default browser profile for convenience
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
+# Common new tab page URLs
+NEW_TAB_URLS = ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']
+
 
 class BrowserSession(BaseModel):
 	"""Event-driven browser session with backwards compatibility.
@@ -108,7 +111,6 @@ class BrowserSession(BaseModel):
 		self,
 		browser_profile: BrowserProfile,
 		cdp_url: str | None = None,
-		wss_url: str | None = None,
 		browser_pid: int | None = None,
 		**kwargs: Any,
 	):
@@ -117,15 +119,9 @@ class BrowserSession(BaseModel):
 		Args:
 			browser_profile: Browser configuration profile
 			cdp_url: CDP URL for connecting to existing browser
-			wss_url: WSS URL for connecting to remote playwright (DEPRECATED)
 			browser_pid: Process ID of existing browser (DEPRECATED)
 			**kwargs: Additional arguments
 		"""
-		# Handle deprecated parameters
-		if wss_url:
-			raise ValueError(
-				'wss_url is no longer supported. Browser Use now only supports CDP connections. Please use cdp_url instead.'
-			)
 
 		# Initialize base model
 		super().__init__(
@@ -263,50 +259,25 @@ class BrowserSession(BaseModel):
 				new_context_args = self.browser_profile.kwargs_for_new_context()
 				context_kwargs = new_context_args.model_dump(exclude_none=True)
 
-				# Map downloads_path to downloads_dir for new_context
+				# Map downloads_path to downloads_path for new_context and ensure accept_downloads is True
 				if self.browser_profile.downloads_path:
 					# Ensure downloads directory exists
 					downloads_dir = Path(self.browser_profile.downloads_path)
 					downloads_dir.mkdir(parents=True, exist_ok=True)
-					context_kwargs['downloads_dir'] = str(downloads_dir.absolute())
-					logger.info(f'Setting downloads_dir to: {context_kwargs["downloads_dir"]}')
+					context_kwargs['accept_downloads'] = True
+					context_kwargs['downloads_path'] = str(downloads_dir.absolute())
+					logger.info(f'Setting downloads_path to: {context_kwargs["downloads_path"]}')
+					logger.info(f'Accept downloads: {context_kwargs["accept_downloads"]}')
 
 				# Log storage state info
 				logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
 				logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
 				logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
 				logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
-				logger.info(f'Context kwargs downloads_dir: {context_kwargs.get("downloads_dir")}')
+				logger.info(f'Context kwargs downloads_path: {context_kwargs.get("downloads_path")}')
+				logger.info(f'Context kwargs accept_downloads: {context_kwargs.get("accept_downloads")}')
 
 				self._browser_context = await self._browser.new_context(**context_kwargs)
-
-				# Set up downloads directory via CDP if downloads are enabled
-				if self.browser_profile.downloads_path:
-					# Ensure we have at least one page to set downloads on
-					if not self._browser_context.pages:
-						await self._browser_context.new_page()
-
-					# Set downloads for all existing pages
-					for page in self._browser_context.pages:
-						try:
-							# Get CDP session for the page
-							cdp_session = await self._browser_context.new_cdp_session(page)
-
-							# Set download behavior
-							await cdp_session.send(
-								'Browser.setDownloadBehavior',
-								{
-									'behavior': 'allow',
-									'downloadPath': str(Path(self.browser_profile.downloads_path).absolute()),
-									'eventsEnabled': True,
-								},
-							)
-							logger.info(f'Set download behavior via CDP for page {page.url}')
-
-							# Detach the CDP session
-							await cdp_session.detach()
-						except Exception as e:
-							logger.warning(f'Failed to set download behavior via CDP for page: {e}')
 
 			# Set initial page if exists
 			pages = self._browser_context.pages
@@ -321,22 +292,16 @@ class BrowserSession(BaseModel):
 				self._crash_watchdog.set_browser_context(
 					self._browser, self._browser_context, self._subprocess.pid if self._subprocess else None
 				)
-				# Add initial pages to crash watchdog
-				for page in pages:
-					self._crash_watchdog.add_page(page)
 
 			# Initialize downloads watchdog if not already initialized
 			if not hasattr(self, '_downloads_watchdog'):
 				from browser_use.browser.downloads_watchdog import DownloadsWatchdog
 
 				self._downloads_watchdog = DownloadsWatchdog(event_bus=self.event_bus, browser_session=self)
-				# Add initial pages to downloads watchdog
-				for page in pages:
-					self._downloads_watchdog.add_page(page)
 
-			# Add initial pages to navigation tracking
+			# Add initial pages to all watchdogs
 			for page in pages:
-				self._add_page_tracking(page)
+				self._add_page_to_watchdogs(page)
 
 			# Initialize aboutblank watchdog if not already initialized
 			if not hasattr(self, '_aboutblank_watchdog'):
@@ -572,12 +537,7 @@ class BrowserSession(BaseModel):
 		try:
 			page = await self.get_current_page()
 		except ValueError:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NoActivePage',
-					message='No active page for click',
-				)
-			)
+			self._dispatch_no_page_error('NoActivePage', 'No active page for click')
 			return
 
 		try:
@@ -711,37 +671,10 @@ class BrowserSession(BaseModel):
 
 		page = await self._browser_context.new_page()
 
-		# Set up downloads directory via CDP for this page if downloads are enabled
-		if self.browser_profile.downloads_path:
-			try:
-				# Get CDP session for the page
-				cdp_session = await page.context.new_cdp_session(page)
+		# Note: Download behavior is set at browser level during startup
 
-				# Set download behavior for this page
-				await cdp_session.send(
-					'Browser.setDownloadBehavior',
-					{
-						'behavior': 'allow',
-						'downloadPath': str(Path(self.browser_profile.downloads_path).absolute()),
-						'eventsEnabled': True,
-					},
-				)
-
-				# Detach the CDP session
-				await cdp_session.detach()
-			except Exception as e:
-				logger.warning(f'Failed to set download behavior via CDP for new tab: {e}')
-
-		# Add page to crash watchdog
-		if hasattr(self, '_crash_watchdog') and self._crash_watchdog:
-			self._crash_watchdog.add_page(page)
-
-		# Add page to downloads watchdog
-		if hasattr(self, '_downloads_watchdog') and self._downloads_watchdog:
-			self._downloads_watchdog.add_page(page)
-
-		# Add page to navigation tracking
-		self._add_page_tracking(page)
+		# Add page to all watchdogs
+		self._add_page_to_watchdogs(page)
 
 		if event.url:
 			await page.goto(event.url)
@@ -1132,7 +1065,7 @@ class BrowserSession(BaseModel):
 			raise ValueError('No current page available')
 
 		# Skip wait for new tab pages
-		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
+		if page.url in NEW_TAB_URLS:
 			return
 
 		# Wait for page load (previously handled by NavigationWatchdog)
@@ -1800,6 +1733,21 @@ class BrowserSession(BaseModel):
 
 		return False
 
+	# ========== Helper Methods ==========
+
+	def _add_page_to_watchdogs(self, page: Page) -> None:
+		"""Add a page to all active watchdogs."""
+		# Add page to crash watchdog
+		if hasattr(self, '_crash_watchdog') and self._crash_watchdog:
+			self._crash_watchdog.add_page(page)
+
+		# Add page to downloads watchdog
+		if hasattr(self, '_downloads_watchdog') and self._downloads_watchdog:
+			self._downloads_watchdog.add_page(page)
+
+		# Add page to navigation tracking
+		self._add_page_tracking(page)
+
 	# ========== Navigation Helper Methods (merged from NavigationWatchdog) ==========
 
 	def _add_page_tracking(self, page: Page) -> None:
@@ -1855,7 +1803,7 @@ class BrowserSession(BaseModel):
 				old_task.cancel()
 
 		# Skip monitoring for new tab pages
-		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
+		if page.url in NEW_TAB_URLS:
 			return
 
 		# Ensure page is tracked
@@ -1926,7 +1874,7 @@ class BrowserSession(BaseModel):
 		if hasattr(self, '_agent_focus_watchdog') and self._agent_focus_watchdog:
 			try:
 				return await self._agent_focus_watchdog.get_or_create_page()
-			except:
+			except Exception:
 				pass
 
 		# Fallback to first page
@@ -1959,7 +1907,7 @@ class BrowserSession(BaseModel):
 		This method can be called externally to wait for page load completion.
 		"""
 		# Skip wait for new tab pages
-		if page.url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']:
+		if page.url in NEW_TAB_URLS:
 			return
 
 		# If page not tracked, add it
@@ -1985,6 +1933,15 @@ class BrowserSession(BaseModel):
 	def auto_download_pdfs(self) -> bool:
 		"""Get current PDF auto-download setting."""
 		return self._auto_download_pdfs
+
+	def _dispatch_no_page_error(self, error_type: str, message: str) -> None:
+		"""Dispatch a standard 'no active page' error event."""
+		self.event_bus.dispatch(
+			BrowserErrorEvent(
+				error_type=error_type,
+				message=message,
+			)
+		)
 
 
 # Import uuid7str for ID generation

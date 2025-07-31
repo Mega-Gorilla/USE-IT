@@ -139,17 +139,11 @@ async def test_actual_download_detection(test_server, tmp_path):
 	downloads_path = tmp_path / 'downloads'
 	downloads_path.mkdir()
 
-	# Create a user data dir for persistent context
-	user_data_dir = tmp_path / 'user_data'
-	user_data_dir.mkdir()
-
 	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=True,
 			downloads_path=str(downloads_path),
-			user_data_dir=str(user_data_dir),  # Use persistent context
-			# Add Chrome flags for download handling
-			args=['--enable-features=DownloadBubble', '--enable-features=DownloadBubbleV2'],
+			user_data_dir=None,  # Don't use persistent context for now
 		)
 	)
 

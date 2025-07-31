@@ -727,8 +727,6 @@ class BrowserUseApp(App):
 				connection_type = 'playwright'  # Default
 				if browser_session.cdp_url:
 					connection_type = 'CDP'
-				elif browser_session.wss_url:
-					connection_type = 'WSS'
 				elif browser_session.browser_profile.executable_path:
 					connection_type = 'user-provided'
 

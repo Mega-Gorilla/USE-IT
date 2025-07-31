@@ -105,7 +105,7 @@ class AboutBlankWatchdog(BaseModel):
 		"""Get current tabs info using event system."""
 		# Request tabs info
 		self.event_bus.dispatch(TabsInfoRequestEvent())
-		
+
 		# Wait for response
 		try:
 			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
@@ -164,7 +164,7 @@ class AboutBlankWatchdog(BaseModel):
 
 			pages = self.browser_session._browser_context.pages
 			browser_session_id = str(self.browser_session.id)[-4:]
-			
+
 			for page in pages:
 				if page.url == 'about:blank':
 					await self._show_dvd_screensaver_loading_animation(page, browser_session_id)

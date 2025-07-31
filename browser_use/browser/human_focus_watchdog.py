@@ -6,7 +6,7 @@ from weakref import WeakKeyDictionary
 
 from bubus import EventBus
 from playwright.async_api import Page
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserStartedEvent,
@@ -147,13 +147,13 @@ class HumanFocusWatchdog(BaseModel):
 
 			# Expose a function that the page can call when it becomes visible
 			await page.expose_function('__reportHumanFocus', lambda: self._handle_page_focus(page))
-			
+
 			# Inject the visibility tracking script
 			await page.evaluate(visibility_script)
-			
+
 			# Store that we've set up tracking for this page
 			self._page_visibility_handlers[page] = True
-			
+
 			logger.debug(f'[HumanFocusWatchdog] Set up visibility tracking for {page.url}')
 
 		except Exception as e:
@@ -173,7 +173,7 @@ class HumanFocusWatchdog(BaseModel):
 				# Find the tab index
 				pages = self.browser_session._browser_context.pages
 				tab_index = pages.index(self._current_human_page) if self._current_human_page in pages else -1
-				
+
 				self.event_bus.dispatch(
 					HumanFocusChangedEvent(
 						tab_index=tab_index,
