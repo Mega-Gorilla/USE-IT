@@ -754,12 +754,27 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
 				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
 			},
+			# {
+			# 	'name': 'Captcha Solver: Auto captcha solving service',
+			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
+			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
+			# },
+			# {
+			# 	'name': 'Consent-O-Matic',
+			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
+			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dmdjildafknihdffpkfmmpnpoiajfjnjd%26uc',
+			# },
+			# {
+			# 	'name': 'Privacy | Protect Your Payments',
+			# 	'id': 'hmgpakheknboplhmlicfkkgjipfabmhp',
+			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dhmgpakheknboplhmlicfkkgjipfabmhp%26uc',
+			# },
 		]
 
 		# Create extensions cache directory
 		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
 		cache_dir.mkdir(parents=True, exist_ok=True)
-		logger.debug(f'📁 Extensions cache directory: {_log_pretty_path(cache_dir)}')
+		# logger.debug(f'📁 Extensions cache directory: {_log_pretty_path(cache_dir)}')
 
 		extension_paths = []
 		loaded_extension_names = []
@@ -770,7 +785,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 			# Check if extension is already extracted
 			if ext_dir.exists() and (ext_dir / 'manifest.json').exists():
-				logger.debug(f'✅ Using cached {ext["name"]} extension from {_log_pretty_path(ext_dir)}')
+				# logger.debug(f'✅ Using cached {ext["name"]} extension from {_log_pretty_path(ext_dir)}')
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 				continue
@@ -794,7 +809,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				continue
 
 		if extension_paths:
-			logger.info(f'✅ Extensions ready: {len(extension_paths)} extensions loaded ({", ".join(loaded_extension_names)})')
+			logger.debug(f'🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
 		else:
 			logger.warning('⚠️ No default extensions could be loaded')
 
