@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from bubus import BaseEvent
-from playwright.async_api import Cookie, Page
+from playwright.async_api import Cookie, Page, StorageStateCookie
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
@@ -43,7 +43,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	# Private state
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
-	_last_cookie_state: list[Cookie] = PrivateAttr(default_factory=list)
+	_last_cookie_state: list[StorageStateCookie] = PrivateAttr(default_factory=list)
 	_save_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
 	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
@@ -158,7 +158,9 @@ class StorageStateWatchdog(BaseWatchdog):
 			return False
 
 		try:
-			current_cookies = await self.browser_session._browser_context.cookies()
+			# Get current storage state cookies (not Cookie API objects)
+			storage_state = await self.browser_session._browser_context.storage_state()
+			current_cookies = storage_state.get('cookies', [])
 
 			# Convert to comparable format, using .get() for optional fields
 			current_cookie_set = {

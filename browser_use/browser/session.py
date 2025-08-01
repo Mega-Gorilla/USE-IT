@@ -491,7 +491,9 @@ class BrowserSession(BaseModel):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				logger.info(f'🔗 {new_tab_msg}')
-				await self.switch_to_tab(-1)
+				# Switch to the last tab (newly created tab)
+				last_tab_index = len(self.pages) - 1
+				await self.switch_to_tab(last_tab_index)
 
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -1541,12 +1543,33 @@ class BrowserSession(BaseModel):
 			if new_tab:
 				import sys
 
+				# Track initial tab count before clicking
+				initial_tab_count = len(self.pages)
+
 				modifier = 'Meta' if sys.platform == 'darwin' else 'Control'
 				await locator.click(modifiers=[modifier])
+
+				# Wait for new tab to be created (up to 5 seconds)
+				try:
+					await asyncio.wait_for(self._wait_for_new_tab(initial_tab_count), timeout=5.0)
+					logger.debug(f'New tab opened, tab count: {len(self.pages)}')
+				except TimeoutError:
+					logger.debug('No new tab opened within 5 seconds')
 			else:
 				await locator.click()
 
 		return download_path
+
+	async def _wait_for_new_tab(self, initial_tab_count: int) -> None:
+		"""Wait for a new tab to be created."""
+		# Wait for TabCreatedEvent instead of polling
+		from browser_use.browser.events import TabCreatedEvent
+
+		try:
+			await self.event_bus.expect(TabCreatedEvent, timeout=5.0)
+		except TimeoutError:
+			# No new tab was created within timeout
+			pass
 
 	async def _input_text_element_node(self, element: Any, text: str) -> None:
 		"""Input text into an element node."""

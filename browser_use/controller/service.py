@@ -190,7 +190,9 @@ class Controller(Generic[Context]):
 						msg += f' - {new_tab_msg}'
 					emoji = '🔗'
 					logger.info(f'{emoji} {new_tab_msg}')
-					await browser_session.switch_to_tab(-1)
+					# Switch to the last tab (newly created tab)
+					last_tab_index = len(browser_session.tabs) - 1
+					await browser_session.switch_to_tab(last_tab_index)
 
 				logger.info(f'{emoji} {msg}')
 				logger.debug(f'Element xpath: {element_node.xpath}')

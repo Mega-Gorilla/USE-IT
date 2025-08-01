@@ -125,7 +125,8 @@ class DownloadsWatchdog(BaseWatchdog):
 		logger.info(f'[DownloadsWatchdog] Handling download: {download.suggested_filename} from {download.url[:100]}...')
 
 		# Debug: Check if download is already being handled elsewhere
-		logger.info(f'[DownloadsWatchdog] Download state - canceled: {download.failure()}, url: {download.url}')
+		failure = await download.failure()
+		logger.info(f'[DownloadsWatchdog] Download state - canceled: {failure}, url: {download.url}')
 		logger.info(f'[DownloadsWatchdog] Active downloads count: {len(self._active_downloads)}')
 
 		try:
