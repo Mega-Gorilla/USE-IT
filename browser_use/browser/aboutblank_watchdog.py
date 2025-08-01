@@ -1,156 +1,123 @@
 """About:blank watchdog for managing about:blank tabs with DVD screensaver."""
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from bubus import EventBus
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from bubus import BaseEvent
+from playwright.async_api import Page
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
 	BrowserStoppedEvent,
 	CloseTabEvent,
-	CreateTabEvent,
+	NavigateToUrlEvent,
 	TabClosedEvent,
 	TabCreatedEvent,
 	TabsInfoRequestEvent,
-	TabsInfoResponseEvent,
 )
+from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
 
+if TYPE_CHECKING:
+	pass
 
-class AboutBlankWatchdog(BaseModel):
+
+class AboutBlankWatchdog(BaseWatchdog):
 	"""Ensures there's always exactly one about:blank tab with DVD screensaver."""
 
-	model_config = ConfigDict(
-		arbitrary_types_allowed=True,
-		validate_assignment=True,
-		extra='forbid',
-	)
+	# Event contracts
+	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		BrowserStoppedEvent,
+		TabCreatedEvent,
+		TabClosedEvent,
+	]
+	EMITS: ClassVar[list[type[BaseEvent]]] = [
+		NavigateToUrlEvent,
+		CloseTabEvent,
+		TabsInfoRequestEvent,
+	]
 
-	event_bus: EventBus
-	browser_session: Any  # Avoid circular import
-	check_interval_seconds: float = Field(default=2.0)
+	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
+		"""Handle browser stopped event."""
+		logger.info('[AboutBlankWatchdog] Browser stopped')
 
-	# Only keep the monitoring task as private state
-	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
-
-	def __init__(self, event_bus: EventBus, browser_session: Any, **kwargs):
-		"""Initialize watchdog with event bus and browser session."""
-		super().__init__(event_bus=event_bus, browser_session=browser_session, **kwargs)
-		self._register_handlers()
-
-	def _register_handlers(self) -> None:
-		"""Register event handlers."""
-		self.event_bus.on(BrowserStartedEvent, self._handle_browser_started)
-		self.event_bus.on(BrowserStoppedEvent, self._handle_browser_stopped)
-		self.event_bus.on(TabCreatedEvent, self._handle_tab_created)
-		self.event_bus.on(TabClosedEvent, self._handle_tab_closed)
-
-	async def _handle_browser_started(self, event: BrowserStartedEvent) -> None:
-		"""Start monitoring when browser starts."""
-		logger.info('[AboutBlankWatchdog] Browser started, beginning monitoring')
-		await self._start_monitoring()
-		# Check tabs immediately
-		await self._check_and_ensure_about_blank_tab()
-
-	async def _handle_browser_stopped(self, event: BrowserStoppedEvent) -> None:
-		"""Stop monitoring when browser stops."""
-		logger.info('[AboutBlankWatchdog] Browser stopped, ending monitoring')
-		await self._stop_monitoring()
-
-	async def _handle_tab_created(self, event: TabCreatedEvent) -> None:
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Check tabs when a new tab is created."""
 		logger.debug(f'[AboutBlankWatchdog] Tab created: {event.url}')
 		# Small delay to let tab finish loading
-		await asyncio.sleep(0.5)
+		await asyncio.sleep(0.1)
 		await self._check_and_ensure_about_blank_tab()
 
-	async def _handle_tab_closed(self, event: TabClosedEvent) -> None:
-		"""Check tabs when a tab is closed."""
-		logger.debug('[AboutBlankWatchdog] Tab closed')
-		# Small delay to let tab finish closing
-		await asyncio.sleep(0.5)
-		await self._check_and_ensure_about_blank_tab()
+	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
+		"""Check tabs when a tab is closed and proactively create about:blank if needed."""
+		logger.debug('[AboutBlankWatchdog] Tab closed, checking if we need to create about:blank tab')
 
-	async def _start_monitoring(self) -> None:
-		"""Start the monitoring task."""
-		if self._monitoring_task and not self._monitoring_task.done():
-			return
-		self._monitoring_task = asyncio.create_task(self._monitor_tabs())
-		logger.info('[AboutBlankWatchdog] Started monitoring task')
+		# Check if we're about to close the last page
+		pages = self.browser_session.pages
+		if len(pages) <= 1:
+			logger.info('[AboutBlankWatchdog] Last page closing, proactively creating about:blank tab')
+			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+			await navigate_event
+			# Wait a bit for navigation to complete
+			await asyncio.sleep(0.1)
+			# Show DVD screensaver on the new tab
+			await self._show_dvd_screensaver_on_about_blank_tabs()
+		else:
+			# Normal check after tab closes
+			await asyncio.sleep(0.1)
+			await self._check_and_ensure_about_blank_tab()
 
-	async def _stop_monitoring(self) -> None:
-		"""Stop the monitoring task."""
-		if self._monitoring_task and not self._monitoring_task.done():
-			self._monitoring_task.cancel()
-			try:
-				await self._monitoring_task
-			except asyncio.CancelledError:
-				pass
-			logger.info('[AboutBlankWatchdog] Stopped monitoring task')
-
-	async def _monitor_tabs(self) -> None:
-		"""Periodically check and ensure about:blank tab."""
-		while True:
-			try:
-				await asyncio.sleep(self.check_interval_seconds)
-				await self._check_and_ensure_about_blank_tab()
-			except asyncio.CancelledError:
-				break
-			except Exception as e:
-				logger.error(f'[AboutBlankWatchdog] Error in monitoring loop: {e}')
-
-	async def _get_current_tabs(self) -> list[dict[str, Any]]:
-		"""Get current tabs info using event system."""
-		# Request tabs info
-		self.event_bus.dispatch(TabsInfoRequestEvent())
-
-		# Wait for response
-		try:
-			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
-			response: TabsInfoResponseEvent = event_result  # type: ignore
-			return response.tabs
-		except TimeoutError:
-			logger.warning('[AboutBlankWatchdog] Timeout waiting for tabs info')
-			return []
+	async def attach_to_page(self, page: Page) -> None:
+		"""AboutBlankWatchdog doesn't monitor individual pages."""
+		pass
 
 	async def _check_and_ensure_about_blank_tab(self) -> None:
-		"""Check current tabs and ensure exactly one about:blank tab exists."""
+		"""Check current tabs and ensure exactly one about:blank tab with animation exists."""
 		try:
-			tabs = await self._get_current_tabs()
-			if not tabs:
-				return
+			pages = self.browser_session.pages
 
-			# Count about:blank tabs
-			about_blank_tabs = [tab for tab in tabs if tab['url'] == 'about:blank']
-			other_tabs = [tab for tab in tabs if tab['url'] != 'about:blank']
+			# Only look for tabs that have our animation (check by title)
+			animation_pages = []
+			browser_session_id = str(self.browser_session.id)[-4:]
+			expected_title = f'Starting agent {browser_session_id}...'
 
-			logger.debug(f'[AboutBlankWatchdog] Found {len(about_blank_tabs)} about:blank tabs and {len(other_tabs)} other tabs')
+			for page in pages:
+				if page.url == 'about:blank':
+					try:
+						page_title = await page.title()
+						if page_title == expected_title:
+							animation_pages.append(page)
+					except Exception:
+						pass  # Skip pages that can't be checked
 
-			# If no about:blank tabs, create one
-			if not about_blank_tabs:
-				logger.info('[AboutBlankWatchdog] No about:blank tab found, creating one')
-				event = self.event_bus.dispatch(CreateTabEvent(url='about:blank'))
+			logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs out of {len(pages)} total tabs')
+
+			# If no animation tabs exist, create one
+			if not animation_pages:
+				logger.info('[AboutBlankWatchdog] Creating animation tab')
+				event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 				await event
 				# Wait a bit for navigation to complete
-				await asyncio.sleep(1.0)
+				await asyncio.sleep(0.1)
 				# Show DVD screensaver on the new tab
 				await self._show_dvd_screensaver_on_about_blank_tabs()
-
-			# If more than one about:blank tab, close extras
-			elif len(about_blank_tabs) > 1:
-				logger.info(f'[AboutBlankWatchdog] Found {len(about_blank_tabs)} about:blank tabs, closing extras')
-				# Keep the first one, close the rest
-				for i in range(1, len(about_blank_tabs)):
-					tab = about_blank_tabs[i]
-					event = self.event_bus.dispatch(CloseTabEvent(tab_index=tab['index']))
-					await event
-					await asyncio.sleep(0.2)  # Small delay between closes
-
-			# Ensure the about:blank tab has the screensaver
-			else:
-				await self._show_dvd_screensaver_on_about_blank_tabs()
+			# If more than one animation tab exists, close the extras (only the ones with animation)
+			elif len(animation_pages) > 1:
+				logger.info(
+					f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, closing {len(animation_pages) - 1} extras'
+				)
+				# Keep the first animation tab, close the rest
+				for i in range(1, len(animation_pages)):
+					page = animation_pages[i]
+					# Find the tab index for this page
+					tab_index = None
+					for idx, p in enumerate(pages):
+						if p == page:
+							tab_index = idx
+							break
+					if tab_index is not None:
+						event = self.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
+						await event
+						await asyncio.sleep(0.1)  # Small delay between closes
 
 		except Exception as e:
 			logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
@@ -158,11 +125,7 @@ class AboutBlankWatchdog(BaseModel):
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
 		"""Show DVD screensaver on all about:blank tabs."""
 		try:
-			# Get current page from browser session
-			if not hasattr(self.browser_session, '_browser_context') or not self.browser_session._browser_context:
-				return
-
-			pages = self.browser_session._browser_context.pages
+			pages = self.browser_session.pages
 			browser_session_id = str(self.browser_session.id)[-4:]
 
 			for page in pages:

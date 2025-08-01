@@ -6,11 +6,10 @@ import json
 import os
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self
-from weakref import WeakKeyDictionary, WeakSet
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 from bubus import EventBus
-from playwright.async_api import Browser, BrowserContext, FloatRect, Page, Playwright, Request, Response, async_playwright
+from playwright.async_api import Browser, BrowserContext, FloatRect, Page, Playwright, async_playwright
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from browser_use.browser.events import (
@@ -21,13 +20,10 @@ from browser_use.browser.events import (
 	BrowserStoppedEvent,
 	ClickElementEvent,
 	CloseTabEvent,
-	CreateTabEvent,
 	FileDownloadedEvent,
-	InputTextEvent,
 	LoadStorageStateEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
-	NavigationStartedEvent,
 	SaveStorageStateEvent,
 	ScreenshotRequestEvent,
 	ScreenshotResponseEvent,
@@ -39,6 +35,7 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 	TabsInfoRequestEvent,
 	TabsInfoResponseEvent,
+	TypeTextEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.views import TabInfo
@@ -71,7 +68,7 @@ class BrowserSession(BaseModel):
 	)
 
 	# Core configuration
-	browser_profile: BrowserProfile
+	browser_profile: BrowserProfile = Field(default_factory=lambda: DEFAULT_BROWSER_PROFILE)
 	id: str = Field(default_factory=lambda: uuid7str())
 
 	# Connection info (for backwards compatibility)
@@ -98,18 +95,29 @@ class BrowserSession(BaseModel):
 	_downloads_watchdog: Any = PrivateAttr(default=None)
 	_aboutblank_watchdog: Any = PrivateAttr(default=None)
 	_human_focus_watchdog: Any = PrivateAttr(default=None)
-	_agent_focus_watchdog: Any = PrivateAttr(default=None)
+	_navigation_watchdog: Any = PrivateAttr(default=None)
 	_storage_state_watchdog: Any = PrivateAttr(default=None)
 
-	# Navigation tracking state (merged from NavigationWatchdog)
-	_tracked_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
-	_page_requests: WeakKeyDictionary[Page, set[Request]] = PrivateAttr(default_factory=WeakKeyDictionary)
-	_page_last_activity: WeakKeyDictionary[Page, float] = PrivateAttr(default_factory=WeakKeyDictionary)
-	_monitoring_tasks: WeakKeyDictionary[Page, asyncio.Task] = PrivateAttr(default_factory=WeakKeyDictionary)
+	# Navigation tracking now handled by watchdogs
+
+	# Cached browser state for synchronous access
+	_cached_browser_state_summary: Any = PrivateAttr(default=None)
+	_logger: Any = PrivateAttr(default=None)
+
+	@property
+	def logger(self) -> Any:
+		"""Get instance-specific logger with session ID in the name"""
+		if (
+			self._logger is None or self._browser_context is None
+		):  # keep updating the name pre-init because our id and str(self) can change
+			import logging
+
+			self._logger = logging.getLogger(f'browser_use.{self}')
+		return self._logger
 
 	def __init__(
 		self,
-		browser_profile: BrowserProfile,
+		browser_profile: BrowserProfile | None = None,
 		cdp_url: str | None = None,
 		browser_pid: int | None = None,
 		**kwargs: Any,
@@ -117,11 +125,15 @@ class BrowserSession(BaseModel):
 		"""Initialize a browser session.
 
 		Args:
-			browser_profile: Browser configuration profile
+			browser_profile: Browser configuration profile (defaults to DEFAULT_BROWSER_PROFILE)
 			cdp_url: CDP URL for connecting to existing browser
 			browser_pid: Process ID of existing browser (DEPRECATED)
 			**kwargs: Additional arguments
 		"""
+
+		# Use default profile if none provided
+		if browser_profile is None:
+			browser_profile = DEFAULT_BROWSER_PROFILE
 
 		# Initialize base model
 		super().__init__(
@@ -198,15 +210,13 @@ class BrowserSession(BaseModel):
 		self.event_bus.on(StartBrowserEvent, self._handle_start)
 		self.event_bus.on(StopBrowserEvent, self._handle_stop)
 
-		# Navigation and interaction
-		self.event_bus.on(NavigateToUrlEvent, self._handle_navigate)
+		# Navigation is handled by NavigationWatchdog
+		# Interaction
 		self.event_bus.on(ClickElementEvent, self._handle_click)
-		self.event_bus.on(InputTextEvent, self._handle_input_text)
+		self.event_bus.on(TypeTextEvent, self._handle_input_text)
 		self.event_bus.on(ScrollEvent, self._handle_scroll)
 
-		# Tab management
-		self.event_bus.on(SwitchTabEvent, self._handle_switch_tab)
-		self.event_bus.on(CreateTabEvent, self._handle_create_tab)
+		# Tab management - handled by watchdogs
 		self.event_bus.on(CloseTabEvent, self._handle_close_tab)
 
 		# Browser state
@@ -259,14 +269,15 @@ class BrowserSession(BaseModel):
 				new_context_args = self.browser_profile.kwargs_for_new_context()
 				context_kwargs = new_context_args.model_dump(exclude_none=True)
 
-				# Map downloads_path to downloads_path for new_context and ensure accept_downloads is True
+				# Ensure accept_downloads is True when downloads are enabled
 				if self.browser_profile.downloads_path:
 					# Ensure downloads directory exists
 					downloads_dir = Path(self.browser_profile.downloads_path)
 					downloads_dir.mkdir(parents=True, exist_ok=True)
 					context_kwargs['accept_downloads'] = True
-					context_kwargs['downloads_path'] = str(downloads_dir.absolute())
-					logger.info(f'Setting downloads_path to: {context_kwargs["downloads_path"]}')
+					# Note: downloads_path is NOT a valid parameter for new_context()
+					# Downloads will be handled by the downloads watchdog using download.save_as()
+					logger.info(f'Downloads enabled, target directory: {downloads_dir.absolute()}')
 					logger.info(f'Accept downloads: {context_kwargs["accept_downloads"]}')
 
 				# Log storage state info
@@ -274,7 +285,6 @@ class BrowserSession(BaseModel):
 				logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
 				logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
 				logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
-				logger.info(f'Context kwargs downloads_path: {context_kwargs.get("downloads_path")}')
 				logger.info(f'Context kwargs accept_downloads: {context_kwargs.get("accept_downloads")}')
 
 				self._browser_context = await self._browser.new_context(**context_kwargs)
@@ -283,57 +293,42 @@ class BrowserSession(BaseModel):
 			pages = self._browser_context.pages
 			# Agent focus will be initialized by the watchdog
 
-			# Initialize crash watchdog if not already initialized
-			if not hasattr(self, '_crash_watchdog'):
-				from browser_use.browser.crash_watchdog import CrashWatchdog
-
-				self._crash_watchdog = CrashWatchdog(event_bus=self.event_bus)
-				# Set browser context for crash watchdog
-				self._crash_watchdog.set_browser_context(
-					self._browser, self._browser_context, self._subprocess.pid if self._subprocess else None
-				)
-
-			# Initialize downloads watchdog if not already initialized
-			if not hasattr(self, '_downloads_watchdog'):
-				from browser_use.browser.downloads_watchdog import DownloadsWatchdog
-
-				self._downloads_watchdog = DownloadsWatchdog(event_bus=self.event_bus, browser_session=self)
-
-			# Add initial pages to all watchdogs
-			for page in pages:
-				self._add_page_to_watchdogs(page)
-
-			# Initialize aboutblank watchdog if not already initialized
-			if not hasattr(self, '_aboutblank_watchdog'):
-				from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
-
-				self._aboutblank_watchdog = AboutBlankWatchdog(event_bus=self.event_bus, browser_session=self)
-
-			# Initialize human focus watchdog if not already initialized
-			if not hasattr(self, '_human_focus_watchdog'):
-				from browser_use.browser.human_focus_watchdog import HumanFocusWatchdog
-
-				self._human_focus_watchdog = HumanFocusWatchdog(event_bus=self.event_bus, browser_session=self)
-
-			# Initialize agent focus watchdog if not already initialized
-			if not hasattr(self, '_agent_focus_watchdog'):
-				from browser_use.browser.agent_focus_watchdog import AgentFocusWatchdog
-
-				self._agent_focus_watchdog = AgentFocusWatchdog(event_bus=self.event_bus, browser_session=self)
-
-			# Initialize storage state watchdog if not already initialized
-			if not hasattr(self, '_storage_state_watchdog'):
-				from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
-
-				self._storage_state_watchdog = StorageStateWatchdog(event_bus=self.event_bus, browser_session=self)
+			# Initialize and attach all watchdogs
+			await self.attach_all_watchdogs()
 
 			# Notify success
+			logger.info('[Session] !!!! DISPATCHING BrowserStartedEvent !!!!')
 			self.event_bus.dispatch(
 				BrowserStartedEvent(
 					cdp_url=self.cdp_url,
 					browser_pid=self._subprocess.pid if self._subprocess else None,
 				)
 			)
+			logger.info('[Session] !!!! BrowserStartedEvent dispatched !!!!')
+
+			# Emit TabCreatedEvent and NavigationCompleteEvent for all existing pages
+			if self._browser_context:
+				for idx, page in enumerate(self._browser_context.pages):
+					# Emit TabCreatedEvent
+					self.event_bus.dispatch(
+						TabCreatedEvent(
+							tab_index=idx,
+							url=page.url,
+						)
+					)
+					logger.info(f'[Session] Emitted TabCreatedEvent for existing tab {idx}: {page.url}')
+
+					# Emit NavigationCompleteEvent for the current page state
+					self.event_bus.dispatch(
+						NavigationCompleteEvent(
+							tab_index=idx,
+							url=page.url,
+							status=200,  # Assume existing pages loaded successfully
+							error_message=None,
+							loading_status='Existing page, found already open',
+						)
+					)
+					logger.info(f'[Session] Emitted NavigationCompleteEvent for existing tab {idx}: {page.url}')
 
 			# Automatically load storage state after browser start
 			self.event_bus.dispatch(LoadStorageStateEvent())
@@ -374,16 +369,7 @@ class BrowserSession(BaseModel):
 				)
 				return
 
-			# Cancel all navigation monitoring tasks
-			for task in list(self._monitoring_tasks.values()):
-				if not task.done():
-					task.cancel()
-
-			# Clear navigation tracking state
-			self._tracked_pages.clear()
-			self._page_requests.clear()
-			self._page_last_activity.clear()
-			self._monitoring_tasks.clear()
+			# Network monitoring now handled by watchdogs
 
 			# Automatically save storage state before stopping
 			self.event_bus.dispatch(SaveStorageStateEvent())
@@ -453,91 +439,12 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(StopBrowserEvent())
 		await event
 
-	async def _handle_navigate(self, event: NavigateToUrlEvent) -> None:
-		"""Handle navigation request with network monitoring (merged from NavigationWatchdog)."""
-		try:
-			# Get the page to navigate
-			page = await self._get_page_for_navigation(event)
-			if not page:
-				self.event_bus.dispatch(
-					BrowserErrorEvent(
-						error_type='NoActivePage',
-						message='No active page to navigate',
-					)
-				)
-				return
-
-			# Dispatch navigation started event
-			tab_index = await self._get_tab_index(page)
-			self.event_bus.dispatch(
-				NavigationStartedEvent(
-					tab_index=tab_index,
-					url=event.url,
-				)
-			)
-
-			# Perform navigation
-			response = await page.goto(
-				event.url,
-				wait_until=event.wait_until,
-			)
-
-			# Dispatch completion event
-			self.event_bus.dispatch(
-				NavigationCompleteEvent(
-					tab_index=tab_index,
-					url=event.url,
-					status=response.status if response else None,
-				)
-			)
-
-			# Start monitoring network activity for the page
-			await self._monitor_page_network(page)
-
-		except Exception as e:
-			# Handle navigation errors
-			error_message = str(e)
-			loading_status = None
-
-			# Check for timeout errors
-			if 'timeout' in error_message.lower():
-				loading_status = f'Timed out waiting for network idle after {event.wait_until}'
-				if 'exceeded while waiting for event "load"' in error_message:
-					loading_status = 'Network timeout - page load incomplete'
-
-			# Get tab index for error reporting
-			try:
-				page = await self._get_page_for_navigation(event)
-				tab_index = await self._get_tab_index(page) if page else 0
-			except Exception:
-				tab_index = 0
-
-			# Dispatch NavigationCompleteEvent with error details
-			self.event_bus.dispatch(
-				NavigationCompleteEvent(
-					tab_index=tab_index,
-					url=event.url,
-					status=None,
-					error_message=error_message,
-					loading_status=loading_status,
-				)
-			)
-
-			# Also dispatch error event for backwards compatibility
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NavigationFailed',
-					message=str(e),
-					details={'url': event.url},
-				)
-			)
-
 	async def _handle_click(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
 		try:
 			page = await self.get_current_page()
 		except ValueError:
-			self._dispatch_no_page_error('NoActivePage', 'No active page for click')
+			self.event_bus.dispatch(BrowserErrorEvent(error_type='NoActivePage', message='No active page for click', details={}))
 			return
 
 		try:
@@ -547,7 +454,7 @@ class BrowserSession(BaseModel):
 				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
 
 			# Track initial number of tabs to detect new tab opening
-			initial_pages = len(self.tabs)
+			initial_pages = len(self.pages)
 
 			# Check if element is a file input (should not be clicked)
 			if self.is_file_input(element_node):
@@ -563,7 +470,9 @@ class BrowserSession(BaseModel):
 				return
 
 			# Perform the actual click
-			download_path = await self._click_element_node(element_node)
+			download_path = await self._click_element_node(
+				element_node, expect_download=event.expect_download, new_tab=event.new_tab
+			)
 
 			# Build success message
 			if download_path:
@@ -576,7 +485,7 @@ class BrowserSession(BaseModel):
 			logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Check if a new tab was opened
-			if len(self.tabs) > initial_pages:
+			if len(self.pages) > initial_pages:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				logger.info(f'🔗 {new_tab_msg}')
@@ -591,7 +500,7 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-	async def _handle_input_text(self, event: InputTextEvent) -> None:
+	async def _handle_input_text(self, event: TypeTextEvent) -> None:
 		"""Handle text input request."""
 		try:
 			page = await self.get_current_page()
@@ -659,54 +568,26 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-	async def _handle_switch_tab(self, event: SwitchTabEvent) -> None:
-		"""Handle tab switch request."""
-		# Agent focus watchdog will handle the actual switch via event listener
-		pass
-
-	async def _handle_create_tab(self, event: CreateTabEvent) -> None:
-		"""Handle new tab creation."""
-		if not self._browser_context:
-			return
-
-		page = await self._browser_context.new_page()
-
-		# Note: Download behavior is set at browser level during startup
-
-		# Add page to all watchdogs
-		self._add_page_to_watchdogs(page)
-
-		if event.url:
-			await page.goto(event.url)
-
-		tab_index = len(self.tabs) - 1
-		self.event_bus.dispatch(
-			TabCreatedEvent(
-				tab_id=f'tab_{tab_index}_{id(page)}',
-				tab_index=tab_index,
-				url=event.url,
-			)
-		)
-
 	async def _handle_close_tab(self, event: CloseTabEvent) -> None:
 		"""Handle tab close request."""
-		pages = self.tabs
-		if 0 <= event.tab_index < len(pages):
-			await pages[event.tab_index].close()
+		if 0 <= event.tab_index < len(self.pages):
+			await self.pages[event.tab_index].close()
 			# Dispatch tab closed event for watchdogs
 			self.event_bus.dispatch(TabClosedEvent(tab_index=event.tab_index))
 
 	async def _handle_browser_state_request(self, event: BrowserStateRequestEvent) -> None:
 		"""Handle browser state request."""
 		try:
-			# Get the full browser state with recovery
+			# Use the internal method directly to avoid infinite loop
 			state = await self._get_browser_state_with_recovery(
 				cache_clickable_elements_hashes=event.cache_clickable_elements_hashes, include_screenshot=event.include_screenshot
 			)
+			# Cache the state for the property
+			self._cached_browser_state_summary = state
 			self.event_bus.dispatch(BrowserStateResponseEvent(state=state))
 		except Exception as e:
 			# Fall back to minimal state on error
-			minimal_state = await self._get_minimal_state_summary()
+			minimal_state = await self.get_minimal_state_summary()
 			self.event_bus.dispatch(BrowserStateResponseEvent(state=minimal_state))
 
 	async def _handle_screenshot_request(self, event: ScreenshotRequestEvent) -> None:
@@ -743,7 +624,7 @@ class BrowserSession(BaseModel):
 			await start_event
 
 		tabs = []
-		for i, page in enumerate(self.tabs):
+		for i, page in enumerate(self.pages):
 			if not page.is_closed():
 				tab_info = TabInfo(
 					page_id=i,
@@ -821,8 +702,8 @@ class BrowserSession(BaseModel):
 	@property
 	def agent_current_page(self) -> Page | None:
 		"""Get the agent's current page."""
-		if self._agent_focus_watchdog:
-			return self._agent_focus_watchdog.current_agent_page
+		if self._navigation_watchdog:
+			return self._navigation_watchdog.current_agent_page
 		return None
 
 	@property
@@ -868,21 +749,50 @@ class BrowserSession(BaseModel):
 			return self._browser_context.pages
 		return []
 
+	@property
+	def pages(self) -> list[Page]:
+		"""Get all open pages."""
+		if self._browser_context:
+			return self._browser_context.pages
+		return []
+
+	def get_page_by_tab_index(self, tab_index: int) -> Page | None:
+		"""Get page by tab index."""
+		if 0 <= tab_index < len(self.pages):
+			return self.pages[tab_index]
+		return None
+
+	def get_tab_index(self, page: Page) -> int:
+		"""Get tab index for a page."""
+		if page in self.pages:
+			return self.pages.index(page)
+		return -1
+
+	@property
+	def browser_state_summary(self) -> Any:
+		"""Get the cached browser state summary (synchronous access)."""
+		# This is a compatibility property for code that expects synchronous access
+		# For new code, use get_browser_state_with_recovery() instead
+		return getattr(self, '_cached_browser_state_summary', None)
+
 	# Page management
 	async def get_current_page(self) -> Page:
 		"""Get the current active page."""
-		if self._agent_focus_watchdog:
-			return await self._agent_focus_watchdog.get_or_create_page()
+		if self._navigation_watchdog:
+			return await self._navigation_watchdog.get_or_create_page()
 		# Fallback if watchdog not initialized
-		if self.tabs:
-			return self.tabs[0]
+		if self.pages:
+			return self.pages[0]
 		raise ValueError('No active page available')
 
 	async def new_page(self, url: str | None = None) -> Page:
 		"""Create a new page."""
-		event = self.event_bus.dispatch(CreateTabEvent(url=url))
+		if url:
+			event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=True))
+		else:
+			event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 		await event
-		return self.tabs[-1]  # Return the newly created page
+		return self.pages[-1]  # Return the newly created page
 
 	async def create_new_tab(self, url: str | None = None) -> Page:
 		"""Create a new tab."""
@@ -897,18 +807,22 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(SwitchTabEvent(tab_index=tab_index))
 		await event
 
-	async def navigate_to(self, url: str) -> None:
+	async def navigate_to(self, url: str) -> Page:
 		"""Navigate the current page to a URL."""
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url))
 		await event
+		return await self.get_current_page()
 
-	async def navigate(self, url: str) -> None:
-		"""Alias for navigate_to for backwards compatibility."""
-		await self.navigate_to(url)
+	async def navigate(self, url: str, timeout_ms: int | None = None, new_tab: bool = False) -> Page:
+		"""Navigate with optional timeout and new tab support."""
+		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, timeout_ms=timeout_ms, new_tab=new_tab))
+		await event
+		return await self.get_current_page()
 
 	async def go_to_url(self, url: str) -> None:
 		"""Alias for navigate_to."""
-		await self.navigate_to(url)
+		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url))
+		await event
 
 	async def go_back(self) -> None:
 		"""Go back in the browser history."""
@@ -941,14 +855,14 @@ class BrowserSession(BaseModel):
 			# No screenshot received
 			return b''
 
-	async def click_element(self, index: int) -> None:
+	async def click_element(self, index: int, expect_download: bool = False, new_tab: bool = False) -> None:
 		"""Click element by index."""
-		event = self.event_bus.dispatch(ClickElementEvent(index=index))
+		event = self.event_bus.dispatch(ClickElementEvent(index=index, expect_download=expect_download, new_tab=new_tab))
 		await event
 
 	async def input_text(self, index: int, text: str) -> None:
 		"""Input text into element."""
-		event = self.event_bus.dispatch(InputTextEvent(index=index, text=text))
+		event = self.event_bus.dispatch(TypeTextEvent(index=index, text=text))
 		await event
 
 	async def scroll(self, direction: Literal['up', 'down', 'left', 'right'], amount: int) -> None:
@@ -974,8 +888,10 @@ class BrowserSession(BaseModel):
 		return copy
 
 	# Additional compatibility methods
-	async def is_connected(self) -> bool:
+	async def is_connected(self, restart: bool = True) -> bool:
 		"""Check if connected to browser."""
+		# The restart parameter is for backward compatibility but is ignored
+		# in the current implementation since restart behavior is now handled automatically
 		return self._browser is not None and self._browser.is_connected()
 
 	async def save_storage_state(self, path: str | None = None) -> None:
@@ -1038,7 +954,7 @@ class BrowserSession(BaseModel):
 			return response.state
 		except TimeoutError:
 			# Fall back to minimal state
-			return await self._get_minimal_state_summary()
+			return await self.get_minimal_state_summary()
 
 	async def _get_browser_state_with_recovery(
 		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True
@@ -1046,44 +962,15 @@ class BrowserSession(BaseModel):
 		"""Internal method to get browser state with recovery logic."""
 		# Try 1: Full state summary
 		try:
-			await self._wait_for_page_and_frames_load()
-			return await self._get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
+			await self.get_current_page()  # Ensure we have a page
+			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
 		except Exception as e:
 			logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
 
 		logger.warning('🔄 Falling back to minimal state summary')
-		return await self._get_minimal_state_summary()
+		return await self.get_minimal_state_summary()
 
-	async def _wait_for_page_and_frames_load(self, timeout_overwrite: float | None = None):
-		"""
-		Ensures page is fully loaded and stable before continuing.
-		Waits for network idle, DOM stability, and minimum WAIT_TIME.
-		"""
-		# For now, just ensure we have a page
-		page = await self.get_current_page()
-		if not page:
-			raise ValueError('No current page available')
-
-		# Skip wait for new tab pages
-		if page.url in NEW_TAB_URLS:
-			return
-
-		# Wait for page load (previously handled by NavigationWatchdog)
-		await self._wait_for_page_load(page, timeout_overwrite)
-
-	async def _wait_for_page_load(self, page: Page, timeout_overwrite: float | None = None) -> None:
-		"""Wait for page to load completely with network idle."""
-		timeout = timeout_overwrite or 30.0
-		try:
-			await page.wait_for_load_state('networkidle', timeout=timeout * 1000)
-		except Exception:
-			# If networkidle times out, at least wait for domcontentloaded
-			try:
-				await page.wait_for_load_state('domcontentloaded', timeout=10 * 1000)
-			except Exception:
-				pass  # Continue anyway
-
-	async def _get_state_summary(self, cache_clickable_elements_hashes: bool, include_screenshot: bool = True) -> Any:
+	async def get_state_summary(self, cache_clickable_elements_hashes: bool, include_screenshot: bool = True) -> Any:
 		"""Get a summary of the current browser state"""
 		from browser_use.browser.views import BrowserStateSummary, PageInfo
 		from browser_use.dom.service import DomService
@@ -1196,7 +1083,7 @@ class BrowserSession(BaseModel):
 			recent_events=self._generate_recent_events_summary(),
 		)
 
-	async def _get_minimal_state_summary(self) -> Any:
+	async def get_minimal_state_summary(self) -> Any:
 		"""Get basic page info without DOM processing"""
 		from browser_use.browser.views import BrowserStateSummary
 		from browser_use.dom.views import DOMElementNode
@@ -1262,6 +1149,28 @@ class BrowserSession(BaseModel):
 		if element and self.is_file_input(element):
 			return element
 		return None
+
+	async def get_locate_element_by_xpath(self, xpath: str) -> Any:
+		"""Get playwright ElementHandle for an element by XPath."""
+		page = await self.get_current_page()
+		if not page:
+			return None
+
+		try:
+			return await page.locator(f'xpath={xpath}').element_handle()
+		except Exception:
+			return None
+
+	async def get_locate_element_by_css_selector(self, selector: str) -> Any:
+		"""Get playwright ElementHandle for an element by CSS selector."""
+		page = await self.get_current_page()
+		if not page:
+			return None
+
+		try:
+			return await page.locator(selector).element_handle()
+		except Exception:
+			return None
 
 	async def get_locate_element(self, element: Any) -> Any:
 		"""Get playwright ElementHandle for a DOM element."""
@@ -1501,8 +1410,13 @@ class BrowserSession(BaseModel):
 			counter += 1
 		return new_filename
 
-	async def _click_element_node(self, element: Any) -> str | None:
+	async def _click_element_node(self, element: Any, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""Click an element node and handle potential downloads.
+
+		Args:
+			element: The DOM element to click
+			expect_download: If True, wait for download and handle it inline. If False, let page-level handler catch it.
+			new_tab: If True, open any resulting navigation in a new tab.
 
 		Returns the download path if a download was triggered, None otherwise.
 		"""
@@ -1520,41 +1434,38 @@ class BrowserSession(BaseModel):
 
 		download_path = None
 
-		# Handle potential downloads if downloads are enabled
-		if self.browser_profile.downloads_path:
+		if expect_download and self.browser_profile.downloads_path:
+			# When expecting a download, click and wait for FileDownloadedEvent from downloads watchdog
+			# The downloads watchdog page-level listener will handle the actual download
 			try:
-				# Try short-timeout expect_download to detect a file download
-				async with page.expect_download(timeout=5_000) as download_info:
+				# Click the element (with new tab modifier if requested)
+				if new_tab:
+					import sys
+
+					modifier = 'Meta' if sys.platform == 'darwin' else 'Control'
+					await locator.click(modifiers=[modifier])
+				else:
 					await locator.click()
-				download = await download_info.value
 
-				# Determine file path
-				suggested_filename = download.suggested_filename
-				unique_filename = await self._get_unique_filename(self.browser_profile.downloads_path, suggested_filename)
-				download_path = os.path.join(self.browser_profile.downloads_path, unique_filename)
-				await download.save_as(download_path)
-				logger.info(f'⬇️ Downloaded file to: {download_path}')
+				# Wait for download event from downloads watchdog with timeout
+				# The watchdog's page.on('download') handler will save_as() and dispatch FileDownloadedEvent
+				download_event = cast(FileDownloadedEvent, await self.event_bus.expect(FileDownloadedEvent, timeout=10.0))
+				download_path = download_event.path
+				logger.info(f'⬇️ Downloaded file via watchdog: {download_path}')
 
-				# Emit download event for the watchdog
-				self.event_bus.dispatch(
-					FileDownloadedEvent(
-						url=download.url,
-						path=download_path,
-						file_name=suggested_filename,
-						file_size=os.path.getsize(download_path) if os.path.exists(download_path) else 0,
-						file_type=os.path.splitext(suggested_filename)[1].lstrip('.'),
-						mime_type=None,
-						from_cache=False,
-						auto_download=False,
-					)
-				)
-
-			except Exception:
-				# If no download is triggered, just perform normal click
-				await locator.click()
+			except TimeoutError:
+				logger.warning('Expected download but no FileDownloadedEvent received within timeout')
+			except Exception as e:
+				logger.warning(f'Error while waiting for download: {e}')
 		else:
-			# If downloads are disabled, just perform the click
-			await locator.click()
+			# Normal click or new tab click - let downloads watchdog handle any downloads in background
+			if new_tab:
+				import sys
+
+				modifier = 'Meta' if sys.platform == 'darwin' else 'Control'
+				await locator.click(modifiers=[modifier])
+			else:
+				await locator.click()
 
 		return download_path
 
@@ -1735,187 +1646,35 @@ class BrowserSession(BaseModel):
 
 	# ========== Helper Methods ==========
 
-	def _add_page_to_watchdogs(self, page: Page) -> None:
-		"""Add a page to all active watchdogs."""
-		# Add page to crash watchdog
-		if hasattr(self, '_crash_watchdog') and self._crash_watchdog:
-			self._crash_watchdog.add_page(page)
+	async def attach_all_watchdogs(self) -> None:
+		"""Initialize and attach all watchdogs in one go."""
+		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
+		from browser_use.browser.crash_watchdog import CrashWatchdog
+		from browser_use.browser.downloads_watchdog import DownloadsWatchdog
+		from browser_use.browser.human_focus_watchdog import HumanFocusWatchdog
+		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
 
-		# Add page to downloads watchdog
-		if hasattr(self, '_downloads_watchdog') and self._downloads_watchdog:
-			self._downloads_watchdog.add_page(page)
+		watchdog_configs = [
+			('_crash_watchdog', CrashWatchdog),
+			('_downloads_watchdog', DownloadsWatchdog),
+			('_navigation_watchdog', NavigationWatchdog),
+			('_storage_state_watchdog', StorageStateWatchdog),
+			('_aboutblank_watchdog', AboutBlankWatchdog),
+			('_human_focus_watchdog', HumanFocusWatchdog),
+		]
 
-		# Add page to navigation tracking
-		self._add_page_tracking(page)
+		for attr_name, watchdog_class in watchdog_configs:
+			if not hasattr(self, attr_name) or getattr(self, attr_name) is None:
+				try:
+					watchdog = watchdog_class(event_bus=self.event_bus, browser_session=self)
+					await watchdog.attach_to_session()
+					setattr(self, attr_name, watchdog)
+					logger.info(f'[Session] Initialized and attached {watchdog_class.__name__}')
+				except Exception as e:
+					logger.warning(f'[Session] Failed to initialize {watchdog_class.__name__}: {e}')
 
 	# ========== Navigation Helper Methods (merged from NavigationWatchdog) ==========
-
-	def _add_page_tracking(self, page: Page) -> None:
-		"""Add a page to track for navigation."""
-		self._tracked_pages.add(page)
-		self._setup_page_listeners(page)
-		logger.debug(f'[Session] Added page to navigation tracking: {page.url}')
-
-	def _setup_page_listeners(self, page: Page) -> None:
-		"""Set up network request listeners for a page."""
-		# Initialize tracking structures
-		self._page_requests[page] = set()
-		self._page_last_activity[page] = asyncio.get_event_loop().time()
-
-		# Set up request/response tracking
-		page.on('request', lambda request: self._on_request(page, request))
-		page.on('response', lambda response: self._on_response(page, response))
-		page.on('requestfailed', lambda request: self._on_request_failed(page, request))
-		page.on('requestfinished', lambda request: self._on_request_finished(page, request))
-
-	def _on_request(self, page: Page, request: Request) -> None:
-		"""Track new network request."""
-		if page in self._page_requests:
-			self._page_requests[page].add(request)
-			self._page_last_activity[page] = asyncio.get_event_loop().time()
-			logger.debug(f'[Session] Request started: {request.method} {request.url}')
-
-	def _on_response(self, page: Page, response: Response) -> None:
-		"""Track network response."""
-		if page in self._page_requests and response.request in self._page_requests[page]:
-			self._page_requests[page].discard(response.request)
-			self._page_last_activity[page] = asyncio.get_event_loop().time()
-			logger.debug(f'[Session] Request completed: {response.request.method} {response.url}')
-
-	def _on_request_failed(self, page: Page, request: Request) -> None:
-		"""Handle failed network request."""
-		if page in self._page_requests:
-			self._page_requests[page].discard(request)
-			logger.debug(f'[Session] Request failed: {request.method} {request.url}')
-
-	def _on_request_finished(self, page: Page, request: Request) -> None:
-		"""Handle finished network request."""
-		if page in self._page_requests:
-			self._page_requests[page].discard(request)
-			logger.debug(f'[Session] Request finished: {request.method} {request.url}')
-
-	async def _monitor_page_network(self, page: Page) -> None:
-		"""Monitor network activity for a page after navigation."""
-		# Cancel any existing monitoring task for this page
-		if page in self._monitoring_tasks:
-			old_task = self._monitoring_tasks[page]
-			if not old_task.done():
-				old_task.cancel()
-
-		# Skip monitoring for new tab pages
-		if page.url in NEW_TAB_URLS:
-			return
-
-		# Ensure page is tracked
-		if page not in self._tracked_pages:
-			self._add_page_tracking(page)
-
-		# Create new monitoring task
-		task = asyncio.create_task(self._wait_for_stable_network(page))
-		self._monitoring_tasks[page] = task
-
-	async def _wait_for_stable_network(self, page: Page) -> None:
-		"""Wait for network to be stable with no pending requests for a specific page."""
-		logger.info(f'[Session] Monitoring network stability for {page.url}')
-
-		start_time = asyncio.get_event_loop().time()
-
-		try:
-			while True:
-				await asyncio.sleep(0.1)
-				now = asyncio.get_event_loop().time()
-
-				# Get pending requests for this page
-				pending_requests = self._page_requests.get(page, set())
-				last_activity = self._page_last_activity.get(page, start_time)
-
-				# Check if network is idle
-				idle_time = self.browser_profile.wait_for_network_idle_page_load_time
-				if len(pending_requests) == 0 and (now - last_activity) >= idle_time:
-					# Page loaded successfully
-					logger.info(f'[Session] Network stable for {page.url}')
-					break
-
-				# Check for timeout
-				max_wait = self.browser_profile.maximum_wait_page_load_time
-				if now - start_time > max_wait:
-					logger.info(
-						f'[Session] Network timeout after {max_wait}s with {len(pending_requests)} '
-						f'pending requests for {page.url}'
-					)
-
-					# Dispatch NavigationCompleteEvent with loading status
-					loading_status = (
-						f'Page loading was aborted after {max_wait}s with {len(pending_requests)} pending network requests. '
-						f'You may want to use the wait action to allow more time for the page to fully load.'
-					)
-
-					tab_index = await self._get_tab_index(page)
-					self.event_bus.dispatch(
-						NavigationCompleteEvent(
-							tab_index=tab_index,
-							url=page.url,
-							status=None,
-							error_message=f'Network timeout with {len(pending_requests)} pending requests',
-							loading_status=loading_status,
-						)
-					)
-					break
-
-		except asyncio.CancelledError:
-			logger.debug(f'[Session] Network monitoring cancelled for {page.url}')
-			raise
-		except Exception as e:
-			logger.error(f'[Session] Error monitoring network: {e}')
-
-	async def _get_page_for_navigation(self, event: NavigateToUrlEvent) -> Page | None:
-		"""Get the page to navigate based on the event."""
-		# Use agent focus watchdog to get current page
-		if hasattr(self, '_agent_focus_watchdog') and self._agent_focus_watchdog:
-			try:
-				return await self._agent_focus_watchdog.get_or_create_page()
-			except Exception:
-				pass
-
-		# Fallback to first page
-		if hasattr(self, '_browser_context') and self._browser_context:
-			pages = self._browser_context.pages
-			if pages:
-				return pages[0]
-
-		return None
-
-	async def _get_tab_index(self, page: Page) -> int:
-		"""Get the tab index for a page."""
-		if hasattr(self, '_browser_context') and self._browser_context:
-			pages = self._browser_context.pages
-			if page in pages:
-				return pages.index(page)
-		return 0
-
-	def _get_pending_requests(self, page: Page) -> set[Request]:
-		"""Get pending requests for a page."""
-		return self._page_requests.get(page, set()).copy()
-
-	def _is_page_loading(self, page: Page) -> bool:
-		"""Check if a page has pending network requests."""
-		return len(self._page_requests.get(page, set())) > 0
-
-	async def wait_for_page_load(self, page: Page, timeout: float | None = None) -> None:
-		"""Wait for a page to finish loading with stable network.
-
-		This method can be called externally to wait for page load completion.
-		"""
-		# Skip wait for new tab pages
-		if page.url in NEW_TAB_URLS:
-			return
-
-		# If page not tracked, add it
-		if page not in self._tracked_pages:
-			self._add_page_tracking(page)
-
-		# Wait for stable network
-		await self._wait_for_stable_network(page)
 
 	# ========== PDF API Methods ==========
 
@@ -1934,15 +1693,6 @@ class BrowserSession(BaseModel):
 		"""Get current PDF auto-download setting."""
 		return self._auto_download_pdfs
 
-	def _dispatch_no_page_error(self, error_type: str, message: str) -> None:
-		"""Dispatch a standard 'no active page' error event."""
-		self.event_bus.dispatch(
-			BrowserErrorEvent(
-				error_type=error_type,
-				message=message,
-			)
-		)
-
 
 # Import uuid7str for ID generation
 try:
@@ -1952,3 +1702,24 @@ except ImportError:
 
 	def uuid7str() -> str:
 		return str(uuid.uuid4())
+
+
+# Fix Pydantic circular dependency for all watchdogs
+# This must be called after BrowserSession class is fully defined
+_watchdog_modules = [
+	'browser_use.browser.crash_watchdog.CrashWatchdog',
+	'browser_use.browser.downloads_watchdog.DownloadsWatchdog',
+	'browser_use.browser.storage_state_watchdog.StorageStateWatchdog',
+	'browser_use.browser.navigation_watchdog.NavigationWatchdog',
+	'browser_use.browser.aboutblank_watchdog.AboutBlankWatchdog',
+	'browser_use.browser.human_focus_watchdog.HumanFocusWatchdog',
+]
+
+for module_path in _watchdog_modules:
+	try:
+		module_name, class_name = module_path.rsplit('.', 1)
+		module = __import__(module_name, fromlist=[class_name])
+		watchdog_class = getattr(module, class_name)
+		watchdog_class.model_rebuild()
+	except Exception:
+		pass  # Ignore if watchdog can't be imported or rebuilt

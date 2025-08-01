@@ -907,27 +907,27 @@ class TestBrowserSessionReusePatterns:
 			# Check cookies in each context - they should be separate
 			context1_cookies = await page1.context.cookies()
 			context2_cookies = await page2.context.cookies()
-			print(f'Context1 cookies: {[c["name"] for c in context1_cookies]}')
-			print(f'Context2 cookies: {[c["name"] for c in context2_cookies]}')
+			print(f'Context1 cookies: {[c.get("name", "unknown") for c in context1_cookies]}')
+			print(f'Context2 cookies: {[c.get("name", "unknown") for c in context2_cookies]}')
 
 			# Since these are separate browser contexts, they won't share cookies
 			# But let's verify the cookies exist in their respective contexts
 			# We need to get cookies for the specific domain
 			domain_cookies1 = await page1.context.cookies(base_url)
 			domain_cookies2 = await page2.context.cookies(base_url)
-			print(f'Domain cookies window1: {[c["name"] for c in domain_cookies1]}')
-			print(f'Domain cookies window2: {[c["name"] for c in domain_cookies2]}')
+			print(f'Domain cookies window1: {[c.get("name", "unknown") for c in domain_cookies1]}')
+			print(f'Domain cookies window2: {[c.get("name", "unknown") for c in domain_cookies2]}')
 
 			# Save storage state from window1
 			await window1.save_storage_state()
 			storage_state_1 = json.loads(auth_json_path.read_text())
-			cookies_1 = {c['name'] for c in storage_state_1['cookies']}
+			cookies_1 = {c.get('name', 'unknown') for c in storage_state_1['cookies']}
 			print(f'Cookies saved from window1: {cookies_1}')
 
 			# Save storage state from window2 (this overwrites the file)
 			await window2.save_storage_state()
 			storage_state_2 = json.loads(auth_json_path.read_text())
-			cookies_2 = {c['name'] for c in storage_state_2['cookies']}
+			cookies_2 = {c.get('name', 'unknown') for c in storage_state_2['cookies']}
 			print(f'Cookies saved from window2: {cookies_2}')
 
 			# Verify each window saved its own cookies
@@ -947,7 +947,7 @@ class TestBrowserSessionReusePatterns:
 			page3 = await window3.get_current_page()
 			await page3.goto(base_url)  # Navigate to the domain
 			loaded_cookies = await page3.context.cookies()
-			loaded_cookie_names = {c['name'] for c in loaded_cookies}
+			loaded_cookie_names = {c.get('name', 'unknown') for c in loaded_cookies}
 			print(f'Cookies loaded in new session: {loaded_cookie_names}')
 
 			# Should have the cookies from window2 (last save)

@@ -109,8 +109,10 @@ class TestTabManagement:
 		return result
 
 	async def _reset_tab_state(self, browser_session: BrowserSession, base_url: str):
-		browser_session.human_current_page = None
-		browser_session.agent_current_page = None
+		# Reset tab state by switching to first tab
+		from browser_use.browser.events import SwitchTabEvent
+
+		browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=0))
 
 		# close all existing tabs
 		if browser_session.browser_context:

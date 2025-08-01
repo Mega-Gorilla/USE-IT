@@ -4,12 +4,11 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Any
-from weakref import WeakSet
+from typing import Any, ClassVar
 
-from bubus import EventBus
-from playwright.async_api import BrowserContext, Cookie, Page
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from bubus import BaseEvent
+from playwright.async_api import Cookie, Page
+from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserStartedEvent,
@@ -21,52 +20,40 @@ from browser_use.browser.events import (
 	TabClosedEvent,
 	TabCreatedEvent,
 )
+from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
 
 
-class StorageStateWatchdog(BaseModel):
+class StorageStateWatchdog(BaseWatchdog):
 	"""Monitors and persists browser storage state including cookies and localStorage."""
 
-	model_config = ConfigDict(
-		arbitrary_types_allowed=True,
-		validate_assignment=True,
-		extra='forbid',
-	)
+	# Event contracts
+	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		BrowserStartedEvent,
+		BrowserStoppedEvent,
+		SaveStorageStateEvent,
+		LoadStorageStateEvent,
+		TabCreatedEvent,
+		TabClosedEvent,
+	]
+	EMITS: ClassVar[list[type[BaseEvent]]] = [
+		StorageStateSavedEvent,
+		StorageStateLoadedEvent,
+	]
 
-	event_bus: EventBus
-	browser_session: Any  # Avoid circular import
+	# Configuration
 	auto_save_interval: float = Field(default=30.0)  # Auto-save every 30 seconds
 	save_on_change: bool = Field(default=True)  # Save immediately when cookies change
 
 	# Private state
-	_browser_context: BrowserContext | None = PrivateAttr(default=None)
-	_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_last_cookie_state: list[Cookie] = PrivateAttr(default_factory=list)
 	_pending_save: bool = PrivateAttr(default=False)
 	_save_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
-	def __init__(self, event_bus: EventBus, browser_session: Any, **kwargs):
-		"""Initialize watchdog with event bus and browser session."""
-		super().__init__(event_bus=event_bus, browser_session=browser_session, **kwargs)
-		self._register_handlers()
-
-	def _register_handlers(self) -> None:
-		"""Register event handlers."""
-		self.event_bus.on(BrowserStartedEvent, self._handle_browser_started)
-		self.event_bus.on(BrowserStoppedEvent, self._handle_browser_stopped)
-		self.event_bus.on(SaveStorageStateEvent, self._handle_save_storage_state)
-		self.event_bus.on(LoadStorageStateEvent, self._handle_load_storage_state)
-		self.event_bus.on(TabCreatedEvent, self._handle_tab_created)
-		self.event_bus.on(TabClosedEvent, self._handle_tab_closed)
-
-	async def _handle_browser_started(self, event: BrowserStartedEvent) -> None:
+	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
 		"""Start monitoring when browser starts."""
 		logger.info('[StorageStateWatchdog] Browser started, initializing storage monitoring')
-
-		# Get browser context reference
-		if hasattr(self.browser_session, '_browser_context'):
-			self._browser_context = self.browser_session._browser_context
 
 		# Start monitoring
 		await self._start_monitoring()
@@ -74,7 +61,7 @@ class StorageStateWatchdog(BaseModel):
 		# Automatically load storage state after browser start
 		self.event_bus.dispatch(LoadStorageStateEvent())
 
-	async def _handle_browser_stopped(self, event: BrowserStoppedEvent) -> None:
+	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Stop monitoring and save state when browser stops."""
 		logger.info('[StorageStateWatchdog] Browser stopping, saving final storage state')
 
@@ -85,24 +72,23 @@ class StorageStateWatchdog(BaseModel):
 
 		# Stop monitoring
 		await self._stop_monitoring()
-		self._browser_context = None
-		self._pages.clear()
+		# No cleanup needed - browser context is managed by session
 
-	async def _handle_tab_created(self, event: TabCreatedEvent) -> None:
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for storage changes."""
 		# Tab will be added when we detect it via browser context
 		pass
 
-	async def _handle_tab_closed(self, event: TabClosedEvent) -> None:
+	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Stop monitoring closed tabs."""
 		# Tab will be removed automatically via WeakSet
 		pass
 
-	async def _handle_save_storage_state(self, event: SaveStorageStateEvent) -> None:
+	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
 		"""Handle storage state save request."""
 		await self._save_storage_state(event.path)
 
-	async def _handle_load_storage_state(self, event: LoadStorageStateEvent) -> None:
+	async def on_LoadStorageStateEvent(self, event: LoadStorageStateEvent) -> None:
 		"""Handle storage state load request."""
 		await self._load_storage_state(event.path)
 
@@ -115,8 +101,8 @@ class StorageStateWatchdog(BaseModel):
 		logger.info('[StorageStateWatchdog] Started storage monitoring task')
 
 		# Set up page monitoring for existing pages
-		if self._browser_context:
-			for page in self._browser_context.pages:
+		if self.browser_session._browser_context:
+			for page in self.browser_session._browser_context.pages:
 				self._setup_page_monitoring(page)
 
 	async def _stop_monitoring(self) -> None:
@@ -131,8 +117,6 @@ class StorageStateWatchdog(BaseModel):
 
 	def _setup_page_monitoring(self, page: Page) -> None:
 		"""Set up storage change monitoring for a page."""
-		self._pages.add(page)
-
 		# Monitor for cookie changes via response headers
 		page.on('response', lambda response: asyncio.create_task(self._check_for_cookie_changes(response)))
 
@@ -175,11 +159,11 @@ class StorageStateWatchdog(BaseModel):
 
 	async def _have_cookies_changed(self) -> bool:
 		"""Check if cookies have changed since last save."""
-		if not self._browser_context:
+		if not self.browser_session._browser_context:
 			return False
 
 		try:
-			current_cookies = await self._browser_context.cookies()
+			current_cookies = await self.browser_session._browser_context.cookies()
 
 			# Convert to comparable format, using .get() for optional fields
 			current_cookie_set = {
@@ -206,7 +190,7 @@ class StorageStateWatchdog(BaseModel):
 	async def _save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state to file."""
 		async with self._save_lock:
-			if not self._browser_context:
+			if not self.browser_session._browser_context:
 				logger.warning('[StorageStateWatchdog] No browser context available for saving')
 				return
 
@@ -216,7 +200,7 @@ class StorageStateWatchdog(BaseModel):
 
 			try:
 				# Get current storage state
-				storage_state = await self._browser_context.storage_state()
+				storage_state = await self.browser_session._browser_context.storage_state()
 
 				# Update our last known state
 				self._last_cookie_state = storage_state.get('cookies', []).copy()
@@ -267,7 +251,7 @@ class StorageStateWatchdog(BaseModel):
 
 	async def _load_storage_state(self, path: str | None = None) -> None:
 		"""Load browser storage state from file."""
-		if not self._browser_context:
+		if not self.browser_session._browser_context:
 			logger.warning('[StorageStateWatchdog] No browser context available for loading')
 			return
 
@@ -276,13 +260,15 @@ class StorageStateWatchdog(BaseModel):
 			return
 
 		try:
-			# Read the storage state file
-			with open(str(load_path)) as f:
-				storage = json.load(f)
+			# Read the storage state file asynchronously
+			import anyio
+
+			content = await anyio.Path(str(load_path)).read_text()
+			storage = json.loads(content)
 
 			# Apply cookies if present
 			if 'cookies' in storage and storage['cookies']:
-				await self._browser_context.add_cookies(storage['cookies'])
+				await self.browser_session._browser_context.add_cookies(storage['cookies'])
 				self._last_cookie_state = storage['cookies'].copy()
 				logger.info(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
 
@@ -291,12 +277,12 @@ class StorageStateWatchdog(BaseModel):
 				for origin in storage['origins']:
 					if 'localStorage' in origin:
 						for item in origin['localStorage']:
-							await self._browser_context.add_init_script(f"""
+							await self.browser_session._browser_context.add_init_script(f"""
 								window.localStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
 							""")
 					if 'sessionStorage' in origin:
 						for item in origin['sessionStorage']:
-							await self._browser_context.add_init_script(f"""
+							await self.browser_session._browser_context.add_init_script(f"""
 								window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
 							""")
 				logger.info(f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
@@ -340,18 +326,18 @@ class StorageStateWatchdog(BaseModel):
 
 	async def get_current_cookies(self) -> list[Cookie]:
 		"""Get current cookies from browser context."""
-		if not self._browser_context:
+		if not self.browser_session._browser_context:
 			return []
 
 		try:
-			return await self._browser_context.cookies()
+			return await self.browser_session._browser_context.cookies()
 		except Exception as e:
 			logger.error(f'[StorageStateWatchdog] Failed to get cookies: {e}')
 			return []
 
 	async def add_cookies(self, cookies: list[Cookie]) -> None:
 		"""Add cookies to browser context."""
-		if not self._browser_context:
+		if not self.browser_session._browser_context:
 			logger.warning('[StorageStateWatchdog] No browser context available for adding cookies')
 			return
 
@@ -385,8 +371,11 @@ class StorageStateWatchdog(BaseModel):
 
 				cookie_params.append(param)
 
-			await self._browser_context.add_cookies(cookie_params)  # type: ignore
+			await self.browser_session._browser_context.add_cookies(cookie_params)  # type: ignore
 			self._pending_save = True
 			logger.info(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
 			logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')
+
+
+# Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined

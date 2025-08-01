@@ -1,17 +1,16 @@
 """Downloads watchdog for monitoring and handling file downloads."""
 
-import asyncio
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import urlparse
 from weakref import WeakSet
 
 import anyio
-from bubus import EventBus
+from bubus import BaseEvent
 from playwright.async_api import Download, Page
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
 	FileDownloadedEvent,
@@ -19,51 +18,54 @@ from browser_use.browser.events import (
 	TabClosedEvent,
 	TabCreatedEvent,
 )
+from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
 
 if TYPE_CHECKING:
-	from browser_use.browser.session import BrowserSession
+	pass
 
 
-class DownloadsWatchdog(BaseModel):
+class DownloadsWatchdog(BaseWatchdog):
 	"""Monitors downloads and handles file download events."""
 
-	model_config = ConfigDict(
-		arbitrary_types_allowed=True,
-		validate_assignment=True,
-		extra='forbid',
-	)
+	# Events this watchdog listens to (for documentation)
+	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		TabCreatedEvent,
+		TabClosedEvent,
+		NavigationCompleteEvent,
+	]
 
-	event_bus: EventBus
-	browser_session: 'BrowserSession'  # Dependency injection instead of private attrs
+	# Events this watchdog emits
+	EMITS: ClassVar[list[type[BaseEvent]]] = [
+		FileDownloadedEvent,
+	]
 
 	# Private state
-	_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
+	_pages_with_listeners: WeakSet[Page] = PrivateAttr(
+		default_factory=WeakSet
+	)  # Track pages that already have download listeners
 	_active_downloads: dict[str, Download] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by page URL
 
-	def __init__(self, event_bus: EventBus, browser_session: 'BrowserSession', **kwargs):
-		"""Initialize watchdog with event bus and browser session."""
-		super().__init__(event_bus=event_bus, browser_session=browser_session, **kwargs)
-		self._register_handlers()
-
-	def _register_handlers(self) -> None:
-		"""Register event handlers."""
-		self.event_bus.on(TabCreatedEvent, self._handle_tab_created)
-		self.event_bus.on(TabClosedEvent, self._handle_tab_closed)
-		self.event_bus.on(NavigationCompleteEvent, self._handle_navigation_complete)
-
-	async def _handle_tab_created(self, event: TabCreatedEvent) -> None:
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for downloads."""
-		# Tab will be added via add_page method from session
-		pass
+		logger.info(f'[DownloadsWatchdog] TabCreatedEvent received for tab {event.tab_index}: {event.url}')
 
-	async def _handle_tab_closed(self, event: TabClosedEvent) -> None:
+		# Assert downloads path is configured (should always be set by BrowserProfile default)
+		assert self.browser_session.browser_profile.downloads_path is not None, 'Downloads path must be configured'
+
+		page = self.browser_session.get_page_by_tab_index(event.tab_index)
+		if page:
+			logger.info(f'[DownloadsWatchdog] Found page for tab {event.tab_index}, calling attach_to_page')
+			await self.attach_to_page(page)
+		else:
+			logger.warning(f'[DownloadsWatchdog] No page found for tab {event.tab_index}')
+
+	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Stop monitoring closed tabs."""
-		# Tab will be removed automatically via WeakSet
-		pass
+		pass  # No cleanup needed, browser context handles page lifecycle
 
-	async def _handle_navigation_complete(self, event: NavigationCompleteEvent) -> None:
+	async def on_NavigationCompleteEvent(self, event: NavigationCompleteEvent) -> None:
 		"""Check for PDFs after navigation completes."""
 		# Clear PDF cache for the navigated URL since content may have changed
 		if event.url in self._pdf_viewer_cache:
@@ -73,37 +75,38 @@ class DownloadsWatchdog(BaseModel):
 		if not self._is_auto_download_enabled():
 			return
 
-		# Get the page that navigated
-		try:
-			if not hasattr(self.browser_session, '_browser_context') or not self.browser_session._browser_context:
-				return
-
-			pages = self.browser_session._browser_context.pages
-			if 0 <= event.tab_index < len(pages):
-				page = pages[event.tab_index]
-
-				# Check if it's a PDF and auto-download if needed
-				if await self.check_for_pdf_viewer(page):
-					logger.info(f'[DownloadsWatchdog] PDF detected after navigation to {event.url}')
-					await self.trigger_pdf_download(page)
-		except Exception as e:
-			logger.error(f'[DownloadsWatchdog] Error checking for PDF after navigation: {e}')
+		page = self.browser_session.get_page_by_tab_index(event.tab_index)
+		if page and await self.check_for_pdf_viewer(page):
+			logger.info(f'[DownloadsWatchdog] PDF detected after navigation to {event.url}')
+			await self.trigger_pdf_download(page)
 
 	def _is_auto_download_enabled(self) -> bool:
 		"""Check if PDF auto-download is enabled."""
 		return getattr(self.browser_session, '_auto_download_pdfs', True)
 
-	def add_page(self, page: Page) -> None:
-		"""Add a page to monitor for downloads."""
-		self._pages.add(page)
-		self._setup_page_listeners(page)
-		logger.debug(f'[DownloadsWatchdog] Added page to monitoring: {page.url}')
+	async def attach_to_page(self, page: Page) -> None:
+		"""Set up download monitoring for a specific page."""
+		try:
+			downloads_path_raw = self.browser_session.browser_profile.downloads_path
+			if not downloads_path_raw:
+				logger.info(f'[DownloadsWatchdog] No downloads path configured, skipping page: {page.url}')
+				return  # No downloads path configured
 
-	def _setup_page_listeners(self, page: Page) -> None:
-		"""Set up download listeners for a page."""
-		# Monitor download events
-		logger.info(f'[DownloadsWatchdog] Setting up download listener for page: {page.url}')
-		page.on('download', lambda download: asyncio.create_task(self._handle_download(download)))
+			# Check if we already have a download listener on this page
+			# to prevent duplicate listeners from being added
+			if page in self._pages_with_listeners:
+				logger.debug(f'[DownloadsWatchdog] Download listener already exists for page: {page.url}')
+				return
+
+			logger.info(f'[DownloadsWatchdog] Setting up download listener for page: {page.url}')
+			# Set up Playwright download event listener
+			page.on('download', self._handle_download)
+			# Track that we've added a listener to prevent duplicates
+			self._pages_with_listeners.add(page)
+			logger.info(f'[DownloadsWatchdog] Successfully set up download listener for page: {page.url}')
+
+		except Exception as e:
+			logger.warning(f'[DownloadsWatchdog] Failed to set up download listener for page {page.url}: {e}')
 
 	async def _handle_download(self, download: Download) -> None:
 		"""Handle a download event."""
@@ -112,10 +115,12 @@ class DownloadsWatchdog(BaseModel):
 		logger.info(f'[DownloadsWatchdog] Handling download: {download.suggested_filename} from {download.url[:100]}...')
 
 		try:
-			# Get download info
+			current_step = 'getting_download_info'
+			# Get download info immediately
 			url = download.url
 			suggested_filename = download.suggested_filename
 
+			current_step = 'determining_download_directory'
 			# Determine download directory from browser profile
 			downloads_dir = self.browser_session.browser_profile.downloads_path
 			if not downloads_dir:
@@ -123,14 +128,48 @@ class DownloadsWatchdog(BaseModel):
 			else:
 				downloads_dir = str(downloads_dir)  # Ensure it's a string
 
+			current_step = 'generating_unique_filename'
 			# Ensure unique filename
 			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
 			download_path = Path(downloads_dir) / unique_filename
 
 			logger.info(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
 
-			# Save the download
-			await download.save_as(str(download_path))
+			current_step = 'calling_save_as'
+			# Save the download using Playwright's save_as method
+			logger.info(f'[DownloadsWatchdog] Saving download to: {download_path}')
+			logger.info(f'[DownloadsWatchdog] Download path exists: {download_path.parent.exists()}')
+			logger.info(f'[DownloadsWatchdog] Download path writable: {os.access(download_path.parent, os.W_OK)}')
+
+			try:
+				logger.info('[DownloadsWatchdog] About to call download.save_as()...')
+				await download.save_as(str(download_path))
+				logger.info(f'[DownloadsWatchdog] Successfully saved download to: {download_path}')
+				current_step = 'save_as_completed'
+			except Exception as save_error:
+				logger.error(f'[DownloadsWatchdog] save_as() failed with error: {save_error}')
+				if 'canceled' in str(save_error).lower():
+					# Download was canceled - try using the path method as fallback
+					logger.warning(f'[DownloadsWatchdog] save_as() was canceled, trying path() method: {save_error}')
+					current_step = 'using_path_fallback'
+					try:
+						# Use download.path() to access the file that was already downloaded
+						source_path = await download.path()
+						if source_path and Path(source_path).exists():
+							# Move the file from the temporary location to our desired location
+							import shutil
+
+							shutil.move(str(source_path), str(download_path))
+							logger.info(f'[DownloadsWatchdog] Successfully moved download from {source_path} to: {download_path}')
+							current_step = 'path_fallback_completed'
+						else:
+							raise Exception(f'Downloaded file not found at path: {source_path}')
+					except Exception as path_error:
+						logger.error(f'[DownloadsWatchdog] Path fallback also failed: {path_error}')
+						raise save_error  # Re-raise the original error
+				else:
+					# Some other save error
+					raise save_error
 
 			# Get file info
 			file_size = download_path.stat().st_size if download_path.exists() else 0
@@ -169,7 +208,10 @@ class DownloadsWatchdog(BaseModel):
 			# File is now tracked on filesystem, no need to track in memory
 
 		except Exception as e:
-			logger.error(f'[DownloadsWatchdog] Error handling download: {e}')
+			logger.error(
+				f'[DownloadsWatchdog] Error handling download at step "{locals().get("current_step", "unknown")}", error: {e}'
+			)
+			logger.error(f'[DownloadsWatchdog] Download state - URL: {download.url}, filename: {download.suggested_filename}')
 		finally:
 			# Clean up tracking
 			if download_id in self._active_downloads:
@@ -395,3 +437,6 @@ class DownloadsWatchdog(BaseModel):
 			new_filename = f'{base} ({counter}){ext}'
 			counter += 1
 		return new_filename
+
+
+# Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined

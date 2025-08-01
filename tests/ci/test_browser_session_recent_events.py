@@ -179,7 +179,14 @@ class TestBrowserRecentEvents:
 		"""
 
 		httpserver.expect_request('/slow').respond_with_data(slow_html, content_type='text/html')
-		httpserver.expect_request('/slow.js').respond_with_handler(lambda req: (time.sleep(5), 'slow')[1])
+
+		def slow_handler(req):
+			import time
+
+			time.sleep(5)
+			return Response('slow')
+
+		httpserver.expect_request('/slow.js').respond_with_handler(slow_handler)
 
 		httpserver.expect_request('/fast').respond_with_data(
 			'<html><head><title>Fast Page</title></head><body><h1>Fast page</h1></body></html>',
@@ -244,7 +251,14 @@ class TestBrowserRecentEvents:
 		"""
 
 		httpserver.expect_request('/malformed').respond_with_data(malformed_html, content_type='text/html')
-		httpserver.expect_request('/slow.js').respond_with_handler(lambda req: (time.sleep(5), 'slow')[1])
+
+		def slow_handler(req):
+			import time
+
+			time.sleep(5)
+			return Response('slow')
+
+		httpserver.expect_request('/slow.js').respond_with_handler(slow_handler)
 
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
@@ -288,7 +302,14 @@ class TestBrowserRecentEvents:
 			f'<body><h1>Testing {timeout_seconds}s timeout</h1></body></html>',
 			content_type='text/html',
 		)
-		httpserver.expect_request(f'/slow_{timeout_seconds}.js').respond_with_handler(lambda req: (time.sleep(10), 'slow')[1])
+
+		def very_slow_handler(req):
+			import time
+
+			time.sleep(10)
+			return Response('slow')
+
+		httpserver.expect_request(f'/slow_{timeout_seconds}.js').respond_with_handler(very_slow_handler)
 
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(

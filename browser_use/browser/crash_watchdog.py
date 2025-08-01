@@ -2,12 +2,11 @@
 
 import asyncio
 import time
-from typing import Any
-from weakref import WeakSet
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from bubus import EventBus
-from playwright.async_api import Browser, BrowserContext, Page, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from bubus import BaseEvent
+from playwright.async_api import Browser, Page, Request, Response
+from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -17,7 +16,11 @@ from browser_use.browser.events import (
 	TabClosedEvent,
 	TabCreatedEvent,
 )
+from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
+
+if TYPE_CHECKING:
+	pass
 
 
 class NetworkRequestTracker:
@@ -31,85 +34,69 @@ class NetworkRequestTracker:
 		self.resource_type = resource_type
 
 
-class CrashWatchdog(BaseModel):
+class CrashWatchdog(BaseWatchdog):
 	"""Monitors browser health for crashes and network timeouts."""
 
-	model_config = ConfigDict(
-		arbitrary_types_allowed=True,
-		validate_assignment=True,
-		extra='forbid',
-	)
+	# Event contracts
+	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		BrowserStartedEvent,
+		BrowserStoppedEvent,
+		TabCreatedEvent,
+		TabClosedEvent,
+	]
+	EMITS: ClassVar[list[type[BaseEvent]]] = [
+		BrowserErrorEvent,
+		PageCrashedEvent,
+	]
 
-	event_bus: EventBus
+	# Configuration
 	network_timeout_seconds: float = Field(default=10.0)
 	check_interval_seconds: float = Field(default=1.0)
 
 	# Private state
-	_browser: Browser | None = PrivateAttr(default=None)
-	_browser_context: BrowserContext | None = PrivateAttr(default=None)
 	_browser_pid: int | None = PrivateAttr(default=None)
-	_pages: WeakSet[Page] = PrivateAttr(default_factory=WeakSet)
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_cdp_session: Any = PrivateAttr(default=None)
 	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # page_url -> timestamp
 
-	def __init__(self, event_bus: EventBus, **kwargs):
-		"""Initialize watchdog with event bus."""
-		super().__init__(event_bus=event_bus, **kwargs)
-		self._register_handlers()
-
-	def _register_handlers(self) -> None:
-		"""Register event handlers."""
-		self.event_bus.on(BrowserStartedEvent, self._handle_browser_started)
-		self.event_bus.on(BrowserStoppedEvent, self._handle_browser_stopped)
-		self.event_bus.on(TabCreatedEvent, self._handle_tab_created)
-		self.event_bus.on(TabClosedEvent, self._handle_tab_closed)
-
-	async def _handle_browser_started(self, event: BrowserStartedEvent) -> None:
+	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
 		"""Start monitoring when browser starts."""
-		logger.info('[Watchdog] Browser started, beginning monitoring')
-		# Note: Browser and context will be set by session via set_browser_context
-		await self._start_monitoring()
+		logger.info('[CrashWatchdog] Browser started event received, beginning monitoring')
 
-	async def _handle_browser_stopped(self, event: BrowserStoppedEvent) -> None:
+		# Get browser pid for process monitoring
+		self._browser_pid = self.browser_session.browser_pid
+
+		await self._start_monitoring()
+		logger.info(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
+
+	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Stop monitoring when browser stops."""
 		logger.info('[Watchdog] Browser stopped, ending monitoring')
 		await self._stop_monitoring()
 
-	async def _handle_tab_created(self, event: TabCreatedEvent) -> None:
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs."""
 		# Tab will be added via add_page method from session
 		pass
 
-	async def _handle_tab_closed(self, event: TabClosedEvent) -> None:
+	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Stop monitoring closed tabs."""
 		# Tab will be removed automatically via WeakSet
 		pass
 
-	def set_browser_context(self, browser: Browser, context: BrowserContext, browser_pid: int | None = None) -> None:
-		"""Set browser and context references."""
-		self._browser = browser
-		self._browser_context = context
-		self._browser_pid = browser_pid
-		logger.info(f'[Watchdog] Browser and context references set (pid: {browser_pid})')
-
-	def add_page(self, page: Page) -> None:
-		"""Add a page to monitor."""
-		self._pages.add(page)
-		self._setup_page_listeners(page)
-		logger.debug(f'[Watchdog] Added page to monitoring: {page.url}')
-
-	def _setup_page_listeners(self, page: Page) -> None:
-		"""Set up network and crash listeners for a page."""
+	async def attach_to_page(self, page: Page) -> None:
+		"""Set up crash monitoring for a specific page."""
 		# Network request tracking
 		page.on('request', lambda req: asyncio.create_task(self._on_request(req)))
 		page.on('response', lambda resp: self._on_response(resp))
 		page.on('requestfailed', lambda req: self._on_request_failed(req))
-		page.on('requestfinished', lambda req: self._on_request_finished(req))
+		page.on('requestfinished', lambda req: (self._active_requests.pop(f'{id(req)}', None), None)[1])
 
 		# Page crash detection
 		page.on('crash', lambda _: asyncio.create_task(self._on_page_crash(page)))
+
+		logger.debug(f'[CrashWatchdog] Added page to monitoring: {page.url}')
 
 	async def _on_request(self, request: Request) -> None:
 		"""Track new network request."""
@@ -139,22 +126,11 @@ class CrashWatchdog(BaseModel):
 			logger.debug(f'[Watchdog] Request failed after {elapsed:.2f}s: {request.url[:50]}...')
 			del self._active_requests[request_id]
 
-	def _on_request_finished(self, request: Request) -> None:
-		"""Remove request from tracking on finish."""
-		request_id = f'{id(request)}'
-		if request_id in self._active_requests:
-			del self._active_requests[request_id]
-
 	async def _on_page_crash(self, page: Page) -> None:
 		"""Handle page crash."""
 		logger.error(f'[Watchdog] Page crashed: {page.url}')
 
-		# Find tab index
-		tab_index = -1
-		if self._browser_context:
-			pages = self._browser_context.pages
-			if page in pages:
-				tab_index = pages.index(page)
+		tab_index = self.browser_session.get_tab_index(page)
 
 		# Emit crash event
 		self.event_bus.dispatch(
@@ -179,10 +155,11 @@ class CrashWatchdog(BaseModel):
 	async def _start_monitoring(self) -> None:
 		"""Start the monitoring loop."""
 		if self._monitoring_task and not self._monitoring_task.done():
+			logger.info('[CrashWatchdog] Monitoring already running')
 			return
 
 		self._monitoring_task = asyncio.create_task(self._monitoring_loop())
-		logger.info('[Watchdog] Monitoring loop started')
+		logger.info('[CrashWatchdog] Monitoring loop created and started')
 
 		# Set up CDP session for browser crash detection
 		if self._browser:
@@ -196,7 +173,15 @@ class CrashWatchdog(BaseModel):
 				await self._cdp_session.send('Page.enable')
 
 				# Set up crash handlers
-				self._cdp_session.on('Inspector.targetCrashed', self._on_browser_crash)
+				self._cdp_session.on(
+					'Inspector.targetCrashed',
+					lambda params: (
+						logger.error('[Watchdog] Browser crash detected via CDP'),
+						self.event_bus.dispatch(
+							BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=params)
+						),
+					),
+				)
 
 				logger.info('[Watchdog] CDP crash detection enabled')
 			except Exception as e:
@@ -222,7 +207,7 @@ class CrashWatchdog(BaseModel):
 
 		# Clear tracking
 		self._active_requests.clear()
-		self._pages.clear()
+		# No _pages attribute in this watchdog
 
 	async def _monitoring_loop(self) -> None:
 		"""Main monitoring loop."""
@@ -241,9 +226,18 @@ class CrashWatchdog(BaseModel):
 		current_time = time.time()
 		timed_out_requests = []
 
+		# Debug logging
+		if self._active_requests:
+			logger.debug(
+				f'[Watchdog] Checking {len(self._active_requests)} active requests for timeouts (threshold: {self.network_timeout_seconds}s)'
+			)
+
 		for request_id, tracker in self._active_requests.items():
 			elapsed = current_time - tracker.start_time
-			if elapsed > self.network_timeout_seconds:
+			logger.debug(
+				f'[Watchdog] Request {tracker.url[:30]}... elapsed: {elapsed:.1f}s, timeout: {self.network_timeout_seconds}s'
+			)
+			if elapsed >= self.network_timeout_seconds:
 				timed_out_requests.append((request_id, tracker))
 
 		# Emit events for timed out requests
@@ -281,7 +275,7 @@ class CrashWatchdog(BaseModel):
 			return
 
 		# Check browser process if we have PID
-		if hasattr(self, '_browser_pid') and self._browser_pid:
+		if self._browser_pid:
 			try:
 				import psutil
 
@@ -304,7 +298,10 @@ class CrashWatchdog(BaseModel):
 		dead_pages = []
 		unresponsive_pages = []
 
-		for page in list(self._pages):  # Copy to avoid modification during iteration
+		if not self.browser_session._browser_context:
+			return
+
+		for page in list(self.browser_session._browser_context.pages):  # Copy to avoid modification during iteration
 			try:
 				if page.is_closed():
 					dead_pages.append(page)
@@ -323,19 +320,14 @@ class CrashWatchdog(BaseModel):
 
 		# Remove dead pages
 		for page in dead_pages:
-			self._pages.discard(page)
+			# Pages are managed by browser context, no need to remove manually
+			pass
 
 		# Report unresponsive pages
 		for page in unresponsive_pages:
 			logger.warning(f'[Watchdog] Page unresponsive: {page.url}')
 
-			# Find tab index
-			tab_index = -1
-			if self._browser_context:
-				pages = self._browser_context.pages
-				if page in pages:
-					tab_index = pages.index(page)
-
+			tab_index = self.browser_session.get_tab_index(page)
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='PageUnresponsive',
@@ -381,11 +373,6 @@ class CrashWatchdog(BaseModel):
 		"""Check if URL is a new tab page."""
 		return url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']
 
-	def _on_browser_crash(self, params: dict[str, Any]) -> None:
-		"""Handle browser crash event from CDP."""
-		logger.error('[Watchdog] Browser crash detected via CDP')
-		self.event_bus.dispatch(BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=params))
-
 	async def trigger_browser_crash(self) -> None:
 		"""Trigger a browser crash for testing (requires CDP session)."""
 		if not self._cdp_session:
@@ -419,3 +406,6 @@ class CrashWatchdog(BaseModel):
 			await cdp.detach()
 		except Exception as e:
 			logger.error(f'[Watchdog] Failed to trigger page crash: {e}')
+
+
+# Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined

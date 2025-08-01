@@ -197,7 +197,7 @@ class TestBrowserSessionStorageState:
 		context = session.browser_context
 		assert context is not None
 		cookies = await context.cookies()
-		localhost_cookies = [c for c in cookies if c['domain'] in ['127.0.0.1', '.127.0.0.1']]
+		localhost_cookies = [c for c in cookies if c.get('domain', '') in ['127.0.0.1', '.127.0.0.1']]
 		assert len(localhost_cookies) == 0, f'Expected no 127.0.0.1 cookies, but found: {localhost_cookies}'
 
 		await session.kill()
@@ -219,7 +219,7 @@ class TestBrowserSessionStorageState:
 		context = session.browser_context
 		assert context is not None
 		cookies = await context.cookies()
-		localhost_cookies = [c for c in cookies if c['domain'] in ['127.0.0.1', '.127.0.0.1']]
+		localhost_cookies = [c for c in cookies if c.get('domain', '') in ['127.0.0.1', '.127.0.0.1']]
 		assert len(localhost_cookies) == 0, f'Expected no 127.0.0.1 cookies, but found: {localhost_cookies}'
 
 		await session.kill()

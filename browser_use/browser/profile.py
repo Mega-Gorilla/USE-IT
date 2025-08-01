@@ -459,6 +459,15 @@ class BrowserLaunchArgs(BaseModel):
 		assert not (self.headless and self.devtools), 'headless=True and devtools=True cannot both be set at the same time'
 		return self
 
+	@model_validator(mode='after')
+	def set_default_downloads_path(self) -> Self:
+		"""Set a default downloads path if none is provided."""
+		if self.downloads_path is None:
+			import tempfile
+
+			self.downloads_path = Path(tempfile.gettempdir()) / 'browser-use-downloads'
+		return self
+
 	@staticmethod
 	def args_as_dict(args: list[str]) -> dict[str, str]:
 		"""Return the extra launch CLI args as a dictionary."""

@@ -139,11 +139,12 @@ async def test_actual_download_detection(test_server, tmp_path):
 	downloads_path = tmp_path / 'downloads'
 	downloads_path.mkdir()
 
+	# Don't use user_data_dir - it seems to complicate downloads
 	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=True,
 			downloads_path=str(downloads_path),
-			user_data_dir=None,  # Don't use persistent context for now
+			user_data_dir=None,  # Use temporary context
 		)
 	)
 
@@ -169,44 +170,13 @@ async def test_actual_download_detection(test_server, tmp_path):
 	print(f'Auto download PDFs enabled: {browser_session._auto_download_pdfs}')
 
 	# Since the link has a download attribute, it will trigger a download, not navigation
-	# We need to intercept the download event
+	# The downloads watchdog will handle the download automatically
 	start_time = time.time()
 
-	# Listen for download event on the page
-	download_started = False
-	received_download = None
+	# We don't need our own download handler - let the downloads watchdog handle it
 
-	async def handle_download(download):
-		nonlocal download_started, received_download
-		download_started = True
-		received_download = download
-		print(f'Download started: {download.suggested_filename}')
-		# Try saving it manually for debugging
-		try:
-			# First, let's see the download state
-			print(f'Download URL: {download.url}')
-			print(f'Download suggested filename: {download.suggested_filename}')
-
-			# Try to get the path where it's being downloaded
-			path = await download.path()
-			print(f'Download path from browser: {path}')
-
-			# If path exists, copy it to our downloads dir
-			if path and os.path.exists(path):
-				import shutil
-
-				dest_path = downloads_path / download.suggested_filename
-				shutil.copy(path, dest_path)
-				print(f'Copied download from {path} to {dest_path}')
-			else:
-				print(f'Download path does not exist: {path}')
-		except Exception as e:
-			print(f'Error handling download: {e}')
-
-	page.on('download', handle_download)
-
-	# Click the download link
-	await browser_session._click_element_node(download_node)
+	# Click the download link with expect_download=True
+	await browser_session._click_element_node(download_node, expect_download=True)
 	duration = time.time() - start_time
 
 	print(f'Click completed in {duration:.2f}s')
@@ -217,7 +187,7 @@ async def test_actual_download_detection(test_server, tmp_path):
 	# Check if we're still on the same page (download attribute prevents navigation)
 	current_url = page.url
 	print(f'Current URL after click: {current_url}')
-	print(f'Download started: {download_started}')
+	print('Download was handled by downloads watchdog')
 
 	# Wait a bit more
 	await asyncio.sleep(1.0)

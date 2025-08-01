@@ -360,9 +360,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if browser_session._owns_browser_resources:
 				self.browser_session = browser_session
 			else:
-				self.logger.warning(
-					'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
-				)
+				# TODO: Only warn when multiple agents are running in parallel, not sequentially
+				# self.logger.warning(
+				# 	'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
+				# )
 				self.browser_session = browser_session.model_copy()
 		else:
 			if browser is not None:
@@ -1207,6 +1208,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
 			# Emit CreateAgentTaskEvent at the START of run()
 			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
+
+			# Start browser session and attach watchdogs
+			assert self.browser_session is not None, "Browser session must be initialized before starting"
+			self.logger.debug('🌐 Starting browser session...')
+			await self.browser_session.start()
+
+			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
 			# Execute initial actions if provided
 			if self.initial_actions:

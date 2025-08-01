@@ -15,6 +15,8 @@ class NavigateToUrlEvent(BaseEvent):
 
 	url: str
 	wait_until: Literal['load', 'domcontentloaded', 'networkidle', 'commit'] = 'load'
+	new_tab: bool = False
+	timeout_ms: int | None = None
 
 
 class ClickElementEvent(BaseEvent):
@@ -23,10 +25,12 @@ class ClickElementEvent(BaseEvent):
 	index: int
 	button: Literal['left', 'right', 'middle'] = 'left'
 	click_count: int = 1
+	expect_download: bool = False
+	new_tab: bool = False
 
 
-class InputTextEvent(BaseEvent):
-	"""Input text into an element."""
+class TypeTextEvent(BaseEvent):
+	"""Type text into an element."""
 
 	index: int
 	text: str
@@ -45,12 +49,6 @@ class SwitchTabEvent(BaseEvent):
 	"""Switch to a different tab."""
 
 	tab_index: int
-
-
-class CreateTabEvent(BaseEvent):
-	"""Create a new tab."""
-
-	url: str | None = None
 
 
 class CloseTabEvent(BaseEvent):
@@ -74,7 +72,7 @@ class BrowserStateRequestEvent(BaseEvent):
 	cache_clickable_elements_hashes: bool = True
 
 
-class WaitEvent(BaseEvent):
+class WaitForConditionEvent(BaseEvent):
 	"""Wait for a condition."""
 
 	condition: Literal['navigation', 'selector', 'timeout', 'load_state']
@@ -158,22 +156,21 @@ class BrowserStoppedEvent(BaseEvent):
 class TabCreatedEvent(BaseEvent):
 	"""A new tab was created."""
 
-	tab_id: str
 	tab_index: int
-	url: str | None = None
+	url: str
 
 
 class TabClosedEvent(BaseEvent):
 	"""A tab was closed."""
 
-	tab_id: str | None = None  # Made optional for compatibility
 	tab_index: int
 
 
 class TabUpdatedEvent(BaseEvent):
 	"""Tab information updated (URL changed, etc.)."""
 
-	tab_id: str
+	tab_index: int
+	url: str
 
 
 class HumanFocusChangedEvent(BaseEvent):
@@ -250,7 +247,7 @@ class TabsInfoResponseEvent(BaseEvent):
 	tabs: list[dict[str, Any]]
 
 
-class EvaluateResponse(BaseEvent):
+class EvaluateJavaScriptResponseEvent(BaseEvent):
 	"""Response to EvaluateJavaScriptEvent."""
 
 	result: Any
