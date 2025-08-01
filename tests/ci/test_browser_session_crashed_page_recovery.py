@@ -27,8 +27,9 @@ from browser_use.browser.session import BrowserSession
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*TargetClosedError.*')
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 async def playwright():
+	"""Create a fresh playwright instance for each test to avoid interference"""
 	async with async_playwright() as p:
 		yield p
 
@@ -163,22 +164,21 @@ class TestBrowserSessionRecovery:
 	"""Test browser-use's recovery mechanisms for unresponsive pages"""
 
 	@pytest.fixture(scope='function')
-	async def browser_session(self, playwright):
-		"""Create a browser session for testing"""
+	async def browser_session(self):
+		"""Create a browser session for testing - no playwright parameter to ensure fresh instance"""
 		session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				keep_alive=True,
+				keep_alive=False,  # Don't keep alive between tests
 				default_navigation_timeout=30_000,
 				minimum_wait_page_load_time=0.1,  # Short wait for testing
 				user_data_dir=None,  # No user data dir to avoid race conditions with other tests
 			),
-			playwright=playwright,
+			# Don't pass playwright - let each session create its own
 		)
 		await session.start()
 		yield session
-		# Small delay to let pending operations complete before cleanup
-		await asyncio.sleep(0.1)
+		# Simple cleanup - just kill the browser
 		await session.kill()
 
 	@pytest.mark.timeout(60)  # 60 second timeout
@@ -330,16 +330,44 @@ class TestBrowserSessionRecovery:
 			content_type='text/html',
 		)
 
-		await browser_session.navigate(httpserver.url_for('/transient-block'))
+		print('1️⃣ Starting test_transient_blocking_recovers_naturally')
+		print(f'   Browser context: {browser_session.browser_context}')
+		print(f'   Browser: {browser_session.browser}')
+
+		try:
+			print('2️⃣ Navigating to transient-block page...')
+			await browser_session.navigate(httpserver.url_for('/transient-block'))
+			print('   Navigation completed')
+		except Exception as e:
+			print(f'   Navigation failed: {type(e).__name__}: {e}')
+			raise
+
+		print('3️⃣ Waiting 3.5 seconds for block to end...')
 		await asyncio.sleep(3.5)  # Wait for block to end
+		print('   Wait completed')
+
+		# Check browser state before screenshot
+		print('4️⃣ Checking browser state before screenshot...')
+		print(f'   Browser connected: {browser_session.browser.is_connected() if browser_session.browser else "No browser"}')
+		print(f'   Browser context: {browser_session.browser_context}')
 
 		# Should work without recovery
-		screenshot = await browser_session.take_screenshot()
+		print('5️⃣ Taking screenshot...')
+		try:
+			screenshot = await browser_session.take_screenshot()
+			print(f'   Screenshot taken: {len(screenshot) if screenshot else 0} bytes')
+		except Exception as e:
+			print(f'   Screenshot failed: {type(e).__name__}: {e}')
+			raise
+
 		assert screenshot is not None and len(screenshot) > 100
 
+		print('6️⃣ Getting page content...')
 		page = await browser_session.get_current_page()
 		content = await page.content()
+		print(f'   Content includes "Page recovered!": {"Page recovered!" in content}')
 		assert 'Page recovered!' in content
+		print('✅ Test completed successfully')
 
 	async def test_multiple_blocking_recovery_cycles(self, httpserver: HTTPServer, browser_session: BrowserSession):
 		"""Test multiple cycles of blocking and recovery"""

@@ -26,7 +26,7 @@ from browser_use.llm.openai.chat import ChatOpenAI
 
 async def main():
 	# Initialize the model
-	llm = ChatOpenAI(model='gpt-4o-mini')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Define a simple search task
 	task = "Search Google for 'what is browser automation' and tell me the top 3 results"

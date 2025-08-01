@@ -4,7 +4,7 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -29,6 +29,7 @@ class AgentSettings(BaseModel):
 	"""Configuration options for the Agent"""
 
 	use_vision: bool = True
+	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
 	use_vision_for_planner: bool = False
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
@@ -481,11 +482,33 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 		for h in self.history:
 			if h.model_output:
-				for action, interacted_element in zip(h.model_output.action, h.state.interacted_element):
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				for action, interacted_element in zip(h.model_output.action, interacted_elements):
 					output = action.model_dump(exclude_none=True)
 					output['interacted_element'] = interacted_element
 					outputs.append(output)
 		return outputs
+
+	def action_history(self) -> list[list[dict]]:
+		"""Get truncated action history with only essential fields"""
+		step_outputs = []
+
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(h.model_output.action, interacted_elements, h.result):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					# Only keep long_term_memory from result
+					action_output['result'] = result.long_term_memory if result and result.long_term_memory else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+
+		return step_outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""
