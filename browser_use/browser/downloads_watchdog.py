@@ -47,6 +47,16 @@ class DownloadsWatchdog(BaseWatchdog):
 	_active_downloads: dict[str, Download] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by page URL
 
+	async def attach_to_session(self) -> None:
+		"""Attach to browser session and ensure downloads directory exists."""
+		await super().attach_to_session()
+
+		# Ensure downloads directory exists
+		downloads_path = self.browser_session.browser_profile.downloads_path
+		if downloads_path:
+			Path(downloads_path).mkdir(parents=True, exist_ok=True)
+			logger.info(f'[DownloadsWatchdog] Ensured downloads directory exists: {downloads_path}')
+
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for downloads."""
 		logger.info(f'[DownloadsWatchdog] TabCreatedEvent received for tab {event.tab_index}: {event.url}')

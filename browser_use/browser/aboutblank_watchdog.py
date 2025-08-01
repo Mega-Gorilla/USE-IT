@@ -1,6 +1,5 @@
 """About:blank watchdog for managing about:blank tabs with DVD screensaver."""
 
-import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
@@ -43,27 +42,23 @@ class AboutBlankWatchdog(BaseWatchdog):
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Check tabs when a new tab is created."""
 		logger.debug(f'[AboutBlankWatchdog] Tab created: {event.url}')
-		# Small delay to let tab finish loading
-		await asyncio.sleep(0.1)
 		await self._check_and_ensure_about_blank_tab()
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Check tabs when a tab is closed and proactively create about:blank if needed."""
-		logger.debug('[AboutBlankWatchdog] Tab closed, checking if we need to create about:blank tab')
+		logger.debug('[AboutBlankWatchdog] Tab closing, checking if we need to create about:blank tab')
 
-		# Check if we're about to close the last page
+		# Check if we're about to close the last page (event happens BEFORE tab closes)
 		pages = self.browser_session.pages
 		if len(pages) <= 1:
-			logger.info('[AboutBlankWatchdog] Last page closing, proactively creating about:blank tab')
+			logger.info('[AboutBlankWatchdog] Last tab closing, will create animation tab')
+			# Create the animation tab since no tabs should remain
 			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 			await navigate_event
-			# Wait a bit for navigation to complete
-			await asyncio.sleep(0.1)
 			# Show DVD screensaver on the new tab
 			await self._show_dvd_screensaver_on_about_blank_tabs()
 		else:
-			# Normal check after tab closes
-			await asyncio.sleep(0.1)
+			# Multiple tabs exist, check after close
 			await self._check_and_ensure_about_blank_tab()
 
 	async def attach_to_page(self, page: Page) -> None:
@@ -91,33 +86,23 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 			logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs out of {len(pages)} total tabs')
 
-			# If no animation tabs exist, create one
+			# If no animation tabs exist, create one only if there are no tabs at all
 			if not animation_pages:
-				logger.info('[AboutBlankWatchdog] Creating animation tab')
-				event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
-				await event
-				# Wait a bit for navigation to complete
-				await asyncio.sleep(0.1)
-				# Show DVD screensaver on the new tab
-				await self._show_dvd_screensaver_on_about_blank_tabs()
-			# If more than one animation tab exists, close the extras (only the ones with animation)
+				if len(pages) == 0:
+					# Only create a new tab if there are no tabs at all
+					logger.info('[AboutBlankWatchdog] No tabs exist, creating animation tab')
+					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+					await navigate_event
+					# Show DVD screensaver on the new tab
+					await self._show_dvd_screensaver_on_about_blank_tabs()
+				else:
+					# There are other tabs - don't create new about:blank tabs during scripting
+					logger.debug(
+						f'[AboutBlankWatchdog] {len(pages)} tabs exist, not creating animation tab to avoid interfering with scripting'
+					)
+			# If more than one animation tab exists, just log it - don't close anything
 			elif len(animation_pages) > 1:
-				logger.info(
-					f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, closing {len(animation_pages) - 1} extras'
-				)
-				# Keep the first animation tab, close the rest
-				for i in range(1, len(animation_pages)):
-					page = animation_pages[i]
-					# Find the tab index for this page
-					tab_index = None
-					for idx, p in enumerate(pages):
-						if p == page:
-							tab_index = idx
-							break
-					if tab_index is not None:
-						event = self.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
-						await event
-						await asyncio.sleep(0.1)  # Small delay between closes
+				logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, allowing them to exist')
 
 		except Exception as e:
 			logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')

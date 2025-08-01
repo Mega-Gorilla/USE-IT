@@ -173,13 +173,6 @@ class TabUpdatedEvent(BaseEvent):
 	url: str
 
 
-class HumanFocusChangedEvent(BaseEvent):
-	"""Human focus changed to a different tab."""
-
-	tab_index: int
-	url: str
-
-
 class AgentFocusChangedEvent(BaseEvent):
 	"""Agent focus changed to a different tab."""
 

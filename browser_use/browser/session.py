@@ -94,7 +94,6 @@ class BrowserSession(BaseModel):
 	_crash_watchdog: Any = PrivateAttr(default=None)
 	_downloads_watchdog: Any = PrivateAttr(default=None)
 	_aboutblank_watchdog: Any = PrivateAttr(default=None)
-	_human_focus_watchdog: Any = PrivateAttr(default=None)
 	_navigation_watchdog: Any = PrivateAttr(default=None)
 	_storage_state_watchdog: Any = PrivateAttr(default=None)
 
@@ -293,10 +292,10 @@ class BrowserSession(BaseModel):
 			pages = self._browser_context.pages
 			# Agent focus will be initialized by the watchdog
 
-			# Initialize and attach all watchdogs
+			# Initialize and attach all watchdogs FIRST
 			await self.attach_all_watchdogs()
 
-			# Notify success
+			# THEN notify success - watchdogs are now ready to receive events
 			logger.info('[Session] !!!! DISPATCHING BrowserStartedEvent !!!!')
 			self.event_bus.dispatch(
 				BrowserStartedEvent(
@@ -371,10 +370,9 @@ class BrowserSession(BaseModel):
 
 			# Network monitoring now handled by watchdogs
 
-			# Automatically save storage state before stopping
-			self.event_bus.dispatch(SaveStorageStateEvent())
-			# Give it a moment to save
-			await asyncio.sleep(0.1)
+			# Automatically save storage state before stopping and wait for completion
+			save_event = self.event_bus.dispatch(SaveStorageStateEvent())
+			await save_event
 
 			# Close context if we created it
 			if self._browser_context and not self._browser_context.pages:
@@ -403,12 +401,14 @@ class BrowserSession(BaseModel):
 			if self.is_local and self._owns_browser_resources:
 				self.cdp_url = None
 
-			# Notify stop
-			self.event_bus.dispatch(
+			# Notify stop and wait for all handlers to complete
+			stop_event = self.event_bus.dispatch(
 				BrowserStoppedEvent(
 					reason='Stopped by request',
 				)
 			)
+			# Wait for all watchdog cleanup handlers to complete
+			await stop_event
 
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -700,17 +700,17 @@ class BrowserSession(BaseModel):
 		return self._browser_context
 
 	@property
-	def agent_current_page(self) -> Page | None:
+	def page(self) -> Page | None:
 		"""Get the agent's current page."""
-		if self._navigation_watchdog:
-			return self._navigation_watchdog.current_agent_page
-		return None
+		if self._navigation_watchdog and hasattr(self._navigation_watchdog, 'current_agent_page'):
+			page = self._navigation_watchdog.current_agent_page
+			if page is not None:
+				return page
 
-	@property
-	def human_current_page(self) -> Page | None:
-		"""Get the human's current page."""
-		if self._human_focus_watchdog:
-			return self._human_focus_watchdog.current_human_page
+		# Fallback: return the first available page if browser context is ready
+		if self._browser_context and self._browser_context.pages:
+			return self._browser_context.pages[0]
+
 		return None
 
 	@property
@@ -807,6 +807,17 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(SwitchTabEvent(tab_index=tab_index))
 		await event
 
+	async def close_tab(self, tab_index: int | None = None) -> None:
+		"""Close a tab by index. If no index provided, closes current tab."""
+		if tab_index is None:
+			# Close current tab - get the current page and close it
+			current_page = await self.get_current_page()
+			await current_page.close()
+		else:
+			# Close specific tab
+			event = self.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
+			await event
+
 	async def navigate_to(self, url: str) -> Page:
 		"""Navigate the current page to a URL."""
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url))
@@ -842,7 +853,7 @@ class BrowserSession(BaseModel):
 		if page:
 			await page.reload()
 
-	async def take_screenshot(self, full_page: bool = False, clip: dict | None = None) -> bytes:
+	async def take_screenshot(self, full_page: bool = False, clip: dict | None = None) -> str | None:
 		"""Take a screenshot."""
 		# Dispatch the request event
 		self.event_bus.dispatch(ScreenshotRequestEvent(full_page=full_page, clip=clip))
@@ -850,10 +861,10 @@ class BrowserSession(BaseModel):
 		try:
 			event_result = await self.event_bus.expect(ScreenshotResponseEvent, timeout=10.0)
 			response: ScreenshotResponseEvent = event_result  # type: ignore
-			return base64.b64decode(response.screenshot)
+			return response.screenshot  # Return base64 string directly
 		except TimeoutError:
 			# No screenshot received
-			return b''
+			return None
 
 	async def click_element(self, index: int, expect_download: bool = False, new_tab: bool = False) -> None:
 		"""Click element by index."""
@@ -899,7 +910,7 @@ class BrowserSession(BaseModel):
 		# Use event-based approach
 		self.event_bus.dispatch(SaveStorageStateEvent(path=path))
 
-	async def get_tabs_info(self) -> list[dict[str, Any]]:
+	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all open tabs."""
 		# Dispatch the request event
 		self.event_bus.dispatch(TabsInfoRequestEvent())
@@ -907,22 +918,15 @@ class BrowserSession(BaseModel):
 		try:
 			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
 			response: TabsInfoResponseEvent = event_result  # type: ignore
-			return response.tabs
+			# Convert dictionaries to TabInfo models
+			tab_infos = []
+			for tab_dict in response.tabs:
+				tab_info = TabInfo(**tab_dict)
+				tab_infos.append(tab_info)
+			return tab_infos
 		except TimeoutError:
 			# No response received
 			return []
-
-	async def get_tabs_info_as_models(self) -> list[TabInfo]:
-		"""Get information about all open tabs as TabInfo models."""
-		tabs_data = await self.get_tabs_info()
-		tab_infos = []
-
-		for tab_dict in tabs_data:
-			# Convert dictionary to TabInfo model
-			tab_info = TabInfo(**tab_dict)  # Now the dict should have all required fields
-			tab_infos.append(tab_info)
-
-		return tab_infos
 
 	# DOM element methods
 	async def get_browser_state_with_recovery(
@@ -1008,7 +1012,7 @@ class BrowserSession(BaseModel):
 			content = DOMState(element_tree=minimal_element_tree, selector_map={})
 
 		# Get tabs info
-		tabs_info = await self.get_tabs_info_as_models()
+		tabs_info = await self.get_tabs_info()
 
 		# Get screenshot if requested
 		screenshot_b64 = None
@@ -1099,7 +1103,7 @@ class BrowserSession(BaseModel):
 			title = 'Page Load Error'
 
 		try:
-			tabs_info = await self.get_tabs_info_as_models()
+			tabs_info = await self.get_tabs_info()
 		except Exception:
 			tabs_info = []
 
@@ -1137,11 +1141,6 @@ class BrowserSession(BaseModel):
 		"""Get selector map from the current browser state."""
 		state = await self.get_browser_state_with_recovery()
 		return state.selector_map if hasattr(state, 'selector_map') else {}
-
-	async def get_dom_element_by_index(self, index: int) -> Any:
-		"""Get DOM element by index from the selector map."""
-		selector_map = await self.get_selector_map()
-		return selector_map.get(index)
 
 	async def find_file_upload_element_by_index(self, index: int) -> Any:
 		"""Find file upload element by index."""
@@ -1651,7 +1650,6 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
 		from browser_use.browser.crash_watchdog import CrashWatchdog
 		from browser_use.browser.downloads_watchdog import DownloadsWatchdog
-		from browser_use.browser.human_focus_watchdog import HumanFocusWatchdog
 		from browser_use.browser.navigation_watchdog import NavigationWatchdog
 		from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
 
@@ -1661,7 +1659,6 @@ class BrowserSession(BaseModel):
 			('_navigation_watchdog', NavigationWatchdog),
 			('_storage_state_watchdog', StorageStateWatchdog),
 			('_aboutblank_watchdog', AboutBlankWatchdog),
-			('_human_focus_watchdog', HumanFocusWatchdog),
 		]
 
 		for attr_name, watchdog_class in watchdog_configs:
@@ -1673,8 +1670,23 @@ class BrowserSession(BaseModel):
 					logger.info(f'[Session] Initialized and attached {watchdog_class.__name__}')
 				except Exception as e:
 					logger.warning(f'[Session] Failed to initialize {watchdog_class.__name__}: {e}')
+			else:
+				# Watchdog already exists, don't re-initialize to avoid duplicate handlers
+				logger.debug(f'[Session] {watchdog_class.__name__} already initialized, skipping')
 
 	# ========== Navigation Helper Methods (merged from NavigationWatchdog) ==========
+
+	# ========== Compatibility Methods for Old API ==========
+
+	async def click(self, selector: str) -> None:
+		"""Click an element by CSS selector (compatibility method)."""
+		page = await self.get_current_page()
+		await page.click(selector)
+
+	async def get_dom_element_by_index(self, index: int) -> Any | None:
+		"""Get DOM element by index (compatibility method)."""
+		selector_map = await self.get_selector_map()
+		return selector_map.get(index)
 
 	# ========== PDF API Methods ==========
 
@@ -1712,7 +1724,6 @@ _watchdog_modules = [
 	'browser_use.browser.storage_state_watchdog.StorageStateWatchdog',
 	'browser_use.browser.navigation_watchdog.NavigationWatchdog',
 	'browser_use.browser.aboutblank_watchdog.AboutBlankWatchdog',
-	'browser_use.browser.human_focus_watchdog.HumanFocusWatchdog',
 ]
 
 for module_path in _watchdog_modules:

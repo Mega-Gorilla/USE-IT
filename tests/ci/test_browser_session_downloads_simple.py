@@ -92,19 +92,24 @@ async def test_browser_use_download_with_data_url():
 		# Wait a moment for DOM to be ready
 		await asyncio.sleep(0.5)
 
-		# Click the download link directly via Playwright
-		# This bypasses browser_session's click handling to test raw functionality
-		async with page.expect_download() as download_info:
-			await page.click('#download-link')
-			download = await download_info.value
+		# Click the download link and let the DownloadsWatchdog handle it completely
+		# Don't use page.expect_download() to avoid conflicts with the watchdog
+		await page.click('#download-link')
 
-		# Save the download
-		save_path = downloads_path / download.suggested_filename
-		await download.save_as(str(save_path))
+		# Wait for the DownloadsWatchdog to process the download by expecting the FileDownloadedEvent
+		from browser_use.browser.events import FileDownloadedEvent
 
-		# Verify file exists
-		assert save_path.exists()
-		assert save_path.read_text() == 'Hello BrowserUse'
+		try:
+			download_event = await browser_session.event_bus.expect(FileDownloadedEvent, timeout=10.0)
+			assert isinstance(download_event, FileDownloadedEvent)
+			print(f'📁 Download completed: {download_event.file_name} ({download_event.file_size} bytes)')
+		except TimeoutError:
+			print('❌ Download did not complete within timeout')
+
+		# Verify file exists in downloads directory
+		expected_file = downloads_path / 'browseruse.txt'  # filename from the HTML
+		assert expected_file.exists()
+		assert expected_file.read_text() == 'Hello BrowserUse'
 
 		print('✅ BrowserUse data URL download test passed!')
 

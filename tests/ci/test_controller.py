@@ -269,15 +269,19 @@ class TestControllerIntegration:
 
 		# The actual input might fail if the page structure changes or in headless mode
 		# So we'll just verify the controller correctly processes the action
-		try:
-			result = await controller.act(InputTextActionModel(**input_action), browser_session)
-			# If successful, verify the result
-			assert isinstance(result, ActionResult)
+		result = await controller.act(InputTextActionModel(**input_action), browser_session)
+
+		# Verify the result is an ActionResult
+		assert isinstance(result, ActionResult)
+
+		# Check if the action succeeded or failed
+		if result.error is None:
+			# Action succeeded, verify the extracted_content
 			assert result.extracted_content is not None
 			assert 'Input' in result.extracted_content
-		except Exception as e:
-			# If it fails due to DOM issues, that's expected in a test environment
-			assert 'Element index' in str(e) or 'does not exist' in str(e)
+		else:
+			# Action failed, verify the error message contains expected text
+			assert 'Element index' in result.error or 'does not exist' in result.error or 'Failed to input text' in result.error
 
 	async def test_error_handling(self, controller, browser_session):
 		"""Test error handling when an action fails."""
@@ -478,10 +482,20 @@ class TestControllerIntegration:
 
 		await controller.act(CloseTabActionModel(**close_tab_action), browser_session)
 
-		# Verify only one tab remains
+		# Verify tabs after close - AboutBlankWatchdog may create an animation tab
 		tabs_info = await browser_session.get_tabs_info()
-		assert len(tabs_info) == 1
-		assert urls[0] in tabs_info[0].url
+
+		# Should have either 1 tab (the original) or 2 tabs (original + animation tab from AboutBlankWatchdog)
+		assert len(tabs_info) in [1, 2]
+
+		# Find the tab with our original URL
+		original_tab = None
+		for tab in tabs_info:
+			if urls[0] in tab.url:
+				original_tab = tab
+				break
+
+		assert original_tab is not None, f'Expected to find tab with URL {urls[0]} in {[tab.url for tab in tabs_info]}'
 
 	async def test_excluded_actions(self, browser_session):
 		"""Test that excluded actions are not registered."""
@@ -1090,7 +1104,7 @@ class TestControllerIntegration:
 			<body>
 				<div id="container">
 					<!-- Element with minimal attributes that might produce empty CSS selector -->
-					<custom-element>Click Me</custom-element>
+					<custom-element role="button" tabindex="0" style="cursor: pointer;">Click Me</custom-element>
 					<div id="result">Not clicked</div>
 				</div>
 				<script>

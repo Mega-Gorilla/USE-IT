@@ -69,8 +69,21 @@ class BaseWatchdog(BaseModel):
 						)
 
 					handler = getattr(self, method_name)
-					self.event_bus.on(event_class, handler)
+
+					# Create a wrapper function with unique name to avoid duplicate handler warnings
+					# Capture handler by value to avoid closure issues
+					def make_unique_handler(actual_handler):
+						async def unique_handler(event):
+							return await actual_handler(event)
+
+						return unique_handler
+
+					unique_handler = make_unique_handler(handler)
+					unique_handler.__name__ = f'{self.__class__.__name__}.{method_name}'
+
+					self.event_bus.on(event_class, unique_handler)
 					registered_events.add(event_class)
+					logger.debug(f'[{self.__class__.__name__}] Registered handler {method_name} for {event_name}')
 
 		# ASSERTION: If LISTENS_TO is defined, ensure all declared events have handlers
 		if self.LISTENS_TO:
@@ -96,6 +109,19 @@ class BaseWatchdog(BaseModel):
 		except Exception as e:
 			logger.error(f'[{self.__class__.__name__}] Error in {func.__name__}: {e}')
 			return None
+
+	def __del__(self) -> None:
+		"""Clean up any running tasks during garbage collection."""
+		# Cancel any private attributes that are tasks
+		for attr_name in dir(self):
+			if attr_name.startswith('_') and attr_name.endswith('_task'):
+				try:
+					task = getattr(self, attr_name)
+					if hasattr(task, 'cancel') and callable(task.cancel) and not task.done():
+						task.cancel()
+						logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
+				except Exception:
+					pass  # Ignore errors during cleanup
 
 
 # Fix Pydantic circular dependency handling - subclasses should call this after BrowserSession is defined

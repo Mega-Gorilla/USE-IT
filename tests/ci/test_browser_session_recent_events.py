@@ -348,3 +348,101 @@ class TestBrowserRecentEvents:
 
 		finally:
 			await browser_session.kill()
+
+
+class TestEventHistoryInfrastructure:
+	"""Tests for NEW event history tracking infrastructure only."""
+
+	async def test_event_bus_history_tracking(self, httpserver: HTTPServer):
+		"""Test that event bus properly tracks event history."""
+		browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=False))
+
+		try:
+			await browser_session.start()
+			initial_history_count = len(browser_session.event_bus.event_history)
+
+			# Set up test page
+			httpserver.expect_request('/history-test').respond_with_data(
+				'<html><body><h1>Event History Test</h1></body></html>',
+				content_type='text/html',
+			)
+
+			# Perform actions that generate events
+			await browser_session.navigate(httpserver.url_for('/history-test'))
+			await browser_session.take_screenshot()
+
+			# Verify event history has grown
+			final_history_count = len(browser_session.event_bus.event_history)
+			assert final_history_count > initial_history_count, 'Event history should track new events'
+
+			# Verify events are stored properly
+			for event_id, event in browser_session.event_bus.event_history.items():
+				assert event_id is not None
+				assert event is not None
+				assert hasattr(event, 'event_type') or hasattr(event, '__class__')
+
+		finally:
+			await browser_session.kill()
+
+	async def test_generate_recent_events_summary_format(self, httpserver: HTTPServer):
+		"""Test that _generate_recent_events_summary produces valid JSON."""
+		browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=False))
+
+		try:
+			await browser_session.start()
+
+			# Generate some events
+			httpserver.expect_request('/json-test').respond_with_data(
+				'<html><body><h1>JSON Test</h1></body></html>',
+				content_type='text/html',
+			)
+			await browser_session.navigate(httpserver.url_for('/json-test'))
+
+			# Test the NEW method _generate_recent_events_summary
+			recent_events_json = browser_session._generate_recent_events_summary(max_events=5)
+
+			# Should return valid JSON
+			assert recent_events_json != '[]', 'Should have events'
+			events = json.loads(recent_events_json)  # Should not raise JSON decode error
+			assert isinstance(events, list), 'Should return a list of events'
+
+			# Events should exclude problematic fields like 'state'
+			for event in events:
+				assert isinstance(event, dict), 'Each event should be a dict'
+				assert 'state' not in event, "Event should not contain 'state' field (circular reference)"
+
+		finally:
+			await browser_session.kill()
+
+	async def test_event_history_limits(self, httpserver: HTTPServer):
+		"""Test that event history summary respects max_events parameter."""
+		browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=False))
+
+		try:
+			await browser_session.start()
+
+			# Generate multiple events
+			httpserver.expect_request('/limit-test').respond_with_data(
+				'<html><body><h1>Limit Test</h1></body></html>',
+				content_type='text/html',
+			)
+
+			# Perform multiple actions to generate events
+			await browser_session.navigate(httpserver.url_for('/limit-test'))
+			await browser_session.take_screenshot()
+			await browser_session.get_tabs_info()
+
+			# Test different limits
+			summary_3 = browser_session._generate_recent_events_summary(max_events=3)
+			summary_1 = browser_session._generate_recent_events_summary(max_events=1)
+
+			events_3 = json.loads(summary_3)
+			events_1 = json.loads(summary_1)
+
+			# Should respect the limits
+			assert len(events_3) <= 3, 'Should limit to 3 events'
+			assert len(events_1) <= 1, 'Should limit to 1 event'
+			assert len(events_1) <= len(events_3), 'Smaller limit should have fewer events'
+
+		finally:
+			await browser_session.kill()

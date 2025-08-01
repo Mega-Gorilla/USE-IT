@@ -1012,6 +1012,145 @@ class TestBrowserSessionReusePatterns:
 
 		await browser_session1.kill()
 
+
+class TestBrowserSessionEventSystem:
+	"""Tests for the new event system integration in BrowserSession."""
+
+	@pytest.fixture(scope='function')
+	async def browser_session(self):
+		"""Create a BrowserSession instance for event system testing."""
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
+		session = BrowserSession(browser_profile=profile)
+		yield session
+		await session.kill()
+
+	async def test_event_bus_initialization(self, browser_session):
+		"""Test that event bus is properly initialized with unique name."""
+		# Event bus should be created during __init__
+		assert browser_session.event_bus is not None
+		assert browser_session.event_bus.name.startswith('BrowserSession_')
+		assert browser_session.id[-4:] in browser_session.event_bus.name
+
+	async def test_event_handlers_registration(self, browser_session):
+		"""Test that event handlers are properly registered."""
+		# Check that handlers are registered in the event bus
+		from browser_use.browser.events import (
+			BrowserStateRequestEvent,
+			ClickElementEvent,
+			CloseTabEvent,
+			ScreenshotRequestEvent,
+			ScrollEvent,
+			StartBrowserEvent,
+			StopBrowserEvent,
+			TabsInfoRequestEvent,
+			TypeTextEvent,
+		)
+
+		# These event types should have handlers registered
+		event_types_with_handlers = [
+			StartBrowserEvent,
+			StopBrowserEvent,
+			ClickElementEvent,
+			TypeTextEvent,
+			ScrollEvent,
+			CloseTabEvent,
+			BrowserStateRequestEvent,
+			ScreenshotRequestEvent,
+			TabsInfoRequestEvent,
+		]
+
+		for event_type in event_types_with_handlers:
+			handlers = browser_session.event_bus.handlers.get(event_type.__name__, [])
+			assert len(handlers) > 0, f'No handlers registered for {event_type.__name__}'
+
+	async def test_direct_event_dispatching(self, browser_session):
+		"""Test direct event dispatching without using the public API."""
+		from browser_use.browser.events import BrowserStartedEvent, StartBrowserEvent
+
+		# Dispatch StartBrowserEvent directly
+		start_event = browser_session.event_bus.dispatch(StartBrowserEvent())
+
+		# Wait for event to complete
+		await start_event
+
+		# Check if BrowserStartedEvent was dispatched
+		assert browser_session.initialized is True
+
+		# Check event history
+		event_history = list(browser_session.event_bus.event_history.values())
+		assert len(event_history) >= 2  # StartBrowserEvent + BrowserStartedEvent + others
+
+		# Find the BrowserStartedEvent in history
+		started_events = [e for e in event_history if isinstance(e, BrowserStartedEvent)]
+		assert len(started_events) >= 1
+		assert started_events[0].cdp_url is not None
+
+	async def test_event_history_tracking(self, browser_session):
+		"""Test that event history is properly tracked."""
+		# Start and stop browser to generate events
+		await browser_session.start()
+		await browser_session.stop()
+
+		# Check event history generation
+		recent_events_json = browser_session._generate_recent_events_summary(max_events=5)
+		assert recent_events_json != '[]'
+
+		# Parse and validate the JSON
+		import json
+
+		recent_events = json.loads(recent_events_json)
+		assert isinstance(recent_events, list)
+		assert len(recent_events) > 0
+
+		# Events should have the expected structure
+		for event in recent_events:
+			assert isinstance(event, dict)
+			assert 'event_type' in event or '__class__' in event  # Event structure may vary
+
+	async def test_event_system_error_handling(self, browser_session):
+		"""Test error handling in event system."""
+		from browser_use.browser.events import StartBrowserEvent
+
+		# Create session with invalid CDP URL to trigger error
+		error_session = BrowserSession(
+			browser_profile=BrowserProfile(headless=True),
+			cdp_url='http://localhost:99999',  # Invalid port
+		)
+
+		try:
+			# Dispatch start event directly - should trigger error handling
+			start_event = error_session.event_bus.dispatch(StartBrowserEvent())
+
+			# The event bus catches and logs the error, but the event awaits successfully
+			await start_event
+
+			# The session should not be initialized due to the error
+			assert error_session.initialized is False, 'Session should not be initialized after connection error'
+
+			# Verify the error was logged in the event history (good enough for error handling test)
+			assert len(error_session.event_bus.event_history) > 0, 'Event should be tracked even with errors'
+
+		finally:
+			await error_session.kill()
+
+	async def test_concurrent_event_dispatching(self, browser_session):
+		"""Test that concurrent events are handled properly."""
+		from browser_use.browser.events import ScreenshotRequestEvent, TabsInfoRequestEvent
+
+		# Start browser first
+		await browser_session.start()
+
+		# Dispatch multiple events concurrently
+		tabs_event = browser_session.event_bus.dispatch(TabsInfoRequestEvent())
+		screenshot_event = browser_session.event_bus.dispatch(ScreenshotRequestEvent())
+
+		# Both should complete successfully
+		results = await asyncio.gather(tabs_event, screenshot_event, return_exceptions=True)
+
+		# Check that no exceptions were raised
+		for result in results:
+			assert not isinstance(result, Exception), f'Event failed with: {result}'
+
 	async def test_many_parallel_browser_sessions(self):
 		"""Test spawning 20 parallel browser_sessions with different settings and ensure they all work"""
 		from browser_use import BrowserSession

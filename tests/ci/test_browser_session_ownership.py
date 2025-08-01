@@ -163,7 +163,7 @@ class TestBrowserOwnership:
 		copied_session._playwright = original_session._playwright
 		copied_session._browser = original_session._browser
 		copied_session._browser_context = original_session._browser_context
-		# Note: agent_current_page is a property, not a directly assignable attribute
+		# Note: page is a property, not a directly assignable attribute
 
 		# Verify copy doesn't own the browser
 		assert copied_session._owns_browser_resources is False

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent
 from playwright.async_api import Page
-from pydantic import PrivateAttr
+from pydantic import Field
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
@@ -47,22 +47,20 @@ class NavigationWatchdog(BaseWatchdog):
 		NavigationCompleteEvent,
 	]
 
-	# Private state for agent focus tracking
-	_current_agent_page: Page | None = PrivateAttr(default=None)
-	_current_agent_tab_index: int = PrivateAttr(default=0)
+	# Agent focus tracking - using regular fields so they can be accessed as properties
+	page: Page | None = Field(default=None, exclude=True)
 
 	async def attach_to_page(self, page: Page) -> None:
 		"""Set up monitoring for a page - tracks page lifecycle."""
 		logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
-		page.on('close', lambda: self._handle_page_close(page))
+		page.on('close', lambda p: self._handle_page_close(page))
 
 	# ========== Browser Lifecycle Events ==========
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clear agent focus when browser stops."""
 		logger.info('[NavigationWatchdog] Browser stopped')
-		self._current_agent_page = None
-		self._current_agent_tab_index = 0
+		self.page = None
 
 	# ========== Tab Lifecycle Events ==========
 
@@ -78,9 +76,7 @@ class NavigationWatchdog(BaseWatchdog):
 		except Exception as e:
 			logger.error(f'[NavigationWatchdog] Error tracking new page: {e}')
 
-		# When a new tab is created, agent typically focuses on it
-		# Small delay to let tab finish loading
-		await asyncio.sleep(0.5)
+		# When a new tab is created, agent typically focuses on it immediately
 		await self._update_agent_focus_to_latest_tab()
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
@@ -88,11 +84,9 @@ class NavigationWatchdog(BaseWatchdog):
 		logger.debug(f'[NavigationWatchdog] Tab closed at index {event.tab_index}')
 
 		# If the closed tab was the agent's current page, find a new one
-		if self._current_agent_tab_index == event.tab_index:
+		if self.tab_index == event.tab_index:
 			await self._find_new_agent_page()
-		elif event.tab_index < self._current_agent_tab_index:
-			# Adjust index if a tab before current was closed
-			self._current_agent_tab_index -= 1
+		# No need to adjust tab_index since it's computed from page position
 
 	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> None:
 		"""Handle explicit tab switches by the agent."""
@@ -122,13 +116,11 @@ class NavigationWatchdog(BaseWatchdog):
 				# Create new page
 				page = await self.browser_session._browser_context.new_page()
 
-				# Page will be automatically attached to watchdogs via TabCreatedEvent
+				# Get tab index for events (after adding the page)
+				tab_index = len(self.browser_session.tabs) - 1
 
 				# Navigate to URL if provided
 				if event.url:
-					# Get tab index for events (after adding the page)
-					tab_index = len(self.browser_session.tabs) - 1
-
 					# Dispatch navigation started event
 					from browser_use.browser.events import NavigationStartedEvent
 
@@ -170,6 +162,20 @@ class NavigationWatchdog(BaseWatchdog):
 								loading_status=loading_status,
 							)
 						)
+
+				# Update agent focus to the new tab immediately
+				self.page = page
+				self._dispatch_focus_changed()
+
+				# ONLY dispatch TabCreatedEvent for NEW tabs (not existing tab navigation)
+				from browser_use.browser.events import TabCreatedEvent
+
+				self.event_bus.dispatch(
+					TabCreatedEvent(
+						tab_index=tab_index,
+						url=page.url,  # Use actual page URL
+					)
+				)
 				return
 
 			# Handle timeout navigation
@@ -284,7 +290,7 @@ class NavigationWatchdog(BaseWatchdog):
 			return
 
 		# Agent focus stays on the tab that navigated
-		if event.tab_index != self._current_agent_tab_index:
+		if event.tab_index != self.tab_index:
 			await self._switch_agent_focus_to_tab(event.tab_index)
 
 	# ========== Tab Tracking Methods ==========
@@ -294,7 +300,7 @@ class NavigationWatchdog(BaseWatchdog):
 		logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
 
 		# Set up page close handler
-		page.on('close', lambda: self._handle_page_close(page))
+		page.on('close', lambda p: self._handle_page_close(page))
 
 	def _handle_page_close(self, page: Page) -> None:
 		"""Handle page close event."""
@@ -389,12 +395,19 @@ class NavigationWatchdog(BaseWatchdog):
 	@property
 	def current_agent_page(self) -> Page | None:
 		"""Get the current page the agent is focused on."""
-		return self._current_agent_page
+		return self.page
 
 	@property
 	def current_agent_tab_index(self) -> int:
 		"""Get the current tab index the agent is focused on."""
-		return self._current_agent_tab_index
+		return self.tab_index
+
+	@property
+	def tab_index(self) -> int:
+		"""Get the current tab index derived from page position in browser_session.pages."""
+		if self.page is None:
+			return 0
+		return self.browser_session.get_tab_index(self.page)
 
 	async def _initialize_agent_focus(self) -> None:
 		"""Initialize agent focus to first available page."""
@@ -403,8 +416,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 		pages = self.browser_session._browser_context.pages
 		if pages:
-			self._current_agent_page = pages[0]
-			self._current_agent_tab_index = 0
+			self.page = pages[0]
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
@@ -416,23 +428,19 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Update agent focus to the latest (most recently created) tab."""
 		if self.browser_session.pages:
 			# Focus on the last tab (most recently created)
-			self._current_agent_page = self.browser_session.pages[-1]
-			self._current_agent_tab_index = len(self.browser_session.pages) - 1
+			self.page = self.browser_session.pages[-1]
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
-				logger.info(
-					f'[NavigationWatchdog] Agent focus moved to new tab {self._current_agent_tab_index}: {current_page.url}'
-				)
+				logger.info(f'[NavigationWatchdog] Agent focus moved to new tab {self.tab_index}: {current_page.url}')
 			except ValueError:
-				logger.info(f'[NavigationWatchdog] Agent focus moved to new tab {self._current_agent_tab_index}')
+				logger.info(f'[NavigationWatchdog] Agent focus moved to new tab {self.tab_index}')
 
 	async def _switch_agent_focus_to_tab(self, tab_index: int) -> None:
 		"""Switch agent focus to a specific tab index."""
 		page = self.browser_session.get_page_by_tab_index(tab_index)
 		if page:
-			self._current_agent_page = page
-			self._current_agent_tab_index = tab_index
+			self.page = page
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
@@ -444,9 +452,8 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Find a new page for agent focus when current one is closed."""
 		if self.browser_session.pages:
 			# Try to stay at the same index, or go to the previous one
-			new_index = min(self._current_agent_tab_index, len(self.browser_session.pages) - 1)
-			self._current_agent_page = self.browser_session.pages[new_index]
-			self._current_agent_tab_index = new_index
+			new_index = min(self.tab_index, len(self.browser_session.pages) - 1)
+			self.page = self.browser_session.pages[new_index]
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
@@ -454,17 +461,16 @@ class NavigationWatchdog(BaseWatchdog):
 			except ValueError:
 				logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}')
 		else:
-			self._current_agent_page = None
-			self._current_agent_tab_index = 0
+			self.page = None
 
 	def _dispatch_focus_changed(self) -> None:
 		"""Dispatch event when agent focus changes."""
-		if self._current_agent_page:
+		if self.page:
 			try:
 				self.event_bus.dispatch(
 					AgentFocusChangedEvent(
-						tab_index=self._current_agent_tab_index,
-						url=self._current_agent_page.url,
+						tab_index=self.tab_index,
+						url=self.page.url,
 					)
 				)
 			except Exception as e:
@@ -472,18 +478,18 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def get_or_create_page(self) -> Page:
 		"""Get current agent page or create a new one if none exists."""
-		if self._current_agent_page and not self._current_agent_page.is_closed():
+		if self.page and not self.page.is_closed():
 			# Check if current page URL is still allowed
-			if not self._is_url_allowed(self._current_agent_page.url):
-				logger.warning(f'⛔️ Current page URL no longer allowed: {self._current_agent_page.url}')
+			if not self._is_url_allowed(self.page.url):
+				logger.warning(f'⛔️ Current page URL no longer allowed: {self.page.url}')
 				# Close the current page and find/create a new one
 				try:
-					await self._current_agent_page.close()
+					await self.page.close()
 				except Exception:
 					pass
-				self._current_agent_page = None
+				self.page = None
 			else:
-				return self._current_agent_page
+				return self.page
 
 		# No current page, request tabs info to find one
 		self.event_bus.dispatch(TabsInfoRequestEvent())
@@ -495,22 +501,21 @@ class NavigationWatchdog(BaseWatchdog):
 				for i, tab in enumerate(response.tabs):
 					if self._is_url_allowed(tab.get('url', 'about:blank')):
 						await self._switch_agent_focus_to_tab(i)
-						if self._current_agent_page:
-							return self._current_agent_page
+						if self.page:
+							return self.page
 		except TimeoutError:
 			pass
 
 		# No tabs available or no allowed tabs, create a new one with about:blank
 		logger.info('[NavigationWatchdog] No active page, creating new tab')
-		self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
-		await asyncio.sleep(0.5)  # Wait for tab creation
+		nav_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+		await nav_event  # Wait for navigation to complete
 
 		# Try to get the new page
 		if self.browser_session.pages:
-			self._current_agent_page = self.browser_session.pages[-1]
-			self._current_agent_tab_index = len(self.browser_session.pages) - 1
+			self.page = self.browser_session.pages[-1]
 			self._dispatch_focus_changed()
-			if self._current_agent_page:
-				return self._current_agent_page
+			if self.page:
+				return self.page
 
 		raise ValueError('Failed to create or find an active page')

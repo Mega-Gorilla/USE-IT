@@ -17,8 +17,6 @@ from browser_use.browser.events import (
 	SaveStorageStateEvent,
 	StorageStateLoadedEvent,
 	StorageStateSavedEvent,
-	TabClosedEvent,
-	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
@@ -33,8 +31,6 @@ class StorageStateWatchdog(BaseWatchdog):
 		BrowserStoppedEvent,
 		SaveStorageStateEvent,
 		LoadStorageStateEvent,
-		TabCreatedEvent,
-		TabClosedEvent,
 	]
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
 		StorageStateSavedEvent,
@@ -48,7 +44,6 @@ class StorageStateWatchdog(BaseWatchdog):
 	# Private state
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_last_cookie_state: list[Cookie] = PrivateAttr(default_factory=list)
-	_pending_save: bool = PrivateAttr(default=False)
 	_save_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
 	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
@@ -65,32 +60,37 @@ class StorageStateWatchdog(BaseWatchdog):
 		"""Stop monitoring and save state when browser stops."""
 		logger.info('[StorageStateWatchdog] Browser stopping, saving final storage state')
 
-		# Save storage state before stopping
-		self.event_bus.dispatch(SaveStorageStateEvent())
-		# Give it a moment to save
-		await asyncio.sleep(0.1)
+		# Save storage state before stopping and wait for completion
+		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
+		await save_event
 
 		# Stop monitoring
 		await self._stop_monitoring()
 		# No cleanup needed - browser context is managed by session
 
-	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
-		"""Monitor new tabs for storage changes."""
-		# Tab will be added when we detect it via browser context
-		pass
-
-	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
-		"""Stop monitoring closed tabs."""
-		# Tab will be removed automatically via WeakSet
-		pass
-
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
 		"""Handle storage state save request."""
-		await self._save_storage_state(event.path)
+		# Use provided path or fall back to profile default
+		path = event.path
+		if path is None:
+			# Use profile default path if available
+			if self.browser_session.browser_profile.storage_state:
+				path = str(self.browser_session.browser_profile.storage_state)
+			else:
+				path = None  # Skip saving if no path available
+		await self._save_storage_state(path)
 
 	async def on_LoadStorageStateEvent(self, event: LoadStorageStateEvent) -> None:
 		"""Handle storage state load request."""
-		await self._load_storage_state(event.path)
+		# Use provided path or fall back to profile default
+		path = event.path
+		if path is None:
+			# Use profile default path if available
+			if self.browser_session.browser_profile.storage_state:
+				path = str(self.browser_session.browser_profile.storage_state)
+			else:
+				path = None  # Skip loading if no path available
+		await self._load_storage_state(path)
 
 	async def _start_monitoring(self) -> None:
 		"""Start the monitoring task."""
@@ -129,11 +129,10 @@ class StorageStateWatchdog(BaseWatchdog):
 			headers = response.headers
 			if 'set-cookie' in headers:
 				logger.debug(f'[StorageStateWatchdog] Cookie change detected from: {response.url}')
-				self._pending_save = True
 
-				# If save on change is enabled, trigger save
+				# If save on change is enabled, trigger save immediately
 				if self.save_on_change:
-					await self._debounced_save()
+					await self._save_storage_state()
 		except Exception as e:
 			logger.debug(f'[StorageStateWatchdog] Error checking for cookie changes: {e}')
 
@@ -146,10 +145,6 @@ class StorageStateWatchdog(BaseWatchdog):
 				# Check if cookies have changed
 				if await self._have_cookies_changed():
 					logger.info('[StorageStateWatchdog] Detected cookie changes during periodic check')
-					await self._save_storage_state()
-
-				# Also save if we have pending changes
-				elif self._pending_save:
 					await self._save_storage_state()
 
 			except asyncio.CancelledError:
@@ -179,14 +174,6 @@ class StorageStateWatchdog(BaseWatchdog):
 			logger.debug(f'[StorageStateWatchdog] Error comparing cookies: {e}')
 			return False
 
-	async def _debounced_save(self, delay: float = 2.0) -> None:
-		"""Save storage state with debouncing to avoid too frequent saves."""
-		self._pending_save = True
-		await asyncio.sleep(delay)
-
-		if self._pending_save:
-			await self._save_storage_state()
-
 	async def _save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state to file."""
 		async with self._save_lock:
@@ -198,13 +185,18 @@ class StorageStateWatchdog(BaseWatchdog):
 			if not save_path:
 				return
 
+			# Skip saving if the storage state is already a dict (indicates it was loaded from memory)
+			# We only save to file if it started as a file path
+			if isinstance(save_path, dict):
+				logger.debug('[StorageStateWatchdog] Storage state is already a dict, skipping file save')
+				return
+
 			try:
 				# Get current storage state
 				storage_state = await self.browser_session._browser_context.storage_state()
 
 				# Update our last known state
 				self._last_cookie_state = storage_state.get('cookies', []).copy()
-				self._pending_save = False
 
 				# Convert path to Path object
 				json_path = Path(save_path).expanduser().resolve()
@@ -372,7 +364,6 @@ class StorageStateWatchdog(BaseWatchdog):
 				cookie_params.append(param)
 
 			await self.browser_session._browser_context.add_cookies(cookie_params)  # type: ignore
-			self._pending_save = True
 			logger.info(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
 			logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')

@@ -1,10 +1,11 @@
 """
-Test script for BrowserSession storage state functionality.
+Test script for BrowserSession storage state functionality and event-driven storage state.
 
 Tests cover:
 - Loading storage state on browser start
 - Saving storage state (including cookies and local storage)
 - Verifying storage state is applied to browser context
+- NEW: Event-driven storage state operations
 """
 
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 import pytest
 from pytest_httpserver import HTTPServer
 
+from browser_use.browser.events import SaveStorageStateEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 
@@ -223,3 +225,43 @@ class TestBrowserSessionStorageState:
 		assert len(localhost_cookies) == 0, f'Expected no 127.0.0.1 cookies, but found: {localhost_cookies}'
 
 		await session.kill()
+
+
+class TestStorageStateEventSystem:
+	"""Tests for NEW event-driven storage state operations."""
+
+	async def test_save_storage_state_event_dispatching(self, httpserver: HTTPServer, tmp_path: Path):
+		"""Test that SaveStorageStateEvent can be dispatched directly."""
+		# Create temporary storage file
+		storage_file = tmp_path / 'event_test_storage.json'
+
+		# Set up test page with cookies
+		httpserver.expect_request('/cookie-test').respond_with_data(
+			'<html><body><h1>Storage Event Test</h1></body></html>',
+			content_type='text/html',
+			headers={'Set-Cookie': 'test_event_cookie=event_value; Path=/'},
+		)
+
+		browser_session = BrowserSession(
+			browser_profile=BrowserProfile(headless=True, user_data_dir=None, storage_state=storage_file, keep_alive=False)
+		)
+
+		try:
+			await browser_session.start()
+
+			# Navigate to set cookies
+			await browser_session.navigate(httpserver.url_for('/cookie-test'))
+
+			# Dispatch SaveStorageStateEvent directly
+			save_event = browser_session.event_bus.dispatch(SaveStorageStateEvent())
+			await save_event
+
+			# Verify storage file was created
+			assert storage_file.exists(), 'Storage state file should be created by event handler'
+
+			# Verify file contains cookies
+			storage_data = json.loads(storage_file.read_text())
+			assert 'cookies' in storage_data
+
+		finally:
+			await browser_session.kill()
