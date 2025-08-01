@@ -132,8 +132,11 @@ class NavigationWatchdog(BaseWatchdog):
 					)
 
 					try:
-						# Perform navigation
-						response = await page.goto(event.url, wait_until=event.wait_until)
+						# Perform navigation with timeout protection
+						response = await asyncio.wait_for(
+							page.goto(event.url, wait_until=event.wait_until),
+							timeout=30.0,  # 30 second timeout to prevent hanging
+						)
 
 						# Dispatch completion event
 						self.event_bus.dispatch(
@@ -146,8 +149,23 @@ class NavigationWatchdog(BaseWatchdog):
 
 						# Network monitoring is handled by CrashWatchdog
 
+					except TimeoutError:
+						# Handle navigation timeout for new tab
+						error_message = 'Navigation timed out after 30 seconds'
+						loading_status = 'Navigation timeout: 30 seconds'
+						logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in new tab')
+
+						self.event_bus.dispatch(
+							NavigationCompleteEvent(
+								tab_index=tab_index,
+								url=event.url,
+								status=None,
+								error_message=error_message,
+								loading_status=loading_status,
+							)
+						)
 					except Exception as e:
-						# Handle navigation error for new tab
+						# Handle other navigation errors for new tab
 						error_message = str(e)
 						loading_status = None
 						if 'timeout' in error_message.lower() or 'timed out' in error_message.lower():
@@ -224,10 +242,13 @@ class NavigationWatchdog(BaseWatchdog):
 				)
 			)
 
-			# Perform navigation
-			response = await page.goto(
-				event.url,
-				wait_until=event.wait_until,
+			# Perform navigation with timeout protection
+			response = await asyncio.wait_for(
+				page.goto(
+					event.url,
+					wait_until=event.wait_until,
+				),
+				timeout=30.0,  # 30 second timeout to prevent hanging
 			)
 
 			# Dispatch completion event
@@ -241,8 +262,27 @@ class NavigationWatchdog(BaseWatchdog):
 
 			# Network monitoring is handled by CrashWatchdog
 
+		except TimeoutError:
+			# Handle navigation timeout for standard navigation
+			error_message = 'Navigation timed out after 30 seconds'
+			loading_status = 'Navigation timeout: 30 seconds'
+			logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in standard navigation')
+
+			# Get tab index for timeout error reporting
+			tab_index = self.browser_session.get_tab_index(page) if page else 0
+
+			# Dispatch NavigationCompleteEvent with timeout error details
+			self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					tab_index=tab_index,
+					url=event.url,
+					status=None,
+					error_message=error_message,
+					loading_status=loading_status,
+				)
+			)
 		except Exception as e:
-			# Handle navigation errors
+			# Handle other navigation errors
 			error_message = str(e)
 			loading_status = None
 

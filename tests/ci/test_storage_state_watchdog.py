@@ -28,7 +28,8 @@ async def test_storage_state_watchdog_lifecycle():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
+		start_event = session.event_bus.dispatch(StartBrowserEvent())
+		await start_event  # Wait for the event and all handlers to complete
 		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
 
 		# Verify storage state watchdog was created

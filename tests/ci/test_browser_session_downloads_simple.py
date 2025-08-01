@@ -4,14 +4,16 @@ import asyncio
 import tempfile
 from pathlib import Path
 
+import pytest
 from playwright.async_api import async_playwright
+from pytest_httpserver import HTTPServer
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 
 
 async def test_simple_playwright_download():
-	"""Test basic Playwright download functionality without browser-use"""
+	"""Test basic Playwright download functionality without browser-use - this just validates the browser setup"""
 
 	async with async_playwright() as p:
 		# Create temp directory for downloads
@@ -39,18 +41,28 @@ async def test_simple_playwright_download():
 
 			await page.set_content(html_content)
 
-			# Set up download promise
-			async with page.expect_download() as download_info:
-				await page.click('a[download]')
-				download = await download_info.value
+			# Set up download handling
+			downloads = []
+			page.on('download', lambda download: downloads.append(download))
 
-			# Save the download
-			save_path = downloads_path / download.suggested_filename
-			await download.save_as(str(save_path))
+			# Click download link
+			await page.click('a[download]')
 
-			# Verify file exists
-			assert save_path.exists()
-			assert save_path.read_text() == 'Hello World'
+			# Wait for download to be triggered
+			await asyncio.sleep(1)
+
+			# Verify download was triggered
+			assert len(downloads) > 0, 'No download was triggered'
+
+			download = downloads[0]
+
+			# Save the download to our test directory
+			download_path = downloads_path / download.suggested_filename
+			await download.save_as(str(download_path))
+
+			# Verify file was saved and has correct content
+			assert download_path.exists(), f'Downloaded file not found at {download_path}'
+			assert download_path.read_text() == 'Hello World', 'Downloaded file has incorrect content'
 
 			print('✅ Basic Playwright download test passed!')
 
@@ -58,8 +70,23 @@ async def test_simple_playwright_download():
 			await browser.close()
 
 
-async def test_browser_use_download_with_data_url():
-	"""Test browser-use download with data URL"""
+@pytest.fixture(scope='function')
+def http_server():
+	"""Create a test HTTP server with a downloadable file."""
+	server = HTTPServer()
+	server.start()
+
+	# Add a route that serves a downloadable text file
+	server.expect_request('/download/test.txt').respond_with_data(
+		'Hello BrowserUse', content_type='text/plain', headers={'Content-Disposition': 'attachment; filename="test.txt"'}
+	)
+
+	yield server
+	server.stop()
+
+
+async def test_browser_use_download_with_http_server(http_server):
+	"""Test browser-use download with HTTP server and event coordination"""
 
 	with tempfile.TemporaryDirectory() as tmpdir:
 		downloads_path = Path(tmpdir) / 'downloads'
@@ -76,13 +103,14 @@ async def test_browser_use_download_with_data_url():
 		await browser_session.start()
 		page = await browser_session.get_current_page()
 
-		# Create a simple HTML page with download link using data URL
-		html_content = """
+		# Create HTML page with download link pointing to HTTP server
+		base_url = f'http://{http_server.host}:{http_server.port}'
+		html_content = f"""
 		<!DOCTYPE html>
 		<html>
 		<body>
 			<h1>Download Test</h1>
-			<a id="download-link" href="data:text/plain;base64,SGVsbG8gQnJvd3NlclVzZQ==" download="browseruse.txt">Download BrowserUse File</a>
+			<a id="download-link" href="{base_url}/download/test.txt">Download Test File</a>
 		</body>
 		</html>
 		"""
@@ -93,7 +121,6 @@ async def test_browser_use_download_with_data_url():
 		await asyncio.sleep(0.5)
 
 		# Click the download link and let the DownloadsWatchdog handle it completely
-		# Don't use page.expect_download() to avoid conflicts with the watchdog
 		await page.click('#download-link')
 
 		# Wait for the DownloadsWatchdog to process the download by expecting the FileDownloadedEvent
@@ -105,13 +132,14 @@ async def test_browser_use_download_with_data_url():
 			print(f'📁 Download completed: {download_event.file_name} ({download_event.file_size} bytes)')
 		except TimeoutError:
 			print('❌ Download did not complete within timeout')
+			raise AssertionError('Download event not received within timeout')
 
 		# Verify file exists in downloads directory
-		expected_file = downloads_path / 'browseruse.txt'  # filename from the HTML
+		expected_file = downloads_path / 'test.txt'
 		assert expected_file.exists()
 		assert expected_file.read_text() == 'Hello BrowserUse'
 
-		print('✅ BrowserUse data URL download test passed!')
+		print('✅ BrowserUse HTTP server download test passed!')
 
 		# Check if browser_session sees the downloaded file
 		downloaded_files = browser_session.downloaded_files
@@ -126,6 +154,15 @@ if __name__ == '__main__':
 	if len(sys.argv) > 1 and sys.argv[1] == 'playwright':
 		asyncio.run(test_simple_playwright_download())
 	elif len(sys.argv) > 1 and sys.argv[1] == 'browseruse':
-		asyncio.run(test_browser_use_download_with_data_url())
+		# Run the HTTP server test
+		server = HTTPServer()
+		server.start()
+		server.expect_request('/download/test.txt').respond_with_data(
+			'Hello BrowserUse', content_type='text/plain', headers={'Content-Disposition': 'attachment; filename="test.txt"'}
+		)
+		try:
+			asyncio.run(test_browser_use_download_with_http_server(server))
+		finally:
+			server.stop()
 	else:
 		print('Usage: python test_browser_session_downloads_simple.py [playwright|browseruse]')

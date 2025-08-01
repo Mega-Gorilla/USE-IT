@@ -20,6 +20,7 @@ from browser_use.browser.events import (
 	BrowserStoppedEvent,
 	ClickElementEvent,
 	CloseTabEvent,
+	ExecuteJavaScriptEvent,
 	FileDownloadedEvent,
 	LoadStorageStateEvent,
 	NavigateToUrlEvent,
@@ -206,28 +207,29 @@ class BrowserSession(BaseModel):
 	def _register_handlers(self) -> None:
 		"""Register event handlers for browser control."""
 		# Browser lifecycle
-		self.event_bus.on(StartBrowserEvent, self._handle_start)
-		self.event_bus.on(StopBrowserEvent, self._handle_stop)
+		self.event_bus.on(StartBrowserEvent, self.on_StartBrowserEvent)
+		self.event_bus.on(StopBrowserEvent, self.on_StopBrowserEvent)
 
 		# Navigation is handled by NavigationWatchdog
 		# Interaction
-		self.event_bus.on(ClickElementEvent, self._handle_click)
-		self.event_bus.on(TypeTextEvent, self._handle_input_text)
-		self.event_bus.on(ScrollEvent, self._handle_scroll)
+		self.event_bus.on(ClickElementEvent, self.on_ClickElementEvent)
+		self.event_bus.on(TypeTextEvent, self.on_TypeTextEvent)
+		self.event_bus.on(ScrollEvent, self.on_ScrollEvent)
 
 		# Tab management - handled by watchdogs
-		self.event_bus.on(CloseTabEvent, self._handle_close_tab)
+		self.event_bus.on(CloseTabEvent, self.on_CloseTabEvent)
 
 		# Browser state
-		self.event_bus.on(BrowserStateRequestEvent, self._handle_browser_state_request)
-		self.event_bus.on(ScreenshotRequestEvent, self._handle_screenshot_request)
-		self.event_bus.on(TabsInfoRequestEvent, self._handle_tabs_info_request)
+		self.event_bus.on(BrowserStateRequestEvent, self.on_BrowserStateRequestEvent)
+		self.event_bus.on(ScreenshotRequestEvent, self.on_ScreenshotRequestEvent)
+		self.event_bus.on(TabsInfoRequestEvent, self.on_TabsInfoRequestEvent)
+		self.event_bus.on(ExecuteJavaScriptEvent, self.on_ExecuteJavaScriptEvent)
 
 		# Storage state is handled by StorageStateWatchdog
 
 	# ========== Event Handlers ==========
 
-	async def _handle_start(self, event: StartBrowserEvent) -> None:
+	async def on_StartBrowserEvent(self, event: StartBrowserEvent) -> None:
 		"""Handle browser start request."""
 		if self._browser and self._browser.is_connected():
 			# Already started
@@ -347,7 +349,7 @@ class BrowserSession(BaseModel):
 			)
 			raise
 
-	async def _handle_stop(self, event: StopBrowserEvent) -> None:
+	async def on_StopBrowserEvent(self, event: StopBrowserEvent) -> None:
 		"""Handle browser stop request."""
 		if not self._browser:
 			self.event_bus.dispatch(
@@ -439,7 +441,7 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(StopBrowserEvent())
 		await event
 
-	async def _handle_click(self, event: ClickElementEvent) -> None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
 		try:
 			page = await self.get_current_page()
@@ -500,7 +502,7 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-	async def _handle_input_text(self, event: TypeTextEvent) -> None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
 		"""Handle text input request."""
 		try:
 			page = await self.get_current_page()
@@ -535,7 +537,7 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-	async def _handle_scroll(self, event: ScrollEvent) -> None:
+	async def on_ScrollEvent(self, event: ScrollEvent) -> None:
 		"""Handle scroll request."""
 		try:
 			page = await self.get_current_page()
@@ -568,14 +570,14 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-	async def _handle_close_tab(self, event: CloseTabEvent) -> None:
+	async def on_CloseTabEvent(self, event: CloseTabEvent) -> None:
 		"""Handle tab close request."""
 		if 0 <= event.tab_index < len(self.pages):
 			await self.pages[event.tab_index].close()
 			# Dispatch tab closed event for watchdogs
 			self.event_bus.dispatch(TabClosedEvent(tab_index=event.tab_index))
 
-	async def _handle_browser_state_request(self, event: BrowserStateRequestEvent) -> None:
+	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> None:
 		"""Handle browser state request."""
 		try:
 			# Use the internal method directly to avoid infinite loop
@@ -590,7 +592,7 @@ class BrowserSession(BaseModel):
 			minimal_state = await self.get_minimal_state_summary()
 			self.event_bus.dispatch(BrowserStateResponseEvent(state=minimal_state))
 
-	async def _handle_screenshot_request(self, event: ScreenshotRequestEvent) -> None:
+	async def on_ScreenshotRequestEvent(self, event: ScreenshotRequestEvent) -> None:
 		"""Handle screenshot request."""
 		try:
 			page = await self.get_current_page()
@@ -607,14 +609,24 @@ class BrowserSession(BaseModel):
 				height=event.clip['height'],
 			)
 
-		screenshot_bytes = await page.screenshot(
-			full_page=event.full_page,
-			clip=clip_rect,
-		)
+		# Add timeout protection to prevent hanging on unresponsive pages
+		try:
+			screenshot_bytes = await asyncio.wait_for(
+				page.screenshot(
+					full_page=event.full_page,
+					clip=clip_rect,
+				),
+				timeout=10.0,  # 10 second timeout for screenshots
+			)
+		except TimeoutError:
+			logger.warning(f'[Session] Screenshot timed out after 10 seconds for page: {page.url}')
+			# Return empty response or could dispatch error event
+			self.event_bus.dispatch(ScreenshotResponseEvent(screenshot='', error='Screenshot timed out'))
+			return
 		screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
 		self.event_bus.dispatch(ScreenshotResponseEvent(screenshot=screenshot_b64))
 
-	async def _handle_tabs_info_request(self, event: TabsInfoRequestEvent) -> None:
+	async def on_TabsInfoRequestEvent(self, event: TabsInfoRequestEvent) -> None:
 		"""Handle tabs info request."""
 		from browser_use.browser.views import TabInfo
 
@@ -637,6 +649,18 @@ class BrowserSession(BaseModel):
 				tabs.append(tab_info.model_dump())
 		# Dispatch the response event
 		self.event_bus.dispatch(TabsInfoResponseEvent(tabs=tabs))
+
+	async def on_ExecuteJavaScriptEvent(self, event: ExecuteJavaScriptEvent) -> Any:
+		"""Handle JavaScript evaluation request."""
+		# Get the correct page by tab index
+		if 0 <= event.tab_index < len(self.pages):
+			page = self.pages[event.tab_index]
+		else:
+			page = await self.get_current_page()
+
+		# Execute the JavaScript and return result directly
+		result = await page.evaluate(event.expression)
+		return result
 
 	def _generate_recent_events_summary(self, max_events: int = 10) -> str:
 		"""Generate a JSON summary of recent browser events."""
@@ -1018,9 +1042,13 @@ class BrowserSession(BaseModel):
 		screenshot_b64 = None
 		if include_screenshot:
 			try:
-				screenshot_bytes = await page.screenshot()
+				screenshot_bytes = await asyncio.wait_for(
+					page.screenshot(),
+					timeout=10.0,  # 10 second timeout for screenshots
+				)
 				screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-			except Exception:
+			except (Exception, TimeoutError) as e:
+				logger.debug(f'[Session] Screenshot failed: {e}')
 				pass
 
 		# Get page dimensions
@@ -1294,14 +1322,14 @@ class BrowserSession(BaseModel):
 						A valid CSS selector string
 		"""
 		try:
+			import re
+
 			# Get base selector from XPath
 			css_selector = cls._convert_simple_xpath_to_css_selector(element.xpath)
 
 			# Handle class attributes
 			if 'class' in element.attributes and element.attributes['class'] and include_dynamic_attributes:
 				# Define a regex pattern for valid class names in CSS
-				import re
-
 				valid_class_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]*$')
 
 				# Iterate through the class attribute values
@@ -1328,18 +1356,63 @@ class BrowserSession(BaseModel):
 				'type',
 				'placeholder',
 				# Accessibility attributes
-				'role',
 				'aria-label',
-				'title',
+				'aria-labelledby',
+				'aria-describedby',
+				'role',
+				# Common form attributes
+				'for',
+				'autocomplete',
+				'required',
+				'readonly',
+				# Media attributes
 				'alt',
+				'title',
+				'src',
+				# Custom stable attributes (add any application-specific ones)
+				'href',
+				'target',
 			}
 
-			for attr in SAFE_ATTRIBUTES:
-				if attr in element.attributes and element.attributes[attr] and include_dynamic_attributes:
-					value = element.attributes[attr]
-					# Escape special characters in attribute values
-					value = value.replace('"', '\\"')
-					css_selector += f'[{attr}="{value}"]'
+			if include_dynamic_attributes:
+				dynamic_attributes = {
+					'data-id',
+					'data-qa',
+					'data-cy',
+					'data-testid',
+				}
+				SAFE_ATTRIBUTES.update(dynamic_attributes)
+
+			# Handle other attributes
+			for attribute, value in element.attributes.items():
+				if attribute == 'class':
+					continue
+
+				# Skip invalid attribute names
+				if not attribute.strip():
+					continue
+
+				if attribute not in SAFE_ATTRIBUTES:
+					continue
+
+				# Escape special characters in attribute names
+				safe_attribute = attribute.replace(':', r'\:')
+
+				# Handle different value cases
+				if value == '':
+					css_selector += f'[{safe_attribute}]'
+				elif any(char in value for char in '"\'<>`\n\r\t'):
+					# Use contains for values with special characters
+					# For newline-containing text, only use the part before the newline
+					if '\n' in value:
+						value = value.split('\n')[0]
+					# Regex-substitute *any* whitespace with a single space, then strip.
+					collapsed_value = re.sub(r'\s+', ' ', value).strip()
+					# Escape embedded double-quotes.
+					safe_value = collapsed_value.replace('"', '\\"')
+					css_selector += f'[{safe_attribute}*="{safe_value}"]'
+				else:
+					css_selector += f'[{safe_attribute}="{value}"]'
 
 			return css_selector
 		except Exception:
@@ -1378,18 +1451,25 @@ class BrowserSession(BaseModel):
 				index_part = part[part.find('[') :]
 
 				# Handle multiple indices
-				if '][' in index_part:
-					# Multiple conditions, just use the element name
-					css_parts.append(base_part)
-				else:
-					# Extract the index
+				indices = [i.strip('[]') for i in index_part.split(']')[:-1]]
+
+				for idx in indices:
 					try:
-						index = int(index_part[1:-1])  # Remove [ and ]
-						# CSS uses 1-based :nth-child, XPath uses 1-based indexing
-						css_parts.append(f'{base_part}:nth-child({index})')
+						# Handle numeric indices
+						if idx.isdigit():
+							index = int(idx) - 1
+							base_part += f':nth-of-type({index + 1})'
+						# Handle last() function
+						elif idx == 'last()':
+							base_part += ':last-of-type'
+						# Handle position() functions
+						elif 'position()' in idx:
+							if '>1' in idx:
+								base_part += ':nth-of-type(n+2)'
 					except ValueError:
-						# Not a simple index, just use the element name
-						css_parts.append(base_part)
+						continue
+
+				css_parts.append(base_part)
 			else:
 				# Handle custom elements with colons
 				if ':' in part:
@@ -1626,6 +1706,12 @@ class BrowserSession(BaseModel):
 					prefix = pattern[:-1]  # Remove the * at the end
 					if url.startswith(prefix):
 						return True
+				elif '://*.' in pattern:
+					# Pattern like http://*.example.com should match http://sub.example.com
+					scheme_and_wildcard, domain_part = pattern.split('://*.')
+					expected_scheme = scheme_and_wildcard
+					if parsed.scheme == expected_scheme and (host == domain_part or host.endswith('.' + domain_part)):
+						return True
 				else:
 					# Use fnmatch for other glob patterns
 					if fnmatch.fnmatch(host, pattern):
@@ -1687,6 +1773,57 @@ class BrowserSession(BaseModel):
 		"""Get DOM element by index (compatibility method)."""
 		selector_map = await self.get_selector_map()
 		return selector_map.get(index)
+
+	async def execute_javascript(self, script: str) -> Any:
+		"""Execute JavaScript in the current page (compatibility method)."""
+		# Get current tab index
+		current_page = await self.get_current_page()
+		tab_index = self.get_tab_index(current_page) if current_page else 0
+
+		# Dispatch the event and await the result
+		event = self.event_bus.dispatch(ExecuteJavaScriptEvent(tab_index=tab_index, expression=script))
+		result = await event.event_result()
+		return result
+
+	async def get_scroll_info(self, page: Page) -> tuple[int, int]:
+		"""Get scroll position information for the current page (compatibility method)."""
+		scroll_y = await page.evaluate('window.scrollY')
+		viewport_height = await page.evaluate('window.innerHeight')
+		total_height = await page.evaluate('document.documentElement.scrollHeight')
+		# Convert to int to handle fractional pixels
+		pixels_above = int(scroll_y)
+		pixels_below = int(max(0, total_height - (scroll_y + viewport_height)))
+		return pixels_above, pixels_below
+
+	async def remove_highlights(self):
+		"""
+		Removes all highlight overlays and labels created by the highlightElement function (compatibility method).
+		Handles cases where the page might be closed or inaccessible.
+		"""
+		page = await self.get_current_page()
+		try:
+			await page.evaluate(
+				"""
+				try {
+					// Remove the highlight container and all its contents
+					const container = document.getElementById('playwright-highlight-container');
+					if (container) {
+						container.remove();
+					}
+
+					// Remove highlight attributes from elements
+					const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
+					highlightedElements.forEach(el => {
+						el.removeAttribute('browser-user-highlight-id');
+					});
+				} catch (e) {
+					console.error('Failed to remove highlights:', e);
+				}
+				"""
+			)
+		except Exception as e:
+			logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
+			# Don't raise the error since this is not critical functionality
 
 	# ========== PDF API Methods ==========
 

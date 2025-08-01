@@ -124,6 +124,10 @@ class DownloadsWatchdog(BaseWatchdog):
 		self._active_downloads[download_id] = download
 		logger.info(f'[DownloadsWatchdog] Handling download: {download.suggested_filename} from {download.url[:100]}...')
 
+		# Debug: Check if download is already being handled elsewhere
+		logger.info(f'[DownloadsWatchdog] Download state - canceled: {download.failure()}, url: {download.url}')
+		logger.info(f'[DownloadsWatchdog] Active downloads count: {len(self._active_downloads)}')
+
 		try:
 			current_step = 'getting_download_info'
 			# Get download info immediately
@@ -238,8 +242,17 @@ class DownloadsWatchdog(BaseWatchdog):
 			return self._pdf_viewer_cache[page_url]
 
 		try:
-			# Check if we're in Chrome's PDF viewer
-			is_pdf_viewer = await page.evaluate("""
+			# Check if page is still valid before evaluation
+			if page.is_closed():
+				logger.debug(f'[DownloadsWatchdog] Page is closed, cannot check for PDF: {page_url}')
+				self._pdf_viewer_cache[page_url] = False
+				return False
+
+			# Add timeout to prevent hanging on unresponsive pages
+			import asyncio
+
+			is_pdf_viewer = await asyncio.wait_for(
+				page.evaluate("""
 				() => {
 					// Check for Chrome's built-in PDF viewer (both old and new selectors)
 					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
@@ -291,7 +304,9 @@ class DownloadsWatchdog(BaseWatchdog):
 					
 					return { isPdf: false };
 				}
-			""")
+				"""),
+				timeout=5.0,  # 5 second timeout to prevent hanging
+			)
 
 			if is_pdf_viewer.get('isPdf', False):
 				logger.info(
@@ -304,8 +319,13 @@ class DownloadsWatchdog(BaseWatchdog):
 			self._pdf_viewer_cache[page_url] = False
 			return False
 
+		except TimeoutError:
+			logger.debug(f'[DownloadsWatchdog] PDF check timed out for page: {page_url}')
+			self._pdf_viewer_cache[page_url] = False
+			return False
 		except Exception as e:
 			logger.debug(f'[DownloadsWatchdog] Error checking for PDF viewer: {e}')
+			self._pdf_viewer_cache[page_url] = False
 			return False
 
 	async def trigger_pdf_download(self, page: Page) -> str | None:
@@ -318,8 +338,16 @@ class DownloadsWatchdog(BaseWatchdog):
 			return None
 
 		try:
-			# Try to get the PDF URL
-			pdf_info = await page.evaluate("""
+			# Check if page is still valid before evaluation
+			if page.is_closed():
+				logger.debug('[DownloadsWatchdog] Page is closed, cannot trigger PDF download')
+				return None
+
+			# Try to get the PDF URL with timeout
+			import asyncio
+
+			pdf_info = await asyncio.wait_for(
+				page.evaluate("""
 				() => {
 					const embedElement = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
 									   document.querySelector('embed[type="application/pdf"]');
@@ -328,7 +356,9 @@ class DownloadsWatchdog(BaseWatchdog):
 					}
 					return { url: window.location.href };
 				}
-			""")
+				"""),
+				timeout=5.0,  # 5 second timeout to prevent hanging
+			)
 
 			pdf_url = pdf_info.get('url', '')
 			if not pdf_url:
@@ -358,7 +388,8 @@ class DownloadsWatchdog(BaseWatchdog):
 				# Properly escape the URL to prevent JavaScript injection
 				escaped_pdf_url = json.dumps(pdf_url)
 
-				download_result = await page.evaluate(f"""
+				download_result = await asyncio.wait_for(
+					page.evaluate(f"""
 					async () => {{
 						try {{
 							// Use fetch with cache: 'force-cache' to prioritize cached version
@@ -389,7 +420,9 @@ class DownloadsWatchdog(BaseWatchdog):
 							throw new Error(`Fetch failed: ${{error.message}}`);
 						}}
 					}}
-				""")
+					"""),
+					timeout=10.0,  # 10 second timeout for download operation
+				)
 
 				if download_result and download_result.get('data') and len(download_result['data']) > 0:
 					# Ensure unique filename
@@ -433,6 +466,9 @@ class DownloadsWatchdog(BaseWatchdog):
 				logger.warning(f'[DownloadsWatchdog] Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
 				return None
 
+		except TimeoutError:
+			logger.debug('[DownloadsWatchdog] PDF download operation timed out')
+			return None
 		except Exception as e:
 			logger.error(f'[DownloadsWatchdog] Error in PDF download: {type(e).__name__}: {e}')
 			return None

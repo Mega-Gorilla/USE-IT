@@ -109,8 +109,8 @@ class GetPageInfoEvent(BaseEvent):
 	tab_index: int
 
 
-class EvaluateJavaScriptEvent(BaseEvent):
-	"""Evaluate JavaScript in page context."""
+class ExecuteJavaScriptEvent(BaseEvent):
+	"""Execute JavaScript in page context."""
 
 	tab_index: int
 	expression: str
@@ -232,19 +232,13 @@ class ScreenshotResponseEvent(BaseEvent):
 	"""Response to ScreenshotRequestEvent."""
 
 	screenshot: str  # base64 encoded
+	error: str | None = None
 
 
 class TabsInfoResponseEvent(BaseEvent):
 	"""Response to TabsInfoRequestEvent."""
 
 	tabs: list[dict[str, Any]]
-
-
-class EvaluateJavaScriptResponseEvent(BaseEvent):
-	"""Response to EvaluateJavaScriptEvent."""
-
-	result: Any
-	error: str | None = None
 
 
 # ============================================================================
