@@ -661,8 +661,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if await self.register_external_agent_status_raise_error_callback():
 				raise InterruptedError
 
-		if self.state.stopped or self.state.paused:
-			# self.logger.debug('Agent paused after getting state')
+		# A stop request should always interrupt execution immediately.
+		if self.state.stopped:
+			raise InterruptedError
+
+		# Treat a cleared external pause event as the definitive paused signal.
+		# We intentionally rely on the event instead of the `state.paused` flag to
+		# avoid desynchronisation between the two.
+		if not self._external_pause_event.is_set():
 			raise InterruptedError
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
@@ -1220,8 +1226,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
-				# Replace the polling with clean pause-wait
-				if self.state.paused:
+				# Use the pause event to wait if the agent is paused.
+				if not self._external_pause_event.is_set():
 					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
 					await self.wait_until_resumed()
 					signal_handler.reset()
@@ -1237,12 +1243,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.info('🛑 Agent stopped')
 					agent_run_error = 'Agent stopped programmatically'
 					break
-
-				while self.state.paused:
-					await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
-					if self.state.stopped:  # Allow stopping while paused
-						agent_run_error = 'Agent stopped programmatically while paused'
-						break
 
 				if on_step_start is not None:
 					await on_step_start(self)
