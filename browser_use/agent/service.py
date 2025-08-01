@@ -760,9 +760,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Check again for paused/stopped state after getting model output
 		await self._raise_if_stopped_or_paused()
 
-		# Increment step counter at the end of each step
-		self.state.n_steps += 1
-
 		# Handle callbacks and conversation saving
 		await self._handle_post_llm_processing(browser_state_summary, input_messages)
 
@@ -878,6 +875,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self, self.state.last_model_output, self.state.last_result, actions_data, browser_state_summary
 			)
 			self.eventbus.dispatch(step_event)
+
+		# Increment step counter after step is fully completed
+		self.state.n_steps += 1
 
 	async def _handle_final_step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Handle special processing for the last step"""
