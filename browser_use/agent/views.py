@@ -47,7 +47,6 @@ class AgentSettings(BaseModel):
 	use_thinking: bool = True
 	flash_mode: bool = False  # If enabled, disables evaluation_previous_goal and next_goal, and sets use_thinking = False
 	max_history_items: int = 40
-	images_per_step: int = 1
 
 	page_extraction_llm: BaseChatModel | None = None
 	planner_llm: BaseChatModel | None = None
@@ -67,7 +66,6 @@ class AgentState(BaseModel):
 	n_steps: int = 1
 	consecutive_failures: int = 0
 	last_result: list[ActionResult] | None = None
-	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[], usage=None))
 	last_plan: str | None = None
 	last_model_output: AgentOutput | None = None
 	paused: bool = False
@@ -320,6 +318,10 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		"""Representation of the AgentHistoryList object"""
 		return f'AgentHistoryList(all_results={self.action_results()}, all_model_outputs={self.model_actions()})'
 
+	def add_item(self, history_item: AgentHistory) -> None:
+		"""Add a history item to the list"""
+		self.history.append(history_item)
+
 	def __repr__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
 		return self.__str__()
@@ -434,20 +436,39 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		"""Get all unique URLs from history"""
 		return [h.state.url if h.state.url is not None else None for h in self.history]
 
-	def screenshots(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
-		"""Get all screenshots from history"""
+	def screenshot_paths(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshot paths from history"""
 		if n_last == 0:
 			return []
 		if n_last is None:
 			if return_none_if_not_screenshot:
-				return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history]
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history]
 			else:
-				return [h.state.screenshot for h in self.history if h.state.screenshot is not None]
+				return [h.state.screenshot_path for h in self.history if h.state.screenshot_path is not None]
 		else:
 			if return_none_if_not_screenshot:
-				return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history[-n_last:]]
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history[-n_last:]]
 			else:
-				return [h.state.screenshot for h in self.history[-n_last:] if h.state.screenshot is not None]
+				return [h.state.screenshot_path for h in self.history[-n_last:] if h.state.screenshot_path is not None]
+
+	def screenshots(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshots from history as base64 strings"""
+		if n_last == 0:
+			return []
+
+		history_items = self.history if n_last is None else self.history[-n_last:]
+		screenshots = []
+
+		for item in history_items:
+			screenshot_b64 = item.state.get_screenshot()
+			if screenshot_b64:
+				screenshots.append(screenshot_b64)
+			else:
+				if return_none_if_not_screenshot:
+					screenshots.append(None)
+				# If return_none_if_not_screenshot is False, we skip None values
+
+		return screenshots
 
 	def action_names(self) -> list[str]:
 		"""Get all action names from history"""
@@ -473,11 +494,33 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 		for h in self.history:
 			if h.model_output:
-				for action, interacted_element in zip(h.model_output.action, h.state.interacted_element):
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				for action, interacted_element in zip(h.model_output.action, interacted_elements):
 					output = action.model_dump(exclude_none=True)
 					output['interacted_element'] = interacted_element
 					outputs.append(output)
 		return outputs
+
+	def action_history(self) -> list[list[dict]]:
+		"""Get truncated action history with only essential fields"""
+		step_outputs = []
+
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(h.model_output.action, interacted_elements, h.result):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					# Only keep long_term_memory from result
+					action_output['result'] = result.long_term_memory if result and result.long_term_memory else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+
+		return step_outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""

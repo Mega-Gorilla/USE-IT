@@ -574,6 +574,49 @@ def get_browser_use_version() -> str:
 		return 'unknown'
 
 
+@cache
+def get_git_info() -> dict[str, str] | None:
+	"""Get git information if installed from git repository"""
+	try:
+		import subprocess
+
+		package_root = Path(__file__).parent.parent
+		git_dir = package_root / '.git'
+		if not git_dir.exists():
+			return None
+
+		# Get git commit hash
+		commit_hash = (
+			subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL).decode().strip()
+		)
+
+		# Get git branch
+		branch = (
+			subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get remote URL
+		remote_url = (
+			subprocess.check_output(['git', 'config', '--get', 'remote.origin.url'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		# Get commit timestamp
+		commit_timestamp = (
+			subprocess.check_output(['git', 'show', '-s', '--format=%ci', 'HEAD'], cwd=package_root, stderr=subprocess.DEVNULL)
+			.decode()
+			.strip()
+		)
+
+		return {'commit_hash': commit_hash, 'branch': branch, 'remote_url': remote_url, 'commit_timestamp': commit_timestamp}
+	except Exception as e:
+		logger.debug(f'Error getting git info: {type(e).__name__}: {e}')
+		return None
+
+
 def _log_pretty_path(path: str | Path | None) -> str:
 	"""Pretty-print a path, shorten home dir to ~ and cwd to ."""
 
