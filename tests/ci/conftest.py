@@ -161,6 +161,7 @@ async def browser_session():
 			headless=True,
 			user_data_dir=None,  # Use temporary directory
 			keep_alive=True,
+			enable_default_extensions=True,  # Enable extensions during tests
 		)
 	)
 	await session.start()

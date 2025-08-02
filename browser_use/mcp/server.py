@@ -14,7 +14,7 @@ Or as an MCP server in Claude Desktop or other MCP clients:
         "mcpServers": {
             "browser-use": {
                 "command": "uvx",
-                "args": ["browser-use", "--mcp"],
+                "args": ["browser-use[cli]", "--mcp"],
                 "env": {
                     "OPENAI_API_KEY": "sk-proj-1234567890",
                 }
@@ -659,7 +659,7 @@ class BrowserUseServer:
 		if not self.browser_session:
 			return 'Error: No browser session active'
 
-		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await self.browser_session.get_browser_state_with_recovery(cache_clickable_elements_hashes=False)
 
 		result = {
 			'url': state.url,

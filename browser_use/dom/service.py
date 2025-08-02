@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -43,7 +44,9 @@ class DomService:
 	TODO: currently we start a new websocket connection PER STEP, we should definitely keep this persistent
 	"""
 
-	def __init__(self, browser: 'BrowserSession', page: 'Page'):
+	logger: logging.Logger
+
+	def __init__(self, browser: 'BrowserSession', page: 'Page', logger: logging.Logger | None = None):
 		self.browser = browser
 		self.page = page
 

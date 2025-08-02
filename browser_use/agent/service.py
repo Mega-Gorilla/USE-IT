@@ -10,7 +10,8 @@ import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -32,7 +33,8 @@ from bubus import EventBus
 from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
-from browser_use.agent.gif import create_history_gif
+# Lazy import for gif to avoid heavy agent.views import at startup
+# from browser_use.agent.gif import create_history_gif
 from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
@@ -178,8 +180,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
+		llm_timeout: int = 60,
+		step_timeout: int = 180,
 		**kwargs,
 	):
+		if not isinstance(llm, BaseChatModel):
+			raise ValueError('invalid llm, must be from browser_use.llm')
 		# Check for deprecated planner parameters
 		planner_params = [
 			planner_llm,
@@ -236,6 +243,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.settings = AgentSettings(
 			use_vision=use_vision,
+			vision_detail_level=vision_detail_level,
 			use_vision_for_planner=False,  # Always False now (deprecated)
 			save_conversation_path=save_conversation_path,
 			save_conversation_path_encoding=save_conversation_path_encoding,
@@ -259,6 +267,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			extend_planner_system_message=None,  # Always None now (deprecated)
 			calculate_cost=calculate_cost,
 			include_tool_call_examples=include_tool_call_examples,
+			llm_timeout=llm_timeout,
+			step_timeout=step_timeout,
 		)
 
 		# Token cost service
@@ -278,7 +288,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self._set_browser_use_version_and_source(source)
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 
-		# Verify we can connect to the LLM and setup the tool calling method
+		# Verify we can connect to the model
 		self._verify_and_setup_llm()
 
 		# TODO: move this logic to the LLMs
@@ -327,6 +337,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			sensitive_data=sensitive_data,
 			max_history_items=self.settings.max_history_items,
 			images_per_step=self.settings.images_per_step,
+			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
 		)
 
@@ -439,8 +450,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
-		wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
-		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}', wal_path=wal_path)
+		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
+		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
 
 		# Cloud sync service
 		self.enable_cloud_sync = CONFIG.BROWSER_USE_CLOUD_SYNC
@@ -641,6 +652,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task = new_task
 		self._message_manager.add_new_task(new_task)
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='_raise_if_stopped_or_paused')
 	async def _raise_if_stopped_or_paused(self) -> None:
 		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
 
@@ -651,24 +663,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if self.state.stopped or self.state.paused:
 			# self.logger.debug('Agent paused after getting state')
 			raise InterruptedError
-
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_with_recovery')
-	async def _get_browser_state_with_recovery(self, cache_clickable_elements_hashes: bool = True) -> BrowserStateSummary:
-		"""Get browser state with multiple fallback strategies for error recovery"""
-
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-
-		# Try 1: Full state summary (current implementation) - like main branch
-		try:
-			return await self.browser_session.get_state_summary(cache_clickable_elements_hashes)
-		except Exception as e:
-			if self.state.last_result is None:
-				self.state.last_result = []
-			self.state.last_result.append(ActionResult(error=str(e)))
-			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
-
-		self.logger.warning('🔄 Falling back to minimal state summary')
-		return await self.browser_session.get_minimal_state_summary()
 
 	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
@@ -704,7 +698,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
-		browser_state_summary = await self._get_browser_state_with_recovery(cache_clickable_elements_hashes=True)
+		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
+			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision
+		)
 		current_page = await self.browser_session.get_current_page()
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
@@ -741,6 +737,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		await self._handle_final_step(step_info)
 		return browser_state_summary
 
+	@observe_debug(ignore_input=True, name='get_next_action')
 	async def _get_next_action(self, browser_state_summary: BrowserStateSummary) -> None:
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
@@ -748,7 +745,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
 		)
 
-		model_output = await self._get_model_output_with_retry(input_messages)
+		try:
+			model_output = await asyncio.wait_for(
+				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
+			)
+		except TimeoutError:
+			raise TimeoutError(
+				f'LLM call timed out after {self.settings.llm_timeout} seconds. Keep your thinking and output short.'
+			)
+
 		self.state.last_model_output = model_output
 
 		# Check again for paused/stopped state after getting model output
@@ -1004,6 +1009,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		return text.strip()
 
 	@time_execution_async('--get_next_action')
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
@@ -1136,6 +1142,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
+				cdp_url=urlparse(self.browser_session.cdp_url).hostname
+				if self.browser_session and self.browser_session.cdp_url
+				else None,
 				action_errors=self.state.history.errors(),
 				action_history=action_history_data,
 				urls_visited=self.state.history.urls(),
@@ -1262,15 +1271,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				try:
 					await asyncio.wait_for(
 						self.step(step_info),
-						timeout=300,  # 5 minute step timeout - more generous for slow LLM calls
+						timeout=self.settings.step_timeout,
 					)
 					self.logger.debug(f'✅ Completed step {step + 1}/{max_steps}')
 				except TimeoutError:
 					# Handle step timeout gracefully
-					error_msg = f'Step {step + 1} timed out after 300 seconds'
+					error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
 					self.logger.error(f'⏰ {error_msg}')
 					self.state.consecutive_failures += 1
-					self.state.last_result = [ActionResult(error=error_msg, include_in_memory=True)]
+					self.state.last_result = [ActionResult(error=error_msg)]
 
 				if on_step_end is not None:
 					await on_step_end(self)
@@ -1360,11 +1369,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				if isinstance(self.settings.generate_gif, str):
 					output_path = self.settings.generate_gif
 
+				# Lazy import gif module to avoid heavy startup cost
+				from browser_use.agent.gif import create_history_gif
+
 				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
 
-				# Emit output file generated event for GIF
-				output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-				self.eventbus.dispatch(output_event)
+				# Only emit output file event if GIF was actually created
+				if Path(output_path).exists():
+					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
+					self.eventbus.dispatch(output_event)
 
 			# Wait briefly for cloud auth to start and print the URL, but don't block for completion
 			if self.enable_cloud_sync and hasattr(self, 'cloud_sync'):
@@ -1400,11 +1413,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# await self.browser_session.remove_highlights()
 
 		for i, action in enumerate(actions):
-			# DO NOT ALLOW TO CALL `done` AS A SINGLE ACTION
-			if i > 0 and action.model_dump(exclude_unset=True).get('done') is not None:
-				msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
-				logger.info(msg)
-				break
+			if i > 0:
+				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
+				if action.model_dump(exclude_unset=True).get('done') is not None:
+					msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
+					logger.info(msg)
+					break
 
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
@@ -1442,6 +1456,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
+				# wait between actions
+				await asyncio.sleep(self.browser_profile.wait_between_actions)
+
 			try:
 				await self._raise_if_stopped_or_paused()
 
@@ -1464,9 +1481,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}({action_params})')
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
-
-				await asyncio.sleep(self.browser_profile.wait_between_actions)
-				# hash all elements. if it is a subset of cached_state its fine - else break (new elements on page)
 
 			except Exception as e:
 				# Handle any exceptions during action execution
@@ -1545,7 +1559,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		state = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await self.browser_session.get_browser_state_with_recovery(
+			cache_clickable_elements_hashes=False, include_screenshot=False
+		)
 		if not state or not history_item.model_output:
 			raise ValueError('Invalid state or model output')
 		updated_actions = []

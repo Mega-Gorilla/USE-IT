@@ -4,7 +4,7 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -31,6 +31,7 @@ class AgentSettings(BaseModel):
 	"""Configuration options for the Agent"""
 
 	use_vision: bool = True
+	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
 	use_vision_for_planner: bool = False
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
@@ -55,6 +56,8 @@ class AgentSettings(BaseModel):
 	extend_planner_system_message: str | None = None
 	calculate_cost: bool = False
 	include_tool_call_examples: bool = False
+	llm_timeout: int = 60  # Timeout in seconds for LLM calls
+	step_timeout: int = 180  # Timeout in seconds for each step
 
 
 class AgentState(BaseModel):

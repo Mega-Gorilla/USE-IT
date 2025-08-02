@@ -94,7 +94,7 @@ Add browser-use to your Claude Desktop configuration:
   "mcpServers": {
     "browser-use": {
       "command": "uvx",
-      "args": ["browser-use", "--mcp"],
+      "args": ["browser-use[cli]", "--mcp"],
       "env": {
         "OPENAI_API_KEY": "sk-..."
       }

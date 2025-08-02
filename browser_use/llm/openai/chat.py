@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import Any, Literal, TypeVar, overload
 
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
@@ -28,15 +28,19 @@ class ChatOpenAI(BaseChatModel):
 	A wrapper around AsyncOpenAI that implements the BaseLLM protocol.
 
 	This class accepts all AsyncOpenAI parameters while adding model
-	and temperature parameters for the LLM interface.
+	and temperature parameters for the LLM interface (if temperature it not `None`).
 	"""
 
 	# Model configuration
 	model: ChatModel | str
 
 	# Model params
-	temperature: float | None = None
+	temperature: float | None = 0.2
+	frequency_penalty: float | None = 0.05
 	reasoning_effort: ReasoningEffort = 'low'
+	seed: int | None = None
+	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
+	top_p: float | None = None
 
 	# Client initialization parameters
 	api_key: str | None = None
@@ -50,6 +54,7 @@ class ChatOpenAI(BaseChatModel):
 	default_query: Mapping[str, object] | None = None
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
+	max_completion_tokens: int | None = 8000
 
 	# Static
 	@property
@@ -143,19 +148,37 @@ class ChatOpenAI(BaseChatModel):
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
 		try:
-			reasoning_effort_dict: dict = {}
+			model_params: dict[str, Any] = {}
+
+			if self.temperature is not None:
+				model_params['temperature'] = self.temperature
+
+			if self.frequency_penalty is not None:
+				model_params['frequency_penalty'] = self.frequency_penalty
+
+			if self.max_completion_tokens is not None:
+				model_params['max_completion_tokens'] = self.max_completion_tokens
+
+			if self.top_p is not None:
+				model_params['top_p'] = self.top_p
+
+			if self.seed is not None:
+				model_params['seed'] = self.seed
+
+			if self.service_tier is not None:
+				model_params['service_tier'] = self.service_tier
+
 			if self.model in ReasoningModels:
-				reasoning_effort_dict = {
-					'reasoning_effort': self.reasoning_effort,
-				}
+				model_params['reasoning_effort'] = self.reasoning_effort
+				model_params['temperature'] = 1
+				model_params['frequency_penalty'] = 0
 
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
-					temperature=self.temperature,
-					**reasoning_effort_dict,
+					**model_params,
 				)
 
 				usage = self._get_usage(response)
@@ -175,9 +198,8 @@ class ChatOpenAI(BaseChatModel):
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
-					temperature=self.temperature,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
-					**reasoning_effort_dict,
+					**model_params,
 				)
 
 				if response.choices[0].message.content is None:

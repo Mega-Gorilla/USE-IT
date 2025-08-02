@@ -320,7 +320,7 @@ Test the MCP server without Claude Desktop:
 
 ```bash
 # Run server (reads from stdin, writes to stdout)
-uvx browser-use --mcp
+uvx 'browser-use[cli]' --mcp
 
 # The server communicates via JSON-RPC on stdio
 ```
@@ -364,8 +364,8 @@ uvx browser-use --mcp
 
 2. **Verify Python installation:**
    ```bash
-   uvx browser-use --version
-   uvx browser-use --mcp --help
+   uvx 'browser-use[cli]' --version
+   uvx 'browser-use[cli]' --mcp --help
    ```
 
 3. **Check Claude logs:**
@@ -388,7 +388,7 @@ If you see "MCP server connection failed":
 
 1. Test the server directly:
    ```bash
-   uvx browser-use --mcp
+   uvx 'browser-use[cli]' --mcp
    ```
 
 2. Check all dependencies:
