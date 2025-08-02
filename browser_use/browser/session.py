@@ -4044,7 +4044,10 @@ class BrowserSession(BaseModel):
 					collapsed_value = re.sub(r'\s+', ' ', value).strip()
 					# Escape embedded double-quotes.
 					safe_value = collapsed_value.replace('"', '\\"')
-					css_selector += f'[{safe_attribute}*="{safe_value}"]'
+
+					# if safe_value is empty, don't add it to the selector (could be empty after the filters)
+					if safe_value:
+						css_selector += f'[{safe_attribute}*="{safe_value}"]'
 				else:
 					css_selector += f'[{safe_attribute}="{value}"]'
 
