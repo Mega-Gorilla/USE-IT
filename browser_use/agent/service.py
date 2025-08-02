@@ -472,7 +472,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._last_known_downloads: list[str] = []
 			self.logger.info('📁 Initialized download tracking for agent')
 
-		# Pause event is now managed in AgentState - no separate attribute needed
+		# Event-based pause control (kept out of AgentState for serialization)
+		self._pause_event = asyncio.Event()
+		self._pause_event.set()
 
 	@property
 	def logger(self) -> logging.Logger:
@@ -1226,7 +1228,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Use the consolidated pause state management
 				if self.state.paused:
 					self.logger.debug(f'⏸️ Step {step}: Agent paused, waiting to resume...')
-					await self.state.wait_until_resumed()
+					await self._pause_event.wait()
 					signal_handler.reset()
 
 				# Check if we should stop due to too many failures
@@ -1617,7 +1619,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		print(
 			'\n\n⏸️  Got [Ctrl+C], paused the agent and left the browser open.\n\tPress [Enter] to resume or [Ctrl+C] again to quit.'
 		)
-		self.state.pause()
+		self.state.paused = True
+		self._pause_event.clear()
 
 		# Task paused
 
@@ -1628,7 +1631,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Resume the agent"""
 		print('----------------------------------------------------------------------')
 		print('▶️  Got Enter, resuming agent execution where it left off...\n')
-		self.state.resume()
+		self.state.paused = False
+		self._pause_event.set()
 
 		# Task resumed
 
