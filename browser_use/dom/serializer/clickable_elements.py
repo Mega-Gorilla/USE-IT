@@ -18,9 +18,15 @@ class ClickableElementDetector:
 		if node.tag_name in {'html', 'body'}:
 			return False
 
-		# Primary check: Chrome's own clickable detection (most reliable for DIV buttons, etc.)
-		# if node.snapshot_node and node.snapshot_node.is_clickable:
-		# 	return True
+		# Super quick check: if the node is a div with no width or height, it's not clickable (basically invisible element on page)
+		if (
+			node.snapshot_node
+			and node.snapshot_node.bounds
+			and node.snapshot_node.bounds.width == 0
+			and node.snapshot_node.bounds.height == 0
+		):
+			return False
+
 		# Enhanced accessibility property checks - direct clear indicators only
 		if node.ax_node and node.ax_node.properties:
 			for prop in node.ax_node.properties:

@@ -80,7 +80,7 @@ class DOMTreeSerializer:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
 
 		if node.node_type == NodeType.DOCUMENT_NODE:
-			# for all children including shadow roots
+			# for all cldren including shadow roots
 			for child in node.children_and_shadow_roots:
 				simplified_child = self._create_simplified_tree(child)
 				if simplified_child:
