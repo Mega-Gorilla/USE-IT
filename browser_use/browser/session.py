@@ -3297,6 +3297,8 @@ class BrowserSession(BaseModel):
 	async def _get_updated_state(self, focus_element: int = -1, include_screenshot: bool = True) -> BrowserStateSummary:
 		"""Update and return state."""
 
+		dom_service: DomService | None = None
+
 		# Check if current page is still valid, if not switch to another available page
 		page = await self.get_current_page()
 
@@ -3472,7 +3474,16 @@ class BrowserSession(BaseModel):
 				return self.browser_state_summary
 			raise
 		finally:
-			await self.remove_highlights(dom_service)
+			if dom_service:
+				await self.remove_highlights(dom_service)
+
+			else:
+				try:
+					async with DomService(self, page) as dom_service:
+						await self.remove_highlights(dom_service)
+				except Exception:
+					self.logger.debug("Can't remove highlights, probably the dom_service is broken")
+					pass
 
 	# region - Page Health Check Helpers
 	@observe_debug(ignore_input=True)

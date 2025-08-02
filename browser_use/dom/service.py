@@ -53,7 +53,8 @@ class DomService:
 		self.cdp_client: CDPClient | None = None
 		# self.playwright_page_to_session_id_store: dict[str, str] = {}
 
-		self.target_to_session_id_cache: dict[str, str] = {}
+		# self.target_to_session_id_cache: dict[str, str] = {}
+		self.session_id_domains_enabled_cache: dict[str, bool] = {}
 
 	async def _get_cdp_client(self) -> CDPClient:
 		if not self.browser.cdp_url:
@@ -123,11 +124,21 @@ class DomService:
 
 		target_id = str(target['targetId'])
 
-		if target_id in self.target_to_session_id_cache:
-			return self.target_to_session_id_cache[target_id]
+		# if target_id in self.target_to_session_id_cache:
+		# 	return self.target_to_session_id_cache[target_id]
 
 		session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
+
+		await self._enable_all_domains_on_session(session_id)
+
+		return session_id
+
+	async def _enable_all_domains_on_session(self, session_id: str) -> None:
+		if session_id in self.session_id_domains_enabled_cache:
+			return
+
+		cdp_client = await self._get_cdp_client()
 
 		await cdp_client.send.Target.setAutoAttach(
 			params={
@@ -145,9 +156,7 @@ class DomService:
 			cdp_client.send.Page.enable(session_id=session_id),
 		)
 
-		self.target_to_session_id_cache[target_id] = session_id
-
-		return session_id
+		self.session_id_domains_enabled_cache[session_id] = True
 
 	def _build_enhanced_ax_node(self, ax_node: AXNode) -> EnhancedAXNode:
 		properties: list[EnhancedAXProperty] | None = None
