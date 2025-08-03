@@ -599,8 +599,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			logger.error('💾 File system is not set up. Cannot save state.')
 			raise ValueError('File system is not set up. Cannot save state.')
 
-
-
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
 		# Use the helper function for version detection
