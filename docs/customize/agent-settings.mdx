@@ -173,19 +173,7 @@ agent = Agent(
 )
 ```
 
-## Run with message context
 
-You can configure the agent and provide a separate message to help the LLM understand the task better.
-
-```python
-from browser_use.llm import ChatOpenAI
-
-agent = Agent(
-    task="your task",
-    message_context="Additional information about the task",
-    llm = ChatOpenAI(model='gpt-4o')
-)
-```
 
 ## Run with planner model
 
@@ -226,7 +214,6 @@ Using a separate planner model can help:
 
 ### Optional Parameters
 
-- `message_context`: Additional information about the task to help the LLM understand the task better.
 - `initial_actions`: List of initial actions to run before the main task.
 - `max_actions_per_step`: Maximum number of actions to run in a step. Defaults to `10`.
 - `max_failures`: Maximum number of failures before giving up. Defaults to `3`.
