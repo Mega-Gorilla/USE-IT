@@ -152,7 +152,7 @@ class ChatLangchain(BaseChatModel):
 						if hasattr(self.chat, 'model_kwargs'):
 							# Temporarily modify model kwargs to use json_mode instead of json_schema
 							original_kwargs = getattr(self.chat, 'model_kwargs', {})
-							self.chat.model_kwargs = {**original_kwargs}
+							setattr(self.chat, 'model_kwargs', {**original_kwargs})
 
 							# Check if this is a ChatOpenAI model with structured output issues
 							if self.chat.__class__.__name__ == 'ChatOpenAI':
@@ -239,3 +239,9 @@ class ChatLangchain(BaseChatModel):
 				message=f'LangChain model error: {str(e)}',
 				model=self.name,
 			) from e
+		
+		# This should never be reached, but add fallback for type checker
+		raise ModelProviderError(
+			message='Unexpected code path reached in ainvoke',
+			model=self.name,
+		)
