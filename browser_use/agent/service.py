@@ -1657,10 +1657,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
 		# so we need to restart the browser if user wants to continue
 		# the _init() method exists, even through its shows a linter error
-		if self.browser:
+		if self.browser_session and self.browser_session.browser:
 			self.logger.info('🌎 Restarting/reconnecting to browser...')
 			loop = asyncio.get_event_loop()
-			loop.create_task(self.browser._init())  # type: ignore
+			loop.create_task(self.browser_session.browser._init())  # type: ignore
 			loop.create_task(asyncio.sleep(5))
 
 	def stop(self) -> None:

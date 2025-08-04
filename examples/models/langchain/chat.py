@@ -239,7 +239,7 @@ class ChatLangchain(BaseChatModel):
 				message=f'LangChain model error: {str(e)}',
 				model=self.name,
 			) from e
-		
+
 		# This should never be reached, but add fallback for type checker
 		raise ModelProviderError(
 			message='Unexpected code path reached in ainvoke',
