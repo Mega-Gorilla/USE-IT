@@ -6,6 +6,11 @@ from pydantic import BaseModel
 from browser_use.dom.history_tree_processor.service import DOMHistoryElement
 from browser_use.dom.views import DOMState
 
+# Known placeholder image data for about:blank pages - a 4x4 white PNG
+PLACEHOLDER_4PX_SCREENSHOT = (
+	'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8//8/AwwwMSAB3BwAlm4DBfIlvvkAAAAASUVORK5CYII='
+)
+
 
 # Pydantic
 class TabInfo(BaseModel):
@@ -59,6 +64,8 @@ class BrowserStateSummary(DOMState):
 	pixels_above: int = 0
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)
+	is_pdf_viewer: bool = False  # Whether the current page is a PDF viewer
+	loading_status: str | None = None  # Message about page loading status (e.g., network timeout)
 
 
 @dataclass
@@ -69,12 +76,31 @@ class BrowserStateHistory:
 	title: str
 	tabs: list[TabInfo]
 	interacted_element: list[DOMHistoryElement | None] | list[None]
-	screenshot: str | None = None
+	screenshot_path: str | None = None
+
+	def get_screenshot(self) -> str | None:
+		"""Load screenshot from disk and return as base64 string"""
+		if not self.screenshot_path:
+			return None
+
+		import base64
+		from pathlib import Path
+
+		path_obj = Path(self.screenshot_path)
+		if not path_obj.exists():
+			return None
+
+		try:
+			with open(path_obj, 'rb') as f:
+				screenshot_data = f.read()
+			return base64.b64encode(screenshot_data).decode('utf-8')
+		except Exception:
+			return None
 
 	def to_dict(self) -> dict[str, Any]:
 		data = {}
 		data['tabs'] = [tab.model_dump() for tab in self.tabs]
-		data['screenshot'] = self.screenshot
+		data['screenshot_path'] = self.screenshot_path
 		data['interacted_element'] = [el.to_dict() if el else None for el in self.interacted_element]
 		data['url'] = self.url
 		data['title'] = self.title

@@ -710,7 +710,9 @@
     const interactiveRoles = new Set([
       'button',           // Directly clickable element
       // 'link',            // Clickable link
-      // 'menuitem',        // Clickable menu item
+      'menu',            // Menu container (ARIA menus)
+      'menubar',         // Menu bar container
+      'menuitem',        // Clickable menu item
       'menuitemradio',   // Radio-style menu item (selectable)
       'menuitemcheckbox', // Checkbox-style menu item (toggleable)
       'radio',           // Radio button (selectable)
@@ -722,7 +724,7 @@
       'combobox',        // Dropdown with text input
       'searchbox',       // Search input field
       'textbox',         // Text input field
-      // 'listbox',         // Selectable list
+      'listbox',         // Selectable list
       'option',          // Selectable option in a list
       'scrollbar'        // Scrollable control
     ]);
@@ -843,23 +845,35 @@
       }
     }
 
-    // For elements in viewport, check if they're topmost
-    const centerX = rects[Math.floor(rects.length / 2)].left + rects[Math.floor(rects.length / 2)].width / 2;
-    const centerY = rects[Math.floor(rects.length / 2)].top + rects[Math.floor(rects.length / 2)].height / 2;
+    const margin = 5;
+    const rect = rects[Math.floor(rects.length / 2)];
 
-    try {
-      const topEl = document.elementFromPoint(centerX, centerY);
-      if (!topEl) return false;
+    // For elements in viewport, check if they're topmost. Do the check in the
+    // center of the element and at the corners to ensure we catch more cases.
+    const checkPoints = [
+      // Initially only this was used, but it was not enough
+      { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      { x: rect.left + margin, y: rect.top + margin },        // top left
+      // { x: rect.right - margin, y: rect.top + margin },    // top right
+      // { x: rect.left + margin, y: rect.bottom - margin },  // bottom left
+      { x: rect.right - margin, y: rect.bottom - margin },    // bottom right
+    ];
 
-      let current = topEl;
-      while (current && current !== document.documentElement) {
-        if (current === element) return true;
-        current = current.parentElement;
+    return checkPoints.some(({ x, y }) => {
+      try {
+        const topEl = document.elementFromPoint(x, y);
+        if (!topEl) return false;
+
+        let current = topEl;
+        while (current && current !== document.documentElement) {
+          if (current === element) return true;
+          current = current.parentElement;
+        }
+        return false;
+      } catch (e) {
+        return true;
       }
-      return false;
-    } catch (e) {
-      return true;
-    }
+    });
   }
 
   /**
@@ -1297,7 +1311,12 @@
       nodeData.isVisible = isElementVisible(node); // isElementVisible uses offsetWidth/Height, which is fine
       if (nodeData.isVisible) {
         nodeData.isTopElement = isTopElement(node);
-        if (nodeData.isTopElement) {
+        
+        // Special handling for ARIA menu containers - check interactivity even if not top element
+        const role = node.getAttribute('role');
+        const isMenuContainer = role === 'menu' || role === 'menubar' || role === 'listbox';
+        
+        if (nodeData.isTopElement || isMenuContainer) {
           nodeData.isInteractive = isInteractiveElement(node);
           // Call the dedicated highlighting function
           nodeWasHighlighted = handleHighlighting(nodeData, node, parentIframe, isParentHighlighted);

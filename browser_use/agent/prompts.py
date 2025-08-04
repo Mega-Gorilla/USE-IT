@@ -1,6 +1,6 @@
 import importlib.resources
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 from browser_use.observability import observe_debug
@@ -75,6 +75,8 @@ class SystemPrompt:
 
 
 class AgentMessagePrompt:
+	vision_detail_level: Literal['auto', 'low', 'high']
+
 	def __init__(
 		self,
 		browser_state_summary: 'BrowserStateSummary',
@@ -89,6 +91,7 @@ class AgentMessagePrompt:
 		sensitive_data: str | None = None,
 		available_file_paths: list[str] | None = None,
 		screenshots: list[str] | None = None,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -102,37 +105,8 @@ class AgentMessagePrompt:
 		self.sensitive_data: str | None = sensitive_data
 		self.available_file_paths: list[str] | None = available_file_paths
 		self.screenshots = screenshots or []
+		self.vision_detail_level = vision_detail_level
 		assert self.browser_state
-
-	@observe_debug(ignore_input=True, ignore_output=True, name='_deduplicate_screenshots')
-	def _deduplicate_screenshots(self, screenshots: list[str]) -> list[str]:
-		"""
-		Remove consecutive duplicate screenshots, keeping only the most recent of each.
-
-		Args:
-			screenshots: List of base64-encoded screenshot strings in chronological order (oldest first)
-
-		Returns:
-			List of screenshots with consecutive duplicates removed, maintaining chronological order
-		"""
-		if not screenshots:
-			return []
-
-		if len(screenshots) == 1:
-			return screenshots
-
-		# Keep track of unique screenshots by comparing each with the next one
-		unique_screenshots = []
-
-		for i in range(len(screenshots)):
-			# Always keep the last screenshot
-			if i == len(screenshots) - 1:
-				unique_screenshots.append(screenshots[i])
-			# Only keep screenshot if it's different from the next one
-			elif screenshots[i] != screenshots[i + 1]:
-				unique_screenshots.append(screenshots[i])
-
-		return unique_screenshots
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
@@ -197,11 +171,16 @@ class AgentMessagePrompt:
 
 		current_tab_text = f'Current tab: {current_tab_id}' if current_tab_id is not None else ''
 
+		# Check if current page is a PDF viewer and add appropriate message
+		pdf_message = ''
+		if self.browser_state.is_pdf_viewer:
+			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the extract_structured_data action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
+
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
 {page_info_text}
-Interactive elements from top layer of the current page inside the viewport{truncated_text}:
+{pdf_message}Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
 		return browser_state
@@ -268,12 +247,9 @@ Interactive elements from top layer of the current page inside the viewport{trun
 			# Start with text description
 			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=state_description)]
 
-			# Deduplicate screenshots, keeping only the most recent of each unique image
-			unique_screenshots = self._deduplicate_screenshots(self.screenshots)
-
 			# Add screenshots with labels
-			for i, screenshot in enumerate(unique_screenshots):
-				if i == len(unique_screenshots) - 1:
+			for i, screenshot in enumerate(self.screenshots):
+				if i == len(self.screenshots) - 1:
 					label = 'Current screenshot:'
 				else:
 					# Use simple, accurate labeling since we don't have actual step timing info
@@ -288,10 +264,11 @@ Interactive elements from top layer of the current page inside the viewport{trun
 						image_url=ImageURL(
 							url=f'data:image/png;base64,{screenshot}',
 							media_type='image/png',
+							detail=self.vision_detail_level,
 						),
 					)
 				)
 
-			return UserMessage(content=content_parts)
+			return UserMessage(content=content_parts, cache=True)
 
-		return UserMessage(content=state_description)
+		return UserMessage(content=state_description, cache=True)
