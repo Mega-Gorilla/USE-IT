@@ -3,8 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from browser_use.dom.history_tree_processor.service import DOMHistoryElement
-from browser_use.dom.views import DOMState
+from browser_use.dom.views import DOMInteractedElement, SerializedDOMState
 
 # Known placeholder image data for about:blank pages - a 4x4 white PNG
 PLACEHOLDER_4PX_SCREENSHOT = (
@@ -52,12 +51,11 @@ class PageInfo(BaseModel):
 
 
 @dataclass
-class BrowserStateSummary(DOMState):
+class BrowserStateSummary:
 	"""The summary of the browser's current state designed for an LLM to process"""
 
-	# provided by DOMState:
-	# element_tree: DOMElementNode
-	# selector_map: SelectorMap
+	# provided by SerializedDOMState:
+	dom_state: SerializedDOMState
 
 	url: str
 	title: str
@@ -80,7 +78,7 @@ class BrowserStateHistory:
 	url: str
 	title: str
 	tabs: list[TabInfo]
-	interacted_element: list[DOMHistoryElement | None] | list[None]
+	interacted_element: list[DOMInteractedElement | None] | list[None]
 	screenshot_path: str | None = None
 
 	def get_screenshot(self) -> str | None:

@@ -176,10 +176,7 @@ class Controller(Generic[Context]):
 					msg = f'Downloaded file to {download_path}' + (' (new tab)' if params.new_tab else '')
 				else:
 					emoji = '🖱️'
-					if params.new_tab:
-						msg = f'Clicked element {params.index} with new tab modifier: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
-					else:
-						msg = f'Clicked button with index {params.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+				msg = f'Clicked button with index {params.index}: {element_node.llm_representation()}'
 
 				# Check for new tab opening (existing behavior for normal clicks, expected for new tab clicks)
 				if len(browser_session.tabs) > initial_pages:
