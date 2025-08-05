@@ -6,7 +6,7 @@ import json
 import os
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from bubus import EventBus
 from playwright.async_api import Browser, BrowserContext, FloatRect, Page, Playwright, async_playwright
@@ -1402,28 +1402,63 @@ class BrowserSession(BaseModel):
 		download_path = None
 
 		if expect_download and self.browser_profile.downloads_path:
-			# When expecting a download, click and wait for FileDownloadedEvent from downloads watchdog
-			# The downloads watchdog page-level listener will handle the actual download
+			# When expecting a download, use page.expect_download() to set up expectation before click
 			try:
-				# Click the element (with new tab modifier if requested)
-				if new_tab:
-					import sys
+				logger.info('[Session] Setting up download expectation before click...')
+				async with page.expect_download() as download_info:
+					# Click the element (with new tab modifier if requested)
+					if new_tab:
+						import sys
 
-					modifier = 'Meta' if sys.platform == 'darwin' else 'Control'
-					await locator.click(modifiers=[modifier])
-				else:
-					await locator.click()
+						modifier = 'Meta' if sys.platform == 'darwin' else 'Control'
+						await locator.click(modifiers=[modifier])
+					else:
+						await locator.click()
 
-				# Wait for download event from downloads watchdog with timeout
-				# The watchdog's page.on('download') handler will save_as() and dispatch FileDownloadedEvent
-				download_event = cast(FileDownloadedEvent, await self.event_bus.expect(FileDownloadedEvent, timeout=10.0))
-				download_path = download_event.path
-				logger.info(f'⬇️ Downloaded file via watchdog: {download_path}')
+				# Get the download object from the expectation
+				download = await download_info.value
+				logger.info(f'[Session] Download received: {download.suggested_filename}')
 
-			except TimeoutError:
-				logger.warning('Expected download but no FileDownloadedEvent received within timeout')
+				# Check if download was cancelled
+				failure = await download.failure()
+				if failure:
+					logger.error(f'[Session] Download failed: {failure}')
+					raise Exception(f'Download failed: {failure}')
+
+				# Generate unique filename and save
+				downloads_dir = str(self.browser_profile.downloads_path)
+				unique_filename = await self._get_unique_filename(downloads_dir, download.suggested_filename)
+				download_path = Path(downloads_dir) / unique_filename
+
+				logger.info(f'[Session] Saving download to: {download_path}')
+				await download.save_as(str(download_path))
+
+				# Verify the file was saved successfully
+				if not download_path.exists():
+					raise Exception(f'Download file was not saved: {download_path}')
+
+				file_size = download_path.stat().st_size
+				logger.info(f'[Session] Download successful: {download_path} ({file_size} bytes)')
+
+				# Dispatch FileDownloadedEvent for consistency with watchdog behavior
+				self.event_bus.dispatch(
+					FileDownloadedEvent(
+						url=download.url,
+						path=str(download_path),
+						file_name=download.suggested_filename,
+						file_size=file_size,
+						file_type=download_path.suffix.lower().lstrip('.') if download_path.suffix else None,
+						mime_type=None,  # Not easily available from Playwright download object
+						from_cache=False,
+						auto_download=False,
+					)
+				)
+
+				return str(download_path)
+
 			except Exception as e:
-				logger.warning(f'Error while waiting for download: {e}')
+				logger.error(f'[Session] Download expectation failed: {e}')
+				raise
 		else:
 			# Normal click or new tab click - let downloads watchdog handle any downloads in background
 			if new_tab:
