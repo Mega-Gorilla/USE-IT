@@ -1454,68 +1454,7 @@ class BrowserSession(BaseModel):
 
 		self.agent_current_page = self.agent_current_page or foreground_page
 		self.human_current_page = self.human_current_page or foreground_page
-		# self.logger.debug('About to define _BrowserUseonTabVisibilityChange callback')
-
-		def _BrowserUseonTabVisibilityChange(source: dict[str, Page]):
-			"""hook callback fired when init script injected into a page detects a focus event"""
-			new_page = source['page']
-
-			# Update human foreground tab state
-			old_foreground = self.human_current_page
-			assert self.browser_context is not None, 'BrowserContext object is not set'
-			assert old_foreground is not None, 'Old foreground page is not set'
-			old_tab_idx = self.browser_context.pages.index(old_foreground)  # type: ignore
-			self.human_current_page = new_page
-			new_tab_idx = self.browser_context.pages.index(new_page)  # type: ignore
-
-			# Log before and after for debugging
-			old_url = old_foreground and old_foreground.url or 'about:blank'
-			new_url = new_page and new_page.url or 'about:blank'
-			agent_url = self.agent_current_page and self.agent_current_page.url or 'about:blank'
-			agent_tab_idx = self.browser_context.pages.index(self.agent_current_page)  # type: ignore
-			if old_url != new_url:
-				self.logger.info(
-					f'👁️ Foregound tab changed by human from [{old_tab_idx}]{_log_pretty_url(old_url)} '
-					f'➡️ [{new_tab_idx}]{_log_pretty_url(new_url)} '
-					f'(agent will stay on [{agent_tab_idx}]{_log_pretty_url(agent_url)})'
-				)
-
-		# Store the callback so we can potentially clean it up later
-		self._tab_visibility_callback = _BrowserUseonTabVisibilityChange
-
-		# self.logger.info('About to call expose_binding')
-		try:
-			await self.browser_context.expose_binding('_BrowserUseonTabVisibilityChange', _BrowserUseonTabVisibilityChange)
-			# self.logger.debug('window._BrowserUseonTabVisibilityChange binding attached via browser_context')
-		except Exception as e:
-			if 'Function "_BrowserUseonTabVisibilityChange" has been already registered' in str(e):
-				self.logger.debug(
-					'⚠️ Function "_BrowserUseonTabVisibilityChange" has been already registered, '
-					'this is likely because the browser was already started with an existing BrowserSession()'
-				)
-
-			else:
-				self.logger.warning(f'⚠️ Error registering _BrowserUseonTabVisibilityChange: {type(e).__name__}: {e}')
-
-		except Exception as e:
-			self.logger.warning(f'⚠️ Failed to register init script for tab focus detection: {e}')
-
-		# Set up visibility listeners for all existing tabs
-		# self.logger.info(f'Setting up visibility listeners for {len(self.browser_context.pages)} pages')
-		for page in self.browser_context.pages:
-			# self.logger.info(f'Processing page with URL: {repr(page.url)}')
-			# Skip new tab pages as they can hang when evaluating scripts
-			if is_new_tab_page(page.url):
-				continue
-
-			try:
-				await page.evaluate(update_tab_focus_script)
-				# self.logger.debug(f'👁️ Added visibility listener to existing tab: {page.url}')
-			except Exception as e:
-				page_idx = self.browser_context.pages.index(page)  # type: ignore
-				self.logger.debug(
-					f'⚠️ Failed to add visibility listener to existing tab, is it crashed or ignoring CDP commands?: [{page_idx}]{page.url}: {type(e).__name__}: {e}'
-				)
+		# Note: JavaScript focus tracking has been removed as it's now handled by NavigationWatchdog
 
 	@observe_debug(
 		ignore_input=True, ignore_output=True, name='setup_viewports', metadata={'browser_profile': '{{browser_profile}}'}
@@ -2903,8 +2842,7 @@ class BrowserSession(BaseModel):
 
 				# Return minimal state immediately
 				self.browser_state_summary = BrowserStateSummary(
-					element_tree=content.element_tree,
-					selector_map=content.selector_map,
+					dom_state=content,
 					url=page.url,
 					title='New Tab' if is_new_tab_page(page.url) else 'Chrome Page',
 					tabs=tabs_info,
@@ -2914,7 +2852,6 @@ class BrowserSession(BaseModel):
 					pixels_below=0,
 					browser_errors=[],
 					is_pdf_viewer=False,
-					loading_status=self._current_page_loading_status,
 				)
 				return self.browser_state_summary
 
@@ -3133,80 +3070,7 @@ class BrowserSession(BaseModel):
 			self.logger.error(f'❌ Using raw CDP to force-close crashed page failed: {type(e).__name__}: {e}')
 			return False
 
-	async def get_locate_element(self, element: Any) -> Any:
-		"""Get playwright ElementHandle for a DOM element."""
-		if not element or not hasattr(element, 'xpath'):
-			return None
-
-		page = await self.get_current_page()
-		if not page:
-			return None
-
-		current_frame = page
-
-		# Start with the target element and collect all parents
-		parents = []
-		current = element
-		while hasattr(current, 'parent') and current.parent is not None:
-			parent = current.parent
-			parents.append(parent)
-			current = parent
-
-		# Reverse the parents list to process from top to bottom
-		parents.reverse()
-
-		# Process all iframe parents in sequence
-		iframes = [item for item in parents if hasattr(item, 'tag_name') and item.tag_name == 'iframe']
-		for parent in iframes:
-			css_selector = self._enhanced_css_selector_for_element(
-				parent,
-				include_dynamic_attributes=self.browser_profile.include_dynamic_attributes,
-			)
-			# Use CSS selector if available, otherwise fall back to XPath
-			if css_selector:
-				current_frame = current_frame.frame_locator(css_selector)
-			else:
-				logger.debug(f'Using XPath for iframe: {parent.xpath}')
-				current_frame = current_frame.frame_locator(f'xpath={parent.xpath}')
-
-		css_selector = self._enhanced_css_selector_for_element(
-			element, include_dynamic_attributes=self.browser_profile.include_dynamic_attributes
-		)
-
-		try:
-			if hasattr(current_frame, 'locator'):
-				if css_selector:
-					element_handle = await current_frame.locator(css_selector).element_handle()
-				else:
-					# Fall back to XPath when CSS selector is empty
-					logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
-					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
-				return element_handle
-			else:
-				# FrameLocator doesn't have query_selector, use locator instead
-				if css_selector:
-					element_handle = await current_frame.locator(css_selector).element_handle()
-				else:
-					# Fall back to XPath
-					logger.debug(f'CSS selector empty, falling back to XPath: {element.xpath}')
-					element_handle = await current_frame.locator(f'xpath={element.xpath}').element_handle()
-				if element_handle:
-					is_visible = await self._is_visible(element_handle)
-					if is_visible:
-						await element_handle.scroll_into_view_if_needed(timeout=1_000)
-					return element_handle
-				return None
-		except Exception as e:
-			self.logger.error(
-				f'❌ Failed to navigate to about:blank: {type(e).__name__}: {e} (something is very wrong or system is extremely overloaded)'
-			)
-			raise
-
-		# Verify it's responsive
-		if not await self._is_page_responsive(new_page, timeout=1.0):
-			raise BrowserError(
-				'Browser is unable to load any new about:blank pages (something is very wrong or browser is extremely overloaded)'
-			)
+	# Removed duplicate get_locate_element - using the properly typed version below
 
 	@observe_debug(ignore_input=True, name='recover_unresponsive_page')
 	async def _recover_unresponsive_page(self, calling_method: str, timeout_ms: int | None = None) -> None:
