@@ -113,14 +113,6 @@ class BaseWatchdog(BaseModel):
 		"""
 		pass
 
-	def safe_execute(self, func, *args, **kwargs):
-		"""Execute function with automatic error logging."""
-		try:
-			return func(*args, **kwargs)
-		except Exception as e:
-			logger.error(f'[{self.__class__.__name__}] Error in {func.__name__}: {e}')
-			return None
-
 	def __del__(self) -> None:
 		"""Clean up any running tasks during garbage collection."""
 		# Cancel any private attributes that are tasks
