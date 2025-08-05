@@ -1726,9 +1726,9 @@ class BrowserSession(BaseModel):
 		current_page = await self.get_current_page()
 		tab_index = self.get_tab_index(current_page) if current_page else 0
 
-		# Dispatch the event and await the result
+		# Dispatch the event and await the result with timeout
 		event = self.event_bus.dispatch(ExecuteJavaScriptEvent(tab_index=tab_index, expression=script))
-		result = await event.event_result()
+		result = await event.event_result(timeout=1.5)
 		return result
 
 	async def get_scroll_info(self, page: Page) -> tuple[int, int]:
