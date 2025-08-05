@@ -147,7 +147,7 @@ async def test_navigation_watchdog_agent_focus_tracking():
 		await asyncio.sleep(0.2)
 
 		# The agent focus should be on a tab index > 0
-		assert nav_watchdog.agent_tab_index >= 0
+		assert nav_watchdog.agent_tab_index > 0
 
 	finally:
 		# Stop browser
