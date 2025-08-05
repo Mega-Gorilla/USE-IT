@@ -11,7 +11,6 @@ from browser_use.browser.events import (
 	NavigateToUrlEvent,
 	TabClosedEvent,
 	TabCreatedEvent,
-	TabsInfoRequestEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
@@ -32,7 +31,6 @@ class AboutBlankWatchdog(BaseWatchdog):
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
 		NavigateToUrlEvent,
 		CloseTabEvent,
-		TabsInfoRequestEvent,
 	]
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:

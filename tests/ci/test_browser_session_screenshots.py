@@ -26,7 +26,7 @@ class TestHeadlessScreenshots:
 		try:
 			# Start the session
 			await browser_session.start()
-			assert browser_session.initialized
+			assert browser_session._browser_context is not None
 
 			# Set up test page with visible content
 			httpserver.expect_request('/').respond_with_data(
@@ -389,7 +389,7 @@ class TestScreenshotEventSystem:
 
 	async def test_screenshot_response_event_dispatching(self, httpserver):
 		"""Test that ScreenshotResponseEvent is properly dispatched by event handlers."""
-		from browser_use.browser.events import ScreenshotRequestEvent, ScreenshotResponseEvent
+		from browser_use.browser.events import ScreenshotEvent
 
 		browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=False))
 
@@ -404,18 +404,11 @@ class TestScreenshotEventSystem:
 			await browser_session.navigate(httpserver.url_for('/event-test'))
 
 			# Test the NEW event-driven path: direct event dispatching
-			request_event = browser_session.event_bus.dispatch(ScreenshotRequestEvent(full_page=False))
-			await request_event
-
-			# Verify ScreenshotResponseEvent was dispatched
-			event_history = list(browser_session.event_bus.event_history.values())
-			response_events = [e for e in event_history if isinstance(e, ScreenshotResponseEvent)]
-			assert len(response_events) >= 1, 'ScreenshotResponseEvent should be dispatched by event handler'
-
-			# Verify the response event contains screenshot data
-			latest_response = response_events[-1]
-			assert latest_response.screenshot is not None
-			assert isinstance(latest_response.screenshot, str)
+			event = browser_session.event_bus.dispatch(ScreenshotEvent(full_page=False))
+			screenshot_result = (await event.event_result()) or {}
+			assert screenshot_result.get('screenshot')
+			assert isinstance(screenshot_result['screenshot'], str)
+			assert len(base64.b64decode(screenshot_result['screenshot'])) > 5000
 
 		finally:
 			await browser_session.kill()

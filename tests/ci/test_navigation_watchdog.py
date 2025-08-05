@@ -5,12 +5,12 @@ from typing import cast
 import pytest
 
 from browser_use.browser.events import (
+	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserStartedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	NavigateToUrlEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 	TabCreatedEvent,
 )
 from browser_use.browser.profile import BrowserProfile
@@ -29,8 +29,8 @@ async def test_navigation_watchdog_tab_created_events():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify navigation watchdog was created
 		assert hasattr(session, '_navigation_watchdog'), 'NavigationWatchdog should be created'
@@ -62,7 +62,7 @@ async def test_navigation_watchdog_tab_created_events():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -82,8 +82,8 @@ async def test_navigation_watchdog_security_enforcement():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify navigation watchdog was created and has security check
 		assert hasattr(session, '_navigation_watchdog'), 'NavigationWatchdog should be created'
@@ -114,7 +114,7 @@ async def test_navigation_watchdog_security_enforcement():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -126,8 +126,8 @@ async def test_navigation_watchdog_agent_focus_tracking():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Get navigation watchdog
 		nav_watchdog = session._navigation_watchdog
@@ -151,5 +151,5 @@ async def test_navigation_watchdog_agent_focus_tracking():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)

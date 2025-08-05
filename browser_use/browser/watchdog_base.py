@@ -74,6 +74,9 @@ class BaseWatchdog(BaseModel):
 					# Capture handler by value to avoid closure issues
 					def make_unique_handler(actual_handler):
 						async def unique_handler(event):
+							logger.debug(
+								f'[{self.__class__.__name__}] calling {actual_handler.__name__}({event.__class__.__name__})'
+							)
 							return await actual_handler(event)
 
 						return unique_handler
@@ -83,7 +86,15 @@ class BaseWatchdog(BaseModel):
 
 					self.event_bus.on(event_class, unique_handler)
 					registered_events.add(event_class)
-					logger.debug(f'[{self.__class__.__name__}] Registered handler {method_name} for {event_name}')
+					logger.debug(
+						f'[{self.__class__.__name__}] Registered handler {method_name} for {event_name}, event_class ID: {id(event_class)}, module: {event_class.__module__}'
+					)
+
+					# Debug: Verify handler was actually stored
+					stored_handlers = self.event_bus.handlers.get(event_class, [])
+					logger.debug(
+						f'[{self.__class__.__name__}] After registration, {event_name} has {len(stored_handlers)} handlers in EventBus'
+					)
 
 		# ASSERTION: If LISTENS_TO is defined, ensure all declared events have handlers
 		if self.LISTENS_TO:

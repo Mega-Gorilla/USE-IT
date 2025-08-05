@@ -446,7 +446,7 @@ class TestParallelism:
 			result1 = await agent1.run()
 
 			# Session should still be alive
-			assert session.initialized
+			assert session._browser_context
 			assert session.browser_pid == initial_browser_pid
 
 			# Second agent reusing session

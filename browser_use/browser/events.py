@@ -57,7 +57,7 @@ class CloseTabEvent(BaseEvent):
 	tab_index: int
 
 
-class ScreenshotRequestEvent(BaseEvent):
+class ScreenshotEvent(BaseEvent):
 	"""Request to take a screenshot."""
 
 	full_page: bool = False
@@ -84,29 +84,36 @@ class WaitForConditionEvent(BaseEvent):
 # ============================================================================
 
 
-class StartBrowserEvent(BaseEvent):
+class BrowserStartEvent(BaseEvent):
 	"""Start/connect to browser."""
 
 	cdp_url: str | None = None
 	launch_options: dict[str, Any] = Field(default_factory=dict)
 
 
-class StopBrowserEvent(BaseEvent):
+class BrowserStopEvent(BaseEvent):
 	"""Stop/disconnect from browser."""
 
 	force: bool = False
 
 
-class TabsInfoRequestEvent(BaseEvent):
-	"""Get information about all open tabs."""
+class BrowserLaunchEvent(BaseEvent[dict[str, str]]):
+	"""Launch a local browser process."""
 
 	pass
 
 
-class GetPageInfoEvent(BaseEvent):
-	"""Get information about a specific page."""
+class BrowserLaunchedEvent(BaseEvent):
+	"""Local browser process has been launched successfully."""
 
-	tab_index: int
+	cdp_url: str
+	browser_pid: int
+
+
+class BrowserKillEvent(BaseEvent):
+	"""Kill local browser subprocess."""
+
+	pass
 
 
 class ExecuteJavaScriptEvent(BaseEvent):
@@ -140,11 +147,10 @@ class GetCookiesEvent(BaseEvent):
 # ============================================================================
 
 
-class BrowserStartedEvent(BaseEvent):
+class BrowserConnectedEvent(BaseEvent):
 	"""Browser has started/connected."""
 
 	cdp_url: str
-	browser_pid: int | None = None
 
 
 class BrowserStoppedEvent(BaseEvent):
@@ -222,23 +228,10 @@ class BrowserErrorEvent(BaseEvent):
 # ============================================================================
 
 
-class BrowserStateResponseEvent(BaseEvent):
+class BrowserStateChangedEvent(BaseEvent):
 	"""Response to BrowserStateRequestEvent."""
 
 	state: Any  # BrowserStateSummary object
-
-
-class ScreenshotResponseEvent(BaseEvent):
-	"""Response to ScreenshotRequestEvent."""
-
-	screenshot: str  # base64 encoded
-	error: str | None = None
-
-
-class TabsInfoResponseEvent(BaseEvent):
-	"""Response to TabsInfoRequestEvent."""
-
-	tabs: list[dict[str, Any]]
 
 
 # ============================================================================

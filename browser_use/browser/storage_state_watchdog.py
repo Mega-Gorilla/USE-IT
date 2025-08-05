@@ -11,8 +11,8 @@ from playwright.async_api import Cookie, Page, StorageStateCookie
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
-	BrowserStoppedEvent,
+	BrowserConnectedEvent,
+	BrowserStopEvent,
 	LoadStorageStateEvent,
 	SaveStorageStateEvent,
 	StorageStateLoadedEvent,
@@ -27,8 +27,8 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
-		BrowserStartedEvent,
-		BrowserStoppedEvent,
+		BrowserConnectedEvent,
+		BrowserStopEvent,
 		SaveStorageStateEvent,
 		LoadStorageStateEvent,
 	]
@@ -46,7 +46,7 @@ class StorageStateWatchdog(BaseWatchdog):
 	_last_cookie_state: list[StorageStateCookie] = PrivateAttr(default_factory=list)
 	_save_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
-	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
+	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser starts."""
 		logger.info('[StorageStateWatchdog] Browser started, initializing storage monitoring')
 
@@ -56,9 +56,9 @@ class StorageStateWatchdog(BaseWatchdog):
 		# Automatically load storage state after browser start
 		self.event_bus.dispatch(LoadStorageStateEvent())
 
-	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
-		"""Stop monitoring and save state when browser stops."""
-		logger.info('[StorageStateWatchdog] Browser stopping, saving final storage state')
+	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
+		"""Stop monitoring and save state when browser stop is requested."""
+		logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage state')
 
 		# Save storage state before stopping and wait for completion
 		save_event = self.event_bus.dispatch(SaveStorageStateEvent())

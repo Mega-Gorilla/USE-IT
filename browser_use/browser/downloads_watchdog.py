@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlparse
 from weakref import WeakSet
 
@@ -13,6 +13,7 @@ from playwright.async_api import Download, Page
 from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
+	BrowserLaunchEvent,
 	FileDownloadedEvent,
 	NavigationCompleteEvent,
 	TabClosedEvent,
@@ -29,14 +30,15 @@ class DownloadsWatchdog(BaseWatchdog):
 	"""Monitors downloads and handles file download events."""
 
 	# Events this watchdog listens to (for documentation)
-	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+	LISTENS_TO: ClassVar[list[type[BaseEvent[Any]]]] = [
+		BrowserLaunchEvent,
 		TabCreatedEvent,
 		TabClosedEvent,
 		NavigationCompleteEvent,
 	]
 
 	# Events this watchdog emits
-	EMITS: ClassVar[list[type[BaseEvent]]] = [
+	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = [
 		FileDownloadedEvent,
 	]
 
@@ -47,10 +49,8 @@ class DownloadsWatchdog(BaseWatchdog):
 	_active_downloads: dict[str, Download] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by page URL
 
-	async def attach_to_session(self) -> None:
-		"""Attach to browser session and ensure downloads directory exists."""
-		await super().attach_to_session()
-
+	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> None:
+		logger.info(f'[DownloadsWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}')
 		# Ensure downloads directory exists
 		downloads_path = self.browser_session.browser_profile.downloads_path
 		if downloads_path:

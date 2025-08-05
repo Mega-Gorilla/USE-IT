@@ -114,12 +114,12 @@ class TestTabManagement:
 
 	async def _reset_tab_state(self, browser_session: BrowserSession, base_url: str):
 		# Ensure browser session is started and watchdogs are initialized
-		if not browser_session.initialized:
+		if not browser_session._browser_context:
 			await browser_session.start()
 
 		# close all existing tabs
-		if browser_session.browser_context:
-			for page in browser_session.browser_context.pages:
+		if browser_session._browser_context:
+			for page in browser_session._browser_context.pages:
 				await page.close()
 
 		await asyncio.sleep(0.5)
@@ -146,7 +146,7 @@ class TestTabManagement:
 		assert browser_session.page == initial_tab
 
 		# Test that get_current_page works even after closing all tabs
-		for page in browser_session.browser_context.pages:
+		for page in browser_session._browser_context.pages:
 			await page.close()
 
 		# Give time for watchdogs to process tab closure events
@@ -179,7 +179,7 @@ class TestTabManagement:
 
 		# test opening a new tab
 		new_tab = await browser_session.create_new_tab(f'{base_url}/page2')
-		new_tab_count = len(browser_session.browser_context.pages)
+		new_tab_count = len(browser_session._browser_context.pages)
 
 		# Debug: Check tab count after new tab creation
 		print(f'DEBUG: new_tab_count = {new_tab_count}')
@@ -290,26 +290,24 @@ class TestTabManagement:
 
 		# Force an error by killing the session (stop() with keep_alive=True doesn't close context)
 		# This properly cleans up connections
-		original_context = browser_session.browser_context
+		original_context = browser_session._browser_context
 
 		# Use stop with force=True to actually close the browser context
-		from browser_use.browser.events import StopBrowserEvent
+		from browser_use.browser.events import BrowserStopEvent
 
-		event = browser_session.event_bus.dispatch(StopBrowserEvent(force=True))
+		event = browser_session.event_bus.dispatch(BrowserStopEvent(force=True))
 		await event
 
 		# Verify session is properly killed
-		assert browser_session.browser_context is None
-		assert browser_session.initialized is False
+		assert browser_session._browser_context is None
 
 		# This should trigger reinitialization
 		page = await browser_session.get_current_page()
 
 		# Verify state is consistent with a new context
 		assert page is not None
-		assert browser_session.browser_context is not None
-		assert browser_session.browser_context != original_context
-		assert browser_session.initialized is True
+		assert browser_session._browser_context is not None
+		assert browser_session._browser_context != original_context
 		assert (await browser_session.is_connected()) is True
 
 	async def test_concurrent_context_access_during_closure(self, browser_session):
@@ -438,37 +436,6 @@ class TestEventDrivenTabOperations:
 		event_history = list(browser_session.event_bus.event_history.values())
 		created_events = [e for e in event_history if isinstance(e, TabCreatedEvent)]
 		assert len(created_events) >= 1
-
-	async def test_tabs_info_event_dispatching(self, browser_session, base_url):
-		"""Test TabsInfoRequestEvent and TabsInfoResponseEvent."""
-		from browser_use.browser.events import TabsInfoRequestEvent, TabsInfoResponseEvent
-
-		# Create multiple tabs
-		await browser_session.navigate_to(f'{base_url}/page1')
-		await browser_session.create_new_tab(f'{base_url}/page2')
-
-		# Request tabs info via direct event
-		request_event = browser_session.event_bus.dispatch(TabsInfoRequestEvent())
-		await request_event
-
-		# Wait for response event
-		try:
-			response_event = await asyncio.wait_for(
-				browser_session.event_bus.expect(TabsInfoResponseEvent, timeout=5.0), timeout=6.0
-			)
-
-			# Verify response contains tab information
-			assert isinstance(response_event.tabs, list)
-			assert len(response_event.tabs) >= 2
-
-			# Check tab structure
-			for tab in response_event.tabs:
-				assert 'url' in tab
-				assert 'title' in tab
-				assert 'index' in tab
-
-		except TimeoutError:
-			pytest.fail('TabsInfoResponseEvent not received within timeout')
 
 	async def test_concurrent_tab_operations_via_events(self, browser_session, base_url):
 		"""Test concurrent tab operations via event system."""

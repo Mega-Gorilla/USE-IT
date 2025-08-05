@@ -13,29 +13,25 @@ from playwright.async_api import Browser, BrowserContext, FloatRect, Page, Playw
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from browser_use.browser.events import (
+	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserStartedEvent,
+	BrowserStartEvent,
+	BrowserStateChangedEvent,
 	BrowserStateRequestEvent,
-	BrowserStateResponseEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	ClickElementEvent,
 	CloseTabEvent,
 	ExecuteJavaScriptEvent,
 	FileDownloadedEvent,
-	LoadStorageStateEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
 	SaveStorageStateEvent,
-	ScreenshotRequestEvent,
-	ScreenshotResponseEvent,
+	ScreenshotEvent,
 	ScrollEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 	SwitchTabEvent,
 	TabClosedEvent,
 	TabCreatedEvent,
-	TabsInfoRequestEvent,
-	TabsInfoResponseEvent,
 	TypeTextEvent,
 )
 from browser_use.browser.profile import BrowserProfile
@@ -69,8 +65,8 @@ class BrowserSession(BaseModel):
 	)
 
 	# Core configuration
-	browser_profile: BrowserProfile = Field(default_factory=lambda: DEFAULT_BROWSER_PROFILE)
 	id: str = Field(default_factory=lambda: uuid7str())
+	browser_profile: BrowserProfile = Field(default_factory=lambda: DEFAULT_BROWSER_PROFILE)
 
 	# Connection info (for backwards compatibility)
 	cdp_url: str | None = None
@@ -84,10 +80,6 @@ class BrowserSession(BaseModel):
 	_browser: Browser | None = PrivateAttr(default=None)
 	_browser_context: BrowserContext | None = PrivateAttr(default=None)
 
-	# Local browser state (only used when cdp_url is None)
-	_subprocess: Any = PrivateAttr(default=None)  # psutil.Process
-	_owns_browser_resources: bool = PrivateAttr(default=True)
-
 	# PDF handling
 	_auto_download_pdfs: bool = PrivateAttr(default=True)
 
@@ -97,6 +89,7 @@ class BrowserSession(BaseModel):
 	_aboutblank_watchdog: Any = PrivateAttr(default=None)
 	_navigation_watchdog: Any = PrivateAttr(default=None)
 	_storage_state_watchdog: Any = PrivateAttr(default=None)
+	_local_browser_watchdog: Any = PrivateAttr(default=None)
 
 	# Navigation tracking now handled by watchdogs
 
@@ -151,64 +144,21 @@ class BrowserSession(BaseModel):
 		# Handle deprecated browser_pid
 		if browser_pid is not None:
 			warnings.warn(
-				'Passing browser_pid to BrowserSession is deprecated. Use from_existing_pid() class method instead.',
+				'Passing browser_pid to BrowserSession is deprecated. Pass a cdp_url explicitly instead.',
 				DeprecationWarning,
 				stacklevel=2,
 			)
 			if not cdp_url:
-				raise ValueError('cdp_url is required when browser_pid is provided')
-
-			# Convert PID to psutil.Process
-			try:
-				import psutil
-
-				self._subprocess = psutil.Process(browser_pid)
-				self._owns_browser_resources = False
-			except ImportError:
-				raise ImportError('psutil is required for process management')
-		else:
-			# Set ownership based on whether we're connecting to existing browser
-			self._owns_browser_resources = cdp_url is None
+				raise ValueError('cdp_url is required to connect the browser')
 
 		# Register event handlers
 		self._register_handlers()
 
-	@classmethod
-	def from_existing_pid(
-		cls,
-		browser_profile: BrowserProfile,
-		pid: int,
-		cdp_url: str,
-		**kwargs: Any,
-	) -> Self:
-		"""Create a session from an existing browser process.
-
-		Args:
-			browser_profile: Browser configuration profile
-			pid: Process ID of the existing browser
-			cdp_url: CDP URL to connect to the browser
-			**kwargs: Additional arguments
-		"""
-		session = cls(
-			browser_profile=browser_profile,
-			cdp_url=cdp_url,
-			**kwargs,
-		)
-		# Convert PID to psutil.Process
-		try:
-			import psutil
-
-			session._subprocess = psutil.Process(pid)
-			session._owns_browser_resources = False
-		except ImportError:
-			raise ImportError('psutil is required for process management')
-		return session
-
 	def _register_handlers(self) -> None:
 		"""Register event handlers for browser control."""
 		# Browser lifecycle
-		self.event_bus.on(StartBrowserEvent, self.on_StartBrowserEvent)
-		self.event_bus.on(StopBrowserEvent, self.on_StopBrowserEvent)
+		self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
+		self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
 
 		# Navigation is handled by NavigationWatchdog
 		# Interaction
@@ -221,38 +171,67 @@ class BrowserSession(BaseModel):
 
 		# Browser state
 		self.event_bus.on(BrowserStateRequestEvent, self.on_BrowserStateRequestEvent)
-		self.event_bus.on(ScreenshotRequestEvent, self.on_ScreenshotRequestEvent)
-		self.event_bus.on(TabsInfoRequestEvent, self.on_TabsInfoRequestEvent)
+		self.event_bus.on(ScreenshotEvent, self.on_ScreenshotEvent)
 		self.event_bus.on(ExecuteJavaScriptEvent, self.on_ExecuteJavaScriptEvent)
+
+		# simple logger
+		self.event_bus.on('*', lambda e: print(e))
 
 		# Storage state is handled by StorageStateWatchdog
 
 	# ========== Event Handlers ==========
 
-	async def on_StartBrowserEvent(self, event: StartBrowserEvent) -> None:
+	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> None:
 		"""Handle browser start request."""
-		if self._browser and self._browser.is_connected():
-			# Already started
-			if not self.cdp_url:
-				raise ValueError('No CDP URL available for browser connection')
-			self.event_bus.dispatch(
-				BrowserStartedEvent(
-					cdp_url=self.cdp_url,
-					browser_pid=self._subprocess.pid if self._subprocess else None,
-				)
-			)
+
+		# Initialize and attach all watchdogs FIRST so LocalBrowserWatchdog can handle BrowserLaunchEvent
+		await self.attach_all_watchdogs()
+
+		if self.cdp_url and self._browser_context:
+			self.event_bus.dispatch(BrowserConnectedEvent(cdp_url=self.cdp_url))
 			return
 
 		try:
 			if self.is_local and not self.cdp_url:
-				# Launch local browser
-				from browser_use.browser.local import LocalBrowserHelpers
+				# Launch local browser using event-driven approach
+				logger.info('[Session] Dispatching BrowserLaunchEvent')
+				logger.info(
+					f'[Session] EventBus ID: {id(self.event_bus)}, has {len(self.event_bus.handlers)} handlers registered'
+				)
 
-				self._subprocess, self.cdp_url = await LocalBrowserHelpers.launch_browser(self.browser_profile)
+				# Debug: Check what handlers are registered for BrowserLaunchEvent
+				from browser_use.browser.events import BrowserLaunchEvent
 
-			# Ensure we have a CDP URL at this point
-			if not self.cdp_url:
-				raise ValueError('No CDP URL available for browser connection')
+				logger.info(
+					f'[Session] BrowserLaunchEvent class ID: {id(BrowserLaunchEvent)}, module: {BrowserLaunchEvent.__module__}'
+				)
+
+				# Debug: Check all registered event types
+				logger.info(f'[Session] All registered event types: {list(self.event_bus.handlers.keys())}')
+
+				# Debug: Check handlers dictionary structure
+				for event_type, handlers_list in self.event_bus.handlers.items():
+					if str(event_type) == "<class 'browser_use.browser.events.BrowserLaunchEvent'>":
+						logger.info(
+							f'[Session] Found BrowserLaunchEvent in handlers: {event_type} (ID: {id(event_type)}) has {len(handlers_list)} handlers'
+						)
+						logger.info(f'[Session] Handler names: {[h for h in handlers_list]}')
+					elif hasattr(event_type, '__name__') and 'BrowserLaunchEvent' in str(event_type):
+						logger.info(
+							f'[Session] Found BrowserLaunchEvent by name: {event_type} (ID: {id(event_type)}) has {len(handlers_list)} handlers'
+						)
+
+				launch_event = self.event_bus.dispatch(BrowserLaunchEvent())
+				await launch_event
+
+				# Get the CDP URL from LocalBrowserWatchdog handler result
+				results = await launch_event.event_results_flat_dict()
+				self.cdp_url = results['cdp_url']
+
+				if not self.cdp_url:
+					raise Exception('No CDP URL returned from LocalBrowserWatchdog')
+
+			assert self.cdp_url and '://' in self.cdp_url
 
 			# Connect via CDP
 			self._playwright = await async_playwright().start()
@@ -262,77 +241,48 @@ class BrowserSession(BaseModel):
 			)
 
 			# Set up browser context
-			contexts = self._browser.contexts
-			if contexts:
-				self._browser_context = contexts[0]
+			if self._browser.contexts:
+				self._browser_context = self._browser.contexts[0]
 			else:
+				raise ValueError(
+					'Creating a new incognito context in an existing browser is not currently supported, you should connect to an existing browser instead'
+				)
 				# Get context kwargs
 				new_context_args = self.browser_profile.kwargs_for_new_context()
 				context_kwargs = new_context_args.model_dump(exclude_none=True)
 
-				# Ensure accept_downloads is True when downloads are enabled
-				if self.browser_profile.downloads_path:
-					# Ensure downloads directory exists
-					downloads_dir = Path(self.browser_profile.downloads_path)
-					downloads_dir.mkdir(parents=True, exist_ok=True)
-					context_kwargs['accept_downloads'] = True
-					# Note: downloads_path is NOT a valid parameter for new_context()
-					# Downloads will be handled by the downloads watchdog using download.save_as()
-					logger.info(f'Downloads enabled, target directory: {downloads_dir.absolute()}')
-					logger.info(f'Accept downloads: {context_kwargs["accept_downloads"]}')
-
-				# Log storage state info
-				logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
-				logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
-				logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
-				logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
-				logger.info(f'Context kwargs accept_downloads: {context_kwargs.get("accept_downloads")}')
+				# # Log storage state info
+				# logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
+				# logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
+				# logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
+				# logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
+				# logger.info(f'Context kwargs accept_downloads: {context_kwargs.get("accept_downloads")}')
 
 				self._browser_context = await self._browser.new_context(**context_kwargs)
 
 			# Set initial page if exists
+			assert self._browser_context
 			pages = self._browser_context.pages
 			# Agent focus will be initialized by the watchdog
 
-			# Initialize and attach all watchdogs FIRST
-			await self.attach_all_watchdogs()
-
-			# THEN notify success - watchdogs are now ready to receive events
-			logger.info('[Session] !!!! DISPATCHING BrowserStartedEvent !!!!')
-			self.event_bus.dispatch(
-				BrowserStartedEvent(
-					cdp_url=self.cdp_url,
-					browser_pid=self._subprocess.pid if self._subprocess else None,
-				)
-			)
-			logger.info('[Session] !!!! BrowserStartedEvent dispatched !!!!')
+			self.event_bus.dispatch(BrowserConnectedEvent(cdp_url=self.cdp_url))
 
 			# Emit TabCreatedEvent and NavigationCompleteEvent for all existing pages
-			if self._browser_context:
-				for idx, page in enumerate(self._browser_context.pages):
-					# Emit TabCreatedEvent
-					self.event_bus.dispatch(
-						TabCreatedEvent(
-							tab_index=idx,
-							url=page.url,
-						)
-					)
-					logger.info(f'[Session] Emitted TabCreatedEvent for existing tab {idx}: {page.url}')
+			for idx, page in enumerate(self._browser_context.pages):
+				# Emit TabCreatedEvent
+				self.event_bus.dispatch(TabCreatedEvent(tab_index=idx, url=page.url))
 
-					# Emit NavigationCompleteEvent for the current page state
-					self.event_bus.dispatch(
-						NavigationCompleteEvent(
-							tab_index=idx,
-							url=page.url,
-							status=200,  # Assume existing pages loaded successfully
-							error_message=None,
-							loading_status='Existing page, found already open',
-						)
+				# Emit NavigationCompleteEvent for the current page state
+				self.event_bus.dispatch(
+					NavigationCompleteEvent(
+						tab_index=idx,
+						url=page.url,
+						status=200,  # Assume existing pages loaded successfully
+						error_message=None,
+						loading_status='Existing page, found already open',
 					)
-					logger.info(f'[Session] Emitted NavigationCompleteEvent for existing tab {idx}: {page.url}')
-
-			# Automatically load storage state after browser start
-			self.event_bus.dispatch(LoadStorageStateEvent())
+				)
+				logger.info(f'[Session] Emitted TabCreatedEvent + NavigationCompleteEvent for existing tab {idx}: {page.url}')
 
 		except Exception as e:
 			# Clean up on failure
@@ -342,81 +292,49 @@ class BrowserSession(BaseModel):
 
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
-					error_type='StartFailed',
-					message=f'Failed to start browser: {str(e)}',
+					error_type='BrowserStartEventError',
+					message=f'Failed to start browser: {type(e).__name__} {e}',
 					details={'cdp_url': self.cdp_url},
 				)
 			)
 			raise
 
-	async def on_StopBrowserEvent(self, event: StopBrowserEvent) -> None:
+	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Handle browser stop request."""
-		if not self._browser:
-			self.event_bus.dispatch(
-				BrowserStoppedEvent(
-					reason='Browser was not started',
-				)
-			)
-			return
 
 		try:
 			# Check if we should keep the browser alive
 			if self.browser_profile.keep_alive and not event.force:
-				# Keep browser alive, just notify stop
-				self.event_bus.dispatch(
-					BrowserStoppedEvent(
-						reason='Kept alive due to keep_alive=True',
-					)
-				)
+				self.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
 				return
 
-			# Network monitoring now handled by watchdogs
-
-			# Automatically save storage state before stopping and wait for completion
-			save_event = self.event_bus.dispatch(SaveStorageStateEvent())
-			await save_event
-
 			# Close context if we created it
-			if self._browser_context and not self._browser_context.pages:
+			if self._browser_context:
 				await self._browser_context.close()
+				self._browser_context = None
 
 			# Clean up playwright
 			if self._playwright:
 				await self._playwright.stop()
 				self._playwright = None
 
-			# Stop local browser process if we own it
-			if self.is_local and self._owns_browser_resources and self._subprocess:
-				from browser_use.browser.local import LocalBrowserHelpers
-
-				await LocalBrowserHelpers.cleanup_process(self._subprocess)
-
-				# Clean up temp directory if one was created
-				if self.browser_profile.user_data_dir and 'browseruse-tmp-' in str(self.browser_profile.user_data_dir):
-					LocalBrowserHelpers.cleanup_temp_dir(self.browser_profile.user_data_dir)
-
 			# Reset state
 			self._browser = None
 			self._browser_context = None
-
-			# Clear CDP URL for local browsers since the process is gone
-			if self.is_local and self._owns_browser_resources:
+			if self.is_local:
 				self.cdp_url = None
 
 			# Notify stop and wait for all handlers to complete
-			stop_event = self.event_bus.dispatch(
-				BrowserStoppedEvent(
-					reason='Stopped by request',
-				)
-			)
-			# Wait for all watchdog cleanup handlers to complete
+			# LocalBrowserWatchdog listens for BrowserStopEvent and dispatches BrowserKillEvent
+			stop_event = self.event_bus.dispatch(BrowserStoppedEvent(reason='Stopped by request'))
 			await stop_event
 
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
-					error_type='StopFailed',
-					message=f'Failed to stop browser: {str(e)}',
+					error_type='BrowserStopEventError',
+					message=f'Failed to stop browser: {type(e).__name__} {e}',
+					details={'cdp_url': self.cdp_url, 'is_local': self.is_local},
 				)
 			)
 
@@ -425,8 +343,7 @@ class BrowserSession(BaseModel):
 
 	async def start(self) -> Self:
 		"""Start the browser session."""
-		event = self.event_bus.dispatch(StartBrowserEvent())
-		# Wait for event to complete
+		event = self.event_bus.dispatch(BrowserStartEvent())
 		await event
 
 		# Check if any handler had an error
@@ -438,16 +355,12 @@ class BrowserSession(BaseModel):
 
 	async def stop(self) -> None:
 		"""Stop the browser session."""
-		event = self.event_bus.dispatch(StopBrowserEvent())
+		event = self.event_bus.dispatch(BrowserStopEvent())
 		await event
 
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
-		try:
-			page = await self.get_current_page()
-		except ValueError:
-			self.event_bus.dispatch(BrowserErrorEvent(error_type='NoActivePage', message='No active page for click', details={}))
-			return
+		page = await self.get_current_page()
 
 		try:
 			# Get the DOM element by index
@@ -506,16 +419,7 @@ class BrowserSession(BaseModel):
 
 	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
 		"""Handle text input request."""
-		try:
-			page = await self.get_current_page()
-		except ValueError:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NoActivePage',
-					message='No active page for text input',
-				)
-			)
-			return
+		page = await self.get_current_page()
 
 		try:
 			# Get the DOM element by index
@@ -588,18 +492,15 @@ class BrowserSession(BaseModel):
 			)
 			# Cache the state for the property
 			self._cached_browser_state_summary = state
-			self.event_bus.dispatch(BrowserStateResponseEvent(state=state))
+			self.event_bus.dispatch(BrowserStateChangedEvent(state=state))
 		except Exception as e:
 			# Fall back to minimal state on error
 			minimal_state = await self.get_minimal_state_summary()
-			self.event_bus.dispatch(BrowserStateResponseEvent(state=minimal_state))
+			self.event_bus.dispatch(BrowserStateChangedEvent(state=minimal_state))
 
-	async def on_ScreenshotRequestEvent(self, event: ScreenshotRequestEvent) -> None:
+	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> dict[str, str]:
 		"""Handle screenshot request."""
-		try:
-			page = await self.get_current_page()
-		except ValueError:
-			return
+		page = await self.get_current_page()
 
 		# Convert clip dict to FloatRect if provided
 		clip_rect: FloatRect | None = None
@@ -622,35 +523,9 @@ class BrowserSession(BaseModel):
 			)
 		except TimeoutError:
 			logger.warning(f'[Session] Screenshot timed out after 10 seconds for page: {page.url}')
-			# Return empty response or could dispatch error event
-			self.event_bus.dispatch(ScreenshotResponseEvent(screenshot='', error='Screenshot timed out'))
-			return
+			return {'screenshot': '', 'error': 'screenshot timed out'}
 		screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-		self.event_bus.dispatch(ScreenshotResponseEvent(screenshot=screenshot_b64))
-
-	async def on_TabsInfoRequestEvent(self, event: TabsInfoRequestEvent) -> None:
-		"""Handle tabs info request."""
-		from browser_use.browser.views import TabInfo
-
-		# Auto-start if not initialized
-		if not self.initialized:
-			start_event = self.event_bus.dispatch(StartBrowserEvent())
-			await start_event
-
-		tabs = []
-		for i, page in enumerate(self.pages):
-			if not page.is_closed():
-				tab_info = TabInfo(
-					page_id=i,
-					url=page.url,
-					title=await page.title(),
-					parent_page_id=None,
-					id=f'tab_{i}',
-					index=i,
-				)
-				tabs.append(tab_info.model_dump())
-		# Dispatch the response event
-		self.event_bus.dispatch(TabsInfoResponseEvent(tabs=tabs))
+		return {'screenshot': screenshot_b64, 'error': ''}
 
 	async def on_ExecuteJavaScriptEvent(self, event: ExecuteJavaScriptEvent) -> Any:
 		"""Handle JavaScript evaluation request."""
@@ -678,7 +553,7 @@ class BrowserSession(BaseModel):
 		events_data = []
 		for event in recent_events:
 			# Exclude fields that might cause circular references
-			# BrowserStateResponseEvent has 'state' which can be circular
+			# BrowserStateChangedEvent has 'state' which can be circular
 			event_dict = event.model_dump(mode='json', exclude={'state'})
 			events_data.append(event_dict)
 
@@ -702,27 +577,31 @@ class BrowserSession(BaseModel):
 		"""Async context manager exit."""
 		await self.stop()
 
-	# Browser properties
-	@property
-	def initialized(self) -> bool:
-		"""Check if the browser session is initialized."""
-		return self._browser is not None and self._browser.is_connected()
-
 	@property
 	def browser_pid(self) -> int | None:
-		"""Get the browser process ID."""
-		if self._subprocess:
-			return self._subprocess.pid
+		"""Get the browser process ID from LocalBrowserWatchdog if available."""
+		if hasattr(self, '_local_browser_watchdog') and self._local_browser_watchdog:
+			return self._local_browser_watchdog.browser_pid
+		# TODO: move all coede that depends on this into the local browser watchdog so we dont pollute other areas with local-browser-specific things
 		return None
+
+	@property
+	def _owns_browser_resources(self) -> bool:
+		"""Check if this session owns browser resources (delegates to LocalBrowserWatchdog)."""
+		if hasattr(self, '_local_browser_watchdog') and self._local_browser_watchdog:
+			return self._local_browser_watchdog._owns_browser_resources
+		return False
 
 	@property
 	def browser(self) -> Browser | None:
 		"""Get the browser instance."""
+		# TODO: add deprecation warning here to slowly discourage direct playwright API access in favor of bubus events
 		return self._browser
 
 	@property
 	def browser_context(self) -> BrowserContext | None:
 		"""Get the browser context."""
+		# TODO: add deprecation warning here to slowly discourage direct playwright API access in favor of bubus events
 		return self._browser_context
 
 	@property
@@ -809,6 +688,9 @@ class BrowserSession(BaseModel):
 		# Fallback if watchdog not initialized
 		if self.pages:
 			return self.pages[0]
+		await self.event_bus.dispatch(
+			BrowserErrorEvent(error_type='NoActivePage', message='No active page for click', details={})
+		)
 		raise ValueError('No active page available')
 
 	async def new_page(self, url: str | None = None) -> Page:
@@ -881,16 +763,9 @@ class BrowserSession(BaseModel):
 
 	async def take_screenshot(self, full_page: bool = False, clip: dict | None = None) -> str | None:
 		"""Take a screenshot."""
-		# Dispatch the request event
-		self.event_bus.dispatch(ScreenshotRequestEvent(full_page=full_page, clip=clip))
-		# Wait for the response event
-		try:
-			event_result = await self.event_bus.expect(ScreenshotResponseEvent, timeout=10.0)
-			response: ScreenshotResponseEvent = event_result  # type: ignore
-			return response.screenshot  # Return base64 string directly
-		except TimeoutError:
-			# No screenshot received
-			return None
+		return (
+			await self.event_bus.dispatch(ScreenshotEvent(full_page=full_page, clip=clip)).event_result() or {'screenshot': None}
+		)['screenshot'] or None
 
 	async def click_element(self, index: int, expect_download: bool = False, new_tab: bool = False) -> None:
 		"""Click element by index."""
@@ -920,8 +795,7 @@ class BrowserSession(BaseModel):
 		copy._playwright = self._playwright
 		copy._browser = self._browser
 		copy._browser_context = self._browser_context
-		copy._subprocess = self._subprocess
-		copy._owns_browser_resources = False  # Copy doesn't own resources
+		# Note: Subprocess management is now handled by LocalBrowserWatchdog
 		return copy
 
 	# Additional compatibility methods
@@ -938,21 +812,19 @@ class BrowserSession(BaseModel):
 
 	async def get_tabs_info(self) -> list[TabInfo]:
 		"""Get information about all open tabs."""
-		# Dispatch the request event
-		self.event_bus.dispatch(TabsInfoRequestEvent())
-		# Wait for the response event
-		try:
-			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
-			response: TabsInfoResponseEvent = event_result  # type: ignore
-			# Convert dictionaries to TabInfo models
-			tab_infos = []
-			for tab_dict in response.tabs:
-				tab_info = TabInfo(**tab_dict)
-				tab_infos.append(tab_info)
-			return tab_infos
-		except TimeoutError:
-			# No response received
-			return []
+		tabs = []
+		for i, page in enumerate(self.pages):
+			if not page.is_closed():
+				tab_info = TabInfo(
+					page_id=i,
+					url=page.url,
+					title=await page.title(),
+					parent_page_id=None,
+					id=f'tab_{i}',
+					index=i,
+				)
+				tabs.append(tab_info.model_dump())
+		return tabs
 
 	# DOM element methods
 	async def get_browser_state_with_recovery(
@@ -979,8 +851,8 @@ class BrowserSession(BaseModel):
 
 		# Wait for response
 		try:
-			event_result = await self.event_bus.expect(BrowserStateResponseEvent, timeout=60.0)
-			response: BrowserStateResponseEvent = event_result  # type: ignore
+			event_result = await self.event_bus.expect(BrowserStateChangedEvent, timeout=60.0)
+			response: BrowserStateChangedEvent = event_result  # type: ignore
 			return response.state
 		except TimeoutError:
 			# Fall back to minimal state
@@ -1006,7 +878,7 @@ class BrowserSession(BaseModel):
 		from browser_use.dom.service import DomService
 
 		# Auto-start if needed
-		if not self.initialized:
+		if not self._browser_context:
 			await self.start()
 
 		page = await self.get_current_page()
@@ -1759,14 +1631,16 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
 		from browser_use.browser.crash_watchdog import CrashWatchdog
 		from browser_use.browser.downloads_watchdog import DownloadsWatchdog
+		from browser_use.browser.local_browser_watchdog import LocalBrowserWatchdog
 		from browser_use.browser.navigation_watchdog import NavigationWatchdog
 		from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
 
 		watchdog_configs = [
 			('_crash_watchdog', CrashWatchdog),
 			('_downloads_watchdog', DownloadsWatchdog),
-			('_navigation_watchdog', NavigationWatchdog),
 			('_storage_state_watchdog', StorageStateWatchdog),
+			('_local_browser_watchdog', LocalBrowserWatchdog),
+			('_navigation_watchdog', NavigationWatchdog),
 			('_aboutblank_watchdog', AboutBlankWatchdog),
 		]
 
@@ -1881,6 +1755,7 @@ except ImportError:
 _watchdog_modules = [
 	'browser_use.browser.crash_watchdog.CrashWatchdog',
 	'browser_use.browser.downloads_watchdog.DownloadsWatchdog',
+	'browser_use.browser.local_browser_watchdog.LocalBrowserWatchdog',
 	'browser_use.browser.storage_state_watchdog.StorageStateWatchdog',
 	'browser_use.browser.navigation_watchdog.NavigationWatchdog',
 	'browser_use.browser.aboutblank_watchdog.AboutBlankWatchdog',

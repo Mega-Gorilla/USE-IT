@@ -361,7 +361,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if browser_session:
 			# Always copy sessions that are passed in to avoid agents overwriting each other's page and page by accident
 			# The model_copy() method now handles copying all necessary fields and setting up ownership
-			if browser_session._owns_browser_resources:
+			if browser_session._local_browser_watchdog and browser_session._local_browser_watchdog._owns_browser_resources:
 				self.browser_session = browser_session
 			else:
 				# TODO: Only warn when multiple agents are running in parallel, not sequentially

@@ -58,7 +58,7 @@ class TestSequentialAgentsSimple:
 		assert history1.history[-1].state.url == httpserver.url_for('/page1')
 
 		# Verify browser session is still alive
-		assert browser_session.initialized
+		assert browser_session._browser_context is not None
 		if initial_pid is not None:
 			assert browser_session.browser_pid == initial_pid
 
@@ -68,7 +68,7 @@ class TestSequentialAgentsSimple:
 		await asyncio.sleep(0.1)  # Give time for any async cleanup
 
 		# Verify browser is STILL alive after garbage collection
-		assert browser_session.initialized
+		assert browser_session._browser_context is not None
 		if initial_pid is not None:
 			assert browser_session.browser_pid == initial_pid
 		assert browser_session.browser_context is not None
@@ -96,7 +96,7 @@ class TestSequentialAgentsSimple:
 		assert history2.history[-1].state.url == httpserver.url_for('/page2')
 
 		# Verify browser session is still alive after second agent
-		assert browser_session.initialized
+		assert browser_session._browser_context is not None
 		if initial_pid is not None:
 			assert browser_session.browser_pid == initial_pid
 		assert browser_session.browser_context is not None
@@ -178,7 +178,7 @@ class TestSequentialAgentsSimple:
 		assert '/tab1' in agent2.browser_session.page.url
 
 		# Verify browser is still functional
-		assert browser_session.initialized
+		assert browser_session._browser_context is not None
 		assert len(browser_session.tabs) == 2
 
 		await browser_session.kill()

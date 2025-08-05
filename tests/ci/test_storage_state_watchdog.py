@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
+	BrowserConnectedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	LoadStorageStateEvent,
 	SaveStorageStateEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 	StorageStateLoadedEvent,
 	StorageStateSavedEvent,
 )
@@ -28,9 +28,9 @@ async def test_storage_state_watchdog_lifecycle():
 
 	try:
 		# Start browser
-		start_event = session.event_bus.dispatch(StartBrowserEvent())
+		start_event = session.event_bus.dispatch(BrowserStartEvent())
 		await start_event  # Wait for the event and all handlers to complete
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify storage state watchdog was created
 		assert hasattr(session, '_storage_state_watchdog'), 'StorageStateWatchdog should be created'
@@ -42,7 +42,7 @@ async def test_storage_state_watchdog_lifecycle():
 		assert not watchdog._monitoring_task.done()
 
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 		# Verify monitoring task was stopped
@@ -55,7 +55,7 @@ async def test_storage_state_watchdog_lifecycle():
 	finally:
 		# Ensure cleanup
 		try:
-			session.event_bus.dispatch(StopBrowserEvent())
+			session.event_bus.dispatch(BrowserStopEvent())
 		except Exception:
 			pass
 
@@ -76,8 +76,8 @@ async def test_storage_state_watchdog_save_event():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Navigate to create some context
 		await session.navigate('data:text/html,<h1>Test Page</h1>')
@@ -102,7 +102,7 @@ async def test_storage_state_watchdog_save_event():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 		# Cleanup temp file
@@ -141,8 +141,8 @@ async def test_storage_state_watchdog_load_event():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Dispatch LoadStorageStateEvent
 		load_event = session.event_bus.dispatch(LoadStorageStateEvent())
@@ -165,7 +165,7 @@ async def test_storage_state_watchdog_load_event():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 		# Cleanup temp file
@@ -185,8 +185,8 @@ async def test_storage_state_watchdog_auto_save():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Configure shorter auto-save interval
 		watchdog = session._storage_state_watchdog
@@ -206,7 +206,7 @@ async def test_storage_state_watchdog_auto_save():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 		# Cleanup temp file

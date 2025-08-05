@@ -4,13 +4,15 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import psutil
 from bubus import BaseEvent
 from playwright.async_api import Page, Request, Response
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
+	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserStartedEvent,
+	BrowserLaunchedEvent,
 	BrowserStoppedEvent,
 	PageCrashedEvent,
 )
@@ -37,7 +39,8 @@ class CrashWatchdog(BaseWatchdog):
 
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
-		BrowserStartedEvent,
+		BrowserConnectedEvent,
+		BrowserLaunchedEvent,
 		BrowserStoppedEvent,
 	]
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
@@ -56,19 +59,25 @@ class CrashWatchdog(BaseWatchdog):
 	_cdp_session: Any = PrivateAttr(default=None)
 	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # page_url -> timestamp
 
-	async def on_BrowserStartedEvent(self, event: BrowserStartedEvent) -> None:
-		"""Start monitoring when browser starts."""
-		logger.info('[CrashWatchdog] Browser started event received, beginning monitoring')
+	async def on_BrowserLaunchedEvent(self, event: BrowserLaunchedEvent) -> None:
+		"""Store browser PID when local browser is launched."""
+		logger.info(f'[CrashWatchdog] Browser launched event received, storing PID: {event.browser_pid}')
+		self._browser_pid = event.browser_pid
 
-		# Get browser pid from event or session
-		self._browser_pid = event.browser_pid or self.browser_session.browser_pid
+	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
+		"""Start monitoring when browser is connected."""
+		logger.info('[CrashWatchdog] Browser connected event received, beginning monitoring')
+
+		# Get browser pid from session if not already set by BrowserLaunchedEvent
+		if not self._browser_pid:
+			self._browser_pid = self.browser_session.browser_pid
 
 		await self._start_monitoring()
 		logger.info(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Stop monitoring when browser stops."""
-		logger.info('[Watchdog] Browser stopped, ending monitoring')
+		logger.info('[CrashWatchdog] Browser stopped, ending monitoring')
 		await self._stop_monitoring()
 
 	async def attach_to_page(self, page: Page) -> None:
@@ -98,14 +107,14 @@ class CrashWatchdog(BaseWatchdog):
 			method=request.method,
 			resource_type=request.resource_type,
 		)
-		logger.debug(f'[Watchdog] Tracking request: {request.method} {request.url[:50]}...')
+		logger.debug(f'[CrashWatchdog] Tracking request: {request.method} {request.url[:50]}...')
 
 	def _on_response(self, response: Response) -> None:
 		"""Remove request from tracking on response."""
 		request_id = f'{id(response.request)}'
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			logger.debug(f'[Watchdog] Request completed in {elapsed:.2f}s: {response.url[:50]}...')
+			logger.debug(f'[CrashWatchdog] Request completed in {elapsed:.2f}s: {response.url[:50]}...')
 			del self._active_requests[request_id]
 
 	def _on_request_failed(self, request: Request) -> None:
@@ -113,12 +122,12 @@ class CrashWatchdog(BaseWatchdog):
 		request_id = f'{id(request)}'
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			logger.debug(f'[Watchdog] Request failed after {elapsed:.2f}s: {request.url[:50]}...')
+			logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {request.url[:50]}...')
 			del self._active_requests[request_id]
 
 	async def _on_page_crash(self, page: Page) -> None:
 		"""Handle page crash."""
-		logger.error(f'[Watchdog] Page crashed: {page.url}')
+		logger.error(f'[CrashWatchdog] Page crashed: {page.url}')
 
 		tab_index = self.browser_session.get_tab_index(page)
 
@@ -171,16 +180,16 @@ class CrashWatchdog(BaseWatchdog):
 					self._cdp_session.on(
 						'Inspector.targetCrashed',
 						lambda params: (
-							logger.error('[Watchdog] Browser crash detected via CDP'),
+							logger.error('[CrashWatchdog] Browser crash detected via CDP'),
 							self.event_bus.dispatch(
 								BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=params)
 							),
 						),
 					)
 
-				logger.info('[Watchdog] CDP crash detection enabled')
+				logger.info('[CrashWatchdog] CDP crash detection enabled')
 			except Exception as e:
-				logger.warning(f'[Watchdog] Failed to set up CDP crash detection: {e}')
+				logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring loop."""
@@ -190,7 +199,7 @@ class CrashWatchdog(BaseWatchdog):
 				await self._monitoring_task
 			except asyncio.CancelledError:
 				pass
-			logger.info('[Watchdog] Monitoring loop stopped')
+			logger.info('[CrashWatchdog] Monitoring loop stopped')
 
 		# Clean up CDP session
 		if self._cdp_session:
@@ -214,7 +223,7 @@ class CrashWatchdog(BaseWatchdog):
 			except asyncio.CancelledError:
 				break
 			except Exception as e:
-				logger.error(f'[Watchdog] Error in monitoring loop: {e}')
+				logger.error(f'[CrashWatchdog] Error in monitoring loop: {e}')
 
 	async def _check_network_timeouts(self) -> None:
 		"""Check for network requests exceeding timeout."""
@@ -224,13 +233,13 @@ class CrashWatchdog(BaseWatchdog):
 		# Debug logging
 		if self._active_requests:
 			logger.debug(
-				f'[Watchdog] Checking {len(self._active_requests)} active requests for timeouts (threshold: {self.network_timeout_seconds}s)'
+				f'[CrashWatchdog] Checking {len(self._active_requests)} active requests for timeouts (threshold: {self.network_timeout_seconds}s)'
 			)
 
 		for request_id, tracker in self._active_requests.items():
 			elapsed = current_time - tracker.start_time
 			logger.debug(
-				f'[Watchdog] Request {tracker.url[:30]}... elapsed: {elapsed:.1f}s, timeout: {self.network_timeout_seconds}s'
+				f'[CrashWatchdog] Request {tracker.url[:30]}... elapsed: {elapsed:.1f}s, timeout: {self.network_timeout_seconds}s'
 			)
 			if elapsed >= self.network_timeout_seconds:
 				timed_out_requests.append((request_id, tracker))
@@ -238,7 +247,7 @@ class CrashWatchdog(BaseWatchdog):
 		# Emit events for timed out requests
 		for request_id, tracker in timed_out_requests:
 			logger.warning(
-				f'[Watchdog] Network request timeout after {self.network_timeout_seconds}s: '
+				f'[CrashWatchdog] Network request timeout after {self.network_timeout_seconds}s: '
 				f'{tracker.method} {tracker.url[:100]}...'
 			)
 
@@ -262,7 +271,7 @@ class CrashWatchdog(BaseWatchdog):
 		"""Check if browser and pages are still responsive."""
 		# Check browser connection
 		if self.browser_session._browser and not self.browser_session._browser.is_connected():
-			logger.error('[Watchdog] Browser disconnected unexpectedly')
+			logger.error('[CrashWatchdog] Browser disconnected unexpectedly')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
 			)
@@ -270,18 +279,15 @@ class CrashWatchdog(BaseWatchdog):
 			raise asyncio.CancelledError('Browser disconnected')
 
 		# Check browser process if we have PID
-		if self._browser_pid:
+		if proc := self.browser_session._local_browser_watchdog._subprocess:
 			try:
-				import psutil
-
-				proc = psutil.Process(self._browser_pid)
 				if proc.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-					logger.error(f'[Watchdog] Browser process {self._browser_pid} has crashed')
+					logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')
 					self.event_bus.dispatch(
 						BrowserErrorEvent(
 							error_type='BrowserProcessCrashed',
-							message=f'Browser process {self._browser_pid} has crashed',
-							details={'pid': self._browser_pid, 'status': proc.status()},
+							message=f'Browser process {proc.pid} has crashed',
+							details={'pid': proc.pid, 'status': proc.status()},
 						)
 					)
 					await self._stop_monitoring()
@@ -320,7 +326,7 @@ class CrashWatchdog(BaseWatchdog):
 
 		# Report unresponsive pages
 		for page in unresponsive_pages:
-			logger.warning(f'[Watchdog] Page unresponsive: {page.url}')
+			logger.warning(f'[CrashWatchdog] Page unresponsive: {page.url}')
 
 			tab_index = self.browser_session.get_tab_index(page)
 			self.event_bus.dispatch(
@@ -371,36 +377,36 @@ class CrashWatchdog(BaseWatchdog):
 	async def trigger_browser_crash(self) -> None:
 		"""Trigger a browser crash for testing (requires CDP session)."""
 		if not self._cdp_session:
-			logger.warning('[Watchdog] No CDP session available for crash testing')
+			logger.warning('[CrashWatchdog] No CDP session available for crash testing')
 			return
 
 		try:
-			logger.warning('[Watchdog] Triggering browser crash for testing...')
+			logger.warning('[CrashWatchdog] Triggering browser crash for testing...')
 			await self._cdp_session.send('Browser.crash')
 		except Exception as e:
-			logger.error(f'[Watchdog] Failed to trigger browser crash: {e}')
+			logger.error(f'[CrashWatchdog] Failed to trigger browser crash: {e}')
 
 	async def trigger_gpu_crash(self) -> None:
 		"""Trigger a GPU process crash for testing (requires CDP session)."""
 		if not self._cdp_session:
-			logger.warning('[Watchdog] No CDP session available for GPU crash testing')
+			logger.warning('[CrashWatchdog] No CDP session available for GPU crash testing')
 			return
 
 		try:
-			logger.warning('[Watchdog] Triggering GPU crash for testing...')
+			logger.warning('[CrashWatchdog] Triggering GPU crash for testing...')
 			await self._cdp_session.send('Browser.crashGpuProcess')
 		except Exception as e:
-			logger.error(f'[Watchdog] Failed to trigger GPU crash: {e}')
+			logger.error(f'[CrashWatchdog] Failed to trigger GPU crash: {e}')
 
 	async def trigger_page_crash(self, page: Page) -> None:
 		"""Trigger a page crash for testing."""
 		try:
-			logger.warning(f'[Watchdog] Triggering page crash for testing on: {page.url}')
+			logger.warning(f'[CrashWatchdog] Triggering page crash for testing on: {page.url}')
 			cdp = await page.context.new_cdp_session(page)
 			await cdp.send('Page.crash')
 			await cdp.detach()
 		except Exception as e:
-			logger.error(f'[Watchdog] Failed to trigger page crash: {e}')
+			logger.error(f'[CrashWatchdog] Failed to trigger page crash: {e}')
 
 
 # Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined

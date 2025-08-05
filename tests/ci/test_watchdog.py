@@ -5,12 +5,12 @@ from typing import cast
 import pytest
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
+	BrowserConnectedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 	TabCreatedEvent,
 )
 from browser_use.browser.profile import BrowserProfile
@@ -24,11 +24,11 @@ async def test_watchdog_integration_with_session_lifecycle():
 	session = BrowserSession(browser_profile=profile)
 
 	# Start browser via event
-	session.event_bus.dispatch(StartBrowserEvent())
+	session.event_bus.dispatch(BrowserStartEvent())
 
 	# Wait for browser started event
-	started_event: BrowserStartedEvent = cast(
-		BrowserStartedEvent, await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+	started_event: BrowserConnectedEvent = cast(
+		BrowserConnectedEvent, await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 	)
 	assert started_event.cdp_url is not None
 
@@ -62,7 +62,7 @@ async def test_watchdog_integration_with_session_lifecycle():
 	assert session._aboutblank_watchdog is not None
 
 	# Stop browser via event
-	session.event_bus.dispatch(StopBrowserEvent())
+	session.event_bus.dispatch(BrowserStopEvent())
 
 	# Wait for browser stopped event
 	stopped_event: BrowserStoppedEvent = cast(
@@ -79,8 +79,8 @@ async def test_watchdog_event_handler_registration():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify event handlers are registered by checking event bus
 		# The event bus should have multiple handlers registered
@@ -102,5 +102,5 @@ async def test_watchdog_event_handler_registration():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)

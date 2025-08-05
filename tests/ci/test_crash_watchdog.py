@@ -6,12 +6,12 @@ from typing import cast
 import pytest
 
 from browser_use.browser.events import (
+	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserStartedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	NavigateToUrlEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
@@ -28,8 +28,8 @@ async def test_crash_watchdog_network_timeout():
 
 	try:
 		# Start browser using event system
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=10.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=10.0)
 
 		logger.info('[TEST] Browser started, configuring watchdog timeout')
 
@@ -75,7 +75,7 @@ async def test_crash_watchdog_network_timeout():
 	finally:
 		# Clean shutdown
 		try:
-			session.event_bus.dispatch(StopBrowserEvent())
+			session.event_bus.dispatch(BrowserStopEvent())
 			await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
 		except Exception:
 			# If graceful shutdown fails, force cleanup
@@ -90,10 +90,10 @@ async def test_crash_watchdog_browser_disconnect():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
+		session.event_bus.dispatch(BrowserStartEvent())
 
 		# Wait for browser to be fully started
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Browser disconnection detection is now handled by the crash watchdog
 		# No configuration needed
@@ -122,7 +122,7 @@ async def test_crash_watchdog_browser_disconnect():
 	finally:
 		# Force stop even if browser is marked as disconnected
 		try:
-			session.event_bus.dispatch(StopBrowserEvent(force=True))
+			session.event_bus.dispatch(BrowserStopEvent(force=True))
 			await asyncio.sleep(0.5)  # Give it time to stop
 		except Exception:
 			pass  # Browser might already be stopped
@@ -134,12 +134,12 @@ async def test_crash_watchdog_lifecycle():
 	profile = BrowserProfile(headless=True)
 	session = BrowserSession(browser_profile=profile)
 
-	# Start browser via event and wait for BrowserStartedEvent
-	start_event = session.event_bus.dispatch(StartBrowserEvent())
+	# Start browser via event and wait for BrowserConnectedEvent
+	start_event = session.event_bus.dispatch(BrowserStartEvent())
 	await start_event  # Wait for the event and all handlers to complete
 
-	started_event: BrowserStartedEvent = cast(
-		BrowserStartedEvent, await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+	started_event: BrowserConnectedEvent = cast(
+		BrowserConnectedEvent, await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 	)
 	assert started_event.cdp_url is not None
 
@@ -152,7 +152,7 @@ async def test_crash_watchdog_lifecycle():
 	assert not session._crash_watchdog._monitoring_task.done()
 
 	# Stop browser via event
-	session.event_bus.dispatch(StopBrowserEvent())
+	session.event_bus.dispatch(BrowserStopEvent())
 
 	# Wait for browser stopped event
 	try:

@@ -9,11 +9,11 @@ import pytest
 from werkzeug.wrappers import Response
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
+	BrowserConnectedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	FileDownloadedEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
@@ -71,8 +71,8 @@ async def test_downloads_watchdog_lifecycle():
 
 		try:
 			# Start browser
-			session.event_bus.dispatch(StartBrowserEvent())
-			await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+			session.event_bus.dispatch(BrowserStartEvent())
+			await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 			# Verify downloads watchdog was created
 			assert hasattr(session, '_downloads_watchdog'), 'DownloadsWatchdog should be created'
@@ -84,7 +84,7 @@ async def test_downloads_watchdog_lifecycle():
 		finally:
 			# Clean shutdown
 			try:
-				session.event_bus.dispatch(StopBrowserEvent())
+				session.event_bus.dispatch(BrowserStopEvent())
 				await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
 			except Exception:
 				# If graceful shutdown fails, force cleanup
@@ -109,8 +109,8 @@ async def test_downloads_watchdog_file_detection(download_test_server):
 
 		try:
 			# Start browser
-			session.event_bus.dispatch(StartBrowserEvent())
-			await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+			session.event_bus.dispatch(BrowserStartEvent())
+			await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 			# Navigate to test page
 			test_url = download_test_server.url_for('/')
@@ -138,7 +138,7 @@ async def test_downloads_watchdog_file_detection(download_test_server):
 		finally:
 			# Clean shutdown
 			try:
-				session.event_bus.dispatch(StopBrowserEvent())
+				session.event_bus.dispatch(BrowserStopEvent())
 				await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
 			except Exception:
 				# If graceful shutdown fails, force cleanup
@@ -159,8 +159,8 @@ async def test_downloads_watchdog_page_attachment():
 
 		try:
 			# Start browser
-			session.event_bus.dispatch(StartBrowserEvent())
-			await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+			session.event_bus.dispatch(BrowserStartEvent())
+			await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 			# Get downloads watchdog
 			downloads_watchdog = session._downloads_watchdog
@@ -181,7 +181,7 @@ async def test_downloads_watchdog_page_attachment():
 		finally:
 			# Clean shutdown
 			try:
-				session.event_bus.dispatch(StopBrowserEvent())
+				session.event_bus.dispatch(BrowserStopEvent())
 				await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
 			except Exception:
 				# If graceful shutdown fails, force cleanup
@@ -197,8 +197,8 @@ async def test_downloads_watchdog_default_downloads_path():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify downloads watchdog was created
 		assert hasattr(session, '_downloads_watchdog'), 'DownloadsWatchdog should be created'
@@ -211,7 +211,7 @@ async def test_downloads_watchdog_default_downloads_path():
 	finally:
 		# Clean shutdown
 		try:
-			session.event_bus.dispatch(StopBrowserEvent())
+			session.event_bus.dispatch(BrowserStopEvent())
 			await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
 		except Exception:
 			# If graceful shutdown fails, force cleanup

@@ -5,11 +5,11 @@ import asyncio
 import pytest
 
 from browser_use.browser.events import (
-	BrowserStartedEvent,
+	BrowserConnectedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	NavigateToUrlEvent,
-	StartBrowserEvent,
-	StopBrowserEvent,
 	TabCreatedEvent,
 )
 from browser_use.browser.profile import BrowserProfile
@@ -24,8 +24,8 @@ async def test_aboutblank_watchdog_lifecycle():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Verify aboutblank watchdog was created
 		assert hasattr(session, '_aboutblank_watchdog'), 'AboutBlankWatchdog should be created'
@@ -33,7 +33,7 @@ async def test_aboutblank_watchdog_lifecycle():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -45,8 +45,8 @@ async def test_aboutblank_watchdog_creates_animation_tab():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Wait for initial tab creation and aboutblank watchdog to process
 		await asyncio.sleep(0.5)
@@ -62,7 +62,7 @@ async def test_aboutblank_watchdog_creates_animation_tab():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -74,8 +74,8 @@ async def test_aboutblank_watchdog_handles_tab_creation():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Get aboutblank watchdog
 		watchdog = session._aboutblank_watchdog
@@ -93,7 +93,7 @@ async def test_aboutblank_watchdog_handles_tab_creation():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -105,8 +105,8 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Get aboutblank watchdog
 		watchdog = session._aboutblank_watchdog
@@ -130,7 +130,7 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
 
 
@@ -142,8 +142,8 @@ async def test_aboutblank_watchdog_animation_tab_management():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(StartBrowserEvent())
-		await session.event_bus.expect(BrowserStartedEvent, timeout=5.0)
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Get aboutblank watchdog
 		watchdog = session._aboutblank_watchdog
@@ -169,5 +169,5 @@ async def test_aboutblank_watchdog_animation_tab_management():
 
 	finally:
 		# Stop browser
-		session.event_bus.dispatch(StopBrowserEvent())
+		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)

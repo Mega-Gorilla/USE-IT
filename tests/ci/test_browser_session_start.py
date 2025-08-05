@@ -52,15 +52,13 @@ class TestBrowserSessionStart:
 
 		# Start the session for the first time
 		result1 = await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 		assert result1 is browser_session
 
 		# Start the session again - should return immediately without re-initialization
 		result2 = await browser_session.start()
 		assert result2 is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 		# Both results should be the same instance
 		assert result1 is result2
@@ -81,8 +79,7 @@ class TestBrowserSessionStart:
 		assert len(successful_results) == 2, f'Expected both starts to succeed, got results: {results}'
 
 		# The session should be initialized after concurrent calls
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 		# Should have a single browser PID
 		final_pid = browser_session.browser_pid
@@ -98,8 +95,7 @@ class TestBrowserSessionStart:
 
 		# Start the session normally
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 		# Simulate a closed browser connection by closing the browser
 		if browser_session.browser:
@@ -108,8 +104,7 @@ class TestBrowserSessionStart:
 		# The session should detect the closed connection and reinitialize
 		result = await browser_session.start()
 		assert result is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 	async def test_start_after_browser_crash(self, browser_session):
 		"""Test calling .start() after browser has crashed."""
@@ -117,7 +112,7 @@ class TestBrowserSessionStart:
 
 		# Start the session normally
 		await browser_session.start()
-		assert browser_session.initialized is True
+		assert browser_session._browser_context is not None
 		original_pid = browser_session.browser_pid
 
 		# Force close the browser to simulate a crash
@@ -125,13 +120,12 @@ class TestBrowserSessionStart:
 			await browser_session.browser.close()
 
 		# Check that initialized reflects the disconnected state
-		assert browser_session.initialized is False
+		assert browser_session._browser_context is None
 
 		# Start should recover and create a new browser
 		result = await browser_session.start()
 		assert result is browser_session
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 		# Should have a new PID (or same if reusing process)
 		new_pid = browser_session.browser_pid
@@ -153,8 +147,7 @@ class TestBrowserSessionStart:
 				await browser_session.start()
 
 			# Session should not be initialized
-			assert browser_session.initialized is False
-			assert browser_session.browser_context is None
+			assert browser_session._browser_context is None
 		finally:
 			await browser_session.kill()
 
@@ -163,15 +156,13 @@ class TestBrowserSessionStart:
 		# logger.info('Testing close on unstarted session')
 
 		# Ensure session is not started
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 		# Close should not raise an exception
 		await browser_session.stop()
 
 		# State should remain unchanged
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 	async def test_close_alias_method(self, browser_session):
 		"""Test the deprecated .close() alias method."""
@@ -179,13 +170,13 @@ class TestBrowserSessionStart:
 
 		# Start the session
 		await browser_session.start()
-		assert browser_session.initialized is True
+		assert browser_session._browser_context is not None
 
 		# Use the deprecated close method
 		await browser_session.close()
 
 		# Session should be stopped
-		assert browser_session.initialized is False
+		assert browser_session._browser_context is None
 
 	async def test_context_manager_usage(self, browser_session):
 		"""Test using BrowserSession as an async context manager."""
@@ -194,11 +185,10 @@ class TestBrowserSessionStart:
 		# Use as context manager
 		async with browser_session as session:
 			assert session is browser_session
-			assert session.initialized is True
-			assert session.browser_context is not None
+			assert session._browser_context is not None
 
 		# Should be stopped after exiting context
-		assert browser_session.initialized is False
+		assert browser_session._browser_context is None
 
 	async def test_multiple_concurrent_operations_after_start(self, browser_session):
 		"""Test that multiple operations can run concurrently after start() completes."""
@@ -230,8 +220,7 @@ class TestBrowserSessionStart:
 
 		# Start the session first
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 		initial_pid = browser_session.browser_pid
 
 		# Various operations should work without restarting
@@ -251,15 +240,14 @@ class TestBrowserSessionStart:
 
 		# Browser PID should remain the same
 		assert browser_session.browser_pid == initial_pid
-		assert browser_session.initialized is True
+		assert browser_session._browser_context is not None
 
 	async def test_lazy_initialization_behavior(self, browser_session):
 		"""Test that operations trigger initialization when needed."""
 		# logger.info('Testing lazy initialization behavior')
 
 		# Ensure session is not started
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 		assert browser_session.browser_pid is None
 
 		# Calling an operation that needs browser should work
@@ -269,7 +257,7 @@ class TestBrowserSessionStart:
 			page = await browser_session.get_current_page()
 			# If it returns a page, session must have auto-started
 			if page is not None:
-				assert browser_session.initialized is True
+				assert browser_session._browser_context is not None
 				assert browser_session.browser_pid is not None
 		except Exception:
 			# If it fails, that's also valid behavior
@@ -277,8 +265,7 @@ class TestBrowserSessionStart:
 
 		# Explicitly start and verify it works
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 		assert browser_session.browser_pid is not None
 
 	async def test_page_lifecycle_management(self, browser_session):
@@ -320,8 +307,7 @@ class TestBrowserSessionStart:
 		# Create a single session for this test
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		await browser_session.start()
-		assert browser_session.initialized is True
-		assert browser_session.browser_context is not None
+		assert browser_session._browser_context is not None
 
 		# Create a lock to ensure only one stop actually executes
 		stop_lock = asyncio.Lock()
@@ -330,7 +316,7 @@ class TestBrowserSessionStart:
 		async def safe_stop():
 			nonlocal stop_execution_count
 			async with stop_lock:
-				if browser_session.initialized:
+				if browser_session._browser_context is not None:
 					stop_execution_count += 1
 					await browser_session.stop()
 			return 'stopped'
@@ -345,8 +331,7 @@ class TestBrowserSessionStart:
 		assert stop_execution_count == 1
 
 		# Session should be stopped
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 	async def test_stop_with_closed_browser_context(self, browser_session):
 		"""Test calling stop() when browser context is already closed."""
@@ -354,8 +339,8 @@ class TestBrowserSessionStart:
 
 		# Start the session
 		await browser_session.start()
-		assert browser_session.initialized is True
-		browser_ctx = browser_session.browser_context
+		assert browser_session._browser_context is not None
+		browser_ctx = browser_session._browser_context
 		assert browser_ctx is not None
 
 		# Manually close the browser context
@@ -365,8 +350,7 @@ class TestBrowserSessionStart:
 		await browser_session.stop()
 
 		# Session should be properly cleaned up
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 	async def test_access_after_stop(self, browser_profile):
 		"""Test accessing browser context after stop() to ensure proper cleanup."""
@@ -380,12 +364,11 @@ class TestBrowserSessionStart:
 		await browser_session.stop()
 
 		# Verify session is stopped
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 		# calling a method wrapped in @require_initialization should auto-restart the session
 		await browser_session.get_tabs_info()
-		assert browser_session.initialized is True
+		assert browser_session._browser_context is not None
 
 	async def test_race_condition_between_stop_and_operation(self, browser_session):
 		"""Test race condition between stop() and other operations."""
@@ -426,8 +409,8 @@ class TestBrowserSessionStart:
 		for i in range(3):
 			# Start
 			await browser_session.start()
-			assert browser_session.initialized is True
-			assert browser_session.browser_context is not None
+			assert browser_session._browser_context is not None
+			assert browser_session._browser_context is not None
 
 			# Perform an operation
 			tabs = await browser_session.get_tabs_info()
@@ -435,8 +418,7 @@ class TestBrowserSessionStart:
 
 			# Stop
 			await browser_session.stop()
-			assert browser_session.initialized is False
-			assert browser_session.browser_context is None
+			assert browser_session._browser_context is None
 
 	async def test_context_manager_with_exception(self, browser_session):
 		"""Test context manager properly closes even when exception occurs."""
@@ -448,13 +430,11 @@ class TestBrowserSessionStart:
 		# Use context manager and raise exception inside
 		with pytest.raises(TestException):
 			async with browser_session as session:
-				assert session.initialized is True
-				assert session.browser_context is not None
+				assert session._browser_context is not None
 				raise TestException('Test exception')
 
 		# Session should still be stopped despite the exception
-		assert browser_session.initialized is False
-		assert browser_session.browser_context is None
+		assert browser_session._browser_context is None
 
 	async def test_session_without_fixture(self):
 		"""Test creating a session without using fixture."""
@@ -464,9 +444,9 @@ class TestBrowserSessionStart:
 
 		try:
 			await session.start()
-			assert session.initialized is True
+			assert session._browser_context is not None
 			await session.stop()
-			assert session.initialized is False
+			assert session._browser_context is None
 		finally:
 			pass
 
@@ -479,7 +459,7 @@ class TestBrowserSessionStart:
 		try:
 			# Start the session
 			await session.start()
-			assert session.initialized is True
+			assert session._browser_context is not None
 
 			# Now test keep_alive behavior
 			session.browser_profile.keep_alive = True
@@ -487,8 +467,7 @@ class TestBrowserSessionStart:
 			# Stop should not actually close the browser with keep_alive=True
 			await session.stop()
 			# Browser should still be connected
-			assert session.initialized is True
-			assert session.browser_context and session.browser_context.pages[0]
+			assert session._browser_context and session._browser_context.pages[0]
 
 		finally:
 			await session.kill()
@@ -507,8 +486,7 @@ class TestBrowserSessionStart:
 
 		try:
 			await session.start()
-			assert session.initialized is True
-			assert session.browser_context is not None
+			assert session._browser_context is not None
 			# Verify the user_data_dir wasn't changed
 			assert session.browser_profile.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
 		finally:
@@ -563,7 +541,7 @@ class TestBrowserSessionReusePatterns:
 
 		# Verify first agent's session is closed
 		assert agent1.browser_session is not None
-		assert not agent1.browser_session.initialized
+		assert not agent1.browser_session._browser_context is not None
 
 		# Second agent with same profile
 		agent2 = Agent(
@@ -577,7 +555,7 @@ class TestBrowserSessionReusePatterns:
 		# Verify second agent created a new session
 		assert agent2.browser_session is not None
 		assert agent1.browser_session is not agent2.browser_session
-		assert not agent2.browser_session.initialized
+		assert not agent2.browser_session._browser_context is not None
 
 	async def test_sequential_agents_same_profile_same_browser(self, mock_llm):
 		"""Test Sequential Agents, Same Profile, Same Browser pattern"""
@@ -606,8 +584,7 @@ class TestBrowserSessionReusePatterns:
 			await agent1.run()
 
 			# Verify session is still alive
-			assert reused_session.initialized
-			assert reused_session.browser_context is not None
+			assert reused_session._browser_context is not None
 
 			# Second agent reusing the same session
 			agent2 = Agent(
@@ -621,7 +598,7 @@ class TestBrowserSessionReusePatterns:
 			# Verify same browser was used (using __eq__ to check browser_pid, cdp_url)
 			assert agent1.browser_session == agent2.browser_session
 			assert agent1.browser_session == reused_session
-			assert reused_session.initialized
+			assert reused_session._browser_context is not None
 
 		finally:
 			await reused_session.kill()
@@ -746,7 +723,7 @@ class TestBrowserSessionReusePatterns:
 	# 			f'agent2 != agent3: {agent2.browser_session} != {agent3.browser_session}'
 	# 		)
 	# 		assert agent1.browser_session == shared_browser, f'agent1 != shared: {agent1.browser_session} != {shared_browser}'
-	# 		assert shared_browser.initialized
+	# 		assert shared_browser._browser_context is not None
 
 	# 		# Give a small delay to ensure all tabs are fully created
 	# 		await asyncio.sleep(0.5)
@@ -901,8 +878,8 @@ class TestBrowserSessionReusePatterns:
 			assert window1 is not window2
 
 			# Both sessions should be initialized
-			assert window1.initialized
-			assert window2.initialized
+			assert window1._browser_context is not None
+			assert window2._browser_context is not None
 
 			# Check cookies in each context - they should be separate
 			context1_cookies = await page1.context.cookies()
@@ -1035,28 +1012,26 @@ class TestBrowserSessionEventSystem:
 		"""Test that event handlers are properly registered."""
 		# Check that handlers are registered in the event bus
 		from browser_use.browser.events import (
+			BrowserStartEvent,
 			BrowserStateRequestEvent,
+			BrowserStopEvent,
 			ClickElementEvent,
 			CloseTabEvent,
-			ScreenshotRequestEvent,
+			ScreenshotEvent,
 			ScrollEvent,
-			StartBrowserEvent,
-			StopBrowserEvent,
-			TabsInfoRequestEvent,
 			TypeTextEvent,
 		)
 
 		# These event types should have handlers registered
 		event_types_with_handlers = [
-			StartBrowserEvent,
-			StopBrowserEvent,
+			BrowserStartEvent,
+			BrowserStopEvent,
 			ClickElementEvent,
 			TypeTextEvent,
 			ScrollEvent,
 			CloseTabEvent,
 			BrowserStateRequestEvent,
-			ScreenshotRequestEvent,
-			TabsInfoRequestEvent,
+			ScreenshotEvent,
 		]
 
 		for event_type in event_types_with_handlers:
@@ -1065,23 +1040,23 @@ class TestBrowserSessionEventSystem:
 
 	async def test_direct_event_dispatching(self, browser_session):
 		"""Test direct event dispatching without using the public API."""
-		from browser_use.browser.events import BrowserStartedEvent, StartBrowserEvent
+		from browser_use.browser.events import BrowserConnectedEvent, BrowserStartEvent
 
-		# Dispatch StartBrowserEvent directly
-		start_event = browser_session.event_bus.dispatch(StartBrowserEvent())
+		# Dispatch BrowserStartEvent directly
+		start_event = browser_session.event_bus.dispatch(BrowserStartEvent())
 
 		# Wait for event to complete
 		await start_event
 
-		# Check if BrowserStartedEvent was dispatched
-		assert browser_session.initialized is True
+		# Check if BrowserConnectedEvent was dispatched
+		assert browser_session._browser_context is not None
 
 		# Check event history
 		event_history = list(browser_session.event_bus.event_history.values())
-		assert len(event_history) >= 2  # StartBrowserEvent + BrowserStartedEvent + others
+		assert len(event_history) >= 2  # BrowserStartEvent + BrowserConnectedEvent + others
 
-		# Find the BrowserStartedEvent in history
-		started_events = [e for e in event_history if isinstance(e, BrowserStartedEvent)]
+		# Find the BrowserConnectedEvent in history
+		started_events = [e for e in event_history if isinstance(e, BrowserConnectedEvent)]
 		assert len(started_events) >= 1
 		assert started_events[0].cdp_url is not None
 
@@ -1109,7 +1084,7 @@ class TestBrowserSessionEventSystem:
 
 	async def test_event_system_error_handling(self, browser_session):
 		"""Test error handling in event system."""
-		from browser_use.browser.events import StartBrowserEvent
+		from browser_use.browser.events import BrowserStartEvent
 
 		# Create session with invalid CDP URL to trigger error
 		error_session = BrowserSession(
@@ -1119,13 +1094,13 @@ class TestBrowserSessionEventSystem:
 
 		try:
 			# Dispatch start event directly - should trigger error handling
-			start_event = error_session.event_bus.dispatch(StartBrowserEvent())
+			start_event = error_session.event_bus.dispatch(BrowserStartEvent())
 
 			# The event bus catches and logs the error, but the event awaits successfully
 			await start_event
 
 			# The session should not be initialized due to the error
-			assert error_session.initialized is False, 'Session should not be initialized after connection error'
+			assert error_session._browser_context is None, 'Session should not be initialized after connection error'
 
 			# Verify the error was logged in the event history (good enough for error handling test)
 			assert len(error_session.event_bus.event_history) > 0, 'Event should be tracked even with errors'
@@ -1135,17 +1110,17 @@ class TestBrowserSessionEventSystem:
 
 	async def test_concurrent_event_dispatching(self, browser_session):
 		"""Test that concurrent events are handled properly."""
-		from browser_use.browser.events import ScreenshotRequestEvent, TabsInfoRequestEvent
+		from browser_use.browser.events import ScreenshotEvent
 
 		# Start browser first
 		await browser_session.start()
 
 		# Dispatch multiple events concurrently
-		tabs_event = browser_session.event_bus.dispatch(TabsInfoRequestEvent())
-		screenshot_event = browser_session.event_bus.dispatch(ScreenshotRequestEvent())
+		screenshot_event1 = browser_session.event_bus.dispatch(ScreenshotEvent())
+		screenshot_event2 = browser_session.event_bus.dispatch(ScreenshotEvent())
 
 		# Both should complete successfully
-		results = await asyncio.gather(tabs_event, screenshot_event, return_exceptions=True)
+		results = await asyncio.gather(screenshot_event1, screenshot_event2, return_exceptions=True)
 
 		# Check that no exceptions were raised
 		for result in results:
@@ -1205,7 +1180,7 @@ class TestBrowserSessionEventSystem:
 		new_tab_tasks = []
 		for browser_session in browser_sessions:
 			assert await browser_session.is_connected()
-			assert browser_session.browser_context is not None
+			assert browser_session._browser_context is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 		await asyncio.gather(*new_tab_tasks)
 
@@ -1225,7 +1200,7 @@ class TestBrowserSessionEventSystem:
 		screenshot_tasks = []
 		for browser_session in filter(bool, browser_sessions):
 			assert await browser_session.is_connected()
-			assert browser_session.browser_context is not None
+			assert browser_session._browser_context is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 			screenshot_tasks.append(browser_session.take_screenshot())
 		await asyncio.gather(*new_tab_tasks)

@@ -17,8 +17,6 @@ from browser_use.browser.events import (
 	SwitchTabEvent,
 	TabClosedEvent,
 	TabCreatedEvent,
-	TabsInfoRequestEvent,
-	TabsInfoResponseEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
@@ -52,14 +50,12 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def attach_to_page(self, page: Page) -> None:
 		"""Set up monitoring for a page - tracks page lifecycle."""
-		logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
-		page.on('close', lambda p: self._handle_page_close(page))
+		page.on('close', self._handle_page_close)
 
 	# ========== Browser Lifecycle Events ==========
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clear agent focus when browser stops."""
-		logger.info('[NavigationWatchdog] Browser stopped')
 		self.page = None
 
 	# ========== Tab Lifecycle Events ==========
@@ -95,6 +91,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
 		"""Handle all navigation requests with security enforcement and complete logic."""
+
 		# SECURITY CHECK: Block disallowed URLs before navigation starts
 		if not self._is_url_allowed(event.url):
 			logger.warning(f'⛔️ Blocking navigation to disallowed URL: {event.url}')
@@ -531,18 +528,12 @@ class NavigationWatchdog(BaseWatchdog):
 			else:
 				return self.page
 
-		# No current page, request tabs info to find one
-		self.event_bus.dispatch(TabsInfoRequestEvent())
 		try:
-			event_result = await self.event_bus.expect(TabsInfoResponseEvent, timeout=5.0)
-			response: TabsInfoResponseEvent = event_result  # type: ignore
-			if response.tabs:
-				# Find the first tab with an allowed URL
-				for i, tab in enumerate(response.tabs):
-					if self._is_url_allowed(tab.get('url', 'about:blank')):
-						await self._switch_agent_focus_to_tab(i)
-						if self.page:
-							return self.page
+			for i, tab in enumerate(self.browser_session.pages):
+				if self._is_url_allowed(tab.url):
+					await self._switch_agent_focus_to_tab(i)
+					if self.page:
+						return self.page
 		except TimeoutError:
 			pass
 
