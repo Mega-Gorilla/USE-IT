@@ -31,7 +31,7 @@ from browser_use.tokens.service import TokenCost
 load_dotenv()
 
 from bubus import EventBus
-from pydantic import ValidationError
+from pydantic import PrivateAttr, ValidationError
 from uuid_extensions import uuid7str
 
 # Lazy import for gif to avoid heavy agent.views import at startup
@@ -123,6 +123,7 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 class Agent(Generic[Context, AgentStructuredOutput]):
 	browser_session: BrowserSession | None = None
 	_logger: logging.Logger | None = None
+	_owns_browser_session: bool = PrivateAttr(default=False)
 
 	@time_execution_sync('--init')
 	def __init__(
@@ -369,6 +370,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# 	'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
 				# )
 				self.browser_session = browser_session.model_copy()
+			# Browser session was provided externally, don't own it
+			self._owns_browser_session = False
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
@@ -376,6 +379,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				browser_profile=browser_profile,
 				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
+			# We created the browser session, so we own it
+			self._owns_browser_session = True
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
@@ -1719,9 +1724,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def close(self):
 		"""Close all resources"""
 		try:
-			# First close browser resources
-			assert self.browser_session is not None, 'BrowserSession is not set up'
-			await self.browser_session.stop()
+			# Only close browser resources if we created them
+			if self._owns_browser_session:
+				assert self.browser_session is not None, 'BrowserSession is not set up'
+				await self.browser_session.stop()
 
 			# Force garbage collection
 			gc.collect()

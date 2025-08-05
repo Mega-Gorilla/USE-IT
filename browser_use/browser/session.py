@@ -383,17 +383,19 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(BrowserStopEvent())
 		await event
 
-		# Schedule EventBus cleanup after all events complete
-		async def cleanup_eventbus():
-			try:
-				await self.event_bus.wait_until_idle(timeout=20.0)
-			except TimeoutError:
-				logger.warning("EventBus didn't become idle within 20 seconds during stop")
-			await self.event_bus.stop(timeout=1.0, clear=True)
+		# Only cleanup EventBus if browser is actually stopping (not kept alive)
+		if not self.browser_profile.keep_alive:
+			# Schedule EventBus cleanup after all events complete
+			async def cleanup_eventbus():
+				try:
+					await self.event_bus.wait_until_idle(timeout=20.0)
+				except TimeoutError:
+					logger.warning("EventBus didn't become idle within 20 seconds during stop")
+				await self.event_bus.stop(timeout=1.0, clear=True)
 
-		import asyncio
+			import asyncio
 
-		asyncio.create_task(cleanup_eventbus())
+			asyncio.create_task(cleanup_eventbus())
 
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
@@ -1720,7 +1722,8 @@ class BrowserSession(BaseModel):
 
 		# Dispatch the event and await the result with timeout
 		event = self.event_bus.dispatch(ExecuteJavaScriptEvent(tab_index=tab_index, expression=script))
-		result = await event.event_result(timeout=1.5)
+		# Allow None results (when JavaScript returns undefined)
+		result = await event.event_result(timeout=1.5, raise_if_none=False)
 		return result
 
 	async def get_scroll_info(self, page: Page) -> tuple[int, int]:

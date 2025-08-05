@@ -49,6 +49,8 @@ class DownloadsWatchdog(BaseWatchdog):
 	)  # Track pages that already have download listeners
 	_active_downloads: dict[str, Download] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by page URL
+	_download_cdp_session_setup: bool = PrivateAttr(default=False)  # Track if CDP session is set up
+	_download_cdp_session: Any = PrivateAttr(default=None)  # Store CDP session reference
 
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> None:
 		logger.info(f'[DownloadsWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}')

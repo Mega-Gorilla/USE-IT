@@ -561,6 +561,11 @@ class NavigationWatchdog(BaseWatchdog):
 
 		# No tabs available or no allowed tabs, create a new one with about:blank
 		logger.info('[NavigationWatchdog] No active page, creating new tab')
+
+		# Check if browser is still connected before trying to create a new tab
+		if not self.browser_session._browser_context:
+			raise ValueError('Browser context is not available - browser may have disconnected')
+
 		nav_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 		await nav_event  # Wait for navigation to complete
 
