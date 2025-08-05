@@ -126,7 +126,7 @@ class MessageManager:
 		self.last_input_messages = []
 		# Only initialize messages if state is empty
 		if len(self.state.history.get_messages()) == 0:
-			self._set_state_message(self.system_prompt, 'system')
+			self._set_message_with_type(self.system_prompt, 'system')
 
 	@property
 	def agent_history_description(self) -> str:
@@ -268,7 +268,7 @@ class MessageManager:
 		state_message = message_prompt.get_user_message(use_vision)
 
 		# Set the state message with caching enabled
-		self._set_state_message(state_message, 'state')
+		self._set_message_with_type(state_message, 'state')
 
 	def _log_history_lines(self) -> str:
 		"""Generate a formatted log string of message history for debugging / printing to terminal"""
@@ -345,7 +345,7 @@ class MessageManager:
 		# Convert items to strings
 		return '\n'.join(item.to_string() for item in items_to_include)
 
-	def _set_state_message(self, message: BaseMessage, message_type: Literal['system', 'state']) -> None:
+	def _set_message_with_type(self, message: BaseMessage, message_type: Literal['system', 'state']) -> None:
 		"""Replace a specific state message slot with a new message"""
 		# filter out sensitive data from the message
 		if self.sensitive_data:
