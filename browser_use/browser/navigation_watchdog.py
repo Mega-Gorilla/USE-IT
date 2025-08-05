@@ -1,11 +1,11 @@
 """Navigation watchdog for monitoring tab lifecycle and agent focus tracking."""
 
 import asyncio
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
 from playwright.async_api import Page
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
@@ -48,6 +48,9 @@ class NavigationWatchdog(BaseWatchdog):
 	# Agent focus tracking - using regular fields so they can be accessed as properties
 	page: Page | None = Field(default=None, exclude=True)
 
+	# Track page close handlers so we can remove them on shutdown
+	_page_close_handlers: dict[Page, Any] = PrivateAttr(default_factory=dict)
+
 	async def attach_to_page(self, page: Page) -> None:
 		"""Set up monitoring for a page - tracks page lifecycle."""
 		page.on('close', self._handle_page_close)
@@ -56,6 +59,13 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clear agent focus when browser stops."""
+		# Remove close handlers from all pages to prevent TabClosedEvent during shutdown
+		for page, handler in list(self._page_close_handlers.items()):
+			try:
+				page.remove_listener('close', handler)
+			except Exception:
+				pass  # Page might already be closed
+		self._page_close_handlers.clear()
 		self.page = None
 
 	# ========== Tab Lifecycle Events ==========
@@ -91,6 +101,11 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
 		"""Handle all navigation requests with security enforcement and complete logic."""
+
+		# Check if browser context is still available
+		if not self.browser_session or not self.browser_session._browser_context:
+			logger.debug('[NavigationWatchdog] No browser context available, ignoring navigation')
+			return
 
 		# SECURITY CHECK: Block disallowed URLs before navigation starts
 		if not self._is_url_allowed(event.url):
@@ -336,8 +351,12 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Track a page for lifecycle events."""
 		logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
 
-		# Set up page close handler
-		page.on('close', lambda p: self._handle_page_close(page))
+		# Set up page close handler and store it so we can remove it later
+		def close_handler(*args, **kwargs):
+			self._handle_page_close(page)
+
+		self._page_close_handlers[page] = close_handler
+		page.on('close', close_handler)
 
 	def _handle_page_close(self, page: Page) -> None:
 		"""Handle page close event."""
@@ -350,6 +369,9 @@ class NavigationWatchdog(BaseWatchdog):
 			# Emit TabClosedEvent
 			self.event_bus.dispatch(TabClosedEvent(tab_index=tab_index))
 			logger.info(f'[NavigationWatchdog] Page closed, emitted TabClosedEvent for tab {tab_index}')
+
+			# Clean up the handler from our tracking dict
+			self._page_close_handlers.pop(page, None)
 
 		except Exception as e:
 			logger.error(f'[NavigationWatchdog] Error handling page close: {e}')

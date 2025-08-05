@@ -89,6 +89,8 @@ async def test_downloads_watchdog_lifecycle():
 			except Exception:
 				# If graceful shutdown fails, force cleanup
 				await session.kill()
+			# Always stop event bus to prevent hanging
+			await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -117,23 +119,33 @@ async def test_downloads_watchdog_file_detection(download_test_server):
 			await session.navigate(test_url)
 
 			# Click download link to trigger download
-			try:
-				await session.click('a[href="/download/test.pdf"]')
+			await session.click('a[href="/download/test.pdf"]')
 
-				# Wait for download to complete
-				await asyncio.sleep(2.0)
+			# Wait for download to complete
+			await asyncio.sleep(2.0)
 
-				# Check if file was downloaded
-				downloaded_files = list(downloads_path.glob('*.pdf'))
-				if downloaded_files:
-					# Verify FileDownloadedEvent was emitted
-					pdf_events = [e for e in download_events if 'pdf' in e.path.lower()]
-					# Note: Download detection can be flaky in headless mode, so we don't assert
-					# assert len(pdf_events) > 0, "Should have detected PDF download"
+			# Verify file was downloaded with correct content
+			downloaded_files = list(downloads_path.glob('*.pdf'))
+			assert len(downloaded_files) > 0, 'PDF download must succeed - no files downloaded is not acceptable'
 
-			except Exception as e:
-				# Download clicks can be flaky in test environment
-				print(f'Download test encountered expected issue: {e}')
+			downloaded_file = downloaded_files[0]
+			assert downloaded_file.exists(), f'Downloaded PDF file must exist: {downloaded_file}'
+
+			# Verify file size and content (we sent 'fake pdf content' which is 25 bytes)
+			file_size = downloaded_file.stat().st_size
+			assert file_size == 25, f'Downloaded PDF must be 25 bytes (fake pdf content), got {file_size} bytes'
+
+			file_content = downloaded_file.read_bytes()
+			expected_content = b'%PDF-1.4 fake pdf content'
+			assert file_content == expected_content, (
+				f'Downloaded PDF content must match. Expected: {expected_content!r}, got: {file_content!r}'
+			)
+
+			# Verify FileDownloadedEvent was emitted
+			pdf_events = [e for e in download_events if 'pdf' in e.path.lower()]
+			assert len(pdf_events) > 0, 'FileDownloadedEvent must be dispatched for PDF download'
+
+			print(f'✅ PDF download successful: {downloaded_file} ({file_size} bytes) with correct content')
 
 		finally:
 			# Clean shutdown
@@ -143,6 +155,8 @@ async def test_downloads_watchdog_file_detection(download_test_server):
 			except Exception:
 				# If graceful shutdown fails, force cleanup
 				await session.kill()
+			# Always stop event bus to prevent hanging
+			await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -186,6 +200,8 @@ async def test_downloads_watchdog_page_attachment():
 			except Exception:
 				# If graceful shutdown fails, force cleanup
 				await session.kill()
+			# Always stop event bus to prevent hanging
+			await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -216,6 +232,8 @@ async def test_downloads_watchdog_default_downloads_path():
 		except Exception:
 			# If graceful shutdown fails, force cleanup
 			await session.kill()
+		# Always stop event bus to prevent hanging
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -339,6 +357,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 		assert result is None  # No download happened
 
 	await browser_with_downloads.close()
+	await browser_with_downloads.event_bus.stop(clear=True, timeout=5)
 
 	# Test 2: With downloads_dir set to None (disables download detection)
 	browser_no_downloads = BrowserSession(
@@ -383,6 +402,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 	assert result_text == 'Clicked!'
 
 	await browser_no_downloads.close()
+	await browser_no_downloads.event_bus.stop(clear=True, timeout=5)
 
 	# Check timing differences
 	print(f'Click with downloads_dir: {duration_with_downloads:.2f}s')
@@ -464,33 +484,29 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 		files = os.listdir(downloads_path)
 		print(f'Files in downloads directory: {files}')
 
-	# Check if files were actually downloaded
-	if len(downloaded_files) > 0:
-		# Check the most recent download
-		latest_download = downloaded_files[0]  # Files are sorted by newest first
-		assert 'test.pdf' in latest_download
-		assert os.path.exists(latest_download)
+	# Verify files were actually downloaded with correct content
+	assert len(downloaded_files) > 0, 'Download must succeed - no files downloaded is not acceptable'
 
-		# Verify the file size is correct (we sent 'PDF content' which is 11 bytes)
-		file_size = os.path.getsize(latest_download)
-		assert file_size == 11, f'Expected 11 bytes, got {file_size}'
+	# Check the most recent download
+	latest_download = downloaded_files[0]  # Files are sorted by newest first
+	assert 'test.pdf' in latest_download, f'Downloaded file should be named test.pdf, got: {latest_download}'
+	assert os.path.exists(latest_download), f'Downloaded file must exist on disk: {latest_download}'
 
-		# Should be relatively fast since download is detected
-		assert duration < 2.0, f'Download click took {duration:.2f}s, expected <2s'
-	else:
-		# Downloads can be flaky in headless test environment
-		# Verify that at least the download mechanism was triggered
-		print('Warning: No files downloaded in test environment')
-		print('This is expected in headless mode - download detection is working')
+	# Verify the file has the correct content and size
+	file_size = os.path.getsize(latest_download)
+	assert file_size == 11, f'Downloaded file must be 11 bytes (PDF content), got {file_size} bytes'
 
-		# Verify the download click was attempted and took reasonable time
-		assert duration < 15.0, f'Download click took {duration:.2f}s, should be fast even if download fails'
+	# Verify the actual file content matches what the server sent
+	file_content = Path(latest_download).read_bytes()
+	expected_content = b'PDF content'
+	assert file_content == expected_content, (
+		f'Downloaded file content must match. Expected: {expected_content!r}, got: {file_content!r}'
+	)
 
-		# Verify the downloads watchdog exists and is configured
-		assert browser_session._downloads_watchdog is not None
-		assert browser_session.browser_profile.downloads_path is not None
+	print(f'✅ Download successful: {latest_download} ({file_size} bytes) with correct content: {file_content!r}')
 
 	await browser_session.close()
+	await browser_session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -526,26 +542,33 @@ async def test_downloads_watchdog_event_dispatching(comprehensive_download_test_
 		event_history = list(browser_session.event_bus.event_history.values())
 		download_events = [e for e in event_history if isinstance(e, FileDownloadedEvent)]
 
-		if len(download_events) >= 1:
-			# Verify the event contains correct information
-			latest_download_event = download_events[-1]
-			assert latest_download_event.path is not None
-			assert 'test.pdf' in latest_download_event.path
-			assert os.path.exists(latest_download_event.path)
-		else:
-			# Downloads can be flaky in headless test environment
-			print('Warning: No FileDownloadedEvent dispatched in test environment')
-			print('This is expected in headless mode - event system is working')
+		# FileDownloadedEvent must be dispatched - no failures accepted
+		assert len(download_events) >= 1, 'FileDownloadedEvent must be dispatched when download succeeds - no failures acceptable'
 
-			# Verify the downloads watchdog exists and is monitoring
-			assert browser_session._downloads_watchdog is not None
-			assert browser_session.browser_profile.downloads_path is not None
+		# Verify the event contains correct information
+		latest_download_event = download_events[-1]
+		assert latest_download_event.path is not None, 'FileDownloadedEvent must have a valid path'
+		assert 'test.pdf' in latest_download_event.path, (
+			f'FileDownloadedEvent path should contain test.pdf, got: {latest_download_event.path}'
+		)
+		assert os.path.exists(latest_download_event.path), (
+			f'FileDownloadedEvent path must exist on disk: {latest_download_event.path}'
+		)
 
-			# Verify event history is being tracked (should have other events)
-			# Check that event history increased (browser start, tab creation, navigation events)
-			print(f'Initial event count: {initial_history_count}, Current event count: {len(event_history)}')
-			# Should have at least a few events from browser startup, tab creation, navigation
-			assert len(event_history) >= 5, f'Event bus should be tracking events, got {len(event_history)}'
+		# Verify the downloaded file has correct content and size
+		file_size = os.path.getsize(latest_download_event.path)
+		assert file_size == 11, f'Downloaded file from event must be 11 bytes (PDF content), got {file_size} bytes'
+
+		file_content = Path(latest_download_event.path).read_bytes()
+		expected_content = b'PDF content'
+		assert file_content == expected_content, (
+			f'Downloaded file content must match. Expected: {expected_content!r}, got: {file_content!r}'
+		)
+
+		print(
+			f'✅ FileDownloadedEvent dispatched correctly for: {latest_download_event.path} ({file_size} bytes) with correct content: {file_content!r}'
+		)
 
 	finally:
 		await browser_session.kill()
+		await browser_session.event_bus.stop(clear=True, timeout=5)

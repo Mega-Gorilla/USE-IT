@@ -4,8 +4,12 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
 from playwright.async_api import Page
+from pydantic import PrivateAttr
 
+from browser_use.browser.crash_watchdog import CrashWatchdog
 from browser_use.browser.events import (
+	AboutBlankDVDScreensaverShownEvent,
+	BrowserStopEvent,
 	BrowserStoppedEvent,
 	CloseTabEvent,
 	NavigateToUrlEvent,
@@ -24,6 +28,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		BrowserStopEvent,
 		BrowserStoppedEvent,
 		TabCreatedEvent,
 		TabClosedEvent,
@@ -31,20 +36,39 @@ class AboutBlankWatchdog(BaseWatchdog):
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
 		NavigateToUrlEvent,
 		CloseTabEvent,
+		AboutBlankDVDScreensaverShownEvent,
 	]
+
+	_stopping: bool = PrivateAttr(default=False)
+
+	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
+		"""Handle browser stop request - stop creating new tabs."""
+		logger.info('[AboutBlankWatchdog] Browser stop requested, stopping tab creation')
+		self._stopping = True
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Handle browser stopped event."""
 		logger.info('[AboutBlankWatchdog] Browser stopped')
+		self._stopping = True
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Check tabs when a new tab is created."""
 		logger.debug(f'[AboutBlankWatchdog] Tab created: {event.url}')
-		await self._check_and_ensure_about_blank_tab()
+
+		# If a new tab page was created, show DVD screensaver on it
+		if CrashWatchdog._is_new_tab_page(event.url):
+			await self._show_dvd_screensaver_on_about_blank_tabs()
+		else:
+			await self._check_and_ensure_about_blank_tab()
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Check tabs when a tab is closed and proactively create about:blank if needed."""
 		logger.debug('[AboutBlankWatchdog] Tab closing, checking if we need to create about:blank tab')
+
+		# Don't create new tabs if browser is shutting down
+		if self._stopping:
+			logger.debug('[AboutBlankWatchdog] Browser is stopping, not creating new tabs')
+			return
 
 		# Check if we're about to close the last page (event happens BEFORE tab closes)
 		pages = self.browser_session.pages
@@ -74,7 +98,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			expected_title = f'Starting agent {browser_session_id}...'
 
 			for page in pages:
-				if page.url == 'about:blank':
+				if CrashWatchdog._is_new_tab_page(page.url):
 					try:
 						page_title = await page.title()
 						if page_title == expected_title:
@@ -106,13 +130,13 @@ class AboutBlankWatchdog(BaseWatchdog):
 			logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
 
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
-		"""Show DVD screensaver on all about:blank tabs."""
+		"""Show DVD screensaver on all new tab pages."""
 		try:
 			pages = self.browser_session.pages
 			browser_session_id = str(self.browser_session.id)[-4:]
 
 			for page in pages:
-				if page.url == 'about:blank':
+				if CrashWatchdog._is_new_tab_page(page.url):
 					await self._show_dvd_screensaver_loading_animation(page, browser_session_id)
 
 		except Exception as e:
@@ -123,14 +147,17 @@ class AboutBlankWatchdog(BaseWatchdog):
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
+		# Get tab index for the event
+		tab_index = self.browser_session.get_tab_index(page)
+
 		try:
 			await page.evaluate(
-				"""(browser_session_label) => {
+				"""function(browser_session_label) {
 				// Ensure document.body exists before proceeding
 				if (!document.body) {
 					// Try again after DOM is ready
 					if (document.readyState === 'loading') {
-						document.addEventListener('DOMContentLoaded', () => arguments.callee(browser_session_label));
+						document.addEventListener('DOMContentLoaded', function() { arguments.callee(browser_session_label); });
 					}
 					return;
 				}
@@ -226,5 +253,12 @@ class AboutBlankWatchdog(BaseWatchdog):
 			}""",
 				browser_session_label,
 			)
+
+			# Emit success event
+			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index, error=None))
+
 		except Exception as e:
 			logger.debug(f'[AboutBlankWatchdog] Failed to show DVD loading animation: {type(e).__name__}: {e}')
+
+			# Emit error event
+			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index, error=str(e)))

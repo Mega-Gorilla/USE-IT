@@ -358,7 +358,8 @@ class CrashWatchdog(BaseWatchdog):
 				except (asyncio.CancelledError, Exception):
 					pass
 
-	def _is_new_tab_page(self, url: str) -> bool:
+	@staticmethod
+	def _is_new_tab_page(url: str) -> bool:
 		"""Check if URL is a new tab page."""
 		return url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']
 

@@ -61,11 +61,15 @@ class StorageStateWatchdog(BaseWatchdog):
 		logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage state')
 
 		# Save storage state before stopping and wait for completion
+		logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
 		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
+		logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
 		await save_event
+		logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
 
 		# Stop monitoring
 		await self._stop_monitoring()
+		logger.info('[StorageStateWatchdog] Browser stop handling complete')
 		# No cleanup needed - browser context is managed by session
 
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:

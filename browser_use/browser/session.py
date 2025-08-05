@@ -174,12 +174,16 @@ class BrowserSession(BaseModel):
 		self.event_bus.on(ScreenshotEvent, self.on_ScreenshotEvent)
 		self.event_bus.on(ExecuteJavaScriptEvent, self.on_ExecuteJavaScriptEvent)
 
-		# simple logger
-		self.event_bus.on('*', lambda e: print(e))
+		# simple logger - disabled to prevent recursion issues during cleanup
+		# self.event_bus.on('*', self._log_event)
 
 		# Storage state is handled by StorageStateWatchdog
 
 	# ========== Event Handlers ==========
+
+	def _log_event(self, event) -> None:
+		"""Simple event logger that doesn't create closures."""
+		print(event)
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> None:
 		"""Handle browser start request."""
@@ -240,6 +244,27 @@ class BrowserSession(BaseModel):
 				**self.browser_profile.kwargs_for_connect().model_dump(),
 			)
 
+			# Enable downloads via CDP Browser.setDownloadBehavior
+			if self.browser_profile.downloads_path:
+				try:
+					logger.info('[Session] Attempting to set Browser.setDownloadBehavior...')
+					# Get CDP session for the browser (not a specific page)
+					cdp_session = await self._browser.new_browser_cdp_session()
+					logger.info(f'[Session] Got CDP session: {cdp_session}')
+					result = await cdp_session.send(
+						'Browser.setDownloadBehavior',
+						{'behavior': 'allow', 'downloadPath': str(self.browser_profile.downloads_path)},
+					)
+					logger.info(f'[Session] Browser.setDownloadBehavior result: {result}')
+					logger.info(
+						f'[Session] Enabled downloads via Browser.setDownloadBehavior to: {self.browser_profile.downloads_path}'
+					)
+				except Exception as e:
+					logger.error(f'[Session] Failed to set browser download behavior via CDP: {e}')
+					import traceback
+
+					logger.error(f'[Session] Traceback: {traceback.format_exc()}')
+
 			# Set up browser context
 			if self._browser.contexts:
 				self._browser_context = self._browser.contexts[0]
@@ -247,18 +272,6 @@ class BrowserSession(BaseModel):
 				raise ValueError(
 					'Creating a new incognito context in an existing browser is not currently supported, you should connect to an existing browser instead'
 				)
-				# Get context kwargs
-				new_context_args = self.browser_profile.kwargs_for_new_context()
-				context_kwargs = new_context_args.model_dump(exclude_none=True)
-
-				# # Log storage state info
-				# logger.info(f'BrowserProfile storage_state: {self.browser_profile.storage_state}')
-				# logger.info(f'NewContextArgs storage_state: {new_context_args.storage_state}')
-				# logger.info(f'Context kwargs keys: {list(context_kwargs.keys())}')
-				# logger.info(f'Context kwargs storage_state: {context_kwargs.get("storage_state")}')
-				# logger.info(f'Context kwargs accept_downloads: {context_kwargs.get("accept_downloads")}')
-
-				self._browser_context = await self._browser.new_context(**context_kwargs)
 
 			# Set initial page if exists
 			assert self._browser_context
@@ -541,6 +554,7 @@ class BrowserSession(BaseModel):
 
 	def _generate_recent_events_summary(self, max_events: int = 10) -> str:
 		"""Generate a JSON summary of recent browser events."""
+		# TODO: filter/summarize/truncate any events that the LLM doesnt need to see (e.g. AboutBlankDVDScreensaverShownEvent)
 
 		# Get recent events from the event bus history (it's a dict of UUID -> Event)
 		all_events = list(self.event_bus.event_history.values())

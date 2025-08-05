@@ -109,6 +109,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				return
 
 			logger.info(f'[DownloadsWatchdog] Setting up download listener for page: {page.url}')
+
 			# Set up Playwright download event listener
 			page.on('download', self._handle_download)
 			# Track that we've added a listener to prevent duplicates
@@ -143,51 +144,42 @@ class DownloadsWatchdog(BaseWatchdog):
 			else:
 				downloads_dir = str(downloads_dir)  # Ensure it's a string
 
-			current_step = 'generating_unique_filename'
-			# Ensure unique filename
-			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
-			download_path = Path(downloads_dir) / unique_filename
+			# Check if Playwright already auto-downloaded the file (due to CDP setup)
+			original_path = Path(downloads_dir) / suggested_filename
+			if original_path.exists() and original_path.stat().st_size > 0:
+				logger.info(
+					f'[DownloadsWatchdog] File already downloaded by Playwright: {original_path} ({original_path.stat().st_size} bytes)'
+				)
 
-			logger.info(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
+				# Use the existing file instead of creating a duplicate
+				download_path = original_path
+				file_size = original_path.stat().st_size
+				unique_filename = suggested_filename
+			else:
+				current_step = 'generating_unique_filename'
+				# Ensure unique filename
+				unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
+				download_path = Path(downloads_dir) / unique_filename
 
-			current_step = 'calling_save_as'
-			# Save the download using Playwright's save_as method
-			logger.info(f'[DownloadsWatchdog] Saving download to: {download_path}')
-			logger.info(f'[DownloadsWatchdog] Download path exists: {download_path.parent.exists()}')
-			logger.info(f'[DownloadsWatchdog] Download path writable: {os.access(download_path.parent, os.W_OK)}')
+				logger.info(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
 
-			try:
-				logger.info('[DownloadsWatchdog] About to call download.save_as()...')
-				await download.save_as(str(download_path))
-				logger.info(f'[DownloadsWatchdog] Successfully saved download to: {download_path}')
-				current_step = 'save_as_completed'
-			except Exception as save_error:
-				logger.error(f'[DownloadsWatchdog] save_as() failed with error: {save_error}')
-				if 'canceled' in str(save_error).lower():
-					# Download was canceled - try using the path method as fallback
-					logger.warning(f'[DownloadsWatchdog] save_as() was canceled, trying path() method: {save_error}')
-					current_step = 'using_path_fallback'
-					try:
-						# Use download.path() to access the file that was already downloaded
-						source_path = await download.path()
-						if source_path and Path(source_path).exists():
-							# Move the file from the temporary location to our desired location
-							import shutil
+				current_step = 'calling_save_as'
+				# Save the download using Playwright's save_as method
+				logger.info(f'[DownloadsWatchdog] Saving download to: {download_path}')
+				logger.info(f'[DownloadsWatchdog] Download path exists: {download_path.parent.exists()}')
+				logger.info(f'[DownloadsWatchdog] Download path writable: {os.access(download_path.parent, os.W_OK)}')
 
-							shutil.move(str(source_path), str(download_path))
-							logger.info(f'[DownloadsWatchdog] Successfully moved download from {source_path} to: {download_path}')
-							current_step = 'path_fallback_completed'
-						else:
-							raise Exception(f'Downloaded file not found at path: {source_path}')
-					except Exception as path_error:
-						logger.error(f'[DownloadsWatchdog] Path fallback also failed: {path_error}')
-						raise save_error  # Re-raise the original error
-				else:
-					# Some other save error
+				try:
+					logger.info('[DownloadsWatchdog] About to call download.save_as()...')
+					await download.save_as(str(download_path))
+					logger.info(f'[DownloadsWatchdog] Successfully saved download to: {download_path}')
+					current_step = 'save_as_completed'
+				except Exception as save_error:
+					logger.error(f'[DownloadsWatchdog] save_as() failed with error: {save_error}')
 					raise save_error
 
-			# Get file info
-			file_size = download_path.stat().st_size if download_path.exists() else 0
+				# Get file info
+				file_size = download_path.stat().st_size if download_path.exists() else 0
 
 			# Determine file type from extension
 			file_ext = download_path.suffix.lower().lstrip('.')

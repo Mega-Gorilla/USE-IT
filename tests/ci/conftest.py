@@ -168,6 +168,8 @@ async def browser_session():
 	await session.start()
 	yield session
 	await session.kill()
+	# Ensure event bus is properly stopped
+	await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.fixture(scope='function')
