@@ -5,9 +5,11 @@ import atexit
 import logging
 import os
 import shutil
+import tempfile
+import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Self, Never
+from typing import Any, Literal, Self
 
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
@@ -48,6 +50,7 @@ from browser_use.browser.types import (
 	FrameLocator,
 	Page,
 	Patchright,
+	Playwright,
 	PlaywrightOrPatchright,
 	async_patchright,
 	async_playwright,
@@ -60,13 +63,15 @@ from browser_use.browser.views import (
 	TabInfo,
 	URLNotAllowedError,
 )
+from browser_use.dom.views import DOMSelectorMap as SelectorMap
 
 # Lazy imports for heavy DOM services to improve startup time
 # from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 # from browser_use.dom.service import DomService
-from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode, DOMSelectorMap as SelectorMap
+from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
 from browser_use.utils import (
 	is_new_tab_page,
+	logger,
 	time_execution_async,
 	time_execution_sync,
 )
@@ -234,7 +239,7 @@ class BrowserSession(BaseModel):
 	event_bus: EventBus = Field(default_factory=EventBus)
 
 	# Browser state
-	_playwright: Playwright | None = PrivateAttr(default=None)
+	_playwright: PlaywrightOrPatchright | None = PrivateAttr(default=None)
 	_browser: Browser | None = PrivateAttr(default=None)
 	_browser_context: BrowserContext | None = PrivateAttr(default=None)
 
@@ -272,11 +277,11 @@ class BrowserSession(BaseModel):
 		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]} (cdp_url={self.cdp_url}, profile={self.browser_profile})'
 
 	def __str__(self) -> str:
-		is_copy = '©' if self._original_browser_session else '#'
+		# Note: _original_browser_session tracking moved to Agent class
 		port_number_or_pid = (
 			(self.cdp_url or self.wss_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
 		)
-		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} {is_copy}{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.agent_current_page))[-2:]}'
+		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.agent_current_page))[-2:]}'
 
 	# better to force people to get it from the right object, "only one way to do it" is better python
 	# def __getattr__(self, key: str) -> Any:
@@ -479,7 +484,7 @@ class BrowserSession(BaseModel):
 		# TODO: remove this after >=0.3.0
 		return self
 
-	async def __aenter__(self) -> BrowserSession:
+	async def __aenter__(self) -> Self:
 		await self.start()
 		return self
 
@@ -513,8 +518,8 @@ class BrowserSession(BaseModel):
 		# The copy doesn't own the browser resources
 		copy._owns_browser_resources = False
 
-		# Keep a reference to the original to prevent garbage collection
-		copy._original_browser_session = self
+		# Note: _original_browser_session tracking moved to Agent class
+		# Keep the copy without reference to avoid circular dependencies
 
 		# Manually copy over the excluded fields that are needed for browser connection
 		# These fields are excluded in the model config but need to be shared
@@ -1490,19 +1495,7 @@ class BrowserSession(BaseModel):
 				)
 
 			else:
-				msg = f'Clicked button with index {event.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
-				logger.info(f'🖱️ {msg}')
-
-			logger.debug(f'Element xpath: {element_node.xpath}')
-
-			# Check if a new tab was opened
-			if len(self.pages) > initial_pages:
-				new_tab_msg = 'New tab opened - switching to it'
-				msg += f' - {new_tab_msg}'
-				logger.info(f'🔗 {new_tab_msg}')
-				# Switch to the last tab (newly created tab)
-				last_tab_index = len(self.pages) - 1
-				await self.switch_to_tab(last_tab_index)
+				self.logger.warning(f'⚠️ Error registering _BrowserUseonTabVisibilityChange: {type(e).__name__}: {e}')
 
 		except Exception as e:
 			self.logger.warning(f'⚠️ Failed to register init script for tab focus detection: {e}')
@@ -2217,15 +2210,15 @@ class BrowserSession(BaseModel):
 		"""Get or create a CDP client for the current browser session."""
 		if not self.cdp_url:
 			raise ValueError('No CDP URL available for this browser session')
-		
+
 		# Import here to avoid circular imports
 		from browser_use.dom.service import DomService
-		
+
 		# Create a temporary DOM service to get CDP client
 		page = await self.get_current_page()
 		dom_service = DomService(self, page, logger=self.logger)
 		return await dom_service._get_cdp_client()
-	
+
 	async def get_current_page_cdp_session_id(self) -> str | None:
 		"""Get the CDP session ID for the current page."""
 		# For now, return None to use the default session
@@ -2273,9 +2266,7 @@ class BrowserSession(BaseModel):
 		# Normalize the URL
 		normalized_url = normalize_url(url)
 
-		# Check if URL is allowed
-		if not self._is_url_allowed(normalized_url):
-			raise BrowserError(f'⛔️ Navigation to non-allowed URL: {normalized_url}')
+		# URL checking is handled by NavigationWatchdog when processing NavigateToUrlEvent
 		# If timeout_ms is not None, use it (even if 0); else try profile.default_navigation_timeout (even if 0); else 12000
 		if timeout_ms is not None:
 			user_timeout_ms = int(timeout_ms)
@@ -2401,12 +2392,6 @@ class BrowserSession(BaseModel):
 			logger.warning(f'Failed to list downloaded files: {e}')
 			return []
 
-	@property
-	def tabs(self) -> list[Page]:
-		"""Get all open tabs/pages."""
-		if self._browser_context:
-			return self._browser_context.pages
-		return []
 
 	@property
 	def pages(self) -> list[Page]:
@@ -2681,9 +2666,9 @@ class BrowserSession(BaseModel):
 				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} used {bytes_used / 1024:.1f} KB in {elapsed:.2f}s{extra_delay}'
 			)
 		else:
-			# Close specific tab
-			event = self.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
-			await event
+			self.logger.info(
+				f'➡️ Page navigation [{tab_idx}]{_log_pretty_url(page.url, 40)} completed in {elapsed:.2f}s{extra_delay}'
+			)
 
 	async def navigate_to(self, url: str) -> Page:
 		"""Navigate the current page to a URL."""
@@ -2733,7 +2718,9 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(TypeTextEvent(index=index, text=text))
 		await event
 
-	async def scroll(self, direction: Literal['up', 'down', 'left', 'right'], amount: int, element_index: int | None = None) -> None:
+	async def scroll(
+		self, direction: Literal['up', 'down', 'left', 'right'], amount: int, element_index: int | None = None
+	) -> None:
 		"""Scroll the page or element."""
 		event = self.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount, element_index=element_index))
 		await event
@@ -2753,28 +2740,8 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(UploadFileEvent(element_index=element_index, file_path=file_path))
 		await event
 
-	# Model copy support
-	def model_copy(self, **kwargs) -> Self:
-		"""Create a copy of this session."""
-		# Create a new instance sharing the same browser resources
-		copy = self.__class__(
-			browser_profile=self.browser_profile,
-			cdp_url=self.cdp_url,
-			**kwargs,
-		)
-		# Share the browser state
-		copy._playwright = self._playwright
-		copy._browser = self._browser
-		copy._browser_context = self._browser_context
-		# Note: Subprocess management is now handled by LocalBrowserWatchdog
-		return copy
 
 	# Additional compatibility methods
-	async def is_connected(self, restart: bool = True) -> bool:
-		"""Check if connected to browser."""
-		# The restart parameter is for backward compatibility but is ignored
-		# in the current implementation since restart behavior is now handled automatically
-		return self._browser is not None and self._browser.is_connected()
 
 	async def save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state."""
@@ -3598,7 +3565,7 @@ class BrowserSession(BaseModel):
 		except Exception:
 			# Fallback to a more basic selector if something goes wrong
 			tag_name = element.tag_name or '*'
-			return f"{tag_name}[highlight_index='{element.highlight_index}']"
+			return f"{tag_name}"
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--is_visible')
@@ -3696,23 +3663,8 @@ class BrowserSession(BaseModel):
 					)
 					return None
 			else:
-				# Handle custom elements with colons
-				if ':' in part:
-					part = part.replace(':', r'\:')
-				css_parts.append(part)
-
-		return ' > '.join(css_parts) if css_parts else ''
-
-	@staticmethod
-	async def _get_unique_filename(directory: str | Path, filename: str) -> str:
-		"""Generate a unique filename for downloads by appending (1), (2), etc., if a file already exists."""
-		base, ext = os.path.splitext(filename)
-		counter = 1
-		new_filename = filename
-		while os.path.exists(os.path.join(directory, new_filename)):
-			new_filename = f'{base} ({counter}){ext}'
-			counter += 1
-		return new_filename
+				self.logger.error(f'Failed to locate element: {type(e).__name__}: {e}')
+				return None
 
 	async def _click_element_node(self, element: Any, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""Click an element node and handle potential downloads.
@@ -3727,38 +3679,8 @@ class BrowserSession(BaseModel):
 		if not element:
 			raise ValueError('No element provided to click')
 
-		page = await self.get_current_page()
-		try:
-			# handle also specific element type or use any type.
-			selector = f'{element_type or "*"}:text("{text}")'
-			elements = await page.query_selector_all(selector)
-			# considering only visible elements
-			elements = [el for el in elements if await self._is_visible(el)]
-
-			if not elements:
-				self.logger.error(f"❌ No visible element with text '{text}' found on page {_log_pretty_url(page.url)}.")
-				return None
-
-			if nth is not None:
-				if 0 <= nth < len(elements):
-					element_handle = elements[nth]
-				else:
-					self.logger.error(
-						f"❌ Visible element with text '{text}' not found at index #{nth} on page {_log_pretty_url(page.url)}."
-					)
-					return None
-			else:
-				element_handle = elements[0]
-
-			is_visible = await self._is_visible(element_handle)
-			if is_visible:
-				await element_handle.scroll_into_view_if_needed(timeout=1_000)
-			return element_handle
-		except Exception as e:
-			self.logger.error(
-				f"❌ Failed to locate element by text '{text}' on page {_log_pretty_url(page.url)}: {type(e).__name__}: {e}"
-			)
-			return None
+		# This method is deprecated - clicking is now handled by DefaultActionWatchdog
+		raise NotImplementedError("_click_element_node is deprecated. Use click_element() which dispatches ClickElementEvent instead.")
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--input_text_element_node')
@@ -3836,7 +3758,7 @@ class BrowserSession(BaseModel):
 			self.logger.debug(
 				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
 			)
-			raise BrowserError(f'Failed to input text into index {element_node.highlight_index}')
+			raise BrowserError(f'Failed to input text into element: {element_node.tag_name}')
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--switch_to_tab')
@@ -3851,7 +3773,7 @@ class BrowserSession(BaseModel):
 		page = pages[page_id]
 
 		# Check if the tab's URL is allowed before switching
-		if not self._is_url_allowed(page.url):
+		if self._navigation_watchdog and not self._navigation_watchdog._is_url_allowed(page.url):
 			raise BrowserError(f'Cannot switch to tab with non-allowed URL: {page.url}')
 
 		# Update both tab references - agent wants this tab, and it's now in the foreground
@@ -4023,8 +3945,24 @@ class BrowserSession(BaseModel):
 		scroll_x = int(page_data['scroll_x'])
 		scroll_y = int(page_data['scroll_y'])
 
-		# Clear existing text and type new text
-		await locator.fill(text)
+		# Calculate pixels above/below/left/right current viewport
+		pixels_above = scroll_y
+		pixels_below = max(0, page_height - (scroll_y + viewport_height))
+		pixels_left = scroll_x
+		pixels_right = max(0, page_width - (scroll_x + viewport_width))
+
+		return PageInfo(
+			viewport_width=viewport_width,
+			viewport_height=viewport_height,
+			page_width=page_width,
+			page_height=page_height,
+			scroll_x=scroll_x,
+			scroll_y=scroll_y,
+			pixels_above=pixels_above,
+			pixels_below=pixels_below,
+			pixels_left=pixels_left,
+			pixels_right=pixels_right,
+		)
 
 	async def _scroll_with_cdp_gesture(self, page: Page, pixels: int) -> bool:
 		"""
@@ -4252,7 +4190,7 @@ class BrowserSession(BaseModel):
 		# Try 1: Full state summary (current implementation) - like main branch
 		try:
 			await self._wait_for_page_and_frames_load()
-			return await self.get_state_summary(cache_clickable_elements_hashes, include_screenshot=include_screenshot)
+			return await self._get_updated_state(include_screenshot=include_screenshot)
 		except Exception as e:
 			self.logger.warning(f'Full state retrieval failed: {type(e).__name__}: {e}')
 
@@ -4261,33 +4199,13 @@ class BrowserSession(BaseModel):
 
 	async def _is_pdf_viewer(self, page: Page) -> bool:
 		"""
-		Removes all highlight overlays and labels created by the highlightElement function (compatibility method).
-		Handles cases where the page might be closed or inaccessible.
+		Check if the current page is a PDF viewer.
 		"""
-		page = await self.get_current_page()
 		try:
-			await page.evaluate(
-				"""
-				try {
-					// Remove the highlight container and all its contents
-					const container = document.getElementById('playwright-highlight-container');
-					if (container) {
-						container.remove();
-					}
-
-					// Remove highlight attributes from elements
-					const highlightedElements = document.querySelectorAll('[browser-user-highlight-id^="playwright-highlight-"]');
-					highlightedElements.forEach(el => {
-						el.removeAttribute('browser-user-highlight-id');
-					});
-				} catch (e) {
-					console.error('Failed to remove highlights:', e);
-				}
-				"""
-			)
-		except Exception as e:
-			logger.debug(f'⚠️ Failed to remove highlights (this is usually ok): {type(e).__name__}: {e}')
-			# Don't raise the error since this is not critical functionality
+			is_pdf = await page.evaluate("window.isPdfViewer || false")
+			return bool(is_pdf)
+		except Exception:
+			return False
 
 	# ========== PDF API Methods ==========
 

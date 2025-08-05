@@ -1,7 +1,6 @@
 """Default browser action handlers using CDP."""
 
 import asyncio
-import os
 from typing import TYPE_CHECKING
 
 from cdp_use import CDPClient
@@ -22,15 +21,13 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
-from browser_use.utils import _log_pretty_url
 
 if TYPE_CHECKING:
-	from browser_use.browser.session import BrowserSession
+	pass
 
 
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
-
 
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request with CDP."""
@@ -183,10 +180,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			backend_node_id = element_node.backend_node_id
 
 			# Get bounds from CDP
-			box_model = await cdp_client.send.DOM.getBoxModel(
-				params={'backendNodeId': backend_node_id},
-				session_id=session_id
-			)
+			box_model = await cdp_client.send.DOM.getBoxModel(params={'backendNodeId': backend_node_id}, session_id=session_id)
 			content_quad = box_model['model']['content']
 			if len(content_quad) < 8:
 				raise Exception('Invalid content quad')
@@ -197,9 +191,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Scroll element into view
 			try:
-				await cdp_client.send.DOM.scrollIntoViewIfNeeded(
-					params={'backendNodeId': backend_node_id}, session_id=session_id
-				)
+				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
 				await asyncio.sleep(0.1)  # Wait for scroll to complete
 			except Exception as e:
 				logger.debug(f'Failed to scroll element into view: {e}')
@@ -285,10 +277,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 							await asyncio.sleep(1)
 
 						if download_complete and download_guid:
-							logger.info(f'⬇️ Download completed via CDP')
+							logger.info('⬇️ Download completed via CDP')
 							# Note: DownloadsWatchdog handles download tracking via events
 							return f'download_{download_guid}'  # Return guid as placeholder
-					except asyncio.TimeoutError:
+					except TimeoutError:
 						# No download triggered, normal click
 						logger.debug('No download triggered within timeout.')
 
@@ -345,9 +337,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Scroll element into view
 			try:
-				await cdp_client.send.DOM.scrollIntoViewIfNeeded(
-					params={'backendNodeId': backend_node_id}, session_id=session_id
-				)
+				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
 				await asyncio.sleep(0.1)
 			except Exception as e:
 				logger.debug(f'Failed to scroll element into view: {e}')
@@ -469,10 +459,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element bounds to know where to scroll
 			backend_node_id = element_node.backend_node_id
-			box_model = await cdp_client.send.DOM.getBoxModel(
-				params={'backendNodeId': backend_node_id},
-				session_id=session_id
-			)
+			box_model = await cdp_client.send.DOM.getBoxModel(params={'backendNodeId': backend_node_id}, session_id=session_id)
 			content_quad = box_model['model']['content']
 
 			# Calculate center point
@@ -496,7 +483,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			logger.debug(f'Failed to scroll element container via CDP: {e}')
 			return False
 
-	async def _get_session_id_for_element(self, cdp_client: CDPClient, element_node) -> str:
+	async def _get_session_id_for_element(self, cdp_client: CDPClient, element_node) -> str | None:
 		"""Get the appropriate CDP session ID for an element based on its frame."""
 		if element_node.frame_id:
 			# Element is in an iframe, need to get session for that frame
@@ -509,9 +496,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					if target['type'] == 'iframe' and element_node.frame_id in str(target.get('targetId', '')):
 						# Attach to this target
 						target_id = target['targetId']
-						session = await cdp_client.send.Target.attachToTarget(
-							params={'targetId': target_id, 'flatten': True}
-						)
+						session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 						session_id = session['sessionId']
 
 						# Enable required domains on this session
@@ -548,10 +533,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Navigate to the previous entry
 			previous_entry_id = entries[current_index - 1]['id']
-			await cdp_client.send.Page.navigateToHistoryEntry(
-				params={'entryId': previous_entry_id}, 
-				session_id=session_id
-			)
+			await cdp_client.send.Page.navigateToHistoryEntry(params={'entryId': previous_entry_id}, session_id=session_id)
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
@@ -585,10 +567,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Navigate to the next entry
 			next_entry_id = entries[current_index + 1]['id']
-			await cdp_client.send.Page.navigateToHistoryEntry(
-				params={'entryId': next_entry_id}, 
-				session_id=session_id
-			)
+			await cdp_client.send.Page.navigateToHistoryEntry(params={'entryId': next_entry_id}, session_id=session_id)
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
@@ -635,7 +614,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				logger.info(f'🕒 Waiting for {actual_seconds} seconds (capped from {event.seconds}s)')
 			else:
 				logger.info(f'🕒 Waiting for {actual_seconds} seconds')
-			
+
 			await asyncio.sleep(actual_seconds)
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -654,14 +633,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Parse key combination
 			keys = event.keys.lower()
-			
+
 			# Handle special key combinations
 			if '+' in keys:
 				# Handle modifier keys
 				parts = keys.split('+')
 				modifiers = 0
 				key = parts[-1]
-				
+
 				for part in parts[:-1]:
 					if part in ['ctrl', 'control']:
 						modifiers |= 2  # Control
@@ -671,7 +650,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						modifiers |= 1  # Alt
 					elif part in ['cmd', 'command', 'meta']:
 						modifiers |= 4  # Meta/Command
-				
+
 				# Send key with modifiers
 				await cdp_client.send.Input.dispatchKeyEvent(
 					params={
@@ -709,9 +688,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'home': 'Home',
 					'end': 'End',
 				}
-				
+
 				key = key_map.get(keys, keys)
-				
+
 				await cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': 'keyDown', 'key': key},
 					session_id=session_id,
@@ -792,10 +771,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			for query in search_queries:
 				try:
 					# Perform search
-					search_result = await cdp_client.send.DOM.performSearch(
-						params={'query': query}, 
-						session_id=session_id
-					)
+					search_result = await cdp_client.send.DOM.performSearch(params={'query': query}, session_id=session_id)
 					search_id = search_result['searchId']
 					result_count = search_result['resultCount']
 
@@ -808,22 +784,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 						if node_ids['nodeIds']:
 							node_id = node_ids['nodeIds'][0]
-							
+
 							# Scroll the element into view
-							await cdp_client.send.DOM.scrollIntoViewIfNeeded(
-								params={'nodeId': node_id}, 
-								session_id=session_id
-							)
-							
+							await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
+
 							found = True
 							logger.info(f'📜 Scrolled to text: "{event.text}"')
 							break
 
 					# Clean up search
-					await cdp_client.send.DOM.discardSearchResults(
-						params={'searchId': search_id}, 
-						session_id=session_id
-					)
+					await cdp_client.send.DOM.discardSearchResults(params={'searchId': search_id}, session_id=session_id)
 				except Exception as e:
 					logger.debug(f'Search query failed: {query}, error: {e}')
 					continue
