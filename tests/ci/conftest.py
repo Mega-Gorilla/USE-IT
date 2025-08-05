@@ -4,7 +4,6 @@ Pytest configuration for browser-use CI tests.
 Sets up environment variables to ensure tests never connect to production services.
 """
 
-import asyncio
 import os
 import socketserver
 import tempfile

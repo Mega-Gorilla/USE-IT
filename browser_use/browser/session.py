@@ -22,6 +22,7 @@ os.environ['PW_TEST_SCREENSHOT_NO_FONTS_READY'] = '1'  # https://github.com/micr
 
 
 import psutil
+from bubus import EventBus
 from bubus.helpers import retry
 from playwright._impl._api_structures import ViewportSize
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
@@ -2021,9 +2022,17 @@ class BrowserSession(BaseModel):
 	@time_execution_async('--click_element_node')
 	@observe_debug(ignore_input=True, name='click_element_node')
 	@require_healthy_browser(usable_page=True, reopen_page=True)
-	async def _click_element_node(self, element_node: DOMElementNode) -> str | None:
+	async def _click_element_node(self, element_node: DOMElementNode, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""
-		Optimized method to click an element using xpath.
+		Optimized method to click an element using xpath with CDP fallbacks.
+		
+		Args:
+			element_node: The DOM element to click
+			expect_download: If True, wait for download and handle it inline
+			new_tab: If True, open any resulting navigation in a new tab
+			
+		Returns:
+			The download path if a download was triggered, None otherwise
 		"""
 		page = await self.get_current_page()
 		try:
@@ -2870,8 +2879,8 @@ class BrowserSession(BaseModel):
 				)
 				content = DOMState(element_tree=minimal_element_tree, selector_map={})
 
-		# Get tabs info
-		tabs_info = await self.get_tabs_info()
+				# Get tabs info
+				tabs_info = await self.get_tabs_info()
 
 				# Skip screenshot for empty pages
 				screenshot_b64 = None
