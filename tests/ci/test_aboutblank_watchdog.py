@@ -113,6 +113,11 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 		pages = session.pages
 		about_blank_pages = [p for p in pages if p.url == 'about:blank']
 
+		# AboutBlankWatchdog should have created at least one about:blank animation tab
+		assert len(about_blank_pages) >= 1, (
+			f'Expected at least one about:blank animation tab for DVD screensaver test, but found {len(about_blank_pages)}'
+		)
+
 		if about_blank_pages:
 			# Try to show screensaver on first about:blank page
 			try:
