@@ -1525,7 +1525,7 @@ class BrowserSession(BaseModel):
 				f'⚠️ Failed to update browser geolocation {self.browser_profile.geolocation}: {type(e).__name__}: {e}'
 			)
 
-		await self.load_storage_state()
+		# Storage state is automatically loaded by StorageStateWatchdog on browser connection
 
 		page = None
 
@@ -2753,7 +2753,7 @@ class BrowserSession(BaseModel):
 	async def get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
-		from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
+		from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode, NodeType, SerializedDOMState, DOMSelectorMap
 
 		page = await self.get_current_page()
 
@@ -2776,20 +2776,36 @@ class BrowserSession(BaseModel):
 
 		# Create minimal DOM element for error state
 		minimal_element_tree = DOMElementNode(
-			tag_name='body',
-			xpath='/body',
+			node_id=1,
+			backend_node_id=1,
+			node_type=NodeType.ELEMENT_NODE,
+			node_name='body',
+			node_value='',
 			attributes={},
-			children=[],
+			is_scrollable=False,
 			is_visible=True,
-			parent=None,
+			absolute_position=None,
+			frame_id=None,
+			content_document=None,
+			shadow_root_type=None,
+			shadow_roots=None,
+			parent_node=None,
+			children_nodes=[],
+			ax_node=None,
+			snapshot_node=None,
 		)
 
 		# Check if current page is a PDF viewer
 		is_pdf_viewer = await self._is_pdf_viewer(page)
 
-		return BrowserStateSummary(
-			element_tree=minimal_element_tree,  # Minimal DOM tree
+		# Create minimal SerializedDOMState
+		minimal_dom_state = SerializedDOMState(
+			_root=None,  # No simplified tree for minimal state
 			selector_map={},  # Empty selector map
+		)
+		
+		return BrowserStateSummary(
+			dom_state=minimal_dom_state,
 			url=url,
 			title=title,
 			tabs=tabs_info,
@@ -3530,8 +3546,10 @@ class BrowserSession(BaseModel):
 				self.logger.error(f'Failed to locate element: {type(e).__name__}: {e}')
 				return None
 
-	async def _click_element_node(self, element: Any, expect_download: bool = False, new_tab: bool = False) -> str | None:
+	async def _click_element_node_compat(self, element: Any, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""Click an element node and handle potential downloads.
+		
+		DEPRECATED: This is a compatibility method. Use the event-based approach instead.
 
 		Args:
 			element: The DOM element to click
