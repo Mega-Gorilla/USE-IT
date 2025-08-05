@@ -9,7 +9,6 @@ from browser_use.agent.message_manager.views import (
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.agent.views import (
 	ActionResult,
-	AgentHistoryList,
 	AgentOutput,
 	AgentStepInfo,
 	MessageManagerState,
@@ -95,6 +94,8 @@ def _log_format_message_line(message: BaseMessage, content: str, is_last_message
 
 
 class MessageManager:
+	vision_detail_level: Literal['auto', 'low', 'high']
+
 	def __init__(
 		self,
 		task: str,
@@ -103,10 +104,9 @@ class MessageManager:
 		state: MessageManagerState = MessageManagerState(),
 		use_thinking: bool = True,
 		include_attributes: list[str] | None = None,
-		message_context: str | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		max_history_items: int | None = None,
-		images_per_step: int = 1,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_tool_call_examples: bool = False,
 	):
 		self.task = task
@@ -116,14 +116,13 @@ class MessageManager:
 		self.sensitive_data_description = ''
 		self.use_thinking = use_thinking
 		self.max_history_items = max_history_items
-		self.images_per_step = images_per_step
+		self.vision_detail_level = vision_detail_level
 		self.include_tool_call_examples = include_tool_call_examples
 
 		assert max_history_items is None or max_history_items > 5, 'max_history_items must be None or greater than 5'
 
 		# Store settings as direct attributes instead of in a settings object
 		self.include_attributes = include_attributes or []
-		self.message_context = message_context
 		self.sensitive_data = sensitive_data
 		self.last_input_messages = []
 		# Only initialize messages if state is empty
@@ -229,7 +228,6 @@ class MessageManager:
 		use_vision=True,
 		page_filtered_actions: str | None = None,
 		sensitive_data=None,
-		agent_history_list: AgentHistoryList | None = None,  # Pass AgentHistoryList from agent
 		available_file_paths: list[str] | None = None,  # Always pass current available_file_paths
 	) -> None:
 		"""Reconstruct all state messages from scratch for optimal caching"""
@@ -242,14 +240,8 @@ class MessageManager:
 		if sensitive_data:
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
-		# Extract previous screenshots if we need more than 1 image and have agent history
+		# Use only the current screenshot
 		screenshots = []
-		if agent_history_list and self.images_per_step > 1:
-			# Get previous screenshots and filter out None values
-			raw_screenshots = agent_history_list.screenshots(n_last=self.images_per_step - 1, return_none_if_not_screenshot=False)
-			screenshots = [s for s in raw_screenshots if s is not None]
-
-		# add current screenshot to the end
 		if browser_state_summary.screenshot:
 			screenshots.append(browser_state_summary.screenshot)
 
@@ -266,6 +258,7 @@ class MessageManager:
 			sensitive_data=self.sensitive_data_description,
 			available_file_paths=available_file_paths,
 			screenshots=screenshots,
+      vision_detail_level=self.vision_detail_level,
 		)
 
 		# Fully reconstruct all messages every time for optimal caching:

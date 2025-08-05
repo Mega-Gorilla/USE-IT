@@ -74,8 +74,8 @@ class DomService:
 		if await self.page.evaluate('1+1') != 2:
 			raise ValueError('The page cannot evaluate javascript code properly')
 
-		if is_new_tab_page(self.page.url):
-			# short-circuit if the page is a new empty tab for speed, no need to inject buildDomTree.js
+		if is_new_tab_page(self.page.url) or self.page.url.startswith('chrome://'):
+			# short-circuit if the page is a new empty tab or chrome:// page for speed, no need to inject buildDomTree.js
 			return (
 				DOMElementNode(
 					tag_name='body',

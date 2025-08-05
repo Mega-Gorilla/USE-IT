@@ -73,7 +73,7 @@ class TestBrowserSessionStart:
 		browser_pids = []
 		original_setup = browser_session._unsafe_setup_new_browser_context
 
-		async def tracking_setup():
+		async def tracking_setup(self):
 			await original_setup()
 			if browser_session.browser_pid:
 				browser_pids.append(browser_session.browser_pid)

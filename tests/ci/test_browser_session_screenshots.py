@@ -106,8 +106,13 @@ class TestHeadlessScreenshots:
 		finally:
 			await browser_session.kill()
 
-	async def test_screenshot_graceful_handling_in_headless(self):
+	async def test_screenshot_graceful_handling_in_headless(self, httpserver):
 		"""Test that screenshot handling works correctly in headless mode even with closed pages"""
+		# Set up test page
+		httpserver.expect_request('/test').respond_with_data(
+			'<html><body><h1>Test Page</h1></body></html>', content_type='text/html'
+		)
+
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
@@ -125,18 +130,22 @@ class TestHeadlessScreenshots:
 			for page in pages:
 				await page.close()
 
-			# Browser should auto-create a new page, so screenshot should still work
-			screenshot = await browser_session.take_screenshot()
-			# Should get a screenshot of the new blank page
-			assert screenshot is not None
-			assert isinstance(screenshot, str)
-			assert len(screenshot) > 0
-
-			# Get state summary should also work
+			# Browser should auto-create a new page on about:blank
+			# Verify screenshot is None for empty pages
 			state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
-			# Should have a screenshot
-			assert state.screenshot is not None
+			assert state.screenshot is None, 'Screenshot should be None for about:blank pages'
+			assert state.url == 'about:blank' or state.url.startswith('chrome://'), f'Expected empty page but got {state.url}'
+
+			# Now navigate to a real page and verify screenshot works
+			await browser_session.navigate(httpserver.url_for('/test'))
+
+			# Get state with screenshot
+			state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			# Should have a screenshot now
+			assert state.screenshot is not None, 'Screenshot should not be None for real pages'
 			assert isinstance(state.screenshot, str)
+			assert len(state.screenshot) > 100, 'Screenshot should have substantial content'
+			assert 'test' in state.url.lower()
 
 		finally:
 			await browser_session.kill()

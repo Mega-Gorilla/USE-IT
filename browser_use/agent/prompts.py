@@ -1,6 +1,6 @@
 import importlib.resources
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 from browser_use.observability import observe_debug
@@ -75,6 +75,8 @@ class SystemPrompt:
 
 
 class AgentMessagePrompt:
+	vision_detail_level: Literal['auto', 'low', 'high']
+
 	def __init__(
 		self,
 		browser_state_summary: 'BrowserStateSummary',
@@ -88,6 +90,7 @@ class AgentMessagePrompt:
 		sensitive_data: str | None = None,
 		available_file_paths: list[str] | None = None,
 		screenshots: list[str] | None = None,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -100,37 +103,10 @@ class AgentMessagePrompt:
 		self.sensitive_data: str | None = sensitive_data
 		self.available_file_paths: list[str] | None = available_file_paths
 		self.screenshots = screenshots or []
+		self.vision_detail_level = vision_detail_level
 		assert self.browser_state
 
-	def _deduplicate_screenshots(self, screenshots: list[str]) -> list[str]:
-		"""
-		Remove consecutive duplicate screenshots, keeping only the most recent of each.
-
-		Args:
-			screenshots: List of base64-encoded screenshot strings in chronological order (oldest first)
-
-		Returns:
-			List of screenshots with consecutive duplicates removed, maintaining chronological order
-		"""
-		if not screenshots:
-			return []
-
-		if len(screenshots) == 1:
-			return screenshots
-
-		# Keep track of unique screenshots by comparing each with the next one
-		unique_screenshots = []
-
-		for i in range(len(screenshots)):
-			# Always keep the last screenshot
-			if i == len(screenshots) - 1:
-				unique_screenshots.append(screenshots[i])
-			# Only keep screenshot if it's different from the next one
-			elif screenshots[i] != screenshots[i + 1]:
-				unique_screenshots.append(screenshots[i])
-
-		return unique_screenshots
-
+	@observe_debug(ignore_input=True, ignore_output=True, name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
 		elements_text = self.browser_state.element_tree.clickable_elements_to_string(include_attributes=self.include_attributes)
 
@@ -265,12 +241,9 @@ Available tabs:
 			# Start with text description
 			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=browser_state_content)]
 
-			# Deduplicate screenshots, keeping only the most recent of each unique image
-			unique_screenshots = self._deduplicate_screenshots(self.screenshots)
-
 			# Add screenshots with labels
-			for i, screenshot in enumerate(unique_screenshots):
-				if i == len(unique_screenshots) - 1:
+			for i, screenshot in enumerate(self.screenshots):
+				if i == len(self.screenshots) - 1:
 					label = 'Current screenshot:'
 				else:
 					# Use simple, accurate labeling since we don't have actual step timing info
@@ -285,13 +258,14 @@ Available tabs:
 						image_url=ImageURL(
 							url=f'data:image/png;base64,{screenshot}',
 							media_type='image/png',
+							detail=self.vision_detail_level,
 						),
 					)
 				)
 
-			return UserMessage(content=content_parts, cache=False)
+			return UserMessage(content=content_parts, cache=True)
 
-		return UserMessage(content=browser_state_content, cache=False)
+		return UserMessage(content=browser_state_content, cache=True)
 
 	def get_read_state_message(self) -> UserMessage | None:
 		"""Get read state as a separate message"""

@@ -105,6 +105,12 @@ class OldConfig:
 	def BROWSER_USE_DEFAULT_USER_DATA_DIR(self) -> Path:
 		return self.BROWSER_USE_PROFILES_DIR / 'default'
 
+	@property
+	def BROWSER_USE_EXTENSIONS_DIR(self) -> Path:
+		path = self.BROWSER_USE_CONFIG_DIR / 'extensions'
+		self._ensure_dirs()
+		return path
+
 	def _ensure_dirs(self) -> None:
 		"""Create directories if they don't exist (only once)"""
 		if not self._dirs_created:
@@ -113,6 +119,7 @@ class OldConfig:
 			)
 			config_dir.mkdir(parents=True, exist_ok=True)
 			(config_dir / 'profiles').mkdir(parents=True, exist_ok=True)
+			(config_dir / 'extensions').mkdir(parents=True, exist_ok=True)
 			self._dirs_created = True
 
 	# LLM API key configuration

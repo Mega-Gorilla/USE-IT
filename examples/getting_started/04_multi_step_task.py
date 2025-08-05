@@ -27,7 +27,7 @@ from browser_use.llm.openai.chat import ChatOpenAI
 
 async def main():
 	# Initialize the model
-	llm = ChatOpenAI(model='gpt-4o-mini')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Define a multi-step task
 	task = """

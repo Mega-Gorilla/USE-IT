@@ -3,14 +3,14 @@ import gc
 import inspect
 import json
 import logging
-import os
 import re
 import sys
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -72,6 +72,7 @@ from browser_use.telemetry.views import AgentTelemetryEvent
 from browser_use.utils import (
 	_log_pretty_path,
 	get_browser_use_version,
+	get_git_info,
 	time_execution_async,
 	time_execution_sync,
 )
@@ -161,7 +162,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
 		validate_output: bool = False,
-		message_context: str | None = None,
 		generate_gif: bool | str = False,
 		available_file_paths: list[str] | None = None,
 		include_attributes: list[str] = DEFAULT_INCLUDE_ATTRIBUTES,
@@ -169,7 +169,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		use_thinking: bool = True,
 		flash_mode: bool = False,
 		max_history_items: int = 40,
-		images_per_step: int = 1,
 		page_extraction_llm: BaseChatModel | None = None,
 		planner_llm: BaseChatModel | None = None,  # Deprecated
 		planner_interval: int = 1,  # Deprecated
@@ -184,6 +183,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		calculate_cost: bool = False,
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
+		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 60,
 		step_timeout: int = 180,
 		**kwargs,
@@ -241,6 +241,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.settings = AgentSettings(
 			use_vision=use_vision,
+			vision_detail_level=vision_detail_level,
 			use_vision_for_planner=False,  # Always False now (deprecated)
 			save_conversation_path=save_conversation_path,
 			save_conversation_path_encoding=save_conversation_path_encoding,
@@ -249,14 +250,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			override_system_message=override_system_message,
 			extend_system_message=extend_system_message,
 			validate_output=validate_output,
-			message_context=message_context,
 			generate_gif=generate_gif,
 			include_attributes=include_attributes,
 			max_actions_per_step=max_actions_per_step,
 			use_thinking=use_thinking,
 			flash_mode=flash_mode,
 			max_history_items=max_history_items,
-			images_per_step=images_per_step,
 			page_extraction_llm=page_extraction_llm,
 			planner_llm=None,  # Always None now (deprecated)
 			planner_interval=1,  # Always 1 now (deprecated)
@@ -277,8 +276,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
 
-		# Initialize file system
+		# Initialize history
+		self.history = AgentHistoryList(history=[], usage=None)
+
+		# Initialize agent directory
+		import time
+
+		timestamp = int(time.time())
+		base_tmp = Path(tempfile.gettempdir())
+		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
+
+		# Initialize file system and screenshot service
 		self._set_file_system(file_system_path)
+		self._set_screenshot_service()
 
 		# Action setup
 		self._setup_action_models()
@@ -330,10 +340,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			use_thinking=self.settings.use_thinking,
 			# Settings that were previously in MessageManagerSettings
 			include_attributes=self.settings.include_attributes,
-			message_context=self.settings.message_context,
 			sensitive_data=sensitive_data,
 			max_history_items=self.settings.max_history_items,
-			images_per_step=self.settings.images_per_step,
+			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
 		)
 
@@ -559,10 +568,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.file_system = FileSystem(file_system_path)
 				self.file_system_path = file_system_path
 			else:
-				# create a temporary file system using agent ID
-				base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
-				self.file_system_path = os.path.join(base_tmp, f'browser_use_agent_{self.id}')
-				self.file_system = FileSystem(self.file_system_path)
+				# Use the agent directory for file system
+				self.file_system = FileSystem(self.agent_directory)
+				self.file_system_path = str(self.agent_directory)
 		except Exception as e:
 			logger.error(f'💾 Failed to initialize file system: {e}.')
 			raise e
@@ -572,6 +580,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		logger.info(f'💾 File system path: {self.file_system_path}')
 
+	def _set_screenshot_service(self) -> None:
+		"""Initialize screenshot service using agent directory"""
+		try:
+			from browser_use.screenshots.service import ScreenshotService
+
+			self.screenshot_service = ScreenshotService(self.agent_directory)
+			logger.info(f'📸 Screenshot service initialized in: {self.agent_directory}/screenshots')
+		except Exception as e:
+			logger.error(f'📸 Failed to initialize screenshot service: {e}.')
+			raise e
+
 	def save_file_system_state(self) -> None:
 		"""Save current file system state to agent state"""
 		if self.file_system:
@@ -579,9 +598,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			logger.error('💾 File system is not set up. Cannot save state.')
 			raise ValueError('File system is not set up. Cannot save state.')
-
-	def _set_message_context(self) -> str | None:
-		return self.settings.message_context
 
 	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
 		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
@@ -693,27 +709,27 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
-		self.logger.debug(f'🌐 Step {self.state.n_steps + 1}: Getting browser state...')
+		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
 			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision
 		)
 		current_page = await self.browser_session.get_current_page()
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
-		await self._check_and_update_downloads(f'Step {self.state.n_steps + 1}: after getting browser state')
+		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
 
 		self._log_step_context(current_page, browser_state_summary)
 		await self._raise_if_stopped_or_paused()
 
 		# Update action models with page-specific actions
-		self.logger.debug(f'📝 Step {self.state.n_steps + 1}: Updating action models...')
+		self.logger.debug(f'📝 Step {self.state.n_steps}: Updating action models...')
 		await self._update_action_models_for_page(current_page)
 
 		# Get page-specific filtered actions
 		page_filtered_actions = self.controller.registry.get_prompt_description(current_page)
 
 		# Page-specific actions will be included directly in the browser_state message
-		self.logger.debug(f'💬 Step {self.state.n_steps + 1}: Creating state messages for context...')
+		self.logger.debug(f'💬 Step {self.state.n_steps}: Creating state messages for context...')
 		self._message_manager.create_state_messages(
 			browser_state_summary=browser_state_summary,
 			model_output=self.state.last_model_output,
@@ -722,7 +738,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			use_vision=self.settings.use_vision,
 			page_filtered_actions=page_filtered_actions if page_filtered_actions else None,
 			sensitive_data=self.sensitive_data,
-			agent_history_list=self.state.history,  # Pass AgentHistoryList for screenshots
 			available_file_paths=self.available_file_paths,  # Always pass current available_file_paths
 		)
 
@@ -734,7 +749,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
 		self.logger.debug(
-			f'🤖 Step {self.state.n_steps + 1}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
+			f'🤖 Step {self.state.n_steps}: Calling LLM with {len(input_messages)} messages (model: {self.llm.model})...'
 		)
 
 		try:
@@ -750,9 +765,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Check again for paused/stopped state after getting model output
 		await self._raise_if_stopped_or_paused()
-
-		# Increment step counter at the start of each step
-		self.state.n_steps += 1
 
 		# Handle callbacks and conversation saving
 		await self._handle_post_llm_processing(browser_state_summary, input_messages)
@@ -847,7 +859,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			)
 
 			# Use _make_history_item like main branch
-			self._make_history_item(self.state.last_model_output, browser_state_summary, self.state.last_result, metadata)
+			await self._make_history_item(self.state.last_model_output, browser_state_summary, self.state.last_result, metadata)
 
 		# Log step completion summary
 		self._log_step_completion_summary(self.step_start_time, self.state.last_result)
@@ -870,6 +882,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			)
 			self.eventbus.dispatch(step_event)
 
+		# Increment step counter after step is fully completed
+		self.state.n_steps += 1
+
 	async def _handle_final_step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Handle special processing for the last step"""
 		if step_info and step_info.is_last_step():
@@ -886,7 +901,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Get model output with retry logic for empty actions"""
 		model_output = await self.get_model_output(input_messages)
 		self.logger.debug(
-			f'✅ Step {self.state.n_steps + 1}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
+			f'✅ Step {self.state.n_steps}: Got LLM response with {len(model_output.action) if model_output.action else 0} actions'
 		)
 
 		if (
@@ -940,7 +955,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.settings.save_conversation_path_encoding,
 			)
 
-	def _make_history_item(
+	async def _make_history_item(
 		self,
 		model_output: AgentOutput | None,
 		browser_state_summary: BrowserStateSummary,
@@ -954,12 +969,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		else:
 			interacted_elements = [None]
 
+		# Store screenshot and get path
+		screenshot_path = None
+		if browser_state_summary.screenshot:
+			screenshot_path = await self.screenshot_service.store_screenshot(browser_state_summary.screenshot, self.state.n_steps)
+
 		state_history = BrowserStateHistory(
 			url=browser_state_summary.url,
 			title=browser_state_summary.title,
 			tabs=browser_state_summary.tabs,
 			interacted_element=interacted_elements,
-			screenshot=browser_state_summary.screenshot,
+			screenshot_path=screenshot_path,
 		)
 
 		history_item = AgentHistory(
@@ -969,7 +989,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			metadata=metadata,
 		)
 
-		self.state.history.history.append(history_item)
+		self.history.add_item(history_item)
 
 	def _remove_think_tags(self, text: str) -> str:
 		THINK_TAGS = re.compile(r'<think>.*?</think>', re.DOTALL)
@@ -1014,7 +1034,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
 		interactive_count = len(browser_state_summary.selector_map) if browser_state_summary else 0
 		self.logger.info(
-			f'📍 Step {self.state.n_steps + 1}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
+			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
 		)
 
 	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
@@ -1087,7 +1107,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Prepare action_history data correctly
 		action_history_data = []
-		for item in self.state.history.history:
+		for item in self.history.history:
 			if item.model_output and item.model_output.action:
 				# Convert each ActionModel in the step to its dictionary representation
 				step_actions = [
@@ -1100,7 +1120,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Append None or [] if a step had no actions or no model output
 				action_history_data.append(None)
 
-		final_res = self.state.history.final_result()
+		final_res = self.history.final_result()
 		final_result_str = json.dumps(final_res) if final_res is not None else None
 
 		self.telemetry.capture(
@@ -1118,13 +1138,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				cdp_url=urlparse(self.browser_session.cdp_url).hostname
 				if self.browser_session and self.browser_session.cdp_url
 				else None,
-				action_errors=self.state.history.errors(),
+				action_errors=self.history.errors(),
 				action_history=action_history_data,
-				urls_visited=self.state.history.urls(),
+				urls_visited=self.history.urls(),
 				steps=self.state.n_steps,
 				total_input_tokens=token_summary.prompt_tokens,
-				total_duration_seconds=self.state.history.total_duration_seconds(),
-				success=self.state.history.is_successful(),
+				total_duration_seconds=self.history.total_duration_seconds(),
+				success=self.history.is_successful(),
 				final_result_response=final_result_str,
 				error_message=agent_run_error,
 			)
@@ -1138,13 +1158,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""
 		await self.step(step_info)
 
-		if self.state.history.is_done():
+		if self.history.is_done():
 			await self.log_completion()
 			if self.register_done_callback:
 				if inspect.iscoroutinefunction(self.register_done_callback):
-					await self.register_done_callback(self.state.history)
+					await self.register_done_callback(self.history)
 				else:
-					self.register_done_callback(self.state.history)
+					self.register_done_callback(self.history)
 			return True, True
 
 		return False, False
@@ -1257,22 +1277,22 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				if on_step_end is not None:
 					await on_step_end(self)
 
-				if self.state.history.is_done():
+				if self.history.is_done():
 					self.logger.debug(f'🎯 Task completed after {step + 1} steps!')
 					await self.log_completion()
 
 					if self.register_done_callback:
 						if inspect.iscoroutinefunction(self.register_done_callback):
-							await self.register_done_callback(self.state.history)
+							await self.register_done_callback(self.history)
 						else:
-							self.register_done_callback(self.state.history)
+							self.register_done_callback(self.history)
 
 					# Task completed
 					break
 			else:
 				agent_run_error = 'Failed to complete task in maximum steps'
 
-				self.state.history.history.append(
+				self.history.add_item(
 					AgentHistory(
 						model_output=None,
 						result=[ActionResult(error=agent_run_error, include_in_memory=True)],
@@ -1281,7 +1301,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 							title='',
 							tabs=[],
 							interacted_element=[],
-							screenshot=None,
+							screenshot_path=None,
 						),
 						metadata=None,
 					)
@@ -1290,23 +1310,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.info(f'❌ {agent_run_error}')
 
 			self.logger.debug('📊 Collecting usage summary...')
-			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+			self.history.usage = await self.token_cost_service.get_usage_summary()
 
 			# set the model output schema and call it on the fly
-			if self.state.history._output_model_schema is None and self.output_model_schema is not None:
-				self.state.history._output_model_schema = self.output_model_schema
+			if self.history._output_model_schema is None and self.output_model_schema is not None:
+				self.history._output_model_schema = self.output_model_schema
 
 			self.logger.debug('🏁 Agent.run() completed successfully')
-			return self.state.history
+			return self.history
 
 		except KeyboardInterrupt:
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
 			self.logger.info('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
 
-			self.state.history.usage = await self.token_cost_service.get_usage_summary()
+			self.history.usage = await self.token_cost_service.get_usage_summary()
 
-			return self.state.history
+			return self.history
 
 		except Exception as e:
 			self.logger.error(f'Agent run failed with exception: {e}', exc_info=True)
@@ -1345,7 +1365,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Lazy import gif module to avoid heavy startup cost
 				from browser_use.agent.gif import create_history_gif
 
-				create_history_gif(task=self.task, history=self.state.history, output_path=output_path)
+				create_history_gif(task=self.task, history=self.history, output_path=output_path)
 
 				# Only emit output file event if GIF was actually created
 				if Path(output_path).exists():
@@ -1470,7 +1490,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
-		if self.state.history.is_successful():
+		if self.history.is_successful():
 			self.logger.info('✅ Task completed successfully')
 		else:
 			self.logger.info('❌ Task completed without success')
@@ -1604,7 +1624,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Save the history to a file"""
 		if not file_path:
 			file_path = 'AgentHistory.json'
-		self.state.history.save_to_file(file_path)
+		self.history.save_to_file(file_path)
 
 	async def wait_until_resumed(self):
 		await self._external_pause_event.wait()
@@ -1720,3 +1740,77 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 		else:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
+
+	def get_trace_object(self) -> dict[str, Any]:
+		"""Get the trace and trace_details objects for the agent"""
+
+		def extract_task_website(task_text: str) -> str | None:
+			url_pattern = r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?'
+			match = re.search(url_pattern, task_text, re.IGNORECASE)
+			return match.group(0) if match else None
+
+		def _get_complete_history_without_screenshots(history_data: dict[str, Any]) -> str:
+			if 'history' in history_data:
+				for item in history_data['history']:
+					if 'state' in item and 'screenshot' in item['state']:
+						item['state']['screenshot'] = None
+
+			return json.dumps(history_data)
+
+		# Generate autogenerated fields
+		trace_id = uuid7str()
+		timestamp = datetime.now().isoformat()
+
+		# Only declare variables that are used multiple times
+		structured_output = self.history.structured_output
+		structured_output_json = json.dumps(structured_output.model_dump()) if structured_output else None
+		final_result = self.history.final_result()
+		git_info = get_git_info()
+		action_history = self.history.action_history()
+		action_errors = self.history.errors()
+		urls = self.history.urls()
+		usage = self.history.usage
+
+		return {
+			'trace': {
+				# Autogenerated fields
+				'trace_id': trace_id,
+				'timestamp': timestamp,
+				'browser_use_version': get_browser_use_version(),
+				'git_info': json.dumps(git_info) if git_info else None,
+				# Direct agent properties
+				'model': self.llm.model,
+				'settings': json.dumps(self.settings.model_dump()) if self.settings else None,
+				'task_id': self.task_id,
+				'task_truncated': self.task[:20000] if len(self.task) > 20000 else self.task,
+				'task_website': extract_task_website(self.task),
+				# AgentHistoryList methods
+				'structured_output_truncated': (
+					structured_output_json[:20000]
+					if structured_output_json and len(structured_output_json) > 20000
+					else structured_output_json
+				),
+				'action_history_truncated': json.dumps(action_history) if action_history else None,
+				'action_errors': json.dumps(action_errors) if action_errors else None,
+				'urls': json.dumps(urls) if urls else None,
+				'final_result_response_truncated': (
+					final_result[:20000] if final_result and len(final_result) > 20000 else final_result
+				),
+				'self_report_completed': 1 if self.history.is_done() else 0,
+				'self_report_success': 1 if self.history.is_successful() else 0,
+				'duration': self.history.total_duration_seconds(),
+				'steps_taken': self.history.number_of_steps(),
+				'usage': json.dumps(usage.model_dump()) if usage else None,
+			},
+			'trace_details': {
+				# Autogenerated fields (ensure same as trace)
+				'trace_id': trace_id,
+				'timestamp': timestamp,
+				# Direct agent properties
+				'task': self.task,
+				# AgentHistoryList methods
+				'structured_output': structured_output_json,
+				'final_result_response': final_result,
+				'complete_history': _get_complete_history_without_screenshots(self.history.model_dump()),
+			},
+		}
