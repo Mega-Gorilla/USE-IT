@@ -258,7 +258,7 @@ class MessageManager:
 			sensitive_data=self.sensitive_data_description,
 			available_file_paths=available_file_paths,
 			screenshots=screenshots,
-      vision_detail_level=self.vision_detail_level,
+			vision_detail_level=self.vision_detail_level,
 		)
 
 		# Fully reconstruct all messages every time for optimal caching:
