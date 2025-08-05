@@ -103,13 +103,6 @@ class BrowserLaunchEvent(BaseEvent[dict[str, str]]):
 	pass
 
 
-class BrowserLaunchedEvent(BaseEvent):
-	"""Local browser process has been launched successfully."""
-
-	cdp_url: str
-	browser_pid: int
-
-
 class BrowserKillEvent(BaseEvent):
 	"""Kill local browser subprocess."""
 

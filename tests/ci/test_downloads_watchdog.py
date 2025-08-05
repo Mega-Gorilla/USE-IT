@@ -218,6 +218,44 @@ async def test_downloads_watchdog_default_downloads_path():
 			await session.kill()
 
 
+@pytest.mark.asyncio
+async def test_unique_downloads_directories():
+	"""Test that different browser profiles get unique downloads directories."""
+	# Create two profiles without specifying downloads_path
+	profile1 = BrowserProfile(headless=True)
+	profile2 = BrowserProfile(headless=True)
+
+	# Ensure they have different downloads paths
+	assert profile1.downloads_path != profile2.downloads_path
+	assert profile1.downloads_path is not None
+	assert profile2.downloads_path is not None
+
+	# Ensure both directories exist
+	assert Path(profile1.downloads_path).exists()
+	assert Path(profile2.downloads_path).exists()
+
+	# Ensure they are both under the temp directory with the correct prefix
+	import tempfile
+
+	temp_dir = Path(tempfile.gettempdir())
+	assert Path(profile1.downloads_path).parent == temp_dir
+	assert Path(profile2.downloads_path).parent == temp_dir
+	assert 'browser-use-downloads-' in str(profile1.downloads_path)
+	assert 'browser-use-downloads-' in str(profile2.downloads_path)
+
+	print(f'✅ Profile 1 downloads path: {profile1.downloads_path}')
+	print(f'✅ Profile 2 downloads path: {profile2.downloads_path}')
+
+	# Test that explicit downloads_path is preserved
+	with tempfile.TemporaryDirectory() as tmpdir:
+		explicit_path = Path(tmpdir) / 'custom-downloads'
+		explicit_path.mkdir()
+
+		profile3 = BrowserProfile(headless=True, downloads_path=str(explicit_path))
+		assert profile3.downloads_path and Path(profile3.downloads_path) == explicit_path
+		print(f'✅ Explicit downloads path preserved: {profile3.downloads_path}')
+
+
 @pytest.fixture(scope='function')
 async def comprehensive_download_test_server(httpserver):
 	"""Setup test HTTP server with comprehensive download test page."""

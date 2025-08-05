@@ -171,3 +171,68 @@ async def test_aboutblank_watchdog_animation_tab_management():
 		# Stop browser
 		session.event_bus.dispatch(BrowserStopEvent())
 		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)
+
+
+@pytest.mark.asyncio
+async def test_aboutblank_watchdog_javascript_execution():
+	"""Test that the DVD screensaver JavaScript executes without errors."""
+	profile = BrowserProfile(headless=True)
+	session = BrowserSession(browser_profile=profile)
+
+	try:
+		# Start browser
+		session.event_bus.dispatch(BrowserStartEvent())
+		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+
+		# Create an about:blank page
+		session.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+		await asyncio.sleep(0.5)
+
+		# Get the about:blank page
+		pages = session.pages
+		about_blank_page = next((p for p in pages if p.url == 'about:blank'), None)
+		assert about_blank_page is not None, 'Should have an about:blank page'
+
+		# Get aboutblank watchdog
+		watchdog = session._aboutblank_watchdog
+
+		# Capture console errors
+		console_errors = []
+
+		async def capture_console_error(msg):
+			if msg.type == 'error':
+				console_errors.append(msg.text)
+
+		about_blank_page.on('console', capture_console_error)
+
+		# Try to inject the DVD screensaver
+		browser_session_id = str(session.id)[-4:]
+		await watchdog._show_dvd_screensaver_loading_animation(about_blank_page, browser_session_id)
+
+		# Give time for any errors to surface
+		await asyncio.sleep(0.5)
+
+		# Check for console errors
+		if console_errors:
+			# Check specifically for arguments.callee error
+			for error in console_errors:
+				if 'arguments' in error.lower() and ('callee' in error.lower() or 'arrow function' in error.lower()):
+					pytest.fail(f'JavaScript error related to arguments.callee in arrow function: {error}')
+				# Also fail on any other errors for completeness
+				pytest.fail(f'JavaScript console error: {error}')
+
+		# Also verify the animation was actually created
+		animation_exists = await about_blank_page.evaluate("""() => {
+			return document.getElementById('pretty-loading-animation') !== null;
+		}""")
+		assert animation_exists, 'DVD screensaver animation should have been created'
+
+		# Check that the title was set
+		title = await about_blank_page.title()
+		expected_title = f'Starting agent {browser_session_id}...'
+		assert title == expected_title, f'Title should be "{expected_title}" but was "{title}"'
+
+	finally:
+		# Stop browser
+		session.event_bus.dispatch(BrowserStopEvent())
+		await session.event_bus.expect(BrowserStoppedEvent, timeout=5.0)

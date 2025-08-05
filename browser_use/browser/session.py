@@ -237,7 +237,7 @@ class BrowserSession(BaseModel):
 			self._playwright = await async_playwright().start()
 			self._browser = await self._playwright.chromium.connect_over_cdp(
 				self.cdp_url,
-				**self.browser_profile.kwargs_for_cdp_connection(),
+				**self.browser_profile.kwargs_for_connect().model_dump(),
 			)
 
 			# Set up browser context

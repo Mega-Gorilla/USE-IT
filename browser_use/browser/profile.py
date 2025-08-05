@@ -461,11 +461,12 @@ class BrowserLaunchArgs(BaseModel):
 
 	@model_validator(mode='after')
 	def set_default_downloads_path(self) -> Self:
-		"""Set a default downloads path if none is provided."""
+		"""Set a unique default downloads path if none is provided."""
 		if self.downloads_path is None:
 			import tempfile
 
-			self.downloads_path = Path(tempfile.gettempdir()) / 'browser-use-downloads'
+			# Create unique temporary directory for downloads
+			self.downloads_path = Path(tempfile.mkdtemp(prefix='browser-use-downloads-'))
 		return self
 
 	@staticmethod
@@ -905,16 +906,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	def kwargs_for_launch(self) -> BrowserLaunchArgs:
 		"""Return the kwargs for BrowserType.connect_over_cdp()."""
 		return BrowserLaunchArgs(**self.model_dump(exclude={'args'}), args=self.get_args())
-
-	def kwargs_for_cdp_connection(self) -> dict[str, Any]:
-		"""Return the kwargs for BrowserType.connect_over_cdp()."""
-		# Extract only the fields relevant for CDP connection
-		connect_args = BrowserConnectArgs(**self.model_dump())
-		return connect_args.model_dump(exclude_none=True)
-
-	def args_for_browser_launch(self) -> list[str]:
-		"""Return the command line args for launching a browser subprocess."""
-		return self.get_args()
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:

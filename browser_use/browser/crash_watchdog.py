@@ -12,7 +12,6 @@ from pydantic import Field, PrivateAttr
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserLaunchedEvent,
 	BrowserStoppedEvent,
 	PageCrashedEvent,
 )
@@ -40,7 +39,6 @@ class CrashWatchdog(BaseWatchdog):
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
 		BrowserConnectedEvent,
-		BrowserLaunchedEvent,
 		BrowserStoppedEvent,
 	]
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
@@ -53,24 +51,14 @@ class CrashWatchdog(BaseWatchdog):
 	check_interval_seconds: float = Field(default=1.0)
 
 	# Private state
-	_browser_pid: int | None = PrivateAttr(default=None)
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_cdp_session: Any = PrivateAttr(default=None)
 	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # page_url -> timestamp
 
-	async def on_BrowserLaunchedEvent(self, event: BrowserLaunchedEvent) -> None:
-		"""Store browser PID when local browser is launched."""
-		logger.info(f'[CrashWatchdog] Browser launched event received, storing PID: {event.browser_pid}')
-		self._browser_pid = event.browser_pid
-
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser is connected."""
 		logger.info('[CrashWatchdog] Browser connected event received, beginning monitoring')
-
-		# Get browser pid from session if not already set by BrowserLaunchedEvent
-		if not self._browser_pid:
-			self._browser_pid = self.browser_session.browser_pid
 
 		await self._start_monitoring()
 		logger.info(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
