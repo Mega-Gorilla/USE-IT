@@ -526,3 +526,320 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 		# Use main page session
 		return await self.browser_session.get_current_page_cdp_session_id()
+
+	async def on_GoBackEvent(self, event: GoBackEvent) -> None:
+		"""Handle navigate back request with CDP."""
+		try:
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
+
+			# Get navigation history
+			history = await cdp_client.send.Page.getNavigationHistory(session_id=session_id)
+			current_index = history['currentIndex']
+			entries = history['entries']
+
+			# Check if we can go back
+			if current_index <= 0:
+				logger.warning('⚠️ Cannot go back - no previous page in history')
+				return
+
+			# Navigate to the previous entry
+			previous_entry_id = entries[current_index - 1]['id']
+			await cdp_client.send.Page.navigateToHistoryEntry(
+				params={'entryId': previous_entry_id}, 
+				session_id=session_id
+			)
+
+			# Wait for navigation
+			await asyncio.sleep(0.5)
+			page = await self.browser_session.get_current_page()
+			await self.browser_session._check_and_handle_navigation(page)
+
+			logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NavigateBackFailed',
+					message=str(e),
+				)
+			)
+
+	async def on_GoForwardEvent(self, event: GoForwardEvent) -> None:
+		"""Handle navigate forward request with CDP."""
+		try:
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
+
+			# Get navigation history
+			history = await cdp_client.send.Page.getNavigationHistory(session_id=session_id)
+			current_index = history['currentIndex']
+			entries = history['entries']
+
+			# Check if we can go forward
+			if current_index >= len(entries) - 1:
+				logger.warning('⚠️ Cannot go forward - no next page in history')
+				return
+
+			# Navigate to the next entry
+			next_entry_id = entries[current_index + 1]['id']
+			await cdp_client.send.Page.navigateToHistoryEntry(
+				params={'entryId': next_entry_id}, 
+				session_id=session_id
+			)
+
+			# Wait for navigation
+			await asyncio.sleep(0.5)
+			page = await self.browser_session.get_current_page()
+			await self.browser_session._check_and_handle_navigation(page)
+
+			logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='NavigateForwardFailed',
+					message=str(e),
+				)
+			)
+
+	async def on_WaitEvent(self, event: WaitEvent) -> None:
+		"""Handle wait request."""
+		try:
+			# Cap wait time at maximum
+			actual_seconds = min(max(event.seconds, 0), event.max_seconds)
+			if actual_seconds != event.seconds:
+				logger.info(f'🕒 Waiting for {actual_seconds} seconds (capped from {event.seconds}s)')
+			else:
+				logger.info(f'🕒 Waiting for {actual_seconds} seconds')
+			
+			await asyncio.sleep(actual_seconds)
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='WaitFailed',
+					message=str(e),
+				)
+			)
+
+	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
+		"""Handle send keys request with CDP."""
+		try:
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
+
+			# Parse key combination
+			keys = event.keys.lower()
+			
+			# Handle special key combinations
+			if '+' in keys:
+				# Handle modifier keys
+				parts = keys.split('+')
+				modifiers = 0
+				key = parts[-1]
+				
+				for part in parts[:-1]:
+					if part in ['ctrl', 'control']:
+						modifiers |= 2  # Control
+					elif part in ['shift']:
+						modifiers |= 8  # Shift
+					elif part in ['alt', 'option']:
+						modifiers |= 1  # Alt
+					elif part in ['cmd', 'command', 'meta']:
+						modifiers |= 4  # Meta/Command
+				
+				# Send key with modifiers
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': key.capitalize() if len(key) == 1 else key,
+						'modifiers': modifiers,
+					},
+					session_id=session_id,
+				)
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': key.capitalize() if len(key) == 1 else key,
+						'modifiers': modifiers,
+					},
+					session_id=session_id,
+				)
+			else:
+				# Single key
+				key_map = {
+					'enter': 'Enter',
+					'return': 'Enter',
+					'tab': 'Tab',
+					'delete': 'Delete',
+					'backspace': 'Backspace',
+					'escape': 'Escape',
+					'esc': 'Escape',
+					'space': ' ',
+					'up': 'ArrowUp',
+					'down': 'ArrowDown',
+					'left': 'ArrowLeft',
+					'right': 'ArrowRight',
+					'pageup': 'PageUp',
+					'pagedown': 'PageDown',
+					'home': 'Home',
+					'end': 'End',
+				}
+				
+				key = key_map.get(keys, keys)
+				
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={'type': 'keyDown', 'key': key},
+					session_id=session_id,
+				)
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={'type': 'keyUp', 'key': key},
+					session_id=session_id,
+				)
+
+			logger.info(f'⌨️ Sent keys: {event.keys}')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='SendKeysFailed',
+					message=str(e),
+					details={'keys': event.keys},
+				)
+			)
+
+	async def on_UploadFileEvent(self, event: UploadFileEvent) -> None:
+		"""Handle file upload request with CDP."""
+		try:
+			# Get the DOM element by index
+			element_node = await self.browser_session.get_dom_element_by_index(event.element_index)
+			if element_node is None:
+				raise Exception(f'Element index {event.element_index} does not exist')
+
+			# Check if it's a file input
+			if not self.browser_session.is_file_input(element_node):
+				raise Exception(f'Element {event.element_index} is not a file input')
+
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+
+			# Set file(s) to upload
+			backend_node_id = element_node.backend_node_id
+			await cdp_client.send.DOM.setFileInputFiles(
+				params={
+					'files': [event.file_path],
+					'backendNodeId': backend_node_id,
+				},
+				session_id=session_id,
+			)
+
+			logger.info(f'📎 Uploaded file {event.file_path} to element {event.element_index}')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='UploadFileFailed',
+					message=str(e),
+					details={'element_index': event.element_index, 'file_path': event.file_path},
+				)
+			)
+
+	async def on_ScrollToTextEvent(self, event: ScrollToTextEvent) -> None:
+		"""Handle scroll to text request with CDP."""
+		try:
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
+
+			# Enable DOM
+			await cdp_client.send.DOM.enable(session_id=session_id)
+
+			# Get document
+			doc = await cdp_client.send.DOM.getDocument(params={'depth': -1}, session_id=session_id)
+			root_node_id = doc['root']['nodeId']
+
+			# Search for text using XPath
+			search_queries = [
+				f'//*[contains(text(), "{event.text}")]',
+				f'//*[contains(., "{event.text}")]',
+				f'//*[@*[contains(., "{event.text}")]]',
+			]
+
+			found = False
+			for query in search_queries:
+				try:
+					# Perform search
+					search_result = await cdp_client.send.DOM.performSearch(
+						params={'query': query}, 
+						session_id=session_id
+					)
+					search_id = search_result['searchId']
+					result_count = search_result['resultCount']
+
+					if result_count > 0:
+						# Get the first match
+						node_ids = await cdp_client.send.DOM.getSearchResults(
+							params={'searchId': search_id, 'fromIndex': 0, 'toIndex': 1},
+							session_id=session_id,
+						)
+
+						if node_ids['nodeIds']:
+							node_id = node_ids['nodeIds'][0]
+							
+							# Scroll the element into view
+							await cdp_client.send.DOM.scrollIntoViewIfNeeded(
+								params={'nodeId': node_id}, 
+								session_id=session_id
+							)
+							
+							found = True
+							logger.info(f'📜 Scrolled to text: "{event.text}"')
+							break
+
+					# Clean up search
+					await cdp_client.send.DOM.discardSearchResults(
+						params={'searchId': search_id}, 
+						session_id=session_id
+					)
+				except Exception as e:
+					logger.debug(f'Search query failed: {query}, error: {e}')
+					continue
+
+			if not found:
+				# Fallback: Try JavaScript search
+				js_result = await cdp_client.send.Runtime.evaluate(
+					params={
+						'expression': f'''
+							(() => {{
+								const walker = document.createTreeWalker(
+									document.body,
+									NodeFilter.SHOW_TEXT,
+									null,
+									false
+								);
+								let node;
+								while (node = walker.nextNode()) {{
+									if (node.textContent.includes("{event.text}")) {{
+										node.parentElement.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+										return true;
+									}}
+								}}
+								return false;
+							}})()
+						'''
+					},
+					session_id=session_id,
+				)
+
+				if js_result.get('result', {}).get('value'):
+					logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
+				else:
+					logger.warning(f'⚠️ Text not found: "{event.text}"')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='ScrollToTextFailed',
+					message=str(e),
+					details={'text': event.text},
+				)
+			)
