@@ -19,7 +19,6 @@ from browser_use.llm.messages import (
 	BaseMessage,
 	ContentPartTextParam,
 	SystemMessage,
-	UserMessage,
 )
 from browser_use.observability import observe_debug
 from browser_use.utils import match_url_with_domain_pattern, time_execution_sync
@@ -129,7 +128,10 @@ class MessageManager:
 		if len(self.state.history.get_messages()) == 0:
 			self._set_state_message(self.system_prompt, 'system')
 
-	# Removed agent_history_description property - now using separate cached history messages
+	@property
+	def agent_history_description(self) -> str:
+		"""Build agent history description from list of items, respecting max_history_items limit"""
+		return self._get_history_description()
 
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
@@ -230,7 +232,7 @@ class MessageManager:
 		sensitive_data=None,
 		available_file_paths: list[str] | None = None,  # Always pass current available_file_paths
 	) -> None:
-		"""Reconstruct all state messages from scratch for optimal caching"""
+		"""Create single state message with all content"""
 
 		# Clear contextual messages from previous steps to prevent accumulation
 		self.state.history.context_messages.clear()
@@ -245,11 +247,12 @@ class MessageManager:
 		if browser_state_summary.screenshot:
 			screenshots.append(browser_state_summary.screenshot)
 
-		# Create the message prompt helper
+		# Create the message prompt helper with history description
 		assert browser_state_summary
 		message_prompt = AgentMessagePrompt(
 			browser_state_summary=browser_state_summary,
 			file_system=self.file_system,
+			agent_history_description=self.agent_history_description,
 			read_state_description=self.state.read_state_description,
 			task=self.task,
 			include_attributes=self.include_attributes,
@@ -261,26 +264,11 @@ class MessageManager:
 			vision_detail_level=self.vision_detail_level,
 		)
 
-		# Fully reconstruct all messages every time for optimal caching:
+		# Create single state message with all content
+		state_message = message_prompt.get_user_message(use_vision)
 
-		# 1. Rebuild cached history messages from history items
-		self._rebuild_history_messages()
-
-		# 2. Create fresh agent state message (not cached - changes every step)
-		agent_state_message = message_prompt.get_agent_state_message()
-
-		# 3. Create fresh browser state message with vision (not cached - changes every step)
-		browser_state_message = message_prompt.get_browser_state_message(use_vision)
-
-		# 4. Create fresh read state message (cached - only changes when new content extracted)
-		read_state_message = message_prompt.get_read_state_message()
-
-		# Replace all state messages
-		self._set_state_message(agent_state_message, 'agent_state')
-		self._set_state_message(browser_state_message, 'browser_state')
-		# read state message is optional
-		if read_state_message:
-			self._set_state_message(read_state_message, 'read_state')
+		# Set the state message with caching enabled
+		self._set_state_message(state_message, 'state')
 
 	def _log_history_lines(self) -> str:
 		"""Generate a formatted log string of message history for debugging / printing to terminal"""
@@ -328,13 +316,8 @@ class MessageManager:
 		self.last_input_messages = self.state.history.get_messages()
 		return self.last_input_messages
 
-	def _create_history_message_from_item(self, item: HistoryItem) -> UserMessage:
-		"""Convert a HistoryItem into a cached UserMessage"""
-		content = item.to_string()
-		return UserMessage(content=content, cache=True)
-
-	def _rebuild_history_messages(self) -> None:
-		"""Rebuild the history messages from agent_history_items, respecting max_history_items limit"""
+	def _get_history_description(self) -> str:
+		"""Build agent history description from list of items, respecting max_history_items limit"""
 		history_items = self.state.agent_history_items
 
 		if self.max_history_items is None:
@@ -359,12 +342,10 @@ class MessageManager:
 					omitted_item = HistoryItem(system_message=f'[... {omitted_count} previous steps omitted...]')
 					items_to_include = [history_items[0], omitted_item] + history_items[-recent_items_count:]
 
-		# Convert items to cached messages
-		self.state.history.history_messages = [self._create_history_message_from_item(item) for item in items_to_include]
+		# Convert items to strings
+		return '\n'.join(item.to_string() for item in items_to_include)
 
-	def _set_state_message(
-		self, message: BaseMessage, message_type: Literal['system', 'agent_state', 'browser_state', 'read_state']
-	) -> None:
+	def _set_state_message(self, message: BaseMessage, message_type: Literal['system', 'state']) -> None:
 		"""Replace a specific state message slot with a new message"""
 		# filter out sensitive data from the message
 		if self.sensitive_data:
@@ -372,12 +353,8 @@ class MessageManager:
 
 		if message_type == 'system':
 			self.state.history.system_message = message
-		elif message_type == 'agent_state':
-			self.state.history.agent_state_message = message
-		elif message_type == 'browser_state':
-			self.state.history.browser_state_message = message
-		elif message_type == 'read_state':
-			self.state.history.read_state_message = message
+		elif message_type == 'state':
+			self.state.history.state_message = message
 		else:
 			raise ValueError(f'Invalid state message type: {message_type}')
 

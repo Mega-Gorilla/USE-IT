@@ -71,25 +71,17 @@ class MessageHistory(BaseModel):
 	"""History of messages"""
 
 	system_message: BaseMessage | None = None
-	history_messages: list[BaseMessage] = Field(default_factory=list)
-	agent_state_message: BaseMessage | None = None
-	browser_state_message: BaseMessage | None = None
-	read_state_message: BaseMessage | None = None
+	state_message: BaseMessage | None = None
 	context_messages: list[BaseMessage] = Field(default_factory=list)
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	def get_messages(self) -> list[BaseMessage]:
-		"""Get all messages in the correct order: system -> history -> agent_state -> browser_state -> read_state -> contextual"""
+		"""Get all messages in the correct order: system -> state -> contextual"""
 		messages = []
 		if self.system_message:
 			messages.append(self.system_message)
-		messages.extend(self.history_messages)
-		if self.agent_state_message:
-			messages.append(self.agent_state_message)
-		if self.browser_state_message:
-			messages.append(self.browser_state_message)
-		if self.read_state_message:
-			messages.append(self.read_state_message)
+		if self.state_message:
+			messages.append(self.state_message)
 		messages.extend(self.context_messages)
 
 		return messages
