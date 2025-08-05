@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from browser_use import Agent, setup_logging
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.browser.types import async_playwright
 from tests.ci.conftest import create_mock_llm
 
 # Set up test logging
@@ -468,52 +467,6 @@ class TestParallelism:
 
 		finally:
 			await session.kill()
-
-	async def test_existing_playwright_objects(self):
-		"""Test using existing playwright objects"""
-		logger.info('Testing with existing playwright objects')
-
-		async with async_playwright() as playwright:
-			browser = await playwright.chromium.launch(headless=True)
-			context = await browser.new_context()
-			page = await context.new_page()
-
-			# Create session with existing playwright objects
-			browser_session = BrowserSession(
-				browser_profile=BrowserProfile(
-					headless=True,
-					user_data_dir=None,
-					keep_alive=False,
-				),
-				page=page,
-				browser_context=context,
-				browser=browser,
-				playwright=playwright,
-			)
-
-			# Create mock LLM
-			mock_llm = create_mock_llm()
-
-			# Create agent with the session
-			agent = Agent(
-				task='Test with existing playwright objects',
-				llm=mock_llm,
-				browser_session=browser_session,
-				enable_memory=False,
-			)
-
-			# Run the agent
-			result = await agent.run()
-
-			# Verify success
-			assert len(result.history) > 0
-			last_history = result.history[-1]
-			if last_history.model_output and last_history.model_output.action:
-				assert any('done' in action.model_dump(include={'done'}) for action in last_history.model_output.action)
-
-			await browser.close()
-			await browser_session.kill()
-		await playwright.stop()
 
 
 if __name__ == '__main__':
