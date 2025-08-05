@@ -34,6 +34,7 @@ async def test_aboutblank_watchdog_lifecycle():
 
 	finally:
 		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -61,6 +62,7 @@ async def test_aboutblank_watchdog_creates_animation_tab():
 
 	finally:
 		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -90,6 +92,7 @@ async def test_aboutblank_watchdog_handles_tab_creation():
 
 	finally:
 		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -130,6 +133,7 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 
 	finally:
 		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -167,6 +171,7 @@ async def test_aboutblank_watchdog_animation_tab_management():
 
 	finally:
 		await session.kill()
+		await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
@@ -247,3 +252,6 @@ async def test_aboutblank_watchdog_javascript_execution():
 
 		# Wait a bit more for playwright internal cleanup
 		await asyncio.sleep(1.0)
+
+		# Stop event bus to prevent hanging
+		await session.event_bus.stop(clear=True, timeout=5)

@@ -4,6 +4,7 @@ Pytest configuration for browser-use CI tests.
 Sets up environment variables to ensure tests never connect to production services.
 """
 
+import asyncio
 import os
 import socketserver
 import tempfile
@@ -238,3 +239,49 @@ def event_collector():
 			self.event_order.clear()
 
 	return EventCollector()
+
+
+@pytest.fixture(scope='session')
+def event_loop_policy():
+	"""Create a custom event loop policy that properly cleans up executors."""
+	from asyncio import DefaultEventLoopPolicy
+
+	class CleanupEventLoopPolicy(DefaultEventLoopPolicy):
+		"""Event loop policy that ensures executors are cleaned up."""
+
+		def new_event_loop(self):
+			"""Create a new event loop with cleanup behavior."""
+			loop = super().new_event_loop()
+
+			# Store original close method
+			original_close = loop.close
+
+			def close_with_executor_cleanup():
+				"""Close loop and clean up any default executor."""
+				# First, shut down the default executor if it exists
+				if hasattr(loop, '_default_executor') and getattr(loop, '_default_executor', None):
+					try:
+						# Shutdown executor and wait for threads
+						executor = getattr(loop, '_default_executor')
+						executor.shutdown(wait=True, cancel_futures=True)
+					except Exception:
+						pass  # Ignore errors during cleanup
+					finally:
+						setattr(loop, '_default_executor', None)
+
+				# Then close the loop normally
+				original_close()
+
+			# Replace close method
+			loop.close = close_with_executor_cleanup
+
+			return loop
+
+	# Set our custom policy
+	policy = CleanupEventLoopPolicy()
+	asyncio.set_event_loop_policy(policy)
+
+	yield policy
+
+	# Reset to default policy after tests
+	asyncio.set_event_loop_policy(DefaultEventLoopPolicy())

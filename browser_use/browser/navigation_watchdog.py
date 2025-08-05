@@ -216,6 +216,13 @@ class NavigationWatchdog(BaseWatchdog):
 					await asyncio.wait_for(nav_event, timeout=event.timeout_ms / 1000.0)
 				except TimeoutError:
 					logger.warning(f'Navigation to {event.url} timed out after {event.timeout_ms}ms')
+					# The nav_event is a BaseEvent from EventBus, not a Task
+					# We can't cancel it directly, but we can try to await it briefly to consume any exception
+					try:
+						await asyncio.wait_for(nav_event, timeout=0.1)
+					except (TimeoutError, asyncio.CancelledError, Exception):
+						# Expected - the navigation likely failed or timed out internally
+						pass
 					# Dispatch NavigationCompleteEvent for timeout error
 					self.event_bus.dispatch(
 						NavigationCompleteEvent(
