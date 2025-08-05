@@ -1,11 +1,16 @@
 import asyncio
 import base64
+import socketserver
 
 import pytest
 from pytest_httpserver import HTTPServer
 
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.dom.views import DOMElementNode
+
+# Fix for httpserver hanging on shutdown - prevent blocking on socket close
+socketserver.ThreadingMixIn.block_on_close = False
+socketserver.ThreadingMixIn.daemon_threads = True
 
 
 class TestBrowserContext:
@@ -67,6 +72,8 @@ class TestBrowserContext:
 		await browser_session.start()
 		yield browser_session
 		await browser_session.kill()
+		# Ensure event bus is properly stopped
+		await browser_session.event_bus.stop(clear=True, timeout=5)
 
 	def test_is_url_allowed(self):
 		"""
@@ -282,9 +289,15 @@ class TestBrowserContext:
 		# Close the second tab
 		await browser_session.close_tab(1)
 
-		# Verify we only have one tab left
+		# Verify we have the expected number of tabs
+		# The first tab remains plus any about:blank tabs created by AboutBlankWatchdog
 		tabs_info = await browser_session.get_tabs_info()
-		assert len(tabs_info) == 1, 'Should have one tab open after closing the second'
+		# Filter out about:blank tabs created by the watchdog
+		non_blank_tabs = [tab for tab in tabs_info if 'about:blank' not in tab.url]
+		assert len(non_blank_tabs) == 1, (
+			f'Should have one non-blank tab open after closing the second, but got {len(non_blank_tabs)}: {non_blank_tabs}'
+		)
+		assert base_url in non_blank_tabs[0].url, 'The remaining tab should be the home page'
 
 	@pytest.mark.asyncio
 	async def test_remove_highlights(self, browser_session, base_url):
