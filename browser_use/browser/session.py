@@ -24,11 +24,16 @@ from uuid_extensions import uuid7str
 from browser_use.browser.events import (
 	ClickElementEvent,
 	CloseTabEvent,
+	GoBackEvent,
+	GoForwardEvent,
 	NavigateToUrlEvent,
 	SaveStorageStateEvent,
 	ScreenshotEvent,
 	ScrollEvent,
+	SendKeysEvent,
 	TypeTextEvent,
+	UploadFileEvent,
+	WaitEvent,
 )
 from browser_use.browser.profile import BROWSERUSE_DEFAULT_CHANNEL, BrowserChannel, BrowserProfile
 from browser_use.browser.types import (
@@ -2695,15 +2700,13 @@ class BrowserSession(BaseModel):
 
 	async def go_back(self) -> None:
 		"""Go back in the browser history."""
-		page = await self.get_current_page()
-		if page:
-			await page.go_back()
+		event = self.event_bus.dispatch(GoBackEvent())
+		await event
 
 	async def go_forward(self) -> None:
 		"""Go forward in the browser history."""
-		page = await self.get_current_page()
-		if page:
-			await page.go_forward()
+		event = self.event_bus.dispatch(GoForwardEvent())
+		await event
 
 	async def refresh(self) -> None:
 		"""Refresh the current page."""
@@ -2727,9 +2730,24 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(TypeTextEvent(index=index, text=text))
 		await event
 
-	async def scroll(self, direction: Literal['up', 'down', 'left', 'right'], amount: int) -> None:
-		"""Scroll the page."""
-		event = self.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount))
+	async def scroll(self, direction: Literal['up', 'down', 'left', 'right'], amount: int, element_index: int | None = None) -> None:
+		"""Scroll the page or element."""
+		event = self.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount, element_index=element_index))
+		await event
+
+	async def wait(self, seconds: float = 3.0) -> None:
+		"""Wait for specified seconds."""
+		event = self.event_bus.dispatch(WaitEvent(seconds=seconds))
+		await event
+
+	async def send_keys(self, keys: str) -> None:
+		"""Send keyboard keys/shortcuts."""
+		event = self.event_bus.dispatch(SendKeysEvent(keys=keys))
+		await event
+
+	async def upload_file(self, element_index: int, file_path: str) -> None:
+		"""Upload file to element."""
+		event = self.event_bus.dispatch(UploadFileEvent(element_index=element_index, file_path=file_path))
 		await event
 
 	# Model copy support
