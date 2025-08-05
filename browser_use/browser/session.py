@@ -239,9 +239,13 @@ class BrowserSession(BaseModel):
 
 			# Connect via CDP
 			self._playwright = await async_playwright().start()
+
+			# Get connection kwargs and exclude accept_downloads when using CDP download behavior
+			connect_kwargs = self.browser_profile.kwargs_for_connect().model_dump(exclude={'accept_downloads'})
+
 			self._browser = await self._playwright.chromium.connect_over_cdp(
 				self.cdp_url,
-				**self.browser_profile.kwargs_for_connect().model_dump(),
+				**connect_kwargs,
 			)
 
 			# Enable downloads via CDP Browser.setDownloadBehavior
@@ -853,7 +857,7 @@ class BrowserSession(BaseModel):
 					id=f'tab_{i}',
 					index=i,
 				)
-				tabs.append(tab_info.model_dump())
+				tabs.append(tab_info)
 		return tabs
 
 	# DOM element methods
