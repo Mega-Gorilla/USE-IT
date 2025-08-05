@@ -131,7 +131,31 @@ class MessageManager:
 	@property
 	def agent_history_description(self) -> str:
 		"""Build agent history description from list of items, respecting max_history_items limit"""
-		return self._get_history_description()
+		if self.max_history_items is None:
+			# Include all items
+			return '\n'.join(item.to_string() for item in self.state.agent_history_items)
+
+		total_items = len(self.state.agent_history_items)
+
+		# If we have fewer items than the limit, just return all items
+		if total_items <= self.max_history_items:
+			return '\n'.join(item.to_string() for item in self.state.agent_history_items)
+
+		# We have more items than the limit, so we need to omit some
+		omitted_count = total_items - self.max_history_items
+
+		# Show first item + omitted message + most recent (max_history_items - 1) items
+		# The omitted message doesn't count against the limit, only real history items do
+		recent_items_count = self.max_history_items - 1  # -1 for first item
+
+		items_to_include = [
+			self.state.agent_history_items[0].to_string(),  # Keep first item (initialization)
+			f'<sys>[... {omitted_count} previous steps omitted...]</sys>',
+		]
+		# Add most recent items
+		items_to_include.extend([item.to_string() for item in self.state.agent_history_items[-recent_items_count:]])
+
+		return '\n'.join(items_to_include)
 
 	def add_new_task(self, new_task: str) -> None:
 		self.task = new_task
@@ -247,9 +271,9 @@ class MessageManager:
 		if browser_state_summary.screenshot:
 			screenshots.append(browser_state_summary.screenshot)
 
-		# Create the message prompt helper with history description
+		# Create single state message with all content
 		assert browser_state_summary
-		message_prompt = AgentMessagePrompt(
+		state_message = AgentMessagePrompt(
 			browser_state_summary=browser_state_summary,
 			file_system=self.file_system,
 			agent_history_description=self.agent_history_description,
@@ -262,10 +286,7 @@ class MessageManager:
 			available_file_paths=available_file_paths,
 			screenshots=screenshots,
 			vision_detail_level=self.vision_detail_level,
-		)
-
-		# Create single state message with all content
-		state_message = message_prompt.get_user_message(use_vision)
+		).get_user_message(use_vision)
 
 		# Set the state message with caching enabled
 		self._set_message_with_type(state_message, 'state')
@@ -316,35 +337,6 @@ class MessageManager:
 		self.last_input_messages = self.state.history.get_messages()
 		return self.last_input_messages
 
-	def _get_history_description(self) -> str:
-		"""Build agent history description from list of items, respecting max_history_items limit"""
-		history_items = self.state.agent_history_items
-
-		if self.max_history_items is None:
-			# Include all items
-			items_to_include = history_items
-		else:
-			total_items = len(history_items)
-
-			# If we have fewer items than the limit, just return all items
-			if total_items <= self.max_history_items:
-				items_to_include = history_items
-			else:
-				# We have more items than the limit, so we need to omit some
-				omitted_count = total_items - self.max_history_items
-				recent_items_count = self.max_history_items - 1  # -1 for first item
-
-				# Include first item + most recent items
-				items_to_include = [history_items[0]] + history_items[-recent_items_count:]
-
-				# Create an omitted message and insert it between first and recent items
-				if omitted_count > 0:
-					omitted_item = HistoryItem(system_message=f'[... {omitted_count} previous steps omitted...]')
-					items_to_include = [history_items[0], omitted_item] + history_items[-recent_items_count:]
-
-		# Convert items to strings
-		return '\n'.join(item.to_string() for item in items_to_include)
-
 	def _set_message_with_type(self, message: BaseMessage, message_type: Literal['system', 'state']) -> None:
 		"""Replace a specific state message slot with a new message"""
 		# filter out sensitive data from the message
@@ -359,7 +351,7 @@ class MessageManager:
 			raise ValueError(f'Invalid state message type: {message_type}')
 
 	def _add_context_message(self, message: BaseMessage) -> None:
-		"""Add a contextual message that persists across steps (e.g., page-specific actions, final step warnings)"""
+		"""Add a contextual message specific to this step (e.g., validation errors, retry instructions, timeout warnings)"""
 		# filter out sensitive data from the message
 		if self.sensitive_data:
 			message = self._filter_sensitive_data(message)

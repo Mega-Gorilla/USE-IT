@@ -168,7 +168,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_actions_per_step: int = 10,
 		use_thinking: bool = True,
 		flash_mode: bool = False,
-		max_history_items: int = 40,
+		max_history_items: int | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		planner_llm: BaseChatModel | None = None,  # Deprecated
 		planner_interval: int = 1,  # Deprecated
@@ -810,11 +810,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 		self.state.consecutive_failures += 1
 
+		# TODO: figure out what to do here
 		if isinstance(error, (ValidationError, ValueError)):
 			self.logger.error(f'{prefix}{error_msg}')
+			# Add context message to help model fix validation errors
+			validation_hint = 'Your output format was invalid. Please follow the exact schema structure required for actions.'
+			# self._message_manager._add_context_message(UserMessage(content=validation_hint))
+
 			if 'Max token limit reached' in error_msg:
-				# TODO: figure out what to do here
-				pass
+				token_hint = 'Your response was too long. Keep your thinking and output concise.'
+				# self._message_manager._add_context_message(UserMessage(content=token_hint))
 		# Handle InterruptedError specially
 		elif isinstance(error, InterruptedError):
 			error_msg = 'The agent was interrupted mid-step' + (f' - {error}' if error else '')
@@ -824,6 +829,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			logger.debug(f'Model: {self.llm.model} failed')
 			error_msg += '\n\nReturn a valid JSON object with the required fields.'
 			logger.error(f'{prefix}{error_msg}')
+			# Add context message to help model fix parsing errors
+			parse_hint = 'Your response could not be parsed. Return a valid JSON object with the required fields.'
+			# self._message_manager._add_context_message(UserMessage(content=parse_hint))
 		else:
 			from anthropic import RateLimitError as AnthropicRateLimitError
 			from google.api_core.exceptions import ResourceExhausted
