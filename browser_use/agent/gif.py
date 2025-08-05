@@ -61,28 +61,22 @@ def create_history_gif(
 		logger.warning('No history to create GIF from')
 		return
 
+	# Get all screenshots from history (including None placeholders)
+	screenshots = history.screenshots(return_none_if_not_screenshot=True)
+
+	if not screenshots:
+		logger.warning('No screenshots found in history')
+		return
+
 	# Find the first non-placeholder screenshot
 	# A screenshot is considered a placeholder if:
 	# 1. It's the exact 4px placeholder for about:blank pages, OR
 	# 2. It comes from a new tab page (chrome://newtab/, about:blank, etc.)
 	first_real_screenshot = None
-	for item in history.history:
-		if not item.state.screenshot:
-			continue
-
-		# Skip exact placeholder screenshots
-		if item.state.screenshot == PLACEHOLDER_4PX_SCREENSHOT:
-			continue
-
-		# Skip screenshots from new tab pages
-		from browser_use.utils import is_new_tab_page
-
-		if is_new_tab_page(item.state.url):
-			continue
-
-		# This is a real screenshot from actual web content
-		first_real_screenshot = item.state.screenshot
-		break
+	for screenshot in screenshots:
+		if screenshot and screenshot != PLACEHOLDER_4PX_SCREENSHOT:
+			first_real_screenshot = screenshot
+			break
 
 	if not first_real_screenshot:
 		logger.warning('No valid screenshots found (all are placeholders or from new tab pages)')
@@ -145,8 +139,9 @@ def create_history_gif(
 		# Find the first non-placeholder screenshot for the task frame
 		first_real_screenshot = None
 		for item in history.history:
-			if item.state.screenshot and item.state.screenshot != PLACEHOLDER_4PX_SCREENSHOT:
-				first_real_screenshot = item.state.screenshot
+			screenshot_b64 = item.state.get_screenshot()
+			if screenshot_b64 and screenshot_b64 != PLACEHOLDER_4PX_SCREENSHOT:
+				first_real_screenshot = screenshot_b64
 				break
 
 		if first_real_screenshot:
@@ -162,14 +157,14 @@ def create_history_gif(
 		else:
 			logger.warning('No real screenshots found for task frame, skipping task frame')
 
-	# Process each history item
-	for i, item in enumerate(history.history, 1):
-		if not item.state.screenshot:
+	# Process each history item with its corresponding screenshot
+	for i, (item, screenshot) in enumerate(zip(history.history, screenshots), 1):
+		if not screenshot:
 			continue
 
 		# Skip placeholder screenshots from about:blank pages
 		# These are 4x4 white PNGs encoded as a specific base64 string
-		if item.state.screenshot == PLACEHOLDER_4PX_SCREENSHOT:
+		if screenshot == PLACEHOLDER_4PX_SCREENSHOT:
 			logger.debug(f'Skipping placeholder screenshot from about:blank page at step {i}')
 			continue
 
@@ -181,7 +176,7 @@ def create_history_gif(
 			continue
 
 		# Convert base64 screenshot to PIL Image
-		img_data = base64.b64decode(item.state.screenshot)
+		img_data = base64.b64decode(screenshot)
 		image = Image.open(io.BytesIO(img_data))
 
 		if show_goals and item.model_output:
