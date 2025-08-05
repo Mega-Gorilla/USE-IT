@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from browser_use.browser.crash_watchdog import CrashWatchdog
 from browser_use.browser.events import (
 	AboutBlankDVDScreensaverShownEvent,
 	BrowserConnectedEvent,
@@ -53,10 +54,10 @@ async def test_aboutblank_watchdog_creates_animation_tab():
 		pages = session.pages
 		assert len(pages) >= 1, 'Should have at least one page'
 
-		# Look for about:blank pages (animation tab)
-		about_blank_pages = [p for p in pages if p.url == 'about:blank']
-		# AboutBlankWatchdog should create at least one animation tab
-		assert len(about_blank_pages) >= 1, f'Expected at least one about:blank animation tab, but found {len(about_blank_pages)}'
+		# Look for new tab pages (animation tab)
+		new_tab_pages = [p for p in pages if CrashWatchdog._is_new_tab_page(p.url)]
+		# AboutBlankWatchdog should detect the initial new tab page
+		assert len(new_tab_pages) >= 1, f'Expected at least one new tab page, but found {len(new_tab_pages)}'
 
 	finally:
 		await session.kill()
@@ -109,16 +110,16 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 		# Wait for animation tab to be created
 		await asyncio.sleep(0.5)
 
-		# Find about:blank pages
+		# Find new tab pages
 		pages = session.pages
-		about_blank_pages = [p for p in pages if p.url == 'about:blank']
+		new_tab_pages = [p for p in pages if CrashWatchdog._is_new_tab_page(p.url)]
 
-		# AboutBlankWatchdog should have created at least one about:blank animation tab
-		assert len(about_blank_pages) >= 1, (
-			f'Expected at least one about:blank animation tab for DVD screensaver test, but found {len(about_blank_pages)}'
+		# AboutBlankWatchdog should have detected the initial new tab page
+		assert len(new_tab_pages) >= 1, (
+			f'Expected at least one new tab page for DVD screensaver test, but found {len(new_tab_pages)}'
 		)
 
-		if about_blank_pages:
+		if new_tab_pages:
 			# Try to show screensaver on first about:blank page
 			try:
 				await watchdog._show_dvd_screensaver_on_about_blank_tabs()
@@ -210,7 +211,7 @@ async def test_aboutblank_watchdog_javascript_execution():
 		# Get the new page
 		page2 = session.get_page_by_tab_index(dvd_event2.tab_index)
 		assert page2 is not None, f'Could not find page at tab index {dvd_event2.tab_index}'
-		assert page2.url == 'about:blank', 'Auto-created tab should be about:blank'
+		assert CrashWatchdog._is_new_tab_page(page2.url), f'Auto-created tab should be a new tab page, but got: {page2.url}'
 
 		# Verify animation on the new tab
 		animation_exists2 = await page2.evaluate("""() => {

@@ -1,5 +1,6 @@
 """Downloads watchdog for monitoring and handling file downloads."""
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -108,16 +109,111 @@ class DownloadsWatchdog(BaseWatchdog):
 				logger.debug(f'[DownloadsWatchdog] Download listener already exists for page: {page.url}')
 				return
 
-			logger.info(f'[DownloadsWatchdog] Setting up download listener for page: {page.url}')
+			logger.info(f'[DownloadsWatchdog] Setting up CDP download listener for page: {page.url}')
 
-			# Set up Playwright download event listener
-			page.on('download', self._handle_download)
+			# Use raw CDP Page.downloadWillBegin events instead of Playwright's download events
+			# This is required when connected via CDP as Playwright download events don't work reliably
+			cdp_session = await page.context.new_cdp_session(page)
+
+			# Enable Page domain events
+			await cdp_session.send('Page.enable')
+
+			# Set up CDP download listener
+			cdp_session.on(
+				'Page.downloadWillBegin', lambda event: asyncio.create_task(self._handle_cdp_download(event, page, cdp_session))
+			)
+
 			# Track that we've added a listener to prevent duplicates
 			self._pages_with_listeners.add(page)
-			logger.info(f'[DownloadsWatchdog] Successfully set up download listener for page: {page.url}')
+			logger.info(f'[DownloadsWatchdog] Successfully set up CDP download listener for page: {page.url}')
 
 		except Exception as e:
-			logger.warning(f'[DownloadsWatchdog] Failed to set up download listener for page {page.url}: {e}')
+			logger.warning(f'[DownloadsWatchdog] Failed to set up CDP download listener for page {page.url}: {e}')
+
+	async def _handle_cdp_download(self, event: dict, page: Page, cdp_session) -> None:
+		"""Handle a CDP Page.downloadWillBegin event."""
+		try:
+			download_url = event.get('url', '')
+			suggested_filename = event.get('suggestedFilename', 'download')
+			guid = event.get('guid', '')
+
+			logger.info(f'[DownloadsWatchdog] CDP download will begin: {suggested_filename} from {download_url[:100]}...')
+
+			# Get download directory
+			downloads_dir = self.browser_session.browser_profile.downloads_path
+			if not downloads_dir:
+				downloads_dir = str(Path.home() / 'Downloads')
+			else:
+				downloads_dir = str(downloads_dir)
+
+			# Generate unique filename
+			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
+			download_path = Path(downloads_dir) / unique_filename
+
+			# Use CDP Browser.downloadProgress to get the actual download data
+			# We need to wait for the download to complete and then get its data
+			logger.info(f'[DownloadsWatchdog] Waiting for CDP download to complete: {guid}')
+
+			# Wait for download completion via CDP events
+			download_complete = False
+			download_data = b''
+
+			def on_download_progress(progress_event):
+				nonlocal download_complete, download_data
+				if progress_event.get('guid') == guid:
+					state = progress_event.get('state', '')
+					if state == 'completed':
+						download_complete = True
+						logger.info(f'[DownloadsWatchdog] CDP download completed: {guid}')
+
+			# Listen for download progress
+			cdp_session.on('Browser.downloadProgress', on_download_progress)
+
+			# Wait for download to complete (up to 30 seconds)
+			for _ in range(150):  # 150 * 0.2s = 30s timeout
+				if download_complete:
+					break
+				await asyncio.sleep(0.2)
+
+			if not download_complete:
+				logger.error(f'[DownloadsWatchdog] CDP download timed out: {guid}')
+				return
+
+			# The download should now be in the downloads directory set by Browser.setDownloadBehavior
+			# Check if the file exists at the expected location
+			expected_path = Path(downloads_dir) / suggested_filename
+			if expected_path.exists() and expected_path.stat().st_size > 0:
+				download_path = expected_path
+				file_size = expected_path.stat().st_size
+				logger.info(f'[DownloadsWatchdog] Found completed download: {download_path} ({file_size} bytes)')
+			else:
+				logger.warning(f'[DownloadsWatchdog] CDP download completed but file not found: {expected_path}')
+				return
+
+			# Determine file type from extension
+			file_ext = download_path.suffix.lower().lstrip('.')
+			file_type = file_ext if file_ext else None
+
+			# Emit download event
+			self.event_bus.dispatch(
+				FileDownloadedEvent(
+					url=download_url,
+					path=str(download_path),
+					file_name=suggested_filename,
+					file_size=file_size,
+					file_type=file_type,
+					mime_type=None,
+					from_cache=False,
+					auto_download=False,
+				)
+			)
+
+			logger.info(
+				f'[DownloadsWatchdog] CDP download completed: {suggested_filename} ({file_size} bytes) saved to {download_path}'
+			)
+
+		except Exception as e:
+			logger.error(f'[DownloadsWatchdog] Error handling CDP download: {e}')
 
 	async def _handle_download(self, download: Download) -> None:
 		"""Handle a download event."""
