@@ -819,9 +819,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				continue
 
 		if extension_paths:
-			logger.debug(f'🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
+			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
 		else:
-			logger.warning('⚠️ No default extensions could be loaded')
+			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
 
 		return extension_paths
 

@@ -108,6 +108,14 @@ class BrowserSession(BaseModel):
 			self._logger = logging.getLogger(f'browser_use.{self}')
 		return self._logger
 
+	def __repr__(self) -> str:
+		port_number_or_pid = (self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
+		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]} (cdp_url={self.cdp_url}, profile={self.browser_profile})'
+
+	def __str__(self) -> str:
+		port_number_or_pid = (self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
+		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]}'
+
 	def __init__(
 		self,
 		browser_profile: BrowserProfile | None = None,
@@ -198,30 +206,30 @@ class BrowserSession(BaseModel):
 		try:
 			if self.is_local and not self.cdp_url:
 				# Launch local browser using event-driven approach
-				logger.info('[Session] Dispatching BrowserLaunchEvent')
-				logger.info(
+				# logger.info('[Session] Dispatching BrowserLaunchEvent')
+				logger.debug(
 					f'[Session] EventBus ID: {id(self.event_bus)}, has {len(self.event_bus.handlers)} handlers registered'
 				)
 
 				# Debug: Check what handlers are registered for BrowserLaunchEvent
 				from browser_use.browser.events import BrowserLaunchEvent
 
-				logger.info(
-					f'[Session] BrowserLaunchEvent class ID: {id(BrowserLaunchEvent)}, module: {BrowserLaunchEvent.__module__}'
-				)
+				# logger.debug(
+				# 	f'[Session] BrowserLaunchEvent class ID: {id(BrowserLaunchEvent)}, module: {BrowserLaunchEvent.__module__}'
+				# )
 
 				# Debug: Check all registered event types
-				logger.info(f'[Session] All registered event types: {list(self.event_bus.handlers.keys())}')
+				logger.debug(f'[Session] All registered event types: {", ".join(self.event_bus.handlers.keys())}')
 
 				# Debug: Check handlers dictionary structure
 				for event_type, handlers_list in self.event_bus.handlers.items():
 					if str(event_type) == "<class 'browser_use.browser.events.BrowserLaunchEvent'>":
-						logger.info(
+						logger.debug(
 							f'[Session] Found BrowserLaunchEvent in handlers: {event_type} (ID: {id(event_type)}) has {len(handlers_list)} handlers'
 						)
-						logger.info(f'[Session] Handler names: {[h for h in handlers_list]}')
+						logger.debug(f'[Session] Handler names: {[h for h in handlers_list]}')
 					elif hasattr(event_type, '__name__') and 'BrowserLaunchEvent' in str(event_type):
-						logger.info(
+						logger.debug(
 							f'[Session] Found BrowserLaunchEvent by name: {event_type} (ID: {id(event_type)}) has {len(handlers_list)} handlers'
 						)
 
@@ -251,16 +259,16 @@ class BrowserSession(BaseModel):
 			# Enable downloads via CDP Browser.setDownloadBehavior
 			if self.browser_profile.downloads_path:
 				try:
-					logger.info('[Session] Attempting to set Browser.setDownloadBehavior...')
+					# logger.debug('[Session] Attempting to set Browser.setDownloadBehavior...')
 					# Get CDP session for the browser (not a specific page)
 					cdp_session = await self._browser.new_browser_cdp_session()
-					logger.info(f'[Session] Got CDP session: {cdp_session}')
+					# logger.debug(f'[Session] Got CDP session: {cdp_session}')
 					result = await cdp_session.send(
 						'Browser.setDownloadBehavior',
 						{'behavior': 'allow', 'downloadPath': str(self.browser_profile.downloads_path)},
 					)
-					logger.info(f'[Session] Browser.setDownloadBehavior result: {result}')
-					logger.info(
+					# logger.debug(f'[Session] Browser.setDownloadBehavior result: {result}')
+					logger.debug(
 						f'[Session] Enabled downloads via Browser.setDownloadBehavior to: {self.browser_profile.downloads_path}'
 					)
 				except Exception as e:
@@ -1683,7 +1691,7 @@ class BrowserSession(BaseModel):
 					watchdog = watchdog_class(event_bus=self.event_bus, browser_session=self)
 					await watchdog.attach_to_session()
 					setattr(self, attr_name, watchdog)
-					logger.info(f'[Session] Initialized and attached {watchdog_class.__name__}')
+					# logger.debug(f'[Session] Initialized and attached {watchdog_class.__name__}')
 				except Exception as e:
 					logger.warning(f'[Session] Failed to initialize {watchdog_class.__name__}: {e}')
 			else:

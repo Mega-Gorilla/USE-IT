@@ -60,14 +60,14 @@ class DownloadsWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Monitor new tabs for downloads."""
-		logger.info(f'[DownloadsWatchdog] TabCreatedEvent received for tab {event.tab_index}: {event.url}')
+		# logger.info(f'[DownloadsWatchdog] TabCreatedEvent received for tab {event.tab_index}: {event.url}')
 
 		# Assert downloads path is configured (should always be set by BrowserProfile default)
 		assert self.browser_session.browser_profile.downloads_path is not None, 'Downloads path must be configured'
 
 		page = self.browser_session.get_page_by_tab_index(event.tab_index)
 		if page:
-			logger.info(f'[DownloadsWatchdog] Found page for tab {event.tab_index}, calling attach_to_page')
+			# logger.info(f'[DownloadsWatchdog] Found page for tab {event.tab_index}, calling attach_to_page')
 			await self.attach_to_page(page)
 		else:
 			logger.warning(f'[DownloadsWatchdog] No page found for tab {event.tab_index}')
@@ -100,7 +100,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		try:
 			downloads_path_raw = self.browser_session.browser_profile.downloads_path
 			if not downloads_path_raw:
-				logger.info(f'[DownloadsWatchdog] No downloads path configured, skipping page: {page.url}')
+				# logger.info(f'[DownloadsWatchdog] No downloads path configured, skipping page: {page.url}')
 				return  # No downloads path configured
 
 			# Check if we already have a download listener on this page
@@ -109,35 +109,42 @@ class DownloadsWatchdog(BaseWatchdog):
 				logger.debug(f'[DownloadsWatchdog] Download listener already exists for page: {page.url}')
 				return
 
-			logger.info(f'[DownloadsWatchdog] Setting up CDP download listener for page: {page.url}')
+			# logger.debug(f'[DownloadsWatchdog] Setting up CDP download listener for page: {page.url}')
 
-			# Use raw CDP Page.downloadWillBegin events instead of Playwright's download events
-			# This is required when connected via CDP as Playwright download events don't work reliably
-			cdp_session = await page.context.new_cdp_session(page)
+			# Use page-level CDP session for download events but store reference in watchdog
+			if not self._download_cdp_session_setup:
+				# Set up page-level CDP session for downloads (only once per browser session)
+				cdp_session = await page.context.new_cdp_session(page)
+				await cdp_session.send('Page.enable')
 
-			# Enable Page domain events
-			await cdp_session.send('Page.enable')
+				# Set up download event listener
+				def download_handler(event):
+					logger.info(f'[DownloadsWatchdog] Download event triggered: {event}')
+					# Find the correct page for this download
+					current_page = page  # Default to current page
+					asyncio.create_task(self._handle_cdp_download(event, current_page))
 
-			# Set up CDP download listener
-			cdp_session.on(
-				'Page.downloadWillBegin', lambda event: asyncio.create_task(self._handle_cdp_download(event, page, cdp_session))
-			)
+				cdp_session.on('Page.downloadWillBegin', download_handler)
+				self._download_cdp_session_setup = True
+				self._download_cdp_session = cdp_session
+				logger.debug('[DownloadsWatchdog] Set up page-level CDP download listener')
 
 			# Track that we've added a listener to prevent duplicates
 			self._pages_with_listeners.add(page)
-			logger.info(f'[DownloadsWatchdog] Successfully set up CDP download listener for page: {page.url}')
+			# logger.debug(f'[DownloadsWatchdog] Successfully set up CDP download listener for page: {page.url}')
 
 		except Exception as e:
 			logger.warning(f'[DownloadsWatchdog] Failed to set up CDP download listener for page {page.url}: {e}')
 
-	async def _handle_cdp_download(self, event: dict, page: Page, cdp_session) -> None:
+	async def _handle_cdp_download(self, event: dict, page: Page, cdp_session=None) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
 		try:
 			download_url = event.get('url', '')
 			suggested_filename = event.get('suggestedFilename', 'download')
 			guid = event.get('guid', '')
 
-			logger.info(f'[DownloadsWatchdog] CDP download will begin: {suggested_filename} from {download_url[:100]}...')
+			logger.info(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
+			logger.debug(f'[DownloadsWatchdog] Full CDP event: {event}')
 
 			# Get download directory
 			downloads_dir = self.browser_session.browser_profile.downloads_path
@@ -146,85 +153,109 @@ class DownloadsWatchdog(BaseWatchdog):
 			else:
 				downloads_dir = str(downloads_dir)
 
-			# Generate unique filename
-			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
-			download_path = Path(downloads_dir) / unique_filename
-
-			# Use CDP Browser.downloadProgress to get the actual download data
-			# We need to wait for the download to complete and then get its data
-			logger.info(f'[DownloadsWatchdog] Waiting for CDP download to complete: {guid}')
-
-			# Wait for download completion via CDP events
-			download_complete = False
-			download_data = b''
-
-			def on_download_progress(progress_event):
-				nonlocal download_complete, download_data
-				if progress_event.get('guid') == guid:
-					state = progress_event.get('state', '')
-					if state == 'completed':
-						download_complete = True
-						logger.info(f'[DownloadsWatchdog] CDP download completed: {guid}')
-
-			# Listen for download progress
-			cdp_session.on('Browser.downloadProgress', on_download_progress)
-
-			# Wait for download to complete (up to 30 seconds)
-			for _ in range(150):  # 150 * 0.2s = 30s timeout
-				if download_complete:
-					break
-				await asyncio.sleep(0.2)
-
-			if not download_complete:
-				logger.error(f'[DownloadsWatchdog] CDP download timed out: {guid}')
-				return
-
-			# The download should now be in the downloads directory set by Browser.setDownloadBehavior
-			# Check if the file exists at the expected location
+			# Since Browser.setDownloadBehavior is already configured, the browser will download the file
+			# We just need to wait for it to appear in the downloads directory
 			expected_path = Path(downloads_dir) / suggested_filename
-			if expected_path.exists() and expected_path.stat().st_size > 0:
-				download_path = expected_path
-				file_size = expected_path.stat().st_size
-				logger.info(f'[DownloadsWatchdog] Found completed download: {download_path} ({file_size} bytes)')
-			else:
-				logger.warning(f'[DownloadsWatchdog] CDP download completed but file not found: {expected_path}')
+
+			# Debug: List current directory contents
+			logger.info(f'[DownloadsWatchdog] Downloads directory: {downloads_dir}')
+			if Path(downloads_dir).exists():
+				files_before = list(Path(downloads_dir).iterdir())
+				logger.info(f'[DownloadsWatchdog] Files before download: {[f.name for f in files_before]}')
+
+			# Browser.setDownloadBehavior doesn't work reliably with CDP connections
+			# So we'll download the file manually using JavaScript fetch
+			logger.info(f'[DownloadsWatchdog] Downloading file manually via fetch: {download_url}')
+
+			try:
+				# Escape the URL for JavaScript
+				import json
+
+				escaped_url = json.dumps(download_url)
+
+				download_result = await page.evaluate(f"""
+				async () => {{
+					try {{
+						const response = await fetch({escaped_url});
+						if (!response.ok) {{
+							throw new Error(`HTTP error! status: ${{response.status}}`);
+						}}
+						const blob = await response.blob();
+						const arrayBuffer = await blob.arrayBuffer();
+						const uint8Array = new Uint8Array(arrayBuffer);
+						return {{
+							data: Array.from(uint8Array),
+							size: uint8Array.length,
+							contentType: response.headers.get('content-type') || 'application/octet-stream'
+						}};
+					}} catch (error) {{
+						throw new Error(`Fetch failed: ${{error.message}}`);
+					}}
+				}}
+				""")
+
+				if download_result and download_result.get('data'):
+					# Save the file
+					file_data = bytes(download_result['data'])
+					file_size = len(file_data)
+
+					# Ensure unique filename
+					unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
+					final_path = Path(downloads_dir) / unique_filename
+
+					# Write the file
+					import anyio
+
+					async with await anyio.open_file(final_path, 'wb') as f:
+						await f.write(file_data)
+
+					logger.info(f'[DownloadsWatchdog] ✅ Downloaded and saved file: {final_path} ({file_size} bytes)')
+					expected_path = final_path
+				else:
+					logger.error('[DownloadsWatchdog] ❌ No data received from fetch')
+					return
+
+			except Exception as fetch_error:
+				logger.error(f'[DownloadsWatchdog] ❌ Failed to download file via fetch: {fetch_error}')
 				return
 
 			# Determine file type from extension
-			file_ext = download_path.suffix.lower().lstrip('.')
+			file_ext = expected_path.suffix.lower().lstrip('.')
 			file_type = file_ext if file_ext else None
 
 			# Emit download event
 			self.event_bus.dispatch(
 				FileDownloadedEvent(
 					url=download_url,
-					path=str(download_path),
-					file_name=suggested_filename,
+					path=str(expected_path),
+					file_name=unique_filename,
 					file_size=file_size,
 					file_type=file_type,
-					mime_type=None,
+					mime_type=download_result.get('contentType'),
 					from_cache=False,
 					auto_download=False,
 				)
 			)
 
 			logger.info(
-				f'[DownloadsWatchdog] CDP download completed: {suggested_filename} ({file_size} bytes) saved to {download_path}'
+				f'[DownloadsWatchdog] ✅ File download completed via CDP: {suggested_filename} ({file_size} bytes) saved to {expected_path}'
 			)
 
 		except Exception as e:
-			logger.error(f'[DownloadsWatchdog] Error handling CDP download: {e}')
+			logger.error(f'[DownloadsWatchdog] ❌ Error handling CDP download: {e}')
 
 	async def _handle_download(self, download: Download) -> None:
 		"""Handle a download event."""
 		download_id = f'{id(download)}'
 		self._active_downloads[download_id] = download
-		logger.info(f'[DownloadsWatchdog] Handling download: {download.suggested_filename} from {download.url[:100]}...')
+		logger.info(f'[DownloadsWatchdog] ⬇️ Handling download: {download.suggested_filename} from {download.url[:100]}...')
 
 		# Debug: Check if download is already being handled elsewhere
-		failure = await download.failure()
-		logger.info(f'[DownloadsWatchdog] Download state - canceled: {failure}, url: {download.url}')
-		logger.info(f'[DownloadsWatchdog] Active downloads count: {len(self._active_downloads)}')
+		failure = (
+			await download.failure()
+		)  # TODO: it always fails for some reason, figure out why connect_over_cdp makes accept_downloads not work
+		logger.warning(f'[DownloadsWatchdog] ❌ Download state - canceled: {failure}, url: {download.url}')
+		# logger.info(f'[DownloadsWatchdog] Active downloads count: {len(self._active_downloads)}')
 
 		try:
 			current_step = 'getting_download_info'
@@ -345,7 +376,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				() => {
 					// Check for Chrome's built-in PDF viewer (both old and new selectors)
 					const pdfEmbed = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
-									 document.querySelector('embed[type="application/pdf"]');
+									document.querySelector('embed[type="application/pdf"]');
 					if (pdfEmbed && pdfEmbed.src) {
 						return {
 							isPdf: true,
@@ -399,7 +430,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 			if is_pdf_viewer.get('isPdf', False):
 				logger.info(
-					f'[DownloadsWatchdog] PDF detected: {is_pdf_viewer.get("url", "unknown")} '
+					f'[DownloadsWatchdog] 📄 PDF detected: {is_pdf_viewer.get("url", "unknown")} '
 					f'(type: {"Chrome viewer" if is_pdf_viewer.get("isChromePdfViewer") else "direct PDF"})'
 				)
 				self._pdf_viewer_cache[page_url] = True
@@ -409,11 +440,11 @@ class DownloadsWatchdog(BaseWatchdog):
 			return False
 
 		except TimeoutError:
-			logger.debug(f'[DownloadsWatchdog] PDF check timed out for page: {page_url}')
+			logger.warning(f'[DownloadsWatchdog] ❌ PDF check timed out for page: {page_url}')
 			self._pdf_viewer_cache[page_url] = False
 			return False
 		except Exception as e:
-			logger.debug(f'[DownloadsWatchdog] Error checking for PDF viewer: {e}')
+			logger.warning(f'[DownloadsWatchdog] ❌ Error checking for PDF viewer: {e}')
 			self._pdf_viewer_cache[page_url] = False
 			return False
 
@@ -423,13 +454,13 @@ class DownloadsWatchdog(BaseWatchdog):
 		Returns the download path if successful, None otherwise.
 		"""
 		if not self.browser_session.browser_profile.downloads_path:
-			logger.warning('[DownloadsWatchdog] No downloads path configured')
+			logger.warning(f'[DownloadsWatchdog] ❌ No downloads path configured, cannot save PDF download for {page.url[:100]}')
 			return None
 
 		try:
 			# Check if page is still valid before evaluation
 			if page.is_closed():
-				logger.debug('[DownloadsWatchdog] Page is closed, cannot trigger PDF download')
+				logger.error(f'[DownloadsWatchdog] ❌ Page is closed, cannot trigger PDF download for {page.url[:100]}')
 				return None
 
 			# Try to get the PDF URL with timeout
@@ -439,7 +470,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				page.evaluate("""
 				() => {
 					const embedElement = document.querySelector('embed[type="application/x-google-chrome-pdf"]') ||
-									   document.querySelector('embed[type="application/pdf"]');
+										document.querySelector('embed[type="application/pdf"]');
 					if (embedElement && embedElement.src) {
 						return { url: embedElement.src };
 					}
@@ -451,7 +482,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 			pdf_url = pdf_info.get('url', '')
 			if not pdf_url:
-				logger.warning('[DownloadsWatchdog] Could not determine PDF URL for download')
+				logger.warning(f'[DownloadsWatchdog] ❌ Could not determine PDF URL for download {pdf_info}')
 				return None
 
 			# Generate filename from URL
@@ -467,10 +498,10 @@ class DownloadsWatchdog(BaseWatchdog):
 			if os.path.exists(downloads_dir):
 				existing_files = os.listdir(downloads_dir)
 				if pdf_filename in existing_files:
-					logger.debug(f'[DownloadsWatchdog] PDF already downloaded: {pdf_filename}')
+					logger.debug(f'[DownloadsWatchdog] ✅ PDF already downloaded: {pdf_filename}')
 					return None
 
-			logger.info(f'[DownloadsWatchdog] Auto-downloading PDF from: {pdf_url[:100]}...')
+			logger.info(f'[DownloadsWatchdog] ⬇️ Downloading PDF file from: {pdf_url[:100]}...')
 
 			# Download using JavaScript fetch to leverage browser cache
 			try:
@@ -529,7 +560,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					cache_status = 'from cache' if download_result.get('fromCache') else 'from network'
 					response_size = download_result.get('responseSize', 0)
 					logger.info(
-						f'[DownloadsWatchdog] Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}'
+						f'[DownloadsWatchdog] ✅ Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}'
 					)
 
 					# Emit file downloaded event

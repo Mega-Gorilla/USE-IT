@@ -48,7 +48,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser starts."""
-		logger.info('[StorageStateWatchdog] Browser started, initializing storage monitoring')
+		logger.info('[StorageStateWatchdog] 🍪 Initializing auth/cookies sync <-> with storage_state.json file')
 
 		# Start monitoring
 		await self._start_monitoring()
@@ -58,18 +58,18 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Stop monitoring and save state when browser stop is requested."""
-		logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage state')
+		logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage_state.json')
 
 		# Save storage state before stopping and wait for completion
-		logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
+		# logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
 		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
-		logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
+		# logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
 		await save_event
-		logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
+		# logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
 
 		# Stop monitoring
 		await self._stop_monitoring()
-		logger.info('[StorageStateWatchdog] Browser stop handling complete')
+		# logger.info('[StorageStateWatchdog] Browser stop handling complete')
 		# No cleanup needed - browser context is managed by session
 
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
@@ -102,7 +102,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			return
 
 		self._monitoring_task = asyncio.create_task(self._monitor_storage_changes())
-		logger.info('[StorageStateWatchdog] Started storage monitoring task')
+		# logger.info('[StorageStateWatchdog] Started storage monitoring task')
 
 		# Set up page monitoring for existing pages
 		if self.browser_session._browser_context:
@@ -117,14 +117,14 @@ class StorageStateWatchdog(BaseWatchdog):
 				await self._monitoring_task
 			except asyncio.CancelledError:
 				pass
-			logger.info('[StorageStateWatchdog] Stopped storage monitoring task')
+			# logger.debug('[StorageStateWatchdog] Stopped storage monitoring task')
 
 	def _setup_page_monitoring(self, page: Page) -> None:
 		"""Set up storage change monitoring for a page."""
 		# Monitor for cookie changes via response headers
 		page.on('response', lambda response: asyncio.create_task(self._check_for_cookie_changes(response)))
 
-		logger.debug(f'[StorageStateWatchdog] Set up monitoring for page: {page.url}')
+		# logger.debug(f'[StorageStateWatchdog] Set up monitoring for page: {page.url}')
 
 	async def _check_for_cookie_changes(self, response) -> None:
 		"""Check if a response set any cookies."""
@@ -138,7 +138,7 @@ class StorageStateWatchdog(BaseWatchdog):
 				if self.save_on_change:
 					await self._save_storage_state()
 		except Exception as e:
-			logger.debug(f'[StorageStateWatchdog] Error checking for cookie changes: {e}')
+			logger.warning(f'[StorageStateWatchdog] Error checking for cookie changes: {e}')
 
 	async def _monitor_storage_changes(self) -> None:
 		"""Periodically check for storage changes and auto-save."""
@@ -148,7 +148,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 				# Check if cookies have changed
 				if await self._have_cookies_changed():
-					logger.info('[StorageStateWatchdog] Detected cookie changes during periodic check')
+					logger.info('[StorageStateWatchdog] Detected changes to sync with storage_state.json')
 					await self._save_storage_state()
 
 			except asyncio.CancelledError:

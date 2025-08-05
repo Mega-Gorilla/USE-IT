@@ -72,7 +72,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Handle new tab creation - track page and possibly move agent focus."""
-		logger.debug(f'[NavigationWatchdog] Tab created: {event.url}')
+		# logger.debug(f'[NavigationWatchdog] Tab created: {event.url}')
 
 		# Get the page from browser context and track it
 		try:
@@ -349,7 +349,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	def _track_page(self, page: Page) -> None:
 		"""Track a page for lifecycle events."""
-		logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
+		# logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
 
 		# Set up page close handler and store it so we can remove it later
 		def close_handler(*args, **kwargs):
@@ -491,9 +491,9 @@ class NavigationWatchdog(BaseWatchdog):
 			self._dispatch_focus_changed()
 			try:
 				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[NavigationWatchdog] Agent focus moved to new tab {self.tab_index}: {current_page.url}')
+				logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {self.tab_index}: {current_page.url}')
 			except ValueError:
-				logger.info(f'[NavigationWatchdog] Agent focus moved to new tab {self.tab_index}')
+				logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {self.tab_index}')
 
 	async def _switch_agent_focus_to_tab(self, tab_index: int) -> None:
 		"""Switch agent focus to a specific tab index."""

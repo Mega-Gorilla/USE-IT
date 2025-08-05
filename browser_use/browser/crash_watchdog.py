@@ -58,14 +58,14 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser is connected."""
-		logger.info('[CrashWatchdog] Browser connected event received, beginning monitoring')
+		# logger.debug('[CrashWatchdog] Browser connected event received, beginning monitoring')
 
 		await self._start_monitoring()
-		logger.info(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
+		# logger.debug(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Stop monitoring when browser stops."""
-		logger.info('[CrashWatchdog] Browser stopped, ending monitoring')
+		# logger.debug('[CrashWatchdog] Browser stopped, ending monitoring')
 		await self._stop_monitoring()
 
 	async def attach_to_page(self, page: Page) -> None:
@@ -95,7 +95,7 @@ class CrashWatchdog(BaseWatchdog):
 			method=request.method,
 			resource_type=request.resource_type,
 		)
-		logger.debug(f'[CrashWatchdog] Tracking request: {request.method} {request.url[:50]}...')
+		# logger.debug(f'[CrashWatchdog] Tracking request: {request.method} {request.url[:50]}...')
 
 	def _on_response(self, response: Response) -> None:
 		"""Remove request from tracking on response."""
@@ -142,11 +142,11 @@ class CrashWatchdog(BaseWatchdog):
 	async def _start_monitoring(self) -> None:
 		"""Start the monitoring loop."""
 		if self._monitoring_task and not self._monitoring_task.done():
-			logger.info('[CrashWatchdog] Monitoring already running')
+			# logger.info('[CrashWatchdog] Monitoring already running')
 			return
 
 		self._monitoring_task = asyncio.create_task(self._monitoring_loop())
-		logger.info('[CrashWatchdog] Monitoring loop created and started')
+		# logger.debug('[CrashWatchdog] Monitoring loop created and started')
 
 		# Set up CDP session for browser crash detection
 		if self.browser_session._browser:
@@ -175,7 +175,7 @@ class CrashWatchdog(BaseWatchdog):
 						),
 					)
 
-				logger.info('[CrashWatchdog] CDP crash detection enabled')
+				logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
 			except Exception as e:
 				logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
@@ -187,7 +187,7 @@ class CrashWatchdog(BaseWatchdog):
 				await self._monitoring_task
 			except asyncio.CancelledError:
 				pass
-			logger.info('[CrashWatchdog] Monitoring loop stopped')
+			logger.debug('[CrashWatchdog] Monitoring loop stopped')
 
 		# Clean up CDP session
 		if self._cdp_session:

@@ -43,17 +43,17 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Handle browser stop request - stop creating new tabs."""
-		logger.info('[AboutBlankWatchdog] Browser stop requested, stopping tab creation')
+		# logger.info('[AboutBlankWatchdog] Browser stop requested, stopping tab creation')
 		self._stopping = True
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Handle browser stopped event."""
-		logger.info('[AboutBlankWatchdog] Browser stopped')
+		# logger.info('[AboutBlankWatchdog] Browser stopped')
 		self._stopping = True
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Check tabs when a new tab is created."""
-		logger.debug(f'[AboutBlankWatchdog] Tab created: {event.url}')
+		# logger.debug(f'[AboutBlankWatchdog] ➕ New tab created: {event.url}')
 
 		# If a new tab page was created, show DVD screensaver on it
 		if CrashWatchdog._is_new_tab_page(event.url):
@@ -63,17 +63,17 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Check tabs when a tab is closed and proactively create about:blank if needed."""
-		logger.debug('[AboutBlankWatchdog] Tab closing, checking if we need to create about:blank tab')
+		# logger.debug('[AboutBlankWatchdog] Tab closing, checking if we need to create about:blank tab')
 
 		# Don't create new tabs if browser is shutting down
 		if self._stopping:
-			logger.debug('[AboutBlankWatchdog] Browser is stopping, not creating new tabs')
+			# logger.debug('[AboutBlankWatchdog] Browser is stopping, not creating new tabs')
 			return
 
 		# Check if we're about to close the last page (event happens BEFORE tab closes)
 		pages = self.browser_session.pages
 		if len(pages) <= 1:
-			logger.info('[AboutBlankWatchdog] Last tab closing, will create animation tab')
+			logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
 			# Create the animation tab since no tabs should remain
 			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 			await navigate_event
@@ -106,25 +106,27 @@ class AboutBlankWatchdog(BaseWatchdog):
 					except Exception:
 						pass  # Skip pages that can't be checked
 
-			logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs out of {len(pages)} total tabs')
+			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs out of {len(pages)} total tabs')
 
 			# If no animation tabs exist, create one only if there are no tabs at all
 			if not animation_pages:
 				if len(pages) == 0:
 					# Only create a new tab if there are no tabs at all
-					logger.info('[AboutBlankWatchdog] No tabs exist, creating animation tab')
+					# logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
 					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 					await navigate_event
 					# Show DVD screensaver on the new tab
 					await self._show_dvd_screensaver_on_about_blank_tabs()
 				else:
 					# There are other tabs - don't create new about:blank tabs during scripting
-					logger.debug(
-						f'[AboutBlankWatchdog] {len(pages)} tabs exist, not creating animation tab to avoid interfering with scripting'
-					)
+					# logger.debug(
+					# 	f'[AboutBlankWatchdog] {len(pages)} tabs exist, not creating animation tab to avoid interfering with scripting'
+					# )
+					pass
 			# If more than one animation tab exists, just log it - don't close anything
 			elif len(animation_pages) > 1:
-				logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, allowing them to exist')
+				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, allowing them to exist')
+				pass
 
 		except Exception as e:
 			logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
@@ -137,6 +139,9 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 			for page in pages:
 				if CrashWatchdog._is_new_tab_page(page.url):
+					# If it's a chrome:// new tab page, redirect to about:blank to avoid CSP issues
+					if page.url.startswith('chrome://'):
+						await page.goto('about:blank')
 					await self._show_dvd_screensaver_loading_animation(page, browser_session_id)
 
 		except Exception as e:
