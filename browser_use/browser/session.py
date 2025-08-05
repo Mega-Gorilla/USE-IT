@@ -1,16 +1,9 @@
 """Event-driven browser session with backwards compatibility."""
 
 import asyncio
-import base64
-import json
 import os
-import warnings
 from pathlib import Path
 from typing import Any, Self
-from urllib.parse import urlparse
-
-import anyio
-from typing_extensions import deprecated
 
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
@@ -25,9 +18,18 @@ import psutil
 from bubus import EventBus
 from bubus.helpers import retry
 from playwright._impl._api_structures import ViewportSize
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, InstanceOf, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
+from browser_use.browser.events import (
+	ClickElementEvent,
+	CloseTabEvent,
+	NavigateToUrlEvent,
+	SaveStorageStateEvent,
+	ScreenshotEvent,
+	ScrollEvent,
+	TypeTextEvent,
+)
 from browser_use.browser.profile import BROWSERUSE_DEFAULT_CHANNEL, BrowserChannel, BrowserProfile
 from browser_use.browser.types import (
 	Browser,
@@ -55,8 +57,6 @@ from browser_use.browser.views import (
 from browser_use.dom.views import DOMElementNode, SelectorMap
 from browser_use.utils import (
 	is_new_tab_page,
-	match_url_with_domain_pattern,
-	merge_dicts,
 	time_execution_async,
 	time_execution_sync,
 )
@@ -2022,15 +2022,17 @@ class BrowserSession(BaseModel):
 	@time_execution_async('--click_element_node')
 	@observe_debug(ignore_input=True, name='click_element_node')
 	@require_healthy_browser(usable_page=True, reopen_page=True)
-	async def _click_element_node(self, element_node: DOMElementNode, expect_download: bool = False, new_tab: bool = False) -> str | None:
+	async def _click_element_node(
+		self, element_node: DOMElementNode, expect_download: bool = False, new_tab: bool = False
+	) -> str | None:
 		"""
 		Optimized method to click an element using xpath with CDP fallbacks.
-		
+
 		Args:
 			element_node: The DOM element to click
 			expect_download: If True, wait for download and handle it inline
 			new_tab: If True, open any resulting navigation in a new tab
-			
+
 		Returns:
 			The download path if a download was triggered, None otherwise
 		"""
@@ -2866,18 +2868,9 @@ class BrowserSession(BaseModel):
 			if is_empty_page:
 				self.logger.debug(f'⚡ Fast path for empty page: {page.url}')
 
-				# Create minimal DOM state immediately
-				from browser_use.dom.views import DOMElementNode, DOMState
-
-				minimal_element_tree = DOMElementNode(
-					tag_name='body',
-					xpath='',
-					attributes={},
-					children=[],
-					is_visible=False,
-					parent=None,
-				)
-				content = DOMState(element_tree=minimal_element_tree, selector_map={})
+				# Create minimal DOM state immediately - just return None for now
+				# since DOM classes have been refactored
+				content = None
 
 				# Get tabs info
 				tabs_info = await self.get_tabs_info()

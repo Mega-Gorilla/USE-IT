@@ -4,6 +4,10 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
+from cdp_use import (
+	get_element_box,
+)
+
 from browser_use.browser.events import (
 	BrowserErrorEvent,
 	ClickElementEvent,
@@ -25,7 +29,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 
 	def __init__(self, browser_session: 'BrowserSession', dom_service: 'DOMService'):
 		super().__init__(browser_session, dom_service)
-		
+
 	def register_event_handlers(self) -> None:
 		"""Register handlers for browser action events."""
 		self.event_bus.on(ClickElementEvent, self.on_ClickElementEvent)
@@ -40,10 +44,10 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			element_node = await self.browser_session.get_dom_element_by_index(event.index)
 			if element_node is None:
 				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
-			
+
 			# Track initial number of tabs to detect new tab opening
 			initial_pages = len(self.browser_session.pages)
-			
+
 			# Check if element is a file input (should not be clicked)
 			if self.browser_session.is_file_input(element_node):
 				msg = f'Index {event.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
@@ -56,12 +60,12 @@ class DefaultActionWatchdog(BrowserWatchdog):
 					)
 				)
 				return
-			
+
 			# Perform the actual click using internal implementation
 			download_path = await self._click_element_node_impl(
 				element_node, expect_download=event.expect_download, new_tab=event.new_tab
 			)
-			
+
 			# Build success message
 			if download_path:
 				msg = f'Downloaded file to {download_path}'
@@ -70,7 +74,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 				msg = f'Clicked button with index {event.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
 				logger.info(f'🖱️ {msg}')
 			logger.debug(f'Element xpath: {element_node.xpath}')
-			
+
 			# Check if a new tab was opened
 			if len(self.browser_session.pages) > initial_pages:
 				new_tab_msg = 'New tab opened - switching to it'
@@ -96,10 +100,10 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			element_node = await self.browser_session.get_dom_element_by_index(event.index)
 			if element_node is None:
 				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
-			
+
 			# Perform the actual text input
 			await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
-			
+
 			# Log success
 			logger.info(f'⌨️ Typed "{event.text}" into element with index {event.index}')
 			logger.debug(f'Element xpath: {element_node.xpath}')
@@ -124,27 +128,27 @@ class DefaultActionWatchdog(BrowserWatchdog):
 				)
 			)
 			return
-		
+
 		try:
 			# Convert direction and amount to pixels
 			# Positive pixels = scroll down, negative = scroll up
 			pixels = event.amount if event.direction == 'down' else -event.amount
-			
+
 			# Element-specific scrolling if index is provided
 			if event.element_index is not None:
 				element_node = await self.browser_session.get_dom_element_by_index(event.element_index)
 				if element_node is None:
 					raise Exception(f'Element index {event.element_index} does not exist')
-				
+
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
 					logger.info(f'📜 Scrolled element {event.element_index} container {event.direction} by {event.amount} pixels')
 					return
-			
+
 			# Perform page-level scroll
 			await self._scroll_with_cdp_gesture(page, pixels)
-			
+
 			# Log success
 			logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
 		except Exception as e:
@@ -157,29 +161,44 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			)
 
 	# ========== Implementation Methods ==========
-	
+
 	async def _click_element_node_impl(self, element_node, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""
-		Optimized method to click an element using xpath with CDP fallbacks.
-		
+		Optimized method to click an element using pure CDP.
+
 		Args:
 			element_node: The DOM element to click
 			expect_download: If True, wait for download and handle it inline
 			new_tab: If True, open any resulting navigation in a new tab
-			
+
 		Returns:
 			The download path if a download was triggered, None otherwise
 		"""
 		page = await self.browser_session.get_current_page()
+
 		try:
-			element_handle = await self.browser_session.get_locate_element(element_node)
-			
-			if element_handle is None:
-				raise Exception(f'Element: {repr(element_node)} not found')
-			
+			# Get CDP client
+			cdp_client = await self.browser_session.get_cdp_client()
+
+			# Get the correct session ID for the element's frame
+			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+
+			# Get element bounds
+			backend_node_id = element_node.backend_node_id
+
+			# Get bounds from CDP
+			box_model = await get_element_box(cdp_client, backend_node_id, session_id=session_id)
+			content_quad = box_model['content']
+			if len(content_quad) < 8:
+				raise Exception('Invalid content quad')
+
+			# Calculate center point from quad
+			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
+			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
+
 			async def perform_click(click_func):
 				"""Performs the actual click, handling both download and navigation scenarios."""
-				
+
 				# only wait the 5s extra for potential downloads if they are enabled
 				if self.browser_session.browser_profile.downloads_path:
 					try:
@@ -195,11 +214,13 @@ class DefaultActionWatchdog(BrowserWatchdog):
 						download_path = os.path.join(self.browser_session.browser_profile.downloads_path, unique_filename)
 						await download.save_as(download_path)
 						logger.info(f'⬇️ Downloaded file to: {download_path}')
-						
+
 						# Track the downloaded file in the session
 						self.browser_session._downloaded_files.append(download_path)
-						logger.info(f'📁 Added download to session tracking (total: {len(self.browser_session._downloaded_files)} files)')
-						
+						logger.info(
+							f'📁 Added download to session tracking (total: {len(self.browser_session._downloaded_files)} files)'
+						)
+
 						return download_path
 					except Exception:
 						# If no download is triggered, treat as normal click
@@ -221,7 +242,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 							f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
 						)
 					await self.browser_session._check_and_handle_navigation(page)
-			
+
 			try:
 				return await perform_click(lambda: element_handle and element_handle.click(timeout=1_500))
 			except URLNotAllowedError as e:
@@ -266,7 +287,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 							except Exception as coord_e:
 								logger.error(f'Coordinate click also failed: {type(coord_e).__name__}: {coord_e}')
 						raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
-		
+
 		except URLNotAllowedError as e:
 			raise e
 		except Exception as e:
@@ -279,10 +300,10 @@ class DefaultActionWatchdog(BrowserWatchdog):
 		"""
 		try:
 			element_handle = await self.browser_session.get_locate_element(element_node)
-			
+
 			if element_handle is None:
 				raise BrowserError(f'Element: {repr(element_node)} not found')
-			
+
 			# Ensure element is ready for input
 			try:
 				await element_handle.wait_for_element_state('stable', timeout=1_000)
@@ -291,7 +312,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 					await element_handle.scroll_into_view_if_needed(timeout=1_000)
 			except Exception:
 				pass
-			
+
 			# let's first try to click and type
 			try:
 				if clear_existing:
@@ -304,17 +325,17 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			except Exception as e:
 				logger.debug(f'Input text with click and type failed, trying element handle method: {e}')
 				pass
-			
+
 			# Get element properties to determine input method
 			tag_handle = await element_handle.get_property('tagName')
 			tag_name = (await tag_handle.json_value()).lower()
 			is_contenteditable = await element_handle.get_property('isContentEditable')
 			readonly_handle = await element_handle.get_property('readOnly')
 			disabled_handle = await element_handle.get_property('disabled')
-			
+
 			readonly = await readonly_handle.json_value() if readonly_handle else False
 			disabled = await disabled_handle.json_value() if disabled_handle else False
-			
+
 			try:
 				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
 					if clear_existing:
@@ -325,7 +346,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			except Exception as e:
 				logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
 				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
-		
+
 		except Exception as e:
 			# Get current page URL safely for error message
 			try:
@@ -333,7 +354,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 				page_url = _log_pretty_url(page.url)
 			except Exception:
 				page_url = 'unknown page'
-			
+
 			logger.debug(
 				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
 			)
@@ -422,7 +443,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
 		"""Try to scroll an element's container."""
 		page = await self.browser_session.get_current_page()
-		
+
 		container_scroll_js = """
 		(params) => {
 			const { dy, elementXPath } = params;
@@ -460,7 +481,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			return { success: false, reason: 'No scrollable container found' };
 		}
 		"""
-		
+
 		try:
 			result = await page.evaluate(container_scroll_js, {'dy': pixels, 'elementXPath': element_node.xpath})
 			return result['success']
