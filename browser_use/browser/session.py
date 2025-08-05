@@ -27,6 +27,7 @@ from browser_use.browser.events import (
 	GoBackEvent,
 	GoForwardEvent,
 	NavigateToUrlEvent,
+	RefreshEvent,
 	SaveStorageStateEvent,
 	ScreenshotEvent,
 	ScrollEvent,
@@ -59,7 +60,7 @@ from browser_use.browser.views import (
 # Lazy imports for heavy DOM services to improve startup time
 # from browser_use.dom.clickable_element_processor.service import ClickableElementProcessor
 # from browser_use.dom.service import DomService
-from browser_use.dom.views import DOMElementNode, SelectorMap
+from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode, DOMSelectorMap as SelectorMap
 from browser_use.utils import (
 	is_new_tab_page,
 	time_execution_async,
@@ -2710,9 +2711,8 @@ class BrowserSession(BaseModel):
 
 	async def refresh(self) -> None:
 		"""Refresh the current page."""
-		page = await self.get_current_page()
-		if page:
-			await page.reload()
+		event = self.event_bus.dispatch(RefreshEvent())
+		await event
 
 	async def take_screenshot(self, full_page: bool = False, clip: dict | None = None) -> str | None:
 		"""Take a screenshot."""

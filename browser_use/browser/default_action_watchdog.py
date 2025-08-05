@@ -14,6 +14,7 @@ from browser_use.browser.events import (
 	ClickElementEvent,
 	GoBackEvent,
 	GoForwardEvent,
+	RefreshEvent,
 	ScrollEvent,
 	ScrollToTextEvent,
 	SendKeysEvent,
@@ -599,6 +600,30 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='NavigateForwardFailed',
+					message=str(e),
+				)
+			)
+
+	async def on_RefreshEvent(self, event: RefreshEvent) -> None:
+		"""Handle page refresh request with CDP."""
+		try:
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
+
+			# Reload the page
+			await cdp_client.send.Page.reload(session_id=session_id)
+
+			# Wait for reload
+			await asyncio.sleep(1.0)
+			page = await self.browser_session.get_current_page()
+			await self.browser_session._check_and_handle_navigation(page)
+
+			logger.info('🔄 Page refreshed')
+		except Exception as e:
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='RefreshFailed',
 					message=str(e),
 				)
 			)

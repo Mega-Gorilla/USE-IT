@@ -93,6 +93,12 @@ class GoForwardEvent(BaseEvent):
 	pass
 
 
+class RefreshEvent(BaseEvent):
+	"""Refresh/reload the current page."""
+	
+	pass
+
+
 class WaitEvent(BaseEvent):
 	"""Wait for a specified number of seconds."""
 	
