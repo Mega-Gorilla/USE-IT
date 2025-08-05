@@ -58,7 +58,7 @@ async def test_navigation_watchdog_tab_created_events():
 
 		# Verify the events have different tab indices (unless they're reusing the same tab)
 		unique_tab_indexes = {event.tab_index for event in tab_created_events}
-		assert len(unique_tab_indexes) >= 1, 'Should have at least one unique tab index'
+	assert len(unique_tab_indexes) >= 2, 'Should have at least two unique tab indices'
 
 	finally:
 		# Stop browser
