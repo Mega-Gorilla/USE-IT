@@ -81,6 +81,45 @@ class WaitForConditionEvent(BaseEvent):
 	state: Literal['attached', 'detached', 'visible', 'hidden'] | None = None
 
 
+class GoBackEvent(BaseEvent):
+	"""Navigate back in browser history."""
+	
+	pass
+
+
+class GoForwardEvent(BaseEvent):
+	"""Navigate forward in browser history."""
+	
+	pass
+
+
+class WaitEvent(BaseEvent):
+	"""Wait for a specified number of seconds."""
+	
+	seconds: float = 3.0
+	max_seconds: float = 10.0  # Safety cap
+
+
+class SendKeysEvent(BaseEvent):
+	"""Send keyboard keys/shortcuts."""
+	
+	keys: str  # e.g., "ctrl+a", "cmd+c", "Enter"
+
+
+class UploadFileEvent(BaseEvent):
+	"""Upload a file to an element."""
+	
+	element_index: int
+	file_path: str
+
+
+class ScrollToTextEvent(BaseEvent):
+	"""Scroll to specific text on the page."""
+	
+	text: str
+	direction: Literal['up', 'down'] = 'down'
+
+
 # ============================================================================
 
 

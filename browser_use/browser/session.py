@@ -238,6 +238,7 @@ class BrowserSession(BaseModel):
 	_navigation_watchdog: Any = PrivateAttr(default=None)
 	_storage_state_watchdog: Any = PrivateAttr(default=None)
 	_local_browser_watchdog: Any = PrivateAttr(default=None)
+	_default_action_watchdog: Any = PrivateAttr(default=None)
 
 	# Navigation tracking now handled by watchdogs
 
@@ -2203,6 +2204,25 @@ class BrowserSession(BaseModel):
 			await page.set_viewport_size(viewport)
 
 	@require_healthy_browser(usable_page=False, reopen_page=False)
+	async def get_cdp_client(self) -> Any:
+		"""Get or create a CDP client for the current browser session."""
+		if not self.cdp_url:
+			raise ValueError('No CDP URL available for this browser session')
+		
+		# Import here to avoid circular imports
+		from browser_use.dom.service import DomService
+		
+		# Create a temporary DOM service to get CDP client
+		page = await self.get_current_page()
+		dom_service = DomService(self, page, logger=self.logger)
+		return await dom_service._get_cdp_client()
+	
+	async def get_current_page_cdp_session_id(self) -> str | None:
+		"""Get the CDP session ID for the current page."""
+		# For now, return None to use the default session
+		# This can be enhanced later to handle frames
+		return None
+
 	async def close_tab(self, tab_index: int | None = None) -> None:
 		assert self.browser_context is not None, 'BrowserContext is not set up'
 		pages = self.browser_context.pages
@@ -4285,6 +4305,7 @@ _watchdog_modules = [
 	'browser_use.browser.storage_state_watchdog.StorageStateWatchdog',
 	'browser_use.browser.navigation_watchdog.NavigationWatchdog',
 	'browser_use.browser.aboutblank_watchdog.AboutBlankWatchdog',
+	'browser_use.browser.default_action_watchdog.DefaultActionWatchdog',
 ]
 
 for module_path in _watchdog_modules:

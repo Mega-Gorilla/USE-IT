@@ -5,6 +5,7 @@ import os
 from typing import TYPE_CHECKING
 
 from cdp_use import (
+	CDPClient,
 	get_element_box,
 )
 
@@ -15,7 +16,7 @@ from browser_use.browser.events import (
 	TypeTextEvent,
 )
 from browser_use.browser.views import BrowserError, URLNotAllowedError
-from browser_use.browser.watchdog_base import BrowserWatchdog
+from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.logging_config import logger
 from browser_use.utils import _log_pretty_url
 
@@ -24,20 +25,12 @@ if TYPE_CHECKING:
 	from browser_use.dom.service import DOMService
 
 
-class DefaultActionWatchdog(BrowserWatchdog):
+class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	def __init__(self, browser_session: 'BrowserSession', dom_service: 'DOMService'):
-		super().__init__(browser_session, dom_service)
-
-	def register_event_handlers(self) -> None:
-		"""Register handlers for browser action events."""
-		self.event_bus.on(ClickElementEvent, self.on_ClickElementEvent)
-		self.event_bus.on(TypeTextEvent, self.on_TypeTextEvent)
-		self.event_bus.on(ScrollEvent, self.on_ScrollEvent)
 
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
-		"""Handle click request with CDP fallbacks."""
+		"""Handle click request with CDP."""
 		page = await self.browser_session.get_current_page()
 		try:
 			# Get the DOM element by index
@@ -164,7 +157,7 @@ class DefaultActionWatchdog(BrowserWatchdog):
 
 	async def _click_element_node_impl(self, element_node, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""
-		Optimized method to click an element using pure CDP.
+		Click an element using pure CDP.
 
 		Args:
 			element_node: The DOM element to click
@@ -196,97 +189,133 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
 			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
 
-			async def perform_click(click_func):
-				"""Performs the actual click, handling both download and navigation scenarios."""
+			# Scroll element into view
+			try:
+				await cdp_client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
+				await asyncio.sleep(0.1)  # Wait for scroll to complete
+			except Exception as e:
+				logger.debug(f'Failed to scroll element into view: {e}')
 
-				# only wait the 5s extra for potential downloads if they are enabled
+			# Set up download detection if downloads are enabled
+			download_path = None
+			download_event = asyncio.Event()
+			download_guid = None
+
+			if self.browser_session.browser_profile.downloads_path:
+				# Enable download events
+				await cdp_client.send.Page.setDownloadBehavior(
+					params={'behavior': 'allow', 'downloadPath': str(self.browser_session.browser_profile.downloads_path)},
+					session_id=session_id,
+				)
+
+				# Set up download listener
+				async def on_download_will_begin(event):
+					nonlocal download_guid
+					download_guid = event['guid']
+					download_event.set()
+
+				cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
+
+			# Perform the click using CDP
+			try:
+				# Move mouse to element
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseMoved',
+						'x': center_x,
+						'y': center_y,
+					},
+					session_id=session_id,
+				)
+
+				# Mouse down
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=session_id,
+				)
+
+				# Mouse up
+				await cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=session_id,
+				)
+
+				# Handle download if expected
 				if self.browser_session.browser_profile.downloads_path:
 					try:
-						# Try short-timeout expect_download to detect a file download has been been triggered
-						async with page.expect_download(timeout=5_000) as download_info:
-							await click_func()
-						download = await download_info.value
-						# Determine file path
-						suggested_filename = download.suggested_filename
-						unique_filename = await self.browser_session._get_unique_filename(
-							self.browser_session.browser_profile.downloads_path, suggested_filename
-						)
-						download_path = os.path.join(self.browser_session.browser_profile.downloads_path, unique_filename)
-						await download.save_as(download_path)
-						logger.info(f'⬇️ Downloaded file to: {download_path}')
+						# Wait for download to start (with timeout)
+						await asyncio.wait_for(download_event.wait(), timeout=5.0)
 
-						# Track the downloaded file in the session
-						self.browser_session._downloaded_files.append(download_path)
-						logger.info(
-							f'📁 Added download to session tracking (total: {len(self.browser_session._downloaded_files)} files)'
-						)
-
-						return download_path
-					except Exception:
-						# If no download is triggered, treat as normal click
-						logger.debug('No download triggered within timeout. Checking navigation...')
-						try:
-							await page.wait_for_load_state()
-						except Exception as e:
-							logger.warning(
-								f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
-							)
-						await self.browser_session._check_and_handle_navigation(page)
-				else:
-					# If downloads are disabled, just perform the click
-					await click_func()
-					try:
-						await page.wait_for_load_state()
-					except Exception as e:
-						logger.warning(
-							f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
-						)
-					await self.browser_session._check_and_handle_navigation(page)
-
-			try:
-				return await perform_click(lambda: element_handle and element_handle.click(timeout=1_500))
-			except URLNotAllowedError as e:
-				raise e
-			except Exception as e:
-				# Check if it's a context error and provide more info
-				if 'Cannot find context with specified id' in str(e) or 'Protocol error' in str(e):
-					logger.warning(f'⚠️ Element context lost, attempting to re-locate element: {type(e).__name__}')
-					# Try to re-locate the element
-					element_handle = await self.browser_session.get_locate_element(element_node)
-					if element_handle is None:
-						raise Exception(f'Element no longer exists in DOM after context loss: {repr(element_node)}')
-					# Try click again with fresh element
-					try:
-						return await perform_click(lambda: element_handle.click(timeout=1_500))
-					except Exception:
-						# Fall back to JavaScript click
-						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
-				else:
-					# Original fallback for other errors
-					try:
-						return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
-					except URLNotAllowedError as e:
-						raise e
-					except Exception as e:
-						# Final fallback - try clicking by coordinates if available
-						if element_node.snapshot_node and element_node.snapshot_node.bounds:
+						# Wait for download to complete
+						download_complete = False
+						for _ in range(60):  # Wait up to 60 seconds
 							try:
-								logger.warning(
-									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.snapshot_node.bounds.center})'
+								# Check download progress
+								response = await cdp_client.send.Page.getDownloadProgress(
+									params={'guid': download_guid}, session_id=session_id
 								)
-								await page.mouse.click(
-									element_node.snapshot_node.bounds.center[0],
-									element_node.snapshot_node.bounds.center[1],
-								)
-								try:
-									await page.wait_for_load_state()
-								except Exception:
-									pass
-								await self.browser_session._check_and_handle_navigation(page)
-								return None  # Success
-							except Exception as coord_e:
-								logger.error(f'Coordinate click also failed: {type(coord_e).__name__}: {coord_e}')
-						raise Exception(f'Failed to click element: {type(e).__name__}: {e}')
+								if response['state'] == 'completed':
+									download_complete = True
+									break
+								elif response['state'] == 'canceled':
+									logger.warning('Download was canceled')
+									break
+							except Exception:
+								pass
+							await asyncio.sleep(1)
+
+						if download_complete and download_guid:
+							logger.info(f'⬇️ Download completed via CDP')
+							# Track the download (note: CDP doesn't give us filename directly)
+							self.browser_session._downloaded_files.append(f'download_{download_guid}')
+							return f'download_{download_guid}'  # Return guid as placeholder
+					except asyncio.TimeoutError:
+						# No download triggered, normal click
+						logger.debug('No download triggered within timeout.')
+
+				# Wait for navigation/changes
+				await asyncio.sleep(0.5)
+				await self.browser_session._check_and_handle_navigation(page)
+
+				return download_path
+
+			except Exception as e:
+				logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
+				# Fall back to JavaScript click via CDP
+				try:
+					result = await cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					object_id = result['object']['objectId']
+
+					await cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.5)
+					await self.browser_session._check_and_handle_navigation(page)
+					return None
+				except Exception as js_e:
+					logger.error(f'CDP JavaScript click also failed: {js_e}')
+					raise Exception(f'Failed to click element: {e}')
 
 		except URLNotAllowedError as e:
 			raise e
@@ -295,74 +324,91 @@ class DefaultActionWatchdog(BrowserWatchdog):
 
 	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True):
 		"""
-		Input text into an element with proper error handling and state management.
-		Handles different types of input fields and ensures proper element state before input.
+		Input text into an element using pure CDP.
 		"""
+		page = await self.browser_session.get_current_page()
+
 		try:
-			element_handle = await self.browser_session.get_locate_element(element_node)
+			# Get CDP client
+			cdp_client = await self.browser_session.get_cdp_client()
 
-			if element_handle is None:
-				raise BrowserError(f'Element: {repr(element_node)} not found')
+			# Get the correct session ID for the element's frame
+			session_id = await self._get_session_id_for_element(cdp_client, element_node)
 
-			# Ensure element is ready for input
+			# Get element info
+			backend_node_id = element_node.backend_node_id
+
+			# Scroll element into view
 			try:
-				await element_handle.wait_for_element_state('stable', timeout=1_000)
-				is_visible = await self.browser_session._is_visible(element_handle)
-				if is_visible:
-					await element_handle.scroll_into_view_if_needed(timeout=1_000)
-			except Exception:
-				pass
-
-			# let's first try to click and type
-			try:
-				if clear_existing:
-					await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-				await element_handle.click()
+				await cdp_client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
 				await asyncio.sleep(0.1)
-				page = await self.browser_session.get_current_page()
-				await page.keyboard.type(text)
-				return
 			except Exception as e:
-				logger.debug(f'Input text with click and type failed, trying element handle method: {e}')
-				pass
+				logger.debug(f'Failed to scroll element into view: {e}')
 
-			# Get element properties to determine input method
-			tag_handle = await element_handle.get_property('tagName')
-			tag_name = (await tag_handle.json_value()).lower()
-			is_contenteditable = await element_handle.get_property('isContentEditable')
-			readonly_handle = await element_handle.get_property('readOnly')
-			disabled_handle = await element_handle.get_property('disabled')
+			# Get object ID for the element
+			result = await cdp_client.send.DOM.resolveNode(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id,
+			)
+			object_id = result['object']['objectId']
 
-			readonly = await readonly_handle.json_value() if readonly_handle else False
-			disabled = await disabled_handle.json_value() if disabled_handle else False
+			# Clear existing text if requested
+			if clear_existing:
+				await cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; if (this.textContent !== undefined) this.textContent = ""; }',
+						'objectId': object_id,
+					},
+					session_id=session_id,
+				)
 
-			try:
-				if (await is_contenteditable.json_value() or tag_name == 'input') and not (readonly or disabled):
-					if clear_existing:
-						await element_handle.evaluate('el => {el.textContent = ""; el.value = "";}')
-					await element_handle.type(text, delay=5)
-				else:
-					await element_handle.fill(text)
-			except Exception as e:
-				logger.error(f'Error during input text into element: {type(e).__name__}: {e}')
-				raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
+			# Focus the element
+			await cdp_client.send.DOM.focus(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id,
+			)
+
+			# Type the text character by character
+			for char in text:
+				# Send keydown
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'text': char,
+						'key': char,
+					},
+					session_id=session_id,
+				)
+				# Send char (for actual text input)
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'char',
+						'text': char,
+						'key': char,
+					},
+					session_id=session_id,
+				)
+				# Send keyup
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'text': char,
+						'key': char,
+					},
+					session_id=session_id,
+				)
+				# Small delay between characters
+				await asyncio.sleep(0.005)
 
 		except Exception as e:
-			# Get current page URL safely for error message
-			try:
-				page = await self.browser_session.get_current_page()
-				page_url = _log_pretty_url(page.url)
-			except Exception:
-				page_url = 'unknown page'
-
-			logger.debug(
-				f'❌ Failed to input text into element: {repr(element_node)} on page {page_url}: {type(e).__name__}: {e}'
-			)
+			logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
 			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
 
 	async def _scroll_with_cdp_gesture(self, page, pixels: int) -> bool:
 		"""
-		Scroll using CDP Input.synthesizeScrollGesture for universal compatibility.
+		Scroll using CDP Input.dispatchMouseEvent to simulate mouse wheel.
 
 		Args:
 			page: The page to scroll
@@ -372,118 +418,105 @@ class DefaultActionWatchdog(BrowserWatchdog):
 			True if successful, False if failed
 		"""
 		try:
-			# Use CDP to synthesize scroll gesture - works in all contexts including PDFs
-			cdp_session = await page.context.new_cdp_session(page)  # type: ignore
+			# Get CDP client and session
+			cdp_client = await self.browser_session.get_cdp_client()
+			session_id = await self.browser_session.get_current_page_cdp_session_id()
 
-			# Get viewport center for scroll origin
-			viewport = await page.evaluate("""
-				() => ({
-					width: window.innerWidth,
-					height: window.innerHeight
-				})
-			""")
+			# Get viewport dimensions
+			layout_metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			viewport_width = layout_metrics['layoutViewport']['clientWidth']
+			viewport_height = layout_metrics['layoutViewport']['clientHeight']
 
-			center_x = viewport['width'] // 2
-			center_y = viewport['height'] // 2
+			# Calculate center of viewport
+			center_x = viewport_width / 2
+			center_y = viewport_height / 2
 
-			await cdp_session.send(
-				'Input.synthesizeScrollGesture',
-				{
+			# For mouse wheel, positive deltaY scrolls down, negative scrolls up
+			delta_y = pixels
+
+			# Dispatch mouse wheel event
+			await cdp_client.send.Input.dispatchMouseEvent(
+				params={
+					'type': 'mouseWheel',
 					'x': center_x,
 					'y': center_y,
-					'xDistance': 0,
-					'yDistance': -pixels,  # Negative = scroll down, Positive = scroll up
-					'gestureSourceType': 'mouse',  # Use mouse gestures for better compatibility
-					'speed': 3000,  # Pixels per second
+					'deltaX': 0,
+					'deltaY': delta_y,
 				},
+				session_id=session_id,
 			)
 
-			try:
-				await asyncio.wait_for(cdp_session.detach(), timeout=1.0)
-			except (TimeoutError, Exception):
-				pass
-			logger.debug(f'📄 Scrolled via CDP Input.synthesizeScrollGesture: {pixels}px')
+			logger.debug(f'📄 Scrolled via CDP mouse wheel: {pixels}px')
 			return True
 
 		except Exception as e:
-			logger.warning(f'❌ Scrolling via CDP Input.synthesizeScrollGesture failed: {type(e).__name__}: {e}')
-			# Fallback to JavaScript
-			await self._scroll_container_js(page, pixels)
-			return True
-
-	async def _scroll_container_js(self, page, pixels: int) -> None:
-		"""Scroll using JavaScript with smart container detection."""
-		SMART_SCROLL_JS = """(dy) => {
-			const bigEnough = el => el.clientHeight >= window.innerHeight * 0.5;
-			const canScroll = el =>
-				el &&
-				/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY) &&
-				el.scrollHeight > el.clientHeight &&
-				bigEnough(el);
-
-			let el = document.activeElement;
-			while (el && !canScroll(el) && el !== document.body) el = el.parentElement;
-
-			el = canScroll(el)
-					? el
-					: [...document.querySelectorAll('*')].find(canScroll)
-					|| document.scrollingElement
-					|| document.documentElement;
-
-			if (el === document.scrollingElement ||
-				el === document.documentElement ||
-				el === document.body) {
-				window.scrollBy(0, dy);
-			} else {
-				el.scrollBy({ top: dy, behavior: 'auto' });
-			}
-		}"""
-		await page.evaluate(SMART_SCROLL_JS, pixels)
+			logger.warning(f'❌ Scrolling via CDP failed: {type(e).__name__}: {e}')
+			return False
 
 	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
-		"""Try to scroll an element's container."""
-		page = await self.browser_session.get_current_page()
-
-		container_scroll_js = """
-		(params) => {
-			const { dy, elementXPath } = params;
-			
-			// Get the target element by XPath
-			const targetElement = document.evaluate(elementXPath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-			if (!targetElement) {
-				return { success: false, reason: 'Element not found by XPath' };
-			}
-
-			// Try to find scrollable containers in the hierarchy
-			let currentElement = targetElement;
-			let scrollSuccess = false;
-			let attempts = 0;
-			
-			while (currentElement && attempts < 10) {
-				const computedStyle = window.getComputedStyle(currentElement);
-				const hasScrollableY = /(auto|scroll|overlay)/.test(computedStyle.overflowY);
-				const canScrollVertically = currentElement.scrollHeight > currentElement.clientHeight;
-				
-				if (hasScrollableY && canScrollVertically) {
-					const beforeScroll = currentElement.scrollTop;
-					currentElement.scrollTop = beforeScroll + dy;
-					const afterScroll = currentElement.scrollTop;
-					
-					if (Math.abs(afterScroll - beforeScroll) > 0.5) {
-						return { success: true };
-					}
-				}
-				
-				currentElement = currentElement.parentElement;
-				attempts++;
-			}
-			
-			return { success: false, reason: 'No scrollable container found' };
-		}
-		"""
-
+		"""Try to scroll an element's container using CDP."""
 		try:
-			result = await page.evaluate(container_scroll_js, {'dy': pixels, 'elementXPath': element_node.xpath})
-			return result['success']
-		except Exception:
+			# Get CDP client
+			cdp_client = await self.browser_session.get_cdp_client()
+
+			# Get the correct session ID for the element's frame
+			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+
+			# Get element bounds to know where to scroll
+			backend_node_id = element_node.backend_node_id
+			box_model = await get_element_box(cdp_client, backend_node_id, session_id=session_id)
+			content_quad = box_model['content']
+
+			# Calculate center point
+			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
+			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
+
+			# Dispatch mouse wheel event at element location
+			await cdp_client.send.Input.dispatchMouseEvent(
+				params={
+					'type': 'mouseWheel',
+					'x': center_x,
+					'y': center_y,
+					'deltaX': 0,
+					'deltaY': pixels,
+				},
+				session_id=session_id,
+			)
+
+			return True
+		except Exception as e:
+			logger.debug(f'Failed to scroll element container via CDP: {e}')
 			return False
+
+	async def _get_session_id_for_element(self, cdp_client: CDPClient, element_node) -> str:
+		"""Get the appropriate CDP session ID for an element based on its frame."""
+		if element_node.frame_id:
+			# Element is in an iframe, need to get session for that frame
+			try:
+				# Get all targets
+				targets = await cdp_client.send.Target.getTargets()
+
+				# Find the target for this frame
+				for target in targets['targetInfos']:
+					if target['type'] == 'iframe' and element_node.frame_id in str(target.get('targetId', '')):
+						# Attach to this target
+						target_id = target['targetId']
+						session = await cdp_client.send.Target.attachToTarget(
+							params={'targetId': target_id, 'flatten': True}
+						)
+						session_id = session['sessionId']
+
+						# Enable required domains on this session
+						await cdp_client.send.DOM.enable(session_id=session_id)
+						await cdp_client.send.Runtime.enable(session_id=session_id)
+						await cdp_client.send.Input.enable(session_id=session_id)
+
+						return session_id
+
+			# If frame not found in targets, use main page session
+			logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
+		except Exception as e:
+			logger.debug(f'Error getting frame session: {e}, using main session')
+
+		# Use main page session
+		return await self.browser_session.get_current_page_cdp_session_id()
