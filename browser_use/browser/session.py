@@ -1,9 +1,13 @@
 """Event-driven browser session with backwards compatibility."""
 
 import asyncio
+import atexit
+import logging
 import os
+import shutil
+from functools import wraps
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, Never
 
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
@@ -2074,9 +2078,8 @@ class BrowserSession(BaseModel):
 						await download.save_as(download_path)
 						self.logger.info(f'⬇️ Downloaded file to: {download_path}')
 
-						# Track the downloaded file in the session
-						self._downloaded_files.append(download_path)
-						self.logger.info(f'📁 Added download to session tracking (total: {len(self._downloaded_files)} files)')
+						# Downloads are tracked via the filesystem in the session's unique downloads directory
+						self.logger.info(f'📁 Download completed: {download_path}')
 
 						return download_path
 					except Exception:

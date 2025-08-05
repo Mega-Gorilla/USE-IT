@@ -67,7 +67,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Downloaded file to {download_path}'
 				logger.info(f'💾 {msg}')
 			else:
-				msg = f'Clicked button with index {event.index}: {element_node.get_all_text_till_next_clickable_element(max_depth=2)}'
+				msg = f'Clicked button with index {event.index}: {element_node.get_all_children_text(max_depth=2)}'
 				logger.info(f'🖱️ {msg}')
 			logger.debug(f'Element xpath: {element_node.xpath}')
 
@@ -286,8 +286,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 						if download_complete and download_guid:
 							logger.info(f'⬇️ Download completed via CDP')
-							# Track the download (note: CDP doesn't give us filename directly)
-							self.browser_session._downloaded_files.append(f'download_{download_guid}')
+							# Note: DownloadsWatchdog handles download tracking via events
 							return f'download_{download_guid}'  # Return guid as placeholder
 					except asyncio.TimeoutError:
 						# No download triggered, normal click
@@ -295,7 +294,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				# Wait for navigation/changes
 				await asyncio.sleep(0.5)
-				await self.browser_session._check_and_handle_navigation(page)
+				# Navigation is handled by NavigationWatchdog via events
 
 				return download_path
 
@@ -317,7 +316,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						session_id=session_id,
 					)
 					await asyncio.sleep(0.5)
-					await self.browser_session._check_and_handle_navigation(page)
+					# Navigation is handled by NavigationWatchdog via events
 					return None
 				except Exception as js_e:
 					logger.error(f'CDP JavaScript click also failed: {js_e}')
@@ -518,14 +517,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 						# Enable required domains on this session
 						await cdp_client.send.DOM.enable(session_id=session_id)
 						await cdp_client.send.Runtime.enable(session_id=session_id)
-						await cdp_client.send.Input.enable(session_id=session_id)
+						# Note: Input domain doesn't have an enable method
 
 						return session_id
 
-			# If frame not found in targets, use main page session
-			logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
-		except Exception as e:
-			logger.debug(f'Error getting frame session: {e}, using main session')
+				# If frame not found in targets, use main page session
+				logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
+			except Exception as e:
+				logger.debug(f'Error getting frame session: {e}, using main session')
 
 		# Use main page session
 		return await self.browser_session.get_current_page_cdp_session_id()
@@ -556,8 +555,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			page = await self.browser_session.get_current_page()
-			await self.browser_session._check_and_handle_navigation(page)
+			# Navigation is handled by NavigationWatchdog via events
 
 			logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
 		except Exception as e:
@@ -594,8 +592,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			page = await self.browser_session.get_current_page()
-			await self.browser_session._check_and_handle_navigation(page)
+			# Navigation is handled by NavigationWatchdog via events
 
 			logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
 		except Exception as e:
@@ -618,8 +615,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for reload
 			await asyncio.sleep(1.0)
-			page = await self.browser_session.get_current_page()
-			await self.browser_session._check_and_handle_navigation(page)
+			# Navigation is handled by NavigationWatchdog via events
 
 			logger.info('🔄 Page refreshed')
 		except Exception as e:
