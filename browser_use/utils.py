@@ -424,7 +424,7 @@ def is_new_tab_page(url: str) -> bool:
 	Returns:
 		bool: True if the URL is a new tab page, False otherwise
 	"""
-	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/')
+	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/', 'chrome://newtab')
 
 
 def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: bool = False) -> bool:
