@@ -29,7 +29,6 @@ from uuid_extensions import uuid7str
 
 from browser_use.browser.events import (
 	ClickElementEvent,
-	CloseTabEvent,
 	GoBackEvent,
 	GoForwardEvent,
 	NavigateToUrlEvent,
@@ -50,7 +49,6 @@ from browser_use.browser.types import (
 	FrameLocator,
 	Page,
 	Patchright,
-	Playwright,
 	PlaywrightOrPatchright,
 	async_patchright,
 	async_playwright,
@@ -2023,7 +2021,7 @@ class BrowserSession(BaseModel):
 							self.logger.warning(
 								f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
 							)
-						await self._check_and_handle_navigation(page)
+						# Navigation is handled by NavigationWatchdog via events
 				else:
 					# If downloads are disabled, just perform the click
 					await click_func()
@@ -2033,7 +2031,7 @@ class BrowserSession(BaseModel):
 						self.logger.warning(
 							f'⚠️ Page {_log_pretty_url(page.url)} failed to finish loading after click: {type(e).__name__}: {e}'
 						)
-					await self._check_and_handle_navigation(page)
+					# Navigation is handled by NavigationWatchdog via events
 
 			try:
 				return await perform_click(lambda: element_handle and element_handle.click(timeout=1_500))
@@ -2061,19 +2059,19 @@ class BrowserSession(BaseModel):
 						raise e
 					except Exception as e:
 						# Final fallback - try clicking by coordinates if available
-						if element_node.viewport_coordinates and element_node.viewport_coordinates.center:
+						if element_node.absolute_position:
 							try:
+								center_x = element_node.absolute_position.x + element_node.absolute_position.width / 2
+								center_y = element_node.absolute_position.y + element_node.absolute_position.height / 2
 								self.logger.warning(
-									f'⚠️ Element click failed, falling back to coordinate click at ({element_node.viewport_coordinates.center.x}, {element_node.viewport_coordinates.center.y})'
+									f'⚠️ Element click failed, falling back to coordinate click at ({center_x}, {center_y})'
 								)
-								await page.mouse.click(
-									element_node.viewport_coordinates.center.x, element_node.viewport_coordinates.center.y
-								)
+								await page.mouse.click(center_x, center_y)
 								try:
 									await page.wait_for_load_state()
 								except Exception:
 									pass
-								await self._check_and_handle_navigation(page)
+								# Navigation is handled by NavigationWatchdog via events
 								return None  # Success
 							except Exception as coord_e:
 								self.logger.error(f'Coordinate click also failed: {type(coord_e).__name__}: {coord_e}')
@@ -2084,57 +2082,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			raise Exception(f'Failed to click element. Error: {str(e)}')
 
-	@time_execution_async('--get_tabs_info')
-	@retry(timeout=3, retries=1)
-	@require_healthy_browser(usable_page=False, reopen_page=False)
-	async def get_tabs_info(self) -> list[TabInfo]:
-		"""Get information about all tabs"""
-		assert self.browser_context is not None, 'BrowserContext is not set up'
-		tabs_info = []
-		for page_id, page in enumerate(self.browser_context.pages):
-			# Skip JS execution for chrome:// pages and new tab pages
-			if is_new_tab_page(page.url) or page.url.startswith('chrome://'):
-				# Use URL as title for chrome pages, or mark new tabs as unusable
-				if is_new_tab_page(page.url):
-					tab_info = TabInfo(page_id=page_id, url=page.url, title='ignore this tab and do not use it')
-				else:
-					# For chrome:// pages, use the URL itself as the title
-					tab_info = TabInfo(page_id=page_id, url=page.url, title=page.url)
-				tabs_info.append(tab_info)
-				continue
-
-			# Normal pages - try to get title with timeout
-			try:
-				title = await asyncio.wait_for(page.title(), timeout=2.0)
-				tab_info = TabInfo(page_id=page_id, url=page.url, title=title)
-			except Exception:
-				# page.title() can hang forever on tabs that are crashed/disappeared/about:blank
-				# but we should preserve the real URL and not mislead the LLM about tab availability
-				self.logger.debug(
-					f'⚠️ Failed to get tab info for tab #{page_id}: {_log_pretty_url(page.url)} (using fallback title)'
-				)
-
-				# Only mark as unusable if it's actually a new tab page, otherwise preserve the real URL
-				if is_new_tab_page(page.url):
-					tab_info = TabInfo(page_id=page_id, url=page.url, title='ignore this tab and do not use it')
-				else:
-					# Preserve the real URL and use a descriptive fallback title
-					# fallback_title = '(title unavailable, page possibly crashed / unresponsive)'
-					# tab_info = TabInfo(page_id=page_id, url=page.url, title=fallback_title)
-
-					# harsh but good, just close the page here because if we cant get the title then we certainly cant do anything else useful with it, no point keeping it open
-					try:
-						await page.close()
-						self.logger.debug(
-							f'🪓 Force-closed 🅟 {str(id(page))[-2:]} because its JS engine is unresponsive via CDP: {_log_pretty_url(page.url)}'
-						)
-					except Exception:
-						pass
-					continue
-
-			tabs_info.append(tab_info)
-
-		return tabs_info
 
 	@retry(timeout=20, retries=1, semaphore_limit=1, semaphore_scope='self')
 	async def _set_viewport_size(self, page: Page, viewport: dict[str, int] | ViewportSize) -> None:
@@ -2330,7 +2277,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			logger.warning(f'Failed to list downloaded files: {e}')
 			return []
-
 
 	@property
 	def pages(self) -> list[Page]:
@@ -2575,8 +2521,7 @@ class BrowserSession(BaseModel):
 		try:
 			await self._wait_for_stable_network()
 
-			# Check if the loaded URL is allowed
-			await self._check_and_handle_navigation(page)
+			# URL checking is handled by NavigationWatchdog via events
 		except URLNotAllowedError as e:
 			raise e
 		except Exception as e:
@@ -2612,12 +2557,6 @@ class BrowserSession(BaseModel):
 	async def navigate_to(self, url: str) -> Page:
 		"""Navigate the current page to a URL."""
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url))
-		await event
-		return await self.get_current_page()
-
-	async def navigate(self, url: str, timeout_ms: int | None = None, new_tab: bool = False) -> Page:
-		"""Navigate with optional timeout and new tab support."""
-		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, timeout_ms=timeout_ms, new_tab=new_tab))
 		await event
 		return await self.get_current_page()
 
@@ -2679,7 +2618,6 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(UploadFileEvent(element_index=element_index, file_path=file_path))
 		await event
 
-
 	# Additional compatibility methods
 
 	async def save_storage_state(self, path: str | None = None) -> None:
@@ -2688,19 +2626,77 @@ class BrowserSession(BaseModel):
 		self.event_bus.dispatch(SaveStorageStateEvent(path=path))
 
 	async def get_tabs_info(self) -> list[TabInfo]:
-		"""Get information about all open tabs."""
+		"""Get information about all open tabs using CDP for reliability."""
 		tabs = []
 		for i, page in enumerate(self.pages):
-			if not page.is_closed():
-				tab_info = TabInfo(
-					page_id=i,
-					url=page.url,
-					title=await page.title(),
-					parent_page_id=None,
-					id=f'tab_{i}',
-					index=i,
-				)
-				tabs.append(tab_info)
+			if page.is_closed():
+				continue
+				
+			# Skip JS execution for chrome:// pages and new tab pages
+			if is_new_tab_page(page.url) or page.url.startswith('chrome://'):
+				# Use URL as title for chrome pages, or mark new tabs as unusable
+				if is_new_tab_page(page.url):
+					title = 'ignore this tab and do not use it'
+				else:
+					# For chrome:// pages, use the URL itself as the title
+					title = page.url
+			else:
+				# Normal pages - try to get title with CDP for reliability
+				try:
+					# Use CDP to get title with timeout
+					cdp_client = await self.get_cdp_client()
+					session_id = await self.get_current_page_cdp_session_id()
+					
+					# Use CDP to evaluate document.title
+					title_result = await asyncio.wait_for(
+						cdp_client.send.Runtime.evaluate(
+							params={'expression': 'document.title'},
+							session_id=session_id
+						),
+						timeout=2.0
+					)
+					title = title_result.get('result', {}).get('value', '')
+					
+					# Special handling for PDF pages
+					if (not title or title == '') and (page.url.endswith('.pdf') or 'pdf' in page.url):
+						# PDF pages might not have a title, use URL filename
+						try:
+							from urllib.parse import urlparse
+							filename = urlparse(page.url).path.split('/')[-1]
+							if filename:
+								title = filename
+						except Exception:
+							pass
+							
+				except Exception as e:
+					# Page might be crashed or unresponsive
+					self.logger.debug(
+						f'⚠️ Failed to get tab info for tab #{i}: {_log_pretty_url(page.url)} - {type(e).__name__}'
+					)
+					
+					# Only mark as unusable if it's actually a new tab page
+					if is_new_tab_page(page.url):
+						title = 'ignore this tab and do not use it'
+					else:
+						# For crashed pages, close them as they're not useful
+						try:
+							await page.close()
+							self.logger.debug(
+								f'🪓 Force-closed page because it\'s unresponsive: {_log_pretty_url(page.url)}'
+							)
+							continue
+						except Exception:
+							title = '(Error)'
+				
+			tab_info = TabInfo(
+				page_id=i,
+				url=page.url,
+				title=title,
+				parent_page_id=None,
+				id=f'tab_{i}',
+				index=i,
+			)
+			tabs.append(tab_info)
 		return tabs
 
 	# DOM element methods
@@ -2753,7 +2749,8 @@ class BrowserSession(BaseModel):
 	async def get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
-		from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode, NodeType, SerializedDOMState, DOMSelectorMap
+		from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
+		from browser_use.dom.views import NodeType, SerializedDOMState
 
 		page = await self.get_current_page()
 
@@ -2803,7 +2800,7 @@ class BrowserSession(BaseModel):
 			_root=None,  # No simplified tree for minimal state
 			selector_map={},  # Empty selector map
 		)
-		
+
 		return BrowserStateSummary(
 			dom_state=minimal_dom_state,
 			url=url,
@@ -2889,14 +2886,10 @@ class BrowserSession(BaseModel):
 			self.logger.debug('🌳 Starting DOM processing...')
 			from browser_use.dom.service import DomService
 
-			dom_service = DomService(page, logger=self.logger)
+			dom_service = DomService(self, page, logger=self.logger)
 			try:
-				content = await asyncio.wait_for(
-					dom_service.get_clickable_elements(
-						focus_element=focus_element,
-						viewport_expansion=self.browser_profile.viewport_expansion,
-						highlight_elements=self.browser_profile.highlight_elements,
-					),
+				content, _ = await asyncio.wait_for(
+					dom_service.get_serialized_dom_tree(),
 					timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
 				)
 				self.logger.debug('✅ DOM processing completed')
@@ -2905,20 +2898,12 @@ class BrowserSession(BaseModel):
 				self.logger.warning('🔄 Falling back to minimal DOM state to allow basic navigation...')
 
 				# Create minimal DOM state for basic navigation
-				from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
+				from browser_use.dom.views import SerializedDOMState
 
-				minimal_element_tree = DOMElementNode(
-					tag_name='body',
-					xpath='/body',
-					attributes={},
-					children=[],
-					is_visible=True,
-					parent=None,
+				content = SerializedDOMState(
+					_root=None,  # No simplified tree for minimal state  
+					selector_map={},  # Empty selector map
 				)
-
-				from browser_use.dom.views import DOMState
-
-				content = DOMState(element_tree=minimal_element_tree, selector_map={})
 
 			self.logger.debug('📋 Getting tabs info...')
 			tabs_info = await self.get_tabs_info()
@@ -2983,8 +2968,7 @@ class BrowserSession(BaseModel):
 			is_pdf_viewer = await self._is_pdf_viewer(page)
 
 			self.browser_state_summary = BrowserStateSummary(
-				element_tree=content.element_tree,
-				selector_map=content.selector_map,
+				dom_state=content,
 				url=page.url,
 				title=title,
 				tabs=tabs_info,
@@ -2994,7 +2978,6 @@ class BrowserSession(BaseModel):
 				pixels_below=pixels_below,
 				browser_errors=browser_errors,
 				is_pdf_viewer=is_pdf_viewer,
-				loading_status=self._current_page_loading_status,
 			)
 
 			self.logger.debug('✅ get_state_summary completed successfully')
@@ -3445,7 +3428,7 @@ class BrowserSession(BaseModel):
 		except Exception:
 			# Fallback to a more basic selector if something goes wrong
 			tag_name = element.tag_name or '*'
-			return f"{tag_name}"
+			return f'{tag_name}'
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--is_visible')
@@ -3548,7 +3531,7 @@ class BrowserSession(BaseModel):
 
 	async def _click_element_node_compat(self, element: Any, expect_download: bool = False, new_tab: bool = False) -> str | None:
 		"""Click an element node and handle potential downloads.
-		
+
 		DEPRECATED: This is a compatibility method. Use the event-based approach instead.
 
 		Args:
@@ -3562,7 +3545,9 @@ class BrowserSession(BaseModel):
 			raise ValueError('No element provided to click')
 
 		# This method is deprecated - clicking is now handled by DefaultActionWatchdog
-		raise NotImplementedError("_click_element_node is deprecated. Use click_element() which dispatches ClickElementEvent instead.")
+		raise NotImplementedError(
+			'_click_element_node is deprecated. Use click_element() which dispatches ClickElementEvent instead.'
+		)
 
 	@require_healthy_browser(usable_page=True, reopen_page=True)
 	@time_execution_async('--input_text_element_node')
@@ -4084,7 +4069,7 @@ class BrowserSession(BaseModel):
 		Check if the current page is a PDF viewer.
 		"""
 		try:
-			is_pdf = await page.evaluate("window.isPdfViewer || false")
+			is_pdf = await page.evaluate('window.isPdfViewer || false')
 			return bool(is_pdf)
 		except Exception:
 			return False

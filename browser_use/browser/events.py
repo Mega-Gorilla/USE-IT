@@ -3,7 +3,7 @@
 from typing import Any, Literal
 
 from bubus import BaseEvent
-from pydantic import Field
+from pydantic import Field, model_validator
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
@@ -20,13 +20,23 @@ class NavigateToUrlEvent(BaseEvent):
 
 
 class ClickElementEvent(BaseEvent):
-	"""Click an element by index."""
+	"""Click an element by index or element_node."""
 
-	index: int
+	index: int | None = None
+	element_node: Any | None = None  # DOMElementNode, but avoid circular import
 	button: Literal['left', 'right', 'middle'] = 'left'
 	click_count: int = 1
 	expect_download: bool = False
 	new_tab: bool = False
+
+	@model_validator(mode='after')
+	def validate_index_or_element_node(self):
+		"""Validate that either index or element_node is provided."""
+		if self.index is None and self.element_node is None:
+			raise ValueError("Either 'index' or 'element_node' must be provided")
+		if self.index is not None and self.element_node is not None:
+			raise ValueError("Only one of 'index' or 'element_node' should be provided")
+		return self
 
 
 class TypeTextEvent(BaseEvent):

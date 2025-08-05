@@ -33,23 +33,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""Handle click request with CDP."""
 		page = await self.browser_session.get_current_page()
 		try:
-			# Get the DOM element by index
-			element_node = await self.browser_session.get_dom_element_by_index(event.index)
-			if element_node is None:
-				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
+			# Get the DOM element by index or use provided element_node
+			if event.element_node is not None:
+				element_node = event.element_node
+				# For element_node clicks, we need to get its index for logging
+				index_for_logging = getattr(element_node, 'highlight_index', 'N/A')
+			else:
+				element_node = await self.browser_session.get_dom_element_by_index(event.index)
+				if element_node is None:
+					raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
+				index_for_logging = event.index
 
 			# Track initial number of tabs to detect new tab opening
 			initial_pages = len(self.browser_session.pages)
 
 			# Check if element is a file input (should not be clicked)
 			if self.browser_session.is_file_input(element_node):
-				msg = f'Index {event.index} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
+				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
 				logger.info(msg)
 				self.event_bus.dispatch(
 					BrowserErrorEvent(
 						error_type='FileInputElement',
 						message=msg,
-						details={'index': event.index},
+						details={'index': index_for_logging},
 					)
 				)
 				return
@@ -64,7 +70,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Downloaded file to {download_path}'
 				logger.info(f'💾 {msg}')
 			else:
-				msg = f'Clicked button with index {event.index}: {element_node.get_all_children_text(max_depth=2)}'
+				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
 				logger.info(f'🖱️ {msg}')
 			logger.debug(f'Element xpath: {element_node.xpath}')
 
@@ -81,7 +87,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				BrowserErrorEvent(
 					error_type='ClickFailed',
 					message=str(e),
-					details={'index': event.index},
+					details={'index': index_for_logging if 'index_for_logging' in locals() else event.index},
 				)
 			)
 
