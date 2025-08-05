@@ -77,7 +77,7 @@ class TestBrowserSessionStorageState:
 		yield session
 		# Cleanup
 		try:
-			await session.kill()
+		await session.start()
 		except Exception:
 			pass
 
