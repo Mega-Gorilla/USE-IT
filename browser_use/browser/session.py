@@ -2844,7 +2844,7 @@ class BrowserSession(BaseModel):
 	async def get_minimal_state_summary(self) -> BrowserStateSummary:
 		"""Get basic page info without DOM processing, but try to capture screenshot"""
 		from browser_use.browser.views import BrowserStateSummary
-		from browser_use.dom.views import DOMElementNode
+		from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
 
 		page = await self.get_current_page()
 
@@ -2982,7 +2982,7 @@ class BrowserSession(BaseModel):
 				self.logger.warning('🔄 Falling back to minimal DOM state to allow basic navigation...')
 
 				# Create minimal DOM state for basic navigation
-				from browser_use.dom.views import DOMElementNode
+				from browser_use.dom.views import EnhancedDOMTreeNode as DOMElementNode
 
 				minimal_element_tree = DOMElementNode(
 					tag_name='body',

@@ -4,10 +4,7 @@ import asyncio
 import os
 from typing import TYPE_CHECKING
 
-from cdp_use import (
-	CDPClient,
-	get_element_box,
-)
+from cdp_use import CDPClient
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -24,12 +21,11 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.logging_config import logger
+from browser_use.utils import logger
 from browser_use.utils import _log_pretty_url
 
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
-	from browser_use.dom.service import DOMService
 
 
 class DefaultActionWatchdog(BaseWatchdog):
@@ -187,8 +183,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 			backend_node_id = element_node.backend_node_id
 
 			# Get bounds from CDP
-			box_model = await get_element_box(cdp_client, backend_node_id, session_id=session_id)
-			content_quad = box_model['content']
+			box_model = await cdp_client.send.DOM.getBoxModel(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id
+			)
+			content_quad = box_model['model']['content']
 			if len(content_quad) < 8:
 				raise Exception('Invalid content quad')
 
@@ -471,8 +470,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element bounds to know where to scroll
 			backend_node_id = element_node.backend_node_id
-			box_model = await get_element_box(cdp_client, backend_node_id, session_id=session_id)
-			content_quad = box_model['content']
+			box_model = await cdp_client.send.DOM.getBoxModel(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id
+			)
+			content_quad = box_model['model']['content']
 
 			# Calculate center point
 			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
