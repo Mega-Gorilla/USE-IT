@@ -9,7 +9,6 @@ from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserStartEvent,
 	BrowserStopEvent,
-	BrowserStoppedEvent,
 	NavigateToUrlEvent,
 	TabCreatedEvent,
 )
@@ -33,26 +32,7 @@ async def test_aboutblank_watchdog_lifecycle():
 		assert session._aboutblank_watchdog is not None, 'AboutBlankWatchdog should not be None'
 
 	finally:
-		# Stop browser
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
-		try:
-			await asyncio.wait_for(session.event_bus.expect(BrowserStoppedEvent), timeout=5.0)
-		except TimeoutError:
-			print('BrowserStoppedEvent timed out')
-
-		# Force close browser context if it exists
-		try:
-			if hasattr(session, '_browser_context') and session._browser_context:
-				await session._browser_context.close()
-		except Exception:
-			pass
-
-		# Stop playwright if it exists
-		try:
-			if hasattr(session, '_playwright') and session._playwright:
-				await session._playwright.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 
 @pytest.mark.asyncio
@@ -76,29 +56,10 @@ async def test_aboutblank_watchdog_creates_animation_tab():
 		# Look for about:blank pages (animation tab)
 		about_blank_pages = [p for p in pages if p.url == 'about:blank']
 		# AboutBlankWatchdog should create at least one animation tab
-		# Note: This depends on timing and browser state, so we don't assert strict count
+		assert len(about_blank_pages) >= 1, f'Expected at least one about:blank animation tab, but found {len(about_blank_pages)}'
 
 	finally:
-		# Stop browser
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
-		try:
-			await asyncio.wait_for(session.event_bus.expect(BrowserStoppedEvent), timeout=5.0)
-		except TimeoutError:
-			print('BrowserStoppedEvent timed out')
-
-		# Force close browser context if it exists
-		try:
-			if hasattr(session, '_browser_context') and session._browser_context:
-				await session._browser_context.close()
-		except Exception:
-			pass
-
-		# Stop playwright if it exists
-		try:
-			if hasattr(session, '_playwright') and session._playwright:
-				await session._playwright.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 
 @pytest.mark.asyncio
@@ -127,26 +88,7 @@ async def test_aboutblank_watchdog_handles_tab_creation():
 		# We can't easily verify internal state without accessing private methods
 
 	finally:
-		# Stop browser
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
-		try:
-			await asyncio.wait_for(session.event_bus.expect(BrowserStoppedEvent), timeout=5.0)
-		except TimeoutError:
-			print('BrowserStoppedEvent timed out')
-
-		# Force close browser context if it exists
-		try:
-			if hasattr(session, '_browser_context') and session._browser_context:
-				await session._browser_context.close()
-		except Exception:
-			pass
-
-		# Stop playwright if it exists
-		try:
-			if hasattr(session, '_playwright') and session._playwright:
-				await session._playwright.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 
 @pytest.mark.asyncio
@@ -181,26 +123,7 @@ async def test_aboutblank_watchdog_dvd_screensaver():
 				print(f'DVD screensaver test encountered expected issue: {e}')
 
 	finally:
-		# Stop browser
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
-		try:
-			await asyncio.wait_for(session.event_bus.expect(BrowserStoppedEvent), timeout=5.0)
-		except TimeoutError:
-			print('BrowserStoppedEvent timed out')
-
-		# Force close browser context if it exists
-		try:
-			if hasattr(session, '_browser_context') and session._browser_context:
-				await session._browser_context.close()
-		except Exception:
-			pass
-
-		# Stop playwright if it exists
-		try:
-			if hasattr(session, '_playwright') and session._playwright:
-				await session._playwright.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 
 @pytest.mark.asyncio
@@ -237,26 +160,7 @@ async def test_aboutblank_watchdog_animation_tab_management():
 		assert len(final_pages) >= initial_page_count, 'Should not lose pages'
 
 	finally:
-		# Stop browser
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
-		try:
-			await asyncio.wait_for(session.event_bus.expect(BrowserStoppedEvent), timeout=5.0)
-		except TimeoutError:
-			print('BrowserStoppedEvent timed out')
-
-		# Force close browser context if it exists
-		try:
-			if hasattr(session, '_browser_context') and session._browser_context:
-				await session._browser_context.close()
-		except Exception:
-			pass
-
-		# Stop playwright if it exists
-		try:
-			if hasattr(session, '_playwright') and session._playwright:
-				await session._playwright.stop()
-		except Exception:
-			pass
+		await session.kill()
 
 
 @pytest.mark.asyncio

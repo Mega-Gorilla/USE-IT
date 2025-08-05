@@ -371,6 +371,18 @@ class BrowserSession(BaseModel):
 		event = self.event_bus.dispatch(BrowserStopEvent())
 		await event
 
+		# Schedule EventBus cleanup after all events complete
+		async def cleanup_eventbus():
+			try:
+				await self.event_bus.wait_until_idle(timeout=20.0)
+			except TimeoutError:
+				logger.warning("EventBus didn't become idle within 20 seconds during stop")
+			await self.event_bus.stop(timeout=1.0, clear=True)
+
+		import asyncio
+
+		asyncio.create_task(cleanup_eventbus())
+
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request."""
 		page = await self.get_current_page()
@@ -548,9 +560,13 @@ class BrowserSession(BaseModel):
 		else:
 			page = await self.get_current_page()
 
-		# Execute the JavaScript and return result directly
-		result = await page.evaluate(event.expression)
-		return result
+		# Execute the JavaScript with timeout protection
+		try:
+			result = await asyncio.wait_for(page.evaluate(event.expression), timeout=30.0)
+			return result
+		except TimeoutError:
+			logger.error(f'[Session] JavaScript evaluation timed out after 30 seconds: {event.expression[:100]}...')
+			raise Exception('JavaScript evaluation timed out after 30 seconds')
 
 	def _generate_recent_events_summary(self, max_events: int = 10) -> str:
 		"""Generate a JSON summary of recent browser events."""
