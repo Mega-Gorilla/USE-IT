@@ -77,6 +77,7 @@ _configure_mcp_server_logging()
 # Import browser_use modules
 from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.events import ClickElementEvent
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
 from browser_use.controller.service import Controller
 from browser_use.filesystem.file_system import FileSystem
@@ -639,7 +640,10 @@ class BrowserUseServer:
 					return f'Could not locate element {index} for modified click'
 		else:
 			# Normal click
-			await self.browser_session._click_element_node(element)
+			event = self.browser_session.event_bus.dispatch(
+				ClickElementEvent(element_node=element)
+			)
+			await event
 			return f'Clicked element {index}'
 
 	async def _type_text(self, index: int, text: str) -> str:

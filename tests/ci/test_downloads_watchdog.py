@@ -13,6 +13,7 @@ from browser_use.browser.events import (
 	BrowserStartEvent,
 	BrowserStopEvent,
 	BrowserStoppedEvent,
+	ClickElementEvent,
 	FileDownloadedEvent,
 )
 from browser_use.browser.profile import BrowserProfile
@@ -348,7 +349,12 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 	else:
 		# Time the click using browser session method
 		start_time = time.time()
-		result = await browser_with_downloads._click_element_node(button_node)
+		event = browser_with_downloads.event_bus.dispatch(
+			ClickElementEvent(element_node=button_node)
+		)
+		await event
+		result = await event.event_result()
+		result = result.get('download_path') if result else None
 		duration_with_downloads = time.time() - start_time
 
 		# Verify click worked
@@ -394,7 +400,12 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 	else:
 		# Time the click using browser session method
 		start_time = time.time()
-		result = await browser_no_downloads._click_element_node(button_node)
+		event = browser_no_downloads.event_bus.dispatch(
+			ClickElementEvent(element_node=button_node)
+		)
+		await event
+		result = await event.event_result()
+		result = result.get('download_path') if result else None
 		duration_no_downloads = time.time() - start_time
 
 	# Verify click worked
@@ -458,7 +469,10 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 	# We don't need our own download handler - let the downloads watchdog handle it
 
 	# Click the download link with expect_download=True
-	await browser_session._click_element_node(download_node, expect_download=True)
+	event = browser_session.event_bus.dispatch(
+		ClickElementEvent(element_node=download_node, expect_download=True)
+	)
+	await event
 	duration = time.time() - start_time
 
 	print(f'Click completed in {duration:.2f}s')

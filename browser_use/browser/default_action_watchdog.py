@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, str] | None:
 		"""Handle click request with CDP."""
 		page = await self.browser_session.get_current_page()
 		try:
@@ -45,7 +45,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				index_for_logging = event.index
 
 			# Track initial number of tabs to detect new tab opening
-			initial_pages = len(self.browser_session.pages)
+			initial_target_ids = await self.browser_session.target_ids
 
 			# Check if element is a file input (should not be clicked)
 			if self.browser_session.is_file_input(element_node):
@@ -75,13 +75,19 @@ class DefaultActionWatchdog(BaseWatchdog):
 			logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Check if a new tab was opened
-			if len(self.browser_session.pages) > initial_pages:
+			current_target_ids = await self.browser_session.target_ids
+			if len(current_target_ids) > len(initial_target_ids):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				logger.info(f'🔗 {new_tab_msg}')
 				# Switch to the last tab (newly created tab)
-				last_tab_index = len(self.browser_session.pages) - 1
-				await self.browser_session.switch_to_tab(last_tab_index)
+				new_target_id = current_target_ids[-1]
+				await self.browser_session._cdp_activate_page(new_target_id)
+				self.browser_session.current_target_id = new_target_id
+			
+			# Return download_path if any
+			if download_path:
+				return {'download_path': download_path}
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(

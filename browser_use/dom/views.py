@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -9,6 +9,7 @@ from cdp_use.cdp.dom.commands import GetDocumentReturns
 from cdp_use.cdp.dom.types import ShadowRootType
 from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 from cdp_use.cdp.target.types import TargetInfo
+from uuid_extensions import uuid7str
 
 from browser_use.dom.utils import cap_text_length
 
@@ -168,6 +169,7 @@ class EnhancedDOMTreeNode:
 	"""
 
 	# region - DOM Node data
+
 	node_id: int
 	backend_node_id: int
 
@@ -221,6 +223,8 @@ class EnhancedDOMTreeNode:
 	snapshot_node: EnhancedSnapshotNode | None
 
 	# endregion - Snapshot Node data
+
+	uuid: str = field(default_factory=uuid7str)
 
 	@property
 	def parent(self) -> 'EnhancedDOMTreeNode | None':

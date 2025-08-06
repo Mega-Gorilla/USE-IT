@@ -9,6 +9,7 @@ import tiktoken
 
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.events import ClickElementEvent
 from browser_use.browser.types import ViewportSize
 from browser_use.dom.debug.highlights import inject_highlighting_script, remove_highlighting_script
 from browser_use.dom.service import DomService
@@ -251,7 +252,10 @@ async def test_focus_vs_all_elements():
 						if clicked_index in selector_map:
 							element_node = selector_map[clicked_index]
 							print(f'Clicking element {clicked_index}: {element_node.tag_name}')
-							await browser_session._click_element_node(element_node)
+							event = browser_session.event_bus.dispatch(
+								ClickElementEvent(element_node=element_node)
+							)
+							await event
 							print('Click successful.')
 					except ValueError:
 						print(f"Invalid input: '{answer}'. Enter an index, 'index,text', 'c,index', or 'q'.")

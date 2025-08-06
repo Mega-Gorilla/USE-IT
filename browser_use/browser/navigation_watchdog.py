@@ -4,7 +4,6 @@ import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
-from playwright.async_api import Page
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
@@ -45,42 +44,39 @@ class NavigationWatchdog(BaseWatchdog):
 		NavigationCompleteEvent,
 	]
 
-	# Agent focus tracking - using regular fields so they can be accessed as properties
-	page: Page | None = Field(default=None, exclude=True)
+	# Agent focus tracking - using target IDs instead of Page objects
+	current_target_id: str | None = Field(default=None, exclude=True)
 
-	# Track page close handlers so we can remove them on shutdown
-	_page_close_handlers: dict[Page, Any] = PrivateAttr(default_factory=dict)
+	# Track target close handlers
+	_target_close_handlers: dict[str, Any] = PrivateAttr(default_factory=dict)
 
-	async def attach_to_page(self, page: Page) -> None:
-		"""Set up monitoring for a page - tracks page lifecycle."""
-		page.on('close', self._handle_page_close)
+	async def attach_to_target(self, target_id: str) -> None:
+		"""Set up monitoring for a target - tracks target lifecycle."""
+		# CDP doesn't have direct page close events, we'll handle via Target.targetDestroyed
+		self._target_close_handlers[target_id] = True
 
 	# ========== Browser Lifecycle Events ==========
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clear agent focus when browser stops."""
-		# Remove close handlers from all pages to prevent TabClosedEvent during shutdown
-		for page, handler in list(self._page_close_handlers.items()):
-			try:
-				page.remove_listener('close', handler)
-			except Exception:
-				pass  # Page might already be closed
-		self._page_close_handlers.clear()
-		self.page = None
+		# Clear target handlers
+		self._target_close_handlers.clear()
+		self.current_target_id = None
 
 	# ========== Tab Lifecycle Events ==========
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
-		"""Handle new tab creation - track page and possibly move agent focus."""
+		"""Handle new tab creation - track target and possibly move agent focus."""
 		# logger.debug(f'[NavigationWatchdog] Tab created: {event.url}')
 
-		# Get the page from browser context and track it
+		# Get all targets and track the new one
 		try:
-			page = self.browser_session.get_page_by_tab_index(event.tab_index)
-			if page:
-				self._track_page(page)
+			targets = await self.browser_session._cdp_get_all_pages()
+			if event.tab_index < len(targets):
+				target_id = targets[event.tab_index]['targetId']
+				self._track_target(target_id)
 		except Exception as e:
-			logger.error(f'[NavigationWatchdog] Error tracking new page: {e}')
+			logger.error(f'[NavigationWatchdog] Error tracking new target: {e}')
 
 		# When a new tab is created, agent typically focuses on it immediately
 		await self._update_agent_focus_to_latest_tab()
@@ -89,10 +85,11 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Handle tab closure."""
 		logger.debug(f'[NavigationWatchdog] Tab closed at index {event.tab_index}')
 
-		# If the closed tab was the agent's current page, find a new one
-		if self.tab_index == event.tab_index:
-			await self._find_new_agent_page()
-		# No need to adjust tab_index since it's computed from page position
+		# If the closed tab was the agent's current target, find a new one
+		current_tab_index = await self._get_current_tab_index()
+		if current_tab_index == event.tab_index:
+			await self._find_new_agent_target()
+		# No need to adjust tab_index since it's computed from target position
 
 	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> None:
 		"""Handle explicit tab switches by the agent."""
@@ -102,9 +99,9 @@ class NavigationWatchdog(BaseWatchdog):
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
 		"""Handle all navigation requests with security enforcement and complete logic."""
 
-		# Check if browser context is still available
-		if not self.browser_session or not self.browser_session._browser_context:
-			logger.debug('[NavigationWatchdog] No browser context available, ignoring navigation')
+		# Check if browser session is still available
+		if not self.browser_session:
+			logger.debug('[NavigationWatchdog] No browser session available, ignoring navigation')
 			return
 
 		# SECURITY CHECK: Block disallowed URLs before navigation starts
@@ -122,16 +119,15 @@ class NavigationWatchdog(BaseWatchdog):
 		try:
 			# Handle new tab navigation
 			if event.new_tab:
-				if not self.browser_session._browser_context:
-					return
+				# Create new tab using CDP
+				target_id = await self.browser_session._cdp_create_new_page(event.url or 'about:blank')
+				self._track_target(target_id)
 
-				# Create new page
-				page = await self.browser_session._browser_context.new_page()
+				# Get tab index for events (after adding the target)
+				targets = await self.browser_session._cdp_get_all_pages()
+				tab_index = len(targets) - 1
 
-				# Get tab index for events (after adding the page)
-				tab_index = len(self.browser_session.tabs) - 1
-
-				# Navigate to URL if provided
+				# Navigate to URL if provided (already done in create_new_page if URL was provided)
 				if event.url:
 					# Dispatch navigation started event
 					from browser_use.browser.events import NavigationStartedEvent
@@ -144,18 +140,16 @@ class NavigationWatchdog(BaseWatchdog):
 					)
 
 					try:
-						# Perform navigation with timeout protection
-						response = await asyncio.wait_for(
-							page.goto(event.url, wait_until=event.wait_until),
-							timeout=30.0,  # 30 second timeout to prevent hanging
-						)
+						# Navigation already happened in _cdp_create_new_page
+						# Just dispatch completion
+						response_status = None  # CDP doesn't return response status directly
 
 						# Dispatch completion event
 						self.event_bus.dispatch(
 							NavigationCompleteEvent(
 								tab_index=tab_index,
 								url=event.url,
-								status=response.status if response else None,
+								status=response_status,
 							)
 						)
 
@@ -194,16 +188,18 @@ class NavigationWatchdog(BaseWatchdog):
 						)
 
 				# Update agent focus to the new tab immediately
-				self.page = page
+				self.current_target_id = target_id
 				self._dispatch_focus_changed()
 
 				# ONLY dispatch TabCreatedEvent for NEW tabs (not existing tab navigation)
 				from browser_use.browser.events import TabCreatedEvent
 
+				# Get the actual URL from the target
+				target_url = await self._get_target_url(target_id)
 				self.event_bus.dispatch(
 					TabCreatedEvent(
 						tab_index=tab_index,
-						url=page.url,  # Use actual page URL
+						url=target_url or event.url,
 					)
 				)
 				return
@@ -229,20 +225,21 @@ class NavigationWatchdog(BaseWatchdog):
 				return
 
 			# Handle standard navigation
-			# Get the page to navigate - use current agent page or create one
-			page = None
+			# Get the target to navigate - use current agent target or create one
+			target_id = None
 			try:
-				page = await self.get_or_create_page()
+				target_id = await self.get_or_create_target()
 			except Exception:
-				# Fallback to first page
-				if self.browser_session.pages:
-					page = self.browser_session.pages[0]
+				# Fallback to first target
+				targets = await self.browser_session._cdp_get_all_pages()
+				if targets:
+					target_id = targets[0]['targetId']
 
-			if not page:
-				raise ValueError('Failed to get or create a page for navigation')
+			if not target_id:
+				raise ValueError('Failed to get or create a target for navigation')
 
 			# Get tab index
-			tab_index = self.browser_session.get_tab_index(page)
+			tab_index = await self._get_tab_index_for_target(target_id)
 
 			# Dispatch navigation started event
 			from browser_use.browser.events import NavigationStartedEvent
@@ -254,21 +251,19 @@ class NavigationWatchdog(BaseWatchdog):
 				)
 			)
 
-			# Perform navigation with timeout protection
-			response = await asyncio.wait_for(
-				page.goto(
-					event.url,
-					wait_until=event.wait_until,
-				),
+			# Perform navigation with timeout protection using CDP
+			await asyncio.wait_for(
+				self.browser_session._cdp_navigate(event.url, target_id),
 				timeout=30.0,  # 30 second timeout to prevent hanging
 			)
+			response_status = None  # CDP doesn't return response status directly
 
 			# Dispatch completion event
 			self.event_bus.dispatch(
 				NavigationCompleteEvent(
 					tab_index=tab_index,
 					url=event.url,
-					status=response.status if response else None,
+					status=response_status,
 				)
 			)
 
@@ -281,7 +276,7 @@ class NavigationWatchdog(BaseWatchdog):
 			logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in standard navigation')
 
 			# Get tab index for timeout error reporting
-			tab_index = self.browser_session.get_tab_index(page) if page else 0
+			tab_index = await self._get_tab_index_for_target(target_id) if target_id else 0
 
 			# Dispatch NavigationCompleteEvent with timeout error details
 			self.event_bus.dispatch(
@@ -329,52 +324,46 @@ class NavigationWatchdog(BaseWatchdog):
 					details={'url': event.url, 'tab_index': event.tab_index},
 				)
 			)
-			# Close the page that navigated to the disallowed URL
+			# Close the target that navigated to the disallowed URL
 			try:
-				if self.browser_session._browser_context:
-					pages = self.browser_session._browser_context.pages
-					if 0 <= event.tab_index < len(pages):
-						page = pages[event.tab_index]
-						await page.close()
-						logger.info(f'⛔️ Closed page with non-allowed URL: {event.url}')
+				targets = await self.browser_session._cdp_get_all_pages()
+				if 0 <= event.tab_index < len(targets):
+					target_id = targets[event.tab_index]['targetId']
+					await self.browser_session._cdp_close_page(target_id)
+					logger.info(f'⛔️ Closed page with non-allowed URL: {event.url}')
 			except Exception as e:
 				logger.error(f'⛔️ Failed to close page with non-allowed URL: {str(e)}')
 			return
 
 		# Agent focus stays on the tab that navigated
-		if event.tab_index != self.tab_index:
+		current_tab_index = await self._get_current_tab_index()
+		if event.tab_index != current_tab_index:
 			await self._switch_agent_focus_to_tab(event.tab_index)
 
 	# ========== Tab Tracking Methods ==========
 
-	def _track_page(self, page: Page) -> None:
-		"""Track a page for lifecycle events."""
-		# logger.debug(f'[NavigationWatchdog] Started tracking page: {page.url}')
+	def _track_target(self, target_id: str) -> None:
+		"""Track a target for lifecycle events."""
+		# logger.debug(f'[NavigationWatchdog] Started tracking target: {target_id}')
+		self._target_close_handlers[target_id] = True
 
-		# Set up page close handler and store it so we can remove it later
-		def close_handler(*args, **kwargs):
-			self._handle_page_close(page)
-
-		self._page_close_handlers[page] = close_handler
-		page.on('close', close_handler)
-
-	def _handle_page_close(self, page: Page) -> None:
-		"""Handle page close event."""
+	def _handle_target_close(self, target_id: str) -> None:
+		"""Handle target close event."""
 		try:
-			# Try to get tab index before page is fully closed
-			tab_index = self.browser_session.get_tab_index(page)
+			# Try to get tab index before target is fully closed
+			tab_index = asyncio.run(self._get_tab_index_for_target(target_id))
 			if tab_index == -1:
-				tab_index = 0  # Fallback if page already removed
+				tab_index = 0  # Fallback if target already removed
 
 			# Emit TabClosedEvent
 			self.event_bus.dispatch(TabClosedEvent(tab_index=tab_index))
-			logger.info(f'[NavigationWatchdog] Page closed, emitted TabClosedEvent for tab {tab_index}')
+			logger.info(f'[NavigationWatchdog] Target closed, emitted TabClosedEvent for tab {tab_index}')
 
 			# Clean up the handler from our tracking dict
-			self._page_close_handlers.pop(page, None)
+			self._target_close_handlers.pop(target_id, None)
 
 		except Exception as e:
-			logger.error(f'[NavigationWatchdog] Error handling page close: {e}')
+			logger.error(f'[NavigationWatchdog] Error handling target close: {e}')
 
 	# ========== Security Methods ==========
 
@@ -452,128 +441,145 @@ class NavigationWatchdog(BaseWatchdog):
 	# ========== Agent Focus Tracking Methods ==========
 
 	@property
-	def current_agent_page(self) -> Page | None:
-		"""Get the current page the agent is focused on."""
-		return self.page
+	def current_agent_target(self) -> str | None:
+		"""Get the current target ID the agent is focused on."""
+		return self.current_target_id
 
 	@property
 	def current_agent_tab_index(self) -> int:
 		"""Get the current tab index the agent is focused on."""
-		return self.tab_index
+		return asyncio.run(self._get_current_tab_index())
 
 	@property
 	def tab_index(self) -> int:
-		"""Get the current tab index derived from page position in browser_session.pages."""
-		if self.page is None:
+		"""Get the current tab index derived from target position."""
+		return asyncio.run(self._get_current_tab_index())
+
+	async def _get_current_tab_index(self) -> int:
+		"""Get the current tab index from target position."""
+		if self.current_target_id is None:
 			return 0
-		return self.browser_session.get_tab_index(self.page)
+		return await self._get_tab_index_for_target(self.current_target_id)
+
+	async def _get_tab_index_for_target(self, target_id: str) -> int:
+		"""Get tab index for a specific target ID."""
+		try:
+			targets = await self.browser_session._cdp_get_all_pages()
+			for i, target in enumerate(targets):
+				if target['targetId'] == target_id:
+					return i
+		except Exception:
+			pass
+		return -1
+
+	async def _get_target_url(self, target_id: str) -> str | None:
+		"""Get the URL for a specific target ID."""
+		try:
+			targets = await self.browser_session._cdp_get_all_pages()
+			for target in targets:
+				if target['targetId'] == target_id:
+					return target.get('url', '')
+		except Exception:
+			pass
+		return None
 
 	async def _initialize_agent_focus(self) -> None:
-		"""Initialize agent focus to first available page."""
-		if not self.browser_session._browser_context:
-			return
-
-		pages = self.browser_session._browser_context.pages
-		if pages:
-			self.page = pages[0]
+		"""Initialize agent focus to first available target."""
+		targets = await self.browser_session._cdp_get_all_pages()
+		if targets:
+			self.current_target_id = targets[0]['targetId']
 			self._dispatch_focus_changed()
-			try:
-				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[NavigationWatchdog] Initial agent focus set to tab 0: {current_page.url}')
-			except ValueError:
-				logger.info('[NavigationWatchdog] Initial agent focus set to tab 0')
+			target_url = await self._get_target_url(self.current_target_id)
+			logger.info(f'[NavigationWatchdog] Initial agent focus set to tab 0: {target_url}')
 
 	async def _update_agent_focus_to_latest_tab(self) -> None:
 		"""Update agent focus to the latest (most recently created) tab."""
-		if self.browser_session.pages:
-			# Focus on the last tab (most recently created)
-			self.page = self.browser_session.pages[-1]
+		targets = await self.browser_session._cdp_get_all_pages()
+		if targets:
+			# Focus on the last target (most recently created)
+			self.current_target_id = targets[-1]['targetId']
 			self._dispatch_focus_changed()
-			try:
-				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {self.tab_index}: {current_page.url}')
-			except ValueError:
-				logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {self.tab_index}')
+			target_url = await self._get_target_url(self.current_target_id)
+			tab_index = await self._get_current_tab_index()
+			logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
 
 	async def _switch_agent_focus_to_tab(self, tab_index: int) -> None:
 		"""Switch agent focus to a specific tab index."""
-		page = self.browser_session.get_page_by_tab_index(tab_index)
-		if page:
-			self.page = page
+		targets = await self.browser_session._cdp_get_all_pages()
+		if 0 <= tab_index < len(targets):
+			self.current_target_id = targets[tab_index]['targetId']
 			self._dispatch_focus_changed()
-			try:
-				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {current_page.url}')
-			except ValueError:
-				logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}')
+			target_url = await self._get_target_url(self.current_target_id)
+			logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
 
-	async def _find_new_agent_page(self) -> None:
-		"""Find a new page for agent focus when current one is closed."""
-		if self.browser_session.pages:
+	async def _find_new_agent_target(self) -> None:
+		"""Find a new target for agent focus when current one is closed."""
+		targets = await self.browser_session._cdp_get_all_pages()
+		if targets:
 			# Try to stay at the same index, or go to the previous one
-			new_index = min(self.tab_index, len(self.browser_session.pages) - 1)
-			self.page = self.browser_session.pages[new_index]
+			current_index = await self._get_current_tab_index()
+			new_index = min(current_index, len(targets) - 1)
+			self.current_target_id = targets[new_index]['targetId']
 			self._dispatch_focus_changed()
-			try:
-				current_page = await self.browser_session.get_current_page()
-				logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {current_page.url}')
-			except ValueError:
-				logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}')
+			target_url = await self._get_target_url(self.current_target_id)
+			logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {target_url}')
 		else:
-			self.page = None
+			self.current_target_id = None
 
 	def _dispatch_focus_changed(self) -> None:
 		"""Dispatch event when agent focus changes."""
-		if self.page:
+		if self.current_target_id:
 			try:
+				# Get URL asynchronously
+				target_url = asyncio.run(self._get_target_url(self.current_target_id))
+				tab_index = asyncio.run(self._get_current_tab_index())
 				self.event_bus.dispatch(
 					AgentFocusChangedEvent(
-						tab_index=self.tab_index,
-						url=self.page.url,
+						tab_index=tab_index,
+						url=target_url or '',
 					)
 				)
 			except Exception as e:
 				logger.error(f'[NavigationWatchdog] Error dispatching focus change: {e}')
 
-	async def get_or_create_page(self) -> Page:
-		"""Get current agent page or create a new one if none exists."""
-		if self.page and not self.page.is_closed():
-			# Check if current page URL is still allowed
-			if not self._is_url_allowed(self.page.url):
-				logger.warning(f'⛔️ Current page URL no longer allowed: {self.page.url}')
-				# Close the current page and find/create a new one
+	async def get_or_create_target(self) -> str:
+		"""Get current agent target or create a new one if none exists."""
+		if self.current_target_id:
+			# Check if current target URL is still allowed
+			target_url = await self._get_target_url(self.current_target_id)
+			if target_url and not self._is_url_allowed(target_url):
+				logger.warning(f'⛔️ Current target URL no longer allowed: {target_url}')
+				# Close the current target and find/create a new one
 				try:
-					await self.page.close()
+					await self.browser_session._cdp_close_page(self.current_target_id)
 				except Exception:
 					pass
-				self.page = None
+				self.current_target_id = None
 			else:
-				return self.page
+				return self.current_target_id
 
 		try:
-			for i, tab in enumerate(self.browser_session.pages):
-				if self._is_url_allowed(tab.url):
-					await self._switch_agent_focus_to_tab(i)
-					if self.page:
-						return self.page
+			targets = await self.browser_session._cdp_get_all_pages()
+			for target in targets:
+				target_url = target.get('url', '')
+				if self._is_url_allowed(target_url):
+					self.current_target_id = target['targetId']
+					self._dispatch_focus_changed()
+					return self.current_target_id
 		except TimeoutError:
 			pass
 
 		# No tabs available or no allowed tabs, create a new one with about:blank
-		logger.info('[NavigationWatchdog] No active page, creating new tab')
-
-		# Check if browser is still connected before trying to create a new tab
-		if not self.browser_session._browser_context:
-			raise ValueError('Browser context is not available - browser may have disconnected')
+		logger.info('[NavigationWatchdog] No active target, creating new tab')
 
 		nav_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 		await nav_event  # Wait for navigation to complete
 
-		# Try to get the new page
-		if self.browser_session.pages:
-			self.page = self.browser_session.pages[-1]
+		# Try to get the new target
+		targets = await self.browser_session._cdp_get_all_pages()
+		if targets:
+			self.current_target_id = targets[-1]['targetId']
 			self._dispatch_focus_changed()
-			if self.page:
-				return self.page
+			return self.current_target_id
 
-		raise ValueError('Failed to create or find an active page')
+		raise ValueError('Failed to create or find an active target')
