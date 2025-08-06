@@ -273,43 +273,46 @@ class Controller(Generic[Context]):
 
 		# Content Actions
 
-		@self.registry.action(
-			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-This tool takes the entire markdown of the page and extracts the query from it. 
-Set extract_links=True ONLY if your query requires extracting links/URLs from the page. 
-Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-""",
-		)
-		async def extract_structured_data(
-			query: str,
-			extract_links: bool,
-			page: Page,
-			page_extraction_llm: BaseChatModel,
-			file_system: FileSystem,
-		):
-			from functools import partial
+		# TODO: Refactor to use events instead of direct page access
+		# This action is temporarily disabled as it needs refactoring to use events
+		if False:  # Disabled
+			@self.registry.action(
+				"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
+			This tool takes the entire markdown of the page and extracts the query from it. 
+			Set extract_links=True ONLY if your query requires extracting links/URLs from the page. 
+			Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
+			""",
+			)
+			async def extract_structured_data(
+				query: str,
+				extract_links: bool,
+				page: Page,
+				page_extraction_llm: BaseChatModel,
+				file_system: FileSystem,
+			):
+				from functools import partial
 
-			import markdownify
+				import markdownify
 
-			strip = []
+				strip = []
 
-			if not extract_links:
-				strip = ['a', 'img']
+				if not extract_links:
+					strip = ['a', 'img']
 
-			# Run markdownify in a thread pool to avoid blocking the event loop
-			loop = asyncio.get_event_loop()
+				# Run markdownify in a thread pool to avoid blocking the event loop
+				loop = asyncio.get_event_loop()
 
-			# Aggressive timeout for page content
-			try:
-				page_html_result = await asyncio.wait_for(page.content(), timeout=10.0)  # 5 second aggressive timeout
-			except TimeoutError:
-				raise RuntimeError('Page content extraction timed out after 5 seconds')
-			except Exception as e:
-				raise RuntimeError(f"Couldn't extract page content: {e}")
+				# Aggressive timeout for page content
+				try:
+					page_html_result = await asyncio.wait_for(page.content(), timeout=10.0)  # 5 second aggressive timeout
+				except TimeoutError:
+					raise RuntimeError('Page content extraction timed out after 5 seconds')
+				except Exception as e:
+					raise RuntimeError(f"Couldn't extract page content: {e}")
 
-			page_html = page_html_result
+				page_html = page_html_result
 
-			markdownify_func = partial(markdownify.markdownify, strip=strip)
+				markdownify_func = partial(markdownify.markdownify, strip=strip)
 
 			try:
 				content = await asyncio.wait_for(
@@ -533,10 +536,11 @@ Explain the content of the page and that the requested information is not availa
 				include_extracted_content_only_once=True,
 			)
 
-		@self.registry.action(
-			description='Get all options from a native dropdown or ARIA menu',
-		)
-		async def get_dropdown_options(index: int, browser_session: BrowserSession) -> ActionResult:
+		# TODO: Refactor to use events instead of direct page/dom access
+		# @self.registry.action(
+		# 	description='Get all options from a native dropdown or ARIA menu',
+		# )
+		# async def get_dropdown_options(index: int, browser_session: BrowserSession) -> ActionResult:
 			"""Get all options from a native dropdown or ARIA menu"""
 			page = await browser_session.get_current_page()
 			dom_element = await browser_session.get_dom_element_by_index(index)
@@ -646,10 +650,11 @@ Explain the content of the page and that the requested information is not availa
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True)
 
-		@self.registry.action(
-			description='Select dropdown option or ARIA menu item for interactive element index by the text of the option you want to select',
-		)
-		async def select_dropdown_option(
+		# TODO: Refactor to use events instead of direct page/dom access
+		# @self.registry.action(
+		# 	description='Select dropdown option or ARIA menu item for interactive element index by the text of the option you want to select',
+		# )
+		# async def select_dropdown_option(
 			index: int,
 			text: str,
 			browser_session: BrowserSession,

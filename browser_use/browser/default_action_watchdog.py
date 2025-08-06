@@ -81,10 +81,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg += f' - {new_tab_msg}'
 				logger.info(f'🔗 {new_tab_msg}')
 				# Switch to the last tab (newly created tab)
-				new_target_id = current_target_ids[-1]
-				await self.browser_session._cdp_activate_page(new_target_id)
-				self.browser_session.current_target_id = new_target_id
-			
+				from browser_use.browser.events import SwitchTabEvent
+
+				last_tab_index = len(current_target_ids) - 1
+				await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+
 			# Return download_path if any
 			if download_path:
 				return {'download_path': download_path}

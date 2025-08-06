@@ -453,6 +453,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
+				target_id=target['targetId'],
 				content_document=None,
 				shadow_root_type=shadow_root_type,
 				shadow_roots=None,
