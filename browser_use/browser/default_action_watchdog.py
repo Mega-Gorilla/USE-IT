@@ -33,16 +33,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""Handle click request with CDP."""
 		page = await self.browser_session.get_current_page()
 		try:
-			# Get the DOM element by index or use provided element_node
-			if event.element_node is not None:
-				element_node = event.element_node
-				# For element_node clicks, we need to get its index for logging
-				index_for_logging = getattr(element_node, 'highlight_index', 'N/A')
-			else:
-				element_node = await self.browser_session.get_dom_element_by_index(event.index)
-				if element_node is None:
-					raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
-				index_for_logging = event.index
+			# Use the provided node
+			element_node = event.node
+			index_for_logging = element_node.element_index or 'unknown'
 
 			# Track initial number of tabs to detect new tab opening
 			initial_target_ids = await self.browser_session.target_ids
@@ -94,7 +87,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				BrowserErrorEvent(
 					error_type='ClickFailed',
 					message=str(e),
-					details={'index': index_for_logging if 'index_for_logging' in locals() else event.index},
+					details={'index': index_for_logging if 'index_for_logging' in locals() else 'unknown'},
 				)
 			)
 
@@ -102,23 +95,22 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""Handle text input request with CDP."""
 		page = await self.browser_session.get_current_page()
 		try:
-			# Get the DOM element by index
-			element_node = await self.browser_session.get_dom_element_by_index(event.index)
-			if element_node is None:
-				raise Exception(f'Element index {event.index} does not exist - retry or use alternative actions')
+			# Use the provided node
+			element_node = event.node
+			index_for_logging = element_node.element_index or 'unknown'
 
 			# Perform the actual text input
 			await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
 
 			# Log success
-			logger.info(f'⌨️ Typed "{event.text}" into element with index {event.index}')
+			logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 			logger.debug(f'Element xpath: {element_node.xpath}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='InputTextFailed',
 					message=str(e),
-					details={'index': event.index, 'text': event.text},
+					details={'index': element_node.element_index or 'unknown', 'text': event.text},
 				)
 			)
 
@@ -140,16 +132,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Positive pixels = scroll down, negative = scroll up
 			pixels = event.amount if event.direction == 'down' else -event.amount
 
-			# Element-specific scrolling if index is provided
-			if event.element_index is not None:
-				element_node = await self.browser_session.get_dom_element_by_index(event.element_index)
-				if element_node is None:
-					raise Exception(f'Element index {event.element_index} does not exist')
+			# Element-specific scrolling if node is provided
+			if event.node is not None:
+				element_node = event.node
+				index_for_logging = element_node.element_index or 'unknown'
 
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
-					logger.info(f'📜 Scrolled element {event.element_index} container {event.direction} by {event.amount} pixels')
+					logger.info(f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels')
 					return
 
 			# Perform page-level scroll
@@ -726,14 +717,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 	async def on_UploadFileEvent(self, event: UploadFileEvent) -> None:
 		"""Handle file upload request with CDP."""
 		try:
-			# Get the DOM element by index
-			element_node = await self.browser_session.get_dom_element_by_index(event.element_index)
-			if element_node is None:
-				raise Exception(f'Element index {event.element_index} does not exist')
+			# Use the provided node
+			element_node = event.node
+			index_for_logging = element_node.element_index or 'unknown'
 
 			# Check if it's a file input
 			if not self.browser_session.is_file_input(element_node):
-				raise Exception(f'Element {event.element_index} is not a file input')
+				raise Exception(f'Element {index_for_logging} is not a file input')
 
 			# Get CDP client and session
 			cdp_client = await self.browser_session.get_cdp_client()
@@ -749,13 +739,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 				session_id=session_id,
 			)
 
-			logger.info(f'📎 Uploaded file {event.file_path} to element {event.element_index}')
+			logger.info(f'📎 Uploaded file {event.file_path} to element {index_for_logging}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='UploadFileFailed',
 					message=str(e),
-					details={'element_index': event.element_index, 'file_path': event.file_path},
+					details={'element_index': element_node.element_index or 'unknown', 'file_path': event.file_path},
 				)
 			)
 

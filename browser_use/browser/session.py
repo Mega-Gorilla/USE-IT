@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from bubus import EventBus
 from bubus.helpers import retry
@@ -30,6 +30,10 @@ from browser_use.utils import (
 	logger,
 	time_execution_async,
 )
+
+if TYPE_CHECKING:
+	from cdp_use import CDPClient
+	from browser_use.dom.views import EnhancedDOMTreeNode
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
 
@@ -75,14 +79,13 @@ class BrowserSession(BaseModel):
 	# Connection info (for backwards compatibility)
 	cdp_url: str | None = None
 	is_local: bool = Field(default=True)
+	
+	# Mutable state
+	current_target_id: str | None = None
+	"""Current active target ID for the main page"""
 
 	# Event bus
 	event_bus: EventBus = Field(default_factory=EventBus)
-
-	# Browser state
-	_playwright: PlaywrightOrPatchright | None = PrivateAttr(default=None)
-	_browser: Browser | None = PrivateAttr(default=None)
-	_browser_context: BrowserContext | None = PrivateAttr(default=None)
 
 	# PDF handling
 	_auto_download_pdfs: bool = PrivateAttr(default=True)
@@ -101,6 +104,13 @@ class BrowserSession(BaseModel):
 
 	# Cached browser state for synchronous access
 	_cached_browser_state_summary: Any = PrivateAttr(default=None)
+	_cached_selector_map: dict[int, 'EnhancedDOMTreeNode'] = PrivateAttr(default_factory=dict)
+	"""Cached mapping of element indices to DOM nodes"""
+	
+	# CDP client
+	_cdp_client: 'CDPClient | None' = PrivateAttr(default=None)
+	"""Cached CDP client instance"""
+	
 	_logger: Any = PrivateAttr(default=None)
 
 	@property
@@ -114,6 +124,17 @@ class BrowserSession(BaseModel):
 			self._logger = logging.getLogger(f'browser_use.{self}')
 		return self._logger
 
+	@property
+	def cdp_client(self) -> 'CDPClient | None':
+		"""Get the cached CDP client if it exists.
+		
+		The client is created and started in setup_browser_via_cdp_url().
+		
+		Returns:
+			The CDP client instance or None if not yet created
+		"""
+		return self._cdp_client
+
 	def __repr__(self) -> str:
 		port_number_or_pid = (self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
 		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]} (cdp_url={self.cdp_url}, profile={self.browser_profile})'
@@ -121,7 +142,7 @@ class BrowserSession(BaseModel):
 	def __str__(self) -> str:
 		# Note: _original_browser_session tracking moved to Agent class
 		port_number_or_pid = (
-			(self.cdp_url or self.wss_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
+			(self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
 		)
 		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.current_target_id))[-2:]}'
 
@@ -150,38 +171,8 @@ class BrowserSession(BaseModel):
 
 			assert self.cdp_url and '://' in self.cdp_url
 
-			# Connect via CDP
-			self._playwright = await async_playwright().start()
-
-			# Get connection kwargs and exclude accept_downloads when using CDP download behavior
-			connect_kwargs = self.browser_profile.kwargs_for_connect().model_dump(exclude={'accept_downloads'})
-
-			self._browser = await self._playwright.chromium.connect_over_cdp(
-				self.cdp_url,
-				**connect_kwargs,
-			)
-
-			# Enable downloads via CDP Browser.setDownloadBehavior
-			if self.browser_profile.downloads_path:
-				try:
-					cdp_session = await self._browser.new_browser_cdp_session()
-					await cdp_session.send(
-						'Browser.setDownloadBehavior',
-						{'behavior': 'allow', 'downloadPath': str(self.browser_profile.downloads_path)},
-					)
-					logger.debug(
-						f'[Session] Enabled downloads via Browser.setDownloadBehavior to: {self.browser_profile.downloads_path}'
-					)
-				except Exception as e:
-					logger.error(f'[Session] Failed to set browser download behavior via CDP: {e}')
-
-			# Get or create browser context
-			if self._browser.contexts:
-				self._browser_context = self._browser.contexts[0]
-			else:
-				self._browser_context = await self._browser.new_context(
-					**self.browser_profile.kwargs_for_new_context().model_dump(mode='json', exclude_unset=True)
-				)
+			# Setup browser via CDP without Playwright
+			await self.setup_browser_via_cdp_url()
 
 			# Notify that browser is connected
 			self.event_bus.dispatch(BrowserConnectedEvent(cdp_url=self.cdp_url))
@@ -200,20 +191,13 @@ class BrowserSession(BaseModel):
 		"""Handle browser stop request."""
 
 		try:
+			# TODO: close all pages here or tell the browser to close gracefully? is there any point?
+			# we might need to give the browser time to save trace files, recordings, etc. during shutdown
+
 			# Check if we should keep the browser alive
 			if self.browser_profile.keep_alive and not event.force:
 				self.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
 				return
-
-			# Close context if we created it
-			if self._browser_context:
-				await self._browser_context.close()
-				self._browser_context = None
-
-			# Clean up playwright
-			if self._playwright:
-				await self._playwright.stop()
-				self._playwright = None
 
 			# Reset state
 			self._browser = None
@@ -291,11 +275,7 @@ class BrowserSession(BaseModel):
 
 		# Manually copy over the excluded fields that are needed for browser connection
 		# These fields are excluded in the model config but need to be shared
-		copy._playwright = self._playwright
-		copy._browser = self._browser
-		copy._browser_context = self._browser_context
 		copy.current_target_id = self.current_target_id
-		copy.browser_pid = self.browser_pid
 
 		return copy
 
@@ -323,7 +303,7 @@ class BrowserSession(BaseModel):
 				ws_url = version_info.json()['webSocketDebuggerUrl']
 
 		# Create and store the CDP client for direct CDP communication
-		if not hasattr(self, '_cdp_client'):
+		if self._cdp_client is None:
 			self._cdp_client = CDPClient(ws_url)
 			await self._cdp_client.start()
 
@@ -400,7 +380,8 @@ class BrowserSession(BaseModel):
 				})();
 			}
 		"""
-		await self.browser_context.add_init_script(init_script)
+		# TODO: convert this to pure cdp-use and/or move it to the dom_watchdog.py
+		# await self.browser_context.add_init_script(init_script)
 
 	@property
 	async def target_ids(self) -> list[str]:
@@ -431,8 +412,6 @@ class BrowserSession(BaseModel):
 
 		# Get all page targets using CDP
 		pages = await self._cdp_get_all_pages()
-		cdp_client = await self.get_cdp_client()
-
 		for i, page_target in enumerate(pages):
 			target_id = page_target['targetId']
 			url = page_target['url']
@@ -449,17 +428,17 @@ class BrowserSession(BaseModel):
 				# Normal pages - try to get title with CDP for reliability
 				try:
 					# Attach to target and get session ID
-					session = await cdp_client.send('Target.attachToTarget', {'targetId': target_id, 'flatten': True})
+					session = await self.cdp_client.send('Target.attachToTarget', {'targetId': target_id, 'flatten': True})
 					session_id = session['sessionId']
 
 					# Use CDP to evaluate document.title
 					title_result = await asyncio.wait_for(
-						cdp_client.send('Runtime.evaluate', {'expression': 'document.title'}, session_id=session_id), timeout=2.0
+						self.cdp_client.send('Runtime.evaluate', {'expression': 'document.title'}, session_id=session_id), timeout=2.0
 					)
 					title = title_result.get('result', {}).get('value', '')
 
 					# Detach from target
-					await cdp_client.send('Target.detachFromTarget', {'sessionId': session_id})
+					await self.cdp_client.send('Target.detachFromTarget', {'sessionId': session_id})
 
 					# Special handling for PDF pages
 					if (not title or title == '') and (url.endswith('.pdf') or 'pdf' in url):
@@ -754,31 +733,6 @@ class BrowserSession(BaseModel):
 
 	# ========== CDP Helper Methods ==========
 
-	async def get_cdp_client(self) -> Any:
-		"""Get the CDP client, creating it if necessary."""
-		if not hasattr(self, '_cdp_client') or self._cdp_client is None:
-			if not self.cdp_url:
-				raise ValueError('CDP URL is not set')
-
-			# Import cdp-use client
-			import httpx
-			from cdp_use import CDPClient
-
-			# Convert HTTP URL to WebSocket URL if needed
-			ws_url = self.cdp_url
-			if not ws_url.startswith('ws'):
-				# If it's an HTTP URL, fetch the WebSocket URL from /json/version endpoint
-				url = ws_url.rstrip('/')
-				if not url.endswith('/json/version'):
-					url = url + '/json/version'
-				async with httpx.AsyncClient() as client:
-					version_info = await client.get(url)
-					ws_url = version_info.json()['webSocketDebuggerUrl']
-
-			self._cdp_client = CDPClient(ws_url)
-			await self._cdp_client.start()
-
-		return self._cdp_client
 
 	async def get_current_page_cdp_session_id(self) -> str | None:
 		"""Get the CDP session ID for the current page."""

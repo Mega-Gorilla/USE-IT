@@ -46,8 +46,8 @@ class DomService:
 
 	logger: logging.Logger
 
-	def __init__(self, browser: 'BrowserSession', page: 'Page', logger: logging.Logger | None = None):
-		self.browser = browser
+	def __init__(self, browser_session: 'BrowserSession', page: 'Page', logger: logging.Logger | None = None):
+		self.browser_session = browser_session
 		self.page = page
 
 		self.cdp_client: CDPClient | None = None
@@ -57,16 +57,16 @@ class DomService:
 		self.session_id_domains_enabled_cache: dict[str, bool] = {}
 
 	async def _get_cdp_client(self) -> CDPClient:
-		if not self.browser.cdp_url:
+		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
 
 		# TODO: MOVE THIS TO BROWSER SESSION (or sth idk)
 		# If the cdp_url is already a websocket URL, use it as-is.
-		if self.browser.cdp_url.startswith('ws'):
-			ws_url = self.browser.cdp_url
+		if self.browser_session.cdp_url.startswith('ws'):
+			ws_url = self.browser_session.cdp_url
 		else:
 			# Otherwise, treat it as the DevTools HTTP root and fetch the websocket URL.
-			url = self.browser.cdp_url.rstrip('/')
+			url = self.browser_session.cdp_url.rstrip('/')
 			if not url.endswith('/json/version'):
 				url = url + '/json/version'
 			async with httpx.AsyncClient() as client:
@@ -321,7 +321,7 @@ class DomService:
 		return {'nodes': merged_nodes}
 
 	async def _get_all_trees_for_session_id(self, session_id: str) -> TargetAllTrees:
-		if not self.browser.cdp_url:
+		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
 
 		cdp_client = await self._get_cdp_client()
@@ -463,6 +463,7 @@ class DomService:
 				snapshot_node=snapshot_data,
 				is_visible=None,
 				absolute_position=absolute_position,
+				element_index=None,
 			)
 
 			enhanced_dom_tree_node_lookup[node['nodeId']] = dom_tree_node

@@ -187,6 +187,7 @@ class DOMTreeSerializer:
 
 		if is_interactive_assign:
 			node.interactive_index = self._interactive_counter
+			node.original_node.element_index = self._interactive_counter
 			self._selector_map[self._interactive_counter] = node.original_node
 			self._interactive_counter += 1
 

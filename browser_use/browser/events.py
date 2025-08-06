@@ -1,9 +1,12 @@
 """Event definitions for browser communication."""
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from bubus import BaseEvent
-from pydantic import Field, model_validator
+from pydantic import Field
+
+if TYPE_CHECKING:
+	from browser_use.dom.views import EnhancedDOMTreeNode
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
@@ -20,29 +23,19 @@ class NavigateToUrlEvent(BaseEvent):
 
 
 class ClickElementEvent(BaseEvent):
-	"""Click an element by index or element_node."""
+	"""Click an element."""
 
-	index: int | None = None
-	element_node: Any | None = None  # DOMElementNode, but avoid circular import
+	node: 'EnhancedDOMTreeNode'
 	button: Literal['left', 'right', 'middle'] = 'left'
 	click_count: int = 1
 	expect_download: bool = False
 	new_tab: bool = False
 
-	@model_validator(mode='after')
-	def validate_index_or_element_node(self):
-		"""Validate that either index or element_node is provided."""
-		if self.index is None and self.element_node is None:
-			raise ValueError("Either 'index' or 'element_node' must be provided")
-		if self.index is not None and self.element_node is not None:
-			raise ValueError("Only one of 'index' or 'element_node' should be provided")
-		return self
-
 
 class TypeTextEvent(BaseEvent):
 	"""Type text into an element."""
 
-	index: int
+	node: 'EnhancedDOMTreeNode'
 	text: str
 	clear_existing: bool = True
 
@@ -52,7 +45,7 @@ class ScrollEvent(BaseEvent):
 
 	direction: Literal['up', 'down', 'left', 'right']
 	amount: int  # pixels
-	element_index: int | None = None  # None means scroll page
+	node: 'EnhancedDOMTreeNode | None' = None  # None means scroll page
 
 
 class SwitchTabEvent(BaseEvent):
@@ -82,13 +75,13 @@ class BrowserStateRequestEvent(BaseEvent):
 	cache_clickable_elements_hashes: bool = True
 
 
-class WaitForConditionEvent(BaseEvent):
-	"""Wait for a condition."""
+# class WaitForConditionEvent(BaseEvent):
+# 	"""Wait for a condition."""
 
-	condition: Literal['navigation', 'selector', 'timeout', 'load_state']
-	timeout: float = 30000
-	selector: str | None = None
-	state: Literal['attached', 'detached', 'visible', 'hidden'] | None = None
+# 	condition: Literal['navigation', 'selector', 'timeout', 'load_state']
+# 	timeout: float = 30000
+# 	selector: str | None = None
+# 	state: Literal['attached', 'detached', 'visible', 'hidden'] | None = None
 
 
 class GoBackEvent(BaseEvent):
@@ -125,7 +118,7 @@ class SendKeysEvent(BaseEvent):
 class UploadFileEvent(BaseEvent):
 	"""Upload a file to an element."""
 	
-	element_index: int
+	node: 'EnhancedDOMTreeNode'
 	file_path: str
 
 
@@ -283,17 +276,6 @@ class BrowserErrorEvent(BaseEvent):
 	error_type: str
 	message: str
 	details: dict[str, Any] = Field(default_factory=dict)
-
-
-# ============================================================================
-# Response Events (for request-response pattern)
-# ============================================================================
-
-
-class BrowserStateChangedEvent(BaseEvent):
-	"""Response to BrowserStateRequestEvent."""
-
-	state: Any  # BrowserStateSummary object
 
 
 # ============================================================================
