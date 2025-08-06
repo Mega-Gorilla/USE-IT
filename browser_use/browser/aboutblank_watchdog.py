@@ -70,9 +70,10 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# logger.debug('[AboutBlankWatchdog] Browser is stopping, not creating new tabs')
 			return
 
-		# Check if we're about to close the last page (event happens BEFORE tab closes)
-		pages = self.browser_session.pages
-		if len(pages) <= 1:
+		# Check if we're about to close the last tab (event happens BEFORE tab closes)
+		targets = await self.browser_session.cdp_client.send.Target.getTargets()
+		page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
+		if len(page_targets) <= 1:
 			logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
 			# Create the animation tab since no tabs should remain
 			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
@@ -90,27 +91,38 @@ class AboutBlankWatchdog(BaseWatchdog):
 	async def _check_and_ensure_about_blank_tab(self) -> None:
 		"""Check current tabs and ensure exactly one about:blank tab with animation exists."""
 		try:
-			pages = self.browser_session.pages
+			targets = await self.browser_session.cdp_client.send.Target.getTargets()
+			page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
 
 			# Only look for tabs that have our animation (check by title)
-			animation_pages = []
+			animation_targets = []
 			browser_session_id = str(self.browser_session.id)[-4:]
 			expected_title = f'Starting agent {browser_session_id}...'
 
-			for page in pages:
-				if CrashWatchdog._is_new_tab_page(page.url):
+			for target in page_targets:
+				if CrashWatchdog._is_new_tab_page(target.get('url', '')):
 					try:
-						page_title = await page.title()
+						# Get title using CDP
+						target_id = target['targetId']
+						session = await self.browser_session.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+						session_id = session['sessionId']
+						title_result = await self.browser_session.cdp_client.send.Runtime.evaluate(
+							params={'expression': 'document.title'},
+							session_id=session_id
+						)
+						page_title = title_result.get('result', {}).get('value', '')
+						await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+						
 						if page_title == expected_title:
-							animation_pages.append(page)
+							animation_targets.append(target)
 					except Exception:
-						pass  # Skip pages that can't be checked
+						pass  # Skip targets that can't be checked
 
-			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs out of {len(pages)} total tabs')
+			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_targets)} animation tabs out of {len(page_targets)} total tabs')
 
 			# If no animation tabs exist, create one only if there are no tabs at all
-			if not animation_pages:
-				if len(pages) == 0:
+			if not animation_targets:
+				if len(page_targets) == 0:
 					# Only create a new tab if there are no tabs at all
 					# logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
 					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
@@ -120,12 +132,12 @@ class AboutBlankWatchdog(BaseWatchdog):
 				else:
 					# There are other tabs - don't create new about:blank tabs during scripting
 					# logger.debug(
-					# 	f'[AboutBlankWatchdog] {len(pages)} tabs exist, not creating animation tab to avoid interfering with scripting'
+					# 	f'[AboutBlankWatchdog] {len(page_targets)} tabs exist, not creating animation tab to avoid interfering with scripting'
 					# )
 					pass
 			# If more than one animation tab exists, just log it - don't close anything
-			elif len(animation_pages) > 1:
-				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_pages)} animation tabs, allowing them to exist')
+			elif len(animation_targets) > 1:
+				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_targets)} animation tabs, allowing them to exist')
 				pass
 
 		except Exception as e:
@@ -134,15 +146,22 @@ class AboutBlankWatchdog(BaseWatchdog):
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
 		"""Show DVD screensaver on all new tab pages."""
 		try:
-			pages = self.browser_session.pages
+			targets = await self.browser_session.cdp_client.send.Target.getTargets()
+			page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
 			browser_session_id = str(self.browser_session.id)[-4:]
 
-			for page in pages:
-				if CrashWatchdog._is_new_tab_page(page.url):
+			for target in page_targets:
+				url = target.get('url', '')
+				if CrashWatchdog._is_new_tab_page(url):
+					target_id = target['targetId']
 					# If it's a chrome:// new tab page, redirect to about:blank to avoid CSP issues
-					if page.url.startswith('chrome://'):
-						await page.goto('about:blank')
-					await self._show_dvd_screensaver_loading_animation(page, browser_session_id)
+					if url.startswith('chrome://'):
+						# Navigate using CDP
+						session = await self.browser_session.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+						session_id = session['sessionId']
+						await self.browser_session.cdp_client.send.Page.navigate(params={'url': 'about:blank'}, session_id=session_id)
+						await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
 
 		except Exception as e:
 			logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')

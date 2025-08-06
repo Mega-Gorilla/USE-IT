@@ -217,8 +217,214 @@ class BrowserSession(BaseModel):
 					details={'cdp_url': self.cdp_url, 'is_local': self.is_local},
 				)
 			)
+	
+	async def on_BrowserStateRequestEvent(self, event: 'BrowserStateRequestEvent') -> 'BrowserStateSummary':
+		"""Handle browser state request by coordinating DOM building and screenshot capture.
+		
+		This is the main entry point for getting the complete browser state.
+		
+		Args:
+			event: The browser state request event with options
+			
+		Returns:
+			Complete BrowserStateSummary with DOM, screenshot, and page info
+		"""
+		from browser_use.browser.events import BuildDOMTreeEvent, BrowserStateRequestEvent, ScreenshotEvent
+		from browser_use.browser.views import BrowserStateSummary, PageInfo
+		from browser_use.dom.views import SerializedDOMState
+		
+		page = await self.get_current_page()
+		
+		# Check if this is a new tab or chrome:// page early for optimization
+		is_empty_page = is_new_tab_page(page.url) or page.url.startswith('chrome://')
+		
+		try:
+			# Fast path for empty pages
+			if is_empty_page:
+				self.logger.debug(f'⚡ Fast path for empty page: {page.url}')
+				
+				# Create minimal DOM state
+				content = SerializedDOMState(_root=None, selector_map={})
+				
+				# Get tabs info
+				tabs_info = await self.get_tabs_info()
+				
+				# Skip screenshot for empty pages
+				screenshot_b64 = None
+				
+				# Use default viewport dimensions
+				viewport = self.browser_profile.viewport or {'width': 1280, 'height': 720}
+				page_info = PageInfo(
+					viewport_width=viewport['width'],
+					viewport_height=viewport['height'],
+					page_width=viewport['width'],
+					page_height=viewport['height'],
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				)
+				
+				return BrowserStateSummary(
+					dom_state=content,
+					url=page.url,
+					title='New Tab' if is_new_tab_page(page.url) else 'Chrome Page',
+					tabs=tabs_info,
+					screenshot=screenshot_b64,
+					page_info=page_info,
+					pixels_above=0,
+					pixels_below=0,
+					browser_errors=[],
+					is_pdf_viewer=False,
+				)
+			
+			# Normal path: Build DOM tree if requested
+			if event.include_dom:
+				self.logger.debug('🌳 Building DOM tree...')
+				
+				# Dispatch BuildDOMTreeEvent and wait for result
+				# The DOM watchdog will handle this and update our cached selector map
+				dom_event = self.event_bus.dispatch(
+					BuildDOMTreeEvent(
+						previous_state=self._cached_browser_state_summary.dom_state if self._cached_browser_state_summary else None
+					)
+				)
+				content = await dom_event.event_result()
+				
+				if not content:
+					# Fallback to minimal DOM state
+					self.logger.warning('DOM build returned no content, using minimal state')
+					content = SerializedDOMState(_root=None, selector_map={})
+			else:
+				# Skip DOM building if not requested
+				content = SerializedDOMState(_root=None, selector_map={})
+			
+			# Get screenshot if requested
+			screenshot_b64 = None
+			if event.include_screenshot:
+				try:
+					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
+					screenshot_result = await screenshot_event.event_result()
+					if screenshot_result:
+						screenshot_b64 = screenshot_result.get('screenshot')
+				except Exception as e:
+					self.logger.warning(f'Screenshot failed: {e}')
+			
+			# Get page info and tabs
+			tabs_info = await self.get_tabs_info()
+			
+			# Get page title safely
+			try:
+				title = await asyncio.wait_for(page.title(), timeout=2.0)
+			except Exception:
+				title = 'Page'
+			
+			# TODO: Get proper page info from CDP
+			viewport = self.browser_profile.viewport or {'width': 1280, 'height': 720}
+			page_info = PageInfo(
+				viewport_width=viewport['width'],
+				viewport_height=viewport['height'],
+				page_width=viewport['width'],
+				page_height=viewport['height'],
+				scroll_x=0,
+				scroll_y=0,
+				pixels_above=0,
+				pixels_below=0,
+				pixels_left=0,
+				pixels_right=0,
+			)
+			
+			# Check for PDF viewer
+			is_pdf_viewer = page.url.endswith('.pdf') or '/pdf/' in page.url
+			
+			# Build and cache the browser state summary
+			browser_state = BrowserStateSummary(
+				dom_state=content,
+				url=page.url,
+				title=title,
+				tabs=tabs_info,
+				screenshot=screenshot_b64,
+				page_info=page_info,
+				pixels_above=0,
+				pixels_below=0,
+				browser_errors=[],
+				is_pdf_viewer=is_pdf_viewer,
+			)
+			
+			# Cache the state
+			self._cached_browser_state_summary = browser_state
+			
+			return browser_state
+			
+		except Exception as e:
+			self.logger.error(f'Failed to get browser state: {e}')
+			
+			# Return minimal recovery state
+			return BrowserStateSummary(
+				dom_state=SerializedDOMState(_root=None, selector_map={}),
+				url=page.url,
+				title='Error',
+				tabs=[],
+				screenshot=None,
+				page_info=PageInfo(
+					viewport_width=1280,
+					viewport_height=720,
+					page_width=1280,
+					page_height=720,
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				),
+				pixels_above=0,
+				pixels_below=0,
+				browser_errors=[str(e)],
+				is_pdf_viewer=False,
+			)
 
 	# ========== Helper Methods ==========
+	
+	async def get_browser_state_with_recovery(
+		self, 
+		cache_clickable_elements_hashes: bool = True,
+		include_screenshot: bool = False
+	) -> 'BrowserStateSummary':
+		"""Get browser state using event system.
+		
+		This is a compatibility wrapper that dispatches BrowserStateRequestEvent.
+		
+		Args:
+			cache_clickable_elements_hashes: Whether to cache element hashes (for compatibility)
+			include_screenshot: Whether to include screenshot in state
+			
+		Returns:
+			BrowserStateSummary from the event handler
+		"""
+		from browser_use.browser.events import BrowserStateRequestEvent
+		
+		# Dispatch the event and wait for result
+		event = self.event_bus.dispatch(
+			BrowserStateRequestEvent(
+				include_dom=True,
+				include_screenshot=include_screenshot,
+				cache_clickable_elements_hashes=cache_clickable_elements_hashes
+			)
+		)
+		
+		# The handler returns the BrowserStateSummary directly
+		result = await event.event_result()
+		return result
+	
+	async def get_state_summary(self, cache_clickable_elements_hashes: bool = True) -> 'BrowserStateSummary':
+		"""Alias for get_browser_state_with_recovery for backwards compatibility."""
+		return await self.get_browser_state_with_recovery(
+			cache_clickable_elements_hashes=cache_clickable_elements_hashes,
+			include_screenshot=False
+		)
 
 	async def attach_all_watchdogs(self) -> None:
 		"""Initialize and attach all watchdogs in one go."""

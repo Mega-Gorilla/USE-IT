@@ -710,8 +710,8 @@ class BrowserUseApp(App):
 
 		if browser_session:
 			try:
-				# Check if browser session has a browser context
-				if not hasattr(browser_session, 'browser_context') or browser_session.browser_context is None:
+				# Check if browser session is connected
+				if not browser_session.cdp_url:
 					browser_info.write('[yellow]Browser session created, waiting for browser to launch...[/]')
 					return
 
@@ -748,8 +748,8 @@ class BrowserUseApp(App):
 						browser_pid = str(browser_session.browser_pid)
 						connected = True
 						browser_status = '[green]Connected[/]'
-					# Otherwise just check if we have a browser context
-					elif browser_session.browser_context is not None:
+					# Otherwise just check if we have a CDP URL
+					elif browser_session.cdp_url:
 						connected = True
 						browser_status = '[green]Connected[/]'
 						browser_pid = 'N/A'
@@ -778,11 +778,17 @@ class BrowserUseApp(App):
 						pass
 
 					# Show the agent's current page URL if available
-					if browser_session.page:
-						current_url = (
-							browser_session.page.url.replace('https://', '').replace('http://', '').replace('www.', '')[:36] + '…'
-						)
-						browser_info.write(f'👁️  [green]{current_url}[/]')
+					if browser_session._cached_browser_state_summary:
+						try:
+							# Use cached browser state to get URL
+							current_url = browser_session._cached_browser_state_summary.url
+							if current_url:
+								current_url = current_url.replace('https://', '').replace('http://', '').replace('www.', '')[:36]
+								if len(current_url) > 36:
+									current_url += '…'
+								browser_info.write(f'👁️  [green]{current_url}[/]')
+						except Exception:
+							pass
 			except Exception as e:
 				browser_info.write(f'[red]Error updating browser info: {str(e)}[/]')
 		else:
