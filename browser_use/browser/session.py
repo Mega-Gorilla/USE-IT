@@ -91,7 +91,7 @@ class BrowserSession(BaseModel):
 
 	# PDF handling
 	_auto_download_pdfs: bool = PrivateAttr(default=True)
-	
+
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
 		# Register BrowserSession's event handlers manually since it's not a BaseWatchdog
@@ -150,7 +150,9 @@ class BrowserSession(BaseModel):
 	def __str__(self) -> str:
 		# Note: _original_browser_session tracking moved to Agent class
 		port_number = (self.cdp_url or 'no-cdp').rsplit(':', 1)[-1].split('/', 1)[0]
-		return f'BrowserSession🆂 {self.id[-4:]}:{port_number} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.current_target_id))[-2:]}'
+		return (
+			f'BrowserSession🆂 {self.id[-4:]}:{port_number} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.current_target_id))[-2:]}'
+		)
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> None:
 		"""Handle browser start request."""
@@ -224,7 +226,6 @@ class BrowserSession(BaseModel):
 					details={'cdp_url': self.cdp_url, 'is_local': self.is_local},
 				)
 			)
-
 
 	# ========== Helper Methods ==========
 
@@ -470,10 +471,7 @@ class BrowserSession(BaseModel):
 				try:
 					# Use helper to get document title
 					title_result = await asyncio.wait_for(
-						self._cdp_execute_on_target(
-							target_id,
-							commands=[('Runtime.evaluate', {'expression': 'document.title'})]
-						),
+						self._cdp_execute_on_target(target_id, commands=[('Runtime.evaluate', {'expression': 'document.title'})]),
 						timeout=2.0,
 					)
 					title = title_result.get('result', {}).get('value', '') if title_result else ''
@@ -804,10 +802,7 @@ class BrowserSession(BaseModel):
 	async def frames_by_target(self, target_id: str) -> list[str]:
 		"""Get all frame IDs for a target."""
 		# Get frame tree using helper
-		frame_tree = await self._cdp_execute_on_target(
-			target_id,
-			commands=[('Page.getFrameTree', {})]
-		)
+		frame_tree = await self._cdp_execute_on_target(target_id, commands=[('Page.getFrameTree', {})])
 
 		# Extract frame IDs recursively
 		frame_ids = []
@@ -836,7 +831,6 @@ class BrowserSession(BaseModel):
 					return target['targetId']
 
 		return None
-
 
 	async def get_current_page_cdp_session_id(self) -> str | None:
 		"""Get the CDP session ID for the current page."""
@@ -895,12 +889,7 @@ class BrowserSession(BaseModel):
 
 			# Enable necessary domains
 			await cdp_client.send.Target.setAutoAttach(
-				params={
-					'autoAttach': True,
-					'waitForDebuggerOnStart': False,
-					'flatten': True
-				},
-				session_id=session_id
+				params={'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True}, session_id=session_id
 			)
 
 			await asyncio.gather(
@@ -1014,31 +1003,32 @@ class BrowserSession(BaseModel):
 		"""Get info about the current active target using CDP."""
 		if not self.current_target_id:
 			return None
-		
+
 		targets = await self.cdp_client.send.Target.getTargets()
 		for target in targets.get('targetInfos', []):
 			if target.get('targetId') == self.current_target_id:
 				return target
 		return None
-	
+
 	async def get_current_page_url(self) -> str:
 		"""Get the URL of the current page using CDP."""
 		target = await self.get_current_target_info()
 		if target:
 			return target.get('url', '')
 		return ''
-	
+
 	async def get_current_page_title(self) -> str:
 		"""Get the title of the current page using CDP."""
 		if not self.current_target_id:
 			return ''
-		
+
 		try:
-			session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': self.current_target_id, 'flatten': True})
+			session = await self.cdp_client.send.Target.attachToTarget(
+				params={'targetId': self.current_target_id, 'flatten': True}
+			)
 			session_id = session['sessionId']
 			title_result = await self.cdp_client.send.Runtime.evaluate(
-				params={'expression': 'document.title'},
-				session_id=session_id
+				params={'expression': 'document.title'}, session_id=session_id
 			)
 			title = title_result.get('result', {}).get('value', '')
 			await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
@@ -1115,18 +1105,18 @@ class BrowserSession(BaseModel):
 
 	async def get_selector_map(self) -> dict[int, 'EnhancedDOMTreeNode']:
 		"""Get the current selector map from cached state or DOM watchdog.
-		
+
 		Returns:
 			Dictionary mapping element indices to EnhancedDOMTreeNode objects
 		"""
 		# First try cached selector map
 		if self._cached_selector_map:
 			return self._cached_selector_map
-		
+
 		# Try to get from DOM watchdog
 		if self._dom_watchdog and hasattr(self._dom_watchdog, 'selector_map'):
 			return self._dom_watchdog.selector_map or {}
-		
+
 		# Return empty dict if nothing available
 		return {}
 
@@ -1139,18 +1129,15 @@ class BrowserSession(BaseModel):
 					params={'targetId': self.current_target_id, 'flatten': True}
 				)
 				session_id = session['sessionId']
-				
+
 				# Remove highlights via JavaScript - matches the highlighting system from debug/highlights.py
 				script = """
 					// Remove all browser-use highlight elements
 					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 					highlights.forEach(el => el.remove());
 				"""
-				await self.cdp_client.send.Runtime.evaluate(
-					params={'expression': script},
-					session_id=session_id
-				)
-				
+				await self.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
+
 				# Detach from target
 				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 			except Exception as e:
@@ -1161,32 +1148,34 @@ class BrowserSession(BaseModel):
 		"""Get list of downloaded files from the downloads directory."""
 		if not self.browser_profile.downloads_path:
 			return []
-		
+
 		downloads_dir = Path(self.browser_profile.downloads_path)
 		if not downloads_dir.exists():
 			return []
-		
+
 		# Get all files in downloads directory (not directories)
 		files = [str(f) for f in downloads_dir.iterdir() if f.is_file()]
 		return sorted(files)
 
 	# ========== CDP-based replacements for browser_context operations ==========
 
-	async def _cdp_execute_on_target(self, target_id: str, commands: list[tuple[str, dict]] | None = None, callable_fn: Any | None = None) -> Any:
+	async def _cdp_execute_on_target(
+		self, target_id: str, commands: list[tuple[str, dict]] | None = None, callable_fn: Any | None = None
+	) -> Any:
 		"""Execute CDP commands on a specific target with automatic attach/detach.
-		
+
 		Args:
 			target_id: The target ID to attach to
 			commands: List of (method, params) tuples to execute, e.g. [('Runtime.evaluate', {'expression': '...'})]
 			callable_fn: Alternative - async function that receives (cdp_client, session_id) and returns result
-			
+
 		Returns:
 			Result of the last command or callable_fn return value
 		"""
 		# Attach to target
 		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
-		
+
 		try:
 			if callable_fn:
 				# Execute the provided async function
@@ -1221,9 +1210,7 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_create_new_page(self, url: str = 'about:blank') -> str:
 		"""Create a new page/tab using CDP Target.createTarget. Returns target ID."""
-		result = await self.cdp_client.send.Target.createTarget(
-			params={'url': url, 'newWindow': False, 'background': False}
-		)
+		result = await self.cdp_client.send.Target.createTarget(params={'url': url, 'newWindow': False, 'background': False})
 		return result['targetId']
 
 	async def _cdp_close_page(self, target_id: str) -> None:
@@ -1301,7 +1288,7 @@ class BrowserSession(BaseModel):
 		"""Navigate to URL using CDP Page.navigate."""
 		# Use provided target_id or fall back to current_target_id
 		target_to_use = target_id or self.current_target_id
-		
+
 		if not target_to_use:
 			# If no target available, get the first page target
 			targets = await self._cdp_get_all_pages()
@@ -1309,102 +1296,91 @@ class BrowserSession(BaseModel):
 				target_to_use = targets[0]['targetId']
 				self.current_target_id = target_to_use
 			else:
-				raise ValueError("No target available for navigation")
-		
+				raise ValueError('No target available for navigation')
+
 		# Use helper to navigate on the target
-		await self._cdp_execute_on_target(
-			target_to_use,
-			commands=[
-				('Page.enable', {}),
-				('Page.navigate', {'url': url})
-			]
-		)
-	
+		await self._cdp_execute_on_target(target_to_use, commands=[('Page.enable', {}), ('Page.navigate', {'url': url})])
+
 	async def cdp_client_for_frame(self, frame_id: str) -> Any:
 		"""Get a CDP client attached to the target containing the specified frame.
-		
+
 		Iterates through all targets, checks their frame trees to find which target
-		contains the frame with the given frame_id, then returns a CDP client 
+		contains the frame with the given frame_id, then returns a CDP client
 		attached to that target.
-		
+
 		Args:
 			frame_id: The frame ID to search for
-			
+
 		Returns:
 			CDP client attached to the target containing the frame
-			
+
 		Raises:
 			ValueError: If the frame is not found in any target
 		"""
 		# Get all targets
 		targets = await self.cdp_client.send.Target.getTargets()
 		all_targets = targets.get('targetInfos', [])
-		
+
 		# Check each target's frame tree
 		for target in all_targets:
 			target_id = target.get('targetId')
 			if not target_id:
 				continue
-				
+
 			# Attach to target to get frame tree
-			session = await self.cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
+			session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
-			
+
 			try:
-				# Get the frame tree for this target
-				frame_tree_result = await self.cdp_client.send.Page.getFrameTree(
-					session_id=session_id
-				)
+				# Enable Page domain first
+				await self.cdp_client.send.Page.enable(session_id=session_id)
 				
+				# Get the frame tree for this target
+				frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
+
 				# Check if frame_id exists in this target's frame tree
 				def frame_exists_in_tree(frame_node: dict) -> bool:
 					"""Recursively check if frame_id exists in the frame tree."""
 					# Check current frame
 					if frame_node.get('frame', {}).get('id') == frame_id:
 						return True
-					
+
 					# Check child frames recursively
 					child_frames = frame_node.get('childFrames', [])
 					for child in child_frames:
 						if frame_exists_in_tree(child):
 							return True
-					
+
 					return False
-				
+
 				# Check if the frame exists in this target's tree
 				if frame_exists_in_tree(frame_tree_result.get('frameTree', {})):
 					# Frame found! Keep the session attached and return a client for it
 					# Note: We're returning the cdp_client with the session already attached
 					# The caller is responsible for detaching when done
 					return self.cdp_client, session_id, target_id
-					
+
 			finally:
 				# Detach from target if frame not found
-				await self.cdp_client.send.Target.detachFromTarget(
-					params={'sessionId': session_id}
-				)
-		
+				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+
 		# Frame not found in any target
 		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")
-	
+
 	async def cdp_client_for_target(self, target_id: str) -> Any:
 		"""Get a CDP client attached to a specific target.
-		
+
 		This is a simpler helper that just attaches to a specific target ID.
-		
+
 		Args:
 			target_id: The target ID to attach to
-			
+
 		Returns:
 			Tuple of (cdp_client, session_id) for the attached target
 		"""
-		session = await self.cdp_client.send.Target.attachToTarget(
-			params={'targetId': target_id, 'flatten': True}
-		)
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
-		
+
 		# Return the client and session_id
 		# Caller is responsible for detaching when done
 		return self.cdp_client, session_id

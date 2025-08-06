@@ -61,33 +61,33 @@ class DomService:
 
 	async def _get_targets_for_current_page(self) -> CurrentPageTargets:
 		"""Get the target for the current page."""
-		print(f"DomService._get_targets_for_current_page: Getting targets...")
+		print('DomService._get_targets_for_current_page: Getting targets...')
 		targets = await self.browser_session.cdp_client.send.Target.getTargets()
-		print(f"DomService: Found {len(targets.get('targetInfos', []))} targets")
+		print(f'DomService: Found {len(targets.get("targetInfos", []))} targets')
 
 		# Use the current_target_id directly
 		current_target_id = self.browser_session.current_target_id
 		if not current_target_id:
 			raise ValueError('No current target ID set in browser session')
-		
-		print(f"DomService: Looking for target with ID: {current_target_id}")
+
+		print(f'DomService: Looking for target with ID: {current_target_id}')
 
 		# Find main page target by ID
 		main_target = next((t for t in targets['targetInfos'] if t['targetId'] == current_target_id), None)
 
 		if not main_target:
 			# Debug: print all available targets
-			print(f"DomService ERROR: No target found for current target ID: {current_target_id}")
-			print(f"Available targets:")
+			print(f'DomService ERROR: No target found for current target ID: {current_target_id}')
+			print('Available targets:')
 			for t in targets['targetInfos']:
-				print(f"  - {t['targetId']}: type={t['type']}, url={t.get('url', 'none')}")
+				print(f'  - {t["targetId"]}: type={t["type"]}, url={t.get("url", "none")}')
 			raise ValueError(f'No target found for current target ID: {current_target_id}')
-		
-		print(f"DomService: Found main target: type={main_target['type']}, url={main_target.get('url', 'none')}")
+
+		print(f'DomService: Found main target: type={main_target["type"]}, url={main_target.get("url", "none")}')
 
 		# Separate iframe targets for attachment
 		iframe_targets = [t for t in targets['targetInfos'] if t['type'] == 'iframe']
-		print(f"DomService: Found {len(iframe_targets)} iframe targets")
+		print(f'DomService: Found {len(iframe_targets)} iframe targets')
 
 		return CurrentPageTargets(
 			page_session=main_target,
@@ -98,7 +98,7 @@ class DomService:
 		"""This function is cached, so go crazy"""
 
 		target_id = str(target['targetId'])
-		print(f"DomService._attach_target: Attaching to target {target_id}, type={target.get('type')}")
+		print(f'DomService._attach_target: Attaching to target {target_id}, type={target.get("type")}')
 
 		# if target_id in self.target_to_session_id_cache:
 		# 	return self.target_to_session_id_cache[target_id]
@@ -108,27 +108,25 @@ class DomService:
 				params={'targetId': target_id, 'flatten': True}
 			)
 			session_id = session['sessionId']
-			print(f"DomService: Successfully attached, got session_id={session_id}")
+			print(f'DomService: Successfully attached, got session_id={session_id}')
 		except Exception as e:
-			print(f"DomService ERROR: Failed to attach to target {target_id}: {e}")
+			print(f'DomService ERROR: Failed to attach to target {target_id}: {e}')
 			raise
-		
+
 		# Track this session for cleanup
 		self._attached_sessions.add(session_id)
 
-		print(f"DomService: Enabling domains on session {session_id}...")
+		print(f'DomService: Enabling domains on session {session_id}...')
 		await self._enable_all_domains_on_session(session_id)
-		print(f"DomService: Domains enabled on session {session_id}")
+		print(f'DomService: Domains enabled on session {session_id}')
 
 		return session_id
-	
+
 	async def _cleanup_sessions(self) -> None:
 		"""Detach from all attached sessions."""
 		for session_id in self._attached_sessions:
 			try:
-				await self.browser_session.cdp_client.send.Target.detachFromTarget(
-					params={'sessionId': session_id}
-				)
+				await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 			except Exception:
 				pass  # Session might already be detached
 		self._attached_sessions.clear()
@@ -319,21 +317,20 @@ class DomService:
 	async def _get_all_trees_for_session_id(self, session_id: str) -> TargetAllTrees:
 		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
-		
-		print(f"DomService._get_all_trees_for_session_id: Starting with session_id={session_id}")
-		
+
+		print(f'DomService._get_all_trees_for_session_id: Starting with session_id={session_id}')
+
 		# Wait for the page to be ready first
 		try:
-			print(f"DomService: Checking page ready state...")
+			print('DomService: Checking page ready state...')
 			ready_state = await self.browser_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': 'document.readyState'},
-				session_id=session_id
+				params={'expression': 'document.readyState'}, session_id=session_id
 			)
-			print(f"DomService: Page ready state: {ready_state}")
+			print(f'DomService: Page ready state: {ready_state}')
 		except Exception as e:
-			print(f"Warning: Could not check page ready state: {e}")
+			print(f'Warning: Could not check page ready state: {e}')
 
-		print(f"DomService: Creating CDP requests...")
+		print('DomService: Creating CDP requests...')
 		snapshot_request = self.browser_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
 				'computedStyles': REQUIRED_COMPUTED_STYLES,
@@ -356,24 +353,21 @@ class DomService:
 		start = time.time()
 		# Use wait_for with timeout to debug which call is hanging
 		try:
-			print(f"DomService: Gathering all CDP requests...")
+			print('DomService: Gathering all CDP requests...')
 			snapshot, dom_tree, ax_tree, device_pixel_ratio = await asyncio.wait_for(
-				asyncio.gather(
-					snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request
-				),
-				timeout=10.0
+				asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request), timeout=10.0
 			)
-			print(f"DomService: All CDP requests completed successfully")
-		except asyncio.TimeoutError:
-			print("ERROR: CDP calls timed out in _get_all_trees_for_session_id")
+			print('DomService: All CDP requests completed successfully')
+		except TimeoutError:
+			print('ERROR: CDP calls timed out in _get_all_trees_for_session_id')
 			# Try to get them individually to see which one hangs
-			print("Trying snapshot...")
+			print('Trying snapshot...')
 			snapshot = await asyncio.wait_for(snapshot_request, timeout=2.0)
-			print("Trying dom_tree...")  
+			print('Trying dom_tree...')
 			dom_tree = await asyncio.wait_for(dom_tree_request, timeout=2.0)
-			print("Trying ax_tree...")
+			print('Trying ax_tree...')
 			ax_tree = await asyncio.wait_for(ax_tree_request, timeout=2.0)
-			print("Trying device_pixel_ratio...")
+			print('Trying device_pixel_ratio...')
 			device_pixel_ratio = await asyncio.wait_for(device_pixel_ratio_request, timeout=2.0)
 		end = time.time()
 		cdp_timing = {'cdp_calls_total': end - start}
@@ -585,13 +579,13 @@ class DomService:
 		"""
 
 		try:
-			print(f"DomService: Getting targets for current page...")
+			print('DomService: Getting targets for current page...')
 			page_session_info = await self._get_targets_for_current_page()
-			print(f"DomService: Got page session info, target_id={page_session_info.page_session.get('targetId')}")
-			
-			print(f"DomService: Getting DOM tree...")
+			print(f'DomService: Got page session info, target_id={page_session_info.page_session.get("targetId")}')
+
+			print('DomService: Getting DOM tree...')
 			enhanced_dom_tree = await self.get_dom_tree(page_session_info.page_session)
-			print(f"DomService: Got enhanced DOM tree")
+			print('DomService: Got enhanced DOM tree')
 
 			start = time.time()
 			serialized_dom_state, serializer_timing = DOMTreeSerializer(
@@ -606,7 +600,7 @@ class DomService:
 			all_timing = {**serializer_timing, **serialize_total_timing}
 
 			return serialized_dom_state, enhanced_dom_tree, all_timing
-		
+
 		finally:
 			# Cleanup any attached sessions
 			await self._cleanup_sessions()

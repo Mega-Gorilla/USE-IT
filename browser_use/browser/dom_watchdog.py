@@ -19,7 +19,7 @@ from browser_use.dom.views import (
 from browser_use.utils import is_new_tab_page, logger
 
 if TYPE_CHECKING:
-	from browser_use.browser.views import BrowserStateSummary, PageInfo, TabInfo
+	from browser_use.browser.views import BrowserStateSummary
 
 
 class DOMWatchdog(BaseWatchdog):
@@ -233,18 +233,18 @@ class DOMWatchdog(BaseWatchdog):
 				await self.browser_session.remove_highlights()
 			except Exception as e:
 				logger.debug(f'Failed to remove existing highlights: {e}')
-			
+
 			# Create or reuse DOM service
 			if self._dom_service is None:
 				self._dom_service = DomService(browser_session=self.browser_session, logger=logger)
 
 			# Get serialized DOM tree using the service
 			start = time.time()
-			print(f"DOMWatchdog: About to call get_serialized_dom_tree with dom_service={self._dom_service}")
+			print(f'DOMWatchdog: About to call get_serialized_dom_tree with dom_service={self._dom_service}')
 			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
 				previous_cached_state=event.previous_state
 			)
-			print(f"DOMWatchdog: Returned from get_serialized_dom_tree")
+			print('DOMWatchdog: Returned from get_serialized_dom_tree')
 			end = time.time()
 
 			logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
@@ -252,11 +252,12 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Update selector map for other watchdogs
 			self.selector_map = self.current_dom_state.selector_map
-			
+
 			# Inject highlighting for visual feedback if we have elements
 			if self.selector_map and self._dom_service:
 				try:
 					from browser_use.dom.debug.highlights import inject_highlighting_script
+
 					await inject_highlighting_script(self._dom_service, self.selector_map)
 					logger.debug(f'Injected highlighting for {len(self.selector_map)} elements')
 				except Exception as e:
