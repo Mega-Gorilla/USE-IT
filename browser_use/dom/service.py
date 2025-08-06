@@ -49,13 +49,15 @@ class DomService:
 
 		# Cache for session domains that have been enabled
 		self.session_id_domains_enabled_cache: dict[str, bool] = {}
+		# Track sessions that need cleanup
+		self._attached_sessions: set[str] = set()
 
 	async def __aenter__(self):
 		return self
 
 	async def __aexit__(self, exc_type, exc_value, traceback):
-		# No cleanup needed - CDP client is managed by browser session
-		pass
+		# Cleanup any attached sessions
+		await self._cleanup_sessions()
 
 	async def _get_targets_for_current_page(self) -> CurrentPageTargets:
 		"""Get the target for the current page."""
@@ -92,10 +94,25 @@ class DomService:
 			params={'targetId': target_id, 'flatten': True}
 		)
 		session_id = session['sessionId']
+		
+		# Track this session for cleanup
+		self._attached_sessions.add(session_id)
 
 		await self._enable_all_domains_on_session(session_id)
 
 		return session_id
+	
+	async def _cleanup_sessions(self) -> None:
+		"""Detach from all attached sessions."""
+		for session_id in self._attached_sessions:
+			try:
+				await self.browser_session.cdp_client.send.Target.detachFromTarget(
+					params={'sessionId': session_id}
+				)
+			except Exception:
+				pass  # Session might already be detached
+		self._attached_sessions.clear()
+		self.session_id_domains_enabled_cache.clear()
 
 	async def _enable_all_domains_on_session(self, session_id: str) -> None:
 		if session_id in self.session_id_domains_enabled_cache:
@@ -282,6 +299,15 @@ class DomService:
 	async def _get_all_trees_for_session_id(self, session_id: str) -> TargetAllTrees:
 		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
+		
+		# Wait for the page to be ready first
+		try:
+			await self.browser_session.cdp_client.send.Runtime.evaluate(
+				params={'expression': 'document.readyState'},
+				session_id=session_id
+			)
+		except Exception as e:
+			print(f"Warning: Could not check page ready state: {e}")
 
 		snapshot_request = self.browser_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
@@ -303,9 +329,25 @@ class DomService:
 		device_pixel_ratio_request = self._get_viewport_ratio(session_id)
 
 		start = time.time()
-		snapshot, dom_tree, ax_tree, device_pixel_ratio = await asyncio.gather(
-			snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request
-		)
+		# Use wait_for with timeout to debug which call is hanging
+		try:
+			snapshot, dom_tree, ax_tree, device_pixel_ratio = await asyncio.wait_for(
+				asyncio.gather(
+					snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request
+				),
+				timeout=10.0
+			)
+		except asyncio.TimeoutError:
+			print("ERROR: CDP calls timed out in _get_all_trees_for_session_id")
+			# Try to get them individually to see which one hangs
+			print("Trying snapshot...")
+			snapshot = await asyncio.wait_for(snapshot_request, timeout=2.0)
+			print("Trying dom_tree...")  
+			dom_tree = await asyncio.wait_for(dom_tree_request, timeout=2.0)
+			print("Trying ax_tree...")
+			ax_tree = await asyncio.wait_for(ax_tree_request, timeout=2.0)
+			print("Trying device_pixel_ratio...")
+			device_pixel_ratio = await asyncio.wait_for(device_pixel_ratio_request, timeout=2.0)
 		end = time.time()
 		cdp_timing = {'cdp_calls_total': end - start}
 		print(f'Time taken to get dom tree: {end - start} seconds')
@@ -515,19 +557,29 @@ class DomService:
 			Tuple of (serialized_dom_state, enhanced_dom_tree_root, timing_info)
 		"""
 
-		page_session_info = await self._get_targets_for_current_page()
-		enhanced_dom_tree = await self.get_dom_tree(page_session_info.page_session)
+		try:
+			print(f"DomService: Getting targets for current page...")
+			page_session_info = await self._get_targets_for_current_page()
+			print(f"DomService: Got page session info, target_id={page_session_info.page_session.get('targetId')}")
+			
+			print(f"DomService: Getting DOM tree...")
+			enhanced_dom_tree = await self.get_dom_tree(page_session_info.page_session)
+			print(f"DomService: Got enhanced DOM tree")
 
-		start = time.time()
-		serialized_dom_state, serializer_timing = DOMTreeSerializer(
-			enhanced_dom_tree, previous_cached_state
-		).serialize_accessible_elements()
+			start = time.time()
+			serialized_dom_state, serializer_timing = DOMTreeSerializer(
+				enhanced_dom_tree, previous_cached_state
+			).serialize_accessible_elements()
 
-		end = time.time()
-		serialize_total_timing = {'serialize_dom_tree_total': end - start}
-		print(f'Time taken to serialize dom tree: {end - start} seconds')
+			end = time.time()
+			serialize_total_timing = {'serialize_dom_tree_total': end - start}
+			print(f'Time taken to serialize dom tree: {end - start} seconds')
 
-		# Combine all timing info
-		all_timing = {**serializer_timing, **serialize_total_timing}
+			# Combine all timing info
+			all_timing = {**serializer_timing, **serialize_total_timing}
 
-		return serialized_dom_state, enhanced_dom_tree, all_timing
+			return serialized_dom_state, enhanced_dom_tree, all_timing
+		
+		finally:
+			# Cleanup any attached sessions
+			await self._cleanup_sessions()

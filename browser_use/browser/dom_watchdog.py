@@ -228,6 +228,12 @@ class DOMWatchdog(BaseWatchdog):
 			SerializedDOMState with serialized DOM and selector map
 		"""
 		try:
+			# Remove any existing highlights before building new DOM
+			try:
+				await self.browser_session.remove_highlights()
+			except Exception as e:
+				logger.debug(f'Failed to remove existing highlights: {e}')
+			
 			# Create or reuse DOM service
 			if self._dom_service is None:
 				self._dom_service = DomService(browser_session=self.browser_session, logger=logger)
@@ -244,6 +250,15 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Update selector map for other watchdogs
 			self.selector_map = self.current_dom_state.selector_map
+			
+			# Inject highlighting for visual feedback if we have elements
+			if self.selector_map and self._dom_service:
+				try:
+					from browser_use.dom.debug.highlights import inject_highlighting_script
+					await inject_highlighting_script(self._dom_service, self.selector_map)
+					logger.debug(f'Injected highlighting for {len(self.selector_map)} elements')
+				except Exception as e:
+					logger.debug(f'Failed to inject highlighting: {e}')
 
 			# Update BrowserSession's cached selector map
 			if self.browser_session:

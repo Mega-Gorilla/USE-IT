@@ -1140,10 +1140,10 @@ class BrowserSession(BaseModel):
 				)
 				session_id = session['sessionId']
 				
-				# Remove highlights via JavaScript
+				# Remove highlights via JavaScript - matches the highlighting system from debug/highlights.py
 				script = """
-					// Remove all highlight elements
-					const highlights = document.querySelectorAll('[data-highlight-index]');
+					// Remove all browser-use highlight elements
+					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 					highlights.forEach(el => el.remove());
 				"""
 				await self.cdp_client.send.Runtime.evaluate(
@@ -1299,18 +1299,26 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_navigate(self, url: str, target_id: str | None = None) -> None:
 		"""Navigate to URL using CDP Page.navigate."""
-		if target_id:
-			# Use helper to navigate on specific target
-			await self._cdp_execute_on_target(
-				target_id,
-				commands=[
-					('Page.enable', {}),
-					('Page.navigate', {'url': url})
-				]
-			)
-		else:
-			# Navigate on the default/current target
-			await self.cdp_client.send.Page.navigate(params={'url': url})
+		# Use provided target_id or fall back to current_target_id
+		target_to_use = target_id or self.current_target_id
+		
+		if not target_to_use:
+			# If no target available, get the first page target
+			targets = await self._cdp_get_all_pages()
+			if targets:
+				target_to_use = targets[0]['targetId']
+				self.current_target_id = target_to_use
+			else:
+				raise ValueError("No target available for navigation")
+		
+		# Use helper to navigate on the target
+		await self._cdp_execute_on_target(
+			target_to_use,
+			commands=[
+				('Page.enable', {}),
+				('Page.navigate', {'url': url})
+			]
+		)
 
 
 # Import uuid7str for ID generation
