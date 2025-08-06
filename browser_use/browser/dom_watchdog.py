@@ -240,9 +240,11 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Get serialized DOM tree using the service
 			start = time.time()
+			print(f"DOMWatchdog: About to call get_serialized_dom_tree with dom_service={self._dom_service}")
 			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
 				previous_cached_state=event.previous_state
 			)
+			print(f"DOMWatchdog: Returned from get_serialized_dom_tree")
 			end = time.time()
 
 			logger.debug(f'Time taken to get DOM tree: {end - start} seconds')

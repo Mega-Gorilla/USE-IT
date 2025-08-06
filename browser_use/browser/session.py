@@ -1319,6 +1319,95 @@ class BrowserSession(BaseModel):
 				('Page.navigate', {'url': url})
 			]
 		)
+	
+	async def cdp_client_for_frame(self, frame_id: str) -> Any:
+		"""Get a CDP client attached to the target containing the specified frame.
+		
+		Iterates through all targets, checks their frame trees to find which target
+		contains the frame with the given frame_id, then returns a CDP client 
+		attached to that target.
+		
+		Args:
+			frame_id: The frame ID to search for
+			
+		Returns:
+			CDP client attached to the target containing the frame
+			
+		Raises:
+			ValueError: If the frame is not found in any target
+		"""
+		# Get all targets
+		targets = await self.cdp_client.send.Target.getTargets()
+		all_targets = targets.get('targetInfos', [])
+		
+		# Check each target's frame tree
+		for target in all_targets:
+			target_id = target.get('targetId')
+			if not target_id:
+				continue
+				
+			# Attach to target to get frame tree
+			session = await self.cdp_client.send.Target.attachToTarget(
+				params={'targetId': target_id, 'flatten': True}
+			)
+			session_id = session['sessionId']
+			
+			try:
+				# Get the frame tree for this target
+				frame_tree_result = await self.cdp_client.send.Page.getFrameTree(
+					session_id=session_id
+				)
+				
+				# Check if frame_id exists in this target's frame tree
+				def frame_exists_in_tree(frame_node: dict) -> bool:
+					"""Recursively check if frame_id exists in the frame tree."""
+					# Check current frame
+					if frame_node.get('frame', {}).get('id') == frame_id:
+						return True
+					
+					# Check child frames recursively
+					child_frames = frame_node.get('childFrames', [])
+					for child in child_frames:
+						if frame_exists_in_tree(child):
+							return True
+					
+					return False
+				
+				# Check if the frame exists in this target's tree
+				if frame_exists_in_tree(frame_tree_result.get('frameTree', {})):
+					# Frame found! Keep the session attached and return a client for it
+					# Note: We're returning the cdp_client with the session already attached
+					# The caller is responsible for detaching when done
+					return self.cdp_client, session_id, target_id
+					
+			finally:
+				# Detach from target if frame not found
+				await self.cdp_client.send.Target.detachFromTarget(
+					params={'sessionId': session_id}
+				)
+		
+		# Frame not found in any target
+		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")
+	
+	async def cdp_client_for_target(self, target_id: str) -> Any:
+		"""Get a CDP client attached to a specific target.
+		
+		This is a simpler helper that just attaches to a specific target ID.
+		
+		Args:
+			target_id: The target ID to attach to
+			
+		Returns:
+			Tuple of (cdp_client, session_id) for the attached target
+		"""
+		session = await self.cdp_client.send.Target.attachToTarget(
+			params={'targetId': target_id, 'flatten': True}
+		)
+		session_id = session['sessionId']
+		
+		# Return the client and session_id
+		# Caller is responsible for detaching when done
+		return self.cdp_client, session_id
 
 
 # Import uuid7str for ID generation
