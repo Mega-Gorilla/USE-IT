@@ -41,7 +41,7 @@ async def main():
 	page = await browser.get_current_page()
 
 	while True:
-		async with DomService(browser, page) as dom_service:
+		async with DomService(browser) as dom_service:
 			await remove_highlighting_script(dom_service)
 
 			start = time.time()

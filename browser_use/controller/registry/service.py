@@ -338,12 +338,16 @@ class Registry(Generic[Context]):
 			if sensitive_data:
 				# Get current URL if browser_session is provided
 				current_url = None
-				if browser_session:
-					if browser_session.page:
-						current_url = browser_session.page.url
-					else:
-						current_page = await browser_session.get_current_page()
-						current_url = current_page.url if current_page else None
+				if browser_session and browser_session.current_target_id:
+					try:
+						# Get current page info using CDP
+						targets = await browser_session.cdp_client.send.Target.getTargets()
+						for target in targets.get('targetInfos', []):
+							if target.get('targetId') == browser_session.current_target_id:
+								current_url = target.get('url')
+								break
+					except Exception:
+						pass
 				validated_params = self._replace_sensitive_data(validated_params, sensitive_data, current_url)
 
 			# Build special context dict

@@ -54,23 +54,26 @@ class DOMWatchdog(BaseWatchdog):
 			SerializedDOMState with serialized DOM and selector map
 		"""
 		try:
-			page = await self.browser_session.get_current_page()
-
 			# Create or reuse DOM service
 			if self._dom_service is None:
-				self._dom_service = DomService(browser=self.browser_session, page=page, logger=logger)
+				self._dom_service = DomService(browser_session=self.browser_session, logger=logger)
 
 			# Get serialized DOM tree using the service
 			start = time.time()
-			self.current_dom_state, timing_info = await self._dom_service.get_serialized_dom_tree(
+			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
 				previous_cached_state=event.previous_state
 			)
 			end = time.time()
 
-			logger.debug(f'Time taken to serialize dom tree: {end - start} seconds')
+			logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
+			logger.debug(f'Timing breakdown: {timing_info}')
 
 			# Update selector map for other watchdogs
 			self.selector_map = self.current_dom_state.selector_map
+
+			# Update BrowserSession's cached selector map
+			if self.browser_session:
+				self.browser_session.update_cached_selector_map(self.selector_map)
 
 			# Build UUID selector map
 			self.uuid_selector_map = {}
@@ -78,19 +81,6 @@ class DOMWatchdog(BaseWatchdog):
 				for node in self.selector_map.values():
 					if hasattr(node, 'uuid'):
 						self.uuid_selector_map[node.uuid] = node
-
-			# Store the enhanced DOM tree if available
-			# Note: The service doesn't expose the raw enhanced tree,
-			# but we can access it through the selector map if needed
-			if self.selector_map:
-				# The root node is typically at index 0 or we can traverse up from any node
-				for node in self.selector_map.values():
-					# Find root by traversing up
-					root = node
-					while root.parent_node:
-						root = root.parent_node
-					self.enhanced_dom_tree = root
-					break
 
 			return self.current_dom_state
 

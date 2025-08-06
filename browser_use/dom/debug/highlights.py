@@ -53,7 +53,6 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 	"""Remove all browser-use highlighting elements from the page."""
 	try:
 		# Get CDP client and session ID
-		cdp_client = await dom_service._get_cdp_client()
 		targets = await dom_service._get_targets_for_current_page()
 		session_id = await dom_service._attach_target_activate_domains_get_session_id(targets.page_session)
 
@@ -70,7 +69,9 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 		"""
 
 		# Execute the removal script via CDP
-		await cdp_client.send.Runtime.evaluate(params={'expression': script, 'returnByValue': True}, session_id=session_id)
+		await dom_service.browser_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': script, 'returnByValue': True}, session_id=session_id
+		)
 		print('✅ All browser-use highlighting elements removed')
 
 	except Exception as e:
@@ -89,7 +90,6 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		converted_elements = convert_dom_selector_map_to_highlight_format(interactive_elements)
 
 		# Get CDP client and session ID
-		cdp_client = await dom_service._get_cdp_client()
 		targets = await dom_service._get_targets_for_current_page()
 		session_id = await dom_service._attach_target_activate_domains_get_session_id(targets.page_session)
 
@@ -367,7 +367,9 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		"""
 
 		# Inject the enhanced CSP-safe script via CDP
-		await cdp_client.send.Runtime.evaluate(params={'expression': script, 'returnByValue': True}, session_id=session_id)
+		await dom_service.browser_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': script, 'returnByValue': True}, session_id=session_id
+		)
 		print(f'✅ Enhanced CSP-safe highlighting injected for {len(converted_elements)} elements')
 
 	except Exception as e:

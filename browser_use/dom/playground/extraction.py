@@ -115,7 +115,7 @@ async def test_focus_vs_all_elements():
 		while True:
 			try:
 				page = await browser_session.get_current_page()
-				async with DomService(browser_session, page) as dom_service:
+				async with DomService(browser_session) as dom_service:
 					await remove_highlighting_script(dom_service)
 
 				# 	all_elements_state = await dom_service.get_serialized_dom_tree()
@@ -140,13 +140,13 @@ async def test_focus_vs_all_elements():
 
 				# Get detailed timing info from DOM service
 				print('\nGetting detailed DOM timing...')
-				async with DomService(browser_session, page) as dom_service:
+				async with DomService(browser_session) as dom_service:
 					serialized_state, timing_info = await dom_service.get_serialized_dom_tree()
 
 				# Combine all timing info
 				all_timing = {'get_state_summary_total': get_state_time, **timing_info}
 
-				async with DomService(browser_session, page) as dom_service:
+				async with DomService(browser_session) as dom_service:
 					await inject_highlighting_script(dom_service, all_elements_state.dom_state.selector_map)
 
 				selector_map = all_elements_state.dom_state.selector_map
@@ -252,9 +252,7 @@ async def test_focus_vs_all_elements():
 						if clicked_index in selector_map:
 							element_node = selector_map[clicked_index]
 							print(f'Clicking element {clicked_index}: {element_node.tag_name}')
-							event = browser_session.event_bus.dispatch(
-								ClickElementEvent(element_node=element_node)
-							)
+							event = browser_session.event_bus.dispatch(ClickElementEvent(element_node=element_node))
 							await event
 							print('Click successful.')
 					except ValueError:

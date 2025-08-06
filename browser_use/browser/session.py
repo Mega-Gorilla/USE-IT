@@ -33,6 +33,7 @@ from browser_use.utils import (
 
 if TYPE_CHECKING:
 	from cdp_use import CDPClient
+
 	from browser_use.dom.views import EnhancedDOMTreeNode
 
 _GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
@@ -79,7 +80,7 @@ class BrowserSession(BaseModel):
 	# Connection info (for backwards compatibility)
 	cdp_url: str | None = None
 	is_local: bool = Field(default=True)
-	
+
 	# Mutable state
 	current_target_id: str | None = None
 	"""Current active target ID for the main page"""
@@ -106,11 +107,11 @@ class BrowserSession(BaseModel):
 	_cached_browser_state_summary: Any = PrivateAttr(default=None)
 	_cached_selector_map: dict[int, 'EnhancedDOMTreeNode'] = PrivateAttr(default_factory=dict)
 	"""Cached mapping of element indices to DOM nodes"""
-	
+
 	# CDP client
 	_cdp_client: 'CDPClient | None' = PrivateAttr(default=None)
 	"""Cached CDP client instance"""
-	
+
 	_logger: Any = PrivateAttr(default=None)
 
 	@property
@@ -127,9 +128,9 @@ class BrowserSession(BaseModel):
 	@property
 	def cdp_client(self) -> 'CDPClient | None':
 		"""Get the cached CDP client if it exists.
-		
+
 		The client is created and started in setup_browser_via_cdp_url().
-		
+
 		Returns:
 			The CDP client instance or None if not yet created
 		"""
@@ -141,9 +142,7 @@ class BrowserSession(BaseModel):
 
 	def __str__(self) -> str:
 		# Note: _original_browser_session tracking moved to Agent class
-		port_number_or_pid = (
-			(self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
-		)
+		port_number_or_pid = (self.cdp_url or str(self.browser_pid) or 'playwright').rsplit(':', 1)[-1].split('/', 1)[0]
 		return f'BrowserSession🆂 {self.id[-4:]}:{port_number_or_pid} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.current_target_id))[-2:]}'
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> None:
@@ -433,7 +432,8 @@ class BrowserSession(BaseModel):
 
 					# Use CDP to evaluate document.title
 					title_result = await asyncio.wait_for(
-						self.cdp_client.send('Runtime.evaluate', {'expression': 'document.title'}, session_id=session_id), timeout=2.0
+						self.cdp_client.send('Runtime.evaluate', {'expression': 'document.title'}, session_id=session_id),
+						timeout=2.0,
 					)
 					title = title_result.get('result', {}).get('value', '')
 
@@ -733,16 +733,107 @@ class BrowserSession(BaseModel):
 
 	# ========== CDP Helper Methods ==========
 
+	async def cdp_clients_for_target(self, target_id: str) -> list['CDPClient']:
+		"""Get CDP clients for a target, including main and iframe sessions.
+
+		Returns list with root target session first, then iframe sessions.
+		"""
+		if not self.cdp_client:
+			raise ValueError('CDP client not initialized')
+
+		clients = []
+
+		# Attach to main target
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+		session_id = session['sessionId']
+
+		# For now, return just the main client with session
+		# In future, we'd enumerate iframes and attach to them too
+		clients.append(self.cdp_client)  # Root client with session attached
+
+		return clients
+
+	async def cdp_client_for_frame(self, frame_id: str) -> 'CDPClient':
+		"""Get CDP client for a specific frame ID."""
+		# For now, return the main client
+		# In future, we'd look up which session owns this frame
+		return self.cdp_client
+
+	async def cdp_client_for_node(self, node: 'EnhancedDOMTreeNode') -> 'CDPClient':
+		"""Get CDP client for a specific DOM node based on its frame."""
+		if node.frame_id:
+			return await self.cdp_client_for_frame(node.frame_id)
+		return self.cdp_client
+
+	async def frames_by_target(self, target_id: str) -> list[str]:
+		"""Get all frame IDs for a target."""
+		# Attach to target and get frame tree
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+		session_id = session['sessionId']
+
+		# Get frame tree
+		frame_tree = await self.cdp_client.send('Page.getFrameTree', session_id=session_id)
+
+		# Extract frame IDs recursively
+		frame_ids = []
+
+		def extract_frames(tree_node):
+			frame_ids.append(tree_node['frame']['id'])
+			for child in tree_node.get('childFrames', []):
+				extract_frames(child)
+
+		extract_frames(frame_tree['frameTree'])
+
+		# Detach session
+		await self.cdp_client.send('Target.detachFromTarget', {'sessionId': session_id})
+
+		return frame_ids
+
+	async def target_id_by_frame_id(self, frame_id: str) -> str | None:
+		"""Get target ID for a given frame ID.
+
+		Note: This requires iterating through all targets to find the frame.
+		"""
+		targets = await self.cdp_client.send.Target.getTargets()
+
+		for target in targets['targetInfos']:
+			if target['type'] in ['page', 'iframe']:
+				# Check if this target contains the frame
+				frames = await self.frames_by_target(target['targetId'])
+				if frame_id in frames:
+					return target['targetId']
+
+		return None
+
+	async def get_tabs_info(self) -> list[TabInfo]:
+		"""Get information about all open tabs.
+
+		Returns:
+			List of TabInfo objects with details about each tab
+		"""
+		targets = await self.cdp_client.send.Target.getTargets()
+
+		tabs = []
+		for i, target in enumerate(targets['targetInfos']):
+			if target['type'] == 'page':
+				tabs.append(
+					TabInfo(
+						target_id=target['targetId'],
+						page_id=i,  # Use index as page_id for backwards compatibility
+						url=target['url'],
+						title=target.get('title', ''),
+					)
+				)
+
+		return tabs
 
 	async def get_current_page_cdp_session_id(self) -> str | None:
 		"""Get the CDP session ID for the current page."""
 		if not hasattr(self, 'current_target_id') or not self.current_target_id:
 			return None
 
-		cdp_client = await self.get_cdp_client()
-
 		# Attach to the current target and get session ID
-		session = await cdp_client.send.Target.attachToTarget(params={'targetId': self.current_target_id, 'flatten': True})
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': self.current_target_id, 'flatten': True})
 		return session['sessionId']
 
 	async def _create_fresh_cdp_client(self) -> Any:
@@ -918,8 +1009,21 @@ class BrowserSession(BaseModel):
 
 	# ========== DOM Helper Methods ==========
 
-	async def get_dom_element_by_index(self, index: int) -> Any | None:
-		"""Get DOM element by index from the DOM watchdog.
+	def update_cached_selector_map(self, selector_map: dict[int, 'EnhancedDOMTreeNode']) -> None:
+		"""Update the cached selector map with new DOM state.
+
+		This should be called by the DOM watchdog after rebuilding the DOM.
+
+		Args:
+			selector_map: The new selector map from DOM serialization
+		"""
+		self._cached_selector_map = selector_map
+
+	async def get_dom_element_by_index(self, index: int) -> 'EnhancedDOMTreeNode | None':
+		"""Get DOM element by index.
+
+		First checks cached selector map, then falls back to DOM watchdog
+		which may trigger a DOM rebuild if needed.
 
 		Args:
 			index: The element index from the serialized DOM
@@ -927,9 +1031,24 @@ class BrowserSession(BaseModel):
 		Returns:
 			EnhancedDOMTreeNode or None if index not found
 		"""
+		# First check cached selector map
+		if self._cached_selector_map and index in self._cached_selector_map:
+			return self._cached_selector_map[index]
+
+		# Fall back to DOM watchdog which may rebuild DOM
 		if self._dom_watchdog:
-			return await self._dom_watchdog.get_element_by_index(index)
+			node = await self._dom_watchdog.get_element_by_index(index)
+			# Update cache if watchdog rebuilt the DOM
+			if self._dom_watchdog.selector_map:
+				self._cached_selector_map = self._dom_watchdog.selector_map
+			return node
+
 		return None
+
+	# Alias for backwards compatibility
+	async def get_element_by_index(self, index: int) -> 'EnhancedDOMTreeNode | None':
+		"""Alias for get_dom_element_by_index for backwards compatibility."""
+		return await self.get_dom_element_by_index(index)
 
 	def is_file_input(self, element: Any) -> bool:
 		"""Check if element is a file input.
@@ -959,94 +1078,78 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_get_all_pages(self) -> list[dict]:
 		"""Get all browser pages/tabs using CDP Target.getTargets."""
-		cdp_client = await self.get_cdp_client()
-		targets = await cdp_client.send('Target.getTargets')
+		targets = await self.cdp_client.send('Target.getTargets')
 		# Filter for page targets only
 		return [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
 
 	async def _cdp_create_new_page(self, url: str = 'about:blank') -> str:
 		"""Create a new page/tab using CDP Target.createTarget. Returns target ID."""
-		cdp_client = await self.get_cdp_client()
-		result = await cdp_client.send('Target.createTarget', {'url': url, 'newWindow': False, 'background': False})
+		result = await self.cdp_client.send('Target.createTarget', {'url': url, 'newWindow': False, 'background': False})
 		return result['targetId']
 
 	async def _cdp_close_page(self, target_id: str) -> None:
 		"""Close a page/tab using CDP Target.closeTarget."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Target.closeTarget', {'targetId': target_id})
+		await self.cdp_client.send('Target.closeTarget', {'targetId': target_id})
 
 	async def _cdp_activate_page(self, target_id: str) -> None:
 		"""Activate/focus a page using CDP Target.activateTarget."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Target.activateTarget', {'targetId': target_id})
+		await self.cdp_client.send('Target.activateTarget', {'targetId': target_id})
 
 	async def _cdp_get_cookies(self, urls: list[str] | None = None) -> list[dict]:
 		"""Get cookies using CDP Network.getCookies."""
-		cdp_client = await self.get_cdp_client()
 		params = {'urls': urls} if urls else {}
-		result = await cdp_client.send('Network.getCookies', params)
+		result = await self.cdp_client.send('Network.getCookies', params)
 		return result.get('cookies', [])
 
 	async def _cdp_set_cookies(self, cookies: list[dict]) -> None:
 		"""Set cookies using CDP Network.setCookies."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Network.setCookies', {'cookies': cookies})
+		await self.cdp_client.send('Network.setCookies', {'cookies': cookies})
 
 	async def _cdp_clear_cookies(self) -> None:
 		"""Clear all cookies using CDP Network.clearBrowserCookies."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Network.clearBrowserCookies')
+		await self.cdp_client.send('Network.clearBrowserCookies')
 
 	async def _cdp_set_extra_headers(self, headers: dict[str, str]) -> None:
 		"""Set extra HTTP headers using CDP Network.setExtraHTTPHeaders."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Network.setExtraHTTPHeaders', {'headers': headers})
+		await self.cdp_client.send('Network.setExtraHTTPHeaders', {'headers': headers})
 
 	async def _cdp_grant_permissions(self, permissions: list[str], origin: str | None = None) -> None:
 		"""Grant permissions using CDP Browser.grantPermissions."""
-		cdp_client = await self.get_cdp_client()
 		params = {'permissions': permissions}
 		if origin:
 			params['origin'] = origin
-		await cdp_client.send('Browser.grantPermissions', params)
+		await self.cdp_client.send('Browser.grantPermissions', params)
 
 	async def _cdp_set_geolocation(self, latitude: float, longitude: float, accuracy: float = 100) -> None:
 		"""Set geolocation using CDP Emulation.setGeolocationOverride."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send(
+		await self.cdp_client.send(
 			'Emulation.setGeolocationOverride', {'latitude': latitude, 'longitude': longitude, 'accuracy': accuracy}
 		)
 
 	async def _cdp_clear_geolocation(self) -> None:
 		"""Clear geolocation override using CDP."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Emulation.clearGeolocationOverride')
+		await self.cdp_client.send('Emulation.clearGeolocationOverride')
 
 	async def _cdp_add_init_script(self, script: str) -> str:
 		"""Add script to evaluate on new document using CDP Page.addScriptToEvaluateOnNewDocument."""
-		cdp_client = await self.get_cdp_client()
-		result = await cdp_client.send('Page.addScriptToEvaluateOnNewDocument', {'source': script})
+		result = await self.cdp_client.send('Page.addScriptToEvaluateOnNewDocument', {'source': script})
 		return result['identifier']
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
 		"""Remove script added with addScriptToEvaluateOnNewDocument."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send('Page.removeScriptToEvaluateOnNewDocument', {'identifier': identifier})
+		await self.cdp_client.send('Page.removeScriptToEvaluateOnNewDocument', {'identifier': identifier})
 
 	async def _cdp_set_viewport(self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False) -> None:
 		"""Set viewport using CDP Emulation.setDeviceMetricsOverride."""
-		cdp_client = await self.get_cdp_client()
-		await cdp_client.send(
+		await self.cdp_client.send(
 			'Emulation.setDeviceMetricsOverride',
 			{'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile},
 		)
 
 	async def _cdp_get_storage_state(self) -> dict:
 		"""Get storage state (cookies, localStorage, sessionStorage) using CDP."""
-		cdp_client = await self.get_cdp_client()
-
 		# Get cookies
-		cookies_result = await cdp_client.send('Network.getCookies')
+		cookies_result = await self.cdp_client.send('Network.getCookies')
 		cookies = cookies_result.get('cookies', [])
 
 		# Get localStorage and sessionStorage would require evaluating JavaScript
@@ -1058,10 +1161,9 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_navigate(self, url: str, target_id: str | None = None) -> None:
 		"""Navigate to URL using CDP Page.navigate."""
-		cdp_client = await self.get_cdp_client()
 		# If target_id provided, we'd need to attach to that session first
 		# For now, navigate on the current page
-		await cdp_client.send('Page.navigate', {'url': url})
+		await self.cdp_client.send('Page.navigate', {'url': url})
 
 
 # Import uuid7str for ID generation

@@ -488,7 +488,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Get instance-specific logger with task ID in the name"""
 
 		_browser_session_id = self.browser_session.id if self.browser_session else self.id
-		_current_page_id = str(id(self.browser_session and self.browser_session.page))[-2:]
+		_current_page_id = (
+			self.browser_session.current_target_id[-2:]
+			if self.browser_session and self.browser_session.current_target_id
+			else '--'
+		)
 		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]} 🅟 {_current_page_id}')
 
 	@property
@@ -499,9 +503,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	@property
 	def browser_context(self) -> BrowserContext:
+		# Deprecated - browser_context no longer exists with CDP-only approach
 		assert self.browser_session is not None, 'BrowserSession is not set up'
-		assert self.browser_session.browser_context is not None, 'BrowserContext is not set up'
-		return self.browser_session.browser_context
+		assert self.browser_session.cdp_client is not None, 'CDP client is not set up'
+		# Return None or raise since we don't have browser_context anymore
+		raise NotImplementedError('browser_context is deprecated - use browser_session.cdp_client instead')
 
 	@property
 	def browser_profile(self) -> BrowserProfile:
@@ -1252,6 +1258,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			assert self.browser_session is not None, 'Browser session must be initialized before starting'
 			self.logger.debug('🌐 Starting browser session...')
 			from browser_use.browser.events import BrowserStartEvent
+
 			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
 			await event
 

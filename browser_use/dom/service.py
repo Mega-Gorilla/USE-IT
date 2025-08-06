@@ -3,8 +3,6 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import httpx
-from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXNode
 from cdp_use.cdp.dom.types import Node
@@ -28,7 +26,6 @@ from browser_use.dom.views import (
 
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
-	from browser_use.browser.types import Page
 
 
 # TODO: enable cross origin iframes -> experimental for now
@@ -46,68 +43,34 @@ class DomService:
 
 	logger: logging.Logger
 
-	def __init__(self, browser_session: 'BrowserSession', page: 'Page', logger: logging.Logger | None = None):
+	def __init__(self, browser_session: 'BrowserSession', logger: logging.Logger | None = None):
 		self.browser_session = browser_session
-		self.page = page
+		self.logger = logger or logging.getLogger(__name__)
 
-		self.cdp_client: CDPClient | None = None
-		# self.playwright_page_to_session_id_store: dict[str, str] = {}
-
-		# self.target_to_session_id_cache: dict[str, str] = {}
+		# Cache for session domains that have been enabled
 		self.session_id_domains_enabled_cache: dict[str, bool] = {}
 
-	async def _get_cdp_client(self) -> CDPClient:
-		if not self.browser_session.cdp_url:
-			raise ValueError('CDP URL is not set')
-
-		# TODO: MOVE THIS TO BROWSER SESSION (or sth idk)
-		# If the cdp_url is already a websocket URL, use it as-is.
-		if self.browser_session.cdp_url.startswith('ws'):
-			ws_url = self.browser_session.cdp_url
-		else:
-			# Otherwise, treat it as the DevTools HTTP root and fetch the websocket URL.
-			url = self.browser_session.cdp_url.rstrip('/')
-			if not url.endswith('/json/version'):
-				url = url + '/json/version'
-			async with httpx.AsyncClient() as client:
-				version_info = await client.get(url)
-				ws_url = version_info.json()['webSocketDebuggerUrl']
-
-		if self.cdp_client is None:
-			self.cdp_client = CDPClient(ws_url)
-			await self.cdp_client.start()
-
-		return self.cdp_client
-
 	async def __aenter__(self):
-		await self._get_cdp_client()
 		return self
 
-	# on self destroy -> stop the cdp client
 	async def __aexit__(self, exc_type, exc_value, traceback):
-		if self.cdp_client:
-			await self.cdp_client.stop()
-			self.cdp_client = None
+		# No cleanup needed - CDP client is managed by browser session
+		pass
 
 	async def _get_targets_for_current_page(self) -> CurrentPageTargets:
-		"""Get the target ID for a playwright page.
+		"""Get the target for the current page."""
+		targets = await self.browser_session.cdp_client.send.Target.getTargets()
 
-		TODO: this is a REALLY hacky way -> if multiple same urls are open then this will break
-		"""
-		# page_guid = self.page._impl_obj._guid
-		# TODO: add cache for page to sessionId
+		# Use the current_target_id directly
+		current_target_id = self.browser_session.current_target_id
+		if not current_target_id:
+			raise ValueError('No current target ID set in browser session')
 
-		# if page_guid in self.page_to_session_id_store:
-		# 	return self.page_to_session_id_store[page_guid]
-
-		cdp_client = await self._get_cdp_client()
-		targets = await cdp_client.send.Target.getTargets()
-
-		# Find main page target
-		main_target = next((t for t in targets['targetInfos'] if t['type'] == 'page' and t['url'] == self.page.url), None)
+		# Find main page target by ID
+		main_target = next((t for t in targets['targetInfos'] if t['targetId'] == current_target_id), None)
 
 		if not main_target:
-			raise ValueError(f'No main page target found for URL: {self.page.url}')
+			raise ValueError(f'No target found for current target ID: {current_target_id}')
 
 		# Separate iframe targets for attachment
 		iframe_targets = [t for t in targets['targetInfos'] if t['type'] == 'iframe']
@@ -120,14 +83,14 @@ class DomService:
 	async def _attach_target_activate_domains_get_session_id(self, target: TargetInfo) -> str:
 		"""This function is cached, so go crazy"""
 
-		cdp_client = await self._get_cdp_client()
-
 		target_id = str(target['targetId'])
 
 		# if target_id in self.target_to_session_id_cache:
 		# 	return self.target_to_session_id_cache[target_id]
 
-		session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+		session = await self.browser_session.cdp_client.send.Target.attachToTarget(
+			params={'targetId': target_id, 'flatten': True}
+		)
 		session_id = session['sessionId']
 
 		await self._enable_all_domains_on_session(session_id)
@@ -138,9 +101,7 @@ class DomService:
 		if session_id in self.session_id_domains_enabled_cache:
 			return
 
-		cdp_client = await self._get_cdp_client()
-
-		await cdp_client.send.Target.setAutoAttach(
+		await self.browser_session.cdp_client.send.Target.setAutoAttach(
 			params={
 				'autoAttach': True,
 				'waitForDebuggerOnStart': False,
@@ -150,10 +111,10 @@ class DomService:
 		)
 
 		await asyncio.gather(
-			cdp_client.send.DOM.enable(session_id=session_id),
-			cdp_client.send.Accessibility.enable(session_id=session_id),
-			cdp_client.send.DOMSnapshot.enable(session_id=session_id),
-			cdp_client.send.Page.enable(session_id=session_id),
+			self.browser_session.cdp_client.send.DOM.enable(session_id=session_id),
+			self.browser_session.cdp_client.send.Accessibility.enable(session_id=session_id),
+			self.browser_session.cdp_client.send.DOMSnapshot.enable(session_id=session_id),
+			self.browser_session.cdp_client.send.Page.enable(session_id=session_id),
 		)
 
 		self.session_id_domains_enabled_cache[session_id] = True
@@ -188,10 +149,8 @@ class DomService:
 	async def _get_viewport_ratio(self, session_id: str) -> float:
 		"""Get viewport dimensions, device pixel ratio, and scroll position using CDP."""
 		try:
-			cdp_client = await self._get_cdp_client()
-
 			# Get the layout metrics which includes the visual viewport
-			metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			metrics = await self.browser_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
 
 			visual_viewport = metrics.get('visualViewport', {})
 
@@ -287,9 +246,7 @@ class DomService:
 	async def _get_ax_tree_for_all_frames(self, session_id: str) -> GetFullAXTreeReturns:
 		"""Recursively collect all frames and merge their accessibility trees into a single array."""
 
-		cdp_client = await self._get_cdp_client()
-
-		frame_tree = await cdp_client.send.Page.getFrameTree(session_id=session_id)
+		frame_tree = await self.browser_session.cdp_client.send.Page.getFrameTree(session_id=session_id)
 
 		def collect_all_frame_ids(frame_tree_node) -> list[str]:
 			"""Recursively collect all frame IDs from the frame tree."""
@@ -307,7 +264,9 @@ class DomService:
 		# Get accessibility tree for each frame
 		ax_tree_requests = []
 		for frame_id in all_frame_ids:
-			ax_tree_request = cdp_client.send.Accessibility.getFullAXTree(params={'frameId': frame_id}, session_id=session_id)
+			ax_tree_request = self.browser_session.cdp_client.send.Accessibility.getFullAXTree(
+				params={'frameId': frame_id}, session_id=session_id
+			)
 			ax_tree_requests.append(ax_tree_request)
 
 		# Wait for all requests to complete
@@ -324,9 +283,7 @@ class DomService:
 		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
 
-		cdp_client = await self._get_cdp_client()
-
-		snapshot_request = cdp_client.send.DOMSnapshot.captureSnapshot(
+		snapshot_request = self.browser_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
 				'computedStyles': REQUIRED_COMPUTED_STYLES,
 				'includePaintOrder': True,
@@ -337,7 +294,9 @@ class DomService:
 			session_id=session_id,
 		)
 
-		dom_tree_request = cdp_client.send.DOM.getDocument(params={'depth': -1, 'pierce': True}, session_id=session_id)
+		dom_tree_request = self.browser_session.cdp_client.send.DOM.getDocument(
+			params={'depth': -1, 'pierce': True}, session_id=session_id
+		)
 
 		ax_tree_request = self._get_ax_tree_for_all_frames(session_id)
 
@@ -549,10 +508,11 @@ class DomService:
 
 	async def get_serialized_dom_tree(
 		self, previous_cached_state: SerializedDOMState | None = None
-	) -> tuple[SerializedDOMState, dict[str, float]]:
+	) -> tuple[SerializedDOMState, EnhancedDOMTreeNode, dict[str, float]]:
 		"""Get the serialized DOM tree representation for LLM consumption.
 
-		TODO: this is a bit of a hack, we should probably have a better way to do this
+		Returns:
+			Tuple of (serialized_dom_state, enhanced_dom_tree_root, timing_info)
 		"""
 
 		page_session_info = await self._get_targets_for_current_page()
@@ -570,4 +530,4 @@ class DomService:
 		# Combine all timing info
 		all_timing = {**serializer_timing, **serialize_total_timing}
 
-		return serialized_dom_state, all_timing
+		return serialized_dom_state, enhanced_dom_tree, all_timing
