@@ -1321,10 +1321,13 @@ class BrowserSession(BaseModel):
 		targets = await self.cdp_client.send.Target.getTargets()
 		all_targets = targets.get('targetInfos', [])
 
-		# Check each target's frame tree
+		# Check each target's frame tree (page and iframe targets)
 		for target in all_targets:
 			target_id = target.get('targetId')
-			if not target_id:
+			target_type = target.get('type')
+			
+			# Skip non-page/iframe targets as they don't have frames
+			if not target_id or target_type not in ['page', 'iframe']:
 				continue
 
 			# Attach to target to get frame tree
@@ -1332,37 +1335,65 @@ class BrowserSession(BaseModel):
 			session_id = session['sessionId']
 
 			try:
-				# Enable Page domain first
-				await self.cdp_client.send.Page.enable(session_id=session_id)
-				
-				# Get the frame tree for this target
-				frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
+				if target_type == 'page':
+					# For page targets, check the frame tree
+					# Enable Page domain first (only works for page targets)
+					await self.cdp_client.send.Page.enable(session_id=session_id)
 
-				# Check if frame_id exists in this target's frame tree
-				def frame_exists_in_tree(frame_node: dict) -> bool:
-					"""Recursively check if frame_id exists in the frame tree."""
-					# Check current frame
-					if frame_node.get('frame', {}).get('id') == frame_id:
-						return True
+					# Get the frame tree for this target
+					frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
 
-					# Check child frames recursively
-					child_frames = frame_node.get('childFrames', [])
-					for child in child_frames:
-						if frame_exists_in_tree(child):
+					# Check if frame_id exists in this target's frame tree
+					def frame_exists_in_tree(frame_node: dict) -> bool:
+						"""Recursively check if frame_id exists in the frame tree."""
+						# Check current frame
+						if frame_node.get('frame', {}).get('id') == frame_id:
 							return True
 
-					return False
+						# Check child frames recursively
+						child_frames = frame_node.get('childFrames', [])
+						for child in child_frames:
+							if frame_exists_in_tree(child):
+								return True
 
-				# Check if the frame exists in this target's tree
-				if frame_exists_in_tree(frame_tree_result.get('frameTree', {})):
-					# Frame found! Keep the session attached and return a client for it
-					# Note: We're returning the cdp_client with the session already attached
-					# The caller is responsible for detaching when done
-					return self.cdp_client, session_id, target_id
+						return False
 
-			finally:
-				# Detach from target if frame not found
+					# Check if the frame exists in this target's tree
+					if frame_exists_in_tree(frame_tree_result.get('frameTree', {})):
+						# Frame found! Keep the session attached and return a client for it
+						# Note: We're returning the cdp_client with the session already attached
+						# The caller is responsible for detaching when done
+						return self.cdp_client, session_id, target_id
+						
+				elif target_type == 'iframe':
+					# For iframe targets (OOPIFs), the target itself IS the frame
+					# We need to check if this iframe target's frame ID matches what we're looking for
+					try:
+						# Enable Page domain to get frame info
+						await self.cdp_client.send.Page.enable(session_id=session_id)
+						
+						# Get the frame tree for this iframe target
+						frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
+						
+						# For an iframe target, the root frame IS the iframe itself
+						iframe_frame_id = frame_tree_result.get('frameTree', {}).get('frame', {}).get('id')
+						
+						if iframe_frame_id == frame_id:
+							# This is the iframe we're looking for!
+							# Don't detach - caller is responsible for cleanup
+							return self.cdp_client, session_id, target_id
+							
+					except Exception:
+						# This iframe target doesn't match
+						pass
+						
+				# If we didn't find the frame in this target, detach before trying next one
 				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+				
+			except Exception as e:
+				# On error, make sure to detach
+				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+				raise
 
 		# Frame not found in any target
 		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")

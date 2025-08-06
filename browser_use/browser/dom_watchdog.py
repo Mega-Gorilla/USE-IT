@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
-	BuildDOMTreeEvent,
 	ScreenshotEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
@@ -30,7 +29,7 @@ class DOMWatchdog(BaseWatchdog):
 	helper methods for other watchdogs.
 	"""
 
-	LISTENS_TO = [BuildDOMTreeEvent, BrowserStateRequestEvent]
+	LISTENS_TO = [BrowserStateRequestEvent]
 	EMITS = [BrowserErrorEvent]
 
 	# Public properties for other watchdogs
@@ -111,16 +110,19 @@ class DOMWatchdog(BaseWatchdog):
 			if event.include_dom:
 				logger.debug('🌳 Building DOM tree...')
 
-				# Dispatch BuildDOMTreeEvent and wait for result
-				# The DOM watchdog will handle this and update our cached selector map
-				dom_event = self.event_bus.dispatch(
-					BuildDOMTreeEvent(
-						previous_state=self.browser_session._cached_browser_state_summary.dom_state
-						if self.browser_session._cached_browser_state_summary
-						else None
-					)
+				# Build the DOM directly using the internal method
+				previous_state = (
+					self.browser_session._cached_browser_state_summary.dom_state
+					if self.browser_session._cached_browser_state_summary
+					else None
 				)
-				content = await dom_event.event_result()
+				
+				try:
+					# Call the DOM building method directly
+					content = await self._build_dom_tree(previous_state)
+				except Exception as e:
+					logger.warning(f'DOM build failed: {e}, using minimal state')
+					content = SerializedDOMState(_root=None, selector_map={})
 
 				if not content:
 					# Fallback to minimal DOM state
@@ -215,15 +217,12 @@ class DOMWatchdog(BaseWatchdog):
 				is_pdf_viewer=False,
 			)
 
-	async def on_BuildDOMTreeEvent(self, event: BuildDOMTreeEvent) -> SerializedDOMState:
-		"""Build and serialize DOM tree, returning ready-to-use LLM format.
-
-		Updates public properties:
-		- self.selector_map: Index to node mapping for element access
-		- self.uuid_selector_map: UUID to node mapping for element access
-		- self.current_dom_state: Cached serialized state
-		- self.enhanced_dom_tree: Full enhanced DOM tree
-
+	async def _build_dom_tree(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
+		"""Internal method to build and serialize DOM tree.
+		
+		This is the actual implementation that does the work, called by both
+		on_BrowserStateRequestEvent.
+		
 		Returns:
 			SerializedDOMState with serialized DOM and selector map
 		"""
@@ -240,11 +239,9 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Get serialized DOM tree using the service
 			start = time.time()
-			print(f'DOMWatchdog: About to call get_serialized_dom_tree with dom_service={self._dom_service}')
 			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
 				previous_cached_state=event.previous_state
 			)
-			print('DOMWatchdog: Returned from get_serialized_dom_tree')
 			end = time.time()
 
 			logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
@@ -298,8 +295,7 @@ class DOMWatchdog(BaseWatchdog):
 		"""
 		if not self.selector_map:
 			# Build DOM if not cached
-			result = await self.event_bus.dispatch(BuildDOMTreeEvent())
-			await result
+			await self._build_dom_tree()
 
 		return self.selector_map.get(index) if self.selector_map else None
 
@@ -313,8 +309,7 @@ class DOMWatchdog(BaseWatchdog):
 		"""
 		if not self.uuid_selector_map:
 			# Build DOM if not cached
-			result = await self.event_bus.dispatch(BuildDOMTreeEvent())
-			await result
+			await self._build_dom_tree()
 
 		return self.uuid_selector_map.get(uuid) if self.uuid_selector_map else None
 

@@ -61,33 +61,21 @@ class DomService:
 
 	async def _get_targets_for_current_page(self) -> CurrentPageTargets:
 		"""Get the target for the current page."""
-		print('DomService._get_targets_for_current_page: Getting targets...')
 		targets = await self.browser_session.cdp_client.send.Target.getTargets()
-		print(f'DomService: Found {len(targets.get("targetInfos", []))} targets')
 
 		# Use the current_target_id directly
 		current_target_id = self.browser_session.current_target_id
 		if not current_target_id:
 			raise ValueError('No current target ID set in browser session')
 
-		print(f'DomService: Looking for target with ID: {current_target_id}')
-
 		# Find main page target by ID
 		main_target = next((t for t in targets['targetInfos'] if t['targetId'] == current_target_id), None)
 
 		if not main_target:
-			# Debug: print all available targets
-			print(f'DomService ERROR: No target found for current target ID: {current_target_id}')
-			print('Available targets:')
-			for t in targets['targetInfos']:
-				print(f'  - {t["targetId"]}: type={t["type"]}, url={t.get("url", "none")}')
 			raise ValueError(f'No target found for current target ID: {current_target_id}')
-
-		print(f'DomService: Found main target: type={main_target["type"]}, url={main_target.get("url", "none")}')
 
 		# Separate iframe targets for attachment
 		iframe_targets = [t for t in targets['targetInfos'] if t['type'] == 'iframe']
-		print(f'DomService: Found {len(iframe_targets)} iframe targets')
 
 		return CurrentPageTargets(
 			page_session=main_target,
