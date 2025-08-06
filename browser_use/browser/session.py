@@ -357,7 +357,7 @@ class BrowserSession(BaseModel):
 
 		if not page_targets:
 			# No pages found, create a new one
-			new_target = await self._cdp_client.send.Target.createTarget({'url': 'about:blank'})
+			new_target = await self._cdp_client.send.Target.createTarget(params={'url': 'about:blank'})
 			target_id = new_target['targetId']
 		else:
 			# Use the first available page
@@ -780,7 +780,7 @@ class BrowserSession(BaseModel):
 		clients = []
 
 		# Attach to main target
-		session = await self.cdp_client.send.Target.attachToTarget(targetId=target_id, flatten=True)
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
 
 		# For now, return just the main client with session
@@ -844,7 +844,7 @@ class BrowserSession(BaseModel):
 			return None
 
 		# Attach to the current target and get session ID
-		session = await self.cdp_client.send.Target.attachToTarget(targetId=self.current_target_id, flatten=True)
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': self.current_target_id, 'flatten': True})
 		return session['sessionId']
 
 	async def _create_fresh_cdp_client(self) -> Any:
@@ -887,7 +887,7 @@ class BrowserSession(BaseModel):
 
 		try:
 			# Attach to the target
-			session = await cdp_client.send.Target.attachToTarget(targetId=target_id, flatten=True)
+			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
 
 			# Store the session_id on the client for convenience
@@ -895,17 +895,19 @@ class BrowserSession(BaseModel):
 
 			# Enable necessary domains
 			await cdp_client.send.Target.setAutoAttach(
-				autoAttach=True,
-				waitForDebuggerOnStart=False,
-				flatten=True,
-				sessionId=session_id
+				params={
+					'autoAttach': True,
+					'waitForDebuggerOnStart': False,
+					'flatten': True
+				},
+				session_id=session_id
 			)
 
 			await asyncio.gather(
-				cdp_client.send.DOM.enable(sessionId=session_id),
-				cdp_client.send.Accessibility.enable(sessionId=session_id),
-				cdp_client.send.DOMSnapshot.enable(sessionId=session_id),
-				cdp_client.send.Page.enable(sessionId=session_id),
+				cdp_client.send.DOM.enable(session_id=session_id),
+				cdp_client.send.Accessibility.enable(session_id=session_id),
+				cdp_client.send.DOMSnapshot.enable(session_id=session_id),
+				cdp_client.send.Page.enable(session_id=session_id),
 			)
 
 			return cdp_client
@@ -939,14 +941,14 @@ class BrowserSession(BaseModel):
 					continue
 
 				# Attach to this target to check its frame tree
-				session = await search_client.send.Target.attachToTarget(targetId=target['targetId'], flatten=True)
+				session = await search_client.send.Target.attachToTarget(params={'targetId': target['targetId'], 'flatten': True})
 				temp_session_id = session['sessionId']
 
 				# Enable Page domain to get frame tree
-				await search_client.send.Page.enable(sessionId=temp_session_id)
+				await search_client.send.Page.enable(session_id=temp_session_id)
 
 				# Get frame tree for this target
-				frame_tree = await search_client.send.Page.getFrameTree(sessionId=temp_session_id)
+				frame_tree = await search_client.send.Page.getFrameTree(session_id=temp_session_id)
 
 				# Recursively search for the frame_id
 				def search_frame_tree(node) -> bool:
@@ -998,7 +1000,7 @@ class BrowserSession(BaseModel):
 			if not session_id:
 				raise ValueError('CDP client does not have target_session_id set')
 
-			result = await cdp_client.send.DOM.describeNode(backendNodeId=node.backend_node_id, sessionId=session_id)
+			result = await cdp_client.send.DOM.describeNode(params={'backendNodeId': node.backend_node_id}, session_id=session_id)
 
 			# If we get here without exception, the node exists
 			return cdp_client
@@ -1032,14 +1034,14 @@ class BrowserSession(BaseModel):
 			return ''
 		
 		try:
-			session = await self.cdp_client.send.Target.attachToTarget(targetId=self.current_target_id, flatten=True)
+			session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': self.current_target_id, 'flatten': True})
 			session_id = session['sessionId']
 			title_result = await self.cdp_client.send.Runtime.evaluate(
-				expression='document.title',
-				sessionId=session_id
+				params={'expression': 'document.title'},
+				session_id=session_id
 			)
 			title = title_result.get('result', {}).get('value', '')
-			await self.cdp_client.send.Target.detachFromTarget(sessionId=session_id)
+			await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 			return title
 		except Exception:
 			return ''
@@ -1134,7 +1136,7 @@ class BrowserSession(BaseModel):
 			try:
 				# Attach to current target
 				session = await self.cdp_client.send.Target.attachToTarget(
-					targetId=self.current_target_id, flatten=True
+					params={'targetId': self.current_target_id, 'flatten': True}
 				)
 				session_id = session['sessionId']
 				
@@ -1145,12 +1147,12 @@ class BrowserSession(BaseModel):
 					highlights.forEach(el => el.remove());
 				"""
 				await self.cdp_client.send.Runtime.evaluate(
-					expression=script,
-					sessionId=session_id
+					params={'expression': script},
+					session_id=session_id
 				)
 				
 				# Detach from target
-				await self.cdp_client.send.Target.detachFromTarget(sessionId=session_id)
+				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 			except Exception as e:
 				self.logger.debug(f'Failed to remove highlights: {e}')
 
@@ -1182,7 +1184,7 @@ class BrowserSession(BaseModel):
 			Result of the last command or callable_fn return value
 		"""
 		# Attach to target
-		session = await self.cdp_client.send.Target.attachToTarget(targetId=target_id, flatten=True)
+		session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
 		
 		try:
@@ -1209,7 +1211,7 @@ class BrowserSession(BaseModel):
 				return session_id  # Just return session_id if no commands
 		finally:
 			# Always detach from target
-			await self.cdp_client.send.Target.detachFromTarget(sessionId=session_id)
+			await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 
 	async def _cdp_get_all_pages(self) -> list[dict]:
 		"""Get all browser pages/tabs using CDP Target.getTargets."""
@@ -1220,17 +1222,17 @@ class BrowserSession(BaseModel):
 	async def _cdp_create_new_page(self, url: str = 'about:blank') -> str:
 		"""Create a new page/tab using CDP Target.createTarget. Returns target ID."""
 		result = await self.cdp_client.send.Target.createTarget(
-			url=url, newWindow=False, background=False
+			params={'url': url, 'newWindow': False, 'background': False}
 		)
 		return result['targetId']
 
 	async def _cdp_close_page(self, target_id: str) -> None:
 		"""Close a page/tab using CDP Target.closeTarget."""
-		await self.cdp_client.send.Target.closeTarget(targetId=target_id)
+		await self.cdp_client.send.Target.closeTarget(params={'targetId': target_id})
 
 	async def _cdp_activate_page(self, target_id: str) -> None:
 		"""Activate/focus a page using CDP Target.activateTarget."""
-		await self.cdp_client.send.Target.activateTarget(targetId=target_id)
+		await self.cdp_client.send.Target.activateTarget(params={'targetId': target_id})
 
 	async def _cdp_get_cookies(self, urls: list[str] | None = None) -> list[dict]:
 		"""Get cookies using CDP Network.getCookies."""
@@ -1240,7 +1242,7 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_set_cookies(self, cookies: list[dict]) -> None:
 		"""Set cookies using CDP Network.setCookies."""
-		await self.cdp_client.send.Network.setCookies(cookies=cookies)
+		await self.cdp_client.send.Network.setCookies(params={'cookies': cookies})
 
 	async def _cdp_clear_cookies(self) -> None:
 		"""Clear all cookies using CDP Network.clearBrowserCookies."""
@@ -1248,7 +1250,7 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_set_extra_headers(self, headers: dict[str, str]) -> None:
 		"""Set extra HTTP headers using CDP Network.setExtraHTTPHeaders."""
-		await self.cdp_client.send.Network.setExtraHTTPHeaders(headers=headers)
+		await self.cdp_client.send.Network.setExtraHTTPHeaders(params={'headers': headers})
 
 	async def _cdp_grant_permissions(self, permissions: list[str], origin: str | None = None) -> None:
 		"""Grant permissions using CDP Browser.grantPermissions."""
@@ -1260,7 +1262,7 @@ class BrowserSession(BaseModel):
 	async def _cdp_set_geolocation(self, latitude: float, longitude: float, accuracy: float = 100) -> None:
 		"""Set geolocation using CDP Emulation.setGeolocationOverride."""
 		await self.cdp_client.send.Emulation.setGeolocationOverride(
-			latitude=latitude, longitude=longitude, accuracy=accuracy
+			params={'latitude': latitude, 'longitude': longitude, 'accuracy': accuracy}
 		)
 
 	async def _cdp_clear_geolocation(self) -> None:
@@ -1269,17 +1271,17 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_add_init_script(self, script: str) -> str:
 		"""Add script to evaluate on new document using CDP Page.addScriptToEvaluateOnNewDocument."""
-		result = await self.cdp_client.send.Page.addScriptToEvaluateOnNewDocument(source=script)
+		result = await self.cdp_client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': script})
 		return result['identifier']
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
 		"""Remove script added with addScriptToEvaluateOnNewDocument."""
-		await self.cdp_client.send.Page.removeScriptToEvaluateOnNewDocument(identifier=identifier)
+		await self.cdp_client.send.Page.removeScriptToEvaluateOnNewDocument(params={'identifier': identifier})
 
 	async def _cdp_set_viewport(self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False) -> None:
 		"""Set viewport using CDP Emulation.setDeviceMetricsOverride."""
 		await self.cdp_client.send.Emulation.setDeviceMetricsOverride(
-			width=width, height=height, deviceScaleFactor=device_scale_factor, mobile=mobile
+			params={'width': width, 'height': height, 'deviceScaleFactor': device_scale_factor, 'mobile': mobile}
 		)
 
 	async def _cdp_get_storage_state(self) -> dict:
@@ -1308,7 +1310,7 @@ class BrowserSession(BaseModel):
 			)
 		else:
 			# Navigate on the default/current target
-			await self.cdp_client.send.Page.navigate(url=url)
+			await self.cdp_client.send.Page.navigate(params={'url': url})
 
 
 # Import uuid7str for ID generation
