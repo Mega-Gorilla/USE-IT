@@ -723,20 +723,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		browser_state_summary = await self.browser_session.get_browser_state_with_recovery(
 			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision
 		)
-		current_page = await self.browser_session.get_current_page()
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
 		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
 
-		self._log_step_context(current_page, browser_state_summary)
+		self._log_step_context(browser_state_summary)
 		await self._raise_if_stopped_or_paused()
 
 		# Update action models with page-specific actions
 		self.logger.debug(f'📝 Step {self.state.n_steps}: Updating action models...')
-		await self._update_action_models_for_page(current_page)
+		await self._update_action_models_for_page(browser_state_summary.url)
 
 		# Get page-specific filtered actions
-		page_filtered_actions = self.controller.registry.get_prompt_description(current_page)
+		page_filtered_actions = self.controller.registry.get_prompt_description(browser_state_summary.url)
 
 		# Page-specific actions will be included directly in the browser_state message
 		self.logger.debug(f'💬 Step {self.state.n_steps}: Creating state messages for context...')
@@ -1061,9 +1060,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
-	def _log_step_context(self, current_page: Page, browser_state_summary: BrowserStateSummary) -> None:
+	def _log_step_context(self, browser_state_summary: BrowserStateSummary) -> None:
 		"""Log step context information"""
-		url_short = current_page.url[:50] + '...' if len(current_page.url) > 50 else current_page.url
+		url = browser_state_summary.url if browser_state_summary else ''
+		url_short = url[:50] + '...' if len(url) > 50 else url
 		interactive_count = len(browser_state_summary.dom_state.selector_map) if browser_state_summary else 0
 		self.logger.info(
 			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
@@ -1764,10 +1764,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		except Exception as e:
 			self.logger.error(f'Error during cleanup: {e}')
 
-	async def _update_action_models_for_page(self, page) -> None:
+	async def _update_action_models_for_page(self, page_url: str) -> None:
 		"""Update action models with page-specific actions"""
 		# Create new action model with current page's filtered actions
-		self.ActionModel = self.controller.registry.create_action_model(page=page)
+		self.ActionModel = self.controller.registry.create_action_model(page_url=page_url)
 		# Update output model with the new actions
 		if self.settings.flash_mode:
 			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
@@ -1777,7 +1777,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
 
 		# Update done action model too
-		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'], page=page)
+		self.DoneActionModel = self.controller.registry.create_action_model(include_actions=['done'], page_url=page_url)
 		if self.settings.flash_mode:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
 		elif self.settings.use_thinking:

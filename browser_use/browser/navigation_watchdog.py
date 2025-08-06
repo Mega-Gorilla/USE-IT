@@ -8,6 +8,7 @@ from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
+	BrowserConnectedEvent,
 	BrowserErrorEvent,
 	BrowserStoppedEvent,
 	NavigateToUrlEvent,
@@ -29,6 +30,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
+		BrowserConnectedEvent,
 		BrowserStoppedEvent,
 		TabCreatedEvent,
 		TabClosedEvent,
@@ -44,7 +46,7 @@ class NavigationWatchdog(BaseWatchdog):
 		NavigationCompleteEvent,
 	]
 
-	# Agent focus tracking - using target IDs instead of Page objects
+	# Agent focus tracking - using target IDs
 	current_target_id: str | None = Field(default=None, exclude=True)
 
 	# Track target close handlers
@@ -52,10 +54,15 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def attach_to_target(self, target_id: str) -> None:
 		"""Set up monitoring for a target - tracks target lifecycle."""
-		# CDP doesn't have direct page close events, we'll handle via Target.targetDestroyed
+		# CDP doesn't have direct target close events, we'll handle via Target.targetDestroyed
 		self._target_close_handlers[target_id] = True
 
 	# ========== Browser Lifecycle Events ==========
+
+	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
+		"""Initialize agent focus when browser is connected."""
+		logger.debug('[NavigationWatchdog] Browser connected, initializing agent focus')
+		await self._initialize_agent_focus()
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
 		"""Clear agent focus when browser stops."""
@@ -189,7 +196,9 @@ class NavigationWatchdog(BaseWatchdog):
 
 				# Update agent focus to the new tab immediately
 				self.current_target_id = target_id
-				self._dispatch_focus_changed()
+				# Also update the browser session's current target
+				self.browser_session.current_target_id = target_id
+				await self._dispatch_focus_changed()
 
 				# ONLY dispatch TabCreatedEvent for NEW tabs (not existing tab navigation)
 				from browser_use.browser.events import TabCreatedEvent
@@ -215,7 +224,7 @@ class NavigationWatchdog(BaseWatchdog):
 					# Dispatch NavigationCompleteEvent for timeout error
 					self.event_bus.dispatch(
 						NavigationCompleteEvent(
-							tab_index=0,  # Default tab index since we don't have access to the actual page
+							tab_index=0,  # Default tab index since we don't have access to the actual target
 							url=event.url,
 							status=None,
 							error_message=f'Navigation timed out after {event.timeout_ms}ms',
@@ -330,9 +339,9 @@ class NavigationWatchdog(BaseWatchdog):
 				if 0 <= event.tab_index < len(targets):
 					target_id = targets[event.tab_index]['targetId']
 					await self.browser_session._cdp_close_page(target_id)
-					logger.info(f'⛔️ Closed page with non-allowed URL: {event.url}')
+					logger.info(f'⛔️ Closed target with non-allowed URL: {event.url}')
 			except Exception as e:
-				logger.error(f'⛔️ Failed to close page with non-allowed URL: {str(e)}')
+				logger.error(f'⛔️ Failed to close target with non-allowed URL: {str(e)}')
 			return
 
 		# Agent focus stays on the tab that navigated
@@ -380,7 +389,7 @@ class NavigationWatchdog(BaseWatchdog):
 		if not self.browser_session.browser_profile.allowed_domains:
 			return True
 
-		# Always allow internal browser pages
+		# Always allow internal browser targets
 		if url in ['about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/']:
 			return True
 
@@ -488,7 +497,8 @@ class NavigationWatchdog(BaseWatchdog):
 		targets = await self.browser_session._cdp_get_all_pages()
 		if targets:
 			self.current_target_id = targets[0]['targetId']
-			self._dispatch_focus_changed()
+			self.browser_session.current_target_id = self.current_target_id
+			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
 			logger.info(f'[NavigationWatchdog] Initial agent focus set to tab 0: {target_url}')
 
@@ -498,7 +508,8 @@ class NavigationWatchdog(BaseWatchdog):
 		if targets:
 			# Focus on the last target (most recently created)
 			self.current_target_id = targets[-1]['targetId']
-			self._dispatch_focus_changed()
+			self.browser_session.current_target_id = self.current_target_id
+			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
 			tab_index = await self._get_current_tab_index()
 			logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
@@ -508,7 +519,8 @@ class NavigationWatchdog(BaseWatchdog):
 		targets = await self.browser_session._cdp_get_all_pages()
 		if 0 <= tab_index < len(targets):
 			self.current_target_id = targets[tab_index]['targetId']
-			self._dispatch_focus_changed()
+			self.browser_session.current_target_id = self.current_target_id
+			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
 			logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
 
@@ -520,19 +532,22 @@ class NavigationWatchdog(BaseWatchdog):
 			current_index = await self._get_current_tab_index()
 			new_index = min(current_index, len(targets) - 1)
 			self.current_target_id = targets[new_index]['targetId']
-			self._dispatch_focus_changed()
+			self.browser_session.current_target_id = self.current_target_id
+			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
 			logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {target_url}')
 		else:
 			self.current_target_id = None
+			if self.browser_session:
+				self.browser_session.current_target_id = None
 
-	def _dispatch_focus_changed(self) -> None:
+	async def _dispatch_focus_changed(self) -> None:
 		"""Dispatch event when agent focus changes."""
 		if self.current_target_id:
 			try:
 				# Get URL asynchronously
-				target_url = asyncio.run(self._get_target_url(self.current_target_id))
-				tab_index = asyncio.run(self._get_current_tab_index())
+				target_url = await self._get_target_url(self.current_target_id)
+				tab_index = await self._get_current_tab_index()
 				self.event_bus.dispatch(
 					AgentFocusChangedEvent(
 						tab_index=tab_index,
@@ -564,7 +579,8 @@ class NavigationWatchdog(BaseWatchdog):
 				target_url = target.get('url', '')
 				if self._is_url_allowed(target_url):
 					self.current_target_id = target['targetId']
-					self._dispatch_focus_changed()
+					self.browser_session.current_target_id = self.current_target_id
+					await self._dispatch_focus_changed()
 					return self.current_target_id
 		except TimeoutError:
 			pass
@@ -579,7 +595,8 @@ class NavigationWatchdog(BaseWatchdog):
 		targets = await self.browser_session._cdp_get_all_pages()
 		if targets:
 			self.current_target_id = targets[-1]['targetId']
-			self._dispatch_focus_changed()
+			self.browser_session.current_target_id = self.current_target_id
+			await self._dispatch_focus_changed()
 			return self.current_target_id
 
 		raise ValueError('Failed to create or find an active target')

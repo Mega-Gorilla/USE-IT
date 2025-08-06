@@ -1,19 +1,25 @@
 """DOM watchdog for browser DOM tree management using CDP."""
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 
-from browser_use.browser.events import BrowserErrorEvent, BuildDOMTreeEvent
+from browser_use.browser.events import (
+	BrowserErrorEvent,
+	BrowserStateRequestEvent,
+	BuildDOMTreeEvent,
+	ScreenshotEvent,
+)
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import DomService
 from browser_use.dom.views import (
 	EnhancedDOMTreeNode,
 	SerializedDOMState,
 )
-from browser_use.utils import logger
+from browser_use.utils import is_new_tab_page, logger
 
 if TYPE_CHECKING:
-	pass
+	from browser_use.browser.views import BrowserStateSummary, PageInfo, TabInfo
 
 
 class DOMWatchdog(BaseWatchdog):
@@ -24,7 +30,7 @@ class DOMWatchdog(BaseWatchdog):
 	helper methods for other watchdogs.
 	"""
 
-	LISTENS_TO = [BuildDOMTreeEvent]
+	LISTENS_TO = [BuildDOMTreeEvent, BrowserStateRequestEvent]
 	EMITS = [BrowserErrorEvent]
 
 	# Public properties for other watchdogs
@@ -40,6 +46,174 @@ class DOMWatchdog(BaseWatchdog):
 		"""Attach watchdog to browser session."""
 		await super().attach_to_session()
 		# DomService will be created on first use
+
+	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
+		"""Handle browser state request by coordinating DOM building and screenshot capture.
+
+		This is the main entry point for getting the complete browser state.
+
+		Args:
+			event: The browser state request event with options
+
+		Returns:
+			Complete BrowserStateSummary with DOM, screenshot, and target info
+		"""
+		from browser_use.browser.views import BrowserStateSummary, PageInfo
+
+		page_url = await self.browser_session.get_current_page_url()
+
+		# Check if this is a new tab or chrome:// target early for optimization
+		is_empty_page = is_new_tab_page(page_url) or page_url.startswith('chrome://')
+
+		try:
+			# Fast path for empty pages
+			if is_empty_page:
+				logger.debug(f'⚡ Fast path for empty target: {page_url}')
+
+				# Create minimal DOM state
+				content = SerializedDOMState(_root=None, selector_map={})
+
+				# Get tabs info
+				tabs_info = await self.browser_session.get_tabs_info()
+
+				# Skip screenshot for empty pages
+				screenshot_b64 = None
+
+				# Use default viewport dimensions
+				viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
+				page_info = PageInfo(
+					viewport_width=viewport['width'],
+					viewport_height=viewport['height'],
+					page_width=viewport['width'],
+					page_height=viewport['height'],
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				)
+
+				return BrowserStateSummary(
+					dom_state=content,
+					url=page_url,
+					title='New Tab' if is_new_tab_page(page_url) else 'Chrome Page',
+					tabs=tabs_info,
+					screenshot=screenshot_b64,
+					page_info=page_info,
+					pixels_above=0,
+					pixels_below=0,
+					browser_errors=[],
+					is_pdf_viewer=False,
+				)
+
+			# Normal path: Build DOM tree if requested
+			if event.include_dom:
+				logger.debug('🌳 Building DOM tree...')
+
+				# Dispatch BuildDOMTreeEvent and wait for result
+				# The DOM watchdog will handle this and update our cached selector map
+				dom_event = self.event_bus.dispatch(
+					BuildDOMTreeEvent(
+						previous_state=self.browser_session._cached_browser_state_summary.dom_state
+						if self.browser_session._cached_browser_state_summary
+						else None
+					)
+				)
+				content = await dom_event.event_result()
+
+				if not content:
+					# Fallback to minimal DOM state
+					logger.warning('DOM build returned no content, using minimal state')
+					content = SerializedDOMState(_root=None, selector_map={})
+			else:
+				# Skip DOM building if not requested
+				content = SerializedDOMState(_root=None, selector_map={})
+
+			# Get screenshot if requested
+			screenshot_b64 = None
+			if event.include_screenshot:
+				try:
+					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
+					screenshot_result = await screenshot_event.event_result()
+					if screenshot_result:
+						screenshot_b64 = screenshot_result.get('screenshot')
+				except Exception as e:
+					logger.warning(f'Screenshot failed: {e}')
+
+			# Get target info and tabs
+			tabs_info = await self.browser_session.get_tabs_info()
+
+			# Get target title safely
+			try:
+				title = await asyncio.wait_for(self.browser_session.get_current_page_title(), timeout=2.0)
+			except Exception:
+				title = 'Page'
+
+			# TODO: Get proper target info from CDP
+			viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
+			page_info = PageInfo(
+				viewport_width=viewport['width'],
+				viewport_height=viewport['height'],
+				page_width=viewport['width'],
+				page_height=viewport['height'],
+				scroll_x=0,
+				scroll_y=0,
+				pixels_above=0,
+				pixels_below=0,
+				pixels_left=0,
+				pixels_right=0,
+			)
+
+			# Check for PDF viewer
+			is_pdf_viewer = page_url.endswith('.pdf') or '/pdf/' in page_url
+
+			# Build and cache the browser state summary
+			browser_state = BrowserStateSummary(
+				dom_state=content,
+				url=page_url,
+				title=title,
+				tabs=tabs_info,
+				screenshot=screenshot_b64,
+				page_info=page_info,
+				pixels_above=0,
+				pixels_below=0,
+				browser_errors=[],
+				is_pdf_viewer=is_pdf_viewer,
+			)
+
+			# Cache the state
+			self.browser_session._cached_browser_state_summary = browser_state
+
+			return browser_state
+
+		except Exception as e:
+			logger.error(f'Failed to get browser state: {e}')
+
+			# Return minimal recovery state
+			return BrowserStateSummary(
+				dom_state=SerializedDOMState(_root=None, selector_map={}),
+				url=page_url if 'page_url' in locals() else '',
+				title='Error',
+				tabs=[],
+				screenshot=None,
+				page_info=PageInfo(
+					viewport_width=1280,
+					viewport_height=720,
+					page_width=1280,
+					page_height=720,
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				),
+				pixels_above=0,
+				pixels_below=0,
+				browser_errors=[str(e)],
+				is_pdf_viewer=False,
+			)
 
 	async def on_BuildDOMTreeEvent(self, event: BuildDOMTreeEvent) -> SerializedDOMState:
 		"""Build and serialize DOM tree, returning ready-to-use LLM format.

@@ -1,4 +1,4 @@
-"""Browser watchdog for monitoring crashes and network timeouts."""
+"""Browser watchdog for monitoring crashes and network timeouts using CDP."""
 
 import asyncio
 import time
@@ -6,14 +6,13 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import psutil
 from bubus import BaseEvent
-from playwright.async_api import Page, Request, Response
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
 	BrowserStoppedEvent,
-	PageCrashedEvent,
+	TargetCrashedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.utils import logger
@@ -25,8 +24,8 @@ if TYPE_CHECKING:
 class NetworkRequestTracker:
 	"""Tracks ongoing network requests."""
 
-	def __init__(self, request: Request, start_time: float, url: str, method: str, resource_type: str | None = None):
-		self.request = request
+	def __init__(self, request_id: str, start_time: float, url: str, method: str, resource_type: str | None = None):
+		self.request_id = request_id
 		self.start_time = start_time
 		self.url = url
 		self.method = method
@@ -34,7 +33,7 @@ class NetworkRequestTracker:
 
 
 class CrashWatchdog(BaseWatchdog):
-	"""Monitors browser health for crashes and network timeouts."""
+	"""Monitors browser health for crashes and network timeouts using CDP."""
 
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
@@ -43,18 +42,18 @@ class CrashWatchdog(BaseWatchdog):
 	]
 	EMITS: ClassVar[list[type[BaseEvent]]] = [
 		BrowserErrorEvent,
-		PageCrashedEvent,
+		TargetCrashedEvent,
 	]
 
 	# Configuration
 	network_timeout_seconds: float = Field(default=10.0)
-	check_interval_seconds: float = Field(default=1.0)
+	check_interval_seconds: float = Field(default=10.0)
 
 	# Private state
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
-	_cdp_session: Any = PrivateAttr(default=None)
-	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # page_url -> timestamp
+	_cdp_sessions: dict[str, str] = PrivateAttr(default_factory=dict)  # target_id -> session_id
+	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # target_url -> timestamp
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser is connected."""
@@ -68,73 +67,124 @@ class CrashWatchdog(BaseWatchdog):
 		# logger.debug('[CrashWatchdog] Browser stopped, ending monitoring')
 		await self._stop_monitoring()
 
-	async def attach_to_page(self, page: Page) -> None:
-		"""Set up crash monitoring for a specific page."""
-		# Network request tracking
-		page.on('request', lambda req: asyncio.create_task(self._on_request(req)))
-		page.on('response', lambda resp: self._on_response(resp))
-		page.on('requestfailed', lambda req: self._on_request_failed(req))
+	async def attach_to_target(self, target_id: str) -> None:
+		"""Set up crash monitoring for a specific target using CDP."""
+		try:
+			cdp_client = self.browser_session.cdp_client
+			
+			# Attach to target and enable domains
+			session = await cdp_client.send.Target.attachToTarget(
+				params={'targetId': target_id, 'flatten': True}
+			)
+			session_id = session['sessionId']
+			self._cdp_sessions[target_id] = session_id
+			
+			# Enable network domain for request tracking
+			await cdp_client.send.Network.enable(session_id=session_id)
+			
+			# Set up network event handlers
+			def on_request_will_be_sent(event):
+				asyncio.create_task(self._on_request_cdp(event))
+			
+			def on_response_received(event):
+				self._on_response_cdp(event)
+			
+			def on_loading_failed(event):
+				self._on_request_failed_cdp(event)
+			
+			def on_loading_finished(event):
+				self._on_request_finished_cdp(event)
+			
+			# Register event handlers
+			cdp_client.on('Network.requestWillBeSent', on_request_will_be_sent, session_id=session_id)
+			cdp_client.on('Network.responseReceived', on_response_received, session_id=session_id)
+			cdp_client.on('Network.loadingFailed', on_loading_failed, session_id=session_id)
+			cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
+			
+			# Enable Inspector domain for crash detection
+			await cdp_client.send.Inspector.enable(session_id=session_id)
+			
+			# Set up crash handler
+			def on_target_crashed(event):
+				asyncio.create_task(self._on_target_crash_cdp(target_id))
+			
+			cdp_client.on('Inspector.targetCrashed', on_target_crashed, session_id=session_id)
+			
+			# Get target info for logging
+			targets = await cdp_client.send.Target.getTargets()
+			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
+			if target_info:
+				logger.debug(f'[CrashWatchdog] Added target to monitoring: {target_info.get("url", "unknown")}')
+			
+		except Exception as e:
+			logger.warning(f'[CrashWatchdog] Failed to attach to target {target_id}: {e}')
 
-		def _on_request_finished(req: Request) -> None:
-			self._active_requests.pop(f'{id(req)}', None)
-
-		page.on('requestfinished', _on_request_finished)
-
-		# Page crash detection
-		page.on('crash', lambda _: asyncio.create_task(self._on_page_crash(page)))
-
-		logger.debug(f'[CrashWatchdog] Added page to monitoring: {page.url}')
-
-	async def _on_request(self, request: Request) -> None:
-		"""Track new network request."""
-		request_id = f'{id(request)}'
+	async def _on_request_cdp(self, event: dict) -> None:
+		"""Track new network request from CDP event."""
+		request_id = event.get('requestId', '')
+		request = event.get('request', {})
+		
 		self._active_requests[request_id] = NetworkRequestTracker(
-			request=request,
+			request_id=request_id,
 			start_time=time.time(),
-			url=request.url,
-			method=request.method,
-			resource_type=request.resource_type,
+			url=request.get('url', ''),
+			method=request.get('method', ''),
+			resource_type=event.get('type'),
 		)
-		# logger.debug(f'[CrashWatchdog] Tracking request: {request.method} {request.url[:50]}...')
+		# logger.debug(f'[CrashWatchdog] Tracking request: {request.get("method", "")} {request.get("url", "")[:50]}...')
 
-	def _on_response(self, response: Response) -> None:
+	def _on_response_cdp(self, event: dict) -> None:
 		"""Remove request from tracking on response."""
-		request_id = f'{id(response.request)}'
+		request_id = event.get('requestId', '')
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			logger.debug(f'[CrashWatchdog] Request completed in {elapsed:.2f}s: {response.url[:50]}...')
-			del self._active_requests[request_id]
+			response = event.get('response', {})
+			logger.debug(f'[CrashWatchdog] Request completed in {elapsed:.2f}s: {response.get("url", "")[:50]}...')
+			# Don't remove yet - wait for loadingFinished
 
-	def _on_request_failed(self, request: Request) -> None:
+	def _on_request_failed_cdp(self, event: dict) -> None:
 		"""Remove request from tracking on failure."""
-		request_id = f'{id(request)}'
+		request_id = event.get('requestId', '')
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {request.url[:50]}...')
+			logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {self._active_requests[request_id].url[:50]}...')
 			del self._active_requests[request_id]
 
-	async def _on_page_crash(self, page: Page) -> None:
-		"""Handle page crash."""
-		logger.error(f'[CrashWatchdog] Page crashed: {page.url}')
+	def _on_request_finished_cdp(self, event: dict) -> None:
+		"""Remove request from tracking when loading is finished."""
+		request_id = event.get('requestId', '')
+		self._active_requests.pop(request_id, None)
 
-		tab_index = self.browser_session.get_tab_index(page)
+	async def _on_target_crash_cdp(self, target_id: str) -> None:
+		"""Handle target crash detected via CDP."""
+		# Get target info
+		cdp_client = self.browser_session.cdp_client
+		targets = await cdp_client.send.Target.getTargets()
+		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
+		
+		target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
+		logger.error(f'[CrashWatchdog] Target crashed: {target_url}')
+
+		# Get tab index
+		tab_index = await self.browser_session.get_tab_index(target_id)
 
 		# Emit crash event
 		self.event_bus.dispatch(
-			PageCrashedEvent(
+			TargetCrashedEvent(
 				tab_index=tab_index,
-				error='Page crashed unexpectedly',
+				error='Target crashed unexpectedly',
 			)
 		)
 
 		# Also emit generic browser error
 		self.event_bus.dispatch(
 			BrowserErrorEvent(
-				error_type='PageCrash',
-				message=f'Page crashed: {page.url}',
+				error_type='TargetCrash',
+				message=f'Target crashed: {target_url}',
 				details={
-					'url': page.url,
+					'url': target_url,
 					'tab_index': tab_index,
+					'target_id': target_id,
 				},
 			)
 		)
@@ -148,36 +198,34 @@ class CrashWatchdog(BaseWatchdog):
 		self._monitoring_task = asyncio.create_task(self._monitoring_loop())
 		# logger.debug('[CrashWatchdog] Monitoring loop created and started')
 
-		# Set up CDP session for browser crash detection
-		if self.browser_session._browser:
+		# Set up CDP session for browser-level crash detection
+		try:
+			cdp_client = self.browser_session.cdp_client
+			
+			# Enable browser-level crash detection
+			# Note: Browser domain might not be available in all contexts
 			try:
-				# Get CDP session from browser
-				browser = self.browser_session._browser
-				context = self.browser_session._browser_context
-				if context and context.pages:
-					cdp_contexts = await context.new_cdp_session(context.pages[0])
-					self._cdp_session = cdp_contexts
-
-				# Enable crash detection domains
-				if self._cdp_session:
-					await self._cdp_session.send('Inspector.enable')
-					await self._cdp_session.send('Page.enable')
-
-				# Set up crash handlers
-				if self._cdp_session:
-					self._cdp_session.on(
-						'Inspector.targetCrashed',
-						lambda params: (
-							logger.error('[CrashWatchdog] Browser crash detected via CDP'),
-							self.event_bus.dispatch(
-								BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=params)
-							),
-						),
+				await cdp_client.send.Browser.getVersion()  # Test if Browser domain is available
+				
+				# Set up browser crash handler
+				def on_browser_crash(event):
+					logger.error('[CrashWatchdog] Browser crash detected via CDP')
+					self.event_bus.dispatch(
+						BrowserErrorEvent(
+							error_type='BrowserCrash', 
+							message='Browser process crashed', 
+							details=event
+						)
 					)
-
+				
+				# Note: Browser.crash event might not exist, using Inspector.targetCrashed instead
 				logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
-			except Exception as e:
-				logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
+			except Exception:
+				# Browser domain not available, rely on target-level monitoring
+				pass
+				
+		except Exception as e:
+			logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring loop."""
@@ -189,17 +237,18 @@ class CrashWatchdog(BaseWatchdog):
 				pass
 			logger.debug('[CrashWatchdog] Monitoring loop stopped')
 
-		# Clean up CDP session
-		if self._cdp_session:
-			try:
-				await self._cdp_session.detach()
-			except Exception:
-				pass
-			self._cdp_session = None
+		# Clean up CDP sessions
+		if self._cdp_sessions:
+			cdp_client = self.browser_session.cdp_client
+			for target_id, session_id in self._cdp_sessions.items():
+				try:
+					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+				except Exception:
+					pass
+			self._cdp_sessions.clear()
 
 		# Clear tracking
 		self._active_requests.clear()
-		# No _pages attribute in this watchdog
 
 	async def _monitoring_loop(self) -> None:
 		"""Main monitoring loop."""
@@ -256,14 +305,18 @@ class CrashWatchdog(BaseWatchdog):
 			del self._active_requests[request_id]
 
 	async def _check_browser_health(self) -> None:
-		"""Check if browser and pages are still responsive."""
-		# Check browser connection
-		if self.browser_session._browser and not self.browser_session._browser.is_connected():
-			logger.error('[CrashWatchdog] Browser disconnected unexpectedly')
+		"""Check if browser and targets are still responsive."""
+		# Check browser connection via CDP
+		try:
+			cdp_client = self.browser_session.cdp_client
+			# Try a simple CDP command to check connection
+			await asyncio.wait_for(cdp_client.send.Target.getTargets(), timeout=2.0)
+		except (asyncio.TimeoutError, Exception) as e:
+			logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
 			)
-			# Exit the monitoring loop - don't try to stop from within the loop
+			# Exit the monitoring loop
 			raise asyncio.CancelledError('Browser disconnected')
 
 		# Check browser process if we have PID
@@ -283,79 +336,111 @@ class CrashWatchdog(BaseWatchdog):
 			except Exception:
 				pass  # psutil not available or process doesn't exist
 
-		# Check each page
-		dead_pages = []
-		unresponsive_pages = []
+		# Check each target
+		dead_targets = []
+		unresponsive_targets = []
 
-		if not self.browser_session._browser_context:
+		try:
+			targets = await cdp_client.send.Target.getTargets()
+			target_infos = targets.get('targetInfos', [])
+			
+			# Only check page-type targets
+			target_list = [t for t in target_infos if t.get('type') == 'page']
+			
+			for target in target_list:
+				target_id = target['targetId']
+				target_url = target.get('url', '')
+				
+				# Skip new tab pages
+				if self._is_new_tab_page(target_url):
+					continue
+				
+				# Check if target is still attached/alive
+				try:
+					# Check responsiveness occasionally to avoid overhead
+					last_check = self._last_responsive_checks.get(target_url, 0)
+					if time.time() - last_check > 10:
+						if not await self._is_target_responsive(target_id, timeout=2.0):
+							unresponsive_targets.append(target)
+						self._last_responsive_checks[target_url] = time.time()
+				except Exception:
+					# Target might be dead
+					dead_targets.append(target)
+
+		except Exception as e:
+			logger.error(f'[CrashWatchdog] Error checking target health: {e}')
 			return
 
-		for page in list(self.browser_session._browser_context.pages):  # Copy to avoid modification during iteration
-			try:
-				if page.is_closed():
-					dead_pages.append(page)
-				# Check responsiveness for non-blank pages
-				elif not self._is_new_tab_page(page.url):
-					# Only check responsiveness occasionally to avoid overhead
-					page_url = page.url
-					last_check = self._last_responsive_checks.get(page_url, 0)
-					if time.time() - last_check > 10:
-						if not await self._is_page_responsive(page, timeout=2.0):
-							unresponsive_pages.append(page)
-						self._last_responsive_checks[page_url] = time.time()
-			except Exception:
-				# Page reference might be invalid
-				dead_pages.append(page)
+		# Report unresponsive targets
+		for target in unresponsive_targets:
+			target_url = target.get('url', 'unknown')
+			logger.warning(f'[CrashWatchdog] Target unresponsive: {target_url}')
 
-		# Remove dead pages
-		for page in dead_pages:
-			# Pages are managed by browser context, no need to remove manually
-			pass
-
-		# Report unresponsive pages
-		for page in unresponsive_pages:
-			logger.warning(f'[CrashWatchdog] Page unresponsive: {page.url}')
-
-			tab_index = self.browser_session.get_tab_index(page)
+			tab_index = await self.browser_session.get_tab_index(target['targetId'])
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
-					error_type='PageUnresponsive',
-					message=f'Page JS engine unresponsive: {page.url}',
+					error_type='TargetUnresponsive',
+					message=f'Target JS engine unresponsive: {target_url}',
 					details={
-						'url': page.url,
+						'url': target_url,
 						'tab_index': tab_index,
+						'target_id': target['targetId'],
 					},
 				)
 			)
 
-	async def _is_page_responsive(self, page: Page, timeout: float = 5.0) -> bool:
-		"""Check if a page is responsive by trying to evaluate simple JavaScript.
-
-		Reused from main branch BrowserSession._is_page_responsive
-		"""
+	async def _is_target_responsive(self, target_id: str, timeout: float = 5.0) -> bool:
+		"""Check if a target is responsive by trying to evaluate simple JavaScript."""
 		eval_task = None
+		session_id = None
 		try:
-			eval_task = asyncio.create_task(page.evaluate('1'))
+			cdp_client = self.browser_session.cdp_client
+			
+			# Attach to target if not already attached
+			if target_id not in self._cdp_sessions:
+				session = await cdp_client.send.Target.attachToTarget(
+					params={'targetId': target_id, 'flatten': True}
+				)
+				session_id = session['sessionId']
+			else:
+				session_id = self._cdp_sessions[target_id]
+			
+			# Try to evaluate simple JavaScript
+			eval_task = asyncio.create_task(
+				cdp_client.send.Runtime.evaluate(
+					params={'expression': '1'},
+					session_id=session_id
+				)
+			)
 			done, pending = await asyncio.wait([eval_task], timeout=timeout)
 
 			if eval_task in done:
 				try:
-					await eval_task  # This will raise if the evaluation failed
-					return True
+					result = await eval_task
+					# Check if evaluation succeeded
+					if result.get('result', {}).get('value') == 1:
+						return True
 				except Exception:
 					return False
 			else:
-				# Timeout - the page is unresponsive
+				# Timeout - the target is unresponsive
 				return False
 		except Exception:
 			return False
 		finally:
-			# Always clean up the eval task
+			# Clean up the eval task
 			if eval_task and not eval_task.done():
 				eval_task.cancel()
 				try:
 					await eval_task
 				except (asyncio.CancelledError, Exception):
+					pass
+			
+			# Detach if we attached just for this check
+			if session_id and target_id not in self._cdp_sessions:
+				try:
+					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+				except Exception:
 					pass
 
 	@staticmethod
@@ -364,38 +449,45 @@ class CrashWatchdog(BaseWatchdog):
 		return url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']
 
 	async def trigger_browser_crash(self) -> None:
-		"""Trigger a browser crash for testing (requires CDP session)."""
-		if not self._cdp_session:
-			logger.warning('[CrashWatchdog] No CDP session available for crash testing')
-			return
-
+		"""Trigger a browser crash for testing (requires CDP)."""
 		try:
+			cdp_client = self.browser_session.cdp_client
 			logger.warning('[CrashWatchdog] Triggering browser crash for testing...')
-			await self._cdp_session.send('Browser.crash')
+			await cdp_client.send.Browser.crash()
 		except Exception as e:
 			logger.error(f'[CrashWatchdog] Failed to trigger browser crash: {e}')
 
 	async def trigger_gpu_crash(self) -> None:
-		"""Trigger a GPU process crash for testing (requires CDP session)."""
-		if not self._cdp_session:
-			logger.warning('[CrashWatchdog] No CDP session available for GPU crash testing')
-			return
-
+		"""Trigger a GPU process crash for testing (requires CDP)."""
 		try:
+			cdp_client = self.browser_session.cdp_client
 			logger.warning('[CrashWatchdog] Triggering GPU crash for testing...')
-			await self._cdp_session.send('Browser.crashGpuProcess')
+			await cdp_client.send.Browser.crashGpuProcess()
 		except Exception as e:
 			logger.error(f'[CrashWatchdog] Failed to trigger GPU crash: {e}')
 
-	async def trigger_page_crash(self, page: Page) -> None:
-		"""Trigger a page crash for testing."""
+	async def trigger_target_crash(self, target_id: str) -> None:
+		"""Trigger a target crash for testing."""
 		try:
-			logger.warning(f'[CrashWatchdog] Triggering page crash for testing on: {page.url}')
-			cdp = await page.context.new_cdp_session(page)
-			await cdp.send('Page.crash')
-			await cdp.detach()
+			cdp_client = self.browser_session.cdp_client
+			
+			# Get target info for logging
+			targets = await cdp_client.send.Target.getTargets()
+			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
+			target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
+			
+			logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
+			
+			# Attach to target
+			session = await cdp_client.send.Target.attachToTarget(
+				params={'targetId': target_id, 'flatten': True}
+			)
+			session_id = session['sessionId']
+			
+			# Crash the target
+			await cdp_client.send.Page.crash(session_id=session_id)
+			
+			# Detach
+			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 		except Exception as e:
-			logger.error(f'[CrashWatchdog] Failed to trigger page crash: {e}')
-
-
-# Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined
+			logger.error(f'[CrashWatchdog] Failed to trigger target crash: {e}')

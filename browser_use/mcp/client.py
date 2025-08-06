@@ -297,11 +297,8 @@ class MCPClient:
 
 		# Set up action filters
 		domains = None
-		page_filter = None
-
-		if is_browser_tool:
-			# Browser tools should only be available when on a web page
-			page_filter = lambda page: page and not is_new_tab_page(page.url)
+		# Note: page_filter has been removed since we no longer use Page objects
+		# Browser tools filtering would need to be done via domain filters instead
 
 		# Create async wrapper function for the MCP tool
 		# Need to define function with explicit parameters to satisfy registry validation
@@ -403,7 +400,7 @@ class MCPClient:
 		description = tool.description or f'MCP tool from {self.server_name}: {tool.name}'
 
 		# Use the registry's action decorator
-		registry.action(description=description, param_model=param_model, domains=domains, page_filter=page_filter)(
+		registry.action(description=description, param_model=param_model, domains=domains)(
 			mcp_action_wrapper
 		)
 

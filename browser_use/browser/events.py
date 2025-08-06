@@ -241,8 +241,8 @@ class AgentFocusChangedEvent(BaseEvent):
 	url: str
 
 
-class PageCrashedEvent(BaseEvent):
-	"""A page has crashed."""
+class TargetCrashedEvent(BaseEvent):
+	"""A target has crashed."""
 
 	tab_index: int
 	error: str

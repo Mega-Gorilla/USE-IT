@@ -4,7 +4,6 @@ import inspect
 from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent, EventBus
-from playwright.async_api import Page
 from pydantic import BaseModel, ConfigDict
 
 from browser_use.utils import logger
@@ -106,10 +105,10 @@ class BaseWatchdog(BaseModel):
 					f'but no handlers found (missing on_{"_, on_".join(missing_names)} methods)'
 				)
 
-	async def attach_to_page(self, page: Page) -> None:
-		"""Set up monitoring for a specific page. Override in subclasses.
+	async def attach_to_target(self, target_id: str) -> None:
+		"""Set up monitoring for a specific target. Override in subclasses.
 
-		This method should be idempotent - safe to call multiple times on the same page.
+		This method should be idempotent - safe to call multiple times on the same target.
 		"""
 		pass
 

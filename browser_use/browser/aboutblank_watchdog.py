@@ -3,7 +3,6 @@
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
-from playwright.async_api import Page
 from pydantic import PrivateAttr
 
 from browser_use.browser.crash_watchdog import CrashWatchdog
@@ -55,7 +54,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		"""Check tabs when a new tab is created."""
 		# logger.debug(f'[AboutBlankWatchdog] ➕ New tab created: {event.url}')
 
-		# If a new tab page was created, show DVD screensaver on it
+		# If a new tab target was created, show DVD screensaver on it
 		if CrashWatchdog._is_new_tab_page(event.url):
 			await self._show_dvd_screensaver_on_about_blank_tabs()
 		else:
@@ -71,8 +70,8 @@ class AboutBlankWatchdog(BaseWatchdog):
 			return
 
 		# Check if we're about to close the last tab (event happens BEFORE tab closes)
-		targets = await self.browser_session.cdp_client.send.Target.getTargets()
-		page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
+		# Use _cdp_get_all_pages for quick check without fetching titles
+		page_targets = await self.browser_session._cdp_get_all_pages()
 		if len(page_targets) <= 1:
 			logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
 			# Create the animation tab since no tabs should remain
@@ -84,45 +83,30 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# Multiple tabs exist, check after close
 			await self._check_and_ensure_about_blank_tab()
 
-	async def attach_to_page(self, page: Page) -> None:
-		"""AboutBlankWatchdog doesn't monitor individual pages."""
+	async def attach_to_target(self, target_id: str) -> None:
+		"""AboutBlankWatchdog doesn't monitor individual targets."""
 		pass
 
 	async def _check_and_ensure_about_blank_tab(self) -> None:
 		"""Check current tabs and ensure exactly one about:blank tab with animation exists."""
 		try:
-			targets = await self.browser_session.cdp_client.send.Target.getTargets()
-			page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
-
+			# Use existing helper to get all tabs info with titles
+			tabs_info = await self.browser_session.get_tabs_info()
+			
 			# Only look for tabs that have our animation (check by title)
-			animation_targets = []
+			animation_tabs = []
 			browser_session_id = str(self.browser_session.id)[-4:]
 			expected_title = f'Starting agent {browser_session_id}...'
 
-			for target in page_targets:
-				if CrashWatchdog._is_new_tab_page(target.get('url', '')):
-					try:
-						# Get title using CDP
-						target_id = target['targetId']
-						session = await self.browser_session.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-						session_id = session['sessionId']
-						title_result = await self.browser_session.cdp_client.send.Runtime.evaluate(
-							params={'expression': 'document.title'},
-							session_id=session_id
-						)
-						page_title = title_result.get('result', {}).get('value', '')
-						await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-						
-						if page_title == expected_title:
-							animation_targets.append(target)
-					except Exception:
-						pass  # Skip targets that can't be checked
+			for tab in tabs_info:
+				if CrashWatchdog._is_new_tab_page(tab.url) and tab.title == expected_title:
+					animation_tabs.append(tab)
 
-			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_targets)} animation tabs out of {len(page_targets)} total tabs')
+			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs out of {len(tabs_info)} total tabs')
 
 			# If no animation tabs exist, create one only if there are no tabs at all
-			if not animation_targets:
-				if len(page_targets) == 0:
+			if not animation_tabs:
+				if len(tabs_info) == 0:
 					# Only create a new tab if there are no tabs at all
 					# logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
 					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
@@ -132,12 +116,12 @@ class AboutBlankWatchdog(BaseWatchdog):
 				else:
 					# There are other tabs - don't create new about:blank tabs during scripting
 					# logger.debug(
-					# 	f'[AboutBlankWatchdog] {len(page_targets)} tabs exist, not creating animation tab to avoid interfering with scripting'
+					# 	f'[AboutBlankWatchdog] {len(tabs_info)} tabs exist, not creating animation tab to avoid interfering with scripting'
 					# )
 					pass
 			# If more than one animation tab exists, just log it - don't close anything
-			elif len(animation_targets) > 1:
-				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_targets)} animation tabs, allowing them to exist')
+			elif len(animation_tabs) > 1:
+				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs, allowing them to exist')
 				pass
 
 		except Exception as e:
@@ -146,143 +130,174 @@ class AboutBlankWatchdog(BaseWatchdog):
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
 		"""Show DVD screensaver on all new tab pages."""
 		try:
-			targets = await self.browser_session.cdp_client.send.Target.getTargets()
-			page_targets = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
+			# Use existing helper to get all tabs
+			tabs_info = await self.browser_session.get_tabs_info()
 			browser_session_id = str(self.browser_session.id)[-4:]
 
-			for target in page_targets:
-				url = target.get('url', '')
-				if CrashWatchdog._is_new_tab_page(url):
-					target_id = target['targetId']
-					# If it's a chrome:// new tab page, redirect to about:blank to avoid CSP issues
-					if url.startswith('chrome://'):
+			for tab in tabs_info:
+				if CrashWatchdog._is_new_tab_page(tab.url):
+					target_id = tab.target_id
+					# If it's a chrome:// new tab target, redirect to about:blank to avoid CSP issues
+					if tab.url.startswith('chrome://'):
 						# Navigate using CDP
-						session = await self.browser_session.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+						session = await self.browser_session.cdp_client.send.Target.attachToTarget(
+							params={'targetId': target_id, 'flatten': True}
+						)
 						session_id = session['sessionId']
-						await self.browser_session.cdp_client.send.Page.navigate(params={'url': 'about:blank'}, session_id=session_id)
+						await self.browser_session.cdp_client.send.Page.navigate(
+							params={'url': 'about:blank'}, session_id=session_id
+						)
 						await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
 
 		except Exception as e:
 			logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')
 
-	async def _show_dvd_screensaver_loading_animation(self, page: Any, browser_session_label: str) -> None:
+	async def _show_dvd_screensaver_loading_animation_cdp(self, target_id: str, browser_session_label: str) -> None:
 		"""
-		Injects a DVD screensaver-style bouncing logo loading animation overlay into the given Playwright Page.
+		Injects a DVD screensaver-style bouncing logo loading animation overlay into the target using CDP.
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
-		# Get tab index for the event
-		tab_index = self.browser_session.get_tab_index(page)
-
 		try:
-			await page.evaluate(
-				"""function(browser_session_label) {
-				// Ensure document.body exists before proceeding
-				if (!document.body) {
-					// Try again after DOM is ready
-					if (document.readyState === 'loading') {
-						document.addEventListener('DOMContentLoaded', function() { arguments.callee(browser_session_label); });
-					}
-					return;
-				}
-				
-				const animated_title = `Starting agent ${browser_session_label}...`;
-				if (document.title === animated_title) {
-					return;      // already run on this tab, dont run again
-				}
-				document.title = animated_title;
-
-				// Create the main overlay
-				const loadingOverlay = document.createElement('div');
-				loadingOverlay.id = 'pretty-loading-animation';
-				loadingOverlay.style.position = 'fixed';
-				loadingOverlay.style.top = '0';
-				loadingOverlay.style.left = '0';
-				loadingOverlay.style.width = '100vw';
-				loadingOverlay.style.height = '100vh';
-				loadingOverlay.style.background = '#000';
-				loadingOverlay.style.zIndex = '99999';
-				loadingOverlay.style.overflow = 'hidden';
-
-				// Create the image element
-				const img = document.createElement('img');
-				img.src = 'https://cf.browser-use.com/logo.svg';
-				img.alt = 'Browser-Use';
-				img.style.width = '200px';
-				img.style.height = 'auto';
-				img.style.position = 'absolute';
-				img.style.left = '0px';
-				img.style.top = '0px';
-				img.style.zIndex = '2';
-				img.style.opacity = '0.8';
-
-				loadingOverlay.appendChild(img);
-				document.body.appendChild(loadingOverlay);
-
-				// DVD screensaver bounce logic
-				let x = Math.random() * (window.innerWidth - 300);
-				let y = Math.random() * (window.innerHeight - 300);
-				let dx = 1.2 + Math.random() * 0.4; // px per frame
-				let dy = 1.2 + Math.random() * 0.4;
-				// Randomize direction
-				if (Math.random() > 0.5) dx = -dx;
-				if (Math.random() > 0.5) dy = -dy;
-
-				function animate() {
-					const imgWidth = img.offsetWidth || 300;
-					const imgHeight = img.offsetHeight || 300;
-					x += dx;
-					y += dy;
-
-					if (x <= 0) {
-						x = 0;
-						dx = Math.abs(dx);
-					} else if (x + imgWidth >= window.innerWidth) {
-						x = window.innerWidth - imgWidth;
-						dx = -Math.abs(dx);
-					}
-					if (y <= 0) {
-						y = 0;
-						dy = Math.abs(dy);
-					} else if (y + imgHeight >= window.innerHeight) {
-						y = window.innerHeight - imgHeight;
-						dy = -Math.abs(dy);
-					}
-
-					img.style.left = `${x}px`;
-					img.style.top = `${y}px`;
-
-					requestAnimationFrame(animate);
-				}
-				animate();
-
-				// Responsive: update bounds on resize
-				window.addEventListener('resize', () => {
-					x = Math.min(x, window.innerWidth - img.offsetWidth);
-					y = Math.min(y, window.innerHeight - img.offsetHeight);
-				});
-
-				// Add a little CSS for smoothness
-				const style = document.createElement('style');
-				style.textContent = `
-					#pretty-loading-animation {
-						/*backdrop-filter: blur(2px) brightness(0.9);*/
-					}
-					#pretty-loading-animation img {
-						user-select: none;
-						pointer-events: none;
-					}
-				`;
-				document.head.appendChild(style);
-			}""",
-				browser_session_label,
+			# Attach to target
+			session = await self.browser_session.cdp_client.send.Target.attachToTarget(
+				params={'targetId': target_id, 'flatten': True}
 			)
+			session_id = session['sessionId']
+			
+			# Inject the DVD screensaver script
+			script = f"""
+				(function(browser_session_label) {{
+					// Ensure document.body exists before proceeding
+					if (!document.body) {{
+						// Try again after DOM is ready
+						if (document.readyState === 'loading') {{
+							document.addEventListener('DOMContentLoaded', function() {{ arguments.callee(browser_session_label); }});
+						}}
+						return;
+					}}
+					
+					const animated_title = `Starting agent ${{browser_session_label}}...`;
+					if (document.title === animated_title) {{
+						return;      // already run on this tab, dont run again
+					}}
+					document.title = animated_title;
 
-			# Emit success event
-			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index, error=None))
+					// Create the main overlay
+					const loadingOverlay = document.createElement('div');
+					loadingOverlay.id = 'pretty-loading-animation';
+					loadingOverlay.style.position = 'fixed';
+					loadingOverlay.style.top = '0';
+					loadingOverlay.style.left = '0';
+					loadingOverlay.style.width = '100vw';
+					loadingOverlay.style.height = '100vh';
+					loadingOverlay.style.backgroundColor = '#1e1e1e';
+					loadingOverlay.style.backgroundImage = 'radial-gradient(ellipse at top left, #2a2a3e 0%, #1e1e1e 50%, #0f0f0f 100%)';
+					loadingOverlay.style.zIndex = '1000000';
+					loadingOverlay.style.display = 'flex';
+					loadingOverlay.style.justifyContent = 'center';
+					loadingOverlay.style.alignItems = 'center';
+					loadingOverlay.style.overflow = 'hidden';
 
+					// Create the loading box (DVD logo)
+					const loadingBox = document.createElement('div');
+					loadingBox.id = 'dvd-logo';
+					loadingBox.style.position = 'absolute';
+					loadingBox.style.width = '160px';
+					loadingBox.style.height = '80px';
+					loadingBox.style.backgroundColor = '#007ACC';
+					loadingBox.style.borderRadius = '15px';
+					loadingBox.style.display = 'flex';
+					loadingBox.style.flexDirection = 'column';
+					loadingBox.style.justifyContent = 'center';
+					loadingBox.style.alignItems = 'center';
+					loadingBox.style.boxShadow = '0 0 30px rgba(0, 122, 204, 0.7), inset 0 0 20px rgba(255, 255, 255, 0.2)';
+					loadingBox.style.transition = 'background-color 0.3s ease, box-shadow 0.3s ease';
+
+					// Add logo emoji
+					const logoEmoji = document.createElement('div');
+					logoEmoji.innerHTML = '🅰';
+					logoEmoji.style.fontSize = '32px';
+					logoEmoji.style.marginBottom = '4px';
+					logoEmoji.style.filter = 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))';
+					loadingBox.appendChild(logoEmoji);
+
+					// Add text
+					const loadingText = document.createElement('div');
+					loadingText.style.color = 'white';
+					loadingText.style.fontSize = '12px';
+					loadingText.style.fontFamily = 'Consolas, Monaco, monospace';
+					loadingText.style.fontWeight = '600';
+					loadingText.style.letterSpacing = '1px';
+					loadingText.style.textShadow = '0 1px 3px rgba(0, 0, 0, 0.5)';
+					loadingText.innerText = `AGENT ${{browser_session_label}}`;
+					loadingBox.appendChild(loadingText);
+
+					loadingOverlay.appendChild(loadingBox);
+					document.body.appendChild(loadingOverlay);
+
+					// DVD screensaver animation variables
+					let x = Math.random() * (window.innerWidth - 160);
+					let y = Math.random() * (window.innerHeight - 80);
+					let xSpeed = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 0.5);
+					let ySpeed = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 0.5);
+					let hue = 0;
+
+					// Color palette for the DVD logo
+					const colors = [
+						'#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+						'#D63031', '#74B9FF', '#A29BFE', '#6C5CE7', '#FD79A8',
+						'#FDCB6E', '#E17055', '#00B894', '#00CEC9', '#0984E3'
+					];
+					let currentColorIndex = 0;
+
+					function changeColor() {{
+						currentColorIndex = (currentColorIndex + 1) % colors.length;
+						const newColor = colors[currentColorIndex];
+						loadingBox.style.backgroundColor = newColor;
+						loadingBox.style.boxShadow = `0 0 30px ${{newColor}}88, inset 0 0 20px rgba(255, 255, 255, 0.2)`;
+					}}
+
+					function animate() {{
+						// Update position
+						x += xSpeed * 2;
+						y += ySpeed * 2;
+
+						// Bounce off walls
+						if (x <= 0 || x >= window.innerWidth - 160) {{
+							xSpeed = -xSpeed;
+							changeColor();
+							x = Math.max(0, Math.min(x, window.innerWidth - 160));
+						}}
+						if (y <= 0 || y >= window.innerHeight - 80) {{
+							ySpeed = -ySpeed;
+							changeColor();
+							y = Math.max(0, Math.min(y, window.innerHeight - 80));
+						}}
+
+						// Apply position
+						loadingBox.style.left = x + 'px';
+						loadingBox.style.top = y + 'px';
+
+						requestAnimationFrame(animate);
+					}}
+
+					animate();
+				}})('{browser_session_label}');
+			"""
+			
+			await self.browser_session.cdp_client.send.Runtime.evaluate(
+				params={'expression': script},
+				session_id=session_id
+			)
+			
+			# Detach from target
+			await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+			
+			# Dispatch event
+			tab_index = await self.browser_session.get_tab_index(target_id)
+			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index))
+			
 		except Exception as e:
-			logger.debug(f'[AboutBlankWatchdog] Failed to show DVD loading animation: {type(e).__name__}: {e}')
+			logger.error(f'[AboutBlankWatchdog] Error injecting DVD screensaver: {e}')
 
-			# Emit error event
-			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index, error=str(e)))

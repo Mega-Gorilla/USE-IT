@@ -130,11 +130,7 @@ class MCPToolWrapper:
 		# Determine if this is a browser-specific tool
 		is_browser_tool = tool_name.startswith('browser_')
 		domains = None
-		page_filter = None
-
-		if is_browser_tool:
-			# Browser tools should only be available when on a web page
-			page_filter = lambda page: not is_new_tab_page(page.url)
+		# Note: page_filter has been removed since we no longer use Page objects
 
 		# Create wrapper function for the MCP tool
 		async def mcp_action_wrapper(**kwargs):
@@ -197,7 +193,7 @@ class MCPToolWrapper:
 
 		# Use the decorator to register the action
 		decorated_wrapper = self.registry.action(
-			description=description, param_model=param_model, domains=domains, page_filter=page_filter
+			description=description, param_model=param_model, domains=domains
 		)(mcp_action_wrapper)
 
 		self._registered_actions.add(tool_name)
