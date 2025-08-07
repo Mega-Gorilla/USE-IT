@@ -204,9 +204,7 @@ class ChatOpenAI(BaseChatModel):
 						openai_messages[0]['content'] += schema_text
 					elif isinstance(openai_messages[0]['content'], Iterable):
 						openai_messages[0]['content'] = list(openai_messages[0]['content']) + [
-							ChatCompletionContentPartTextParam(
-								text=schema_text, type='text'
-							)
+							ChatCompletionContentPartTextParam(text=schema_text, type='text')
 						]
 
 				# Return structured response
