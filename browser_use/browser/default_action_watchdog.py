@@ -24,6 +24,13 @@ from browser_use.browser.watchdog_base import BaseWatchdog
 if TYPE_CHECKING:
 	pass
 
+# Rebuild event models that have forward references to EnhancedDOMTreeNode
+# This must be done after all imports are complete
+ClickElementEvent.model_rebuild()
+TypeTextEvent.model_rebuild()
+ScrollEvent.model_rebuild()
+UploadFileEvent.model_rebuild()
+
 
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
