@@ -16,7 +16,6 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 if TYPE_CHECKING:
 	pass
@@ -73,7 +72,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		# Use _cdp_get_all_pages for quick check without fetching titles
 		page_targets = await self.browser_session._cdp_get_all_pages()
 		if len(page_targets) <= 1:
-			logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
+			self.logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
 			# Create the animation tab since no tabs should remain
 			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 			await navigate_event
@@ -125,7 +124,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 				pass
 
 		except Exception as e:
-			logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
+			self.logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
 
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
 		"""Show DVD screensaver on all new tab pages."""
@@ -151,7 +150,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
 
 		except Exception as e:
-			logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')
+			self.logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')
 
 	async def _show_dvd_screensaver_loading_animation_cdp(self, target_id: str, browser_session_label: str) -> None:
 		"""
@@ -299,5 +298,5 @@ class AboutBlankWatchdog(BaseWatchdog):
 			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index))
 			
 		except Exception as e:
-			logger.error(f'[AboutBlankWatchdog] Error injecting DVD screensaver: {e}')
+			self.logger.error(f'[AboutBlankWatchdog] Error injecting DVD screensaver: {e}')
 

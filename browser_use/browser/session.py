@@ -125,7 +125,7 @@ class BrowserSession(BaseModel):
 	def logger(self) -> Any:
 		"""Get instance-specific logger with session ID in the name"""
 		if (
-			self._logger is None or self._browser_context is None
+			self._logger is None
 		):  # keep updating the name pre-init because our id and str(self) can change
 			import logging
 
@@ -133,14 +133,19 @@ class BrowserSession(BaseModel):
 		return self._logger
 
 	@property
-	def cdp_client(self) -> 'CDPClient | None':
-		"""Get the cached CDP client if it exists.
+	def cdp_client(self) -> 'CDPClient':
+		"""Get the cached CDP client.
 
 		The client is created and started in setup_browser_via_cdp_url().
 
 		Returns:
-			The CDP client instance or None if not yet created
+			The CDP client instance
+			
+		Raises:
+			RuntimeError: If CDP client is not initialized yet
 		"""
+		if self._cdp_client is None:
+			raise RuntimeError('CDP client not initialized - browser may not be connected yet')
 		return self._cdp_client
 
 	def __repr__(self) -> str:
@@ -160,7 +165,7 @@ class BrowserSession(BaseModel):
 		# Initialize and attach all watchdogs FIRST so LocalBrowserWatchdog can handle BrowserLaunchEvent
 		await self.attach_all_watchdogs()
 
-		if self.cdp_url and self._browser_context:
+		if self.cdp_url:
 			self.event_bus.dispatch(BrowserConnectedEvent(cdp_url=self.cdp_url))
 			return
 
@@ -208,8 +213,6 @@ class BrowserSession(BaseModel):
 				return
 
 			# Reset state
-			self._browser = None
-			self._browser_context = None
 			if self.is_local:
 				self.cdp_url = None
 
@@ -657,16 +660,17 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'PDF auto-download check failed: {type(e).__name__}: {e}')
 
 			self.logger.debug('🌳 Starting DOM processing...')
-			from browser_use.browser.events import BuildDOMTreeEvent
+			from browser_use.browser.events import BrowserStateRequestEvent
 			from browser_use.dom.views import SerializedDOMState
 
 			try:
-				# Use the DOMWatchdog via event bus
+				# Use the DOMWatchdog via event bus - request state with DOM
 				result = await asyncio.wait_for(
-					self.event_bus.dispatch(BuildDOMTreeEvent(previous_state=None)),
+					self.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False)),
 					timeout=45.0,  # 45 second timeout for DOM processing - generous for complex pages
 				)
-				content = await result.event_result()
+				state_summary = await result.event_result()
+				content = state_summary.dom_state if state_summary else None
 				self.logger.debug('✅ DOM processing completed')
 			except (TimeoutError, Exception) as e:
 				if isinstance(e, TimeoutError):
@@ -786,12 +790,6 @@ class BrowserSession(BaseModel):
 		clients.append(self.cdp_client)  # Root client with session attached
 
 		return clients
-
-	async def cdp_client_for_frame(self, frame_id: str) -> 'CDPClient':
-		"""Get CDP client for a specific frame ID."""
-		# For now, return the main client
-		# In future, we'd look up which session owns this frame
-		return self.cdp_client
 
 	async def cdp_client_for_node(self, node: 'EnhancedDOMTreeNode') -> 'CDPClient':
 		"""Get CDP client for a specific DOM node based on its frame."""
@@ -1122,26 +1120,32 @@ class BrowserSession(BaseModel):
 
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
-		if self.cdp_client and self.current_target_id:
-			try:
-				# Attach to current target
-				session = await self.cdp_client.send.Target.attachToTarget(
-					params={'targetId': self.current_target_id, 'flatten': True}
-				)
-				session_id = session['sessionId']
+		try:
+			# Check if we have a CDP client and target
+			if not self.current_target_id:
+				return
+			
+			# This will raise RuntimeError if CDP client not initialized
+			cdp_client = self.cdp_client
+			
+			# Attach to current target
+			session = await cdp_client.send.Target.attachToTarget(
+				params={'targetId': self.current_target_id, 'flatten': True}
+			)
+			session_id = session['sessionId']
 
-				# Remove highlights via JavaScript - matches the highlighting system from debug/highlights.py
-				script = """
+			# Remove highlights via JavaScript - matches the highlighting system from debug/highlights.py
+			script = """
 					// Remove all browser-use highlight elements
 					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 					highlights.forEach(el => el.remove());
-				"""
-				await self.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
+			"""
+			await cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
 
-				# Detach from target
-				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-			except Exception as e:
-				self.logger.debug(f'Failed to remove highlights: {e}')
+			# Detach from target
+			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+		except Exception as e:
+			self.logger.debug(f'Failed to remove highlights: {e}')
 
 	@property
 	def downloaded_files(self) -> list[str]:
@@ -1301,101 +1305,222 @@ class BrowserSession(BaseModel):
 		# Use helper to navigate on the target
 		await self._cdp_execute_on_target(target_to_use, commands=[('Page.enable', {}), ('Page.navigate', {'url': url})])
 
+	async def get_all_frames(self) -> tuple[dict[str, dict], dict[str, str]]:
+		"""Get a complete frame hierarchy from all browser targets.
+		
+		Returns:
+			Tuple of (all_frames, target_sessions) where:
+			- all_frames: dict mapping frame_id -> frame info dict with all metadata
+			- target_sessions: dict mapping target_id -> session_id for active sessions
+		"""
+		all_frames = {}  # frame_id -> FrameInfo dict
+		target_sessions = {}  # target_id -> session_id (keep sessions alive during collection)
+		
+		# Get all targets
+		targets = await self.cdp_client.send.Target.getTargets()
+		all_targets = targets.get('targetInfos', [])
+		
+		# First pass: collect frame trees from ALL targets
+		for target in all_targets:
+			target_id = target.get('targetId')
+			
+			if not target_id:
+				continue
+			
+			# Attach to target
+			session = await self.cdp_client.send.Target.attachToTarget(
+				params={'targetId': target_id, 'flatten': True}
+			)
+			session_id = session['sessionId']
+			target_sessions[target_id] = session_id
+			
+			try:
+				# Set auto-attach to get related targets
+				await self.cdp_client.send.Target.setAutoAttach(
+					params={
+						'autoAttach': True,
+						'waitForDebuggerOnStart': False,
+						'flatten': True
+					},
+					session_id=session_id
+				)
+				
+				# Try to get frame tree (not all target types support this)
+				try:
+					await self.cdp_client.send.Page.enable(session_id=session_id)
+					frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
+					
+					# Process the frame tree recursively
+					def process_frame_tree(node, parent_frame_id=None):
+						"""Recursively process frame tree and add to all_frames."""
+						frame = node.get('frame', {})
+						current_frame_id = frame.get('id')
+						
+						if current_frame_id:
+							# Create frame info with all CDP response data plus our additions
+							frame_info = {
+								**frame,  # Include all original frame data
+								'frameTargetId': target_id,  # Target that can access this frame
+								'parentFrameId': parent_frame_id,  # Parent frame ID if any
+								'childFrameIds': [],  # Will be populated below
+								'isCrossOrigin': False,  # Will be determined based on context
+							}
+							
+							# Check if frame is cross-origin based on crossOriginIsolatedContextType
+							cross_origin_type = frame.get('crossOriginIsolatedContextType')
+							if cross_origin_type and cross_origin_type != 'NotIsolated':
+								frame_info['isCrossOrigin'] = True
+							
+							# For iframe targets, the frame itself is likely cross-origin
+							if target.get('type') == 'iframe':
+								frame_info['isCrossOrigin'] = True
+							
+							# Add child frame IDs (note: OOPIFs won't appear here)
+							child_frames = node.get('childFrames', [])
+							for child in child_frames:
+								child_frame = child.get('frame', {})
+								child_frame_id = child_frame.get('id')
+								if child_frame_id:
+									frame_info['childFrameIds'].append(child_frame_id)
+							
+							# Store or merge frame info
+							if current_frame_id in all_frames:
+								# Frame already seen from another target, merge info
+								existing = all_frames[current_frame_id]
+								# If this is an iframe target, it has direct access to the frame
+								if target.get('type') == 'iframe':
+									existing['frameTargetId'] = target_id
+									existing['isCrossOrigin'] = True
+							else:
+								all_frames[current_frame_id] = frame_info
+							
+							# Process child frames recursively
+							for child in child_frames:
+								process_frame_tree(child, current_frame_id)
+					
+					# Process the entire frame tree
+					process_frame_tree(frame_tree_result.get('frameTree', {}))
+					
+				except Exception:
+					# Target doesn't support Page domain or has no frames
+					pass
+					
+			except Exception:
+				# Error processing this target
+				pass
+		
+		# Second pass: populate backend node IDs and parent target IDs
+		await self._populate_frame_metadata(all_frames, target_sessions)
+		
+		return all_frames, target_sessions
+
+	async def _populate_frame_metadata(self, all_frames: dict[str, dict], target_sessions: dict[str, str]) -> None:
+		"""Populate additional frame metadata like backend node IDs and parent target IDs.
+		
+		Args:
+			all_frames: Frame hierarchy dict to populate
+			target_sessions: Active target sessions
+		"""
+		for frame_id_iter, frame_info in all_frames.items():
+			parent_frame_id = frame_info.get('parentFrameId')
+			
+			if parent_frame_id and parent_frame_id in all_frames:
+				parent_frame_info = all_frames[parent_frame_id]
+				parent_target_id = parent_frame_info.get('frameTargetId')
+				
+				# Store parent target ID
+				frame_info['parentTargetId'] = parent_target_id
+				
+				# Try to get backend node ID from parent context
+				if parent_target_id in target_sessions:
+					parent_session_id = target_sessions[parent_target_id]
+					try:
+						# Enable DOM domain
+						await self.cdp_client.send.DOM.enable(session_id=parent_session_id)
+						
+						# Get frame owner info to find backend node ID
+						frame_owner = await self.cdp_client.send.DOM.getFrameOwner(
+							params={'frameId': frame_id_iter},
+							session_id=parent_session_id
+						)
+						
+						if frame_owner:
+							frame_info['backendNodeId'] = frame_owner.get('backendNodeId')
+							frame_info['nodeId'] = frame_owner.get('nodeId')
+							
+					except Exception:
+						# Frame owner not available (likely cross-origin)
+						pass
+
+	async def find_frame_target(self, frame_id: str, all_frames: dict[str, dict] | None = None) -> dict | None:
+		"""Find the frame info for a specific frame ID.
+		
+		Args:
+			frame_id: The frame ID to search for
+			all_frames: Optional pre-built frame hierarchy. If None, will call get_all_frames()
+			
+		Returns:
+			Frame info dict if found, None otherwise
+		"""
+		if all_frames is None:
+			all_frames, _ = await self.get_all_frames()
+		
+		return all_frames.get(frame_id)
+
+	async def cleanup_target_sessions(self, target_sessions: dict[str, str], keep_target_id: str | None = None) -> None:
+		"""Clean up CDP sessions by detaching from targets.
+		
+		Args:
+			target_sessions: Dict of target_id -> session_id to clean up
+			keep_target_id: Optional target ID to keep attached (won't detach this one)
+		"""
+		for target_id, session_id in target_sessions.items():
+			if target_id != keep_target_id:
+				try:
+					await self.cdp_client.send.Target.detachFromTarget(
+						params={'sessionId': session_id}
+					)
+				except Exception:
+					pass
+
 	async def cdp_client_for_frame(self, frame_id: str) -> Any:
 		"""Get a CDP client attached to the target containing the specified frame.
 
-		Iterates through all targets, checks their frame trees to find which target
-		contains the frame with the given frame_id, then returns a CDP client
-		attached to that target.
+		Builds a unified frame hierarchy from all targets to find the correct target
+		for any frame, including OOPIFs (Out-of-Process iframes).
 
 		Args:
 			frame_id: The frame ID to search for
 
 		Returns:
-			CDP client attached to the target containing the frame
+			Tuple of (cdp_client, session_id, target_id) for the target containing the frame
 
 		Raises:
 			ValueError: If the frame is not found in any target
 		"""
-		# Get all targets
-		targets = await self.cdp_client.send.Target.getTargets()
-		all_targets = targets.get('targetInfos', [])
-
-		# Check each target's frame tree (page and iframe targets)
-		for target in all_targets:
-			target_id = target.get('targetId')
-			target_type = target.get('type')
+		# Get complete frame hierarchy
+		all_frames, target_sessions = await self.get_all_frames()
+		
+		# Find the requested frame
+		frame_info = await self.find_frame_target(frame_id, all_frames)
+		
+		if frame_info:
+			target_id = frame_info.get('frameTargetId')
 			
-			# Skip non-page/iframe targets as they don't have frames
-			if not target_id or target_type not in ['page', 'iframe']:
-				continue
-
-			# Attach to target to get frame tree
-			session = await self.cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
-
-			try:
-				if target_type == 'page':
-					# For page targets, check the frame tree
-					# Enable Page domain first (only works for page targets)
-					await self.cdp_client.send.Page.enable(session_id=session_id)
-
-					# Get the frame tree for this target
-					frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
-
-					# Check if frame_id exists in this target's frame tree
-					def frame_exists_in_tree(frame_node: dict) -> bool:
-						"""Recursively check if frame_id exists in the frame tree."""
-						# Check current frame
-						if frame_node.get('frame', {}).get('id') == frame_id:
-							return True
-
-						# Check child frames recursively
-						child_frames = frame_node.get('childFrames', [])
-						for child in child_frames:
-							if frame_exists_in_tree(child):
-								return True
-
-						return False
-
-					# Check if the frame exists in this target's tree
-					if frame_exists_in_tree(frame_tree_result.get('frameTree', {})):
-						# Frame found! Keep the session attached and return a client for it
-						# Note: We're returning the cdp_client with the session already attached
-						# The caller is responsible for detaching when done
-						return self.cdp_client, session_id, target_id
-						
-				elif target_type == 'iframe':
-					# For iframe targets (OOPIFs), the target itself IS the frame
-					# We need to check if this iframe target's frame ID matches what we're looking for
-					try:
-						# Enable Page domain to get frame info
-						await self.cdp_client.send.Page.enable(session_id=session_id)
-						
-						# Get the frame tree for this iframe target
-						frame_tree_result = await self.cdp_client.send.Page.getFrameTree(session_id=session_id)
-						
-						# For an iframe target, the root frame IS the iframe itself
-						iframe_frame_id = frame_tree_result.get('frameTree', {}).get('frame', {}).get('id')
-						
-						if iframe_frame_id == frame_id:
-							# This is the iframe we're looking for!
-							# Don't detach - caller is responsible for cleanup
-							return self.cdp_client, session_id, target_id
-							
-					except Exception:
-						# This iframe target doesn't match
-						pass
-						
-				# If we didn't find the frame in this target, detach before trying next one
-				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+			if target_id in target_sessions:
+				# Use existing session
+				session_id = target_sessions[target_id]
 				
-			except Exception as e:
-				# On error, make sure to detach
-				await self.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-				raise
-
-		# Frame not found in any target
+				# Clean up other sessions before returning
+				await self.cleanup_target_sessions(target_sessions, keep_target_id=target_id)
+				
+				# Return the client with session attached (caller must detach)
+				return self.cdp_client, session_id, target_id
+		
+		# Clean up all sessions before raising error
+		await self.cleanup_target_sessions(target_sessions)
+		
+		# Frame not found
 		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")
 
 	async def cdp_client_for_target(self, target_id: str) -> Any:

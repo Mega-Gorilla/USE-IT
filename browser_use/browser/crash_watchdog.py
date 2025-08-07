@@ -15,7 +15,6 @@ from browser_use.browser.events import (
 	TargetCrashedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 if TYPE_CHECKING:
 	pass
@@ -114,10 +113,10 @@ class CrashWatchdog(BaseWatchdog):
 			targets = await cdp_client.send.Target.getTargets()
 			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 			if target_info:
-				logger.debug(f'[CrashWatchdog] Added target to monitoring: {target_info.get("url", "unknown")}')
+				self.logger.debug(f'[CrashWatchdog] Added target to monitoring: {target_info.get("url", "unknown")}')
 			
 		except Exception as e:
-			logger.warning(f'[CrashWatchdog] Failed to attach to target {target_id}: {e}')
+			self.logger.warning(f'[CrashWatchdog] Failed to attach to target {target_id}: {e}')
 
 	async def _on_request_cdp(self, event: dict) -> None:
 		"""Track new network request from CDP event."""
@@ -139,7 +138,7 @@ class CrashWatchdog(BaseWatchdog):
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
 			response = event.get('response', {})
-			logger.debug(f'[CrashWatchdog] Request completed in {elapsed:.2f}s: {response.get("url", "")[:50]}...')
+			self.logger.debug(f'[CrashWatchdog] Request completed in {elapsed:.2f}s: {response.get("url", "")[:50]}...')
 			# Don't remove yet - wait for loadingFinished
 
 	def _on_request_failed_cdp(self, event: dict) -> None:
@@ -147,7 +146,7 @@ class CrashWatchdog(BaseWatchdog):
 		request_id = event.get('requestId', '')
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {self._active_requests[request_id].url[:50]}...')
+			self.logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {self._active_requests[request_id].url[:50]}...')
 			del self._active_requests[request_id]
 
 	def _on_request_finished_cdp(self, event: dict) -> None:
@@ -163,7 +162,7 @@ class CrashWatchdog(BaseWatchdog):
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 		
 		target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
-		logger.error(f'[CrashWatchdog] Target crashed: {target_url}')
+		self.logger.error(f'[CrashWatchdog] Target crashed: {target_url}')
 
 		# Get tab index
 		tab_index = await self.browser_session.get_tab_index(target_id)
@@ -209,7 +208,7 @@ class CrashWatchdog(BaseWatchdog):
 				
 				# Set up browser crash handler
 				def on_browser_crash(event):
-					logger.error('[CrashWatchdog] Browser crash detected via CDP')
+					self.logger.error('[CrashWatchdog] Browser crash detected via CDP')
 					self.event_bus.dispatch(
 						BrowserErrorEvent(
 							error_type='BrowserCrash', 
@@ -219,13 +218,13 @@ class CrashWatchdog(BaseWatchdog):
 					)
 				
 				# Note: Browser.crash event might not exist, using Inspector.targetCrashed instead
-				logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
+				self.logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
 			except Exception:
 				# Browser domain not available, rely on target-level monitoring
 				pass
 				
 		except Exception as e:
-			logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
+			self.logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring loop."""
@@ -235,7 +234,7 @@ class CrashWatchdog(BaseWatchdog):
 				await self._monitoring_task
 			except asyncio.CancelledError:
 				pass
-			logger.debug('[CrashWatchdog] Monitoring loop stopped')
+			self.logger.debug('[CrashWatchdog] Monitoring loop stopped')
 
 		# Clean up CDP sessions
 		if self._cdp_sessions:
@@ -260,7 +259,7 @@ class CrashWatchdog(BaseWatchdog):
 			except asyncio.CancelledError:
 				break
 			except Exception as e:
-				logger.error(f'[CrashWatchdog] Error in monitoring loop: {e}')
+				self.logger.error(f'[CrashWatchdog] Error in monitoring loop: {e}')
 
 	async def _check_network_timeouts(self) -> None:
 		"""Check for network requests exceeding timeout."""
@@ -269,13 +268,13 @@ class CrashWatchdog(BaseWatchdog):
 
 		# Debug logging
 		if self._active_requests:
-			logger.debug(
+			self.logger.debug(
 				f'[CrashWatchdog] Checking {len(self._active_requests)} active requests for timeouts (threshold: {self.network_timeout_seconds}s)'
 			)
 
 		for request_id, tracker in self._active_requests.items():
 			elapsed = current_time - tracker.start_time
-			logger.debug(
+			self.logger.debug(
 				f'[CrashWatchdog] Request {tracker.url[:30]}... elapsed: {elapsed:.1f}s, timeout: {self.network_timeout_seconds}s'
 			)
 			if elapsed >= self.network_timeout_seconds:
@@ -283,7 +282,7 @@ class CrashWatchdog(BaseWatchdog):
 
 		# Emit events for timed out requests
 		for request_id, tracker in timed_out_requests:
-			logger.warning(
+			self.logger.warning(
 				f'[CrashWatchdog] Network request timeout after {self.network_timeout_seconds}s: '
 				f'{tracker.method} {tracker.url[:100]}...'
 			)
@@ -312,7 +311,7 @@ class CrashWatchdog(BaseWatchdog):
 			# Try a simple CDP command to check connection
 			await asyncio.wait_for(cdp_client.send.Target.getTargets(), timeout=2.0)
 		except (asyncio.TimeoutError, Exception) as e:
-			logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
+			self.logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
 			)
@@ -323,7 +322,7 @@ class CrashWatchdog(BaseWatchdog):
 		if proc := self.browser_session._local_browser_watchdog._subprocess:
 			try:
 				if proc.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-					logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')
+					self.logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')
 					self.event_bus.dispatch(
 						BrowserErrorEvent(
 							error_type='BrowserProcessCrashed',
@@ -368,13 +367,13 @@ class CrashWatchdog(BaseWatchdog):
 					dead_targets.append(target)
 
 		except Exception as e:
-			logger.error(f'[CrashWatchdog] Error checking target health: {e}')
+			self.logger.error(f'[CrashWatchdog] Error checking target health: {e}')
 			return
 
 		# Report unresponsive targets
 		for target in unresponsive_targets:
 			target_url = target.get('url', 'unknown')
-			logger.warning(f'[CrashWatchdog] Target unresponsive: {target_url}')
+			self.logger.warning(f'[CrashWatchdog] Target unresponsive: {target_url}')
 
 			tab_index = await self.browser_session.get_tab_index(target['targetId'])
 			self.event_bus.dispatch(
@@ -452,19 +451,19 @@ class CrashWatchdog(BaseWatchdog):
 		"""Trigger a browser crash for testing (requires CDP)."""
 		try:
 			cdp_client = self.browser_session.cdp_client
-			logger.warning('[CrashWatchdog] Triggering browser crash for testing...')
+			self.logger.warning('[CrashWatchdog] Triggering browser crash for testing...')
 			await cdp_client.send.Browser.crash()
 		except Exception as e:
-			logger.error(f'[CrashWatchdog] Failed to trigger browser crash: {e}')
+			self.logger.error(f'[CrashWatchdog] Failed to trigger browser crash: {e}')
 
 	async def trigger_gpu_crash(self) -> None:
 		"""Trigger a GPU process crash for testing (requires CDP)."""
 		try:
 			cdp_client = self.browser_session.cdp_client
-			logger.warning('[CrashWatchdog] Triggering GPU crash for testing...')
+			self.logger.warning('[CrashWatchdog] Triggering GPU crash for testing...')
 			await cdp_client.send.Browser.crashGpuProcess()
 		except Exception as e:
-			logger.error(f'[CrashWatchdog] Failed to trigger GPU crash: {e}')
+			self.logger.error(f'[CrashWatchdog] Failed to trigger GPU crash: {e}')
 
 	async def trigger_target_crash(self, target_id: str) -> None:
 		"""Trigger a target crash for testing."""
@@ -476,7 +475,7 @@ class CrashWatchdog(BaseWatchdog):
 			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 			target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
 			
-			logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
+			self.logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
 			
 			# Attach to target
 			session = await cdp_client.send.Target.attachToTarget(
@@ -490,4 +489,4 @@ class CrashWatchdog(BaseWatchdog):
 			# Detach
 			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 		except Exception as e:
-			logger.error(f'[CrashWatchdog] Failed to trigger target crash: {e}')
+			self.logger.error(f'[CrashWatchdog] Failed to trigger target crash: {e}')

@@ -59,23 +59,44 @@ class DomService:
 		# Cleanup any attached sessions
 		await self._cleanup_sessions()
 
-	async def _get_targets_for_current_page(self) -> CurrentPageTargets:
-		"""Get the target for the current page."""
+	async def _get_targets_for_page(self, target_id: str | None = None) -> CurrentPageTargets:
+		"""Get the target info for a specific page.
+		
+		Args:
+			target_id: The target ID to get info for. If None, uses current_target_id.
+		"""
 		targets = await self.browser_session.cdp_client.send.Target.getTargets()
 
-		# Use the current_target_id directly
-		current_target_id = self.browser_session.current_target_id
-		if not current_target_id:
-			raise ValueError('No current target ID set in browser session')
+		# Use provided target_id or fall back to current_target_id
+		if target_id is None:
+			target_id = self.browser_session.current_target_id
+			if not target_id:
+				raise ValueError('No current target ID set in browser session')
 
 		# Find main page target by ID
-		main_target = next((t for t in targets['targetInfos'] if t['targetId'] == current_target_id), None)
+		main_target = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 
 		if not main_target:
-			raise ValueError(f'No target found for current target ID: {current_target_id}')
+			raise ValueError(f'No target found for target ID: {target_id}')
 
-		# Separate iframe targets for attachment
-		iframe_targets = [t for t in targets['targetInfos'] if t['type'] == 'iframe']
+		# Get all frames using the new method to find iframe targets for this page
+		all_frames, _ = await self.browser_session.get_all_frames()
+		
+		# Find iframe targets that are children of this target
+		iframe_targets = []
+		for frame_info in all_frames.values():
+			# Check if this frame is a cross-origin iframe with its own target
+			if frame_info.get('isCrossOrigin') and frame_info.get('frameTargetId'):
+				# Check if this frame belongs to our target
+				parent_target = frame_info.get('parentTargetId', frame_info.get('frameTargetId'))
+				if parent_target == target_id:
+					# Find the target info for this iframe
+					iframe_target = next(
+						(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']), 
+						None
+					)
+					if iframe_target:
+						iframe_targets.append(iframe_target)
 
 		return CurrentPageTargets(
 			page_session=main_target,
@@ -86,7 +107,6 @@ class DomService:
 		"""This function is cached, so go crazy"""
 
 		target_id = str(target['targetId'])
-		print(f'DomService._attach_target: Attaching to target {target_id}, type={target.get("type")}')
 
 		# if target_id in self.target_to_session_id_cache:
 		# 	return self.target_to_session_id_cache[target_id]
@@ -96,17 +116,13 @@ class DomService:
 				params={'targetId': target_id, 'flatten': True}
 			)
 			session_id = session['sessionId']
-			print(f'DomService: Successfully attached, got session_id={session_id}')
 		except Exception as e:
-			print(f'DomService ERROR: Failed to attach to target {target_id}: {e}')
 			raise
 
 		# Track this session for cleanup
 		self._attached_sessions.add(session_id)
 
-		print(f'DomService: Enabling domains on session {session_id}...')
 		await self._enable_all_domains_on_session(session_id)
-		print(f'DomService: Domains enabled on session {session_id}')
 
 		return session_id
 
@@ -124,11 +140,20 @@ class DomService:
 		if session_id in self.session_id_domains_enabled_cache:
 			return
 
+		# Set auto-attach with proper filter for iframe targets
+		# This will automatically attach to immediate child frames
+		# IMPORTANT: This is NOT recursive - we need to call setAutoAttach 
+		# on each newly attached frame to get its children
 		await self.browser_session.cdp_client.send.Target.setAutoAttach(
 			params={
 				'autoAttach': True,
 				'waitForDebuggerOnStart': False,
 				'flatten': True,
+				# Include filter to ensure iframe targets are attached
+				'filter': [
+					{'type': 'page', 'exclude': False},
+					{'type': 'iframe', 'exclude': False}
+				]
 			},
 			session_id=session_id,
 		)
@@ -306,19 +331,13 @@ class DomService:
 		if not self.browser_session.cdp_url:
 			raise ValueError('CDP URL is not set')
 
-		print(f'DomService._get_all_trees_for_session_id: Starting with session_id={session_id}')
-
 		# Wait for the page to be ready first
 		try:
-			print('DomService: Checking page ready state...')
 			ready_state = await self.browser_session.cdp_client.send.Runtime.evaluate(
 				params={'expression': 'document.readyState'}, session_id=session_id
 			)
-			print(f'DomService: Page ready state: {ready_state}')
 		except Exception as e:
-			print(f'Warning: Could not check page ready state: {e}')
-
-		print('DomService: Creating CDP requests...')
+			pass  # Page might not be ready yet
 		snapshot_request = self.browser_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
 				'computedStyles': REQUIRED_COMPUTED_STYLES,
@@ -339,27 +358,19 @@ class DomService:
 		device_pixel_ratio_request = self._get_viewport_ratio(session_id)
 
 		start = time.time()
-		# Use wait_for with timeout to debug which call is hanging
+		# Gather all CDP requests with timeout
 		try:
-			print('DomService: Gathering all CDP requests...')
 			snapshot, dom_tree, ax_tree, device_pixel_ratio = await asyncio.wait_for(
 				asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request), timeout=10.0
 			)
-			print('DomService: All CDP requests completed successfully')
 		except TimeoutError:
-			print('ERROR: CDP calls timed out in _get_all_trees_for_session_id')
 			# Try to get them individually to see which one hangs
-			print('Trying snapshot...')
 			snapshot = await asyncio.wait_for(snapshot_request, timeout=2.0)
-			print('Trying dom_tree...')
 			dom_tree = await asyncio.wait_for(dom_tree_request, timeout=2.0)
-			print('Trying ax_tree...')
 			ax_tree = await asyncio.wait_for(ax_tree_request, timeout=2.0)
-			print('Trying device_pixel_ratio...')
 			device_pixel_ratio = await asyncio.wait_for(device_pixel_ratio_request, timeout=2.0)
 		end = time.time()
 		cdp_timing = {'cdp_calls_total': end - start}
-		print(f'Time taken to get dom tree: {end - start} seconds')
 
 		return TargetAllTrees(
 			snapshot=snapshot,
@@ -371,12 +382,23 @@ class DomService:
 
 	async def get_dom_tree(
 		self,
-		target: TargetInfo,
+		target_id: str | None = None,
 		initial_html_frames: list[EnhancedDOMTreeNode] | None = None,
 		initial_total_frame_offset: DOMRect | None = None,
 	) -> EnhancedDOMTreeNode:
+		"""Get the DOM tree for a specific target.
+		
+		Args:
+			target_id: Optional target ID. If None, uses current target.
+			initial_html_frames: List of HTML frame nodes encountered so far
+			initial_total_frame_offset: Accumulated coordinate offset
+		"""
+		# Get target info
+		page_session_info = await self._get_targets_for_page(target_id)
+		target = page_session_info.page_session
+		actual_target_id = target['targetId']  # Store the actual target ID being used
+		
 		# Get viewport dimensions first for visibility calculation
-
 		session_id = await self._attach_target_activate_domains_get_session_id(target)
 
 		trees = await self._get_all_trees_for_session_id(session_id)
@@ -463,7 +485,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
-				target_id=target['targetId'],
+				target_id=actual_target_id,
 				content_document=None,
 				shadow_root_type=shadow_root_type,
 				shadow_roots=None,
@@ -533,15 +555,26 @@ class DomService:
 				# TODO: hacky way to disable cross origin iframes for now
 				ENABLE_CROSS_ORIGIN_IFRAMES and node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
 			):  # None meaning there is no content
-				targets = await self._get_targets_for_current_page()
-				iframe_document_target = next(
-					(iframe for iframe in targets.iframe_sessions if iframe.get('targetId') == node.get('frameId', None)), None
-				)
+				# Use get_all_frames to find the iframe's target
+				frame_id = node.get('frameId', None)
+				if frame_id:
+					all_frames, _ = await self.browser_session.get_all_frames()
+					frame_info = all_frames.get(frame_id)
+					iframe_document_target = None
+					if frame_info and frame_info.get('frameTargetId'):
+						# Get the target info for this iframe
+						targets = await self.browser_session.cdp_client.send.Target.getTargets()
+						iframe_document_target = next(
+							(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']),
+							None
+						)
+				else:
+					iframe_document_target = None
 				# if target actually exists in one of the frames, just recursively build the dom tree for it
 				if iframe_document_target:
 					print(f'🔍 Getting content document for iframe {node.get("frameId", None)}')
 					content_document = await self.get_dom_tree(
-						iframe_document_target,
+						target_id=iframe_document_target.get('targetId'),
 						# TODO: experiment with this values -> not sure whether the whole cross origin iframe should be ALWAYS included as soon as some part of it is visible or not.
 						# Current config: if the cross origin iframe is AT ALL visible, then just include everything inside of it!
 						# initial_html_frames=updated_html_frames,
@@ -567,13 +600,8 @@ class DomService:
 		"""
 
 		try:
-			print('DomService: Getting targets for current page...')
-			page_session_info = await self._get_targets_for_current_page()
-			print(f'DomService: Got page session info, target_id={page_session_info.page_session.get("targetId")}')
-
-			print('DomService: Getting DOM tree...')
-			enhanced_dom_tree = await self.get_dom_tree(page_session_info.page_session)
-			print('DomService: Got enhanced DOM tree')
+			# Use current target (None means use current)
+			enhanced_dom_tree = await self.get_dom_tree(target_id=None)
 
 			start = time.time()
 			serialized_dom_state, serializer_timing = DOMTreeSerializer(
@@ -582,7 +610,6 @@ class DomService:
 
 			end = time.time()
 			serialize_total_timing = {'serialize_dom_tree_total': end - start}
-			print(f'Time taken to serialize dom tree: {end - start} seconds')
 
 			# Combine all timing info
 			all_timing = {**serializer_timing, **serialize_total_timing}

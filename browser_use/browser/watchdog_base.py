@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, ClassVar
 from bubus import BaseEvent, EventBus
 from pydantic import BaseModel, ConfigDict
 
-from browser_use.utils import logger
-
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
 
@@ -34,6 +32,11 @@ class BaseWatchdog(BaseModel):
 	# Core dependencies
 	event_bus: EventBus
 	browser_session: 'BrowserSession'
+
+	@property
+	def logger(self):
+		"""Get the logger from the browser session."""
+		return self.browser_session.logger
 
 	async def attach_to_session(self) -> None:
 		"""Attach watchdog to its browser session and start monitoring.
@@ -73,7 +76,7 @@ class BaseWatchdog(BaseModel):
 					# Capture handler by value to avoid closure issues
 					def make_unique_handler(actual_handler):
 						async def unique_handler(event):
-							logger.debug(
+							self.logger.debug(
 								f'[{self.__class__.__name__}] calling {actual_handler.__name__}({event.__class__.__name__})'
 							)
 							return await actual_handler(event)
@@ -100,7 +103,7 @@ class BaseWatchdog(BaseModel):
 			missing_handlers = set(self.LISTENS_TO) - registered_events
 			if missing_handlers:
 				missing_names = [e.__name__ for e in missing_handlers]
-				logger.warning(
+				self.logger.warning(
 					f'[{self.__class__.__name__}] LISTENS_TO declares {missing_names} '
 					f'but no handlers found (missing on_{"_, on_".join(missing_names)} methods)'
 				)
@@ -121,7 +124,7 @@ class BaseWatchdog(BaseModel):
 					task = getattr(self, attr_name)
 					if hasattr(task, 'cancel') and callable(task.cancel) and not task.done():
 						task.cancel()
-						logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
+						self.logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
 				except Exception:
 					pass  # Ignore errors during cleanup
 

@@ -240,7 +240,7 @@ class DOMWatchdog(BaseWatchdog):
 			# Get serialized DOM tree using the service
 			start = time.time()
 			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
-				previous_cached_state=event.previous_state
+				previous_cached_state=previous_state
 			)
 			end = time.time()
 

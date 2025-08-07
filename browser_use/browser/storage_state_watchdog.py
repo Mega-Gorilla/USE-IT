@@ -18,7 +18,6 @@ from browser_use.browser.events import (
 	StorageStateSavedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 
 class StorageStateWatchdog(BaseWatchdog):
@@ -47,7 +46,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser starts."""
-		logger.info('[StorageStateWatchdog] 🍪 Initializing auth/cookies sync <-> with storage_state.json file')
+		self.logger.info('[StorageStateWatchdog] 🍪 Initializing auth/cookies sync <-> with storage_state.json file')
 
 		# Start monitoring
 		await self._start_monitoring()
@@ -57,18 +56,18 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Stop monitoring and save state when browser stop is requested."""
-		logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage_state.json')
+		self.logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage_state.json')
 
 		# Save storage state before stopping and wait for completion
-		# logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
+		# self.logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
 		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
-		# logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
+		# self.logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
 		await save_event
-		# logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
+		# self.logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
 
 		# Stop monitoring
 		await self._stop_monitoring()
-		# logger.info('[StorageStateWatchdog] Browser stop handling complete')
+		# self.logger.info('[StorageStateWatchdog] Browser stop handling complete')
 		# No cleanup needed - browser context is managed by session
 
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
@@ -101,7 +100,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			return
 
 		self._monitoring_task = asyncio.create_task(self._monitor_storage_changes())
-		# logger.info('[StorageStateWatchdog] Started storage monitoring task')
+		# self.logger.info('[StorageStateWatchdog] Started storage monitoring task')
 
 		# Set up monitoring for existing targets
 		if self.browser_session.cdp_client:
@@ -117,7 +116,7 @@ class StorageStateWatchdog(BaseWatchdog):
 				await self._monitoring_task
 			except asyncio.CancelledError:
 				pass
-			# logger.debug('[StorageStateWatchdog] Stopped storage monitoring task')
+			# self.logger.debug('[StorageStateWatchdog] Stopped storage monitoring task')
 
 	def _setup_target_monitoring(self, target_id: str) -> None:
 		"""Set up storage change monitoring for a target.
@@ -126,7 +125,7 @@ class StorageStateWatchdog(BaseWatchdog):
 		via Network.responseReceivedExtraInfo events.
 		"""
 		# For now, rely on periodic monitoring
-		logger.debug(f'[StorageStateWatchdog] Target {target_id} will be monitored via periodic checks')
+		self.logger.debug(f'[StorageStateWatchdog] Target {target_id} will be monitored via periodic checks')
 
 	async def _check_for_cookie_changes_cdp(self, event: dict) -> None:
 		"""Check if a CDP network event indicates cookie changes.
@@ -243,19 +242,19 @@ class StorageStateWatchdog(BaseWatchdog):
 					)
 				)
 
-				logger.info(
+				self.logger.info(
 					f'[StorageStateWatchdog] Saved storage state to {json_path} '
 					f'({len(merged_state.get("cookies", []))} cookies, '
 					f'{len(merged_state.get("origins", []))} origins)'
 				)
 
 			except Exception as e:
-				logger.error(f'[StorageStateWatchdog] Failed to save storage state: {e}')
+				self.logger.error(f'[StorageStateWatchdog] Failed to save storage state: {e}')
 
 	async def _load_storage_state(self, path: str | None = None) -> None:
 		"""Load browser storage state from file."""
 		if not self.browser_session.cdp_client:
-			logger.warning('[StorageStateWatchdog] No CDP client available for loading')
+			self.logger.warning('[StorageStateWatchdog] No CDP client available for loading')
 			return
 
 		load_path = path or self.browser_session.browser_profile.storage_state
@@ -273,7 +272,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			if 'cookies' in storage and storage['cookies']:
 				await self.browser_session._cdp_set_cookies(storage['cookies'])
 				self._last_cookie_state = storage['cookies'].copy()
-				logger.info(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
+				self.logger.info(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
 
 			# Apply origins (localStorage/sessionStorage) if present
 			if 'origins' in storage and storage['origins']:
@@ -290,7 +289,7 @@ class StorageStateWatchdog(BaseWatchdog):
 								window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
 							"""
 							await self.browser_session._cdp_add_init_script(script)
-				logger.info(f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
+				self.logger.info(f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
 
 			self.event_bus.dispatch(
 				StorageStateLoadedEvent(
@@ -300,10 +299,10 @@ class StorageStateWatchdog(BaseWatchdog):
 				)
 			)
 
-			logger.info(f'[StorageStateWatchdog] Loaded storage state from: {load_path}')
+			self.logger.info(f'[StorageStateWatchdog] Loaded storage state from: {load_path}')
 
 		except Exception as e:
-			logger.error(f'[StorageStateWatchdog] Failed to load storage state: {e}')
+			self.logger.error(f'[StorageStateWatchdog] Failed to load storage state: {e}')
 
 	@staticmethod
 	def _merge_storage_states(existing: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
@@ -337,21 +336,21 @@ class StorageStateWatchdog(BaseWatchdog):
 		try:
 			return await self.browser_session._cdp_get_cookies()
 		except Exception as e:
-			logger.error(f'[StorageStateWatchdog] Failed to get cookies: {e}')
+			self.logger.error(f'[StorageStateWatchdog] Failed to get cookies: {e}')
 			return []
 
 	async def add_cookies(self, cookies: list[dict[str, Any]]) -> None:
 		"""Add cookies using CDP."""
 		if not self.browser_session.cdp_client:
-			logger.warning('[StorageStateWatchdog] No CDP client available for adding cookies')
+			self.logger.warning('[StorageStateWatchdog] No CDP client available for adding cookies')
 			return
 
 		try:
 			# Set cookies using CDP
 			await self.browser_session._cdp_set_cookies(cookies)
-			logger.info(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
+			self.logger.info(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
-			logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')
+			self.logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')
 
 
 # Fix Pydantic circular dependency - this will be called from session.py after BrowserSession is defined

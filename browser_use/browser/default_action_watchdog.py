@@ -20,7 +20,6 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 if TYPE_CHECKING:
 	pass
@@ -42,7 +41,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check if element is a file input (should not be clicked)
 			if self.browser_session.is_file_input(element_node):
 				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
-				logger.info(msg)
+				self.logger.info(msg)
 				self.event_bus.dispatch(
 					BrowserErrorEvent(
 						error_type='FileInputElement',
@@ -60,18 +59,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Build success message
 			if download_path:
 				msg = f'Downloaded file to {download_path}'
-				logger.info(f'💾 {msg}')
+				self.logger.info(f'💾 {msg}')
 			else:
 				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
-				logger.info(f'🖱️ {msg}')
-			logger.debug(f'Element xpath: {element_node.xpath}')
+				self.logger.info(f'🖱️ {msg}')
+			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Check if a new tab was opened
 			current_target_ids = await self.browser_session.target_ids
 			if len(current_target_ids) > len(initial_target_ids):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
-				logger.info(f'🔗 {new_tab_msg}')
+				self.logger.info(f'🔗 {new_tab_msg}')
 				# Switch to the last tab (newly created tab)
 				from browser_use.browser.events import SwitchTabEvent
 
@@ -101,8 +100,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
 
 			# Log success
-			logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
-			logger.debug(f'Element xpath: {element_node.xpath}')
+			self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
+			self.logger.debug(f'Element xpath: {element_node.xpath}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -140,14 +139,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
-					logger.info(f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels')
+					self.logger.info(f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels')
 					return
 
 			# Perform target-level scroll
 			await self._scroll_with_cdp_gesture(pixels)
 
 			# Log success
-			logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
+			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -197,7 +196,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
 				await asyncio.sleep(0.1)  # Wait for scroll to complete
 			except Exception as e:
-				logger.debug(f'Failed to scroll element into view: {e}')
+				self.logger.debug(f'Failed to scroll element into view: {e}')
 
 			# Set up download detection if downloads are enabled
 			download_path = None
@@ -273,19 +272,19 @@ class DefaultActionWatchdog(BaseWatchdog):
 									download_complete = True
 									break
 								elif response['state'] == 'canceled':
-									logger.warning('Download was canceled')
+									self.logger.warning('Download was canceled')
 									break
 							except Exception:
 								pass
 							await asyncio.sleep(1)
 
 						if download_complete and download_guid:
-							logger.info('⬇️ Download completed via CDP')
+							self.logger.info('⬇️ Download completed via CDP')
 							# Note: DownloadsWatchdog handles download tracking via events
 							return f'download_{download_guid}'  # Return guid as placeholder
 					except TimeoutError:
 						# No download triggered, normal click
-						logger.debug('No download triggered within timeout.')
+						self.logger.debug('No download triggered within timeout.')
 
 				# Wait for navigation/changes
 				await asyncio.sleep(0.5)
@@ -294,7 +293,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				return download_path
 
 			except Exception as e:
-				logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
+				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
 				# Fall back to JavaScript click via CDP
 				try:
 					result = await cdp_client.send.DOM.resolveNode(
@@ -314,7 +313,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					# Navigation is handled by NavigationWatchdog via events
 					return None
 				except Exception as js_e:
-					logger.error(f'CDP JavaScript click also failed: {js_e}')
+					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
 					raise Exception(f'Failed to click element: {e}')
 
 		except URLNotAllowedError as e:
@@ -342,7 +341,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
 				await asyncio.sleep(0.1)
 			except Exception as e:
-				logger.debug(f'Failed to scroll element into view: {e}')
+				self.logger.debug(f'Failed to scroll element into view: {e}')
 
 			# Get object ID for the element
 			result = await cdp_client.send.DOM.resolveNode(
@@ -400,7 +399,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await asyncio.sleep(0.005)
 
 		except Exception as e:
-			logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
+			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
 			raise BrowserError(f'Failed to input text into element: {repr(element_node)}')
 
 	async def _scroll_with_cdp_gesture(self, pixels: int) -> bool:
@@ -442,11 +441,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 				session_id=session_id,
 			)
 
-			logger.debug(f'📄 Scrolled via CDP mouse wheel: {pixels}px')
+			self.logger.debug(f'📄 Scrolled via CDP mouse wheel: {pixels}px')
 			return True
 
 		except Exception as e:
-			logger.warning(f'❌ Scrolling via CDP failed: {type(e).__name__}: {e}')
+			self.logger.warning(f'❌ Scrolling via CDP failed: {type(e).__name__}: {e}')
 			return False
 
 	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
@@ -481,7 +480,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			return True
 		except Exception as e:
-			logger.debug(f'Failed to scroll element container via CDP: {e}')
+			self.logger.debug(f'Failed to scroll element container via CDP: {e}')
 			return False
 
 	async def _get_session_id_for_element(self, cdp_client: CDPClient, element_node) -> str | None:
@@ -508,9 +507,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 						return session_id
 
 				# If frame not found in targets, use main target session
-				logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
+				self.logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
 			except Exception as e:
-				logger.debug(f'Error getting frame session: {e}, using main session')
+				self.logger.debug(f'Error getting frame session: {e}, using main session')
 
 		# Use main target session
 		return await self.browser_session.get_current_page_cdp_session_id()
@@ -529,7 +528,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if we can go back
 			if current_index <= 0:
-				logger.warning('⚠️ Cannot go back - no previous entry in history')
+				self.logger.warning('⚠️ Cannot go back - no previous entry in history')
 				return
 
 			# Navigate to the previous entry
@@ -540,7 +539,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await asyncio.sleep(0.5)
 			# Navigation is handled by NavigationWatchdog via events
 
-			logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
+			self.logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -563,7 +562,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if we can go forward
 			if current_index >= len(entries) - 1:
-				logger.warning('⚠️ Cannot go forward - no next entry in history')
+				self.logger.warning('⚠️ Cannot go forward - no next entry in history')
 				return
 
 			# Navigate to the next entry
@@ -574,7 +573,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await asyncio.sleep(0.5)
 			# Navigation is handled by NavigationWatchdog via events
 
-			logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
+			self.logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -597,7 +596,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			await asyncio.sleep(1.0)
 			# Navigation is handled by NavigationWatchdog via events
 
-			logger.info('🔄 Target refreshed')
+			self.logger.info('🔄 Target refreshed')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -612,9 +611,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Cap wait time at maximum
 			actual_seconds = min(max(event.seconds, 0), event.max_seconds)
 			if actual_seconds != event.seconds:
-				logger.info(f'🕒 Waiting for {actual_seconds} seconds (capped from {event.seconds}s)')
+				self.logger.info(f'🕒 Waiting for {actual_seconds} seconds (capped from {event.seconds}s)')
 			else:
-				logger.info(f'🕒 Waiting for {actual_seconds} seconds')
+				self.logger.info(f'🕒 Waiting for {actual_seconds} seconds')
 
 			await asyncio.sleep(actual_seconds)
 		except Exception as e:
@@ -701,7 +700,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=session_id,
 				)
 
-			logger.info(f'⌨️ Sent keys: {event.keys}')
+			self.logger.info(f'⌨️ Sent keys: {event.keys}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -736,7 +735,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				session_id=session_id,
 			)
 
-			logger.info(f'📎 Uploaded file {event.file_path} to element {index_for_logging}')
+			self.logger.info(f'📎 Uploaded file {event.file_path} to element {index_for_logging}')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -789,13 +788,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 							await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
 
 							found = True
-							logger.info(f'📜 Scrolled to text: "{event.text}"')
+							self.logger.info(f'📜 Scrolled to text: "{event.text}"')
 							break
 
 					# Clean up search
 					await cdp_client.send.DOM.discardSearchResults(params={'searchId': search_id}, session_id=session_id)
 				except Exception as e:
-					logger.debug(f'Search query failed: {query}, error: {e}')
+					self.logger.debug(f'Search query failed: {query}, error: {e}')
 					continue
 
 			if not found:
@@ -825,9 +824,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				if js_result.get('result', {}).get('value'):
-					logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
+					self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
 				else:
-					logger.warning(f'⚠️ Text not found: "{event.text}"')
+					self.logger.warning(f'⚠️ Text not found: "{event.text}"')
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(

@@ -49,7 +49,10 @@ class LocalBrowserWatchdog(BaseWatchdog):
 				f'[LocalBrowserWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}, launching local browser'
 			)
 
+			logger.debug('[LocalBrowserWatchdog] Calling _launch_browser...')
 			process, cdp_url = await self._launch_browser()
+			logger.debug(f'[LocalBrowserWatchdog] _launch_browser returned: process={process}, cdp_url={cdp_url}')
+			
 			self._subprocess = process
 
 			logger.info(f'[LocalBrowserWatchdog] Browser launched successfully at {cdp_url}, PID: {process.pid}')
@@ -112,40 +115,49 @@ class LocalBrowserWatchdog(BaseWatchdog):
 				)
 
 				# Get browser executable from playwright
-				playwright = await async_playwright().start()
-				try:
-					# Use custom executable if provided, otherwise use playwright's
-					if profile.executable_path:
-						browser_path = profile.executable_path
-					else:
-						browser_path = playwright.chromium.executable_path
-
-					# Launch browser subprocess directly
-					subprocess = await asyncio.create_subprocess_exec(
-						browser_path,
-						*launch_args,
-						stdout=asyncio.subprocess.PIPE,
-						stderr=asyncio.subprocess.PIPE,
+				# Use custom executable if provided, otherwise use playwright's
+				if profile.executable_path:
+					browser_path = profile.executable_path
+					logger.debug(f'[LocalBrowserWatchdog] Using custom executable: {browser_path}')
+				else:
+					logger.debug('[LocalBrowserWatchdog] Getting browser path from playwright...')
+					# Use async playwright properly with timeout
+					playwright = await asyncio.wait_for(
+						async_playwright().start(),
+						timeout=5.0  # 5 second timeout
 					)
+					try:
+						browser_path = playwright.chromium.executable_path
+						logger.debug(f'[LocalBrowserWatchdog] Got browser path: {browser_path}')
+					finally:
+						# Always stop playwright after getting the path
+						await playwright.stop()
+						logger.debug('[LocalBrowserWatchdog] Playwright stopped')
 
-					# Convert to psutil.Process
-					process = psutil.Process(subprocess.pid)
+				# Launch browser subprocess directly
+				logger.debug(f'[LocalBrowserWatchdog] Launching browser subprocess with {len(launch_args)} args...')
+				subprocess = await asyncio.create_subprocess_exec(
+					browser_path,
+					*launch_args,
+					stdout=asyncio.subprocess.PIPE,
+					stderr=asyncio.subprocess.PIPE,
+				)
+				logger.debug(f'[LocalBrowserWatchdog] Browser subprocess launched with PID: {subprocess.pid}')
 
-					# Wait for CDP to be ready and get the URL
-					cdp_url = await self._wait_for_cdp_url(debug_port)
+				# Convert to psutil.Process
+				process = psutil.Process(subprocess.pid)
 
-					# Success! Clean up any temp dirs we created but didn't use
-					for tmp_dir in self._temp_dirs_to_cleanup:
-						try:
-							shutil.rmtree(tmp_dir, ignore_errors=True)
-						except Exception:
-							pass
+				# Wait for CDP to be ready and get the URL
+				cdp_url = await self._wait_for_cdp_url(debug_port)
 
-					return process, cdp_url
+				# Success! Clean up any temp dirs we created but didn't use
+				for tmp_dir in self._temp_dirs_to_cleanup:
+					try:
+						shutil.rmtree(tmp_dir, ignore_errors=True)
+					except Exception:
+						pass
 
-				finally:
-					# Clean up playwright instance
-					await playwright.stop()
+				return process, cdp_url
 
 			except Exception as e:
 				error_str = str(e).lower()

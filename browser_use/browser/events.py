@@ -190,18 +190,6 @@ class GetCookiesEvent(BaseEvent):
 # ============================================================================
 
 
-class BuildDOMTreeEvent(BaseEvent):
-	"""Build and serialize the DOM tree for the current page.
-	
-	Returns SerializedDOMState with the DOM tree ready for LLM consumption.
-	"""
-	
-	previous_state: Any | None = None  # SerializedDOMState, but avoid circular import
-
-
-# ============================================================================
-
-
 class BrowserConnectedEvent(BaseEvent):
 	"""Browser has started/connected."""
 
