@@ -35,8 +35,9 @@ class ChatOpenAI(BaseChatModel):
 	model: ChatModel | str
 
 	# Model params
-	temperature: float | None = 0.2
-	frequency_penalty: float | None = 0.05
+	# set to 0.1 because browser-use aims to be more reliable and deterministic
+	temperature: float | None = 0.1
+	frequency_penalty: float | None = None
 	reasoning_effort: ReasoningEffort = 'low'
 	seed: int | None = None
 	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
