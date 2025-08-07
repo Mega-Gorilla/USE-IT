@@ -35,7 +35,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, str] | None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, bool | str] | None:
 		"""Handle click request with CDP."""
 		try:
 			# Use the provided node
@@ -56,7 +56,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						details={'index': index_for_logging},
 					)
 				)
-				return
+				return {'success': False, 'error': 'Click triggered a FileInputElement which could not be handled, use the dedicated upload file function instead'}
 
 			# Perform the actual click using internal implementation
 			download_path = await self._click_element_node_impl(
@@ -86,7 +86,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Return download_path if any
 			if download_path:
-				return {'download_path': download_path}
+				return {'success': True, 'download_path': download_path}
+			return {'success': True}
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -96,7 +97,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 			)
 
-	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, bool] | None:
 		"""Handle text input request with CDP."""
 		try:
 			# Use the provided node
@@ -109,6 +110,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Log success
 			self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
+			return {'success': True}
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -118,7 +120,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 			)
 
-	async def on_ScrollEvent(self, event: ScrollEvent) -> None:
+	async def on_ScrollEvent(self, event: ScrollEvent) -> dict[str, str | bool] | None:
 		"""Handle scroll request with CDP."""
 		try:
 			# Check if we have a current target for scrolling
@@ -131,7 +133,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					message=str(e),
 				)
 			)
-			return
+			return {'success': False, 'error': 'No active page for scrolling'}
 
 		try:
 			# Convert direction and amount to pixels
@@ -149,13 +151,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 					self.logger.info(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
 					)
-					return
+					return {'success': True}
 
 			# Perform target-level scroll
 			await self._scroll_with_cdp_gesture(pixels)
 
 			# Log success
 			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
+			return {'success': True}
 		except Exception as e:
 			self.event_bus.dispatch(
 				BrowserErrorEvent(

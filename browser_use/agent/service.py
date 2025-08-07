@@ -1751,6 +1751,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				assert self.browser_session is not None, 'BrowserSession is not set up'
 				# Dispatch BrowserStopEvent to properly stop the browser
 				from browser_use.browser.events import BrowserStopEvent
+
 				stop_event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
 				await stop_event
 

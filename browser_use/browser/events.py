@@ -11,6 +11,7 @@ from browser_use.dom.views import EnhancedDOMTreeNode
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
 # ============================================================================
 
+
 class ElementSelectedEvent(BaseEvent):
 	"""An element was selected."""
 
@@ -371,4 +372,3 @@ for name_a in event_names:
 			assert name_a not in name_b, (
 				f'Event with name {name_a} is a substring of {name_b}, all events must be completely unique to avoid find-and-replace accidents'
 			)
-
