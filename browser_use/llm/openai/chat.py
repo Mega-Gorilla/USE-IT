@@ -201,9 +201,6 @@ class ChatOpenAI(BaseChatModel):
 					print(f'[CUSTOM MODEL] Using custom model logic for: {self.model}')
 					# we need to make a custom call and parse the response
 					# 1. find the system prompt message and	add the json schema to system prompt with \n<json_schema>\njson_schema\n</json_schema>
-					# 2. do a normal call instead of with structured output
-					# 3. split the response by </think> and take the last part
-					# 4. send it to parsing
 					if openai_messages[0]['role'] == 'system':
 						print('[CUSTOM MODEL] Found system message, adding JSON schema')
 						if isinstance(openai_messages[0]['content'], str):
@@ -218,38 +215,6 @@ class ChatOpenAI(BaseChatModel):
 							]
 					else:
 						print(f'[CUSTOM MODEL] Warning: First message is not system role: {openai_messages[0]["role"]}')
-
-					print('[CUSTOM MODEL] Making API call without structured output')
-					response = await self.get_client().chat.completions.create(
-						model=self.model,
-						messages=openai_messages,
-						temperature=self.temperature,
-					)
-
-					content = response.choices[0].message.content
-					print(f'[CUSTOM MODEL] Received response content length: {len(content) if content else 0}')
-
-					if content is None:
-						print('[CUSTOM MODEL] Error: Response content is None')
-						raise ModelProviderError(
-							message='Failed to parse structured output from model response',
-							status_code=500,
-							model=self.name,
-						)
-
-					print("[CUSTOM MODEL] Splitting response by '</think>' tag")
-					content = content.split('</think>')[-1].strip('\n').strip()
-					print(f'[CUSTOM MODEL] Parsed content length after split: {len(content)}')
-					print(f'[CUSTOM MODEL] Parsed content preview: {content[:200]}...')
-
-					usage = self._get_usage(response)
-					print('[CUSTOM MODEL] Attempting to validate JSON against output format')
-					parsed = output_format.model_validate_json(content)
-					print('[CUSTOM MODEL] Successfully parsed and validated response')
-					return ChatInvokeCompletion(
-						completion=parsed,
-						usage=usage,
-					)
 
 				# Return structured response
 				response = await self.get_client().chat.completions.create(
