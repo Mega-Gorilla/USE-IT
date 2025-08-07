@@ -341,3 +341,13 @@ for name_a in event_names:
 			assert name_a not in name_b, (
 				f'Event with name {name_a} is a substring of {name_b}, all events must be completely unique to avoid find-and-replace accidents'
 			)
+
+
+if not TYPE_CHECKING:
+	from browser_use.dom.views import EnhancedDOMTreeNode
+
+	NavigateToUrlEvent.model_rebuild()
+	ClickElementEvent.model_rebuild()
+	TypeTextEvent.model_rebuild()
+	ScrollEvent.model_rebuild()
+	UploadFileEvent.model_rebuild()

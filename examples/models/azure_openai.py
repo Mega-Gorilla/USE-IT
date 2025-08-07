@@ -24,7 +24,7 @@ llm = ChatAzureOpenAI(
 )
 
 agent = Agent(
-	task='Go to amazon.com, search for laptop, sort by best rating, and give me the price of the first result',
+	task='Go to google.com/travel/flights and find the cheapest flight from New York to Paris on 2025-10-15',
 	llm=llm,
 )
 
