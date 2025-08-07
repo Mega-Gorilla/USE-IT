@@ -22,8 +22,6 @@ T = TypeVar('T', bound=BaseModel)
 
 ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro']
 
-CustomModels: list[ChatModel | str] = ['browser-use/BrowserUse_Qwen3_8B_160725']
-
 
 @dataclass
 class ChatOpenAI(BaseChatModel):
@@ -44,6 +42,7 @@ class ChatOpenAI(BaseChatModel):
 	seed: int | None = None
 	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
 	top_p: float | None = None
+	add_schema_to_system_prompt: bool = False  # Add JSON schema to system prompt instead of using response_format
 
 	# Client initialization parameters
 	api_key: str | None = None
@@ -197,24 +196,17 @@ class ChatOpenAI(BaseChatModel):
 					'schema': SchemaOptimizer.create_optimized_json_schema(output_format),
 				}
 
-				if self.model in CustomModels:
-					print(f'[CUSTOM MODEL] Using custom model logic for: {self.model}')
-					# we need to make a custom call and parse the response
-					# 1. find the system prompt message and	add the json schema to system prompt with \n<json_schema>\njson_schema\n</json_schema>
-					if openai_messages[0]['role'] == 'system':
-						print('[CUSTOM MODEL] Found system message, adding JSON schema')
-						if isinstance(openai_messages[0]['content'], str):
-							print('[CUSTOM MODEL] System content is string, appending schema')
-							openai_messages[0]['content'] += f'\n<json_schema>\n{response_format}\n</json_schema>'
-						elif isinstance(openai_messages[0]['content'], Iterable):
-							print('[CUSTOM MODEL] System content is iterable, adding schema as new part')
-							openai_messages[0]['content'] = list(openai_messages[0]['content']) + [
-								ChatCompletionContentPartTextParam(
-									text=f'\n<json_schema>\n{response_format}\n</json_schema>', type='text'
-								)
-							]
-					else:
-						print(f'[CUSTOM MODEL] Warning: First message is not system role: {openai_messages[0]["role"]}')
+				# Add JSON schema to system prompt if requested
+				if self.add_schema_to_system_prompt and openai_messages and openai_messages[0]['role'] == 'system':
+					schema_text = f'\n<json_schema>\n{response_format}\n</json_schema>'
+					if isinstance(openai_messages[0]['content'], str):
+						openai_messages[0]['content'] += schema_text
+					elif isinstance(openai_messages[0]['content'], Iterable):
+						openai_messages[0]['content'] = list(openai_messages[0]['content']) + [
+							ChatCompletionContentPartTextParam(
+								text=schema_text, type='text'
+							)
+						]
 
 				# Return structured response
 				response = await self.get_client().chat.completions.create(
