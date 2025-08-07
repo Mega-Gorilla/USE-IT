@@ -148,6 +148,10 @@ class ChatOpenAI(BaseChatModel):
 
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
+		# GPT 5 doesn't support temperature
+		if 'gpt-5' in self.model:
+			self.temperature = None
+
 		try:
 			model_params: dict[str, Any] = {}
 
