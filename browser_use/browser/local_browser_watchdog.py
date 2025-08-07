@@ -51,7 +51,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self.logger.debug('[LocalBrowserWatchdog] Calling _launch_browser...')
 			process, cdp_url = await self._launch_browser()
 			self.logger.debug(f'[LocalBrowserWatchdog] _launch_browser returned: process={process}, cdp_url={cdp_url}')
-			
+
 			self._subprocess = process
 
 			self.logger.info(f'[LocalBrowserWatchdog] Browser launched successfully at {cdp_url}, PID: {process.pid}')
@@ -123,7 +123,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 					# Use async playwright properly with timeout
 					playwright = await asyncio.wait_for(
 						async_playwright().start(),
-						timeout=5.0  # 5 second timeout
+						timeout=5.0,  # 5 second timeout
 					)
 					try:
 						browser_path = playwright.chromium.executable_path
@@ -244,16 +244,24 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		try:
 			# Try graceful shutdown first
 			process.terminate()
-			# Wait up to 5 seconds for process to exit
-			process.wait(timeout=5)
-		except psutil.TimeoutExpired:
-			# Force kill if needed
-			try:
+			
+			# Use async wait instead of blocking wait
+			for _ in range(50):  # Wait up to 5 seconds (50 * 0.1)
+				if not process.is_running():
+					return
+				await asyncio.sleep(0.1)
+			
+			# If still running after 5 seconds, force kill
+			if process.is_running():
 				process.kill()
-			except psutil.NoSuchProcess:
-				pass
+				# Give it a moment to die
+				await asyncio.sleep(0.1)
+				
 		except psutil.NoSuchProcess:
 			# Process already gone
+			pass
+		except Exception:
+			# Ignore any other errors during cleanup
 			pass
 
 	@staticmethod

@@ -137,13 +137,13 @@ class StorageStateWatchdog(BaseWatchdog):
 			# Check for Set-Cookie headers in the response
 			headers = event.get('headers', {})
 			if 'set-cookie' in headers or 'Set-Cookie' in headers:
-				logger.debug('[StorageStateWatchdog] Cookie change detected via CDP')
+				self.logger.debug('[StorageStateWatchdog] Cookie change detected via CDP')
 
 				# If save on change is enabled, trigger save immediately
 				if self.save_on_change:
 					await self._save_storage_state()
 		except Exception as e:
-			logger.warning(f'[StorageStateWatchdog] Error checking for cookie changes: {e}')
+			self.logger.warning(f'[StorageStateWatchdog] Error checking for cookie changes: {e}')
 
 	async def _monitor_storage_changes(self) -> None:
 		"""Periodically check for storage changes and auto-save."""
@@ -153,13 +153,13 @@ class StorageStateWatchdog(BaseWatchdog):
 
 				# Check if cookies have changed
 				if await self._have_cookies_changed():
-					logger.info('[StorageStateWatchdog] Detected changes to sync with storage_state.json')
+					self.logger.info('[StorageStateWatchdog] Detected changes to sync with storage_state.json')
 					await self._save_storage_state()
 
 			except asyncio.CancelledError:
 				break
 			except Exception as e:
-				logger.error(f'[StorageStateWatchdog] Error in monitoring loop: {e}')
+				self.logger.error(f'[StorageStateWatchdog] Error in monitoring loop: {e}')
 
 	async def _have_cookies_changed(self) -> bool:
 		"""Check if cookies have changed since last save."""
@@ -181,14 +181,14 @@ class StorageStateWatchdog(BaseWatchdog):
 
 			return current_cookie_set != last_cookie_set
 		except Exception as e:
-			logger.debug(f'[StorageStateWatchdog] Error comparing cookies: {e}')
+			self.logger.debug(f'[StorageStateWatchdog] Error comparing cookies: {e}')
 			return False
 
 	async def _save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state to file."""
 		async with self._save_lock:
 			if not self.browser_session.cdp_client:
-				logger.warning('[StorageStateWatchdog] No CDP client available for saving')
+				self.logger.warning('[StorageStateWatchdog] No CDP client available for saving')
 				return
 
 			save_path = path or self.browser_session.browser_profile.storage_state
@@ -198,7 +198,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			# Skip saving if the storage state is already a dict (indicates it was loaded from memory)
 			# We only save to file if it started as a file path
 			if isinstance(save_path, dict):
-				logger.debug('[StorageStateWatchdog] Storage state is already a dict, skipping file save')
+				self.logger.debug('[StorageStateWatchdog] Storage state is already a dict, skipping file save')
 				return
 
 			try:
@@ -219,7 +219,7 @@ class StorageStateWatchdog(BaseWatchdog):
 						existing_state = json.loads(json_path.read_text())
 						merged_state = self._merge_storage_states(existing_state, dict(storage_state))
 					except Exception as e:
-						logger.error(f'[StorageStateWatchdog] Failed to merge with existing state: {e}')
+						self.logger.error(f'[StorageStateWatchdog] Failed to merge with existing state: {e}')
 
 				# Write atomically
 				temp_path = json_path.with_suffix('.json.tmp')

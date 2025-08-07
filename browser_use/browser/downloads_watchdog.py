@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlparse
-from weakref import WeakSet
 
 import anyio
 from bubus import BaseEvent
@@ -14,6 +13,7 @@ from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserLaunchEvent,
+	BrowserStoppedEvent,
 	FileDownloadedEvent,
 	NavigationCompleteEvent,
 	TabClosedEvent,
@@ -31,6 +31,7 @@ class DownloadsWatchdog(BaseWatchdog):
 	# Events this watchdog listens to (for documentation)
 	LISTENS_TO: ClassVar[list[type[BaseEvent[Any]]]] = [
 		BrowserLaunchEvent,
+		BrowserStoppedEvent,
 		TabCreatedEvent,
 		TabClosedEvent,
 		NavigationCompleteEvent,
@@ -42,13 +43,12 @@ class DownloadsWatchdog(BaseWatchdog):
 	]
 
 	# Private state
-	_targets_with_listeners: set[str] = PrivateAttr(
-		default_factory=set
-	)  # Track targets that already have download listeners
+	_targets_with_listeners: set[str] = PrivateAttr(default_factory=set)  # Track targets that already have download listeners
 	_active_downloads: dict[str, Any] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by target URL
 	_download_cdp_session_setup: bool = PrivateAttr(default=False)  # Track if CDP session is set up
 	_download_cdp_session: Any = PrivateAttr(default=None)  # Store CDP session reference
+	_cdp_event_tasks: set[asyncio.Task] = PrivateAttr(default_factory=set)  # Track CDP event handler tasks
 
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> None:
 		self.logger.info(f'[DownloadsWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}')
@@ -75,6 +75,32 @@ class DownloadsWatchdog(BaseWatchdog):
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Stop monitoring closed tabs."""
 		pass  # No cleanup needed, browser context handles target lifecycle
+
+	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
+		"""Clean up when browser stops."""
+		# Cancel all CDP event handler tasks
+		for task in list(self._cdp_event_tasks):
+			if not task.done():
+				task.cancel()
+		# Wait for all tasks to complete cancellation
+		if self._cdp_event_tasks:
+			await asyncio.gather(*self._cdp_event_tasks, return_exceptions=True)
+		self._cdp_event_tasks.clear()
+		
+		# Clean up CDP session
+		if self._download_cdp_session:
+			try:
+				cdp_client = self.browser_session.cdp_client
+				await cdp_client.send.Target.detachFromTarget(params={'sessionId': self._download_cdp_session})
+			except Exception:
+				pass
+			self._download_cdp_session = None
+			self._download_cdp_session_setup = False
+		
+		# Clear other state
+		self._targets_with_listeners.clear()
+		self._active_downloads.clear()
+		self._pdf_viewer_cache.clear()
 
 	async def on_NavigationCompleteEvent(self, event: NavigationCompleteEvent) -> None:
 		"""Check for PDFs after navigation completes."""
@@ -115,22 +141,41 @@ class DownloadsWatchdog(BaseWatchdog):
 			if not self._download_cdp_session_setup:
 				# Set up CDP session for downloads (only once per browser session)
 				cdp_client = self.browser_session.cdp_client
-				session = await cdp_client.send.Target.attachToTarget(
-					params={'targetId': target_id, 'flatten': True}
+				
+				# Set download behavior to allow downloads and enable events
+				downloads_path = self.browser_session.browser_profile.downloads_path
+				await cdp_client.send.Browser.setDownloadBehavior(
+					params={
+						'behavior': 'allow', 
+						'downloadPath': str(downloads_path),  # Convert Path to string
+						'eventsEnabled': True
+					}
 				)
-				session_id = session['sessionId']
-				await cdp_client.send.Page.enable(session_id=session_id)
-
-				# Set up download event listener
-				def download_handler(event):
-					self.logger.info(f'[DownloadsWatchdog] Download event triggered: {event}')
-					# Pass target_id for this download
-					asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
-
-				cdp_client.on('Page.downloadWillBegin', download_handler, session_id=session_id)
+				
+				# Register download event handlers
+				def download_will_begin_handler(event: dict, session_id: str | None):
+					self.logger.info(f'[DownloadsWatchdog] Download will begin: {event}')
+					# Create and track the task
+					task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
+					self._cdp_event_tasks.add(task)
+					# Remove from set when done
+					task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
+				
+				def download_progress_handler(event: dict, session_id: str | None):
+					# Check if download is complete
+					if event.get('state') == 'completed':
+						file_path = event.get('filePath')
+						if file_path:
+							self.logger.info(f'[DownloadsWatchdog] Download completed: {file_path}')
+							# Track the download
+							self._track_download(file_path)
+				
+				# Register the handlers with CDP
+				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)
+				cdp_client.register.Browser.downloadProgress(download_progress_handler)
+				
 				self._download_cdp_session_setup = True
-				self._download_cdp_session = session_id
-				self.logger.debug('[DownloadsWatchdog] Set up CDP download listener')
+				self.logger.debug('[DownloadsWatchdog] Set up CDP download listeners')
 
 			# Track that we've added a listener to prevent duplicates
 			self._targets_with_listeners.add(target_id)
@@ -138,6 +183,32 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		except Exception as e:
 			self.logger.warning(f'[DownloadsWatchdog] Failed to set up CDP download listener for target {target_id}: {e}')
+	
+	def _track_download(self, file_path: str) -> None:
+		"""Track a completed download and dispatch the appropriate event.
+		
+		Args:
+			file_path: The path to the downloaded file
+		"""
+		try:
+			# Get file info
+			path = Path(file_path)
+			if path.exists():
+				file_size = path.stat().st_size
+				self.logger.info(f'[DownloadsWatchdog] Tracked download: {path.name} ({file_size} bytes)')
+				
+				# Dispatch download event
+				from browser_use.browser.events import FileDownloadedEvent
+				self.event_bus.dispatch(FileDownloadedEvent(
+					url=str(path),  # Use the file path as URL for local files
+					file_path=str(path),
+					file_name=path.name,
+					file_size=file_size
+				))
+			else:
+				self.logger.warning(f'[DownloadsWatchdog] Downloaded file not found: {file_path}')
+		except Exception as e:
+			self.logger.error(f'[DownloadsWatchdog] Error tracking download: {e}')
 
 	async def _handle_cdp_download(self, event: dict, target_id: str, session_id: str) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
@@ -200,9 +271,9 @@ class DownloadsWatchdog(BaseWatchdog):
 						}})()
 						""",
 						'awaitPromise': True,
-						'returnByValue': True
+						'returnByValue': True,
 					},
-					session_id=session_id
+					session_id=session_id,
 				)
 				download_result = result.get('result', {}).get('value')
 
@@ -357,7 +428,9 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.logger.error(
 				f'[DownloadsWatchdog] Error handling download at step "{locals().get("current_step", "unknown")}", error: {e}'
 			)
-			self.logger.error(f'[DownloadsWatchdog] Download state - URL: {download.url}, filename: {download.suggested_filename}')
+			self.logger.error(
+				f'[DownloadsWatchdog] Download state - URL: {download.url}, filename: {download.suggested_filename}'
+			)
 		finally:
 			# Clean up tracking
 			if download_id in self._active_downloads:
@@ -374,18 +447,16 @@ class DownloadsWatchdog(BaseWatchdog):
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 		if not target_info:
 			return False
-		
+
 		page_url = target_info.get('url', '')
-		
+
 		# Check cache first
 		if page_url in self._pdf_viewer_cache:
 			return self._pdf_viewer_cache[page_url]
 
 		try:
 			# Attach to target for evaluation
-			session = await cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
+			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
 
 			# Add timeout to prevent hanging on unresponsive pages
@@ -447,16 +518,16 @@ class DownloadsWatchdog(BaseWatchdog):
 					return { isPdf: false };
 				})()
 				""",
-						'returnByValue': True
+						'returnByValue': True,
 					},
-					session_id=session_id
+					session_id=session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
-			
+
 			# Detach from target
 			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-			
+
 			is_pdf_viewer = result.get('result', {}).get('value', {})
 
 			if is_pdf_viewer.get('isPdf', False):
@@ -485,15 +556,13 @@ class DownloadsWatchdog(BaseWatchdog):
 		Returns the download path if successful, None otherwise.
 		"""
 		if not self.browser_session.browser_profile.downloads_path:
-			self.logger.warning(f'[DownloadsWatchdog] ❌ No downloads path configured, cannot save PDF download')
+			self.logger.warning('[DownloadsWatchdog] ❌ No downloads path configured, cannot save PDF download')
 			return None
 
 		try:
 			# Get CDP client and attach to target
 			cdp_client = self.browser_session.cdp_client
-			session = await cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
+			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
 
 			# Try to get the PDF URL with timeout
@@ -512,9 +581,9 @@ class DownloadsWatchdog(BaseWatchdog):
 					return { url: window.location.href };
 				})()
 				""",
-						'returnByValue': True
+						'returnByValue': True,
 					},
-					session_id=session_id
+					session_id=session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
@@ -584,9 +653,9 @@ class DownloadsWatchdog(BaseWatchdog):
 					}})()
 					""",
 							'awaitPromise': True,
-							'returnByValue': True
+							'returnByValue': True,
 						},
-						session_id=session_id
+						session_id=session_id,
 					),
 					timeout=10.0,  # 10 second timeout for download operation
 				)

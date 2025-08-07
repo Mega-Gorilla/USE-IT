@@ -45,7 +45,7 @@ class DomService:
 
 	def __init__(self, browser_session: 'BrowserSession', logger: logging.Logger | None = None):
 		self.browser_session = browser_session
-		self.logger = logger or logging.getLogger(__name__)
+		self.logger = logger or browser_session.logger
 
 		# Cache for session domains that have been enabled
 		self.session_id_domains_enabled_cache: dict[str, bool] = {}
@@ -217,7 +217,7 @@ class DomService:
 
 			return float(device_pixel_ratio)
 		except Exception as e:
-			print(f'⚠️  Viewport size detection failed: {e}')
+			self.logger.debug(f'Viewport size detection failed: {e}')
 			# Fallback to default viewport size
 			return 1.0
 
@@ -572,7 +572,7 @@ class DomService:
 					iframe_document_target = None
 				# if target actually exists in one of the frames, just recursively build the dom tree for it
 				if iframe_document_target:
-					print(f'🔍 Getting content document for iframe {node.get("frameId", None)}')
+					self.logger.debug(f'Getting content document for iframe {node.get("frameId", None)}')
 					content_document = await self.get_dom_tree(
 						target_id=iframe_document_target.get('targetId'),
 						# TODO: experiment with this values -> not sure whether the whole cross origin iframe should be ALWAYS included as soon as some part of it is visible or not.

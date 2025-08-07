@@ -120,8 +120,15 @@ class Controller(Generic[Context]):
 				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				error_msg = str(e)
+				# Always log the actual error first for debugging
+				browser_session.logger.error(f'❌ Navigation failed: {error_msg}')
+				
+				# Check if it's specifically a RuntimeError about CDP client
+				if isinstance(e, RuntimeError) and 'CDP client not initialized' in error_msg:
+					browser_session.logger.error('❌ Browser connection failed - CDP client not properly initialized')
+					raise BrowserError(f'Browser connection error: {error_msg}')
 				# Check for network-related errors
-				if any(
+				elif any(
 					err in error_msg
 					for err in [
 						'ERR_NAME_NOT_RESOLVED',
@@ -132,10 +139,10 @@ class Controller(Generic[Context]):
 					]
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
-					logger.warning(site_unavailable_msg)
+					browser_session.logger.warning(f'⚠️ {site_unavailable_msg}')
 					raise BrowserError(site_unavailable_msg)
 				else:
-					# Re-raise non-network errors (including URLNotAllowedError for unauthorized domains)
+					# Re-raise the original error
 					raise
 
 		@self.registry.action('Go back', param_model=NoParamsAction)

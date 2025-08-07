@@ -361,16 +361,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 
 		if browser_session:
-			# Always copy sessions that are passed in to avoid agents overwriting each other's page and page by accident
-			# The model_copy() method now handles copying all necessary fields and setting up ownership
-			if browser_session._local_browser_watchdog and browser_session._local_browser_watchdog._owns_browser_resources:
-				self.browser_session = browser_session
-			else:
-				# TODO: Only warn when multiple agents are running in parallel, not sequentially
-				# self.logger.warning(
-				# 	'⚠️ Attempting to use multiple Agents with the same BrowserSession! This is not supported yet and will likely lead to strange behavior, use separate BrowserSessions for each Agent.'
-				# )
-				self.browser_session = browser_session.model_copy()
+			# Use the browser session directly without copying
+			# This ensures the CDP client and watchdogs are properly accessible
+			self.browser_session = browser_session
 			# Browser session was provided externally, don't own it
 			self._owns_browser_session = False
 		else:

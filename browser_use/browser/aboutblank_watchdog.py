@@ -53,11 +53,9 @@ class AboutBlankWatchdog(BaseWatchdog):
 		"""Check tabs when a new tab is created."""
 		# logger.debug(f'[AboutBlankWatchdog] ➕ New tab created: {event.url}')
 
-		# If a new tab target was created, show DVD screensaver on it
-		if CrashWatchdog._is_new_tab_page(event.url):
+		# If an about:blank tab was created, show DVD screensaver on all about:blank tabs
+		if event.url == 'about:blank':
 			await self._show_dvd_screensaver_on_about_blank_tabs()
-		else:
-			await self._check_and_ensure_about_blank_tab()
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Check tabs when a tab is closed and proactively create about:blank if needed."""
@@ -89,23 +87,29 @@ class AboutBlankWatchdog(BaseWatchdog):
 	async def _check_and_ensure_about_blank_tab(self) -> None:
 		"""Check current tabs and ensure exactly one about:blank tab with animation exists."""
 		try:
-			# Use existing helper to get all tabs info with titles
-			tabs_info = await self.browser_session.get_tabs_info()
+			# For quick checks, just get page targets without titles to reduce noise
+			page_targets = await self.browser_session._cdp_get_all_pages()
 			
-			# Only look for tabs that have our animation (check by title)
+			# Only get full tabs info if we actually need to check titles
+			tabs_info = None
+			
+			# For AboutBlankWatchdog, we only care about tab count not titles
+			# Only get full tabs info if we actually have animation tabs to check
+			if len(page_targets) == 0:
+				tabs_info = []
+			else:
+				# Skip the expensive get_tabs_info call - we just need tab count
+				tabs_info = None
+			
+			# We don't need to track animation tabs anymore since we're only ensuring
+			# that there's at least one tab open
 			animation_tabs = []
-			browser_session_id = str(self.browser_session.id)[-4:]
-			expected_title = f'Starting agent {browser_session_id}...'
 
-			for tab in tabs_info:
-				if CrashWatchdog._is_new_tab_page(tab.url) and tab.title == expected_title:
-					animation_tabs.append(tab)
-
-			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs out of {len(tabs_info)} total tabs')
+			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs out of {len(page_targets)} total tabs')
 
 			# If no animation tabs exist, create one only if there are no tabs at all
 			if not animation_tabs:
-				if len(tabs_info) == 0:
+				if len(page_targets) == 0:
 					# Only create a new tab if there are no tabs at all
 					# logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
 					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
@@ -127,26 +131,18 @@ class AboutBlankWatchdog(BaseWatchdog):
 			self.logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')
 
 	async def _show_dvd_screensaver_on_about_blank_tabs(self) -> None:
-		"""Show DVD screensaver on all new tab pages."""
+		"""Show DVD screensaver on all about:blank pages only."""
 		try:
-			# Use existing helper to get all tabs
-			tabs_info = await self.browser_session.get_tabs_info()
+			# Get just the page targets without expensive title fetching
+			page_targets = await self.browser_session._cdp_get_all_pages()
 			browser_session_id = str(self.browser_session.id)[-4:]
 
-			for tab in tabs_info:
-				if CrashWatchdog._is_new_tab_page(tab.url):
-					target_id = tab.target_id
-					# If it's a chrome:// new tab target, redirect to about:blank to avoid CSP issues
-					if tab.url.startswith('chrome://'):
-						# Navigate using CDP
-						session = await self.browser_session.cdp_client.send.Target.attachToTarget(
-							params={'targetId': target_id, 'flatten': True}
-						)
-						session_id = session['sessionId']
-						await self.browser_session.cdp_client.send.Page.navigate(
-							params={'url': 'about:blank'}, session_id=session_id
-						)
-						await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+			for page_target in page_targets:
+				target_id = page_target['targetId']
+				url = page_target['url']
+				
+				# Only target about:blank pages specifically
+				if url == 'about:blank':
 					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
 
 		except Exception as e:
@@ -167,9 +163,16 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# Inject the DVD screensaver script
 			script = f"""
 				(function(browser_session_label) {{
+					// Check if animation is already running using window property
+					if (window.__dvdAnimationRunning) {{
+						return; // Already running, don't add another
+					}}
+					window.__dvdAnimationRunning = true;
+					
 					// Ensure document.body exists before proceeding
 					if (!document.body) {{
 						// Try again after DOM is ready
+						window.__dvdAnimationRunning = false; // Reset flag to retry
 						if (document.readyState === 'loading') {{
 							document.addEventListener('DOMContentLoaded', function() {{ arguments.callee(browser_session_label); }});
 						}}
@@ -177,9 +180,6 @@ class AboutBlankWatchdog(BaseWatchdog):
 					}}
 					
 					const animated_title = `Starting agent ${{browser_session_label}}...`;
-					if (document.title === animated_title) {{
-						return;      // already run on this tab, dont run again
-					}}
 					document.title = animated_title;
 
 					// Create the main overlay

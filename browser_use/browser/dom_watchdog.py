@@ -63,6 +63,11 @@ class DOMWatchdog(BaseWatchdog):
 
 		# Check if this is a new tab or chrome:// target early for optimization
 		is_empty_page = is_new_tab_page(page_url) or page_url.startswith('chrome://')
+		
+		# Get tabs info once at the beginning for all paths
+		self.logger.debug('Getting tabs info...')
+		tabs_info = await self.browser_session.get_tabs_info()
+		self.logger.debug(f'Got {len(tabs_info)} tabs')
 
 		try:
 			# Fast path for empty pages
@@ -71,9 +76,6 @@ class DOMWatchdog(BaseWatchdog):
 
 				# Create minimal DOM state
 				content = SerializedDOMState(_root=None, selector_map={})
-
-				# Get tabs info
-				tabs_info = await self.browser_session.get_tabs_info()
 
 				# Skip screenshot for empty pages
 				screenshot_b64 = None
@@ -116,7 +118,7 @@ class DOMWatchdog(BaseWatchdog):
 					if self.browser_session._cached_browser_state_summary
 					else None
 				)
-				
+
 				try:
 					# Call the DOM building method directly
 					content = await self._build_dom_tree(previous_state)
@@ -143,13 +145,15 @@ class DOMWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.warning(f'Screenshot failed: {e}')
 
-			# Get target info and tabs
-			tabs_info = await self.browser_session.get_tabs_info()
+			# Tabs info already fetched at the beginning
 
 			# Get target title safely
 			try:
+				self.logger.debug('Getting page title...')
 				title = await asyncio.wait_for(self.browser_session.get_current_page_title(), timeout=2.0)
-			except Exception:
+				self.logger.debug(f'Got title: {title}')
+			except Exception as e:
+				self.logger.debug(f'Failed to get title: {e}')
 				title = 'Page'
 
 			# TODO: Get proper target info from CDP
@@ -187,6 +191,7 @@ class DOMWatchdog(BaseWatchdog):
 			# Cache the state
 			self.browser_session._cached_browser_state_summary = browser_state
 
+			self.logger.debug('Returning browser state from on_BrowserStateRequestEvent')
 			return browser_state
 
 		except Exception as e:
@@ -219,10 +224,10 @@ class DOMWatchdog(BaseWatchdog):
 
 	async def _build_dom_tree(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
 		"""Internal method to build and serialize DOM tree.
-		
+
 		This is the actual implementation that does the work, called by both
 		on_BrowserStateRequestEvent.
-		
+
 		Returns:
 			SerializedDOMState with serialized DOM and selector map
 		"""

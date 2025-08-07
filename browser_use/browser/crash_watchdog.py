@@ -46,13 +46,14 @@ class CrashWatchdog(BaseWatchdog):
 
 	# Configuration
 	network_timeout_seconds: float = Field(default=10.0)
-	check_interval_seconds: float = Field(default=10.0)
+	check_interval_seconds: float = Field(default=30.0)  # Reduced frequency to reduce noise
 
 	# Private state
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
 	_cdp_sessions: dict[str, str] = PrivateAttr(default_factory=dict)  # target_id -> session_id
 	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # target_url -> timestamp
+	_cdp_event_tasks: set[asyncio.Task] = PrivateAttr(default_factory=set)  # Track CDP event handler tasks
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser is connected."""
@@ -83,7 +84,11 @@ class CrashWatchdog(BaseWatchdog):
 			
 			# Set up network event handlers
 			def on_request_will_be_sent(event):
-				asyncio.create_task(self._on_request_cdp(event))
+				# Create and track the task
+				task = asyncio.create_task(self._on_request_cdp(event))
+				self._cdp_event_tasks.add(task)
+				# Remove from set when done
+				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 			
 			def on_response_received(event):
 				self._on_response_cdp(event)
@@ -105,7 +110,11 @@ class CrashWatchdog(BaseWatchdog):
 			
 			# Set up crash handler
 			def on_target_crashed(event):
-				asyncio.create_task(self._on_target_crash_cdp(target_id))
+				# Create and track the task
+				task = asyncio.create_task(self._on_target_crash_cdp(target_id))
+				self._cdp_event_tasks.add(task)
+				# Remove from set when done
+				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 			
 			cdp_client.on('Inspector.targetCrashed', on_target_crashed, session_id=session_id)
 			
@@ -235,6 +244,15 @@ class CrashWatchdog(BaseWatchdog):
 			except asyncio.CancelledError:
 				pass
 			self.logger.debug('[CrashWatchdog] Monitoring loop stopped')
+
+		# Cancel all CDP event handler tasks
+		for task in list(self._cdp_event_tasks):
+			if not task.done():
+				task.cancel()
+		# Wait for all tasks to complete cancellation
+		if self._cdp_event_tasks:
+			await asyncio.gather(*self._cdp_event_tasks, return_exceptions=True)
+		self._cdp_event_tasks.clear()
 
 		# Clean up CDP sessions
 		if self._cdp_sessions:
