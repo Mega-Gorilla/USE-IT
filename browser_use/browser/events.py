@@ -86,45 +86,45 @@ class BrowserStateRequestEvent(BaseEvent):
 
 class GoBackEvent(BaseEvent):
 	"""Navigate back in browser history."""
-	
+
 	pass
 
 
 class GoForwardEvent(BaseEvent):
 	"""Navigate forward in browser history."""
-	
+
 	pass
 
 
 class RefreshEvent(BaseEvent):
 	"""Refresh/reload the current page."""
-	
+
 	pass
 
 
 class WaitEvent(BaseEvent):
 	"""Wait for a specified number of seconds."""
-	
+
 	seconds: float = 3.0
 	max_seconds: float = 10.0  # Safety cap
 
 
 class SendKeysEvent(BaseEvent):
 	"""Send keyboard keys/shortcuts."""
-	
+
 	keys: str  # e.g., "ctrl+a", "cmd+c", "Enter"
 
 
 class UploadFileEvent(BaseEvent):
 	"""Upload a file to an element."""
-	
+
 	node: 'EnhancedDOMTreeNode'
 	file_path: str
 
 
 class ScrollToTextEvent(BaseEvent):
 	"""Scroll to specific text on the page."""
-	
+
 	text: str
 	direction: Literal['up', 'down'] = 'down'
 
@@ -324,8 +324,9 @@ class AboutBlankDVDScreensaverShownEvent(BaseEvent):
 	error: str | None = None
 
 
-# Note: Model rebuilding for forward references is handled at the end of the module import chain
-# The events with 'EnhancedDOMTreeNode' forward references will be rebuilt after all imports are complete
+# Note: Model rebuilding for forward references is handled in the importing modules
+# Events with 'EnhancedDOMTreeNode' forward references (ClickElementEvent, TypeTextEvent,
+# ScrollEvent, UploadFileEvent) need model_rebuild() called after imports are complete
 
 # check that event names are valid and non-overlapping (naiively n^2 so it's pretty slow but ok for now, optimize when >20 events)
 event_names = {

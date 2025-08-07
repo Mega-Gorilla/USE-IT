@@ -40,7 +40,7 @@ from browser_use.utils import time_execution_sync
 
 logger = logging.getLogger(__name__)
 
-# Rebuild event models that have forward references to EnhancedDOMTreeNode
+# Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
 ClickElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()

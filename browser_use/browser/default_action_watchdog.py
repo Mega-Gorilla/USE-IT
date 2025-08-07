@@ -24,7 +24,7 @@ from browser_use.browser.watchdog_base import BaseWatchdog
 if TYPE_CHECKING:
 	pass
 
-# Rebuild event models that have forward references to EnhancedDOMTreeNode
+# Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
 ClickElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
@@ -146,7 +146,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
-					self.logger.info(f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels')
+					self.logger.info(
+						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
+					)
 					return
 
 			# Perform target-level scroll
