@@ -19,7 +19,6 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 if TYPE_CHECKING:
 	pass
@@ -61,7 +60,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Initialize agent focus when browser is connected."""
-		logger.debug('[NavigationWatchdog] Browser connected, initializing agent focus')
+		self.logger.debug('[NavigationWatchdog] Browser connected, initializing agent focus')
 		await self._initialize_agent_focus()
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
@@ -74,7 +73,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Handle new tab creation - track target and possibly move agent focus."""
-		# logger.debug(f'[NavigationWatchdog] Tab created: {event.url}')
+		# self.logger.debug(f'[NavigationWatchdog] Tab created: {event.url}')
 
 		# Get all targets and track the new one
 		try:
@@ -83,14 +82,14 @@ class NavigationWatchdog(BaseWatchdog):
 				target_id = targets[event.tab_index]['targetId']
 				self._track_target(target_id)
 		except Exception as e:
-			logger.error(f'[NavigationWatchdog] Error tracking new target: {e}')
+			self.logger.error(f'[NavigationWatchdog] Error tracking new target: {e}')
 
 		# When a new tab is created, agent typically focuses on it immediately
 		await self._update_agent_focus_to_latest_tab()
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure."""
-		logger.debug(f'[NavigationWatchdog] Tab closed at index {event.tab_index}')
+		self.logger.debug(f'[NavigationWatchdog] Tab closed at index {event.tab_index}')
 
 		# If the closed tab was the agent's current target, find a new one
 		current_tab_index = await self._get_current_tab_index()
@@ -100,7 +99,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> None:
 		"""Handle explicit tab switches by the agent."""
-		logger.debug(f'[NavigationWatchdog] Agent switching to tab {event.tab_index}')
+		self.logger.debug(f'[NavigationWatchdog] Agent switching to tab {event.tab_index}')
 		await self._switch_agent_focus_to_tab(event.tab_index)
 
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
@@ -108,12 +107,12 @@ class NavigationWatchdog(BaseWatchdog):
 
 		# Check if browser session is still available
 		if not self.browser_session:
-			logger.debug('[NavigationWatchdog] No browser session available, ignoring navigation')
+			self.logger.debug('[NavigationWatchdog] No browser session available, ignoring navigation')
 			return
 
 		# SECURITY CHECK: Block disallowed URLs before navigation starts
 		if not self._is_url_allowed(event.url):
-			logger.warning(f'⛔️ Blocking navigation to disallowed URL: {event.url}')
+			self.logger.warning(f'⛔️ Blocking navigation to disallowed URL: {event.url}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='NavigationBlocked',
@@ -166,7 +165,7 @@ class NavigationWatchdog(BaseWatchdog):
 						# Handle navigation timeout for new tab
 						error_message = 'Navigation timed out after 30 seconds'
 						loading_status = 'Navigation timeout: 30 seconds'
-						logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in new tab')
+						self.logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in new tab')
 
 						self.event_bus.dispatch(
 							NavigationCompleteEvent(
@@ -220,7 +219,7 @@ class NavigationWatchdog(BaseWatchdog):
 				try:
 					await asyncio.wait_for(nav_event, timeout=event.timeout_ms / 1000.0)
 				except TimeoutError:
-					logger.warning(f'Navigation to {event.url} timed out after {event.timeout_ms}ms')
+					self.logger.warning(f'Navigation to {event.url} timed out after {event.timeout_ms}ms')
 					# Dispatch NavigationCompleteEvent for timeout error
 					self.event_bus.dispatch(
 						NavigationCompleteEvent(
@@ -282,7 +281,7 @@ class NavigationWatchdog(BaseWatchdog):
 			# Handle navigation timeout for standard navigation
 			error_message = 'Navigation timed out after 30 seconds'
 			loading_status = 'Navigation timeout: 30 seconds'
-			logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in standard navigation')
+			self.logger.warning(f'[NavigationWatchdog] Navigation to {event.url} timed out in standard navigation')
 
 			# Get tab index for timeout error reporting
 			tab_index = await self._get_tab_index_for_target(target_id) if target_id else 0
@@ -324,7 +323,7 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Update agent focus when navigation completes and enforce security."""
 		# Check if the navigated URL is allowed
 		if not self._is_url_allowed(event.url):
-			logger.warning(f'⛔️ Navigation to non-allowed URL detected: {event.url}')
+			self.logger.warning(f'⛔️ Navigation to non-allowed URL detected: {event.url}')
 			# Dispatch browser error
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -339,9 +338,9 @@ class NavigationWatchdog(BaseWatchdog):
 				if 0 <= event.tab_index < len(targets):
 					target_id = targets[event.tab_index]['targetId']
 					await self.browser_session._cdp_close_page(target_id)
-					logger.info(f'⛔️ Closed target with non-allowed URL: {event.url}')
+					self.logger.info(f'⛔️ Closed target with non-allowed URL: {event.url}')
 			except Exception as e:
-				logger.error(f'⛔️ Failed to close target with non-allowed URL: {str(e)}')
+				self.logger.error(f'⛔️ Failed to close target with non-allowed URL: {str(e)}')
 			return
 
 		# Agent focus stays on the tab that navigated
@@ -353,7 +352,7 @@ class NavigationWatchdog(BaseWatchdog):
 
 	def _track_target(self, target_id: str) -> None:
 		"""Track a target for lifecycle events."""
-		# logger.debug(f'[NavigationWatchdog] Started tracking target: {target_id}')
+		# self.logger.debug(f'[NavigationWatchdog] Started tracking target: {target_id}')
 		self._target_close_handlers[target_id] = True
 
 	def _handle_target_close(self, target_id: str) -> None:
@@ -366,13 +365,13 @@ class NavigationWatchdog(BaseWatchdog):
 
 			# Emit TabClosedEvent
 			self.event_bus.dispatch(TabClosedEvent(tab_index=tab_index))
-			logger.info(f'[NavigationWatchdog] Target closed, emitted TabClosedEvent for tab {tab_index}')
+			self.logger.info(f'[NavigationWatchdog] Target closed, emitted TabClosedEvent for tab {tab_index}')
 
 			# Clean up the handler from our tracking dict
 			self._target_close_handlers.pop(target_id, None)
 
 		except Exception as e:
-			logger.error(f'[NavigationWatchdog] Error handling target close: {e}')
+			self.logger.error(f'[NavigationWatchdog] Error handling target close: {e}')
 
 	# ========== Security Methods ==========
 
@@ -500,7 +499,7 @@ class NavigationWatchdog(BaseWatchdog):
 			self.browser_session.current_target_id = self.current_target_id
 			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
-			logger.info(f'[NavigationWatchdog] Initial agent focus set to tab 0: {target_url}')
+			self.logger.info(f'[NavigationWatchdog] Initial agent focus set to tab 0: {target_url}')
 
 	async def _update_agent_focus_to_latest_tab(self) -> None:
 		"""Update agent focus to the latest (most recently created) tab."""
@@ -512,7 +511,7 @@ class NavigationWatchdog(BaseWatchdog):
 			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
 			tab_index = await self._get_current_tab_index()
-			logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
+			self.logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
 
 	async def _switch_agent_focus_to_tab(self, tab_index: int) -> None:
 		"""Switch agent focus to a specific tab index."""
@@ -522,7 +521,7 @@ class NavigationWatchdog(BaseWatchdog):
 			self.browser_session.current_target_id = self.current_target_id
 			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
-			logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
+			self.logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
 
 	async def _find_new_agent_target(self) -> None:
 		"""Find a new target for agent focus when current one is closed."""
@@ -535,7 +534,7 @@ class NavigationWatchdog(BaseWatchdog):
 			self.browser_session.current_target_id = self.current_target_id
 			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.current_target_id)
-			logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {target_url}')
+			self.logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {target_url}')
 		else:
 			self.current_target_id = None
 			if self.browser_session:
@@ -555,7 +554,7 @@ class NavigationWatchdog(BaseWatchdog):
 					)
 				)
 			except Exception as e:
-				logger.error(f'[NavigationWatchdog] Error dispatching focus change: {e}')
+				self.logger.error(f'[NavigationWatchdog] Error dispatching focus change: {e}')
 
 	async def get_or_create_target(self) -> str:
 		"""Get current agent target or create a new one if none exists."""
@@ -563,7 +562,7 @@ class NavigationWatchdog(BaseWatchdog):
 			# Check if current target URL is still allowed
 			target_url = await self._get_target_url(self.current_target_id)
 			if target_url and not self._is_url_allowed(target_url):
-				logger.warning(f'⛔️ Current target URL no longer allowed: {target_url}')
+				self.logger.warning(f'⛔️ Current target URL no longer allowed: {target_url}')
 				# Close the current target and find/create a new one
 				try:
 					await self.browser_session._cdp_close_page(self.current_target_id)
@@ -586,7 +585,7 @@ class NavigationWatchdog(BaseWatchdog):
 			pass
 
 		# No tabs available or no allowed tabs, create a new one with about:blank
-		logger.info('[NavigationWatchdog] No active target, creating new tab')
+		self.logger.info('[NavigationWatchdog] No active target, creating new tab')
 
 		nav_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 		await nav_event  # Wait for navigation to complete

@@ -15,7 +15,7 @@ from browser_use.dom.views import (
 	EnhancedDOMTreeNode,
 	SerializedDOMState,
 )
-from browser_use.utils import is_new_tab_page, logger
+from browser_use.utils import is_new_tab_page
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary
@@ -67,7 +67,7 @@ class DOMWatchdog(BaseWatchdog):
 		try:
 			# Fast path for empty pages
 			if is_empty_page:
-				logger.debug(f'⚡ Fast path for empty target: {page_url}')
+				self.logger.debug(f'⚡ Fast path for empty target: {page_url}')
 
 				# Create minimal DOM state
 				content = SerializedDOMState(_root=None, selector_map={})
@@ -108,7 +108,7 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Normal path: Build DOM tree if requested
 			if event.include_dom:
-				logger.debug('🌳 Building DOM tree...')
+				self.logger.debug('🌳 Building DOM tree...')
 
 				# Build the DOM directly using the internal method
 				previous_state = (
@@ -121,12 +121,12 @@ class DOMWatchdog(BaseWatchdog):
 					# Call the DOM building method directly
 					content = await self._build_dom_tree(previous_state)
 				except Exception as e:
-					logger.warning(f'DOM build failed: {e}, using minimal state')
+					self.logger.warning(f'DOM build failed: {e}, using minimal state')
 					content = SerializedDOMState(_root=None, selector_map={})
 
 				if not content:
 					# Fallback to minimal DOM state
-					logger.warning('DOM build returned no content, using minimal state')
+					self.logger.warning('DOM build returned no content, using minimal state')
 					content = SerializedDOMState(_root=None, selector_map={})
 			else:
 				# Skip DOM building if not requested
@@ -141,7 +141,7 @@ class DOMWatchdog(BaseWatchdog):
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
 				except Exception as e:
-					logger.warning(f'Screenshot failed: {e}')
+					self.logger.warning(f'Screenshot failed: {e}')
 
 			# Get target info and tabs
 			tabs_info = await self.browser_session.get_tabs_info()
@@ -190,7 +190,7 @@ class DOMWatchdog(BaseWatchdog):
 			return browser_state
 
 		except Exception as e:
-			logger.error(f'Failed to get browser state: {e}')
+			self.logger.error(f'Failed to get browser state: {e}')
 
 			# Return minimal recovery state
 			return BrowserStateSummary(
@@ -231,11 +231,11 @@ class DOMWatchdog(BaseWatchdog):
 			try:
 				await self.browser_session.remove_highlights()
 			except Exception as e:
-				logger.debug(f'Failed to remove existing highlights: {e}')
+				self.logger.debug(f'Failed to remove existing highlights: {e}')
 
 			# Create or reuse DOM service
 			if self._dom_service is None:
-				self._dom_service = DomService(browser_session=self.browser_session, logger=logger)
+				self._dom_service = DomService(browser_session=self.browser_session, logger=self.logger)
 
 			# Get serialized DOM tree using the service
 			start = time.time()
@@ -244,8 +244,8 @@ class DOMWatchdog(BaseWatchdog):
 			)
 			end = time.time()
 
-			logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
-			logger.debug(f'Timing breakdown: {timing_info}')
+			self.logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
+			self.logger.debug(f'Timing breakdown: {timing_info}')
 
 			# Update selector map for other watchdogs
 			self.selector_map = self.current_dom_state.selector_map
@@ -256,9 +256,9 @@ class DOMWatchdog(BaseWatchdog):
 					from browser_use.dom.debug.highlights import inject_highlighting_script
 
 					await inject_highlighting_script(self._dom_service, self.selector_map)
-					logger.debug(f'Injected highlighting for {len(self.selector_map)} elements')
+					self.logger.debug(f'Injected highlighting for {len(self.selector_map)} elements')
 				except Exception as e:
-					logger.debug(f'Failed to inject highlighting: {e}')
+					self.logger.debug(f'Failed to inject highlighting: {e}')
 
 			# Update BrowserSession's cached selector map
 			if self.browser_session:
@@ -274,7 +274,7 @@ class DOMWatchdog(BaseWatchdog):
 			return self.current_dom_state
 
 		except Exception as e:
-			logger.error(f'Failed to build DOM tree: {e}')
+			self.logger.error(f'Failed to build DOM tree: {e}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
 					error_type='DOMBuildFailed',

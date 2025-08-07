@@ -1305,6 +1305,31 @@ class BrowserSession(BaseModel):
 		# Use helper to navigate on the target
 		await self._cdp_execute_on_target(target_to_use, commands=[('Page.enable', {}), ('Page.navigate', {'url': url})])
 
+	@staticmethod
+	def _is_valid_target(target_info: dict) -> bool:
+		"""Check if a target should be processed.
+		
+		Args:
+			target_info: Target info dict from CDP
+			
+		Returns:
+			True if target should be processed, False if it should be skipped
+		"""
+		target_type = target_info.get('type', '')
+		url = target_info.get('url', '')
+		
+		# Exclude chrome extension and error pages
+		if url.startswith('chrome-extension://') or url.startswith('chrome-error://'):
+			return False
+		
+		# Exclude any worker targets
+		if 'worker' in target_type.lower():
+			return False
+		
+		# Include specific target types
+		valid_types = {'page', 'tab', 'iframe', 'webview', 'browser'}
+		return target_type in valid_types
+
 	async def get_all_frames(self) -> tuple[dict[str, dict], dict[str, str]]:
 		"""Get a complete frame hierarchy from all browser targets.
 		
@@ -1325,6 +1350,10 @@ class BrowserSession(BaseModel):
 			target_id = target.get('targetId')
 			
 			if not target_id:
+				continue
+			
+			# Skip invalid targets
+			if not self._is_valid_target(target):
 				continue
 			
 			# Attach to target

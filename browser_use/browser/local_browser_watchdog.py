@@ -17,7 +17,6 @@ from browser_use.browser.events import (
 	BrowserStopEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import logger
 
 if TYPE_CHECKING:
 	pass
@@ -45,25 +44,25 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> dict[str, str]:
 		"""Launch a local browser process."""
 		try:
-			logger.info(
+			self.logger.info(
 				f'[LocalBrowserWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}, launching local browser'
 			)
 
-			logger.debug('[LocalBrowserWatchdog] Calling _launch_browser...')
+			self.logger.debug('[LocalBrowserWatchdog] Calling _launch_browser...')
 			process, cdp_url = await self._launch_browser()
-			logger.debug(f'[LocalBrowserWatchdog] _launch_browser returned: process={process}, cdp_url={cdp_url}')
+			self.logger.debug(f'[LocalBrowserWatchdog] _launch_browser returned: process={process}, cdp_url={cdp_url}')
 			
 			self._subprocess = process
 
-			logger.info(f'[LocalBrowserWatchdog] Browser launched successfully at {cdp_url}, PID: {process.pid}')
+			self.logger.info(f'[LocalBrowserWatchdog] Browser launched successfully at {cdp_url}, PID: {process.pid}')
 			return {'cdp_url': cdp_url}
 		except Exception as e:
-			logger.error(f'[LocalBrowserWatchdog] Exception in on_BrowserLaunchEvent: {e}', exc_info=True)
+			self.logger.error(f'[LocalBrowserWatchdog] Exception in on_BrowserLaunchEvent: {e}', exc_info=True)
 			raise
 
 	async def on_BrowserKillEvent(self, event: BrowserKillEvent) -> None:
 		"""Kill the local browser subprocess."""
-		logger.info('[LocalBrowserWatchdog] Killing local browser process')
+		self.logger.info('[LocalBrowserWatchdog] Killing local browser process')
 
 		if self._subprocess:
 			await self._cleanup_process(self._subprocess)
@@ -79,12 +78,12 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self.browser_session.browser_profile.user_data_dir = self._original_user_data_dir
 			self._original_user_data_dir = None
 
-		logger.info('[LocalBrowserWatchdog] Browser cleanup completed')
+		self.logger.info('[LocalBrowserWatchdog] Browser cleanup completed')
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Listen for BrowserStopEvent and dispatch BrowserKillEvent without awaiting it."""
 		if self.browser_session.is_local and self._subprocess:
-			logger.info('[LocalBrowserWatchdog] BrowserStopEvent received, dispatching BrowserKillEvent')
+			self.logger.info('[LocalBrowserWatchdog] BrowserStopEvent received, dispatching BrowserKillEvent')
 			# Dispatch BrowserKillEvent without awaiting so it gets processed after all BrowserStopEvent handlers
 			self.event_bus.dispatch(BrowserKillEvent())
 
@@ -118,9 +117,9 @@ class LocalBrowserWatchdog(BaseWatchdog):
 				# Use custom executable if provided, otherwise use playwright's
 				if profile.executable_path:
 					browser_path = profile.executable_path
-					logger.debug(f'[LocalBrowserWatchdog] Using custom executable: {browser_path}')
+					self.logger.debug(f'[LocalBrowserWatchdog] Using custom executable: {browser_path}')
 				else:
-					logger.debug('[LocalBrowserWatchdog] Getting browser path from playwright...')
+					self.logger.debug('[LocalBrowserWatchdog] Getting browser path from playwright...')
 					# Use async playwright properly with timeout
 					playwright = await asyncio.wait_for(
 						async_playwright().start(),
@@ -128,21 +127,21 @@ class LocalBrowserWatchdog(BaseWatchdog):
 					)
 					try:
 						browser_path = playwright.chromium.executable_path
-						logger.debug(f'[LocalBrowserWatchdog] Got browser path: {browser_path}')
+						self.logger.debug(f'[LocalBrowserWatchdog] Got browser path: {browser_path}')
 					finally:
 						# Always stop playwright after getting the path
 						await playwright.stop()
-						logger.debug('[LocalBrowserWatchdog] Playwright stopped')
+						self.logger.debug('[LocalBrowserWatchdog] Playwright stopped')
 
 				# Launch browser subprocess directly
-				logger.debug(f'[LocalBrowserWatchdog] Launching browser subprocess with {len(launch_args)} args...')
+				self.logger.debug(f'[LocalBrowserWatchdog] Launching browser subprocess with {len(launch_args)} args...')
 				subprocess = await asyncio.create_subprocess_exec(
 					browser_path,
 					*launch_args,
 					stdout=asyncio.subprocess.PIPE,
 					stderr=asyncio.subprocess.PIPE,
 				)
-				logger.debug(f'[LocalBrowserWatchdog] Browser subprocess launched with PID: {subprocess.pid}')
+				self.logger.debug(f'[LocalBrowserWatchdog] Browser subprocess launched with PID: {subprocess.pid}')
 
 				# Convert to psutil.Process
 				process = psutil.Process(subprocess.pid)
@@ -164,7 +163,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 
 				# Check if this is a user_data_dir related error
 				if any(err in error_str for err in ['singletonlock', 'user data directory', 'cannot create', 'already in use']):
-					logger.warning(f'Browser launch failed (attempt {attempt + 1}/{max_retries}): {e}')
+					self.logger.warning(f'Browser launch failed (attempt {attempt + 1}/{max_retries}): {e}')
 
 					if attempt < max_retries - 1:
 						# Create a temporary directory for next attempt
@@ -173,7 +172,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 
 						# Update profile to use temp directory
 						profile.user_data_dir = str(tmp_dir)
-						logger.info(f'Retrying with temporary user_data_dir: {tmp_dir}')
+						self.logger.info(f'Retrying with temporary user_data_dir: {tmp_dir}')
 
 						# Small delay before retry
 						await asyncio.sleep(0.5)
@@ -273,7 +272,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			if 'browseruse-tmp-' in str(temp_path):
 				shutil.rmtree(temp_path, ignore_errors=True)
 		except Exception as e:
-			logger.debug(f'Failed to cleanup temp dir {temp_dir}: {e}')
+			self.logger.debug(f'Failed to cleanup temp dir {temp_dir}: {e}')
 
 	@property
 	def browser_pid(self) -> int | None:
