@@ -1,7 +1,7 @@
 import hashlib
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXPropertyName
@@ -340,17 +340,17 @@ class EnhancedDOMTreeNode:
 
 	async def create_cdp_session(self, browser_session):
 		"""Create a CDP session for this node's target.
-		
+
 		Args:
 			browser_session: The BrowserSession to use for creating the CDP client
-		
+
 		Returns:
 			CDPClient attached to this node's target
-			
+
 		Note: Caller is responsible for cleanup using await cdp_client.stop()
 		"""
 		return await browser_session.create_cdp_session_for_node(self)
-	
+
 	def get_all_children_text(self, max_depth: int = -1) -> str:
 		text_parts = []
 

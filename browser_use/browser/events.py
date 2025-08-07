@@ -1,18 +1,20 @@
 """Event definitions for browser communication."""
 
-from typing import Any, Literal
+from typing import Any, Generic, Literal
 
 from bubus import BaseEvent
+from bubus.models import T_EventResultType
 from pydantic import Field, field_validator
 
 from browser_use.dom.views import EnhancedDOMTreeNode
+from typing_extensions import TypeVar
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
 # ============================================================================
 
 
-class ElementSelectedEvent(BaseEvent):
+class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 	"""An element was selected."""
 
 	node: EnhancedDOMTreeNode
@@ -53,7 +55,7 @@ class NavigateToUrlEvent(BaseEvent):
 	timeout_ms: int | None = None
 
 
-class ClickElementEvent(ElementSelectedEvent):
+class ClickElementEvent(ElementSelectedEvent[dict[str, str] | None]):
 	"""Click an element."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -361,7 +363,7 @@ class AboutBlankDVDScreensaverShownEvent(BaseEvent):
 
 # check that event names are valid and non-overlapping (naiively n^2 so it's pretty slow but ok for now, optimize when >20 events)
 event_names = {
-	name
+	name.split('[')[0]
 	for name in globals().keys()
 	if not name.startswith('_') and issubclass(globals()[name], BaseEvent) and name != 'BaseEvent'
 }

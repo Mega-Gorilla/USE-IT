@@ -56,7 +56,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 						details={'index': index_for_logging},
 					)
 				)
-				raise Exception('Click triggered a FileInputElement which could not be handled, use the dedicated upload file function instead')
+				raise Exception(
+					'Click triggered a FileInputElement which could not be handled, use the dedicated upload file function instead'
+				)
 
 			# Perform the actual click using internal implementation
 			download_path = await self._click_element_node_impl(
@@ -228,7 +230,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					download_guid = event['guid']
 					download_event.set()
 
-				cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
+				# TODO: fix this with download_watchdog.py
+				# cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
 
 			# Perform the click using CDP
 			try:
@@ -267,42 +270,42 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				# Handle download if expected
-				if self.browser_session.browser_profile.downloads_path:
-					try:
-						# Wait for download to start (with timeout)
-						await asyncio.wait_for(download_event.wait(), timeout=5.0)
+				# if self.browser_session.browser_profile.downloads_path:
+				# 	try:
+				# 		# Wait for download to start (with timeout)
+				# 		await asyncio.wait_for(download_event.wait(), timeout=5.0)
 
-						# Wait for download to complete
-						download_complete = False
-						for _ in range(60):  # Wait up to 60 seconds
-							try:
-								# Check download progress
-								response = await cdp_client.send.Page.getDownloadProgress(
-									params={'guid': download_guid}, session_id=session_id
-								)
-								if response['state'] == 'completed':
-									download_complete = True
-									break
-								elif response['state'] == 'canceled':
-									self.logger.warning('Download was canceled')
-									break
-							except Exception:
-								pass
-							await asyncio.sleep(1)
+				# 		# Wait for download to complete
+				# 		download_complete = False
+				# 		for _ in range(60):  # Wait up to 60 seconds
+				# 			try:
+				# 				# Check download progress
+				# 				response = await cdp_client.send.Page.getDownloadProgress(
+				# 					params={'guid': download_guid}, session_id=session_id
+				# 				)
+				# 				if response['state'] == 'completed':
+				# 					download_complete = True
+				# 					break
+				# 				elif response['state'] == 'canceled':
+				# 					self.logger.warning('Download was canceled')
+				# 					break
+				# 			except Exception:
+				# 				pass
+				# 			await asyncio.sleep(1)
 
-						if download_complete and download_guid:
-							self.logger.info('⬇️ Download completed via CDP')
-							# Note: DownloadsWatchdog handles download tracking via events
-							return f'download_{download_guid}'  # Return guid as placeholder
-					except TimeoutError:
-						# No download triggered, normal click
-						self.logger.debug('No download triggered within timeout.')
+				# 		if download_complete and download_guid:
+				# 			self.logger.info('⬇️ Download completed via CDP')
+				# 			# Note: DownloadsWatchdog handles download tracking via events
+				# 			return f'download_{download_guid}'  # Return guid as placeholder
+				# 	except TimeoutError:
+				# 		# No download triggered, normal click
+				# 		self.logger.debug('No download triggered within timeout.')
 
-				# Wait for navigation/changes
-				await asyncio.sleep(0.5)
-				# Navigation is handled by NavigationWatchdog via events
+				# # Wait for navigation/changes
+				# await asyncio.sleep(0.5)
+				# # Navigation is handled by NavigationWatchdog via events
 
-				return download_path
+				# return download_path
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
