@@ -155,6 +155,22 @@ class EnhancedSnapshotNode:
 	"""Stacking contexts from the layout tree"""
 
 
+# @dataclass(slots=True)
+# class SuperSelector:
+# 	node_id: int
+# 	backend_node_id: int
+# 	frame_id: str | None
+# 	target_id: str
+
+# 	node_type: NodeType
+# 	node_name: str
+
+# 	# is_visible: bool | None
+# 	# is_scrollable: bool | None
+
+# 	element_index: int | None
+
+
 @dataclass(slots=True)
 class EnhancedDOMTreeNode:
 	"""

@@ -181,7 +181,7 @@ class Controller(Generic[Context]):
 				raise ValueError(f'Failed to click element {params.index}: {e}') from e
 
 			# Get the result if any (e.g., download path)
-			result = await event.event_result()
+			result = await event.event_result(raise_if_none=False, raise_if_any=True)
 			if result:
 				download_path = result.get('download_path')
 				if download_path:

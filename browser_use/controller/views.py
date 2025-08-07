@@ -13,7 +13,7 @@ class GoToUrlAction(BaseModel):
 	new_tab: bool = False  # True to open in new tab, False to navigate in current tab
 
 
-class ClickElementAction(BaseModel):
+class ClickElementAction(BaseModel[dict[str, str] | None]):
 	index: int
 	new_tab: bool = Field(default=False, description='set True to open any resulting navigation in a new tab, False otherwise')
 	expect_download: bool = Field(default=False, description='set True if expecting a download, False otherwise')
