@@ -19,7 +19,17 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
 
-ReasoningModels: list[ChatModel | str] = ['o4-mini', 'o3', 'o3-mini', 'o1', 'o1-pro', 'o3-pro', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano']
+ReasoningModels: list[ChatModel | str] = [
+	'o4-mini',
+	'o3',
+	'o3-mini',
+	'o1',
+	'o1-pro',
+	'o3-pro',
+	'gpt-5',
+	'gpt-5-mini',
+	'gpt-5-nano',
+]
 
 
 @dataclass
