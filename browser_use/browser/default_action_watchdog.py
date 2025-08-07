@@ -494,16 +494,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Find the target for this frame
 				for target in targets['targetInfos']:
 					if target['type'] == 'iframe' and element_node.frame_id in str(target.get('targetId', '')):
-						# Attach to this target
+						# Get cached session for this target
 						target_id = target['targetId']
-						session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-						session_id = session['sessionId']
-
-						# Enable required domains on this session
-						await cdp_client.send.DOM.enable(session_id=session_id)
-						await cdp_client.send.Runtime.enable(session_id=session_id)
-						# Note: Input domain doesn't have an enable method
-
+						client, session_id = await self.browser_session.get_cdp_session(target_id)
+						# Domains are already enabled by get_cdp_session
 						return session_id
 
 				# If frame not found in targets, use main target session

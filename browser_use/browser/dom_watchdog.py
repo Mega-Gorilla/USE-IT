@@ -139,9 +139,15 @@ class DOMWatchdog(BaseWatchdog):
 			if event.include_screenshot:
 				try:
 					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
-					screenshot_result = await screenshot_event.event_result()
+					# Add timeout to prevent hanging if no handler exists
+					screenshot_result = await asyncio.wait_for(
+						screenshot_event.event_result(), 
+						timeout=2.0
+					)
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
+				except asyncio.TimeoutError:
+					self.logger.warning('Screenshot timed out after 2 seconds - no handler registered?')
 				except Exception as e:
 					self.logger.warning(f'Screenshot failed: {e}')
 

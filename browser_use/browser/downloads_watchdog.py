@@ -43,7 +43,7 @@ class DownloadsWatchdog(BaseWatchdog):
 	]
 
 	# Private state
-	_targets_with_listeners: set[str] = PrivateAttr(default_factory=set)  # Track targets that already have download listeners
+	_sessions_with_listeners: set[str] = PrivateAttr(default_factory=set)  # Track sessions that already have download listeners
 	_active_downloads: dict[str, Any] = PrivateAttr(default_factory=dict)
 	_pdf_viewer_cache: dict[str, bool] = PrivateAttr(default_factory=dict)  # Cache PDF viewer status by target URL
 	_download_cdp_session_setup: bool = PrivateAttr(default=False)  # Track if CDP session is set up
@@ -88,17 +88,12 @@ class DownloadsWatchdog(BaseWatchdog):
 		self._cdp_event_tasks.clear()
 
 		# Clean up CDP session
-		if self._download_cdp_session:
-			try:
-				cdp_client = self.browser_session.cdp_client
-				await cdp_client.send.Target.detachFromTarget(params={'sessionId': self._download_cdp_session})
-			except Exception:
-				pass
-			self._download_cdp_session = None
-			self._download_cdp_session_setup = False
+		# CDP sessions are now cached and managed by BrowserSession
+		self._download_cdp_session = None
+		self._download_cdp_session_setup = False
 
 		# Clear other state
-		self._targets_with_listeners.clear()
+		self._sessions_with_listeners.clear()
 		self._active_downloads.clear()
 		self._pdf_viewer_cache.clear()
 
@@ -129,10 +124,12 @@ class DownloadsWatchdog(BaseWatchdog):
 				# logger.info(f'[DownloadsWatchdog] No downloads path configured, skipping target: {target_id}')
 				return  # No downloads path configured
 
-			# Check if we already have a download listener on this target
+			# Check if we already have a download listener on this session
 			# to prevent duplicate listeners from being added
-			if target_id in self._targets_with_listeners:
-				self.logger.debug(f'[DownloadsWatchdog] Download listener already exists for target: {target_id}')
+			# Note: Since download listeners are set up once per browser session, not per target,
+			# we just track if we've set up the browser-level listener
+			if self._download_cdp_session_setup:
+				self.logger.debug(f'[DownloadsWatchdog] Download listener already set up for browser session')
 				return
 
 			# logger.debug(f'[DownloadsWatchdog] Setting up CDP download listener for target: {target_id}')
@@ -177,8 +174,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				self._download_cdp_session_setup = True
 				self.logger.debug('[DownloadsWatchdog] Set up CDP download listeners')
 
-			# Track that we've added a listener to prevent duplicates
-			self._targets_with_listeners.add(target_id)
+			# No need to track individual targets since download listener is browser-level
 			# logger.debug(f'[DownloadsWatchdog] Successfully set up CDP download listener for target: {target_id}')
 
 		except Exception as e:
@@ -458,9 +454,8 @@ class DownloadsWatchdog(BaseWatchdog):
 			return self._pdf_viewer_cache[page_url]
 
 		try:
-			# Attach to target for evaluation
-			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
+			# Get cached session
+			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
 
 			# Add timeout to prevent hanging on unresponsive pages
 			import asyncio
@@ -528,9 +523,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
 
-			# Detach from target
-			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-
+			# No need to detach - session is cached
 			is_pdf_viewer = result.get('result', {}).get('value', {})
 
 			if is_pdf_viewer.get('isPdf', False):
@@ -563,10 +556,8 @@ class DownloadsWatchdog(BaseWatchdog):
 			return None
 
 		try:
-			# Get CDP client and attach to target
-			cdp_client = self.browser_session.cdp_client
-			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
+			# Get cached session
+			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
 
 			# Try to get the PDF URL with timeout
 			import asyncio
@@ -697,22 +688,14 @@ class DownloadsWatchdog(BaseWatchdog):
 						)
 					)
 
-					# Detach from target before returning
-					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+					# No need to detach - session is cached
 					return download_path
 				else:
 					self.logger.warning(f'[DownloadsWatchdog] No data received when downloading PDF from {pdf_url}')
-					# Detach from target
-					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 					return None
 
 			except Exception as e:
 				self.logger.warning(f'[DownloadsWatchdog] Failed to auto-download PDF from {pdf_url}: {type(e).__name__}: {e}')
-				# Try to detach from target if possible
-				try:
-					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-				except:
-					pass
 				return None
 
 		except TimeoutError:

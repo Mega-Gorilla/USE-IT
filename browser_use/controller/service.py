@@ -130,8 +130,12 @@ class Controller(Generic[Context]):
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
-			event = browser_session.event_bus.dispatch(GoBackEvent())
-			await event
+			try:
+				event = browser_session.event_bus.dispatch(GoBackEvent())
+				await event
+			except Exception as e:
+				logger.error(f'Failed to dispatch GoBackEvent: {type(e).__name__}: {e}')
+				raise ValueError(f'Failed to go back: {e}') from e
 			msg = '🔙  Navigated back'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg)
@@ -162,10 +166,14 @@ class Controller(Generic[Context]):
 				raise ValueError(f'Element index {params.index} not found in DOM')
 
 			# Dispatch click event with node
-			event = browser_session.event_bus.dispatch(
-				ClickElementEvent(node=node, expect_download=params.expect_download, new_tab=params.new_tab)
-			)
-			await event
+			try:
+				event = browser_session.event_bus.dispatch(
+					ClickElementEvent(node=node, expect_download=params.expect_download, new_tab=params.new_tab)
+				)
+				await event
+			except Exception as e:
+				logger.error(f'Failed to dispatch ClickElementEvent: {type(e).__name__}: {e}')
+				raise ValueError(f'Failed to click element {params.index}: {e}') from e
 
 			# Get the result if any (e.g., download path)
 			result = await event.event_result()
@@ -192,8 +200,14 @@ class Controller(Generic[Context]):
 				raise ValueError(f'Element index {params.index} not found in DOM')
 
 			# Dispatch type text event with node
-			event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text))
-			await event
+			try:
+				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text))
+				await event
+			except Exception as e:
+				# Log the full error for debugging
+				logger.error(f'Failed to dispatch TypeTextEvent: {type(e).__name__}: {e}')
+				# Re-raise with more context
+				raise ValueError(f'Failed to input text into element {params.index}: {e}') from e
 
 			if not has_sensitive_data:
 				msg = f'⌨️  Input {params.text} into index {params.index}'

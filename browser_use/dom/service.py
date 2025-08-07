@@ -107,31 +107,15 @@ class DomService:
 
 		target_id = str(target['targetId'])
 
-		# if target_id in self.target_to_session_id_cache:
-		# 	return self.target_to_session_id_cache[target_id]
-
-		try:
-			session = await self.browser_session.cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
-			session_id = session['sessionId']
-		except Exception as e:
-			raise
-
-		# Track this session for cleanup
-		self._attached_sessions.add(session_id)
-
-		await self._enable_all_domains_on_session(session_id)
-
+		# Use cached session from BrowserSession
+		client, session_id = await self.browser_session.get_cdp_session(target_id)
+		
+		# Domains are already enabled by get_cdp_session, no need to track for cleanup
 		return session_id
 
 	async def _cleanup_sessions(self) -> None:
-		"""Detach from all attached sessions."""
-		for session_id in self._attached_sessions:
-			try:
-				await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-			except Exception:
-				pass  # Session might already be detached
+		"""Clear cached session data. Sessions are now managed by BrowserSession."""
+		# Sessions are now cached and managed by BrowserSession, no need to detach
 		self._attached_sessions.clear()
 		self.session_id_domains_enabled_cache.clear()
 

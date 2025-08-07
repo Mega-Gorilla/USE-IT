@@ -51,9 +51,9 @@ class CrashWatchdog(BaseWatchdog):
 	# Private state
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
 	_monitoring_task: asyncio.Task | None = PrivateAttr(default=None)
-	_cdp_sessions: dict[str, str] = PrivateAttr(default_factory=dict)  # target_id -> session_id
 	_last_responsive_checks: dict[str, float] = PrivateAttr(default_factory=dict)  # target_url -> timestamp
 	_cdp_event_tasks: set[asyncio.Task] = PrivateAttr(default_factory=set)  # Track CDP event handler tasks
+	_sessions_with_listeners: set[str] = PrivateAttr(default_factory=set)  # Track sessions that already have event listeners
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Start monitoring when browser is connected."""
@@ -70,15 +70,13 @@ class CrashWatchdog(BaseWatchdog):
 	async def attach_to_target(self, target_id: str) -> None:
 		"""Set up crash monitoring for a specific target using CDP."""
 		try:
-			cdp_client = self.browser_session.cdp_client
-
-			# Attach to target and enable domains
-			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
-			self._cdp_sessions[target_id] = session_id
-
-			# Enable network domain for request tracking
-			await cdp_client.send.Network.enable(session_id=session_id)
+			# Get cached session (domains already enabled by get_cdp_session)
+			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
+			
+			# Check if we already have listeners for this session
+			if session_id in self._sessions_with_listeners:
+				self.logger.debug(f'[CrashWatchdog] Event listeners already exist for session: {session_id}')
+				return
 
 			# Set up network event handlers
 			def on_request_will_be_sent(event):
@@ -98,15 +96,13 @@ class CrashWatchdog(BaseWatchdog):
 				self._on_request_finished_cdp(event)
 
 			# Register event handlers
-			cdp_client.on('Network.requestWillBeSent', on_request_will_be_sent, session_id=session_id)
-			cdp_client.on('Network.responseReceived', on_response_received, session_id=session_id)
-			cdp_client.on('Network.loadingFailed', on_loading_failed, session_id=session_id)
-			cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
+			# TEMPORARILY DISABLED: Network events causing too much logging
+			# cdp_client.on('Network.requestWillBeSent', on_request_will_be_sent, session_id=session_id)
+			# cdp_client.on('Network.responseReceived', on_response_received, session_id=session_id)
+			# cdp_client.on('Network.loadingFailed', on_loading_failed, session_id=session_id)
+			# cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
 
-			# Enable Inspector domain for crash detection
-			await cdp_client.send.Inspector.enable(session_id=session_id)
-
-			# Set up crash handler
+			# Set up crash handler (Inspector domain already enabled by get_cdp_session)
 			def on_target_crashed(event):
 				# Create and track the task
 				task = asyncio.create_task(self._on_target_crash_cdp(target_id))
@@ -115,6 +111,9 @@ class CrashWatchdog(BaseWatchdog):
 				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
 			cdp_client.on('Inspector.targetCrashed', on_target_crashed, session_id=session_id)
+			
+			# Track that we've added listeners to this session
+			self._sessions_with_listeners.add(session_id)
 
 			# Get target info for logging
 			targets = await cdp_client.send.Target.getTargets()
@@ -250,18 +249,9 @@ class CrashWatchdog(BaseWatchdog):
 			await asyncio.gather(*self._cdp_event_tasks, return_exceptions=True)
 		self._cdp_event_tasks.clear()
 
-		# Clean up CDP sessions
-		if self._cdp_sessions:
-			cdp_client = self.browser_session.cdp_client
-			for target_id, session_id in self._cdp_sessions.items():
-				try:
-					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-				except Exception:
-					pass
-			self._cdp_sessions.clear()
-
-		# Clear tracking
+		# Clear tracking (CDP sessions are cached and managed by BrowserSession)
 		self._active_requests.clear()
+		self._sessions_with_listeners.clear()
 
 	async def _monitoring_loop(self) -> None:
 		"""Main monitoring loop."""
@@ -324,13 +314,32 @@ class CrashWatchdog(BaseWatchdog):
 			cdp_client = self.browser_session.cdp_client
 			# Try a simple CDP command to check connection
 			await asyncio.wait_for(cdp_client.send.Target.getTargets(), timeout=2.0)
-		except (TimeoutError, Exception) as e:
+		except (asyncio.TimeoutError, Exception) as e:
 			self.logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
 			)
 			# Exit the monitoring loop
 			raise asyncio.CancelledError('Browser disconnected')
+		
+		# Check all cached CDP sessions for health
+		if hasattr(self.browser_session, '_cdp_session_cache'):
+			dead_sessions = []
+			for target_id, cached_value in list(self.browser_session._cdp_session_cache.items()):
+				try:
+					client, session_id = cached_value
+					# Quick ping to check if session is alive
+					await asyncio.wait_for(
+						client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id),
+						timeout=1.0
+					)
+				except:
+					dead_sessions.append(target_id)
+					self.logger.warning(f'[CrashWatchdog] Dead session detected for target {target_id}')
+			
+			# Clean up dead sessions
+			for target_id in dead_sessions:
+				await self.browser_session.release_cdp_session(target_id)
 
 		# Check browser process if we have PID
 		if proc := self.browser_session._local_browser_watchdog._subprocess:
@@ -405,16 +414,9 @@ class CrashWatchdog(BaseWatchdog):
 	async def _is_target_responsive(self, target_id: str, timeout: float = 5.0) -> bool:
 		"""Check if a target is responsive by trying to evaluate simple JavaScript."""
 		eval_task = None
-		session_id = None
 		try:
-			cdp_client = self.browser_session.cdp_client
-
-			# Attach to target if not already attached
-			if target_id not in self._cdp_sessions:
-				session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-				session_id = session['sessionId']
-			else:
-				session_id = self._cdp_sessions[target_id]
+			# Get cached session
+			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
 
 			# Try to evaluate simple JavaScript
 			eval_task = asyncio.create_task(cdp_client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id))
@@ -442,12 +444,7 @@ class CrashWatchdog(BaseWatchdog):
 				except (asyncio.CancelledError, Exception):
 					pass
 
-			# Detach if we attached just for this check
-			if session_id and target_id not in self._cdp_sessions:
-				try:
-					await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-				except Exception:
-					pass
+			# No need to detach - sessions are cached and managed by BrowserSession
 
 	@staticmethod
 	def _is_new_tab_page(url: str) -> bool:
@@ -484,14 +481,10 @@ class CrashWatchdog(BaseWatchdog):
 
 			self.logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
 
-			# Attach to target
-			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
+			# Get cached session
+			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
 
 			# Crash the target
 			await cdp_client.send.Page.crash(session_id=session_id)
-
-			# Detach
-			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 		except Exception as e:
 			self.logger.error(f'[CrashWatchdog] Failed to trigger target crash: {e}')

@@ -324,6 +324,9 @@ class AboutBlankDVDScreensaverShownEvent(BaseEvent):
 	error: str | None = None
 
 
+# Note: Model rebuilding for forward references is handled at the end of the module import chain
+# The events with 'EnhancedDOMTreeNode' forward references will be rebuilt after all imports are complete
+
 # check that event names are valid and non-overlapping (naiively n^2 so it's pretty slow but ok for now, optimize when >20 events)
 event_names = {
 	name

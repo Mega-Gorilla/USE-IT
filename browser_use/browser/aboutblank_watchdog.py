@@ -155,16 +155,13 @@ class AboutBlankWatchdog(BaseWatchdog):
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
 		try:
-			# Attach to target
-			session = await self.browser_session.cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
-			session_id = session['sessionId']
+			# Get cached session
+			client, session_id = await self.browser_session.get_cdp_session(target_id)
 
-			# Inject the DVD screensaver script
+			# Inject the DVD screensaver script (from main branch with idempotency added)
 			script = f"""
 				(function(browser_session_label) {{
-					// Check if animation is already running using window property
+					// Idempotency check
 					if (window.__dvdAnimationRunning) {{
 						return; // Already running, don't add another
 					}}
@@ -175,12 +172,15 @@ class AboutBlankWatchdog(BaseWatchdog):
 						// Try again after DOM is ready
 						window.__dvdAnimationRunning = false; // Reset flag to retry
 						if (document.readyState === 'loading') {{
-							document.addEventListener('DOMContentLoaded', function() {{ arguments.callee(browser_session_label); }});
+							document.addEventListener('DOMContentLoaded', () => arguments.callee(browser_session_label));
 						}}
 						return;
 					}}
 					
 					const animated_title = `Starting agent ${{browser_session_label}}...`;
+					if (document.title === animated_title) {{
+						return;      // already run on this tab, dont run again
+					}}
 					document.title = animated_title;
 
 					// Create the main overlay
@@ -191,105 +191,86 @@ class AboutBlankWatchdog(BaseWatchdog):
 					loadingOverlay.style.left = '0';
 					loadingOverlay.style.width = '100vw';
 					loadingOverlay.style.height = '100vh';
-					loadingOverlay.style.backgroundColor = '#1e1e1e';
-					loadingOverlay.style.backgroundImage = 'radial-gradient(ellipse at top left, #2a2a3e 0%, #1e1e1e 50%, #0f0f0f 100%)';
-					loadingOverlay.style.zIndex = '1000000';
-					loadingOverlay.style.display = 'flex';
-					loadingOverlay.style.justifyContent = 'center';
-					loadingOverlay.style.alignItems = 'center';
+					loadingOverlay.style.background = '#000';
+					loadingOverlay.style.zIndex = '99999';
 					loadingOverlay.style.overflow = 'hidden';
 
-					// Create the loading box (DVD logo)
-					const loadingBox = document.createElement('div');
-					loadingBox.id = 'dvd-logo';
-					loadingBox.style.position = 'absolute';
-					loadingBox.style.width = '160px';
-					loadingBox.style.height = '80px';
-					loadingBox.style.backgroundColor = '#007ACC';
-					loadingBox.style.borderRadius = '15px';
-					loadingBox.style.display = 'flex';
-					loadingBox.style.flexDirection = 'column';
-					loadingBox.style.justifyContent = 'center';
-					loadingBox.style.alignItems = 'center';
-					loadingBox.style.boxShadow = '0 0 30px rgba(0, 122, 204, 0.7), inset 0 0 20px rgba(255, 255, 255, 0.2)';
-					loadingBox.style.transition = 'background-color 0.3s ease, box-shadow 0.3s ease';
+					// Create the image element
+					const img = document.createElement('img');
+					img.src = 'https://cf.browser-use.com/logo.svg';
+					img.alt = 'Browser-Use';
+					img.style.width = '200px';
+					img.style.height = 'auto';
+					img.style.position = 'absolute';
+					img.style.left = '0px';
+					img.style.top = '0px';
+					img.style.zIndex = '2';
+					img.style.opacity = '0.8';
 
-					// Add logo emoji
-					const logoEmoji = document.createElement('div');
-					logoEmoji.innerHTML = '🅰';
-					logoEmoji.style.fontSize = '32px';
-					logoEmoji.style.marginBottom = '4px';
-					logoEmoji.style.filter = 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))';
-					loadingBox.appendChild(logoEmoji);
-
-					// Add text
-					const loadingText = document.createElement('div');
-					loadingText.style.color = 'white';
-					loadingText.style.fontSize = '12px';
-					loadingText.style.fontFamily = 'Consolas, Monaco, monospace';
-					loadingText.style.fontWeight = '600';
-					loadingText.style.letterSpacing = '1px';
-					loadingText.style.textShadow = '0 1px 3px rgba(0, 0, 0, 0.5)';
-					loadingText.innerText = `AGENT ${{browser_session_label}}`;
-					loadingBox.appendChild(loadingText);
-
-					loadingOverlay.appendChild(loadingBox);
+					loadingOverlay.appendChild(img);
 					document.body.appendChild(loadingOverlay);
 
-					// DVD screensaver animation variables
-					let x = Math.random() * (window.innerWidth - 160);
-					let y = Math.random() * (window.innerHeight - 80);
-					let xSpeed = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 0.5);
-					let ySpeed = (Math.random() > 0.5 ? 1 : -1) * (1 + Math.random() * 0.5);
-					let hue = 0;
-
-					// Color palette for the DVD logo
-					const colors = [
-						'#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-						'#D63031', '#74B9FF', '#A29BFE', '#6C5CE7', '#FD79A8',
-						'#FDCB6E', '#E17055', '#00B894', '#00CEC9', '#0984E3'
-					];
-					let currentColorIndex = 0;
-
-					function changeColor() {{
-						currentColorIndex = (currentColorIndex + 1) % colors.length;
-						const newColor = colors[currentColorIndex];
-						loadingBox.style.backgroundColor = newColor;
-						loadingBox.style.boxShadow = `0 0 30px ${{newColor}}88, inset 0 0 20px rgba(255, 255, 255, 0.2)`;
-					}}
+					// DVD screensaver bounce logic
+					let x = Math.random() * (window.innerWidth - 300);
+					let y = Math.random() * (window.innerHeight - 300);
+					let dx = 1.2 + Math.random() * 0.4; // px per frame
+					let dy = 1.2 + Math.random() * 0.4;
+					// Randomize direction
+					if (Math.random() > 0.5) dx = -dx;
+					if (Math.random() > 0.5) dy = -dy;
 
 					function animate() {{
-						// Update position
-						x += xSpeed * 2;
-						y += ySpeed * 2;
+						const imgWidth = img.offsetWidth || 300;
+						const imgHeight = img.offsetHeight || 300;
+						x += dx;
+						y += dy;
 
-						// Bounce off walls
-						if (x <= 0 || x >= window.innerWidth - 160) {{
-							xSpeed = -xSpeed;
-							changeColor();
-							x = Math.max(0, Math.min(x, window.innerWidth - 160));
+						if (x <= 0) {{
+							x = 0;
+							dx = Math.abs(dx);
+						}} else if (x + imgWidth >= window.innerWidth) {{
+							x = window.innerWidth - imgWidth;
+							dx = -Math.abs(dx);
 						}}
-						if (y <= 0 || y >= window.innerHeight - 80) {{
-							ySpeed = -ySpeed;
-							changeColor();
-							y = Math.max(0, Math.min(y, window.innerHeight - 80));
+						if (y <= 0) {{
+							y = 0;
+							dy = Math.abs(dy);
+						}} else if (y + imgHeight >= window.innerHeight) {{
+							y = window.innerHeight - imgHeight;
+							dy = -Math.abs(dy);
 						}}
 
-						// Apply position
-						loadingBox.style.left = x + 'px';
-						loadingBox.style.top = y + 'px';
+						img.style.left = `${{x}}px`;
+						img.style.top = `${{y}}px`;
 
 						requestAnimationFrame(animate);
 					}}
-
 					animate();
+
+					// Responsive: update bounds on resize
+					window.addEventListener('resize', () => {{
+						x = Math.min(x, window.innerWidth - img.offsetWidth);
+						y = Math.min(y, window.innerHeight - img.offsetHeight);
+					}});
+
+					// Add a little CSS for smoothness
+					const style = document.createElement('style');
+					style.textContent = `
+						#pretty-loading-animation {{
+							/*backdrop-filter: blur(2px) brightness(0.9);*/
+						}}
+						#pretty-loading-animation img {{
+							user-select: none;
+							pointer-events: none;
+						}}
+					`;
+					document.head.appendChild(style);
 				}})('{browser_session_label}');
 			"""
 
-			await self.browser_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
+			await client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
 
-			# Detach from target
-			await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
+			# No need to detach - session is cached
 
 			# Dispatch event
 			tab_index = await self.browser_session.get_tab_index(target_id)

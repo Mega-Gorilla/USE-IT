@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import psutil
 from bubus import BaseEvent
-from playwright.async_api import async_playwright
 from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
@@ -120,18 +119,9 @@ class LocalBrowserWatchdog(BaseWatchdog):
 					self.logger.debug(f'[LocalBrowserWatchdog] Using custom executable: {browser_path}')
 				else:
 					self.logger.debug('[LocalBrowserWatchdog] Getting browser path from playwright...')
-					# Use async playwright properly with timeout
-					playwright = await asyncio.wait_for(
-						async_playwright().start(),
-						timeout=5.0,  # 5 second timeout
-					)
-					try:
-						browser_path = playwright.chromium.executable_path
-						self.logger.debug(f'[LocalBrowserWatchdog] Got browser path: {browser_path}')
-					finally:
-						# Always stop playwright after getting the path
-						await playwright.stop()
-						self.logger.debug('[LocalBrowserWatchdog] Playwright stopped')
+					# Get browser path from playwright in a subprocess to avoid thread issues
+					browser_path = await self._get_browser_path_via_subprocess()
+					self.logger.debug(f'[LocalBrowserWatchdog] Got browser path: {browser_path}')
 
 				# Launch browser subprocess directly
 				self.logger.debug(f'[LocalBrowserWatchdog] Launching browser subprocess with {len(launch_args)} args...')
@@ -196,6 +186,62 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		if self._original_user_data_dir is not None:
 			profile.user_data_dir = self._original_user_data_dir
 		raise RuntimeError(f'Failed to launch browser after {max_retries} attempts')
+
+	@staticmethod
+	async def _get_browser_path_via_subprocess() -> str:
+		"""Get browser executable path from playwright in a subprocess to avoid thread issues."""
+		import sys
+		import json
+		
+		# Python code to run in subprocess
+		get_path_code = """
+import asyncio
+import json
+import sys
+
+async def get_path():
+    from playwright.async_api import async_playwright
+    playwright = await async_playwright().start()
+    try:
+        path = playwright.chromium.executable_path
+        print(json.dumps({"path": path}))
+    finally:
+        await playwright.stop()
+
+asyncio.run(get_path())
+"""
+		
+		# Run in subprocess with timeout
+		process = await asyncio.create_subprocess_exec(
+			sys.executable, '-c', get_path_code,
+			stdout=asyncio.subprocess.PIPE,
+			stderr=asyncio.subprocess.PIPE,
+		)
+		
+		try:
+			# Wait for result with timeout
+			stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
+			
+			# Parse the result
+			if stdout:
+				result = json.loads(stdout.decode())
+				return result['path']
+			else:
+				# Fallback to default location if subprocess fails
+				error_msg = stderr.decode() if stderr else "Unknown error"
+				raise RuntimeError(f"Failed to get browser path from playwright: {error_msg}")
+				
+		except asyncio.TimeoutError:
+			# Kill the subprocess if it times out
+			process.kill()
+			await process.wait()
+			raise RuntimeError("Timeout getting browser path from playwright")
+		except Exception as e:
+			# Make sure subprocess is terminated
+			if process.returncode is None:
+				process.kill()
+				await process.wait()
+			raise RuntimeError(f"Error getting browser path: {e}")
 
 	@staticmethod
 	def _find_free_port() -> int:
