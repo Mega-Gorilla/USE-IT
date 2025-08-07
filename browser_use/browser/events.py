@@ -1,16 +1,46 @@
 """Event definitions for browser communication."""
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from bubus import BaseEvent
-from pydantic import Field
+from pydantic import Field, field_validator
 
-if TYPE_CHECKING:
-	from browser_use.dom.views import EnhancedDOMTreeNode
+from browser_use.dom.views import EnhancedDOMTreeNode
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
 # ============================================================================
+
+class ElementSelectedEvent(BaseEvent):
+	"""An element was selected."""
+
+	node: EnhancedDOMTreeNode
+
+	@field_validator('node', mode='before')
+	@classmethod
+	def serialize_node(cls, data: EnhancedDOMTreeNode) -> EnhancedDOMTreeNode:
+		return EnhancedDOMTreeNode(
+			element_index=data.element_index,
+			node_id=data.node_id,
+			backend_node_id=data.backend_node_id,
+			frame_id=data.frame_id,
+			target_id=data.target_id,
+			node_type=data.node_type,
+			node_name=data.node_name,
+			node_value=data.node_value,
+			attributes=data.attributes,
+			is_scrollable=data.is_scrollable,
+			is_visible=data.is_visible,
+			absolute_position=data.absolute_position,
+			# override the circular reference fields in EnhancedDOMTreeNode as they cant be serialized and arent needed by event handlers
+			content_document=None,
+			shadow_root_type=None,
+			shadow_roots=[],
+			parent_node=None,
+			children_nodes=[],
+			ax_node=None,
+			snapshot_node=None,
+		)
 
 
 class NavigateToUrlEvent(BaseEvent):
@@ -22,7 +52,7 @@ class NavigateToUrlEvent(BaseEvent):
 	timeout_ms: int | None = None
 
 
-class ClickElementEvent(BaseEvent):
+class ClickElementEvent(ElementSelectedEvent):
 	"""Click an element."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -32,7 +62,7 @@ class ClickElementEvent(BaseEvent):
 	new_tab: bool = False
 
 
-class TypeTextEvent(BaseEvent):
+class TypeTextEvent(ElementSelectedEvent):
 	"""Type text into an element."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -40,7 +70,7 @@ class TypeTextEvent(BaseEvent):
 	clear_existing: bool = True
 
 
-class ScrollEvent(BaseEvent):
+class ScrollEvent(ElementSelectedEvent):
 	"""Scroll the page or element."""
 
 	direction: Literal['up', 'down', 'left', 'right']
@@ -115,7 +145,7 @@ class SendKeysEvent(BaseEvent):
 	keys: str  # e.g., "ctrl+a", "cmd+c", "Enter"
 
 
-class UploadFileEvent(BaseEvent):
+class UploadFileEvent(ElementSelectedEvent):
 	"""Upload a file to an element."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -342,12 +372,3 @@ for name_a in event_names:
 				f'Event with name {name_a} is a substring of {name_b}, all events must be completely unique to avoid find-and-replace accidents'
 			)
 
-
-if not TYPE_CHECKING:
-	from browser_use.dom.views import EnhancedDOMTreeNode
-
-	NavigateToUrlEvent.model_rebuild()
-	ClickElementEvent.model_rebuild()
-	TypeTextEvent.model_rebuild()
-	ScrollEvent.model_rebuild()
-	UploadFileEvent.model_rebuild()

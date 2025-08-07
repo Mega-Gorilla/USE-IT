@@ -1749,7 +1749,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Only close browser resources if we created them
 			if self._owns_browser_session:
 				assert self.browser_session is not None, 'BrowserSession is not set up'
-				await self.browser_session.stop()
+				# Dispatch BrowserStopEvent to properly stop the browser
+				from browser_use.browser.events import BrowserStopEvent
+				stop_event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
+				await stop_event
 
 			# Force garbage collection
 			gc.collect()
