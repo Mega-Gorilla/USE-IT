@@ -499,24 +499,23 @@ class NavigationWatchdog(BaseWatchdog):
 		# Get all targets and filter for valid page/tab targets
 		all_targets = await self.browser_session.cdp_client.send.Target.getTargets()
 		targets = [
-			t for t in all_targets.get('targetInfos', [])
+			t
+			for t in all_targets.get('targetInfos', [])
 			if self.browser_session._is_valid_target(t) and t.get('type') in ('page', 'tab')
 		]
-		
+
 		if targets:
 			# Set initial focus to first target BEFORE dispatching events
 			self.browser_session.current_target_id = targets[0]['targetId']
-			
+
 			# Dispatch TabCreatedEvent for all initial pages so watchdogs can process them
 			from browser_use.browser.events import TabCreatedEvent
+
 			for i, target in enumerate(targets):
 				target_url = target.get('url', '')
 				self.logger.debug(f'[NavigationWatchdog] Dispatching TabCreatedEvent for initial tab {i}: {target_url}')
-				self.event_bus.dispatch(TabCreatedEvent(
-					tab_index=i,
-					url=target_url
-				))
-			
+				self.event_bus.dispatch(TabCreatedEvent(tab_index=i, url=target_url))
+
 			# Dispatch focus changed event
 			await self._dispatch_focus_changed()
 			target_url = await self._get_target_url(self.browser_session.current_target_id)

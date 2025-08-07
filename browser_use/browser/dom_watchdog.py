@@ -63,7 +63,7 @@ class DOMWatchdog(BaseWatchdog):
 
 		# Check if this is a new tab or chrome:// target early for optimization
 		is_empty_page = is_new_tab_page(page_url) or page_url.startswith('chrome://')
-		
+
 		# Get tabs info once at the beginning for all paths
 		self.logger.debug('Getting tabs info...')
 		tabs_info = await self.browser_session.get_tabs_info()

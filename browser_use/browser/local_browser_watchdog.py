@@ -244,19 +244,19 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		try:
 			# Try graceful shutdown first
 			process.terminate()
-			
+
 			# Use async wait instead of blocking wait
 			for _ in range(50):  # Wait up to 5 seconds (50 * 0.1)
 				if not process.is_running():
 					return
 				await asyncio.sleep(0.1)
-			
+
 			# If still running after 5 seconds, force kill
 			if process.is_running():
 				process.kill()
 				# Give it a moment to die
 				await asyncio.sleep(0.1)
-				
+
 		except psutil.NoSuchProcess:
 			# Process already gone
 			pass

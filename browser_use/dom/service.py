@@ -61,7 +61,7 @@ class DomService:
 
 	async def _get_targets_for_page(self, target_id: str | None = None) -> CurrentPageTargets:
 		"""Get the target info for a specific page.
-		
+
 		Args:
 			target_id: The target ID to get info for. If None, uses current_target_id.
 		"""
@@ -81,7 +81,7 @@ class DomService:
 
 		# Get all frames using the new method to find iframe targets for this page
 		all_frames, _ = await self.browser_session.get_all_frames()
-		
+
 		# Find iframe targets that are children of this target
 		iframe_targets = []
 		for frame_info in all_frames.values():
@@ -92,8 +92,7 @@ class DomService:
 				if parent_target == target_id:
 					# Find the target info for this iframe
 					iframe_target = next(
-						(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']), 
-						None
+						(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']), None
 					)
 					if iframe_target:
 						iframe_targets.append(iframe_target)
@@ -142,7 +141,7 @@ class DomService:
 
 		# Set auto-attach with proper filter for iframe targets
 		# This will automatically attach to immediate child frames
-		# IMPORTANT: This is NOT recursive - we need to call setAutoAttach 
+		# IMPORTANT: This is NOT recursive - we need to call setAutoAttach
 		# on each newly attached frame to get its children
 		await self.browser_session.cdp_client.send.Target.setAutoAttach(
 			params={
@@ -150,10 +149,7 @@ class DomService:
 				'waitForDebuggerOnStart': False,
 				'flatten': True,
 				# Include filter to ensure iframe targets are attached
-				'filter': [
-					{'type': 'page', 'exclude': False},
-					{'type': 'iframe', 'exclude': False}
-				]
+				'filter': [{'type': 'page', 'exclude': False}, {'type': 'iframe', 'exclude': False}],
 			},
 			session_id=session_id,
 		)
@@ -387,7 +383,7 @@ class DomService:
 		initial_total_frame_offset: DOMRect | None = None,
 	) -> EnhancedDOMTreeNode:
 		"""Get the DOM tree for a specific target.
-		
+
 		Args:
 			target_id: Optional target ID. If None, uses current target.
 			initial_html_frames: List of HTML frame nodes encountered so far
@@ -397,7 +393,7 @@ class DomService:
 		page_session_info = await self._get_targets_for_page(target_id)
 		target = page_session_info.page_session
 		actual_target_id = target['targetId']  # Store the actual target ID being used
-		
+
 		# Get viewport dimensions first for visibility calculation
 		session_id = await self._attach_target_activate_domains_get_session_id(target)
 
@@ -565,8 +561,7 @@ class DomService:
 						# Get the target info for this iframe
 						targets = await self.browser_session.cdp_client.send.Target.getTargets()
 						iframe_document_target = next(
-							(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']),
-							None
+							(t for t in targets['targetInfos'] if t['targetId'] == frame_info['frameTargetId']), None
 						)
 				else:
 					iframe_document_target = None

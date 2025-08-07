@@ -120,7 +120,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	def _setup_target_monitoring(self, target_id: str) -> None:
 		"""Set up storage change monitoring for a target.
-		
+
 		Note: CDP event listeners for cookie changes would need to be implemented
 		via Network.responseReceivedExtraInfo events.
 		"""
@@ -129,7 +129,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 	async def _check_for_cookie_changes_cdp(self, event: dict) -> None:
 		"""Check if a CDP network event indicates cookie changes.
-		
+
 		This would be called by Network.responseReceivedExtraInfo events
 		if we set up CDP event listeners.
 		"""
@@ -289,7 +289,9 @@ class StorageStateWatchdog(BaseWatchdog):
 								window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
 							"""
 							await self.browser_session._cdp_add_init_script(script)
-				self.logger.info(f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins')
+				self.logger.info(
+					f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins'
+				)
 
 			self.event_bus.dispatch(
 				StorageStateLoadedEvent(

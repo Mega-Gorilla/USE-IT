@@ -1,11 +1,10 @@
 """About:blank watchdog for managing about:blank tabs with DVD screensaver."""
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent
 from pydantic import PrivateAttr
 
-from browser_use.browser.crash_watchdog import CrashWatchdog
 from browser_use.browser.events import (
 	AboutBlankDVDScreensaverShownEvent,
 	BrowserStopEvent,
@@ -70,7 +69,9 @@ class AboutBlankWatchdog(BaseWatchdog):
 		# Use _cdp_get_all_pages for quick check without fetching titles
 		page_targets = await self.browser_session._cdp_get_all_pages()
 		if len(page_targets) <= 1:
-			self.logger.info('[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser')
+			self.logger.info(
+				'[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser'
+			)
 			# Create the animation tab since no tabs should remain
 			navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 			await navigate_event
@@ -89,10 +90,10 @@ class AboutBlankWatchdog(BaseWatchdog):
 		try:
 			# For quick checks, just get page targets without titles to reduce noise
 			page_targets = await self.browser_session._cdp_get_all_pages()
-			
+
 			# Only get full tabs info if we actually need to check titles
 			tabs_info = None
-			
+
 			# For AboutBlankWatchdog, we only care about tab count not titles
 			# Only get full tabs info if we actually have animation tabs to check
 			if len(page_targets) == 0:
@@ -100,7 +101,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			else:
 				# Skip the expensive get_tabs_info call - we just need tab count
 				tabs_info = None
-			
+
 			# We don't need to track animation tabs anymore since we're only ensuring
 			# that there's at least one tab open
 			animation_tabs = []
@@ -140,7 +141,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			for page_target in page_targets:
 				target_id = page_target['targetId']
 				url = page_target['url']
-				
+
 				# Only target about:blank pages specifically
 				if url == 'about:blank':
 					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
@@ -159,7 +160,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 				params={'targetId': target_id, 'flatten': True}
 			)
 			session_id = session['sessionId']
-			
+
 			# Inject the DVD screensaver script
 			script = f"""
 				(function(browser_session_label) {{
@@ -284,19 +285,15 @@ class AboutBlankWatchdog(BaseWatchdog):
 					animate();
 				}})('{browser_session_label}');
 			"""
-			
-			await self.browser_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': script},
-				session_id=session_id
-			)
-			
+
+			await self.browser_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
+
 			# Detach from target
 			await self.browser_session.cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
-			
+
 			# Dispatch event
 			tab_index = await self.browser_session.get_tab_index(target_id)
 			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index))
-			
+
 		except Exception as e:
 			self.logger.error(f'[AboutBlankWatchdog] Error injecting DVD screensaver: {e}')
-

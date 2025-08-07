@@ -86,7 +86,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		if self._cdp_event_tasks:
 			await asyncio.gather(*self._cdp_event_tasks, return_exceptions=True)
 		self._cdp_event_tasks.clear()
-		
+
 		# Clean up CDP session
 		if self._download_cdp_session:
 			try:
@@ -96,7 +96,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				pass
 			self._download_cdp_session = None
 			self._download_cdp_session_setup = False
-		
+
 		# Clear other state
 		self._targets_with_listeners.clear()
 		self._active_downloads.clear()
@@ -141,17 +141,17 @@ class DownloadsWatchdog(BaseWatchdog):
 			if not self._download_cdp_session_setup:
 				# Set up CDP session for downloads (only once per browser session)
 				cdp_client = self.browser_session.cdp_client
-				
+
 				# Set download behavior to allow downloads and enable events
 				downloads_path = self.browser_session.browser_profile.downloads_path
 				await cdp_client.send.Browser.setDownloadBehavior(
 					params={
-						'behavior': 'allow', 
+						'behavior': 'allow',
 						'downloadPath': str(downloads_path),  # Convert Path to string
-						'eventsEnabled': True
+						'eventsEnabled': True,
 					}
 				)
-				
+
 				# Register download event handlers
 				def download_will_begin_handler(event: dict, session_id: str | None):
 					self.logger.info(f'[DownloadsWatchdog] Download will begin: {event}')
@@ -160,7 +160,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					self._cdp_event_tasks.add(task)
 					# Remove from set when done
 					task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
-				
+
 				def download_progress_handler(event: dict, session_id: str | None):
 					# Check if download is complete
 					if event.get('state') == 'completed':
@@ -169,11 +169,11 @@ class DownloadsWatchdog(BaseWatchdog):
 							self.logger.info(f'[DownloadsWatchdog] Download completed: {file_path}')
 							# Track the download
 							self._track_download(file_path)
-				
+
 				# Register the handlers with CDP
 				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)
 				cdp_client.register.Browser.downloadProgress(download_progress_handler)
-				
+
 				self._download_cdp_session_setup = True
 				self.logger.debug('[DownloadsWatchdog] Set up CDP download listeners')
 
@@ -183,10 +183,10 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		except Exception as e:
 			self.logger.warning(f'[DownloadsWatchdog] Failed to set up CDP download listener for target {target_id}: {e}')
-	
+
 	def _track_download(self, file_path: str) -> None:
 		"""Track a completed download and dispatch the appropriate event.
-		
+
 		Args:
 			file_path: The path to the downloaded file
 		"""
@@ -196,15 +196,18 @@ class DownloadsWatchdog(BaseWatchdog):
 			if path.exists():
 				file_size = path.stat().st_size
 				self.logger.info(f'[DownloadsWatchdog] Tracked download: {path.name} ({file_size} bytes)')
-				
+
 				# Dispatch download event
 				from browser_use.browser.events import FileDownloadedEvent
-				self.event_bus.dispatch(FileDownloadedEvent(
-					url=str(path),  # Use the file path as URL for local files
-					file_path=str(path),
-					file_name=path.name,
-					file_size=file_size
-				))
+
+				self.event_bus.dispatch(
+					FileDownloadedEvent(
+						url=str(path),  # Use the file path as URL for local files
+						file_path=str(path),
+						file_name=path.name,
+						file_size=file_size,
+					)
+				)
 			else:
 				self.logger.warning(f'[DownloadsWatchdog] Downloaded file not found: {file_path}')
 		except Exception as e:

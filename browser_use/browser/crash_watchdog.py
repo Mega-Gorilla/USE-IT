@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 from bubus import BaseEvent
@@ -71,17 +71,15 @@ class CrashWatchdog(BaseWatchdog):
 		"""Set up crash monitoring for a specific target using CDP."""
 		try:
 			cdp_client = self.browser_session.cdp_client
-			
+
 			# Attach to target and enable domains
-			session = await cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
+			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
 			self._cdp_sessions[target_id] = session_id
-			
+
 			# Enable network domain for request tracking
 			await cdp_client.send.Network.enable(session_id=session_id)
-			
+
 			# Set up network event handlers
 			def on_request_will_be_sent(event):
 				# Create and track the task
@@ -89,25 +87,25 @@ class CrashWatchdog(BaseWatchdog):
 				self._cdp_event_tasks.add(task)
 				# Remove from set when done
 				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
-			
+
 			def on_response_received(event):
 				self._on_response_cdp(event)
-			
+
 			def on_loading_failed(event):
 				self._on_request_failed_cdp(event)
-			
+
 			def on_loading_finished(event):
 				self._on_request_finished_cdp(event)
-			
+
 			# Register event handlers
 			cdp_client.on('Network.requestWillBeSent', on_request_will_be_sent, session_id=session_id)
 			cdp_client.on('Network.responseReceived', on_response_received, session_id=session_id)
 			cdp_client.on('Network.loadingFailed', on_loading_failed, session_id=session_id)
 			cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
-			
+
 			# Enable Inspector domain for crash detection
 			await cdp_client.send.Inspector.enable(session_id=session_id)
-			
+
 			# Set up crash handler
 			def on_target_crashed(event):
 				# Create and track the task
@@ -115,15 +113,15 @@ class CrashWatchdog(BaseWatchdog):
 				self._cdp_event_tasks.add(task)
 				# Remove from set when done
 				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
-			
+
 			cdp_client.on('Inspector.targetCrashed', on_target_crashed, session_id=session_id)
-			
+
 			# Get target info for logging
 			targets = await cdp_client.send.Target.getTargets()
 			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 			if target_info:
 				self.logger.debug(f'[CrashWatchdog] Added target to monitoring: {target_info.get("url", "unknown")}')
-			
+
 		except Exception as e:
 			self.logger.warning(f'[CrashWatchdog] Failed to attach to target {target_id}: {e}')
 
@@ -131,7 +129,7 @@ class CrashWatchdog(BaseWatchdog):
 		"""Track new network request from CDP event."""
 		request_id = event.get('requestId', '')
 		request = event.get('request', {})
-		
+
 		self._active_requests[request_id] = NetworkRequestTracker(
 			request_id=request_id,
 			start_time=time.time(),
@@ -155,7 +153,9 @@ class CrashWatchdog(BaseWatchdog):
 		request_id = event.get('requestId', '')
 		if request_id in self._active_requests:
 			elapsed = time.time() - self._active_requests[request_id].start_time
-			self.logger.debug(f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {self._active_requests[request_id].url[:50]}...')
+			self.logger.debug(
+				f'[CrashWatchdog] Request failed after {elapsed:.2f}s: {self._active_requests[request_id].url[:50]}...'
+			)
 			del self._active_requests[request_id]
 
 	def _on_request_finished_cdp(self, event: dict) -> None:
@@ -169,7 +169,7 @@ class CrashWatchdog(BaseWatchdog):
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
-		
+
 		target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
 		self.logger.error(f'[CrashWatchdog] Target crashed: {target_url}')
 
@@ -209,29 +209,25 @@ class CrashWatchdog(BaseWatchdog):
 		# Set up CDP session for browser-level crash detection
 		try:
 			cdp_client = self.browser_session.cdp_client
-			
+
 			# Enable browser-level crash detection
 			# Note: Browser domain might not be available in all contexts
 			try:
 				await cdp_client.send.Browser.getVersion()  # Test if Browser domain is available
-				
+
 				# Set up browser crash handler
 				def on_browser_crash(event):
 					self.logger.error('[CrashWatchdog] Browser crash detected via CDP')
 					self.event_bus.dispatch(
-						BrowserErrorEvent(
-							error_type='BrowserCrash', 
-							message='Browser process crashed', 
-							details=event
-						)
+						BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=event)
 					)
-				
+
 				# Note: Browser.crash event might not exist, using Inspector.targetCrashed instead
 				self.logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
 			except Exception:
 				# Browser domain not available, rely on target-level monitoring
 				pass
-				
+
 		except Exception as e:
 			self.logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
@@ -328,7 +324,7 @@ class CrashWatchdog(BaseWatchdog):
 			cdp_client = self.browser_session.cdp_client
 			# Try a simple CDP command to check connection
 			await asyncio.wait_for(cdp_client.send.Target.getTargets(), timeout=2.0)
-		except (asyncio.TimeoutError, Exception) as e:
+		except (TimeoutError, Exception) as e:
 			self.logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
 			self.event_bus.dispatch(
 				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
@@ -360,18 +356,18 @@ class CrashWatchdog(BaseWatchdog):
 		try:
 			targets = await cdp_client.send.Target.getTargets()
 			target_infos = targets.get('targetInfos', [])
-			
+
 			# Only check page-type targets
 			target_list = [t for t in target_infos if t.get('type') == 'page']
-			
+
 			for target in target_list:
 				target_id = target['targetId']
 				target_url = target.get('url', '')
-				
+
 				# Skip new tab pages
 				if self._is_new_tab_page(target_url):
 					continue
-				
+
 				# Check if target is still attached/alive
 				try:
 					# Check responsiveness occasionally to avoid overhead
@@ -412,23 +408,16 @@ class CrashWatchdog(BaseWatchdog):
 		session_id = None
 		try:
 			cdp_client = self.browser_session.cdp_client
-			
+
 			# Attach to target if not already attached
 			if target_id not in self._cdp_sessions:
-				session = await cdp_client.send.Target.attachToTarget(
-					params={'targetId': target_id, 'flatten': True}
-				)
+				session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 				session_id = session['sessionId']
 			else:
 				session_id = self._cdp_sessions[target_id]
-			
+
 			# Try to evaluate simple JavaScript
-			eval_task = asyncio.create_task(
-				cdp_client.send.Runtime.evaluate(
-					params={'expression': '1'},
-					session_id=session_id
-				)
-			)
+			eval_task = asyncio.create_task(cdp_client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id))
 			done, pending = await asyncio.wait([eval_task], timeout=timeout)
 
 			if eval_task in done:
@@ -452,7 +441,7 @@ class CrashWatchdog(BaseWatchdog):
 					await eval_task
 				except (asyncio.CancelledError, Exception):
 					pass
-			
+
 			# Detach if we attached just for this check
 			if session_id and target_id not in self._cdp_sessions:
 				try:
@@ -487,23 +476,21 @@ class CrashWatchdog(BaseWatchdog):
 		"""Trigger a target crash for testing."""
 		try:
 			cdp_client = self.browser_session.cdp_client
-			
+
 			# Get target info for logging
 			targets = await cdp_client.send.Target.getTargets()
 			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 			target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
-			
+
 			self.logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
-			
+
 			# Attach to target
-			session = await cdp_client.send.Target.attachToTarget(
-				params={'targetId': target_id, 'flatten': True}
-			)
+			session = await cdp_client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 			session_id = session['sessionId']
-			
+
 			# Crash the target
 			await cdp_client.send.Page.crash(session_id=session_id)
-			
+
 			# Detach
 			await cdp_client.send.Target.detachFromTarget(params={'sessionId': session_id})
 		except Exception as e:
