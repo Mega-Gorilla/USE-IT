@@ -2,6 +2,7 @@ import asyncio
 import enum
 import json
 import logging
+import re
 from typing import Generic, TypeVar
 
 try:
@@ -286,135 +287,140 @@ class Controller(Generic[Context]):
 		# TODO: Refactor to use events instead of direct page access
 		# This action is temporarily disabled as it needs refactoring to use events
 
-	# 		@self.registry.action(
-	# 			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-	# 		This tool takes the entire markdown of the page and extracts the query from it.
-	# 		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
-	# 		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-	# 		""",
-	# 		)
-	# 		async def extract_structured_data(
-	# 			query: str,
-	# 			extract_links: bool,
-	# 			page: Page,
-	# 			page_extraction_llm: BaseChatModel,
-	# 			file_system: FileSystem,
-	# 		):
-	# 			from functools import partial
+		@self.registry.action(
+			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
+		This tool takes the entire markdown of the page and extracts the query from it.
+		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
+		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
+		""",
+		)
+		async def extract_structured_data(
+			query: str,
+			extract_links: bool,
+			browser_session: BrowserSession,
+			page_extraction_llm: BaseChatModel,
+			file_system: FileSystem,
+		):
+			from functools import partial
 
-	# 			import markdownify
+			import markdownify
 
-	# 			strip = []
+			strip = []
 
-	# 			if not extract_links:
-	# 				strip = ['a', 'img']
+			if not extract_links:
+				strip = ['a', 'img']
 
-	# 			# Run markdownify in a thread pool to avoid blocking the event loop
-	# 			loop = asyncio.get_event_loop()
+			# Run markdownify in a thread pool to avoid blocking the event loop
+			loop = asyncio.get_event_loop()
 
-	# 			# Aggressive timeout for page content
-	# 			try:
-	# 				page_html_result = await asyncio.wait_for(page.content(), timeout=10.0)  # 5 second aggressive timeout
-	# 			except TimeoutError:
-	# 				raise RuntimeError('Page content extraction timed out after 5 seconds')
-	# 			except Exception as e:
-	# 				raise RuntimeError(f"Couldn't extract page content: {e}")
+			client, session_id = await browser_session.get_cdp_session()
 
-	# 			page_html = page_html_result
+			try:
+				result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
+				root_node_id = result['root']['nodeId']
+				page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': root_node_id}, session_id=session_id)
+			except TimeoutError:
+				raise RuntimeError('Page content extraction timed out after 5 seconds')
+			except Exception as e:
+				raise RuntimeError(f"Couldn't extract page content: {e}")
 
-	# 			markdownify_func = partial(markdownify.markdownify, strip=strip)
+			page_html = page_html_result
 
-	# 			try:
-	# 				content = await asyncio.wait_for(
-	# 					loop.run_in_executor(None, markdownify_func, page_html), timeout=5.0
-	# 				)  # 5 second aggressive timeout
-	# 			except Exception as e:
-	# 				logger.warning(f'Markdownify failed: {type(e).__name__}')
-	# 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
+			markdownify_func = partial(markdownify.markdownify, strip=strip)
 
-	# 			# manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
-	# 			for iframe in page.frames:
-	# 				try:
-	# 					await iframe.wait_for_load_state(timeout=1000)  # 1 second aggressive timeout for iframe load
-	# 				except Exception:
-	# 					pass
+			try:
+				content = await asyncio.wait_for(
+					loop.run_in_executor(None, markdownify_func, page_html), timeout=5.0
+				)  # 5 second aggressive timeout
+			except Exception as e:
+				logger.warning(f'Markdownify failed: {type(e).__name__}')
+				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
-	# 				if iframe.url != page.url and not iframe.url.startswith('data:') and not iframe.url.startswith('about:'):
-	# 					content += f'\n\nIFRAME {iframe.url}:\n'
-	# 					# Run markdownify in a thread pool for iframe content as well
-	# 					try:
-	# 						# Aggressive timeouts for iframe content
-	# 						iframe_html = await asyncio.wait_for(iframe.content(), timeout=2.0)  # 2 second aggressive timeout
-	# 						iframe_markdown = await asyncio.wait_for(
-	# 							loop.run_in_executor(None, markdownify_func, iframe_html),
-	# 							timeout=2.0,  # 2 second aggressive timeout for iframe markdownify
-	# 						)
-	# 					except Exception:
-	# 						iframe_markdown = ''  # Skip failed iframes
-	# 					content += iframe_markdown
-	# 			# replace multiple sequential \n with a single \n
-	# 			content = re.sub(r'\n+', '\n', content)
+			# TODO: fix this using new browser_session.get_all_frames()
+			# # manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
+			# for iframe in page.frames:
+			# 	try:
+			# 		await iframe.wait_for_load_state(timeout=1000)  # 1 second aggressive timeout for iframe load
+			# 	except Exception:
+			# 		pass
 
-	# 			# limit to 30000 characters - remove text in the middle (≈15000 tokens)
-	# 			max_chars = 30000
-	# 			if len(content) > max_chars:
-	# 				logger.info(f'Content is too long, removing middle {len(content) - max_chars} characters')
-	# 				content = (
-	# 					content[: max_chars // 2]
-	# 					+ '\n... left out the middle because it was too long ...\n'
-	# 					+ content[-max_chars // 2 :]
-	# 				)
+			# 	if iframe.url != page.url and not iframe.url.startswith('data:') and not iframe.url.startswith('about:'):
+			# 		content += f'\n\nIFRAME {iframe.url}:\n'
+			# 		# Run markdownify in a thread pool for iframe content as well
+			# 		try:
+			# 			# Aggressive timeouts for iframe content
+			# 			iframe_html = await asyncio.wait_for(iframe.content(), timeout=2.0)  # 2 second aggressive timeout
+			# 			iframe_markdown = await asyncio.wait_for(
+			# 				loop.run_in_executor(None, markdownify_func, iframe_html),
+			# 				timeout=2.0,  # 2 second aggressive timeout for iframe markdownify
+			# 			)
+			# 		except Exception:
+			# 			iframe_markdown = ''  # Skip failed iframes
+			# 		content += iframe_markdown
+			# # replace multiple sequential \n with a single \n
 
-	# 			prompt = """You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If
-	# 1. The query is vague
-	# 2. Does not make sense for the page
-	# 3. Some/all of the information is not available
+			content = re.sub(r'\n+', '\n', content)
 
-	# Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
-	# 			try:
-	# 				formatted_prompt = prompt.format(query=query, page=content)
-	# 				# Aggressive timeout for LLM call
-	# 				response = await asyncio.wait_for(
-	# 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
-	# 					timeout=120.0,  # 120 second aggressive timeout for LLM call
-	# 				)
+			# limit to 30000 characters - remove text in the middle (≈15000 tokens)
+			max_chars = 30000
+			if len(content) > max_chars:
+				logger.info(f'Content is too long, removing middle {len(content) - max_chars} characters')
+				content = (
+					content[: max_chars // 2]
+					+ '\n... left out the middle because it was too long ...\n'
+					+ content[-max_chars // 2 :]
+				)
 
-	# 				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+			prompt = """You convert websites into structured information. Extract information from this webpage based on the query. Focus only on content relevant to the query. If
+1. The query is vague
+2. Does not make sense for the page
+3. Some/all of the information is not available
 
-	# 				# if content is small include it to memory
-	# 				MAX_MEMORY_SIZE = 600
-	# 				if len(extracted_content) < MAX_MEMORY_SIZE:
-	# 					memory = extracted_content
-	# 					include_extracted_content_only_once = False
-	# 				else:
-	# 					# find lines until MAX_MEMORY_SIZE
-	# 					lines = extracted_content.splitlines()
-	# 					display = ''
-	# 					display_lines_count = 0
-	# 					for line in lines:
-	# 						if len(display) + len(line) < MAX_MEMORY_SIZE:
-	# 							display += line + '\n'
-	# 							display_lines_count += 1
-	# 						else:
-	# 							break
-	# 					save_result = await file_system.save_extracted_content(extracted_content)
-	# 					memory = f'Extracted content from {page.url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
-	# 					include_extracted_content_only_once = True
-	# 				logger.info(f'📄 {memory}')
-	# 				return ActionResult(
-	# 					extracted_content=extracted_content,
-	# 					include_extracted_content_only_once=include_extracted_content_only_once,
-	# 					long_term_memory=memory,
-	# 				)
-	# 			except TimeoutError:
-	# 				error_msg = f'LLM call timed out for query: {query}'
-	# 				logger.warning(error_msg)
-	# 				raise RuntimeError(error_msg)
-	# 			except Exception as e:
-	# 				logger.debug(f'Error extracting content: {e}')
-	# 				msg = f'📄  Extracted from page\n: {content}\n'
-	# 				logger.info(msg)
-	# 				raise RuntimeError(str(e))
+Explain the content of the page and that the requested information is not available in the page. Respond in JSON format.\nQuery: {query}\n Website:\n{page}"""
+			try:
+				formatted_prompt = prompt.format(query=query, page=content)
+				# Aggressive timeout for LLM call
+				response = await asyncio.wait_for(
+					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
+					timeout=120.0,  # 120 second aggressive timeout for LLM call
+				)
+
+				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+
+				# if content is small include it to memory
+				MAX_MEMORY_SIZE = 600
+				if len(extracted_content) < MAX_MEMORY_SIZE:
+					memory = extracted_content
+					include_extracted_content_only_once = False
+				else:
+					# find lines until MAX_MEMORY_SIZE
+					lines = extracted_content.splitlines()
+					display = ''
+					display_lines_count = 0
+					for line in lines:
+						if len(display) + len(line) < MAX_MEMORY_SIZE:
+							display += line + '\n'
+							display_lines_count += 1
+						else:
+							break
+					save_result = await file_system.save_extracted_content(extracted_content)
+					memory = f'Extracted content from {page.url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
+					include_extracted_content_only_once = True
+				logger.info(f'📄 {memory}')
+				return ActionResult(
+					extracted_content=extracted_content,
+					include_extracted_content_only_once=include_extracted_content_only_once,
+					long_term_memory=memory,
+				)
+			except TimeoutError:
+				error_msg = f'LLM call timed out for query: {query}'
+				logger.warning(error_msg)
+				raise RuntimeError(error_msg)
+			except Exception as e:
+				logger.debug(f'Error extracting content: {e}')
+				msg = f'📄  Extracted from page\n: {content}\n'
+				logger.info(msg)
+				raise RuntimeError(str(e))
 
 	# @self.registry.action(
 	# 	'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components).',
