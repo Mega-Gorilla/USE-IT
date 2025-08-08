@@ -188,38 +188,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 		Returns:
 			The download path if a download was triggered, None otherwise
 		"""
-		cdp_session = await self.browser_session.attach_cdp_session()
-
-		session_id = element_node.session_id
-		backend_node_id = element_node.backend_node_id
-
-		# do JS click first because quads click isnt good enough yet
-		try:
-			result = await cdp_session.cdp_client.send.DOM.resolveNode(
-				params={'backendNodeId': backend_node_id},
-				session_id=session_id,
-			)
-			assert 'object' in result and 'objectId' in result['object'], (
-				'Failed to find DOM element based on backendNodeId, maybe page content changed?'
-			)
-			object_id = result['object']['objectId']
-
-			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-				params={
-					'functionDeclaration': 'function() { this.click(); }',
-					'objectId': object_id,
-				},
-				session_id=session_id,
-			)
-			await asyncio.sleep(0.5)
-			# Navigation is handled by NavigationWatchdog via events
-			return None
-		except Exception as js_e:
-			self.logger.error(f'CDP JavaScript click also failed: {js_e}')
-			raise Exception(f'Failed to click element: {js_e}')
 
 		try:
 			# Get CDP client
+			cdp_session = await self.browser_session.attach_cdp_session()
 
 			# Get the correct session ID for the element's frame
 			# session_id = await self._get_session_id_for_element(element_node)
@@ -270,10 +242,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# TODO: fix this with download_watchdog.py
 				# cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
 
-
 			# Perform the click using CDP
 			# TODO: do occlusion detection first, if element is not on the top, fire JS-based
-   			# click event instead using xpath of x,y coordinate clicking, because we wont be able to click *through* occluding elements using x,y clicks
+			# click event instead using xpath of x,y coordinate clicking, because we wont be able to click *through* occluding elements using x,y clicks
 			try:
 				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
 				# Move mouse to element
@@ -286,7 +257,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=session_id,
 				)
 				await asyncio.sleep(0.123)
-			
+
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
 				modifiers = 0
@@ -366,34 +337,33 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# # Navigation is handled by NavigationWatchdog via events
 
 				# return download_path
-				raise Exception('Quad click isnt perfect yet especially for multi-action sequences where navigation dropdowns move around, additional JavaScript click is needed')
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
 				# Fall back to JavaScript click via CDP
-				# try:
-				# 	result = await cdp_session.cdp_client.send.DOM.resolveNode(
-				# 		params={'backendNodeId': backend_node_id},
-				# 		session_id=session_id,
-				# 	)
-				# 	assert 'object' in result and 'objectId' in result['object'], (
-				# 		'Failed to find DOM element based on backendNodeId, maybe page content changed?'
-				# 	)
-				# 	object_id = result['object']['objectId']
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+					)
+					object_id = result['object']['objectId']
 
-				# 	await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-				# 		params={
-				# 			'functionDeclaration': 'function() { this.click(); }',
-				# 			'objectId': object_id,
-				# 		},
-				# 		session_id=session_id,
-				# 	)
-				# 	await asyncio.sleep(0.5)
-				# 	# Navigation is handled by NavigationWatchdog via events
-				# 	return None
-				# except Exception as js_e:
-				# 	self.logger.error(f'CDP JavaScript click also failed: {js_e}')
-				raise Exception(f'Failed to click element: {e}')
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.5)
+					# Navigation is handled by NavigationWatchdog via events
+					return None
+				except Exception as js_e:
+					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
+					raise Exception(f'Failed to click element: {e}')
 
 		except URLNotAllowedError as e:
 			raise e
@@ -708,7 +678,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Handle modifier keys
 				parts = keys.split('+')
 				key = parts[-1]
-				
+
 				# Calculate modifier bits inline
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
 				modifiers = 0
@@ -767,7 +737,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Use rawKeyDown for special keys (non-text producing keys)
 				# Use keyDown only for regular text characters
 				key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
-				
+
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': key_type, 'key': key},
 					session_id=cdp_session.session_id,
