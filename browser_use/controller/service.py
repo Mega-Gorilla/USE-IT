@@ -319,7 +319,7 @@ class Controller(Generic[Context]):
 				# result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
 				# root_node_id = result['root']['nodeId']
 				# page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': 1}, session_id=session_id)
-				page_html_result = await client.send.Page.captureSnapshot(params={'format': 'mhtml'}, session_id=session_id)
+				page_html_result = await client.send.Page.captureSnapshot(params={'format': 'mhtml'}, session_id=session_id)   # included OOPIF content automatically
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
@@ -336,29 +336,6 @@ class Controller(Generic[Context]):
 			except Exception as e:
 				logger.warning(f'Markdownify failed: {type(e).__name__}')
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
-
-			# TODO: fix this using new browser_session.get_all_frames()
-			# # manually append iframe text into the content so it's readable by the LLM (includes cross-origin iframes)
-			# for iframe in page.frames:
-			# 	try:
-			# 		await iframe.wait_for_load_state(timeout=1000)  # 1 second aggressive timeout for iframe load
-			# 	except Exception:
-			# 		pass
-
-			# 	if iframe.url != page.url and not iframe.url.startswith('data:') and not iframe.url.startswith('about:'):
-			# 		content += f'\n\nIFRAME {iframe.url}:\n'
-			# 		# Run markdownify in a thread pool for iframe content as well
-			# 		try:
-			# 			# Aggressive timeouts for iframe content
-			# 			iframe_html = await asyncio.wait_for(iframe.content(), timeout=2.0)  # 2 second aggressive timeout
-			# 			iframe_markdown = await asyncio.wait_for(
-			# 				loop.run_in_executor(None, markdownify_func, iframe_html),
-			# 				timeout=2.0,  # 2 second aggressive timeout for iframe markdownify
-			# 			)
-			# 		except Exception:
-			# 			iframe_markdown = ''  # Skip failed iframes
-			# 		content += iframe_markdown
-			# # replace multiple sequential \n with a single \n
 
 			content = re.sub(r'\n+', '\n', content)
 
