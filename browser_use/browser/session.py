@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import weakref
 from pathlib import Path
 from typing import Any, Self
 
@@ -141,7 +140,6 @@ class BrowserSession(BaseModel):
 
 
 		self._cdp_client_root = None  # type: ignore
-		self._cdp_session_cache.clear()
 		self._cached_browser_state_summary = None
 		self._cached_selector_map.clear()
 
@@ -279,6 +277,10 @@ class BrowserSession(BaseModel):
 			target_id = self.current_target_id
 			if not target_id:
 				raise ValueError('No target ID provided and no current target ID set')
+
+		await self._cdp_client_root.send.Target.setAutoAttach(
+			params={'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True}
+		)
 
 		session = await self._cdp_client_root.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
@@ -521,7 +523,6 @@ class BrowserSession(BaseModel):
 			try:
 				await self.get_cdp_session(target_id)
 				assert self.cdp_client is not None
-				self.logger.info(f'🌐 CDP session cached and domains enabled for target {target_id[:8]}...')
 			except Exception as e:
 				self.logger.warning(f'Failed to create CDP session: {e}')
 				raise
@@ -542,7 +543,7 @@ class BrowserSession(BaseModel):
 		"""Get target ID by tab index."""
 		target_ids = await self._cdp_get_all_pages()
 		if 0 <= tab_index < len(target_ids):
-			return target_ids[tab_index]
+			return target_ids[tab_index]['targetId']
 		return None
 
 	async def get_tab_index(self, target_id: str) -> int:

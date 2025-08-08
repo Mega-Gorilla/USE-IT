@@ -12,8 +12,8 @@ from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
 	BrowserStoppedEvent,
-	TargetCrashedEvent,
 )
+from cdp_use.cdp.inspector.events import TargetCrashedEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
 
 if TYPE_CHECKING:
@@ -39,10 +39,7 @@ class CrashWatchdog(BaseWatchdog):
 		BrowserConnectedEvent,
 		BrowserStoppedEvent,
 	]
-	EMITS: ClassVar[list[type[BaseEvent]]] = [
-		BrowserErrorEvent,
-		TargetCrashedEvent,
-	]
+	EMITS: ClassVar[list[type[BaseEvent]]] = [BrowserErrorEvent]
 
 	# Configuration
 	network_timeout_seconds: float = Field(default=10.0)
@@ -103,14 +100,14 @@ class CrashWatchdog(BaseWatchdog):
 			# cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
 
 			# Set up crash handler (Inspector domain already enabled by get_cdp_session)
-			def on_target_crashed(event):
+			def on_target_crashed(event: TargetCrashedEvent, session_id: str | None=None):
 				# Create and track the task
 				task = asyncio.create_task(self._on_target_crash_cdp(target_id))
 				self._cdp_event_tasks.add(task)
 				# Remove from set when done
 				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
-			cdp_client.on('Inspector.targetCrashed', on_target_crashed, session_id=session_id)
+			cdp_client.register.Inspector.targetCrashed(on_target_crashed)
 			
 			# Track that we've added listeners to this session
 			self._sessions_with_listeners.add(session_id)
@@ -168,28 +165,21 @@ class CrashWatchdog(BaseWatchdog):
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
-
-		target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
-		self.logger.error(f'[CrashWatchdog] Target crashed: {target_url}')
+		if target_info and target_info['targetId'] == self.browser_session.current_target_id:
+			self.browser_session.current_target_id = None
+			self.logger.error(f'[CrashWatchdog] 💥 Target crashed, navigating Agent to a new tab: {target_info.get("url", "unknown")}')
 
 		# Get tab index
 		tab_index = await self.browser_session.get_tab_index(target_id)
 
-		# Emit crash event
-		self.event_bus.dispatch(
-			TargetCrashedEvent(
-				tab_index=tab_index,
-				error='Target crashed unexpectedly',
-			)
-		)
 
 		# Also emit generic browser error
 		self.event_bus.dispatch(
 			BrowserErrorEvent(
 				error_type='TargetCrash',
-				message=f'Target crashed: {target_url}',
+				message=f'Target crashed: #{tab_index}',
 				details={
-					'url': target_url,
+					# 'url': target_url,  # TODO: add url to details
 					'tab_index': tab_index,
 					'target_id': target_id,
 				},
@@ -222,6 +212,8 @@ class CrashWatchdog(BaseWatchdog):
 					self.event_bus.dispatch(
 						BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=event)
 					)
+     
+				cdp_client.remove_event_listener('Browser.crash', on_browser_crash)
 
 				# Note: Browser.crash event might not exist, using Inspector.targetCrashed instead
 				self.logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
@@ -311,40 +303,20 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def _check_browser_health(self) -> None:
 		"""Check if browser and targets are still responsive."""
-		# Check browser connection via CDP
-		try:
-			cdp_client = self.browser_session.cdp_client
-			# Try a simple CDP command to check connection
-			await asyncio.wait_for(cdp_client.send.Target.getTargets(), timeout=2.0)
-		except (asyncio.TimeoutError, Exception) as e:
-			self.logger.error(f'[CrashWatchdog] Browser connection check failed: {e}')
-			self.event_bus.dispatch(
-				BrowserErrorEvent(error_type='BrowserDisconnected', message='Browser disconnected unexpectedly', details={})
-			)
-			# Exit the monitoring loop
-			raise asyncio.CancelledError('Browser disconnected')
-		
-		# Check all cached CDP sessions for health
-		if hasattr(self.browser_session, '_cdp_session_cache'):
-			dead_sessions = []
-			for target_id, cached_value in list(self.browser_session._cdp_session_cache.items()):
-				try:
-					client, session_id = cached_value
-					# Quick ping to check if session is alive
-					await asyncio.wait_for(
-						client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id),
-						timeout=1.0
-					)
-				except:
-					dead_sessions.append(target_id)
-					self.logger.warning(f'[CrashWatchdog] Dead session detected for target {target_id}')
-			
-			# Clean up dead sessions
-			for target_id in dead_sessions:
-				await self.browser_session._cdp_release_session(target_id)
 
+		try:
+			client, session_id = await self.browser_session.get_cdp_session()
+			# Quick ping to check if session is alive
+			await asyncio.wait_for(
+				client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id),
+				timeout=1.0
+			)
+		except:
+			self.logger.error(f'[CrashWatchdog] ❌ Crashed session detected for target {self.browser_session.current_target_id}')
+			self.browser_session.current_target_id = None
+		
 		# Check browser process if we have PID
-		if proc := self.browser_session._local_browser_watchdog._subprocess:
+		if self.browser_session._local_browser_watchdog and (proc := self.browser_session._local_browser_watchdog._subprocess):
 			try:
 				if proc.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
 					self.logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')
@@ -360,93 +332,6 @@ class CrashWatchdog(BaseWatchdog):
 			except Exception:
 				pass  # psutil not available or process doesn't exist
 
-		# Check each target
-		dead_targets = []
-		unresponsive_targets = []
-
-		try:
-			targets = await cdp_client.send.Target.getTargets()
-			target_infos = targets.get('targetInfos', [])
-
-			# Only check page-type targets
-			target_list = [t for t in target_infos if t.get('type') == 'page']
-
-			for target in target_list:
-				target_id = target['targetId']
-				target_url = target.get('url', '')
-
-				# Skip new tab pages
-				if self._is_new_tab_page(target_url):
-					continue
-
-				# Check if target is still attached/alive
-				try:
-					# Check responsiveness occasionally to avoid overhead
-					last_check = self._last_responsive_checks.get(target_url, 0)
-					if time.time() - last_check > 10:
-						if not await self._is_target_responsive(target_id, timeout=2.0):
-							unresponsive_targets.append(target)
-						self._last_responsive_checks[target_url] = time.time()
-				except Exception:
-					# Target might be dead
-					dead_targets.append(target)
-
-		except Exception as e:
-			self.logger.error(f'[CrashWatchdog] Error checking target health: {e}')
-			return
-
-		# Report unresponsive targets
-		for target in unresponsive_targets:
-			target_url = target.get('url', 'unknown')
-			self.logger.warning(f'[CrashWatchdog] Target unresponsive: {target_url}')
-
-			tab_index = await self.browser_session.get_tab_index(target['targetId'])
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='TargetUnresponsive',
-					message=f'Target JS engine unresponsive: {target_url}',
-					details={
-						'url': target_url,
-						'tab_index': tab_index,
-						'target_id': target['targetId'],
-					},
-				)
-			)
-
-	async def _is_target_responsive(self, target_id: str, timeout: float = 5.0) -> bool:
-		"""Check if a target is responsive by trying to evaluate simple JavaScript."""
-		eval_task = None
-		try:
-			# Get cached session
-			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
-
-			# Try to evaluate simple JavaScript
-			eval_task = asyncio.create_task(cdp_client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id))
-			done, pending = await asyncio.wait([eval_task], timeout=timeout)
-
-			if eval_task in done:
-				try:
-					result = await eval_task
-					# Check if evaluation succeeded
-					if result.get('result', {}).get('value') == 1:
-						return True
-				except Exception:
-					return False
-			else:
-				# Timeout - the target is unresponsive
-				return False
-		except Exception:
-			return False
-		finally:
-			# Clean up the eval task
-			if eval_task and not eval_task.done():
-				eval_task.cancel()
-				try:
-					await eval_task
-				except (asyncio.CancelledError, Exception):
-					pass
-
-			# No need to detach - sessions are cached and managed by BrowserSession
 
 	@staticmethod
 	def _is_new_tab_page(url: str) -> bool:

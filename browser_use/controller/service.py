@@ -36,6 +36,7 @@ from browser_use.controller.views import (
 )
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
+from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_sync
 
@@ -362,8 +363,10 @@ Explain the content of the page and that the requested information is not availa
 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
 					timeout=120.0,  # 120 second aggressive timeout for LLM call
 				)
+				target_info = await client.send.Target.getTargetInfo(session_id=session_id)  # TODO: make a helper method on browser_session for this
+				url = target_info['targetInfo']['url']
 
-				extracted_content = f'Page Link: {page.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+				extracted_content = f'Page Link: {url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
 
 				# if content is small include it to memory
 				MAX_MEMORY_SIZE = 600
@@ -382,7 +385,7 @@ Explain the content of the page and that the requested information is not availa
 						else:
 							break
 					save_result = await file_system.save_extracted_content(extracted_content)
-					memory = f'Extracted content from {page.url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
+					memory = f'Extracted content from {url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
 					include_extracted_content_only_once = True
 				logger.info(f'📄 {memory}')
 				return ActionResult(
