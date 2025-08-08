@@ -316,15 +316,16 @@ class Controller(Generic[Context]):
 			client, session_id = await browser_session.get_cdp_session()
 
 			try:
-				result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
-				root_node_id = result['root']['nodeId']
-				page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': root_node_id}, session_id=session_id)
+				# result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
+				# root_node_id = result['root']['nodeId']
+				# page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': 1}, session_id=session_id)
+				page_html_result = await client.send.Page.captureSnapshot(params={'format': 'mhtml'}, session_id=session_id)
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
 				raise RuntimeError(f"Couldn't extract page content: {e}")
 
-			page_html = page_html_result
+			page_html = page_html_result['data']
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
 
