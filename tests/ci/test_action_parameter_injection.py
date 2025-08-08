@@ -81,96 +81,60 @@ class TestBrowserContext:
 		the allowed domains configuration.
 		"""
 		# Scenario 1: allowed_domains is None, any URL should be allowed.
+		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from bubus import EventBus
+		
 		config1 = BrowserProfile(allowed_domains=None, headless=True, user_data_dir=None)
 		context1 = BrowserSession(browser_profile=config1)
-		assert context1._is_url_allowed('http://anydomain.com') is True
-		assert context1._is_url_allowed('https://anotherdomain.org/path') is True
+		event_bus1 = EventBus()
+		watchdog1 = NavigationWatchdog(browser_session=context1, event_bus=event_bus1)
+		assert watchdog1._is_url_allowed('http://anydomain.com') is True
+		assert watchdog1._is_url_allowed('https://anotherdomain.org/path') is True
 
 		# Scenario 2: allowed_domains is provided.
 		# Note: match_url_with_domain_pattern defaults to https:// scheme when none is specified
 		allowed = ['https://example.com', 'http://example.com', 'http://*.mysite.org', 'https://*.mysite.org']
 		config2 = BrowserProfile(allowed_domains=allowed, headless=True, user_data_dir=None)
 		context2 = BrowserSession(browser_profile=config2)
+		event_bus2 = EventBus()
+		watchdog2 = NavigationWatchdog(browser_session=context2, event_bus=event_bus2)
 
 		# URL exactly matching
-		assert context2._is_url_allowed('http://example.com') is True
+		assert watchdog2._is_url_allowed('http://example.com') is True
 		# URL with subdomain (should not be allowed)
-		assert context2._is_url_allowed('http://sub.example.com/path') is False
+		assert watchdog2._is_url_allowed('http://sub.example.com/path') is False
 		# URL with subdomain for wildcard pattern (should be allowed)
-		assert context2._is_url_allowed('http://sub.mysite.org') is True
+		assert watchdog2._is_url_allowed('http://sub.mysite.org') is True
 		# URL that matches second allowed domain
-		assert context2._is_url_allowed('https://mysite.org/page') is True
+		assert watchdog2._is_url_allowed('https://mysite.org/page') is True
 		# URL with port number, still allowed (port is stripped)
-		assert context2._is_url_allowed('http://example.com:8080') is True
-		assert context2._is_url_allowed('https://example.com:443') is True
+		assert watchdog2._is_url_allowed('http://example.com:8080') is True
+		assert watchdog2._is_url_allowed('https://example.com:443') is True
 
 		# Scenario 3: Malformed URL or empty domain
 		# urlparse will return an empty netloc for some malformed URLs.
-		assert context2._is_url_allowed('notaurl') is False
+		assert watchdog2._is_url_allowed('notaurl') is False
 
 	def test_convert_simple_xpath_to_css_selector(self):
 		"""
-		Test the _convert_simple_xpath_to_css_selector method of BrowserSession.
-		This verifies that simple XPath expressions are correctly converted to CSS selectors.
+		Test removed: _convert_simple_xpath_to_css_selector method no longer exists.
 		"""
-		# Test empty xpath returns empty string
-		assert BrowserSession._convert_simple_xpath_to_css_selector('') == ''
-
-		# Test a simple xpath without indices
-		xpath = '/html/body/div/span'
-		expected = 'html > body > div > span'
-		result = BrowserSession._convert_simple_xpath_to_css_selector(xpath)
-		assert result == expected
-
-		# Test xpath with an index on one element: [2] should translate to :nth-of-type(2)
-		xpath = '/html/body/div[2]/span'
-		expected = 'html > body > div:nth-of-type(2) > span'
-		result = BrowserSession._convert_simple_xpath_to_css_selector(xpath)
-		assert result == expected
-
-		# Test xpath with indices on multiple elements
-		xpath = '/ul/li[3]/a[1]'
-		expected = 'ul > li:nth-of-type(3) > a:nth-of-type(1)'
-		result = BrowserSession._convert_simple_xpath_to_css_selector(xpath)
-		assert result == expected
+		pass  # Method was removed from BrowserSession
 
 	def test_enhanced_css_selector_for_element(self):
 		"""
-		Test the _enhanced_css_selector_for_element method to verify that
-		it returns the correct CSS selector string for a DOMElementNode.
+		Test removed: _enhanced_css_selector_for_element method no longer exists.
 		"""
+		pass  # Method was removed from BrowserSession
 
-		# Create a DOMElementNode instance with a complex set of attributes
-		dummy_element = EnhancedDOMTreeNode(
-			node_id=1,
-			backend_node_id=1,
-			node_type=NodeType.ELEMENT_NODE,
-			node_name='div',
-			node_value='',
-			attributes={'class': 'foo bar', 'id': 'my-id', 'placeholder': 'some "quoted" text', 'data-testid': '123'},
-			is_scrollable=False,
-			frame_id=None,
-			content_document=None,
-			shadow_root_type=None,
-			shadow_roots=None,
-			parent_node=None,
-			children_nodes=None,
-			ax_node=None,
-			snapshot_node=None,
-		)
-
-		# Call the method with include_dynamic_attributes=True
-		actual_selector = BrowserSession._enhanced_css_selector_for_element(dummy_element, include_dynamic_attributes=True)
-
-		# Expected conversion includes the xpath conversion, class attributes, and other attributes
-		expected_selector = 'div.foo.bar[id="my-id"][placeholder*="some \\"quoted\\" text"][data-testid="123"]'  # changed the test because we have slightly different dom logic now
-		assert actual_selector == expected_selector, f'Expected {expected_selector}, but got {actual_selector}'
 
 	@pytest.mark.asyncio
 	async def test_navigate_and_get_current_page(self, browser_session, base_url):
 		"""Test that navigate method changes the URL and get_current_page returns the proper page."""
 		# Navigate to the test page
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Get the current page
 		page = await browser_session.get_current_page()
@@ -186,7 +150,9 @@ class TestBrowserContext:
 	async def test_refresh_page(self, browser_session, base_url):
 		"""Test that refresh_page correctly reloads the current page."""
 		# Navigate to the test page
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Get the current page before refresh
 		page_before = await browser_session.get_current_page()
@@ -208,7 +174,9 @@ class TestBrowserContext:
 	async def test_execute_javascript(self, browser_session, base_url):
 		"""Test that execute_javascript correctly executes JavaScript in the current page."""
 		# Navigate to a test page
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Execute a simple JavaScript snippet that returns a value
 		result = await browser_session.execute_javascript('document.title')
@@ -227,7 +195,9 @@ class TestBrowserContext:
 	async def test_get_scroll_info(self, browser_session, base_url):
 		"""Test that get_scroll_info returns the correct scroll position information."""
 		# Navigate to the scroll test page
-		await browser_session.navigate(f'{base_url}/scroll_test')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/scroll_test'))
+		await event
 		page = await browser_session.get_current_page()
 
 		# Get initial scroll info
@@ -253,7 +223,9 @@ class TestBrowserContext:
 	async def test_take_screenshot(self, browser_session, base_url):
 		"""Test that take_screenshot returns a valid base64 encoded image."""
 		# Navigate to the test page
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Take a screenshot
 		screenshot_base64 = await browser_session.take_screenshot()
@@ -274,7 +246,9 @@ class TestBrowserContext:
 	async def test_switch_tab_operations(self, browser_session, base_url):
 		"""Test tab creation, switching, and closing operations."""
 		# Navigate to home page in first tab
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Create a new tab
 		await browser_session.create_new_tab(f'{base_url}/scroll_test')
@@ -312,7 +286,7 @@ class TestBrowserContext:
 	# async def test_remove_highlights(self, browser_session, base_url):
 	# 	"""Test that remove_highlights successfully removes highlight elements."""
 	# 	# Navigate to a test page
-	# 	await browser_session.navigate(f'{base_url}/')
+	# 	from browser_use.browser.events import NavigateToUrlEvent; event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/')
 
 	# 	# Add a highlight via JavaScript
 	# 	await browser_session.execute_javascript("""
@@ -364,7 +338,9 @@ class TestBrowserContext:
 			return ActionResult(extracted_content='return some result')
 
 		# Navigate to a test page
-		await browser_session.navigate(f'{base_url}/')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
+		await event
 
 		# Execute the action
 		result = await registry.execute_action('simple_action', {})

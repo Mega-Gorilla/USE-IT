@@ -30,9 +30,22 @@ class ScreenshotWatchdog(BaseWatchdog):
 		Returns:
 			Dict with 'screenshot' key containing base64-encoded screenshot or None
 		"""
+		self.logger.debug('[ScreenshotWatchdog] Handler START - on_ScreenshotEvent called')
 		try:
 			# Get CDP client and session for current target
 			cdp_session = await self.browser_session.attach_cdp_session()
+			
+			# Activate the target to ensure it's focused
+			self.logger.debug(f'[ScreenshotWatchdog] Activating target: {cdp_session.target_id}')
+			try:
+				# Use Target.activateTarget to bring the tab to front
+				await self.browser_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
+			except Exception as e:
+				self.logger.debug(f'[ScreenshotWatchdog] Could not activate target: {e}')
+			
+			# Small delay to ensure the tab switch is complete
+			import asyncio
+			await asyncio.sleep(0.2)
 
 			# Prepare screenshot parameters
 			params = CaptureScreenshotParameters(format='png', captureBeyondViewport=False)

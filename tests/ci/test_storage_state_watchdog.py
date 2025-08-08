@@ -154,14 +154,18 @@ async def test_storage_state_watchdog_load_event():
 		except Exception:
 			pass  # It's okay if event doesn't fire immediately
 
-		# Verify cookies were loaded
-		context = session.browser_context
-		if context:
-			cookies = await context.cookies()
-			# Should have at least the test cookie
-			cookie_names = {cookie.get('name') for cookie in cookies if cookie.get('name')}
-			# Note: May have additional cookies from browser, so we just check our test cookie exists
-			# assert 'test_cookie' in cookie_names
+		# Verify cookies were loaded using CDP
+		if session.cdp_client:
+			# Get the current target to get cookies from
+			target_info = await session.get_current_target_info()
+			if target_info:
+				cdp_session = await session.attach_cdp_session(target_info.target_id)
+				result = await cdp_session.cdp_client.send.Storage.getCookies(session_id=cdp_session.session_id)
+				cookies = result.get('cookies', [])
+				# Should have at least the test cookie
+				cookie_names = {cookie.get('name') for cookie in cookies if cookie.get('name')}
+				# Note: May have additional cookies from browser, so we just check our test cookie exists
+				# assert 'test_cookie' in cookie_names
 
 	finally:
 		# Stop browser

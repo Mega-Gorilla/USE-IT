@@ -12,6 +12,17 @@ from cdp_use.cdp.network import Cookie
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
+# Silence cdp_use logging - it's too verbose at DEBUG level
+# We need to patch the logger in the cdp_use.client module directly
+import cdp_use.client
+cdp_use.client.logger.setLevel(logging.ERROR)
+
+# Also configure all cdp_use loggers
+for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
+	cdp_logger = logging.getLogger(logger_name)
+	cdp_logger.setLevel(logging.ERROR)
+	cdp_logger.propagate = False  # Don't propagate to root logger
+
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
@@ -344,8 +355,17 @@ class BrowserSession(BaseModel):
 		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True, cached: bool = False
 	) -> BrowserStateSummary:
 		if cached and self._cached_browser_state_summary is not None and self._cached_browser_state_summary.dom_state:
-			self.logger.debug('🔄 Using pre-cached browser state summary for open tab')
-			return self._cached_browser_state_summary
+			# Don't use cached state if it has 0 interactive elements
+			selector_map = self._cached_browser_state_summary.dom_state.selector_map
+			
+			# Don't use cached state if we need a screenshot but the cached state doesn't have one
+			if include_screenshot and not self._cached_browser_state_summary.screenshot:
+				self.logger.debug('⚠️ Cached browser state has no screenshot, fetching fresh state with screenshot')
+			elif selector_map and len(selector_map) > 0:
+				self.logger.debug('🔄 Using pre-cached browser state summary for open tab')
+				return self._cached_browser_state_summary
+			else:
+				self.logger.debug('⚠️ Cached browser state has 0 interactive elements, fetching fresh state')
 
 		# Dispatch the event and wait for result
 		event: BrowserStateRequestEvent = cast(
@@ -451,20 +471,19 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(ScrollToTextEvent, self._default_action_watchdog.on_ScrollToTextEvent)
 		await self._default_action_watchdog.attach_to_session()
 
-		# Initialize DOMWatchdog
-		DOMWatchdog.model_rebuild()
-		self._dom_watchdog = DOMWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
-		await self._dom_watchdog.attach_to_session()
-
-		# Initialize ScreenshotWatchdog
 		ScreenshotWatchdog.model_rebuild()
 		self._screenshot_watchdog = ScreenshotWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(BrowserStartEvent, self._screenshot_watchdog.on_BrowserStartEvent)
 		# self.event_bus.on(BrowserStoppedEvent, self._screenshot_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(ScreenshotEvent, self._screenshot_watchdog.on_ScreenshotEvent)
 		await self._screenshot_watchdog.attach_to_session()
+
+		# Initialize DOMWatchdog (depends on ScreenshotWatchdog being registered)
+		DOMWatchdog.model_rebuild()
+		self._dom_watchdog = DOMWatchdog(event_bus=self.event_bus, browser_session=self)
+		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
+		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
+		await self._dom_watchdog.attach_to_session()
 		
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._watchdogs_attached = True

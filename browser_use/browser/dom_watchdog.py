@@ -188,16 +188,34 @@ class DOMWatchdog(BaseWatchdog):
 			# Get screenshot if requested
 			screenshot_b64 = None
 			if event.include_screenshot:
+				self.logger.debug(f'📸 DOM watchdog requesting screenshot, include_screenshot={event.include_screenshot}')
 				try:
+					# Check if handler is registered
+					handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
+					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {[h.__name__ for h in handlers]}')
+					
 					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=6.0))
-					# Add timeout to prevent hanging if no handler exists
-					screenshot_result = await screenshot_event.event_results_flat_dict(raise_if_none=True, raise_if_any=True)
+					self.logger.debug(f'📸 Dispatched ScreenshotEvent, waiting for event to complete...')
+					
+					# Wait for the event itself to complete (this waits for all handlers)
+					await screenshot_event
+					
+					# Now get the results after the event has completed
+					screenshot_result = await screenshot_event.event_results_flat_dict()
+					self.logger.debug(f'📸 Got screenshot result: {screenshot_result.keys() if screenshot_result else None}')
+					
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
-				except TimeoutError:
-					self.logger.warning('Screenshot timed out after 6 seconds - no handler registered or slow page?')
+						if screenshot_b64:
+							self.logger.debug(f'📸 Screenshot captured in DOM watchdog, length: {len(screenshot_b64)}')
+						else:
+							self.logger.warning('📸 Screenshot result returned but screenshot was None')
+				except asyncio.TimeoutError:
+					self.logger.warning('📸 Screenshot timed out after 6 seconds - no handler registered or slow page?')
 				except Exception as e:
-					self.logger.warning(f'Screenshot failed: {type(e).__name__}: {e}')
+					self.logger.warning(f'📸 Screenshot failed: {type(e).__name__}: {e}')
+			else:
+				self.logger.debug(f'📸 Skipping screenshot, include_screenshot={event.include_screenshot}')
 
 			# Tabs info already fetched at the beginning
 
@@ -229,6 +247,11 @@ class DOMWatchdog(BaseWatchdog):
 			is_pdf_viewer = page_url.endswith('.pdf') or '/pdf/' in page_url
 
 			# Build and cache the browser state summary
+			if screenshot_b64:
+				self.logger.debug(f'📸 Creating BrowserStateSummary with screenshot, length: {len(screenshot_b64)}')
+			else:
+				self.logger.debug('📸 Creating BrowserStateSummary WITHOUT screenshot')
+			
 			browser_state = BrowserStateSummary(
 				dom_state=content,
 				url=page_url,

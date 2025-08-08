@@ -18,6 +18,8 @@ from browser_use.browser.events import (
 	CloseTabEvent,
 	GoBackEvent,
 	NavigateToUrlEvent,
+	ScrollEvent,
+	SendKeysEvent,
 	SwitchTabEvent,
 	TypeTextEvent,
 )
@@ -30,7 +32,9 @@ from browser_use.controller.views import (
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
+	ScrollAction,
 	SearchGoogleAction,
+	SendKeysAction,
 	StructuredOutputAction,
 	SwitchTabAction,
 )
@@ -46,7 +50,8 @@ logger = logging.getLogger(__name__)
 # This must be done after all imports are complete
 ClickElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
-# Note: ScrollEvent and UploadFileEvent also have node references but are not imported here
+ScrollEvent.model_rebuild()
+# Note: UploadFileEvent also has node references but is not imported yet
 
 Context = TypeVar('Context')
 
@@ -410,52 +415,64 @@ Explain the content of the page and that the requested information is not availa
 				logger.info(msg)
 				raise RuntimeError(str(e))
 
-	# @self.registry.action(
-	# 	'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components).',
-	# 	param_model=ScrollAction,
-	# )
-	# async def scroll(params: ScrollAction, browser_session: BrowserSession):
-	# 	# Look up the node from the selector map if index is provided
-	# 	node = None
-	# 	if params.index is not None:
-	# 		node = EnhancedDOMTreeNode.from_element_index(browser_session, params.index)
+		@self.registry.action(
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components).',
+			param_model=ScrollAction,
+		)
+		async def scroll(params: ScrollAction, browser_session: BrowserSession):
+			# Look up the node from the selector map if index is provided
+			node = None
+			if params.index is not None:
+				node = await browser_session.get_element_by_index(params.index)
+				if node is None:
+					raise ValueError(f'Element index {params.index} not found in DOM')
 
-	# 	# Dispatch scroll event with node - the complex logic is handled in the event handler
-	# 	event = browser_session.event_bus.dispatch(
-	# 		ScrollEvent(
-	# 			direction='down' if params.down else 'up',
-	# 			amount=params.num_pages,  # Pass num_pages, handler will convert to pixels
-	# 			node=node
-	# 		)
-	# 	)
-	# 	await event
+			# Dispatch scroll event with node - the complex logic is handled in the event handler
+			# Convert pages to pixels (assuming 800px per page as standard viewport height)
+			pixels = int(params.num_pages * 800)
+			try:
+				event = browser_session.event_bus.dispatch(
+					ScrollEvent(
+						direction='down' if params.down else 'up',
+						amount=pixels,
+						node=node
+					)
+				)
+				await event
+			except Exception as e:
+				logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
+				raise ValueError(f'Failed to scroll: {e}') from e
 
-	# 	direction = 'down' if params.down else 'up'
-	# 	target = f'element {params.index}' if params.index is not None else 'the page'
+			direction = 'down' if params.down else 'up'
+			target = f'element {params.index}' if params.index is not None else 'the page'
 
-	# 	if params.num_pages == 1.0:
-	# 		long_term_memory = f'Scrolled {direction} {target} by one page'
-	# 	else:
-	# 		long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
+			if params.num_pages == 1.0:
+				long_term_memory = f'Scrolled {direction} {target} by one page'
+			else:
+				long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
 
-	# 	msg = f'🔍 {long_term_memory}'
-	# 	logger.info(msg)
-	# 	return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
+			msg = f'🔍 {long_term_memory}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 
-	# @self.registry.action(
-	# 	'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
-	# 	param_model=SendKeysAction,
-	# )
-	# async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
-	# 	# Dispatch send keys event
-	# 	event = browser_session.event_bus.dispatch(
-	# 		SendKeysEvent(keys=params.keys)
-	# 	)
-	# 	await event
+		@self.registry.action(
+			'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
+			param_model=SendKeysAction,
+		)
+		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
+			# Dispatch send keys event
+			try:
+				event = browser_session.event_bus.dispatch(
+					SendKeysEvent(keys=params.keys)
+				)
+				await event
+			except Exception as e:
+				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
+				raise ValueError(f'Failed to send keys: {e}') from e
 
-	# 	msg = f'⌨️  Sent keys: {params.keys}'
-	# 	logger.info(msg)
-	# 	return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
+			msg = f'⌨️  Sent keys: {params.keys}'
+			logger.info(msg)
+			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
 
 	# @self.registry.action(
 	# 	description='Scroll to a text in the current page',

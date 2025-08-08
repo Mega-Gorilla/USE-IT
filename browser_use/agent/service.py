@@ -698,11 +698,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
+		# Always take screenshots for all steps
+		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
-			include_screenshot=self.settings.use_vision,
+			include_screenshot=True,
 			cached=True,
 		)
+		if browser_state_summary.screenshot:
+			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')
+		else:
+			self.logger.debug(f'📸 Got browser state WITHOUT screenshot')
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
 		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
@@ -983,7 +989,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Store screenshot and get path
 		screenshot_path = None
 		if browser_state_summary.screenshot:
+			self.logger.debug(f"📸 Storing screenshot for step {self.state.n_steps}, screenshot length: {len(browser_state_summary.screenshot)}")
 			screenshot_path = await self.screenshot_service.store_screenshot(browser_state_summary.screenshot, self.state.n_steps)
+			self.logger.debug(f"📸 Screenshot stored at: {screenshot_path}")
+		else:
+			self.logger.debug(f"📸 No screenshot in browser_state_summary for step {self.state.n_steps}")
 
 		state_history = BrowserStateHistory(
 			url=browser_state_summary.url,
@@ -1762,15 +1772,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Only close browser resources if we created them
 			if self._owns_browser_session:
 				assert self.browser_session is not None, 'BrowserSession is not set up'
-				# Dispatch BrowserStopEvent to stop the browser
-				from browser_use.browser.events import BrowserStopEvent
-
-				stop_event = self.browser_session.event_bus.dispatch(BrowserStopEvent(force=True))
-				await stop_event
-				
-				# Stop the browser session's EventBus with clearing for complete cleanup
-				# This ensures the script can exit cleanly
-				await self.browser_session.event_bus.stop(timeout=5.0, clear=True)
+				# Kill the browser session - this dispatches BrowserStopEvent,
+				# stops the EventBus with clear=True, and recreates a fresh EventBus
+				await self.browser_session.kill()
 
 			# Force garbage collection
 			gc.collect()

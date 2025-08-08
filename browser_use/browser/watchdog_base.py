@@ -91,7 +91,17 @@ class BaseWatchdog(BaseModel):
 							self.logger.debug(
 								f'[{self.__class__.__name__}] calling {actual_handler.__name__}({event.__class__.__name__})'
 							)
-							return await actual_handler(event)
+							try:
+								result = await actual_handler(event)
+								self.logger.debug(
+									f'[{self.__class__.__name__}] {actual_handler.__name__} completed successfully'
+								)
+								return result
+							except Exception as e:
+								self.logger.error(
+									f'[{self.__class__.__name__}] {actual_handler.__name__} failed: {e}'
+								)
+								raise
 
 						return unique_handler
 

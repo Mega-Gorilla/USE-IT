@@ -138,6 +138,12 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 		'groq',
 		'portalocker',
 		'portalocker.utils',
+		'cdp_use',
+		'cdp_use.client',
+		'cdp_use.cdp',
+		'cdp_use.cdp.registry',
+		'websockets',
+		'websockets.client',
 	]
 	for logger_name in third_party_loggers:
 		third_party = logging.getLogger(logger_name)

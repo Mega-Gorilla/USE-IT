@@ -138,6 +138,7 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert 'Scrolled' in result.extracted_content
 		assert result.include_in_memory is True
+		assert result.error is None
 
 		# Test 2: Basic page scroll up
 		scroll_up_action = {'scroll': ScrollAction(down=False, num_pages=0.5)}
@@ -146,15 +147,16 @@ class TestControllerIntegration:
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
 		assert 'Scrolled' in result.extracted_content
+		assert result.error is None
 
-		# Test 3: Invalid index fallback (always safe)
+		# Test 3: Invalid index should give an error
 		invalid_scroll_action = {'scroll': ScrollAction(down=True, num_pages=1.0, index=999)}
 		result = await controller.act(ScrollActionModel(**invalid_scroll_action), browser_session)
 
-		# This will always work - invalid index falls back to page scroll
+		# This should fail with error about element not found
 		assert isinstance(result, ActionResult)
-		assert result.extracted_content is not None
-		assert 'Scrolled' in result.extracted_content
+		assert result.error is not None
+		assert 'Element index 999 not found' in result.error
 
 		# Test 4: Model parameter validation
 		scroll_with_index = ScrollAction(down=True, num_pages=1.0, index=5)

@@ -159,8 +159,8 @@ class TestARIAMenuDropdown:
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_session.get_current_page()
-		await page.wait_for_load_state()
+		from browser_use.browser.events import NavigationCompleteEvent
+		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state to populate the selector map
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
@@ -224,8 +224,8 @@ class TestARIAMenuDropdown:
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_session.get_current_page()
-		await page.wait_for_load_state()
+		from browser_use.browser.events import NavigationCompleteEvent
+		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state to populate the selector map
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
@@ -287,8 +287,8 @@ class TestARIAMenuDropdown:
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
 		# Wait for the page to load
-		page = await browser_session.get_current_page()
-		await page.wait_for_load_state()
+		from browser_use.browser.events import NavigationCompleteEvent
+		await browser_session.event_bus.expect(NavigationCompleteEvent, timeout=10.0)
 
 		# Initialize the DOM state to populate the selector map
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
