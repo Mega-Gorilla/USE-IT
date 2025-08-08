@@ -74,7 +74,7 @@ class TestBrowserRecentEvents:
 
 			# Get state while resources are still loading
 			# _wait_for_stable_network should detect pending requests and timeout
-			state = await browser_session.get_browser_state_with_recovery()
+			state = await browser_session.get_browser_state_summary()
 
 			# Wait for navigation to complete
 			await nav_task
@@ -144,7 +144,7 @@ class TestBrowserRecentEvents:
 			await browser_session.navigate(httpserver.url_for('/fast'))
 
 			# Get browser state
-			state = await browser_session.get_browser_state_with_recovery()
+			state = await browser_session.get_browser_state_summary()
 
 			# Recent events should show successful navigation
 			assert state.recent_events is not None
@@ -207,7 +207,7 @@ class TestBrowserRecentEvents:
 
 			# Navigate to slow page
 			await browser_session.navigate(httpserver.url_for('/slow'))
-			state1 = await browser_session.get_browser_state_with_recovery()
+			state1 = await browser_session.get_browser_state_summary()
 			assert state1.recent_events is not None
 			events1 = json.loads(state1.recent_events)
 			event_types1 = [e.get('event_type') for e in events1]
@@ -215,7 +215,7 @@ class TestBrowserRecentEvents:
 
 			# Navigate to fast page
 			await browser_session.navigate(httpserver.url_for('/fast'))
-			state2 = await browser_session.get_browser_state_with_recovery()
+			state2 = await browser_session.get_browser_state_summary()
 
 			# Recent events should show both navigations
 			assert state2.recent_events is not None
@@ -276,7 +276,7 @@ class TestBrowserRecentEvents:
 			await browser_session.navigate(httpserver.url_for('/malformed'))
 
 			# Get browser state - this might fall back to minimal state
-			state = await browser_session.get_browser_state_with_recovery()
+			state = await browser_session.get_browser_state_summary()
 
 			# Even if we get minimal state, recent events should be preserved
 			assert state.recent_events is not None
@@ -329,7 +329,7 @@ class TestBrowserRecentEvents:
 			await browser_session.navigate(httpserver.url_for(f'/timeout_{timeout_seconds}'))
 
 			# Get browser state
-			state = await browser_session.get_browser_state_with_recovery()
+			state = await browser_session.get_browser_state_summary()
 
 			# Verify recent events captured the navigation
 			assert state.recent_events is not None
@@ -430,7 +430,7 @@ class TestEventHistoryInfrastructure:
 			# Perform multiple actions to generate events
 			await browser_session.navigate(httpserver.url_for('/limit-test'))
 			await browser_session.take_screenshot()
-			await browser_session.get_tabs_info()
+			await browser_session.get_tabs()
 
 			# Test different limits
 			summary_3 = browser_session._generate_recent_events_summary(max_events=3)

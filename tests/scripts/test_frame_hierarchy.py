@@ -221,9 +221,9 @@ async def analyze_frame_hierarchy(url):
 		print('\n🛑 Shutting down...')
 
 		# Close CDP connection first while browser is still alive
-		if session._cdp_client:
+		if session._cdp_client_root:
 			try:
-				await session._cdp_client.stop()
+				await session._cdp_client_root.stop()
 			except:
 				pass  # Ignore errors if already disconnected
 

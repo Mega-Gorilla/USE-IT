@@ -43,7 +43,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			index_for_logging = element_node.element_index or 'unknown'
 
 			# Track initial number of tabs to detect new tab opening
-			initial_target_ids = await self.browser_session.target_ids
+			initial_target_ids = await self.browser_session._cdp_get_all_pages()
 
 			# Check if element is a file input (should not be clicked)
 			if self.browser_session.is_file_input(element_node):
@@ -75,7 +75,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Check if a new tab was opened
-			current_target_ids = await self.browser_session.target_ids
+			current_target_ids = await self.browser_session._cdp_get_all_pages()
 			if len(current_target_ids) > len(initial_target_ids):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'

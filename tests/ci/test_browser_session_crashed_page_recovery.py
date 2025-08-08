@@ -307,7 +307,7 @@ class TestBrowserSessionRecovery:
 		await browser_session.navigate(httpserver.url_for('/normal'))
 
 		# Take a screenshot to verify browser works
-		state2 = await browser_session.get_browser_state_with_recovery()
+		state2 = await browser_session.get_browser_state_summary()
 		assert state2.screenshot is not None
 		assert len(state2.screenshot) > 100, 'Browser should still work after recovery'
 

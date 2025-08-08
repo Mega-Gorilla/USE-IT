@@ -406,7 +406,7 @@ class TestParallelism:
 					assert any('done' in action.model_dump(include={'done'}) for action in last_history.model_output.action)
 
 			# Verify multiple tabs were created
-			tabs = await shared_session.get_tabs_info()
+			tabs = await shared_session.get_tabs()
 			assert len(tabs) >= 2  # At least 2 tabs
 
 			# Verify same browser session was used

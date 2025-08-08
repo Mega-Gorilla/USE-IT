@@ -367,7 +367,7 @@ class TestBrowserSessionStart:
 		assert browser_session._browser_context is None
 
 		# calling a method wrapped in @require_initialization should auto-restart the session
-		await browser_session.get_tabs_info()
+		await browser_session.get_tabs()
 		assert browser_session._browser_context is not None
 
 	async def test_race_condition_between_stop_and_operation(self, browser_session):

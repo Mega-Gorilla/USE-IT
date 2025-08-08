@@ -215,7 +215,7 @@ async def test_navigation_events_history_pushstate(httpserver):
 		tab_created_events.clear()
 
 		# Get browser state to interact with the page
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 
 		# Test 1: history.pushState (should NOT trigger NavigationCompleteEvent)
 		push_button_found = False
@@ -234,7 +234,7 @@ async def test_navigation_events_history_pushstate(httpserver):
 		assert len(navigation_complete_events) == 0, 'history.pushState should not trigger NavigationCompleteEvent'
 
 		# Test 2: Same tab link click (should trigger NavigationCompleteEvent)
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 		same_tab_link_found = False
 
 		for idx, element in state.selector_map.items():
@@ -262,7 +262,7 @@ async def test_navigation_events_history_pushstate(httpserver):
 		navigation_complete_events.clear()
 		tab_created_events.clear()
 
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 		new_tab_link_found = False
 
 		for idx, element in state.selector_map.items():
@@ -358,7 +358,7 @@ async def test_navigation_events_link_clicks(httpserver):
 		navigation_complete_events.clear()
 
 		# Test 1: Same tab link click
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 		same_tab_link_found = False
 
 		for idx, element in state.selector_map.items():
@@ -386,7 +386,7 @@ async def test_navigation_events_link_clicks(httpserver):
 		navigation_complete_events.clear()
 		tab_created_events.clear()
 
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 		new_tab_link_found = False
 
 		for idx, element in state.selector_map.items():
@@ -413,7 +413,7 @@ async def test_navigation_events_link_clicks(httpserver):
 
 		navigation_complete_events.clear()
 
-		state = await session.get_browser_state_with_recovery()
+		state = await session.get_browser_state_summary()
 		js_link_found = False
 
 		for idx, element in state.selector_map.items():

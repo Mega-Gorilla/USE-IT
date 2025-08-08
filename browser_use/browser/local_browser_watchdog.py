@@ -310,8 +310,7 @@ asyncio.run(get_path())
 			# Ignore any other errors during cleanup
 			pass
 
-	@staticmethod
-	def _cleanup_temp_dir(temp_dir: Path | str) -> None:
+	def _cleanup_temp_dir(self, temp_dir: Path | str) -> None:
 		"""Clean up temporary directory.
 
 		Args:

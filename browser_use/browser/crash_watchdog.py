@@ -198,6 +198,8 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def _start_monitoring(self) -> None:
 		"""Start the monitoring loop."""
+		assert self.browser_session.cdp_client is not None, 'Root CDP client not initialized - browser may not be connected yet'
+		
 		if self._monitoring_task and not self._monitoring_task.done():
 			# logger.info('[CrashWatchdog] Monitoring already running')
 			return
@@ -339,7 +341,7 @@ class CrashWatchdog(BaseWatchdog):
 			
 			# Clean up dead sessions
 			for target_id in dead_sessions:
-				await self.browser_session.release_cdp_session(target_id)
+				await self.browser_session._cdp_release_session(target_id)
 
 		# Check browser process if we have PID
 		if proc := self.browser_session._local_browser_watchdog._subprocess:

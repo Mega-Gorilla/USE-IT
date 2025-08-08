@@ -113,8 +113,7 @@ class DownloadsWatchdog(BaseWatchdog):
 			await self.trigger_pdf_download(target_id)
 
 	def _is_auto_download_enabled(self) -> bool:
-		"""Check if PDF auto-download is enabled."""
-		return getattr(self.browser_session, '_auto_download_pdfs', True)
+		return True  # TODO: move this to browser_profile config option
 
 	async def attach_to_target(self, target_id: str) -> None:
 		"""Set up download monitoring for a specific target."""

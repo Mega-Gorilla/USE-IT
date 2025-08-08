@@ -1200,8 +1200,8 @@ class TestControllerIntegration:
 		except Exception as e:
 			pass
 
-		# Test that get_minimal_state_summary always works
-		summary = await browser_session.get_minimal_state_summary()
+		# Test that browser state recovery works after error
+		summary = await browser_session.get_browser_state_summary(include_screenshot=False)
 		assert summary is not None
 
 	async def test_click_element_new_tab(self, controller, browser_session, base_url, http_server):

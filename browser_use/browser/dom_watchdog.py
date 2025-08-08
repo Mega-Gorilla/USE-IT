@@ -5,6 +5,7 @@ import time
 from typing import TYPE_CHECKING
 
 from browser_use.browser.events import (
+	TabCreatedEvent,
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
 	ScreenshotEvent,
@@ -29,7 +30,7 @@ class DOMWatchdog(BaseWatchdog):
 	helper methods for other watchdogs.
 	"""
 
-	LISTENS_TO = [BrowserStateRequestEvent]
+	LISTENS_TO = [TabCreatedEvent, BrowserStateRequestEvent]
 	EMITS = [BrowserErrorEvent]
 
 	# Public properties for other watchdogs
@@ -41,10 +42,64 @@ class DOMWatchdog(BaseWatchdog):
 	# Internal DOM service
 	_dom_service: DomService | None = None
 
-	async def attach_to_session(self) -> None:
-		"""Attach watchdog to browser session."""
-		await super().attach_to_session()
-		# DomService will be created on first use
+
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
+		# self.logger.debug('Setting up init scripts in browser')
+
+		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
+
+		init_script = """
+			// check to make sure we're not inside the PDF viewer
+			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
+			if (!window.isPdfViewer) {
+
+				// Permissions
+				const originalQuery = window.navigator.permissions.query;
+				window.navigator.permissions.query = (parameters) => (
+					parameters.name === 'notifications' ?
+						Promise.resolve({ state: Notification.permission }) :
+						originalQuery(parameters)
+				);
+				(() => {
+					if (window._eventListenerTrackerInitialized) return;
+					window._eventListenerTrackerInitialized = true;
+
+					const originalAddEventListener = EventTarget.prototype.addEventListener;
+					const eventListenersMap = new WeakMap();
+
+					EventTarget.prototype.addEventListener = function(type, listener, options) {
+						if (typeof listener === "function") {
+							let listeners = eventListenersMap.get(this);
+							if (!listeners) {
+								listeners = [];
+								eventListenersMap.set(this, listeners);
+							}
+
+							listeners.push({
+								type,
+								listener,
+								listenerPreview: listener.toString().slice(0, 100),
+								options
+							});
+						}
+
+						return originalAddEventListener.call(this, type, listener, options);
+					};
+
+					window.getEventListenersForNode = (node) => {
+						const listeners = eventListenersMap.get(node) || [];
+						return listeners.map(({ type, listenerPreview, options }) => ({
+							type,
+							listenerPreview,
+							options
+						}));
+					};
+				})();
+			}
+		"""
+		client, session_id = await self.browser_session.get_cdp_session()
+		await client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': init_script, 'runImmediately': True}, session_id=session_id)
+
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
@@ -66,7 +121,7 @@ class DOMWatchdog(BaseWatchdog):
 
 		# Get tabs info once at the beginning for all paths
 		self.logger.debug('Getting tabs info...')
-		tabs_info = await self.browser_session.get_tabs_info()
+		tabs_info = await self.browser_session.get_tabs()
 		self.logger.debug(f'Got {len(tabs_info)} tabs')
 
 		try:

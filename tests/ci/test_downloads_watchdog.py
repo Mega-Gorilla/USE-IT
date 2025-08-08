@@ -326,7 +326,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 	await page.goto(comprehensive_download_test_server.url_for('/'))
 
 	# Get the actual DOM state to find the button
-	state = await browser_with_downloads.get_browser_state_with_recovery()
+	state = await browser_with_downloads.get_browser_state_summary()
 
 	# Find the button element
 	button_node = None
@@ -382,7 +382,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 	await page.evaluate('document.getElementById("result").innerText = ""')
 
 	# Get the DOM state again for the new browser session
-	state = await browser_no_downloads.get_browser_state_with_recovery()
+	state = await browser_no_downloads.get_browser_state_summary()
 
 	# Find the button element again
 	button_node = None
@@ -446,7 +446,7 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 	await page.goto(comprehensive_download_test_server.url_for('/'))
 
 	# Get the DOM state to find the download link
-	state = await browser_session.get_browser_state_with_recovery()
+	state = await browser_session.get_browser_state_summary()
 
 	# Find the download link element
 	download_node = None

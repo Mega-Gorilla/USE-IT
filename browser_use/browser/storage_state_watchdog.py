@@ -98,15 +98,12 @@ class StorageStateWatchdog(BaseWatchdog):
 		"""Start the monitoring task."""
 		if self._monitoring_task and not self._monitoring_task.done():
 			return
+		
+		assert self.browser_session.cdp_client is not None
 
 		self._monitoring_task = asyncio.create_task(self._monitor_storage_changes())
 		# self.logger.info('[StorageStateWatchdog] Started storage monitoring task')
 
-		# Set up monitoring for existing targets
-		if self.browser_session.cdp_client:
-			targets = await self.browser_session._cdp_get_all_pages()
-			for target in targets:
-				self._setup_target_monitoring(target['targetId'])
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring task."""
@@ -117,15 +114,6 @@ class StorageStateWatchdog(BaseWatchdog):
 			except asyncio.CancelledError:
 				pass
 			# self.logger.debug('[StorageStateWatchdog] Stopped storage monitoring task')
-
-	def _setup_target_monitoring(self, target_id: str) -> None:
-		"""Set up storage change monitoring for a target.
-
-		Note: CDP event listeners for cookie changes would need to be implemented
-		via Network.responseReceivedExtraInfo events.
-		"""
-		# For now, rely on periodic monitoring
-		self.logger.debug(f'[StorageStateWatchdog] Target {target_id} will be monitored via periodic checks')
 
 	async def _check_for_cookie_changes_cdp(self, event: dict) -> None:
 		"""Check if a CDP network event indicates cookie changes.

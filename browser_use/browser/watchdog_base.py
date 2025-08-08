@@ -2,12 +2,12 @@
 
 import inspect
 from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Iterable
 
 from bubus import BaseEvent, EventBus
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-	from browser_use.browser.session import BrowserSession
+from browser_use.browser.session import BrowserSession
 
 
 class BaseWatchdog(BaseModel):
@@ -19,19 +19,26 @@ class BaseWatchdog(BaseModel):
 	Handler methods should be named: on_EventTypeName(self, event: EventTypeName)
 	"""
 
-	model_config = ConfigDict(
-		arbitrary_types_allowed=True,
-		validate_assignment=True,
-		extra='forbid',
-	)
+	model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True, extra='forbid', revalidate_instances='never')
 
-	# Class variables defining event contracts (optional, for documentation)
+	# Class variables to statically define the list of events relevant to each watchdog
+	# (not enforced, just to make it easier to understand the code and debug watchdogs at runtime)
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = []  # Events this watchdog listens to
-	EMITS: ClassVar[list[type[BaseEvent]]] = []  # Events this watchdog emits
+	EMITS: ClassVar[list[type[BaseEvent]]] = []       # Events this watchdog emits
 
 	# Core dependencies
-	event_bus: EventBus
-	browser_session: 'BrowserSession'
+	event_bus: EventBus = Field()
+	browser_session: BrowserSession = Field()
+
+	# Shared state that other watchdogs might need to access should not be defined on BrowserSession, not here!
+	# Shared helper methods needed by other watchdogs should be defined on BrowserSession, not here!
+	# Alternatively, expose some events on the watchdog to allow access to state/helpers via event_bus system.
+
+	# Private state internal to the watchdog can be defined like this on BaseWatchdog subclasses:
+	# _screenshot_cache: dict[str, bytes] = PrivateAttr(default_factory=dict)
+	# _browser_crash_watcher_task: asyncio.Task | None = PrivateAttr(default=None)
+    # _cdp_download_tasks: WeakSet[asyncio.Task] = PrivateAttr(default_factory=WeakSet)
+    # ...
 
 	@property
 	def logger(self):
@@ -45,6 +52,9 @@ class BaseWatchdog(BaseModel):
 		bound to a browser session via self.browser_session from initialization.
 		"""
 		# Register event handlers automatically based on method names
+
+		assert self.browser_session is not None, 'Root CDP client not initialized - browser may not be connected yet'
+
 		from browser_use.browser import events
 
 		event_classes = {}
@@ -108,25 +118,31 @@ class BaseWatchdog(BaseModel):
 					f'but no handlers found (missing on_{"_, on_".join(missing_names)} methods)'
 				)
 
-	async def attach_to_target(self, target_id: str) -> None:
-		"""Set up monitoring for a specific target. Override in subclasses.
-
-		This method should be idempotent - safe to call multiple times on the same target.
-		"""
-		pass
-
 	def __del__(self) -> None:
 		"""Clean up any running tasks during garbage collection."""
-		# Cancel any private attributes that are tasks
-		for attr_name in dir(self):
-			if attr_name.startswith('_') and attr_name.endswith('_task'):
-				try:
-					task = getattr(self, attr_name)
-					if hasattr(task, 'cancel') and callable(task.cancel) and not task.done():
-						task.cancel()
-						self.logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
-				except Exception:
-					pass  # Ignore errors during cleanup
+		
+		# A BIT OF MAGIC: Cancel any private attributes that look like asyncio tasks
+		try:
+			for attr_name in dir(self):
+				# e.g. _browser_crash_watcher_task = asyncio.Task
+				if attr_name.startswith('_') and attr_name.endswith('_task'):
+					try:
+						task = getattr(self, attr_name)
+						if hasattr(task, 'cancel') and callable(task.cancel) and not task.done():
+							task.cancel()
+							# self.logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
+					except Exception:
+						pass  # Ignore errors during cleanup
 
-
-# Fix Pydantic circular dependency handling - subclasses should call this after BrowserSession is defined
+				# e.g. _cdp_download_tasks = WeakSet[asyncio.Task] or list[asyncio.Task]
+				if attr_name.startswith('_') and attr_name.endswith('_tasks') and isinstance(getattr(self, attr_name), Iterable):
+					for task in getattr(self, attr_name):
+						try:
+							if hasattr(task, 'cancel') and callable(task.cancel) and not task.done():
+								task.cancel()
+								# self.logger.debug(f'[{self.__class__.__name__}] Cancelled {attr_name} during cleanup')
+						except Exception:
+							pass  # Ignore errors during cleanup
+		except Exception as e:
+			from browser_use.utils import logger
+			logger.error(f'⚠️ Error during BrowserSession {self.__class__.__name__} gargabe collection __del__(): {type(e)}: {e}')
