@@ -4,7 +4,7 @@ import asyncio
 import logging
 import weakref
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any, Self
 
 import httpx
 from bubus import EventBus
@@ -15,36 +15,16 @@ from uuid_extensions import uuid7str
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
-	BrowserKillEvent,
 	BrowserLaunchEvent,
 	BrowserStartEvent,
 	BrowserStateRequestEvent,
 	BrowserStopEvent,
 	BrowserStoppedEvent,
-	ClickElementEvent,
-	GoBackEvent,
-	GoForwardEvent,
-	LoadStorageStateEvent,
-	NavigateToUrlEvent,
-	NavigationCompleteEvent,
-	RefreshEvent,
-	SaveStorageStateEvent,
-	ScreenshotEvent,
-	ScrollEvent,
-	ScrollToTextEvent,
-	SendKeysEvent,
-	SwitchTabEvent,
-	TabClosedEvent,
-	TabCreatedEvent,
-	TypeTextEvent,
-	UploadFileEvent,
-	WaitEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.views import BrowserStateSummary, TabInfo
-from browser_use.utils import _log_pretty_url, is_new_tab_page
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
-
+from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -101,8 +81,14 @@ class BrowserSession(BaseModel):
 
 	cdp_url: str | None = None
 	is_local: bool = Field(default=True)
-	cdp_session_cache_enabled: bool = Field(default=True, description='Cache CDP sessions based on target_id, set False to create a fresh CDP session for every single CDP call')
-	browser_profile: BrowserProfile = Field(default_factory=lambda: DEFAULT_BROWSER_PROFILE, description='BrowserProfile() options to use for the session, otherwise a default profile will be used')
+	cdp_session_cache_enabled: bool = Field(
+		default=True,
+		description='Cache CDP sessions based on target_id, set False to create a fresh CDP session for every single CDP call',
+	)
+	browser_profile: BrowserProfile = Field(
+		default_factory=lambda: DEFAULT_BROWSER_PROFILE,
+		description='BrowserProfile() options to use for the session, otherwise a default profile will be used',
+	)
 
 	# Main shared event bus for all browser session + all watchdogs
 	event_bus: EventBus = Field(default_factory=EventBus)
@@ -127,7 +113,6 @@ class BrowserSession(BaseModel):
 	_dom_watchdog: Any | None = PrivateAttr(default=None)
 	_screenshot_watchdog: Any | None = PrivateAttr(default=None)
 
-
 	_logger: Any = PrivateAttr(default=None)
 
 	@property
@@ -150,7 +135,7 @@ class BrowserSession(BaseModel):
 
 	async def reset(self) -> None:
 		"""Clear all cached CDP sessions with proper cleanup."""
-	
+
 		# TODO: clear the event bus queue here, implement this helper
 		# await self.event_bus.wait_for_idle(timeout=5.0)
 		# await self.event_bus.clear()
@@ -216,7 +201,9 @@ class BrowserSession(BaseModel):
 					await launch_event
 
 					# Get the CDP URL from LocalBrowserWatchdog handler result
-					results = await launch_event.event_results_flat_dict(raise_if_none=True, raise_if_any=True, raise_if_conflicts=True)
+					results = await launch_event.event_results_flat_dict(
+						raise_if_none=True, raise_if_any=True, raise_if_conflicts=True
+					)
 					self.cdp_url = results.get('cdp_url')
 
 					if not self.cdp_url:
@@ -276,7 +263,6 @@ class BrowserSession(BaseModel):
 				)
 			)
 
-
 	async def get_cdp_session(self, target_id: str | None = None) -> tuple[CDPClient, str]:
 		"""Get or create a CDP session for a target, using cache when enabled.
 
@@ -288,7 +274,9 @@ class BrowserSession(BaseModel):
 		"""
 		assert self.cdp_url is not None, 'CDP URL not set - browser may not be configured or launched yet'
 		assert self._cdp_client_root is not None, 'Root CDP client not initialized - browser may not be connected yet'
-		assert self.cdp_session_cache_enabled
+		assert self.cdp_session_cache_enabled, (
+			'cdp_session_cache_enabled should be always enabled to force us to make sure it works properly'
+		)
 
 		if not target_id:
 			target_id = self.current_target_id
@@ -309,9 +297,10 @@ class BrowserSession(BaseModel):
 		if cached:
 			try:
 				# Quick ping to verify it's still alive (0.1s timeout)
-				await asyncio.wait_for(
+				result = await asyncio.wait_for(
 					cached.client.send.Runtime.evaluate(params={'expression': '1+1'}, session_id=cached.session_id), timeout=0.1
 				)
+				assert int(result.get('code', '0')) > 0, 'Cached session died unexpectedly!'
 				return cached.client, cached.session_id
 			except Exception:
 				# Dead session, remove from cache
@@ -331,7 +320,6 @@ class BrowserSession(BaseModel):
 		# Cache it using CachedSession (which supports weak references)
 		self._cdp_session_cache[target_id] = CachedSession(client, session_id, target_id)
 		return client, session_id
-
 
 	async def _cdp_enable_all_domains(self, client: Any, session_id: str) -> None:
 		"""Enable all necessary CDP domains for a session."""
@@ -370,7 +358,6 @@ class BrowserSession(BaseModel):
 				await client.send.Target.detachFromTarget(params={'sessionId': session_id})
 			except Exception:
 				pass  # Session might already be dead
-
 
 	# ========== Helper Methods ==========
 
@@ -527,20 +514,19 @@ class BrowserSession(BaseModel):
 
 		assert self.cdp_url is not None
 
-		browser_location = "local browser" if self.is_local else "remote browser"
+		browser_location = 'local browser' if self.is_local else 'remote browser'
 		self.logger.info(f'🌎 Connecting to existing chromium-based browser via CDP: {self.cdp_url} -> ({browser_location})')
 
 		try:
 			# Import cdp-use client
 
 			# Convert HTTP URL to WebSocket URL if needed
-			
+
 			# Create and store the CDP client for direct CDP communication
 			self._cdp_client_root = CDPClient(self.cdp_url)
 			assert self._cdp_client_root is not None
 			await self._cdp_client_root.start()
 			self.logger.info('✅ CDP client connected successfully')
-
 
 			# Get browser targets to find available contexts/pages
 			targets = await self._cdp_client_root.send.Target.getTargets()
@@ -604,7 +590,6 @@ class BrowserSession(BaseModel):
 			raise RuntimeError(f'Failed to establish CDP connection to browser: {e}') from e
 
 		return self
-
 
 	async def get_target_id_by_tab_index(self, tab_index: int) -> str | None:
 		"""Get target ID by tab index."""
@@ -684,8 +669,6 @@ class BrowserSession(BaseModel):
 
 	# DOM element methods
 	# Removed duplicate get_browser_state_with_recovery - using the decorated version below
-
-
 
 	# ========== CDP Helper Methods ==========
 
@@ -1056,11 +1039,35 @@ class BrowserSession(BaseModel):
 		else:
 			return session_id
 
-	async def _cdp_get_all_pages(self, include_http: bool = True, include_about: bool = True, include_pages: bool = True, include_iframes: bool = False, include_workers: bool = False, include_chrome: bool = False, include_chrome_extensions: bool = False, include_chrome_error: bool = False) -> list[TargetInfo]:
+	async def _cdp_get_all_pages(
+		self,
+		include_http: bool = True,
+		include_about: bool = True,
+		include_pages: bool = True,
+		include_iframes: bool = False,
+		include_workers: bool = False,
+		include_chrome: bool = False,
+		include_chrome_extensions: bool = False,
+		include_chrome_error: bool = False,
+	) -> list[TargetInfo]:
 		"""Get all browser pages/tabs using CDP Target.getTargets."""
 		targets = await self.cdp_client.send.Target.getTargets()
 		# Filter for valid page/tab targets only
-		return [t for t in targets.get('targetInfos', []) if self._is_valid_target(t, include_http=include_http, include_about=include_about, include_pages=include_pages, include_iframes=include_iframes, include_workers=include_workers, include_chrome=include_chrome, include_chrome_extensions=include_chrome_extensions, include_chrome_error=include_chrome_error)]
+		return [
+			t
+			for t in targets.get('targetInfos', [])
+			if self._is_valid_target(
+				t,
+				include_http=include_http,
+				include_about=include_about,
+				include_pages=include_pages,
+				include_iframes=include_iframes,
+				include_workers=include_workers,
+				include_chrome=include_chrome,
+				include_chrome_extensions=include_chrome_extensions,
+				include_chrome_error=include_chrome_error,
+			)
+		]
 
 	async def _cdp_create_new_page(self, url: str = 'about:blank') -> str:
 		"""Create a new page/tab using CDP Target.createTarget. Returns target ID."""
@@ -1130,7 +1137,9 @@ class BrowserSession(BaseModel):
 	async def _cdp_add_init_script(self, script: str) -> str:
 		"""Add script to evaluate on new document using CDP Page.addScriptToEvaluateOnNewDocument."""
 		client, session_id = await self.get_cdp_session()
-		result = await client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': script, 'runImmediately': True}, session_id=session_id)
+		result = await client.send.Page.addScriptToEvaluateOnNewDocument(
+			params={'source': script, 'runImmediately': True}, session_id=session_id
+		)
 		return result['identifier']
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
@@ -1236,13 +1245,21 @@ class BrowserSession(BaseModel):
 		target_sessions = {}  # target_id -> session_id (keep sessions alive during collection)
 
 		# Get all targets
-		targets = await self._cdp_get_all_pages(include_http=True, include_about=True, include_pages=True, include_iframes=True, include_workers=False, include_chrome=False, include_chrome_extensions=False, include_chrome_error=True)
+		targets = await self._cdp_get_all_pages(
+			include_http=True,
+			include_about=True,
+			include_pages=True,
+			include_iframes=True,
+			include_workers=False,
+			include_chrome=False,
+			include_chrome_extensions=False,
+			include_chrome_error=True,
+		)
 		all_targets = targets
 
 		# First pass: collect frame trees from ALL targets
 		for target in all_targets:
 			target_id = target['targetId']
-
 
 			# Get cached session for this target
 			client, session_id = await self.get_cdp_session(target_id)
@@ -1280,7 +1297,7 @@ class BrowserSession(BaseModel):
 									include_workers=False,
 									include_chrome=False,  # chrome://newtab, chrome://settings, etc. are not valid frames we can control (for sanity reasons)
 									include_chrome_extensions=False,  # chrome-extension://
-									include_chrome_error=False,    # chrome-error://  (e.g. when iframes fail to load or are blocked by uBlock Origin)
+									include_chrome_error=False,  # chrome-error://  (e.g. when iframes fail to load or are blocked by uBlock Origin)
 								),
 							}
 
@@ -1431,7 +1448,6 @@ class BrowserSession(BaseModel):
 			Tuple of (cdp_client, session_id) for the target
 		"""
 		return await self.get_cdp_session(target_id)
-
 
 
 # Fix Pydantic circular dependency for all watchdogs

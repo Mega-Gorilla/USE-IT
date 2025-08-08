@@ -5,10 +5,10 @@ import time
 from typing import TYPE_CHECKING
 
 from browser_use.browser.events import (
-	TabCreatedEvent,
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
 	ScreenshotEvent,
+	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import DomService
@@ -41,7 +41,6 @@ class DOMWatchdog(BaseWatchdog):
 
 	# Internal DOM service
 	_dom_service: DomService | None = None
-
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
@@ -98,8 +97,7 @@ class DOMWatchdog(BaseWatchdog):
 			}
 		"""
 		client, session_id = await self.browser_session.get_cdp_session()
-		await client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': init_script, 'runImmediately': True}, session_id=session_id)
-
+		await self.browser_session.cdp_client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': init_script})
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
@@ -195,13 +193,10 @@ class DOMWatchdog(BaseWatchdog):
 				try:
 					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
 					# Add timeout to prevent hanging if no handler exists
-					screenshot_result = await asyncio.wait_for(
-						screenshot_event.event_result(), 
-						timeout=2.0
-					)
+					screenshot_result = await asyncio.wait_for(screenshot_event.event_result(), timeout=2.0)
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
-				except asyncio.TimeoutError:
+				except TimeoutError:
 					self.logger.warning('Screenshot timed out after 2 seconds - no handler registered?')
 				except Exception as e:
 					self.logger.warning(f'Screenshot failed: {e}')
