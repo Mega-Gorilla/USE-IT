@@ -194,7 +194,9 @@ async def test_storage_state_watchdog_auto_save():
 			watchdog.auto_save_interval = 1.0  # Save every 1 second
 
 		# Navigate to create some context that might change storage
-		await session.navigate('data:text/html,<script>document.cookie="auto_test=value"</script>')
+		from browser_use.browser.events import NavigateToUrlEvent
+		event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<script>document.cookie="auto_test=value"</script>'))
+		await event
 
 		# Wait a bit longer than auto-save interval
 		import asyncio

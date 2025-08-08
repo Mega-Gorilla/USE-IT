@@ -85,34 +85,6 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self.logger.info('[LocalBrowserWatchdog] BrowserStopEvent received, dispatching BrowserKillEvent')
 			# Dispatch BrowserKillEvent without awaiting so it gets processed after all BrowserStopEvent handlers
 			self.event_bus.dispatch(BrowserKillEvent())
-	
-	async def _delayed_eventbus_cleanup(self, delay: float = 5.0) -> None:
-		"""Clean up the EventBus after a delay to allow for potential reuse."""
-		try:
-			self.logger.debug(f'[LocalBrowserWatchdog] Scheduling EventBus cleanup in {delay} seconds')
-			
-			# Use a shorter delay for immediate cleanup if we're shutting down
-			# Check if the event loop is stopping (script is exiting)
-			loop = asyncio.get_event_loop()
-			if loop.is_stopping() or not loop.is_running():
-				delay = 0.1  # Almost immediate cleanup if shutting down
-			
-			await asyncio.sleep(delay)
-			
-			# Check if EventBus is still running (might have been restarted)
-			if hasattr(self.browser_session, 'event_bus') and self.browser_session.event_bus._is_running:
-				self.logger.debug('[LocalBrowserWatchdog] Stopping and clearing EventBus for complete cleanup')
-				await self.browser_session.event_bus.stop(timeout=1.0, clear=True)
-			else:
-				self.logger.debug('[LocalBrowserWatchdog] EventBus already stopped, skipping cleanup')
-		except asyncio.CancelledError:
-			# Task was cancelled, do immediate cleanup
-			if hasattr(self.browser_session, 'event_bus') and self.browser_session.event_bus._is_running:
-				await self.browser_session.event_bus.stop(timeout=0.1, clear=True)
-			raise
-		except Exception as e:
-			# Don't let cleanup errors propagate
-			self.logger.debug(f'[LocalBrowserWatchdog] Error during delayed EventBus cleanup: {e}')
 
 	async def _launch_browser(self, max_retries: int = 3) -> tuple[psutil.Process, str]:
 		"""Launch browser process and return (process, cdp_url).
