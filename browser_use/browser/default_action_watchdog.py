@@ -268,8 +268,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
+    
+				# TODO: do occlusion detection, if element is not on the top, fire JS-based click event instead of x,y coordinate clicking
 
-				# Handle download if expected
+				# Handle download if expected: should be handled by downloads_watchdog.py now using browser-level download event listeners
 				# if self.browser_session.browser_profile.downloads_path:
 				# 	try:
 				# 		# Wait for download to start (with timeout)
