@@ -743,11 +743,13 @@ class BrowserUseApp(App):
 				browser_status = '[red]Disconnected[/]'
 
 				try:
-					# Check if browser PID is available
-					if hasattr(browser_session, 'browser_pid') and browser_session.browser_pid:
-						browser_pid = str(browser_session.browser_pid)
-						connected = True
-						browser_status = '[green]Connected[/]'
+					# Check if browser PID is available through LocalBrowserWatchdog
+					if hasattr(browser_session, '_local_browser_watchdog') and browser_session._local_browser_watchdog:
+						local_watchdog = browser_session._local_browser_watchdog
+						if hasattr(local_watchdog, 'browser_pid') and local_watchdog.browser_pid:
+							browser_pid = str(local_watchdog.browser_pid)
+							connected = True
+							browser_status = '[green]Connected[/]'
 					# Otherwise just check if we have a CDP URL
 					elif browser_session.cdp_url:
 						connected = True
@@ -1348,13 +1350,7 @@ async def textual_interface(config: dict[str, Any]):
 		)
 		logger.debug('BrowserSession initialized successfully')
 
-		# Log browser version if available
-		try:
-			if hasattr(browser_session, 'browser') and browser_session.browser:
-				version = browser_session.browser.version
-				logger.info(f'Browser version: {version}')
-		except Exception as e:
-			logger.debug(f'Could not determine browser version: {e}')
+		# Browser version logging not available with CDP implementation
 	except Exception as e:
 		logger.error(f'Error initializing BrowserSession: {str(e)}', exc_info=True)
 		raise RuntimeError(f'Failed to initialize BrowserSession: {str(e)}')

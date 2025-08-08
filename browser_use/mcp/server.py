@@ -740,8 +740,10 @@ class BrowserUseServer:
 		from browser_use.browser.events import ScrollEvent
 		
 		# Scroll by a standard amount (500 pixels)
-		dy = 500 if direction == 'down' else -500
-		event = self.browser_session.event_bus.dispatch(ScrollEvent(dx=0, dy=dy))
+		event = self.browser_session.event_bus.dispatch(ScrollEvent(
+			direction=direction,  # type: ignore
+			amount=500
+		))
 		await event
 		return f'Scrolled {direction}'
 
@@ -774,7 +776,7 @@ class BrowserUseServer:
 		tabs_info = await self.browser_session.get_tabs()
 		tabs = []
 		for i, tab in enumerate(tabs_info):
-			tabs.append({'index': i, 'url': tab['url'], 'title': tab.get('title', '')})
+			tabs.append({'index': i, 'url': tab.url, 'title': tab.title or ''})
 		return json.dumps(tabs, indent=2)
 
 	async def _switch_tab(self, tab_index: int) -> str:
@@ -795,7 +797,7 @@ class BrowserUseServer:
 
 		tabs = await self.browser_session.get_tabs()
 		if 0 <= tab_index < len(tabs):
-			url = tabs[tab_index]['url']
+			url = tabs[tab_index].url
 			from browser_use.browser.events import CloseTabEvent
 			event = self.browser_session.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
 			await event

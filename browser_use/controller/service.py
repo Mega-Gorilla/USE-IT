@@ -19,6 +19,7 @@ from browser_use.browser.events import (
 	GoBackEvent,
 	NavigateToUrlEvent,
 	ScrollEvent,
+	ScrollToTextEvent,
 	SendKeysEvent,
 	SwitchTabEvent,
 	TypeTextEvent,
@@ -80,11 +81,48 @@ class Controller(Generic[Context]):
 		async def search_google(params: SearchGoogleAction, browser_session: BrowserSession):
 			search_url = f'https://www.google.com/search?q={params.query}&udm=14'
 
+			# Check if there's already a tab open on Google or agent's about:blank
+			use_new_tab = True
+			try:
+				tabs = await browser_session.get_tabs()
+				# Get last 4 chars of browser session ID to identify agent's tabs
+				browser_session_label = str(browser_session.id)[-4:]
+				
+				for i, tab in enumerate(tabs):
+					# Check if tab is on Google domain
+					if tab.url and 'google.com' in tab.url:
+						# Found existing Google tab, navigate in it
+						logger.debug(f'Found existing Google tab at index {i}: {tab.url}, reusing it')
+						
+						# Switch to this tab first if it's not the current one
+						from browser_use.browser.events import SwitchTabEvent
+						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
+							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+							await switch_event
+						
+						use_new_tab = False
+						break
+					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
+					elif tab.url == 'about:blank' and tab.title and browser_session_label in tab.title:
+						# This is our agent's about:blank page with DVD animation
+						logger.debug(f'Found agent-owned about:blank tab at index {i} with title: {tab.title}, reusing it')
+						
+						# Switch to this tab first
+						from browser_use.browser.events import SwitchTabEvent
+						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
+							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+							await switch_event
+						
+						use_new_tab = False
+						break
+			except Exception as e:
+				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
+
 			# Dispatch navigation event
 			event = browser_session.event_bus.dispatch(
 				NavigateToUrlEvent(
 					url=search_url,
-					new_tab=True,  # Always use new tab for Google searches
+					new_tab=use_new_tab,
 				)
 			)
 			await event
@@ -319,7 +357,7 @@ class Controller(Generic[Context]):
 			# Run markdownify in a thread pool to avoid blocking the event loop
 			loop = asyncio.get_event_loop()
 
-			cdp_session = await browser_session.attach_cdp_session()
+			cdp_session = await browser_session.get_or_create_cdp_session()
 
 			try:
 				page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
@@ -423,9 +461,14 @@ Explain the content of the page and that the requested information is not availa
 			# Look up the node from the selector map if index is provided
 			node = None
 			if params.index is not None:
-				node = await browser_session.get_element_by_index(params.index)
-				if node is None:
-					raise ValueError(f'Element index {params.index} not found in DOM')
+				try:
+					node = await browser_session.get_element_by_index(params.index)
+					if node is None:
+						# Element not found - return error
+						raise ValueError(f'Element index {params.index} not found in DOM')
+				except Exception as e:
+					# Error getting element - return error
+					raise ValueError(f'Failed to get element {params.index}: {e}') from e
 
 			# Dispatch scroll event with node - the complex logic is handled in the event handler
 			# Convert pages to pixels (assuming 800px per page as standard viewport height)
@@ -474,32 +517,32 @@ Explain the content of the page and that the requested information is not availa
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
 
-	# @self.registry.action(
-	# 	description='Scroll to a text in the current page',
-	# )
-	# async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
-	# 	# Dispatch scroll to text event
-	# 	event = browser_session.event_bus.dispatch(
-	# 		ScrollToTextEvent(text=text)
-	# 	)
-	# 	await event
+		@self.registry.action(
+			description='Scroll to a text in the current page',
+		)
+		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
+			# Dispatch scroll to text event
+			event = browser_session.event_bus.dispatch(
+				ScrollToTextEvent(text=text)
+			)
+			await event
 
-	# 	# Check result to see if text was found
-	# 	result = await event.event_result()
-	# 	if result and result.get('found'):
-	# 		msg = f'🔍  Scrolled to text: {text}'
-	# 		logger.info(msg)
-	# 		return ActionResult(
-	# 			extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}'
-	# 		)
-	# 	else:
-	# 		msg = f"Text '{text}' not found or not visible on page"
-	# 		logger.info(msg)
-	# 		return ActionResult(
-	# 			extracted_content=msg,
-	# 			include_in_memory=True,
-	# 			long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
-	# 		)
+			# Check result to see if text was found
+			result = await event.event_result()
+			if result and result.get('found'):
+				msg = f'🔍  Scrolled to text: {text}'
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}'
+				)
+			else:
+				msg = f"Text '{text}' not found or not visible on page"
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
+				)
 
 	# # File System Actions
 	# @self.registry.action(
@@ -567,114 +610,114 @@ Explain the content of the page and that the requested information is not availa
 	# 	description='Get all options from a native dropdown or ARIA menu',
 	# )
 	# async def get_dropdown_options(index: int, browser_session: BrowserSession) -> ActionResult:
-	# """Get all options from a native dropdown or ARIA menu"""
-	# page = await browser_session.get_current_page()
-	# dom_element = await browser_session.get_dom_element_by_index(index)
-	# if dom_element is None:
-	# 	raise Exception(f'Element index {index} does not exist - retry or use alternative actions')
+	# 	"""Get all options from a native dropdown or ARIA menu"""
 
-	# try:
-	# 	# Frame-aware approach since we know it works
-	# 	all_options = []
-	# 	frame_index = 0
+	# 	dom_element = await browser_session.get_dom_element_by_index(index)
+	# 	if dom_element is None:
+	# 		raise Exception(f'Element index {index} does not exist - retry or use alternative actions')
 
-	# 	for frame in page.frames:
-	# 		try:
-	# 			# First check if it's a native select element
-	# 			options = await frame.evaluate(
-	# 				"""
-	# 				(xpath) => {
-	# 					const element = document.evaluate(xpath, document, null,
-	# 						XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-	# 					if (!element) return null;
+	# 	try:
+	# 		# Frame-aware approach since we know it works
+	# 		all_options = []
+	# 		frame_index = 0
 
-	# 					// Check if it's a native select element
-	# 					if (element.tagName.toLowerCase() === 'select') {
-	# 						return {
-	# 							type: 'select',
-	# 							options: Array.from(element.options).map(opt => ({
-	# 								text: opt.text, //do not trim, because we are doing exact match in select_dropdown_option
-	# 								value: opt.value,
-	# 								index: opt.index
-	# 							})),
-	# 							id: element.id,
-	# 							name: element.name
-	# 						};
+	# 		for frame in page.frames:
+	# 			try:
+	# 				# First check if it's a native select element
+	# 				options = await frame.evaluate(
+	# 					"""
+	# 					(xpath) => {
+	# 						const element = document.evaluate(xpath, document, null,
+	# 							XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+	# 						if (!element) return null;
+
+	# 						// Check if it's a native select element
+	# 						if (element.tagName.toLowerCase() === 'select') {
+	# 							return {
+	# 								type: 'select',
+	# 								options: Array.from(element.options).map(opt => ({
+	# 									text: opt.text, //do not trim, because we are doing exact match in select_dropdown_option
+	# 									value: opt.value,
+	# 									index: opt.index
+	# 								})),
+	# 								id: element.id,
+	# 								name: element.name
+	# 							};
+	# 						}
+
+	# 						// Check if it's an ARIA menu
+	# 						if (element.getAttribute('role') === 'menu' ||
+	# 							element.getAttribute('role') === 'listbox' ||
+	# 							element.getAttribute('role') === 'combobox') {
+	# 							// Find all menu items
+	# 							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+	# 							const options = [];
+
+	# 							menuItems.forEach((item, idx) => {
+	# 								// Get the text content of the menu item
+	# 								const text = item.textContent.trim();
+	# 								if (text) {
+	# 									options.push({
+	# 										text: text,
+	# 										value: text, // For ARIA menus, use text as value
+	# 										index: idx
+	# 									});
+	# 								}
+	# 							});
+
+	# 							return {
+	# 								type: 'aria',
+	# 								options: options,
+	# 								id: element.id || '',
+	# 								name: element.getAttribute('aria-label') || ''
+	# 							};
+	# 						}
+
+	# 						return null;
 	# 					}
+	# 				""",
+	# 					dom_element.xpath,
+	# 				)
 
-	# 					// Check if it's an ARIA menu
-	# 					if (element.getAttribute('role') === 'menu' ||
-	# 						element.getAttribute('role') === 'listbox' ||
-	# 						element.getAttribute('role') === 'combobox') {
-	# 						// Find all menu items
-	# 						const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
-	# 						const options = [];
+	# 				if options:
+	# 					logger.debug(f'Found {options["type"]} dropdown in frame {frame_index}')
+	# 					logger.debug(f'Element ID: {options["id"]}, Name: {options["name"]}')
 
-	# 						menuItems.forEach((item, idx) => {
-	# 							// Get the text content of the menu item
-	# 							const text = item.textContent.trim();
-	# 							if (text) {
-	# 								options.push({
-	# 									text: text,
-	# 									value: text, // For ARIA menus, use text as value
-	# 									index: idx
-	# 								});
-	# 							}
-	# 						});
+	# 					formatted_options = []
+	# 					for opt in options['options']:
+	# 						# encoding ensures AI uses the exact string in select_dropdown_option
+	# 						encoded_text = json.dumps(opt['text'])
+	# 						formatted_options.append(f'{opt["index"]}: text={encoded_text}')
 
-	# 						return {
-	# 							type: 'aria',
-	# 							options: options,
-	# 							id: element.id || '',
-	# 							name: element.getAttribute('aria-label') || ''
-	# 						};
-	# 					}
+	# 					all_options.extend(formatted_options)
 
-	# 					return null;
-	# 				}
-	# 			""",
-	# 				dom_element.xpath,
+	# 			except Exception as frame_e:
+	# 				logger.debug(f'Frame {frame_index} evaluation failed: {str(frame_e)}')
+
+	# 			frame_index += 1
+
+	# 		if all_options:
+	# 			msg = '\n'.join(all_options)
+	# 			msg += '\nUse the exact text string in select_dropdown_option'
+	# 			logger.info(msg)
+	# 			return ActionResult(
+	# 				extracted_content=msg,
+	# 				include_in_memory=True,
+	# 				long_term_memory=f'Found dropdown options for index {index}.',
+	# 				include_extracted_content_only_once=True,
+	# 			)
+	# 		else:
+	# 			msg = 'No options found in any frame for dropdown'
+	# 			logger.info(msg)
+	# 			return ActionResult(
+	# 				extracted_content=msg, include_in_memory=True, long_term_memory='No dropdown options found'
 	# 			)
 
-	# 			if options:
-	# 				logger.debug(f'Found {options["type"]} dropdown in frame {frame_index}')
-	# 				logger.debug(f'Element ID: {options["id"]}, Name: {options["name"]}')
-
-	# 				formatted_options = []
-	# 				for opt in options['options']:
-	# 					# encoding ensures AI uses the exact string in select_dropdown_option
-	# 					encoded_text = json.dumps(opt['text'])
-	# 					formatted_options.append(f'{opt["index"]}: text={encoded_text}')
-
-	# 				all_options.extend(formatted_options)
-
-	# 		except Exception as frame_e:
-	# 			logger.debug(f'Frame {frame_index} evaluation failed: {str(frame_e)}')
-
-	# 		frame_index += 1
-
-	# 	if all_options:
-	# 		msg = '\n'.join(all_options)
-	# 		msg += '\nUse the exact text string in select_dropdown_option'
+	# 	except Exception as e:
+	# 		logger.error(f'Failed to get dropdown options: {str(e)}')
+	# 		msg = f'Error getting options: {str(e)}'
 	# 		logger.info(msg)
-	# 		return ActionResult(
-	# 			extracted_content=msg,
-	# 			include_in_memory=True,
-	# 			long_term_memory=f'Found dropdown options for index {index}.',
-	# 			include_extracted_content_only_once=True,
-	# 		)
-	# 	else:
-	# 		msg = 'No options found in any frame for dropdown'
-	# 		logger.info(msg)
-	# 		return ActionResult(
-	# 			extracted_content=msg, include_in_memory=True, long_term_memory='No dropdown options found'
-	# 		)
-
-	# except Exception as e:
-	# 	logger.error(f'Failed to get dropdown options: {str(e)}')
-	# 	msg = f'Error getting options: {str(e)}'
-	# 	logger.info(msg)
-	# 	return ActionResult(extracted_content=msg, include_in_memory=True)
+	# 		return ActionResult(extracted_content=msg, include_in_memory=True)
 
 	# TODO: Refactor to use events instead of direct page/dom access
 	# @self.registry.action(

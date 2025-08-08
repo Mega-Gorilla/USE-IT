@@ -21,7 +21,9 @@ class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 
 	@field_validator('node', mode='before')
 	@classmethod
-	def serialize_node(cls, data: EnhancedDOMTreeNode) -> EnhancedDOMTreeNode:
+	def serialize_node(cls, data: EnhancedDOMTreeNode | None) -> EnhancedDOMTreeNode | None:
+		if data is None:
+			return None
 		return EnhancedDOMTreeNode(
 			element_index=data.element_index,
 			node_id=data.node_id,

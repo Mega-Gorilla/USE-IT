@@ -263,8 +263,8 @@ class TestTabManagement:
 		second_tab = await browser_session.create_new_tab(f'{base_url}/page2')
 
 		# Verify the second tab is now active
-		current_page = await browser_session.get_current_page()
-		assert current_page.url == second_tab.url == f'{base_url}/page2'
+		current_url = await browser_session.get_current_page_url()
+		assert current_url == f'{base_url}/page2'
 
 		# Close the second tab by closing the page directly
 		await second_tab.close()
@@ -302,10 +302,11 @@ class TestTabManagement:
 		assert browser_session._browser_context is None
 
 		# This should trigger reinitialization
-		page = await browser_session.get_current_page()
+		# Verify by getting URL
+		current_url = await browser_session.get_current_page_url()
 
 		# Verify state is consistent with a new context
-		assert page is not None
+		assert current_url is not None
 		assert browser_session._browser_context is not None
 		assert browser_session._browser_context != original_context
 		assert (await browser_session.is_connected()) is True
@@ -380,16 +381,16 @@ class TestEventDrivenTabOperations:
 		await switch_event
 
 		# Verify the switch worked
-		current_page = await browser_session.get_current_page()
-		assert f'{base_url}/page1' in current_page.url
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/page1' in current_url
 
 		# Switch to tab 2 via direct event
 		switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=2))
 		await switch_event
 
 		# Verify the switch worked
-		current_page = await browser_session.get_current_page()
-		assert f'{base_url}/page3' in current_page.url
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/page3' in current_url
 
 	async def test_close_tab_event_dispatching(self, browser_session, base_url):
 		"""Test direct CloseTabEvent dispatching."""
@@ -429,8 +430,8 @@ class TestEventDrivenTabOperations:
 		assert len(browser_session.tabs) == initial_tab_count + 1
 
 		# Check that current page is the new tab
-		current_page = await browser_session.get_current_page()
-		assert f'{base_url}/page2' in current_page.url
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/page2' in current_url
 
 		# Check event history for TabCreatedEvent
 		event_history = list(browser_session.event_bus.event_history.values())
@@ -461,5 +462,5 @@ class TestEventDrivenTabOperations:
 		await asyncio.gather(switch_event1, switch_event2)
 
 		# Final state should be deterministic (last switch wins)
-		current_page = await browser_session.get_current_page()
-		assert current_page is not None
+		current_url = await browser_session.get_current_page_url()
+		assert current_url is not None

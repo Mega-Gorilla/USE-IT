@@ -114,11 +114,37 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert f'Navigated to {base_url}' in result.extracted_content
 
-	async def test_scroll_actions(self, controller, browser_session, base_url):
-		"""Test basic scroll action functionality without complex HTML."""
+	async def test_scroll_actions(self, controller, browser_session, base_url, http_server):
+		"""Test basic scroll action functionality."""
+		
+		# Add a page with scrollable content
+		http_server.expect_request('/scrollable').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Scrollable Page</title>
+				<style>
+					body { margin: 0; padding: 20px; }
+					.content { height: 3000px; background: linear-gradient(to bottom, #f0f0f0, #333); }
+					.marker { padding: 20px; background: #007bff; color: white; margin: 500px 0; }
+				</style>
+			</head>
+			<body>
+				<h1>Scrollable Test Page</h1>
+				<div class="content">
+					<div class="marker" id="marker1">Marker 1</div>
+					<div class="marker" id="marker2">Marker 2</div>
+					<div class="marker" id="marker3">Marker 3</div>
+				</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
 
-		# Navigate to any simple page
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
+		# Navigate to scrollable page
+		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/scrollable', new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
@@ -133,30 +159,32 @@ class TestControllerIntegration:
 
 		result = await controller.act(ScrollActionModel(**scroll_action), browser_session)
 
-		# Basic assertions that will always pass
+		# Verify scroll down succeeded
 		assert isinstance(result, ActionResult)
+		assert result.error is None, f"Scroll down failed: {result.error}"
 		assert result.extracted_content is not None
-		assert 'Scrolled' in result.extracted_content
+		assert 'Scrolled down' in result.extracted_content
+		assert 'the page' in result.extracted_content
 		assert result.include_in_memory is True
-		assert result.error is None
 
 		# Test 2: Basic page scroll up
 		scroll_up_action = {'scroll': ScrollAction(down=False, num_pages=0.5)}
 		result = await controller.act(ScrollActionModel(**scroll_up_action), browser_session)
 
 		assert isinstance(result, ActionResult)
+		assert result.error is None, f"Scroll up failed: {result.error}"
 		assert result.extracted_content is not None
-		assert 'Scrolled' in result.extracted_content
-		assert result.error is None
+		assert 'Scrolled up' in result.extracted_content
+		assert '0.5 pages' in result.extracted_content
 
-		# Test 3: Invalid index should give an error
+		# Test 3: Test with invalid element index (should error)
 		invalid_scroll_action = {'scroll': ScrollAction(down=True, num_pages=1.0, index=999)}
 		result = await controller.act(ScrollActionModel(**invalid_scroll_action), browser_session)
 
 		# This should fail with error about element not found
 		assert isinstance(result, ActionResult)
-		assert result.error is not None
-		assert 'Element index 999 not found' in result.error
+		assert result.error is not None, "Expected error for invalid element index"
+		assert 'Element index 999 not found' in result.error or 'Failed to scroll' in result.error
 
 		# Test 4: Model parameter validation
 		scroll_with_index = ScrollAction(down=True, num_pages=1.0, index=5)

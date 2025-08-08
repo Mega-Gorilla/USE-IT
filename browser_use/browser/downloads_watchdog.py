@@ -454,14 +454,13 @@ class DownloadsWatchdog(BaseWatchdog):
 			return self._pdf_viewer_cache[page_url]
 
 		try:
-			# Get cached session
-			cdp_session = await self.browser_session.attach_cdp_session(target_id)
-
-			# Add timeout to prevent hanging on unresponsive pages
+			# Create a temporary CDP session for this target without switching focus
 			import asyncio
+			
+			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
 			result = await asyncio.wait_for(
-				cdp_session.cdp_client.send.Runtime.evaluate(
+				temp_session.cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': """
 				(() => {
@@ -518,7 +517,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				""",
 						'returnByValue': True,
 					},
-					session_id=cdp_session.session_id,
+					session_id=temp_session.session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
@@ -556,14 +555,14 @@ class DownloadsWatchdog(BaseWatchdog):
 			return None
 
 		try:
-			# Get cached session
-			cdp_session = await self.browser_session.attach_cdp_session(target_id)
+			# Create a temporary CDP session for this target without switching focus
+			import asyncio
+			
+			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
 			# Try to get the PDF URL with timeout
-			import asyncio
-
 			result = await asyncio.wait_for(
-				cdp_session.cdp_client.send.Runtime.evaluate(
+				temp_session.cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': """
 				(() => {
@@ -577,7 +576,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				""",
 						'returnByValue': True,
 					},
-					session_id=cdp_session.session_id,
+					session_id=temp_session.session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
@@ -612,7 +611,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				escaped_pdf_url = json.dumps(pdf_url)
 
 				result = await asyncio.wait_for(
-					cdp_session.cdp_client.send.Runtime.evaluate(
+					temp_session.cdp_client.send.Runtime.evaluate(
 						params={
 							'expression': f"""
 					(async () => {{
@@ -649,7 +648,7 @@ class DownloadsWatchdog(BaseWatchdog):
 							'awaitPromise': True,
 							'returnByValue': True,
 						},
-						session_id=cdp_session.session_id,
+						session_id=temp_session.session_id,
 					),
 					timeout=10.0,  # 10 second timeout for download operation
 				)

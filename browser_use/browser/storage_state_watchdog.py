@@ -325,8 +325,8 @@ class StorageStateWatchdog(BaseWatchdog):
 
 		try:
 			cookies = await self.browser_session._cdp_get_cookies()
-			# Convert Cookie objects to dicts
-			return [cookie.model_dump() if hasattr(cookie, 'model_dump') else dict(cookie) for cookie in cookies]
+			# Cookie is a TypedDict, cast to dict for compatibility
+			return [dict(cookie) for cookie in cookies]
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to get cookies: {e}')
 			return []

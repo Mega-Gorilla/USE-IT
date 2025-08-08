@@ -488,8 +488,8 @@ class TestBrowserSessionRecovery:
 		from browser_use.browser.events import NavigateToUrlEvent
 		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/normal')))
 		await event
-		page2 = await browser_session.get_current_page()
-		assert 'normal' in page2.url
+		url2 = await browser_session.get_current_page_url()
+		assert 'normal' in url2
 
 	async def test_browser_crash_throws_hard_error_no_restart(self, browser_session: BrowserSession):
 		"""Test that browser crashes throw hard errors instead of restarting the browser"""

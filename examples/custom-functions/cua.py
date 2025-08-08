@@ -253,7 +253,7 @@ async def main():
 
 	finally:
 		# Clean up browser session
-		await browser_session.close()
+		await browser_session.kill()
 		print('\n🧹 Browser session closed')
 
 

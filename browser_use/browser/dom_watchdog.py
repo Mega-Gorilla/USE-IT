@@ -95,7 +95,18 @@ class DOMWatchdog(BaseWatchdog):
 				})();
 			}
 		"""
-		await self.browser_session._cdp_add_init_script(init_script)
+		
+		# Try to inject the script, but don't fail if the Page domain isn't ready yet
+		# This can happen when a new tab is created and the CDP session isn't fully attached
+		try:
+			await self.browser_session._cdp_add_init_script(init_script)
+		except Exception as e:
+			if "'Page.addScriptToEvaluateOnNewDocument' wasn't found" in str(e):
+				self.logger.debug(f'Page domain not ready for new tab, skipping init script injection: {e}')
+				# The script will be injected when the page actually navigates
+			else:
+				# Re-raise other errors
+				raise
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
@@ -111,6 +122,10 @@ class DOMWatchdog(BaseWatchdog):
 		from browser_use.browser.views import BrowserStateSummary, PageInfo
 
 		page_url = await self.browser_session.get_current_page_url()
+		if self.browser_session.agent_focus:
+			self.logger.debug(f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}')
+		else:
+			self.logger.debug(f'📍 Current page URL: {page_url}, no cdp_session attached')
 
 		# check if we should skip DOM tree build for pointless pages
 		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')
@@ -124,6 +139,7 @@ class DOMWatchdog(BaseWatchdog):
 			# Fast path for empty pages
 			if not_a_meaningful_website:
 				self.logger.debug(f'⚡ Skipping BuildDOMTree for empty target: {page_url}')
+				self.logger.info(f'📸 Not taking screenshot for empty page: {page_url} (non-http/https URL)')
 
 				# Create minimal DOM state
 				content = SerializedDOMState(_root=None, selector_map={})
@@ -192,7 +208,8 @@ class DOMWatchdog(BaseWatchdog):
 				try:
 					# Check if handler is registered
 					handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
-					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {[h.__name__ for h in handlers]}')
+					handler_names = [getattr(h, '__name__', str(h)) for h in handlers]
+					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {handler_names}')
 					
 					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=6.0))
 					self.logger.debug(f'📸 Dispatched ScreenshotEvent, waiting for event to complete...')

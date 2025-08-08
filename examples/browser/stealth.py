@@ -43,7 +43,7 @@ async def main():
 	await asyncio.sleep(5)
 	await (await normal_browser_session.get_current_page()).screenshot(path='normal_browser.png')
 	imgcat(Path('normal_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
-	await normal_browser_session.close()
+	await normal_browser_session.kill()
 
 	print('\n\nPATCHRIGHT STEALTH BROWSER:')
 	patchright_browser_session = BrowserSession(
@@ -62,7 +62,7 @@ async def main():
 	await asyncio.sleep(5)
 	await (await patchright_browser_session.get_current_page()).screenshot(path='patchright_browser.png')
 	imgcat(Path('patchright_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
-	await patchright_browser_session.close()
+	await patchright_browser_session.kill()
 
 	# Brave Browser
 	if Path('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser').is_file():
@@ -81,7 +81,7 @@ async def main():
 		await asyncio.sleep(5)
 		await (await brave_browser_session.get_current_page()).screenshot(path='brave_browser.png')
 		imgcat(Path('brave_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
-		await brave_browser_session.close()
+		await brave_browser_session.kill()
 
 	if Path('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser').is_file():
 		print('\n\nBRAVE + PATCHRIGHT STEALTH BROWSER:')
@@ -103,7 +103,7 @@ async def main():
 		imgcat(Path('brave_patchright_browser.png').read_bytes(), height=max(terminal_height - 15, 40))
 
 		input('Press [Enter] to close the browser...')
-		await brave_patchright_browser_session.close()
+		await brave_patchright_browser_session.kill()
 
 	# print()
 	# agent = Agent(

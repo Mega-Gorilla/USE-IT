@@ -86,7 +86,7 @@ async def main():
 	await agent.run(max_steps=10)
 
 	# Cleanup
-	await browser_session.stop()
+	await browser_session.kill()
 
 
 if __name__ == '__main__':

@@ -53,7 +53,7 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 	"""Remove all browser-use highlighting elements from the page."""
 	try:
 		# Get CDP client and session ID
-		cdp_session = await dom_service.browser_session.attach_cdp_session()
+		cdp_session = await dom_service.browser_session.get_or_create_cdp_session()
 
 		print('🧹 Removing browser-use highlighting elements')
 
@@ -361,7 +361,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		}})();
 		"""
 
-		cdp_session = await dom_service.browser_session.attach_cdp_session()
+		cdp_session = await dom_service.browser_session.get_or_create_cdp_session()
 
 		# Inject the enhanced CSP-safe script via CDP
 		await cdp_session.cdp_client.send.Runtime.evaluate(

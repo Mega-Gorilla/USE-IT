@@ -34,18 +34,35 @@ async def main():
 	# await browser.create_new_tab('https://en.wikipedia.org/wiki/Apple_Inc.')
 	# await browser.create_new_tab('https://semantic-ui.com/modules/dropdown.html#/definition')
 	# await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/iframe-buttons')
-	await browser.navigate('https://v0-website-with-clickable-elements.vercel.app/nested-iframe')
-
-	await browser._wait_for_page_and_frames_load()
-
-	page = await browser.get_current_page()
+	from browser_use.browser.events import NavigateToUrlEvent
+	nav_event = browser.event_bus.dispatch(NavigateToUrlEvent(url='https://v0-website-with-clickable-elements.vercel.app/nested-iframe'))
+	await nav_event
+	
+	# Wait a moment for page to fully load
+	await asyncio.sleep(2)
 
 	while True:
 		async with DomService(browser) as dom_service:
 			await remove_highlighting_script(dom_service)
 
 			start = time.time()
-			dom_tree, dom_timing = await dom_service.get_dom_tree()
+			# Get current target ID from browser session
+			if browser.agent_focus and browser.agent_focus.target_id:
+				target_id = browser.agent_focus.target_id
+			else:
+				# Get first available target
+				targets = await browser._cdp_get_all_pages()
+				if not targets:
+					raise ValueError('No targets available')
+				target_id = targets[0]['targetId']
+			
+			result = await dom_service.get_dom_tree(target_id)
+			if isinstance(result, tuple):
+				dom_tree = result[0]
+				dom_timing = result[1] if len(result) > 1 else {}
+			else:
+				dom_tree = result
+				dom_timing = {}
 
 			end = time.time()
 			print(f'Time taken: {end - start} seconds')

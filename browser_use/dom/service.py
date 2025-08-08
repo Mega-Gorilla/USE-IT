@@ -124,7 +124,7 @@ class DomService:
 
 	async def _get_viewport_ratio(self, target_id: str) -> float:
 		"""Get viewport dimensions, device pixel ratio, and scroll position using CDP."""
-		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
+		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=False)
 
 		try:
 			# Get the layout metrics which includes the visual viewport
@@ -224,7 +224,7 @@ class DomService:
 	async def _get_ax_tree_for_all_frames(self, target_id: str) -> GetFullAXTreeReturns:
 		"""Recursively collect all frames and merge their accessibility trees into a single array."""
 
-		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
+		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=False)
 		frame_tree = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
 
 		def collect_all_frame_ids(frame_tree_node) -> list[str]:
@@ -259,7 +259,7 @@ class DomService:
 		return {'nodes': merged_nodes}
 
 	async def _get_all_trees(self, target_id: str) -> TargetAllTrees:
-		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
+		cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target_id, focus=False)
 
 		# Wait for the page to be ready first
 		try:
@@ -409,7 +409,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
-				session_id=self.browser_session.cdp_session.session_id if self.browser_session.cdp_session else None,
+				session_id=self.browser_session.agent_focus.session_id if self.browser_session.agent_focus else None,
 				target_id=target_id,
 				content_document=None,
 				shadow_root_type=shadow_root_type,

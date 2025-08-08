@@ -155,8 +155,8 @@ class AboutBlankWatchdog(BaseWatchdog):
 		This is used to visually indicate that the browser is setting up or waiting.
 		"""
 		try:
-			# Get cached session
-			cdp_session = await self.browser_session.attach_cdp_session(target_id)
+			# Create temporary session for this target without switching focus
+			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
 			# Inject the DVD screensaver script (from main branch with idempotency added)
 			script = f"""
@@ -268,7 +268,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 				}})('{browser_session_label}');
 			"""
 
-			await cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=cdp_session.session_id)
+			await temp_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=temp_session.session_id)
 
 			# No need to detach - session is cached
 

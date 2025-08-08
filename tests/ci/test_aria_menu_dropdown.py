@@ -272,8 +272,13 @@ class TestARIAMenuDropdown:
 		assert 'selected option' in result.extracted_content.lower() or 'clicked' in result.extracted_content.lower()
 		assert 'Filter' in result.extracted_content
 
-		# Verify the click actually had an effect on the page
-		result_text = await page.evaluate("document.getElementById('result').textContent")
+		# Verify the click actually had an effect on the page using CDP
+		cdp_session = await session.attach_cdp_session()
+		result = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
+			session_id=cdp_session.session_id
+		)
+		result_text = result.get('result', {}).get('value', '')
 		assert 'Filter' in result_text, f"Expected 'Filter' in result text, got '{result_text}'"
 
 	async def test_get_dropdown_options_with_nested_aria_menu(self, controller, browser_session: BrowserSession, base_url):

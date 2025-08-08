@@ -33,7 +33,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 		self.logger.debug('[ScreenshotWatchdog] Handler START - on_ScreenshotEvent called')
 		try:
 			# Get CDP client and session for current target
-			cdp_session = await self.browser_session.attach_cdp_session()
+			cdp_session = await self.browser_session.get_or_create_cdp_session()
 			
 			# Activate the target to ensure it's focused
 			self.logger.debug(f'[ScreenshotWatchdog] Activating target: {cdp_session.target_id}')

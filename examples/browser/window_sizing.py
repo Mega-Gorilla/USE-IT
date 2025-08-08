@@ -77,7 +77,7 @@ async def example_custom_window_size():
 	finally:
 		# Close resources
 		if browser_session:
-			await browser_session.stop()
+			await browser_session.kill()
 
 
 async def example_no_viewport_option():
@@ -120,7 +120,7 @@ async def example_no_viewport_option():
 
 	finally:
 		if browser_session:
-			await browser_session.stop()
+			await browser_session.kill()
 
 
 def validate_window_size(configured: dict[str, Any], actual: dict[str, Any]) -> None:

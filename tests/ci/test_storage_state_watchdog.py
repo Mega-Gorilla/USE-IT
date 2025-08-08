@@ -80,7 +80,9 @@ async def test_storage_state_watchdog_save_event():
 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
 		# Navigate to create some context
-		await session.navigate('data:text/html,<h1>Test Page</h1>')
+		from browser_use.browser.events import NavigateToUrlEvent
+		nav_event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Test Page</h1>'))
+		await nav_event
 
 		# Dispatch SaveStorageStateEvent
 		save_event = session.event_bus.dispatch(SaveStorageStateEvent())
@@ -159,7 +161,7 @@ async def test_storage_state_watchdog_load_event():
 			# Get the current target to get cookies from
 			target_info = await session.get_current_target_info()
 			if target_info:
-				cdp_session = await session.attach_cdp_session(target_info.target_id)
+				cdp_session = await session.get_or_create_cdp_session(target_info['targetId'])
 				result = await cdp_session.cdp_client.send.Storage.getCookies(session_id=cdp_session.session_id)
 				cookies = result.get('cookies', [])
 				# Should have at least the test cookie
