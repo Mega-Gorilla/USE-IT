@@ -91,7 +91,7 @@ class TestHeadlessScreenshots:
 			await browser_session.navigate(httpserver.url_for('/'))
 
 			# Get state summary
-			state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 			# Verify screenshot is included
 			assert state.screenshot is not None
@@ -132,7 +132,7 @@ class TestHeadlessScreenshots:
 
 			# Browser should auto-create a new page on about:blank with animation
 			# With AboutBlankWatchdog, about:blank pages now have animated content, so they should have screenshots
-			state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 			assert state.screenshot is not None, 'Screenshot should not be None for animated about:blank pages'
 			assert state.url == 'about:blank' or state.url.startswith('chrome://'), f'Expected empty page but got {state.url}'
 
@@ -140,7 +140,7 @@ class TestHeadlessScreenshots:
 			await browser_session.navigate(httpserver.url_for('/test'))
 
 			# Get state with screenshot
-			state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+			state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 			# Should have a screenshot now
 			assert state.screenshot is not None, 'Screenshot should not be None for real pages'
 			assert isinstance(state.screenshot, str)

@@ -314,14 +314,14 @@ class Controller(Generic[Context]):
 			# Run markdownify in a thread pool to avoid blocking the event loop
 			loop = asyncio.get_event_loop()
 
-			client, session_id = await browser_session.get_cdp_session()
+			cdp_session = await browser_session.attach_cdp_session()
 
 			try:
 				# result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
 				# root_node_id = result['root']['nodeId']
 				# page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': 1}, session_id=session_id)
-				page_html_result = await client.send.Page.captureSnapshot(
-					params={'format': 'mhtml'}, session_id=session_id
+				page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
+					params={'format': 'mhtml'}, session_id=cdp_session.session_id
 				)  # included OOPIF content automatically
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
@@ -365,12 +365,8 @@ Explain the content of the page and that the requested information is not availa
 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
 					timeout=120.0,  # 120 second aggressive timeout for LLM call
 				)
-				target_info = await client.send.Target.getTargetInfo(
-					session_id=session_id
-				)  # TODO: make a helper method on browser_session for this
-				url = target_info['targetInfo']['url']
 
-				extracted_content = f'Page Link: {url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+				extracted_content = f'Page Link: {cdp_session.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
 
 				# if content is small include it to memory
 				MAX_MEMORY_SIZE = 600
@@ -389,7 +385,7 @@ Explain the content of the page and that the requested information is not availa
 						else:
 							break
 					save_result = await file_system.save_extracted_content(extracted_content)
-					memory = f'Extracted content from {url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
+					memory = f'Extracted content from {cdp_session.url}\n<query>{query}\n</query>\n<extracted_content>\n{display}{len(lines) - display_lines_count} more lines...\n</extracted_content>\n<file_system>{save_result}</file_system>'
 					include_extracted_content_only_once = True
 				logger.info(f'📄 {memory}')
 				return ActionResult(

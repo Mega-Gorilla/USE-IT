@@ -104,7 +104,7 @@ class TestBrowserSessionFileUploads:
 		await page.wait_for_load_state('networkidle')
 
 		# Get browser state to populate selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 		# Get the selector map after page load
 		selector_map = await browser_session.get_selector_map()
@@ -209,7 +209,7 @@ class TestBrowserSessionFileUploads:
 		await page.wait_for_load_state('networkidle')
 
 		# Get browser state to populate selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 		selector_map = await browser_session.get_selector_map()
 
@@ -273,7 +273,7 @@ class TestBrowserSessionFileUploads:
 		await page.wait_for_load_state('networkidle')
 
 		# Get browser state to populate selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 		selector_map = await browser_session.get_selector_map()
 

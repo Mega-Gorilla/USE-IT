@@ -1195,7 +1195,7 @@ class TestControllerIntegration:
 
 		# Test that get_state_summary works
 		try:
-			await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+			await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 			assert False, 'Expected throw error when navigating to non-existent page'
 		except Exception as e:
 			pass

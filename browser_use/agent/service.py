@@ -482,25 +482,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		_browser_session_id = self.browser_session.id if self.browser_session else self.id
 		_current_page_id = (
-			self.browser_session.current_target_id[-2:]
-			if self.browser_session and self.browser_session.current_target_id
-			else '--'
+			self.browser_session.cdp_session.target_id[-2:] if self.browser_session and self.browser_session.cdp_session else '--'
 		)
 		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]} 🅟 {_current_page_id}')
-
-	@property
-	def browser(self) -> Browser:
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-		assert self.browser_session.browser is not None, 'Browser is not set up'
-		return self.browser_session.browser
-
-	@property
-	def browser_context(self) -> BrowserContext:
-		# Deprecated - browser_context no longer exists with CDP-only approach
-		assert self.browser_session is not None, 'BrowserSession is not set up'
-		assert self.browser_session.cdp_client is not None, 'CDP client is not set up'
-		# Return None or raise since we don't have browser_context anymore
-		raise NotImplementedError('browser_context is deprecated - use browser_session.cdp_client instead')
 
 	@property
 	def browser_profile(self) -> BrowserProfile:
@@ -1449,7 +1433,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					break
 
 			if action.get_index() is not None and i != 0:
-				new_browser_state_summary = await self.browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+				new_browser_state_summary = await self.browser_session.get_browser_state_summary(
+					cache_clickable_elements_hashes=False
+				)
 				new_selector_map = new_browser_state_summary.dom_state.selector_map
 
 				# Detect index change after previous action

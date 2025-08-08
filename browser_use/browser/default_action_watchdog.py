@@ -3,8 +3,6 @@
 import asyncio
 from typing import TYPE_CHECKING
 
-from cdp_use import CDPClient
-
 from browser_use.browser.events import (
 	BrowserErrorEvent,
 	ClickElementEvent,
@@ -20,6 +18,7 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
+from browser_use.dom.service import EnhancedDOMTreeNode
 
 if TYPE_CHECKING:
 	pass
@@ -75,15 +74,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Check if a new tab was opened
-			current_target_ids = await self.browser_session._cdp_get_all_pages()
-			if len(current_target_ids) > len(initial_target_ids):
+			after_target_ids = await self.browser_session._cdp_get_all_pages()
+			if len(after_target_ids) > len(initial_target_ids):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
 				# Switch to the last tab (newly created tab)
 				from browser_use.browser.events import SwitchTabEvent
 
-				last_tab_index = len(current_target_ids) - 1
+				last_tab_index = len(after_target_ids) - 1
 				await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
 
 			# Return download_path if any
@@ -126,7 +125,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""Handle scroll request with CDP."""
 		try:
 			# Check if we have a current target for scrolling
-			if not self.browser_session.current_target_id:
+			if not self.browser_session.cdp_session:
 				raise ValueError('No active target for scrolling')
 		except ValueError as e:
 			self.event_bus.dispatch(
@@ -187,16 +186,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 		try:
 			# Get CDP client
-			cdp_client = self.browser_session.cdp_client
+			cdp_session = await self.browser_session.attach_cdp_session()
 
 			# Get the correct session ID for the element's frame
-			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+			session_id = await self._get_session_id_for_element(element_node)
 
 			# Get element bounds
 			backend_node_id = element_node.backend_node_id
 
 			# Get bounds from CDP
-			box_model = await cdp_client.send.DOM.getBoxModel(params={'backendNodeId': backend_node_id}, session_id=session_id)
+			box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
+				params={'backendNodeId': backend_node_id}, session_id=session_id
+			)
 			content_quad = box_model['model']['content']
 			if len(content_quad) < 8:
 				raise Exception('Invalid content quad')
@@ -207,7 +208,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Scroll element into view
 			try:
-				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
+				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
 				await asyncio.sleep(0.1)  # Wait for scroll to complete
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
@@ -219,7 +222,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if self.browser_session.browser_profile.downloads_path:
 				# Enable download events
-				await cdp_client.send.Page.setDownloadBehavior(
+				await cdp_session.cdp_client.send.Page.setDownloadBehavior(
 					params={'behavior': 'allow', 'downloadPath': str(self.browser_session.browser_profile.downloads_path)},
 					session_id=session_id,
 				)
@@ -236,7 +239,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Perform the click using CDP
 			try:
 				# Move mouse to element
-				await cdp_client.send.Input.dispatchMouseEvent(
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
 						'type': 'mouseMoved',
 						'x': center_x,
@@ -246,7 +249,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				# Mouse down
-				await cdp_client.send.Input.dispatchMouseEvent(
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
 						'type': 'mousePressed',
 						'x': center_x,
@@ -258,7 +261,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				# Mouse up
-				await cdp_client.send.Input.dispatchMouseEvent(
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
 						'type': 'mouseReleased',
 						'x': center_x,
@@ -268,7 +271,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
-    
+
 				# TODO: do occlusion detection, if element is not on the top, fire JS-based click event instead of x,y coordinate clicking
 
 				# Handle download if expected: should be handled by downloads_watchdog.py now using browser-level download event listeners
@@ -313,13 +316,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
 				# Fall back to JavaScript click via CDP
 				try:
-					result = await cdp_client.send.DOM.resolveNode(
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
 						params={'backendNodeId': backend_node_id},
 						session_id=session_id,
 					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+					)
 					object_id = result['object']['objectId']
 
-					await cdp_client.send.Runtime.callFunctionOn(
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 						params={
 							'functionDeclaration': 'function() { this.click(); }',
 							'objectId': object_id,
@@ -348,7 +354,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			cdp_client = self.browser_session.cdp_client
 
 			# Get the correct session ID for the element's frame
-			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+			session_id = await self._get_session_id_for_element(element_node)
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
@@ -364,6 +370,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			result = await cdp_client.send.DOM.resolveNode(
 				params={'backendNodeId': backend_node_id},
 				session_id=session_id,
+			)
+			assert 'object' in result and 'objectId' in result['object'], (
+				'Failed to find DOM element based on backendNodeId, maybe page content changed?'
 			)
 			object_id = result['object']['objectId']
 
@@ -431,8 +440,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""
 		try:
 			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
+			assert self.browser_session.cdp_session is not None, 'CDP session not initialized - browser may not be connected yet'
+			cdp_client = self.browser_session.cdp_session.cdp_client
+			session_id = self.browser_session.cdp_session.session_id
 
 			# Get viewport dimensions
 			layout_metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
@@ -468,15 +478,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
 		"""Try to scroll an element's container using CDP."""
 		try:
-			# Get CDP client
-			cdp_client = self.browser_session.cdp_client
-
-			# Get the correct session ID for the element's frame
-			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
 			# Get element bounds to know where to scroll
 			backend_node_id = element_node.backend_node_id
-			box_model = await cdp_client.send.DOM.getBoxModel(params={'backendNodeId': backend_node_id}, session_id=session_id)
+			box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
+				params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
+			)
 			content_quad = box_model['model']['content']
 
 			# Calculate center point
@@ -484,7 +492,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
 
 			# Dispatch mouse wheel event at element location
-			await cdp_client.send.Input.dispatchMouseEvent(
+			await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 				params={
 					'type': 'mouseWheel',
 					'x': center_x,
@@ -492,7 +500,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'deltaX': 0,
 					'deltaY': pixels,
 				},
-				session_id=session_id,
+				session_id=cdp_session.session_id,
 			)
 
 			return True
@@ -500,22 +508,21 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Failed to scroll element container via CDP: {e}')
 			return False
 
-	async def _get_session_id_for_element(self, cdp_client: CDPClient, element_node) -> str | None:
+	async def _get_session_id_for_element(self, element_node: EnhancedDOMTreeNode) -> str | None:
 		"""Get the appropriate CDP session ID for an element based on its frame."""
 		if element_node.frame_id:
 			# Element is in an iframe, need to get session for that frame
 			try:
 				# Get all targets
-				targets = await cdp_client.send.Target.getTargets()
+				targets = await self.browser_session.cdp_client.send.Target.getTargets()
 
 				# Find the target for this frame
 				for target in targets['targetInfos']:
 					if target['type'] == 'iframe' and element_node.frame_id in str(target.get('targetId', '')):
 						# Get cached session for this target
 						target_id = target['targetId']
-						client, session_id = await self.browser_session.get_cdp_session(target_id)
-						# Domains are already enabled by get_cdp_session
-						return session_id
+						cdp_session = await self.browser_session.attach_cdp_session(target_id)
+						return cdp_session.session_id
 
 				# If frame not found in targets, use main target session
 				self.logger.debug(f'Frame {element_node.frame_id} not found in targets, using main session')
@@ -523,17 +530,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(f'Error getting frame session: {e}, using main session')
 
 		# Use main target session
-		return await self.browser_session.get_current_page_cdp_session_id()
+		assert self.browser_session.cdp_session is not None, 'CDP session not initialized - browser may not be connected yet'
+		return self.browser_session.cdp_session.session_id
 
 	async def on_GoBackEvent(self, event: GoBackEvent) -> None:
 		"""Handle navigate back request with CDP."""
+		cdp_session = await self.browser_session.attach_cdp_session()
 		try:
 			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
 
 			# Get navigation history
-			history = await cdp_client.send.Page.getNavigationHistory(session_id=session_id)
+			history = await cdp_session.cdp_client.send.Page.getNavigationHistory(session_id=cdp_session.session_id)
 			current_index = history['currentIndex']
 			entries = history['entries']
 
@@ -544,7 +551,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Navigate to the previous entry
 			previous_entry_id = entries[current_index - 1]['id']
-			await cdp_client.send.Page.navigateToHistoryEntry(params={'entryId': previous_entry_id}, session_id=session_id)
+			await cdp_session.cdp_client.send.Page.navigateToHistoryEntry(
+				params={'entryId': previous_entry_id}, session_id=cdp_session.session_id
+			)
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
@@ -561,13 +570,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def on_GoForwardEvent(self, event: GoForwardEvent) -> None:
 		"""Handle navigate forward request with CDP."""
+		cdp_session = await self.browser_session.attach_cdp_session()
 		try:
-			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
-
 			# Get navigation history
-			history = await cdp_client.send.Page.getNavigationHistory(session_id=session_id)
+			history = await cdp_session.cdp_client.send.Page.getNavigationHistory(session_id=cdp_session.session_id)
 			current_index = history['currentIndex']
 			entries = history['entries']
 
@@ -578,7 +584,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Navigate to the next entry
 			next_entry_id = entries[current_index + 1]['id']
-			await cdp_client.send.Page.navigateToHistoryEntry(params={'entryId': next_entry_id}, session_id=session_id)
+			await cdp_session.cdp_client.send.Page.navigateToHistoryEntry(
+				params={'entryId': next_entry_id}, session_id=cdp_session.session_id
+			)
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
@@ -595,13 +603,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def on_RefreshEvent(self, event: RefreshEvent) -> None:
 		"""Handle target refresh request with CDP."""
+		cdp_session = await self.browser_session.attach_cdp_session()
 		try:
-			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
-
 			# Reload the target
-			await cdp_client.send.Page.reload(session_id=session_id)
+			await cdp_session.cdp_client.send.Page.reload(session_id=cdp_session.session_id)
 
 			# Wait for reload
 			await asyncio.sleep(1.0)
@@ -637,11 +642,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		"""Handle send keys request with CDP."""
+		cdp_session = await self.browser_session.attach_cdp_session()
 		try:
-			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
-
 			# Parse key combination
 			keys = event.keys.lower()
 
@@ -663,21 +665,21 @@ class DefaultActionWatchdog(BaseWatchdog):
 						modifiers |= 4  # Meta/Command
 
 				# Send key with modifiers
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
 						'key': key.capitalize() if len(key) == 1 else key,
 						'modifiers': modifiers,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
 						'key': key.capitalize() if len(key) == 1 else key,
 						'modifiers': modifiers,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 			else:
 				# Single key
@@ -702,13 +704,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				key = key_map.get(keys, keys)
 
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': 'keyDown', 'key': key},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': 'keyUp', 'key': key},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
@@ -734,7 +736,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client
-			session_id = await self._get_session_id_for_element(cdp_client, element_node)
+			session_id = await self._get_session_id_for_element(element_node)
 
 			# Set file(s) to upload
 			backend_node_id = element_node.backend_node_id
@@ -761,7 +763,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client
-			session_id = await self.browser_session.get_current_page_cdp_session_id()
+			assert self.browser_session.cdp_session is not None, 'CDP session not initialized - browser may not be connected yet'
+			session_id = self.browser_session.cdp_session.session_id
 
 			# Enable DOM
 			await cdp_client.send.DOM.enable(session_id=session_id)

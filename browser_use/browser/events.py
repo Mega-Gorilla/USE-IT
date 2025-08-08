@@ -1,13 +1,13 @@
 """Event definitions for browser communication."""
 
-from typing import Any, Generic, Literal
+from typing import Any, Literal
 
 from bubus import BaseEvent
 from bubus.models import T_EventResultType
 from pydantic import Field, field_validator
 
+from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.views import EnhancedDOMTreeNode
-from typing_extensions import TypeVar
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
@@ -35,7 +35,7 @@ class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 			is_scrollable=data.is_scrollable,
 			is_visible=data.is_visible,
 			absolute_position=data.absolute_position,
-			# override the circular reference fields in EnhancedDOMTreeNode as they cant be serialized and arent needed by event handlers
+			# override the circular reference fields in EnhancedDOMTreeNode as they cant be serialized and aren't needed by event handlers
 			content_document=None,
 			shadow_root_type=None,
 			shadow_roots=[],
@@ -100,7 +100,7 @@ class ScreenshotEvent(BaseEvent):
 	clip: dict[str, float] | None = None  # {x, y, width, height}
 
 
-class BrowserStateRequestEvent(BaseEvent):
+class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
 	"""Request current browser state."""
 
 	include_dom: bool = True

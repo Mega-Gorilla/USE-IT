@@ -156,7 +156,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		"""
 		try:
 			# Get cached session
-			client, session_id = await self.browser_session.get_cdp_session(target_id)
+			cdp_session = await self.browser_session.attach_cdp_session(target_id)
 
 			# Inject the DVD screensaver script (from main branch with idempotency added)
 			script = f"""
@@ -268,7 +268,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 				}})('{browser_session_label}');
 			"""
 
-			await client.send.Runtime.evaluate(params={'expression': script}, session_id=session_id)
+			await cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=cdp_session.session_id)
 
 			# No need to detach - session is cached
 

@@ -128,7 +128,7 @@ class DownloadsWatchdog(BaseWatchdog):
 			# Note: Since download listeners are set up once per browser session, not per target,
 			# we just track if we've set up the browser-level listener
 			if self._download_cdp_session_setup:
-				self.logger.debug(f'[DownloadsWatchdog] Download listener already set up for browser session')
+				self.logger.debug('[DownloadsWatchdog] Download listener already set up for browser session')
 				return
 
 			# logger.debug(f'[DownloadsWatchdog] Setting up CDP download listener for target: {target_id}')
@@ -454,13 +454,13 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		try:
 			# Get cached session
-			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
+			cdp_session = await self.browser_session.attach_cdp_session(target_id)
 
 			# Add timeout to prevent hanging on unresponsive pages
 			import asyncio
 
 			result = await asyncio.wait_for(
-				cdp_client.send.Runtime.evaluate(
+				cdp_session.cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': """
 				(() => {
@@ -517,7 +517,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				""",
 						'returnByValue': True,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
@@ -556,13 +556,13 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		try:
 			# Get cached session
-			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
+			cdp_session = await self.browser_session.attach_cdp_session(target_id)
 
 			# Try to get the PDF URL with timeout
 			import asyncio
 
 			result = await asyncio.wait_for(
-				cdp_client.send.Runtime.evaluate(
+				cdp_session.cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': """
 				(() => {
@@ -576,7 +576,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				""",
 						'returnByValue': True,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				),
 				timeout=5.0,  # 5 second timeout to prevent hanging
 			)
@@ -611,7 +611,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				escaped_pdf_url = json.dumps(pdf_url)
 
 				result = await asyncio.wait_for(
-					cdp_client.send.Runtime.evaluate(
+					cdp_session.cdp_client.send.Runtime.evaluate(
 						params={
 							'expression': f"""
 					(async () => {{
@@ -648,7 +648,7 @@ class DownloadsWatchdog(BaseWatchdog):
 							'awaitPromise': True,
 							'returnByValue': True,
 						},
-						session_id=session_id,
+						session_id=cdp_session.session_id,
 					),
 					timeout=10.0,  # 10 second timeout for download operation
 				)

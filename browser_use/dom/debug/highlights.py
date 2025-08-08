@@ -53,7 +53,7 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 	"""Remove all browser-use highlighting elements from the page."""
 	try:
 		# Get CDP client and session ID
-		client, session_id = await dom_service.browser_session.get_cdp_session(target_id=dom_service.browser_session.current_target_id)
+		cdp_session = await dom_service.browser_session.attach_cdp_session()
 
 		print('🧹 Removing browser-use highlighting elements')
 
@@ -68,8 +68,8 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 		"""
 
 		# Execute the removal script via CDP
-		await client.send.Runtime.evaluate(
-			params={'expression': script, 'returnByValue': True}, session_id=session_id
+		await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
 		)
 		print('✅ All browser-use highlighting elements removed')
 
@@ -84,12 +84,9 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		print('⚠️ No interactive elements to highlight')
 		return
 
-
-
 	try:
 		# Convert DOMSelectorMap to the format expected by the JavaScript
 		converted_elements = convert_dom_selector_map_to_highlight_format(interactive_elements)
-
 
 		print(f'📍 Creating CSP-safe highlighting for {len(converted_elements)} elements')
 
@@ -363,12 +360,12 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			console.log('✅ Browser-use highlighting complete');
 		}})();
 		"""
-  
-		client, session_id = await dom_service.browser_session.get_cdp_session(target_id=dom_service.browser_session.current_target_id)
+
+		cdp_session = await dom_service.browser_session.attach_cdp_session()
 
 		# Inject the enhanced CSP-safe script via CDP
-		await client.send.Runtime.evaluate(
-			params={'expression': script, 'returnByValue': True}, session_id=session_id
+		await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
 		)
 		print(f'✅ Enhanced CSP-safe highlighting injected for {len(converted_elements)} elements')
 

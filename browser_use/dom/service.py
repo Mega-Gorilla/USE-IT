@@ -3,11 +3,9 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXNode
 from cdp_use.cdp.dom.types import Node
-from cdp_use.cdp.target.types import TargetInfo
 
 from browser_use.dom.enhanced_snapshot import (
 	REQUIRED_COMPUTED_STYLES,
@@ -52,7 +50,7 @@ class DomService:
 		return self
 
 	async def __aexit__(self, exc_type, exc_value, traceback):
-		pass   # no need to cleanup anything, browser_session auto handles cleaning up session cache
+		pass  # no need to cleanup anything, browser_session auto handles cleaning up session cache
 
 	async def _get_targets_for_page(self, target_id: str | None = None) -> CurrentPageTargets:
 		"""Get the target info for a specific page.
@@ -97,7 +95,6 @@ class DomService:
 			iframe_sessions=iframe_targets,
 		)
 
-
 	def _build_enhanced_ax_node(self, ax_node: AXNode) -> EnhancedAXNode:
 		properties: list[EnhancedAXProperty] | None = None
 		if 'properties' in ax_node and ax_node['properties']:
@@ -127,11 +124,11 @@ class DomService:
 
 	async def _get_viewport_ratio(self, target_id: str) -> float:
 		"""Get viewport dimensions, device pixel ratio, and scroll position using CDP."""
-		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
+		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
 
 		try:
 			# Get the layout metrics which includes the visual viewport
-			metrics = await client.send.Page.getLayoutMetrics(session_id=session_id)
+			metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
 
 			visual_viewport = metrics.get('visualViewport', {})
 
@@ -227,8 +224,8 @@ class DomService:
 	async def _get_ax_tree_for_all_frames(self, target_id: str) -> GetFullAXTreeReturns:
 		"""Recursively collect all frames and merge their accessibility trees into a single array."""
 
-		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
-		frame_tree = await client.send.Page.getFrameTree(session_id=session_id)
+		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
+		frame_tree = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
 
 		def collect_all_frame_ids(frame_tree_node) -> list[str]:
 			"""Recursively collect all frame IDs from the frame tree."""
@@ -246,8 +243,8 @@ class DomService:
 		# Get accessibility tree for each frame
 		ax_tree_requests = []
 		for frame_id in all_frame_ids:
-			ax_tree_request = client.send.Accessibility.getFullAXTree(
-				params={'frameId': frame_id}, session_id=session_id
+			ax_tree_request = cdp_session.cdp_client.send.Accessibility.getFullAXTree(
+				params={'frameId': frame_id}, session_id=cdp_session.session_id
 			)
 			ax_tree_requests.append(ax_tree_request)
 
@@ -262,16 +259,16 @@ class DomService:
 		return {'nodes': merged_nodes}
 
 	async def _get_all_trees(self, target_id: str) -> TargetAllTrees:
-		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
+		cdp_session = await self.browser_session.attach_cdp_session(target_id=target_id)
 
 		# Wait for the page to be ready first
 		try:
-			ready_state = await client.send.Runtime.evaluate(
-				params={'expression': 'document.readyState'}, session_id=session_id
+			ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
+				params={'expression': 'document.readyState'}, session_id=cdp_session.session_id
 			)
 		except Exception as e:
 			pass  # Page might not be ready yet
-		snapshot_request = client.send.DOMSnapshot.captureSnapshot(
+		snapshot_request = cdp_session.cdp_client.send.DOMSnapshot.captureSnapshot(
 			params={
 				'computedStyles': REQUIRED_COMPUTED_STYLES,
 				'includePaintOrder': True,
@@ -279,11 +276,11 @@ class DomService:
 				'includeBlendedBackgroundColors': False,
 				'includeTextColorOpacities': False,
 			},
-			session_id=session_id,
+			session_id=cdp_session.session_id,
 		)
 
-		dom_tree_request = client.send.DOM.getDocument(
-			params={'depth': -1, 'pierce': True}, session_id=session_id
+		dom_tree_request = cdp_session.cdp_client.send.DOM.getDocument(
+			params={'depth': -1, 'pierce': True}, session_id=cdp_session.session_id
 		)
 
 		ax_tree_request = self._get_ax_tree_for_all_frames(target_id)
