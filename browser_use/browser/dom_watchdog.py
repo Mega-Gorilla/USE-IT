@@ -8,7 +8,7 @@ from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
 	ScreenshotEvent,
-	TabCreatedEvent,
+	BrowserConnectedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import DomService
@@ -30,7 +30,7 @@ class DOMWatchdog(BaseWatchdog):
 	helper methods for other watchdogs.
 	"""
 
-	LISTENS_TO = [TabCreatedEvent, BrowserStateRequestEvent]
+	LISTENS_TO = [BrowserConnectedEvent, BrowserStateRequestEvent]
 	EMITS = [BrowserErrorEvent]
 
 	# Public properties for other watchdogs
@@ -42,7 +42,7 @@ class DOMWatchdog(BaseWatchdog):
 	# Internal DOM service
 	_dom_service: DomService | None = None
 
-	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
+	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
 
 		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
@@ -96,8 +96,7 @@ class DOMWatchdog(BaseWatchdog):
 				})();
 			}
 		"""
-		client, session_id = await self.browser_session.get_cdp_session()
-		await self.browser_session.cdp_client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': init_script})
+		await self.browser_session._cdp_add_init_script(init_script)
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.

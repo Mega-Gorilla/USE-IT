@@ -1136,15 +1136,18 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_add_init_script(self, script: str) -> str:
 		"""Add script to evaluate on new document using CDP Page.addScriptToEvaluateOnNewDocument."""
+		assert self._cdp_client_root is not None
 		client, session_id = await self.get_cdp_session()
+
 		result = await client.send.Page.addScriptToEvaluateOnNewDocument(
-			params={'source': script, 'runImmediately': True}, session_id=session_id
+			params={'source': script, 'runImmediately': True}
 		)
 		return result['identifier']
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
 		"""Remove script added with addScriptToEvaluateOnNewDocument."""
-		await self.cdp_client.send.Page.removeScriptToEvaluateOnNewDocument(params={'identifier': identifier})
+		client, session_id = await self.get_cdp_session(target_id='main')
+		await client.send.Page.removeScriptToEvaluateOnNewDocument(params={'identifier': identifier}, session_id=session_id)
 
 	async def _cdp_set_viewport(self, width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False) -> None:
 		"""Set viewport using CDP Emulation.setDeviceMetricsOverride."""

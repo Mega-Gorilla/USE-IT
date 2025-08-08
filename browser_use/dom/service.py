@@ -3,6 +3,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from cdp_use import CDPClient
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
 from cdp_use.cdp.accessibility.types import AXNode
 from cdp_use.cdp.dom.types import Node
@@ -56,8 +57,7 @@ class DomService:
 		return self
 
 	async def __aexit__(self, exc_type, exc_value, traceback):
-		# Cleanup any attached sessions
-		await self._cleanup_sessions()
+		pass   # no need to cleanup anything, browser_session auto handles cleaning up session cache
 
 	async def _get_targets_for_page(self, target_id: str | None = None) -> CurrentPageTargets:
 		"""Get the target info for a specific page.
@@ -102,50 +102,6 @@ class DomService:
 			iframe_sessions=iframe_targets,
 		)
 
-	async def _attach_target_activate_domains_get_session_id(self, target: TargetInfo) -> str:
-		"""This function is cached, so go crazy"""
-
-		target_id = str(target['targetId'])
-
-		# Use cached session from BrowserSession
-		client, session_id = await self.browser_session.get_cdp_session(target_id)
-		
-		# Domains are already enabled by get_cdp_session, no need to track for cleanup
-		return session_id
-
-	async def _cleanup_sessions(self) -> None:
-		"""Clear cached session data. Sessions are now managed by BrowserSession."""
-		# Sessions are now cached and managed by BrowserSession, no need to detach
-		self._attached_sessions.clear()
-		self.session_id_domains_enabled_cache.clear()
-
-	async def _enable_all_domains_on_session(self, session_id: str) -> None:
-		if session_id in self.session_id_domains_enabled_cache:
-			return
-
-		# Set auto-attach with proper filter for iframe targets
-		# This will automatically attach to immediate child frames
-		# IMPORTANT: This is NOT recursive - we need to call setAutoAttach
-		# on each newly attached frame to get its children
-		await self.browser_session.cdp_client.send.Target.setAutoAttach(
-			params={
-				'autoAttach': True,
-				'waitForDebuggerOnStart': False,
-				'flatten': True,
-				# Include filter to ensure iframe targets are attached
-				'filter': [{'type': 'page', 'exclude': False}, {'type': 'iframe', 'exclude': False}],
-			},
-			session_id=session_id,
-		)
-
-		await asyncio.gather(
-			self.browser_session.cdp_client.send.DOM.enable(session_id=session_id),
-			self.browser_session.cdp_client.send.Accessibility.enable(session_id=session_id),
-			self.browser_session.cdp_client.send.DOMSnapshot.enable(session_id=session_id),
-			self.browser_session.cdp_client.send.Page.enable(session_id=session_id),
-		)
-
-		self.session_id_domains_enabled_cache[session_id] = True
 
 	def _build_enhanced_ax_node(self, ax_node: AXNode) -> EnhancedAXNode:
 		properties: list[EnhancedAXProperty] | None = None
@@ -174,11 +130,13 @@ class DomService:
 		)
 		return enhanced_ax_node
 
-	async def _get_viewport_ratio(self, session_id: str) -> float:
+	async def _get_viewport_ratio(self, target_id: str) -> float:
 		"""Get viewport dimensions, device pixel ratio, and scroll position using CDP."""
+		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
+
 		try:
 			# Get the layout metrics which includes the visual viewport
-			metrics = await self.browser_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			metrics = await client.send.Page.getLayoutMetrics(session_id=session_id)
 
 			visual_viewport = metrics.get('visualViewport', {})
 
@@ -271,10 +229,11 @@ class DomService:
 		# If we reach here, element is visible in main viewport and all containing iframes
 		return True
 
-	async def _get_ax_tree_for_all_frames(self, session_id: str) -> GetFullAXTreeReturns:
+	async def _get_ax_tree_for_all_frames(self, target_id: str) -> GetFullAXTreeReturns:
 		"""Recursively collect all frames and merge their accessibility trees into a single array."""
 
-		frame_tree = await self.browser_session.cdp_client.send.Page.getFrameTree(session_id=session_id)
+		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
+		frame_tree = await client.send.Page.getFrameTree(session_id=session_id)
 
 		def collect_all_frame_ids(frame_tree_node) -> list[str]:
 			"""Recursively collect all frame IDs from the frame tree."""
@@ -292,7 +251,7 @@ class DomService:
 		# Get accessibility tree for each frame
 		ax_tree_requests = []
 		for frame_id in all_frame_ids:
-			ax_tree_request = self.browser_session.cdp_client.send.Accessibility.getFullAXTree(
+			ax_tree_request = client.send.Accessibility.getFullAXTree(
 				params={'frameId': frame_id}, session_id=session_id
 			)
 			ax_tree_requests.append(ax_tree_request)
@@ -307,18 +266,17 @@ class DomService:
 
 		return {'nodes': merged_nodes}
 
-	async def _get_all_trees_for_session_id(self, session_id: str) -> TargetAllTrees:
-		if not self.browser_session.cdp_url:
-			raise ValueError('CDP URL is not set')
+	async def _get_all_trees(self, target_id: str) -> TargetAllTrees:
+		client, session_id = await self.browser_session.get_cdp_session(target_id=target_id)
 
 		# Wait for the page to be ready first
 		try:
-			ready_state = await self.browser_session.cdp_client.send.Runtime.evaluate(
+			ready_state = await client.send.Runtime.evaluate(
 				params={'expression': 'document.readyState'}, session_id=session_id
 			)
 		except Exception as e:
 			pass  # Page might not be ready yet
-		snapshot_request = self.browser_session.cdp_client.send.DOMSnapshot.captureSnapshot(
+		snapshot_request = client.send.DOMSnapshot.captureSnapshot(
 			params={
 				'computedStyles': REQUIRED_COMPUTED_STYLES,
 				'includePaintOrder': True,
@@ -329,13 +287,13 @@ class DomService:
 			session_id=session_id,
 		)
 
-		dom_tree_request = self.browser_session.cdp_client.send.DOM.getDocument(
+		dom_tree_request = client.send.DOM.getDocument(
 			params={'depth': -1, 'pierce': True}, session_id=session_id
 		)
 
-		ax_tree_request = self._get_ax_tree_for_all_frames(session_id)
+		ax_tree_request = self._get_ax_tree_for_all_frames(target_id)
 
-		device_pixel_ratio_request = self._get_viewport_ratio(session_id)
+		device_pixel_ratio_request = self._get_viewport_ratio(target_id)
 
 		start = time.time()
 		# Gather all CDP requests with timeout
@@ -362,7 +320,7 @@ class DomService:
 
 	async def get_dom_tree(
 		self,
-		target_id: str | None = None,
+		target_id: str,
 		initial_html_frames: list[EnhancedDOMTreeNode] | None = None,
 		initial_total_frame_offset: DOMRect | None = None,
 	) -> EnhancedDOMTreeNode:
@@ -373,15 +331,8 @@ class DomService:
 			initial_html_frames: List of HTML frame nodes encountered so far
 			initial_total_frame_offset: Accumulated coordinate offset
 		"""
-		# Get target info
-		page_session_info = await self._get_targets_for_page(target_id)
-		target = page_session_info.page_session
-		actual_target_id = target['targetId']  # Store the actual target ID being used
 
-		# Get viewport dimensions first for visibility calculation
-		session_id = await self._attach_target_activate_domains_get_session_id(target)
-
-		trees = await self._get_all_trees_for_session_id(session_id)
+		trees = await self._get_all_trees(target_id)
 
 		dom_tree = trees.dom_tree
 		ax_tree = trees.ax_tree
@@ -409,6 +360,7 @@ class DomService:
 				html_frames: List of HTML frame nodes encountered so far
 				accumulated_iframe_offset: Accumulated coordinate translation from parent iframes (includes scroll corrections)
 			"""
+
 			# Initialize lists if not provided
 			if html_frames is None:
 				html_frames = []
@@ -465,7 +417,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
-				target_id=actual_target_id,
+				target_id=target_id,
 				content_document=None,
 				shadow_root_type=shadow_root_type,
 				shadow_roots=None,
@@ -578,23 +530,19 @@ class DomService:
 			Tuple of (serialized_dom_state, enhanced_dom_tree_root, timing_info)
 		"""
 
-		try:
-			# Use current target (None means use current)
-			enhanced_dom_tree = await self.get_dom_tree(target_id=None)
+		# Use current target (None means use current)
+		assert self.browser_session.current_target_id is not None
+		enhanced_dom_tree = await self.get_dom_tree(target_id=self.browser_session.current_target_id)
 
-			start = time.time()
-			serialized_dom_state, serializer_timing = DOMTreeSerializer(
-				enhanced_dom_tree, previous_cached_state
-			).serialize_accessible_elements()
+		start = time.time()
+		serialized_dom_state, serializer_timing = DOMTreeSerializer(
+			enhanced_dom_tree, previous_cached_state
+		).serialize_accessible_elements()
 
-			end = time.time()
-			serialize_total_timing = {'serialize_dom_tree_total': end - start}
+		end = time.time()
+		serialize_total_timing = {'serialize_dom_tree_total': end - start}
 
-			# Combine all timing info
-			all_timing = {**serializer_timing, **serialize_total_timing}
+		# Combine all timing info
+		all_timing = {**serializer_timing, **serialize_total_timing}
 
-			return serialized_dom_state, enhanced_dom_tree, all_timing
-
-		finally:
-			# Cleanup any attached sessions
-			await self._cleanup_sessions()
+		return serialized_dom_state, enhanced_dom_tree, all_timing
