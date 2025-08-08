@@ -320,7 +320,9 @@ class Controller(Generic[Context]):
 				# result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
 				# root_node_id = result['root']['nodeId']
 				# page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': 1}, session_id=session_id)
-				page_html_result = await client.send.Page.captureSnapshot(params={'format': 'mhtml'}, session_id=session_id)   # included OOPIF content automatically
+				page_html_result = await client.send.Page.captureSnapshot(
+					params={'format': 'mhtml'}, session_id=session_id
+				)  # included OOPIF content automatically
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
@@ -363,7 +365,9 @@ Explain the content of the page and that the requested information is not availa
 					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
 					timeout=120.0,  # 120 second aggressive timeout for LLM call
 				)
-				target_info = await client.send.Target.getTargetInfo(session_id=session_id)  # TODO: make a helper method on browser_session for this
+				target_info = await client.send.Target.getTargetInfo(
+					session_id=session_id
+				)  # TODO: make a helper method on browser_session for this
 				url = target_info['targetInfo']['url']
 
 				extracted_content = f'Page Link: {url}\nQuery: {query}\nExtracted Content:\n{response.completion}'

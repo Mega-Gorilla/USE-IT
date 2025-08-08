@@ -6,14 +6,15 @@ from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 from bubus import BaseEvent
+from cdp_use.cdp.target.events import TargetCrashedEvent
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
 	BrowserStoppedEvent,
+	TabCreatedEvent,
 )
-from cdp_use.cdp.inspector.events import TargetCrashedEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class CrashWatchdog(BaseWatchdog):
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
 		BrowserConnectedEvent,
 		BrowserStoppedEvent,
+		TabCreatedEvent,
 	]
 	EMITS: ClassVar[list[type[BaseEvent]]] = [BrowserErrorEvent]
 
@@ -64,33 +66,38 @@ class CrashWatchdog(BaseWatchdog):
 		# logger.debug('[CrashWatchdog] Browser stopped, ending monitoring')
 		await self._stop_monitoring()
 
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
+		"""Attach to new tab."""
+		assert self.browser_session.current_target_id is not None, 'No current target ID'
+		await self.attach_to_target(self.browser_session.current_target_id)
+
 	async def attach_to_target(self, target_id: str) -> None:
 		"""Set up crash monitoring for a specific target using CDP."""
 		try:
 			# Get cached session (domains already enabled by get_cdp_session)
 			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
-			
+
 			# Check if we already have listeners for this session
 			if session_id in self._sessions_with_listeners:
 				self.logger.debug(f'[CrashWatchdog] Event listeners already exist for session: {session_id}')
 				return
 
 			# Set up network event handlers
-			def on_request_will_be_sent(event):
-				# Create and track the task
-				task = asyncio.create_task(self._on_request_cdp(event))
-				self._cdp_event_tasks.add(task)
-				# Remove from set when done
-				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
+			# def on_request_will_be_sent(event):
+			# 	# Create and track the task
+			# 	task = asyncio.create_task(self._on_request_cdp(event))
+			# 	self._cdp_event_tasks.add(task)
+			# 	# Remove from set when done
+			# 	task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
-			def on_response_received(event):
-				self._on_response_cdp(event)
+			# def on_response_received(event):
+			# 	self._on_response_cdp(event)
 
-			def on_loading_failed(event):
-				self._on_request_failed_cdp(event)
+			# def on_loading_failed(event):
+			# 	self._on_request_failed_cdp(event)
 
-			def on_loading_finished(event):
-				self._on_request_finished_cdp(event)
+			# def on_loading_finished(event):
+			# 	self._on_request_finished_cdp(event)
 
 			# Register event handlers
 			# TEMPORARILY DISABLED: Network events causing too much logging
@@ -100,15 +107,15 @@ class CrashWatchdog(BaseWatchdog):
 			# cdp_client.on('Network.loadingFinished', on_loading_finished, session_id=session_id)
 
 			# Set up crash handler (Inspector domain already enabled by get_cdp_session)
-			def on_target_crashed(event: TargetCrashedEvent, session_id: str | None=None):
+			def on_target_crashed(event: TargetCrashedEvent, session_id: str | None = None):
 				# Create and track the task
 				task = asyncio.create_task(self._on_target_crash_cdp(target_id))
 				self._cdp_event_tasks.add(task)
 				# Remove from set when done
 				task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
-			cdp_client.register.Inspector.targetCrashed(on_target_crashed)
-			
+			cdp_client.register.Target.targetCrashed(on_target_crashed)
+
 			# Track that we've added listeners to this session
 			self._sessions_with_listeners.add(session_id)
 
@@ -167,11 +174,12 @@ class CrashWatchdog(BaseWatchdog):
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
 		if target_info and target_info['targetId'] == self.browser_session.current_target_id:
 			self.browser_session.current_target_id = None
-			self.logger.error(f'[CrashWatchdog] 💥 Target crashed, navigating Agent to a new tab: {target_info.get("url", "unknown")}')
+			self.logger.error(
+				f'[CrashWatchdog] 💥 Target crashed, navigating Agent to a new tab: {target_info.get("url", "unknown")}'
+			)
 
 		# Get tab index
 		tab_index = await self.browser_session.get_tab_index(target_id)
-
 
 		# Also emit generic browser error
 		self.event_bus.dispatch(
@@ -189,7 +197,7 @@ class CrashWatchdog(BaseWatchdog):
 	async def _start_monitoring(self) -> None:
 		"""Start the monitoring loop."""
 		assert self.browser_session.cdp_client is not None, 'Root CDP client not initialized - browser may not be connected yet'
-		
+
 		if self._monitoring_task and not self._monitoring_task.done():
 			# logger.info('[CrashWatchdog] Monitoring already running')
 			return
@@ -197,32 +205,6 @@ class CrashWatchdog(BaseWatchdog):
 		self._monitoring_task = asyncio.create_task(self._monitoring_loop())
 		# logger.debug('[CrashWatchdog] Monitoring loop created and started')
 
-		# Set up CDP session for browser-level crash detection
-		try:
-			cdp_client = self.browser_session.cdp_client
-
-			# Enable browser-level crash detection
-			# Note: Browser domain might not be available in all contexts
-			try:
-				await cdp_client.send.Browser.getVersion()  # Test if Browser domain is available
-
-				# Set up browser crash handler
-				def on_browser_crash(event):
-					self.logger.error('[CrashWatchdog] Browser crash detected via CDP')
-					self.event_bus.dispatch(
-						BrowserErrorEvent(error_type='BrowserCrash', message='Browser process crashed', details=event)
-					)
-     
-				cdp_client.remove_event_listener('Browser.crash', on_browser_crash)
-
-				# Note: Browser.crash event might not exist, using Inspector.targetCrashed instead
-				self.logger.debug('[CrashWatchdog] 💥 CDP crash detection enabled')
-			except Exception:
-				# Browser domain not available, rely on target-level monitoring
-				pass
-
-		except Exception as e:
-			self.logger.warning(f'[CrashWatchdog] Failed to set up CDP crash detection: {e}')
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring loop."""
@@ -307,14 +289,11 @@ class CrashWatchdog(BaseWatchdog):
 		try:
 			client, session_id = await self.browser_session.get_cdp_session()
 			# Quick ping to check if session is alive
-			await asyncio.wait_for(
-				client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id),
-				timeout=1.0
-			)
-		except:
+			await asyncio.wait_for(client.send.Runtime.evaluate(params={'expression': '1'}, session_id=session_id), timeout=1.0)
+		except Exception as e:
 			self.logger.error(f'[CrashWatchdog] ❌ Crashed session detected for target {self.browser_session.current_target_id}')
 			self.browser_session.current_target_id = None
-		
+
 		# Check browser process if we have PID
 		if self.browser_session._local_browser_watchdog and (proc := self.browser_session._local_browser_watchdog._subprocess):
 			try:
@@ -332,46 +311,7 @@ class CrashWatchdog(BaseWatchdog):
 			except Exception:
 				pass  # psutil not available or process doesn't exist
 
-
 	@staticmethod
 	def _is_new_tab_page(url: str) -> bool:
 		"""Check if URL is a new tab page."""
 		return url in ['about:blank', 'chrome://new-tab-page/', 'chrome://newtab/']
-
-	async def trigger_browser_crash(self) -> None:
-		"""Trigger a browser crash for testing (requires CDP)."""
-		try:
-			cdp_client = self.browser_session.cdp_client
-			self.logger.warning('[CrashWatchdog] Triggering browser crash for testing...')
-			await cdp_client.send.Browser.crash()
-		except Exception as e:
-			self.logger.error(f'[CrashWatchdog] Failed to trigger browser crash: {e}')
-
-	async def trigger_gpu_crash(self) -> None:
-		"""Trigger a GPU process crash for testing (requires CDP)."""
-		try:
-			cdp_client = self.browser_session.cdp_client
-			self.logger.warning('[CrashWatchdog] Triggering GPU crash for testing...')
-			await cdp_client.send.Browser.crashGpuProcess()
-		except Exception as e:
-			self.logger.error(f'[CrashWatchdog] Failed to trigger GPU crash: {e}')
-
-	async def trigger_target_crash(self, target_id: str) -> None:
-		"""Trigger a target crash for testing."""
-		try:
-			cdp_client = self.browser_session.cdp_client
-
-			# Get target info for logging
-			targets = await cdp_client.send.Target.getTargets()
-			target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
-			target_url = target_info.get('url', 'unknown') if target_info else 'unknown'
-
-			self.logger.warning(f'[CrashWatchdog] Triggering target crash for testing on: {target_url}')
-
-			# Get cached session
-			cdp_client, session_id = await self.browser_session.get_cdp_session(target_id)
-
-			# Crash the target
-			await cdp_client.send.Page.crash(session_id=session_id)
-		except Exception as e:
-			self.logger.error(f'[CrashWatchdog] Failed to trigger target crash: {e}')

@@ -138,7 +138,6 @@ class BrowserSession(BaseModel):
 		# await self.event_bus.wait_for_idle(timeout=5.0)
 		# await self.event_bus.clear()
 
-
 		self._cdp_client_root = None  # type: ignore
 		self._cached_browser_state_summary = None
 		self._cached_selector_map.clear()
@@ -174,6 +173,12 @@ class BrowserSession(BaseModel):
 	async def start(self) -> None:
 		"""Start the browser session."""
 		await self.event_bus.dispatch(BrowserStartEvent())
+  
+	async def kill(self) -> None:
+		"""Kill the browser session."""
+		await self.event_bus.dispatch(BrowserStopEvent(force=True))
+		await self.event_bus.stop(clear=True, timeout=5)
+		self.event_bus = EventBus()
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
 		"""Handle browser start request.
@@ -286,7 +291,6 @@ class BrowserSession(BaseModel):
 		session_id = session['sessionId']
 		await self._cdp_enable_all_domains(self._cdp_client_root, session_id)
 		return self._cdp_client_root, session_id
-
 
 	async def _cdp_enable_all_domains(self, client: Any, session_id: str) -> None:
 		"""Enable all necessary CDP domains for a session."""
@@ -1087,9 +1091,7 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None
 		client, session_id = await self.get_cdp_session()
 
-		result = await client.send.Page.addScriptToEvaluateOnNewDocument(
-			params={'source': script, 'runImmediately': True}
-		)
+		result = await client.send.Page.addScriptToEvaluateOnNewDocument(params={'source': script, 'runImmediately': True})
 		return result['identifier']
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
