@@ -98,7 +98,6 @@ class BrowserSession(BaseModel):
 
 	# Mutable private state shared between watchdogs
 	_cdp_client_root: CDPClient | None = PrivateAttr(default=None)
-	_cdp_session_cache: weakref.WeakValueDictionary = PrivateAttr(default_factory=weakref.WeakValueDictionary)
 	_cached_browser_state_summary: Any = PrivateAttr(default=None)
 	_cached_selector_map: dict[int, 'EnhancedDOMTreeNode'] = PrivateAttr(default_factory=dict)
 
@@ -140,8 +139,6 @@ class BrowserSession(BaseModel):
 		# await self.event_bus.wait_for_idle(timeout=5.0)
 		# await self.event_bus.clear()
 
-		# for target_id in list(self._cdp_session_cache.keys()):
-		# 	await self._cdp_release_session(target_id)
 
 		self._cdp_client_root = None  # type: ignore
 		self._cdp_session_cache.clear()
@@ -283,43 +280,11 @@ class BrowserSession(BaseModel):
 			if not target_id:
 				raise ValueError('No target ID provided and no current target ID set')
 
-		# If caching is disabled, always create a new session
-		if not self.cdp_session_cache_enabled:
-			client = CDPClient(self.cdp_url)
-			await client.start()
-			session = await client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
-			session_id = session['sessionId']
-			await self._cdp_enable_all_domains(client, session_id)
-			return client, session_id
-
-		# Check cache first
-		cached = self._cdp_session_cache.get(target_id)
-		if cached:
-			try:
-				# Quick ping to verify it's still alive (0.1s timeout)
-				result = await asyncio.wait_for(
-					cached.client.send.Runtime.evaluate(params={'expression': '1+1'}, session_id=cached.session_id), timeout=0.1
-				)
-				assert int(result.get('code', '0')) > 0, 'Cached session died unexpectedly!'
-				return cached.client, cached.session_id
-			except Exception:
-				# Dead session, remove from cache
-				self._cdp_session_cache.pop(target_id, None)
-				raise Exception('Cached session died unexpectedly!')
-
-		# Create new session
-		assert self.cdp_url is not None
-		client = CDPClient(self.cdp_url)
-		await client.start()
-		session = await client.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
+		session = await self._cdp_client_root.send.Target.attachToTarget(params={'targetId': target_id, 'flatten': True})
 		session_id = session['sessionId']
-		await self._cdp_enable_all_domains(client, session_id)
+		await self._cdp_enable_all_domains(self._cdp_client_root, session_id)
+		return self._cdp_client_root, session_id
 
-		# Enable all necessary domains at creation time
-
-		# Cache it using CachedSession (which supports weak references)
-		self._cdp_session_cache[target_id] = CachedSession(client, session_id, target_id)
-		return client, session_id
 
 	async def _cdp_enable_all_domains(self, client: Any, session_id: str) -> None:
 		"""Enable all necessary CDP domains for a session."""
@@ -340,24 +305,6 @@ class BrowserSession(BaseModel):
 			# client.send.Network.enable(session_id=session_id),
 			return_exceptions=True,  # Don't fail if some domains aren't available
 		)
-
-	async def _cdp_release_session(self, target_id: str) -> None:
-		"""Explicitly release a CDP session (detach and remove from cache).
-
-		Args:
-			target_id: The target ID to release the session for
-		"""
-		# If caching is disabled, nothing to release from cache
-		if not self.cdp_session_cache_enabled:
-			return
-
-		cached = self._cdp_session_cache.pop(target_id, None)
-		if cached:
-			try:
-				client, session_id = cached
-				await client.send.Target.detachFromTarget(params={'sessionId': session_id})
-			except Exception:
-				pass  # Session might already be dead
 
 	# ========== Helper Methods ==========
 

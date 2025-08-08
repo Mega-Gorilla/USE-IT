@@ -48,11 +48,6 @@ class DomService:
 		self.browser_session = browser_session
 		self.logger = logger or browser_session.logger
 
-		# Cache for session domains that have been enabled
-		self.session_id_domains_enabled_cache: dict[str, bool] = {}
-		# Track sessions that need cleanup
-		self._attached_sessions: set[str] = set()
-
 	async def __aenter__(self):
 		return self
 
