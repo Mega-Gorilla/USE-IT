@@ -9,6 +9,7 @@ from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	ScreenshotEvent,
 	BrowserConnectedEvent,
+	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import DomService
@@ -30,7 +31,7 @@ class DOMWatchdog(BaseWatchdog):
 	helper methods for other watchdogs.
 	"""
 
-	LISTENS_TO = [BrowserConnectedEvent, BrowserStateRequestEvent]
+	LISTENS_TO = [TabCreatedEvent, BrowserStateRequestEvent]
 	EMITS = [BrowserErrorEvent]
 
 	# Public properties for other watchdogs
@@ -42,7 +43,7 @@ class DOMWatchdog(BaseWatchdog):
 	# Internal DOM service
 	_dom_service: DomService | None = None
 
-	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
+	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
 
 		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
@@ -113,8 +114,8 @@ class DOMWatchdog(BaseWatchdog):
 
 		page_url = await self.browser_session.get_current_page_url()
 
-		# Check if this is a new tab or chrome:// target early for optimization
-		is_empty_page = is_new_tab_page(page_url) or page_url.startswith('chrome://')
+		# check if we should skip DOM tree build for pointless pages
+		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')
 
 		# Get tabs info once at the beginning for all paths
 		self.logger.debug('Getting tabs info...')
@@ -123,8 +124,8 @@ class DOMWatchdog(BaseWatchdog):
 
 		try:
 			# Fast path for empty pages
-			if is_empty_page:
-				self.logger.debug(f'⚡ Fast path for empty target: {page_url}')
+			if not_a_meaningful_website:
+				self.logger.debug(f'⚡ Skipping BuildDOMTree for empty target: {page_url}')
 
 				# Create minimal DOM state
 				content = SerializedDOMState(_root=None, selector_map={})
@@ -150,7 +151,7 @@ class DOMWatchdog(BaseWatchdog):
 				return BrowserStateSummary(
 					dom_state=content,
 					url=page_url,
-					title='New Tab' if is_new_tab_page(page_url) else 'Chrome Page',
+					title='Empty Tab',
 					tabs=tabs_info,
 					screenshot=screenshot_b64,
 					page_info=page_info,
@@ -190,15 +191,15 @@ class DOMWatchdog(BaseWatchdog):
 			screenshot_b64 = None
 			if event.include_screenshot:
 				try:
-					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
+					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=6.0))
 					# Add timeout to prevent hanging if no handler exists
-					screenshot_result = await asyncio.wait_for(screenshot_event.event_result(), timeout=2.0)
+					screenshot_result = await screenshot_event.event_results_flat_dict(raise_if_none=True, raise_if_any=True)
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
 				except TimeoutError:
-					self.logger.warning('Screenshot timed out after 2 seconds - no handler registered?')
+					self.logger.warning('Screenshot timed out after 6 seconds - no handler registered or slow page?')
 				except Exception as e:
-					self.logger.warning(f'Screenshot failed: {e}')
+					self.logger.warning(f'Screenshot failed: {type(e).__name__}: {e}')
 
 			# Tabs info already fetched at the beginning
 
@@ -309,6 +310,9 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Update selector map for other watchdogs
 			self.selector_map = self.current_dom_state.selector_map
+			# Update BrowserSession's cached selector map
+			if self.browser_session:
+				self.browser_session.update_cached_selector_map(self.selector_map)
 
 			# Inject highlighting for visual feedback if we have elements
 			if self.selector_map and self._dom_service:
@@ -319,10 +323,6 @@ class DOMWatchdog(BaseWatchdog):
 					self.logger.debug(f'Injected highlighting for {len(self.selector_map)} elements')
 				except Exception as e:
 					self.logger.debug(f'Failed to inject highlighting: {e}')
-
-			# Update BrowserSession's cached selector map
-			if self.browser_session:
-				self.browser_session.update_cached_selector_map(self.selector_map)
 
 			# Build UUID selector map
 			self.uuid_selector_map = {}

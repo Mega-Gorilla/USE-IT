@@ -1,6 +1,7 @@
 """Default browser action handlers using CDP."""
 
 import asyncio
+import platform
 from typing import TYPE_CHECKING
 
 from browser_use.browser.events import (
@@ -72,6 +73,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
 				self.logger.info(f'🖱️ {msg}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
+
+			# Wait a bit for potential new tab to be created
+			# This is necessary because tab creation is async and might not be immediate
+			await asyncio.sleep(0.5)
 
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
@@ -189,7 +194,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			cdp_session = await self.browser_session.attach_cdp_session()
 
 			# Get the correct session ID for the element's frame
-			session_id = await self._get_session_id_for_element(element_node)
+			# session_id = await self._get_session_id_for_element(element_node)
+			session_id = cdp_session.session_id
 
 			# Get element bounds
 			backend_node_id = element_node.backend_node_id
@@ -216,28 +222,32 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(f'Failed to scroll element into view: {e}')
 
 			# Set up download detection if downloads are enabled
-			download_path = None
-			download_event = asyncio.Event()
-			download_guid = None
+			# download_path = None
+			# download_event = asyncio.Event()
+			# download_guid = None
 
-			if self.browser_session.browser_profile.downloads_path:
+			if self.browser_session.browser_profile.downloads_path and expect_download:
 				# Enable download events
 				await cdp_session.cdp_client.send.Page.setDownloadBehavior(
 					params={'behavior': 'allow', 'downloadPath': str(self.browser_session.browser_profile.downloads_path)},
 					session_id=session_id,
 				)
 
-				# Set up download listener
-				async def on_download_will_begin(event):
-					nonlocal download_guid
-					download_guid = event['guid']
-					download_event.set()
+				# # Set up download listener
+				# async def on_download_will_begin(event):
+				# 	nonlocal download_guid
+				# 	download_guid = event['guid']
+				# 	download_event.set()
 
 				# TODO: fix this with download_watchdog.py
 				# cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
 
+
 			# Perform the click using CDP
+			# TODO: do occlusion detection first, if element is not on the top, fire JS-based
+   			# click event instead using xpath of x,y coordinate clicking, because we wont be able to click *through* occluding elements using x,y clicks
 			try:
+				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
 				# Move mouse to element
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
@@ -247,8 +257,22 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
+				await asyncio.sleep(0.123)
+			
+				# Calculate modifier bitmask for CDP
+				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
+				modifiers = 0
+				if new_tab:
+					# Use platform-appropriate modifier for "open in new tab"
+					if platform.system() == 'Darwin':
+						modifiers = 4  # Meta/Cmd key
+						self.logger.debug('⌘ Using Cmd modifier for new tab click...')
+					else:
+						modifiers = 2  # Control key
+						self.logger.debug('⌃ Using Ctrl modifier for new tab click...')
 
 				# Mouse down
+				self.logger.debug(f'👆🏾 Clicking x: {center_x}px y: {center_y}px with modifiers: {modifiers} ...')
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
 						'type': 'mousePressed',
@@ -256,9 +280,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 						'y': center_y,
 						'button': 'left',
 						'clickCount': 1,
+						'modifiers': modifiers,
 					},
 					session_id=session_id,
 				)
+				await asyncio.sleep(0.145)
 
 				# Mouse up
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
@@ -268,11 +294,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 						'y': center_y,
 						'button': 'left',
 						'clickCount': 1,
+						'modifiers': modifiers,
 					},
 					session_id=session_id,
 				)
 
-				# TODO: do occlusion detection, if element is not on the top, fire JS-based click event instead of x,y coordinate clicking
+				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
 
 				# Handle download if expected: should be handled by downloads_watchdog.py now using browser-level download event listeners
 				# if self.browser_session.browser_profile.downloads_path:
@@ -311,6 +338,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# # Navigation is handled by NavigationWatchdog via events
 
 				# return download_path
+				# raise Exception('Quad click isnt perfect yet especially for multi-action sequences where navigation dropdowns move around, additional JavaScript click is needed')
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
@@ -651,23 +679,27 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if '+' in keys:
 				# Handle modifier keys
 				parts = keys.split('+')
-				modifiers = 0
 				key = parts[-1]
-
+				
+				# Calculate modifier bits inline
+				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
+				modifiers = 0
 				for part in parts[:-1]:
-					if part in ['ctrl', 'control']:
-						modifiers |= 2  # Control
-					elif part in ['shift']:
-						modifiers |= 8  # Shift
-					elif part in ['alt', 'option']:
+					part_lower = part.lower()
+					if part_lower in ['alt', 'option']:
 						modifiers |= 1  # Alt
-					elif part in ['cmd', 'command', 'meta']:
+					elif part_lower in ['ctrl', 'control']:
+						modifiers |= 2  # Control
+					elif part_lower in ['meta', 'cmd', 'command']:
 						modifiers |= 4  # Meta/Command
+					elif part_lower in ['shift']:
+						modifiers |= 8  # Shift
 
 				# Send key with modifiers
+				# Use rawKeyDown for non-text keys (like shortcuts)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
-						'type': 'keyDown',
+						'type': 'rawKeyDown',
 						'key': key.capitalize() if len(key) == 1 else key,
 						'modifiers': modifiers,
 					},
@@ -704,8 +736,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				key = key_map.get(keys, keys)
 
+				# Use rawKeyDown for special keys (non-text producing keys)
+				# Use keyDown only for regular text characters
+				key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
+				
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={'type': 'keyDown', 'key': key},
+					params={'type': key_type, 'key': key},
 					session_id=cdp_session.session_id,
 				)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(

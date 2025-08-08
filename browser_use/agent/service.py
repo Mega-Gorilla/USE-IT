@@ -23,6 +23,7 @@ from browser_use.agent.cloud_events import (
 	UpdateAgentTaskEvent,
 )
 from browser_use.agent.message_manager.utils import save_conversation
+from browser_use.browser.events import BrowserStateRequestEvent
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.tokens.service import TokenCost
@@ -698,7 +699,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision
+			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision, cached=True,
 		)
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
@@ -1178,6 +1179,27 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		return False, False
 
+	def _extract_url_from_task(self, task: str) -> str | None:
+		"""Extract URL from task string using naive pattern matching."""
+		import re
+		
+		# Look for common URL patterns
+		patterns = [
+			r'https?://[^\s<>"\']+',  # Full URLs with http/https
+			r'(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with optional paths
+		]
+		
+		for pattern in patterns:
+			match = re.search(pattern, task)
+			if match:
+				url = match.group(0)
+				# Add https:// if missing
+				if not url.startswith(('http://', 'https://')):
+					url = 'https://' + url
+				return url
+		
+		return None
+
 	@observe(name='agent.run', metadata={'task': '{{task}}', 'debug': '{{debug}}'})
 	@time_execution_async('--run')
 	async def run(
@@ -1234,12 +1256,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Start browser session and attach watchdogs
 			assert self.browser_session is not None, 'Browser session must be initialized before starting'
 			self.logger.debug('🌐 Starting browser session...')
-			from browser_use.browser.events import BrowserStartEvent
+			from browser_use.browser.events import BrowserStartEvent, NavigateToUrlEvent
 
 			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
 			await event
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
+			
+			# Check if task contains a URL and navigate to it immediately
+			initial_url = self._extract_url_from_task(self.task)
+			if initial_url:
+				self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
+				self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
+
+				# this one is just for element higlighting as a loading animation, not technically used by anything but nice to see what the agent will see as the browser starts up
+				self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
+
+				self.logger.debug(f'✅ Navigated to {initial_url}')
 
 			# Execute initial actions if provided
 			if self.initial_actions:

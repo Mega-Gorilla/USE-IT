@@ -1,7 +1,7 @@
 """Base watchdog class for browser monitoring components."""
 
 import inspect
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from collections.abc import Iterable
 
 from bubus import BaseEvent, EventBus
@@ -23,8 +23,8 @@ class BaseWatchdog(BaseModel):
 
 	# Class variables to statically define the list of events relevant to each watchdog
 	# (not enforced, just to make it easier to understand the code and debug watchdogs at runtime)
-	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = []  # Events this watchdog listens to
-	EMITS: ClassVar[list[type[BaseEvent]]] = []       # Events this watchdog emits
+	LISTENS_TO: ClassVar[list[type[BaseEvent[Any]]]] = []  # Events this watchdog listens to
+	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []       # Events this watchdog emits
 
 	# Core dependencies
 	event_bus: EventBus = Field()

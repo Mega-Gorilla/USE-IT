@@ -6,6 +6,7 @@ from bubus import BaseEvent
 
 from browser_use.browser.events import ScreenshotEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
+from cdp_use.cdp.page import CaptureScreenshotParameters
 
 if TYPE_CHECKING:
 	pass
@@ -34,18 +35,12 @@ class ScreenshotWatchdog(BaseWatchdog):
 			cdp_session = await self.browser_session.attach_cdp_session()
 
 			# Prepare screenshot parameters
-			params = {'format': 'png'}
-
-			# if event.full_page:
-			# 	params['captureBeyondViewport'] = True
-
-			# if event.clip:
-			# 	params['clip'] = event.clip
+			params = CaptureScreenshotParameters(format='png', captureBeyondViewport=False)
 
 			# Take screenshot using CDP
 			self.logger.debug(f'[ScreenshotWatchdog] Taking screenshot with params: {params}')
 			result = await cdp_session.cdp_client.send.Page.captureScreenshot(
-				# params=params,
+				params=params,
 				session_id=cdp_session.session_id
 			)
 

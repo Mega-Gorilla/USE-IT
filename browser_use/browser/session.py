@@ -68,7 +68,16 @@ class CDPSession(BaseModel):
 		return await cdp_session.attach()
 
 	async def attach(self) -> Self:
-		result = await self.cdp_client.send.Target.attachToTarget(params={'targetId': self.target_id, 'flatten': True})
+		result = await self.cdp_client.send.Target.attachToTarget(
+			params={
+				'targetId': self.target_id,
+				'flatten': True,
+				'filter': [                                 # type: ignore
+					{'type': 'page', 'exclude': False},
+					{'type': 'iframe', 'exclude': False},
+				],
+			}
+		)
 		self.session_id = result['sessionId']
 
 		# Enable all domains in parallel
@@ -323,10 +332,14 @@ class BrowserSession(BaseModel):
 	# ========== Helper Methods ==========
 
 	async def get_browser_state_summary(
-		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = False
+		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True, cached: bool = False
 	) -> BrowserStateSummary:
+		if cached and self._cached_browser_state_summary is not None and self._cached_browser_state_summary.dom_state:
+			self.logger.debug('🔄 Using pre-cached browser state summary for open tab')
+			return self._cached_browser_state_summary
+
 		# Dispatch the event and wait for result
-		event = cast(
+		event: BrowserStateRequestEvent = cast(
 			BrowserStateRequestEvent,
 			self.event_bus.dispatch(
 				BrowserStateRequestEvent(
@@ -810,12 +823,16 @@ class BrowserSession(BaseModel):
 		return result.get('cookies', [])
 
 	async def _cdp_set_cookies(self, cookies: list[Cookie]) -> None:
-		"""Set cookies using CDP Network.setCookies."""
+		"""Set cookies using CDP Storage.setCookies."""
 		if not self.cdp_session or not cookies:
 			return
 
 		cdp_session = await self.attach_cdp_session()
-		await cdp_session.cdp_client.send.Storage.setCookies(params={'cookies': cookies}, session_id=cdp_session.session_id)
+		# Storage.setCookies expects params dict with 'cookies' key
+		await cdp_session.cdp_client.send.Storage.setCookies(
+			params={'cookies': cookies},  # type: ignore[arg-type]
+			session_id=cdp_session.session_id
+		)
 
 	async def _cdp_clear_cookies(self) -> None:
 		"""Clear all cookies using CDP Network.clearBrowserCookies."""

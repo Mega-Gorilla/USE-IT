@@ -317,18 +317,23 @@ class Controller(Generic[Context]):
 			cdp_session = await browser_session.attach_cdp_session()
 
 			try:
-				# result = await client.send.DOM.getDocument(params={'pierce': True}, session_id=session_id)
-				# root_node_id = result['root']['nodeId']
-				# page_html_result = await client.send.DOM.getOuterHTML(params={'nodeId': 1}, session_id=session_id)
 				page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
 					params={'format': 'mhtml'}, session_id=cdp_session.session_id
-				)  # included OOPIF content automatically
+				)  # includes OOPIF content automatically
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
 				raise RuntimeError(f"Couldn't extract page content: {e}")
 
 			page_html = page_html_result['data']
+
+			try:
+				# strip large data:... base64 encoded images, fonts, css, etc. from mhtml captureSnapshot output
+				page_html = re.sub(r'url\(\s*data:[^)]+\)', 'url()', page_html, flags=re.I)
+				page_html = re.sub(r'(?P<q>["\'])data:[^"\']*(?P=q)', r'\g<q>\g<q>', page_html, flags=re.I)
+				page_html = re.sub(r'\bdata:[^)\s>"\']+', '', page_html, flags=re.I)
+			except Exception as e:
+				logger.warning(f'Error stripping data:... blobs from page html while converting to markdown: {type(e).__name__}: {e}')
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
 
