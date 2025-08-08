@@ -620,7 +620,8 @@ class BrowserSession(BaseModel):
 
 	async def get_tab_index(self, target_id: str) -> int:
 		"""Get tab index for a target ID."""
-		target_ids = await self._cdp_get_all_pages()
+		targets = await self._cdp_get_all_pages()
+		target_ids = [t['targetId'] for t in targets]
 		if target_id in target_ids:
 			return target_ids.index(target_id)
 		return -1

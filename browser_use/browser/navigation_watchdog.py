@@ -64,8 +64,8 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Clear agent focus when browser stops."""
 		# Clear target handlers
 		self._target_close_handlers.clear()
-		assert self.browser_session.cdp_session is not None, 'No current target ID'
-		self.browser_session.cdp_session.target_id = None
+		if self.browser_session.cdp_session:
+			self.browser_session.cdp_session.target_id = None
 
 	# ========== Tab Lifecycle Events ==========
 
@@ -525,9 +525,10 @@ class NavigationWatchdog(BaseWatchdog):
 		targets = await self.browser_session._cdp_get_all_pages()
 		if targets:
 			# Focus on the last target (most recently created)
-			self.browser_session.cdp_session.target_id = targets[-1]['targetId']
+			if self.browser_session.cdp_session:
+				self.browser_session.cdp_session.target_id = targets[-1]['targetId']
 			await self._dispatch_focus_changed()
-			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id)
+			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None)
 			tab_index = await self._get_current_tab_index()
 			self.logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
 
@@ -535,9 +536,10 @@ class NavigationWatchdog(BaseWatchdog):
 		"""Switch agent focus to a specific tab index."""
 		targets = await self.browser_session._cdp_get_all_pages()
 		if 0 <= tab_index < len(targets):
-			self.browser_session.cdp_session.target_id = targets[tab_index]['targetId']
+			if self.browser_session.cdp_session:
+				self.browser_session.cdp_session.target_id = targets[tab_index]['targetId']
 			await self._dispatch_focus_changed()
-			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id)
+			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None)
 			self.logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
 
 	async def _find_new_agent_target(self) -> None:

@@ -124,7 +124,7 @@ skip-magic-trailing-comma = false
 
 [tool.pyright]
 typeCheckingMode = "basic"
-exclude = ["tests/old/", ".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/"]
+exclude = [".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/", "debug/*", "tests/scripts/*", "tests/old/*"]
 venvPath = "."
 venv = ".venv"
 
@@ -140,6 +140,7 @@ include = [
     "browser_use/py.typed",
     "browser_use/dom/**/*.js",
     "!tests/**/*.py",
+    "!debug/*",
 ]
 
 [tool.pytest.ini_options]

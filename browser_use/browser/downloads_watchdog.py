@@ -198,7 +198,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				self.event_bus.dispatch(
 					FileDownloadedEvent(
 						url=str(path),  # Use the file path as URL for local files
-						file_path=str(path),
+						path=str(path),
 						file_name=path.name,
 						file_size=file_size,
 					)
@@ -208,7 +208,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		except Exception as e:
 			self.logger.error(f'[DownloadsWatchdog] Error tracking download: {e}')
 
-	async def _handle_cdp_download(self, event: dict, target_id: str, session_id: str) -> None:
+	async def _handle_cdp_download(self, event: dict, target_id: str, session_id: str | None) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
 		try:
 			download_url = event.get('url', '')
@@ -271,7 +271,7 @@ class DownloadsWatchdog(BaseWatchdog):
 						'awaitPromise': True,
 						'returnByValue': True,
 					},
-					session_id=session_id,
+					session_id=session_id if session_id else None,
 				)
 				download_result = result.get('result', {}).get('value')
 

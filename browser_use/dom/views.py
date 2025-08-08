@@ -212,6 +212,7 @@ class EnhancedDOMTreeNode:
 	"""
 
 	# frames
+	session_id: str
 	target_id: str
 	frame_id: str | None
 	content_document: 'EnhancedDOMTreeNode | None'
@@ -327,6 +328,7 @@ class EnhancedDOMTreeNode:
 			'node_value': self.node_value,
 			'attributes': self.attributes,
 			'is_scrollable': self.is_scrollable,
+			'session_id': self.session_id,
 			'target_id': self.target_id,
 			'frame_id': self.frame_id,
 			'content_document': self.content_document.__json__() if self.content_document else None,

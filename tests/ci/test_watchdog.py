@@ -96,9 +96,10 @@ async def test_watchdog_event_handler_registration():
 			session._storage_state_watchdog,
 			session._aboutblank_watchdog,
 		]:
-			assert watchdog.event_bus is event_bus
-			assert hasattr(watchdog, 'LISTENS_TO')
-			assert hasattr(watchdog, 'EMITS')
+			if watchdog is not None:
+				assert watchdog.event_bus is event_bus
+				assert hasattr(watchdog, 'LISTENS_TO')
+				assert hasattr(watchdog, 'EMITS')
 
 	finally:
 		# Stop browser

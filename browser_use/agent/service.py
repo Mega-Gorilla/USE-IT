@@ -1186,7 +1186,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Look for common URL patterns
 		patterns = [
 			r'https?://[^\s<>"\']+',  # Full URLs with http/https
-			r'(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with optional paths
+			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with subdomains and optional paths
 		]
 		
 		for pattern in patterns:
@@ -1776,6 +1776,22 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Force garbage collection
 			gc.collect()
+
+			# Debug: Log remaining threads and asyncio tasks
+			import threading
+			threads = threading.enumerate()
+			self.logger.debug(f'🧵 Remaining threads ({len(threads)}): {[t.name for t in threads]}')
+			
+			# Get all asyncio tasks
+			tasks = asyncio.all_tasks(asyncio.get_event_loop())
+			# Filter out the current task (this close() coroutine)
+			other_tasks = [t for t in tasks if t != asyncio.current_task()]
+			if other_tasks:
+				self.logger.debug(f'⚡ Remaining asyncio tasks ({len(other_tasks)}):')
+				for task in other_tasks[:10]:  # Limit to first 10 to avoid spam
+					self.logger.debug(f'  - {task.get_name()}: {task}')
+			else:
+				self.logger.debug('⚡ No remaining asyncio tasks')
 
 		except Exception as e:
 			self.logger.error(f'Error during cleanup: {e}')

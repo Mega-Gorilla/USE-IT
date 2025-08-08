@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from bubus import BaseEvent
+from cdp_use.cdp.network import Cookie
 from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
@@ -324,7 +325,9 @@ class StorageStateWatchdog(BaseWatchdog):
 			return []
 
 		try:
-			return await self.browser_session._cdp_get_cookies()
+			cookies = await self.browser_session._cdp_get_cookies()
+			# Convert Cookie objects to dicts
+			return [cookie.model_dump() if hasattr(cookie, 'model_dump') else dict(cookie) for cookie in cookies]
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to get cookies: {e}')
 			return []
@@ -336,8 +339,10 @@ class StorageStateWatchdog(BaseWatchdog):
 			return
 
 		try:
+			# Convert dicts to Cookie objects
+			cookie_objects = [Cookie(**cookie_dict) if isinstance(cookie_dict, dict) else cookie_dict for cookie_dict in cookies]
 			# Set cookies using CDP
-			await self.browser_session._cdp_set_cookies(cookies)
+			await self.browser_session._cdp_set_cookies(cookie_objects)
 			self.logger.info(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')

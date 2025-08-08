@@ -188,10 +188,38 @@ class DefaultActionWatchdog(BaseWatchdog):
 		Returns:
 			The download path if a download was triggered, None otherwise
 		"""
+		cdp_session = await self.browser_session.attach_cdp_session()
+
+		session_id = element_node.session_id
+		backend_node_id = element_node.backend_node_id
+
+		# do JS click first because quads click isnt good enough yet
+		try:
+			result = await cdp_session.cdp_client.send.DOM.resolveNode(
+				params={'backendNodeId': backend_node_id},
+				session_id=session_id,
+			)
+			assert 'object' in result and 'objectId' in result['object'], (
+				'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+			)
+			object_id = result['object']['objectId']
+
+			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { this.click(); }',
+					'objectId': object_id,
+				},
+				session_id=session_id,
+			)
+			await asyncio.sleep(0.5)
+			# Navigation is handled by NavigationWatchdog via events
+			return None
+		except Exception as js_e:
+			self.logger.error(f'CDP JavaScript click also failed: {js_e}')
+			raise Exception(f'Failed to click element: {js_e}')
 
 		try:
 			# Get CDP client
-			cdp_session = await self.browser_session.attach_cdp_session()
 
 			# Get the correct session ID for the element's frame
 			# session_id = await self._get_session_id_for_element(element_node)
@@ -338,34 +366,34 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# # Navigation is handled by NavigationWatchdog via events
 
 				# return download_path
-				# raise Exception('Quad click isnt perfect yet especially for multi-action sequences where navigation dropdowns move around, additional JavaScript click is needed')
+				raise Exception('Quad click isnt perfect yet especially for multi-action sequences where navigation dropdowns move around, additional JavaScript click is needed')
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
 				# Fall back to JavaScript click via CDP
-				try:
-					result = await cdp_session.cdp_client.send.DOM.resolveNode(
-						params={'backendNodeId': backend_node_id},
-						session_id=session_id,
-					)
-					assert 'object' in result and 'objectId' in result['object'], (
-						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
-					)
-					object_id = result['object']['objectId']
+				# try:
+				# 	result = await cdp_session.cdp_client.send.DOM.resolveNode(
+				# 		params={'backendNodeId': backend_node_id},
+				# 		session_id=session_id,
+				# 	)
+				# 	assert 'object' in result and 'objectId' in result['object'], (
+				# 		'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+				# 	)
+				# 	object_id = result['object']['objectId']
 
-					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-						params={
-							'functionDeclaration': 'function() { this.click(); }',
-							'objectId': object_id,
-						},
-						session_id=session_id,
-					)
-					await asyncio.sleep(0.5)
-					# Navigation is handled by NavigationWatchdog via events
-					return None
-				except Exception as js_e:
-					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
-					raise Exception(f'Failed to click element: {e}')
+				# 	await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				# 		params={
+				# 			'functionDeclaration': 'function() { this.click(); }',
+				# 			'objectId': object_id,
+				# 		},
+				# 		session_id=session_id,
+				# 	)
+				# 	await asyncio.sleep(0.5)
+				# 	# Navigation is handled by NavigationWatchdog via events
+				# 	return None
+				# except Exception as js_e:
+				# 	self.logger.error(f'CDP JavaScript click also failed: {js_e}')
+				raise Exception(f'Failed to click element: {e}')
 
 		except URLNotAllowedError as e:
 			raise e
