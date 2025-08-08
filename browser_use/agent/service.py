@@ -699,7 +699,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			cache_clickable_elements_hashes=True, include_screenshot=self.settings.use_vision, cached=True,
+			cache_clickable_elements_hashes=True,
+			include_screenshot=self.settings.use_vision,
+			cached=True,
 		)
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
@@ -1182,13 +1184,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def _extract_url_from_task(self, task: str) -> str | None:
 		"""Extract URL from task string using naive pattern matching."""
 		import re
-		
+
 		# Look for common URL patterns
 		patterns = [
 			r'https?://[^\s<>"\']+',  # Full URLs with http/https
 			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with subdomains and optional paths
 		]
-		
+
 		for pattern in patterns:
 			match = re.search(pattern, task)
 			if match:
@@ -1197,7 +1199,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				if not url.startswith(('http://', 'https://')):
 					url = 'https://' + url
 				return url
-		
+
 		return None
 
 	@observe(name='agent.run', metadata={'task': '{{task}}', 'debug': '{{debug}}'})
@@ -1262,7 +1264,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			await event
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
-			
+
 			# Check if task contains a URL and navigate to it immediately
 			initial_url = self._extract_url_from_task(self.task)
 			if initial_url:
@@ -1709,14 +1711,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# The signal handler should have already reset the flags
 		# through its reset() method when called from run()
 
-		# playwright browser is always immediately killed by the first Ctrl+C (no way to stop that)
-		# so we need to restart the browser if user wants to continue
-		# the _init() method exists, even through its shows a linter error
-		if self.browser:
-			self.logger.info('🌎 Restarting/reconnecting to browser...')
-			loop = asyncio.get_event_loop()
-			loop.create_task(self.browser._init())  # type: ignore
-			loop.create_task(asyncio.sleep(5))
 
 	def stop(self) -> None:
 		"""Stop the agent"""
@@ -1768,20 +1762,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Only close browser resources if we created them
 			if self._owns_browser_session:
 				assert self.browser_session is not None, 'BrowserSession is not set up'
-				# Dispatch BrowserStopEvent to properly stop the browser
+				# Dispatch BrowserStopEvent to stop the browser
 				from browser_use.browser.events import BrowserStopEvent
 
-				stop_event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
+				stop_event = self.browser_session.event_bus.dispatch(BrowserStopEvent(force=True))
 				await stop_event
+				
+				# Stop the browser session's EventBus with clearing for complete cleanup
+				# This ensures the script can exit cleanly
+				await self.browser_session.event_bus.stop(timeout=5.0, clear=True)
 
 			# Force garbage collection
 			gc.collect()
 
 			# Debug: Log remaining threads and asyncio tasks
 			import threading
+
 			threads = threading.enumerate()
 			self.logger.debug(f'🧵 Remaining threads ({len(threads)}): {[t.name for t in threads]}')
-			
+
 			# Get all asyncio tasks
 			tasks = asyncio.all_tasks(asyncio.get_event_loop())
 			# Filter out the current task (this close() coroutine)

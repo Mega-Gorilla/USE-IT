@@ -26,6 +26,7 @@ class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 			element_index=data.element_index,
 			node_id=data.node_id,
 			backend_node_id=data.backend_node_id,
+			session_id=data.session_id,
 			frame_id=data.frame_id,
 			target_id=data.target_id,
 			node_type=data.node_type,

@@ -3,10 +3,10 @@
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from bubus import BaseEvent
+from cdp_use.cdp.page import CaptureScreenshotParameters
 
 from browser_use.browser.events import ScreenshotEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
-from cdp_use.cdp.page import CaptureScreenshotParameters
 
 if TYPE_CHECKING:
 	pass
@@ -39,10 +39,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 
 			# Take screenshot using CDP
 			self.logger.debug(f'[ScreenshotWatchdog] Taking screenshot with params: {params}')
-			result = await cdp_session.cdp_client.send.Page.captureScreenshot(
-				params=params,
-				session_id=cdp_session.session_id
-			)
+			result = await cdp_session.cdp_client.send.Page.captureScreenshot(params=params, session_id=cdp_session.session_id)
 
 			# Return base64-encoded screenshot data
 			if result and 'data' in result:

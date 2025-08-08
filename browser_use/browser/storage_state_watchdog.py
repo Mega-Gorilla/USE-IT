@@ -99,12 +99,11 @@ class StorageStateWatchdog(BaseWatchdog):
 		"""Start the monitoring task."""
 		if self._monitoring_task and not self._monitoring_task.done():
 			return
-		
+
 		assert self.browser_session.cdp_client is not None
 
 		self._monitoring_task = asyncio.create_task(self._monitor_storage_changes())
 		# self.logger.info('[StorageStateWatchdog] Started storage monitoring task')
-
 
 	async def _stop_monitoring(self) -> None:
 		"""Stop the monitoring task."""

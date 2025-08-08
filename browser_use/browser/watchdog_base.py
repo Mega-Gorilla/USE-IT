@@ -1,8 +1,8 @@
 """Base watchdog class for browser monitoring components."""
 
 import inspect
-from typing import TYPE_CHECKING, Any, ClassVar
 from collections.abc import Iterable
+from typing import Any, ClassVar
 
 from bubus import BaseEvent, EventBus
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,12 +19,14 @@ class BaseWatchdog(BaseModel):
 	Handler methods should be named: on_EventTypeName(self, event: EventTypeName)
 	"""
 
-	model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True, extra='forbid', revalidate_instances='never')
+	model_config = ConfigDict(
+		arbitrary_types_allowed=True, validate_assignment=True, extra='forbid', revalidate_instances='never'
+	)
 
 	# Class variables to statically define the list of events relevant to each watchdog
 	# (not enforced, just to make it easier to understand the code and debug watchdogs at runtime)
 	LISTENS_TO: ClassVar[list[type[BaseEvent[Any]]]] = []  # Events this watchdog listens to
-	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []       # Events this watchdog emits
+	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []  # Events this watchdog emits
 
 	# Core dependencies
 	event_bus: EventBus = Field()
@@ -37,8 +39,8 @@ class BaseWatchdog(BaseModel):
 	# Private state internal to the watchdog can be defined like this on BaseWatchdog subclasses:
 	# _screenshot_cache: dict[str, bytes] = PrivateAttr(default_factory=dict)
 	# _browser_crash_watcher_task: asyncio.Task | None = PrivateAttr(default=None)
-    # _cdp_download_tasks: WeakSet[asyncio.Task] = PrivateAttr(default_factory=WeakSet)
-    # ...
+	# _cdp_download_tasks: WeakSet[asyncio.Task] = PrivateAttr(default_factory=WeakSet)
+	# ...
 
 	@property
 	def logger(self):
@@ -96,6 +98,17 @@ class BaseWatchdog(BaseModel):
 					unique_handler = make_unique_handler(handler)
 					unique_handler.__name__ = f'{self.__class__.__name__}.{method_name}'
 
+					# Check if this handler is already registered - throw error if duplicate
+					existing_handlers = self.event_bus.handlers.get(event_class.__name__, [])
+					handler_names = [getattr(h, '__name__', str(h)) for h in existing_handlers]
+					
+					if unique_handler.__name__ in handler_names:
+						raise RuntimeError(
+							f'[{self.__class__.__name__}] Duplicate handler registration attempted! '
+							f'Handler {unique_handler.__name__} is already registered for {event_name}. '
+							f'This likely means attach_to_session() was called multiple times.'
+						)
+					
 					self.event_bus.on(event_class, unique_handler)
 					registered_events.add(event_class)
 					# logger.debug(
@@ -120,7 +133,7 @@ class BaseWatchdog(BaseModel):
 
 	def __del__(self) -> None:
 		"""Clean up any running tasks during garbage collection."""
-		
+
 		# A BIT OF MAGIC: Cancel any private attributes that look like asyncio tasks
 		try:
 			for attr_name in dir(self):
@@ -145,4 +158,5 @@ class BaseWatchdog(BaseModel):
 							pass  # Ignore errors during cleanup
 		except Exception as e:
 			from browser_use.utils import logger
+
 			logger.error(f'⚠️ Error during BrowserSession {self.__class__.__name__} gargabe collection __del__(): {type(e)}: {e}')

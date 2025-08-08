@@ -8,7 +8,6 @@ from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
 	ScreenshotEvent,
-	BrowserConnectedEvent,
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
@@ -17,7 +16,6 @@ from browser_use.dom.views import (
 	EnhancedDOMTreeNode,
 	SerializedDOMState,
 )
-from browser_use.utils import is_new_tab_page
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary

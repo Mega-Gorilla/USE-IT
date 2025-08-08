@@ -171,7 +171,11 @@ class CrashWatchdog(BaseWatchdog):
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
 		target_info = next((t for t in targets['targetInfos'] if t['targetId'] == target_id), None)
-		if target_info and self.browser_session.cdp_session and target_info['targetId'] == self.browser_session.cdp_session.target_id:
+		if (
+			target_info
+			and self.browser_session.cdp_session
+			and target_info['targetId'] == self.browser_session.cdp_session.target_id
+		):
 			self.browser_session.cdp_session.target_id = None  # type: ignore
 			self.browser_session.cdp_session.session_id = None  # type: ignore
 			self.logger.error(

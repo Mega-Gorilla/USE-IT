@@ -212,7 +212,7 @@ class EnhancedDOMTreeNode:
 	"""
 
 	# frames
-	session_id: str
+	session_id: str | None
 	target_id: str
 	frame_id: str | None
 	content_document: 'EnhancedDOMTreeNode | None'

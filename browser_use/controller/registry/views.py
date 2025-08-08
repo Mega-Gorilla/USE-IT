@@ -100,7 +100,6 @@ class ActionRegistry(BaseModel):
 				return True
 		return False
 
-
 	def get_prompt_description(self, page_url: str | None = None) -> str:
 		"""Get a description of all actions for the prompt
 
@@ -114,11 +113,7 @@ class ActionRegistry(BaseModel):
 		"""
 		if page_url is None:
 			# For system prompt (no URL provided), include only actions with no filters
-			return '\n'.join(
-				action.prompt_description()
-				for action in self.actions.values()
-				if action.domains is None
-			)
+			return '\n'.join(action.prompt_description() for action in self.actions.values() if action.domains is None)
 
 		# only include filtered actions for the current page URL
 		filtered_actions = []

@@ -65,7 +65,7 @@ class NavigationWatchdog(BaseWatchdog):
 		# Clear target handlers
 		self._target_close_handlers.clear()
 		if self.browser_session.cdp_session:
-			self.browser_session.cdp_session.target_id = None
+			self.browser_session.cdp_session.target_id = None  # type: ignore
 
 	# ========== Tab Lifecycle Events ==========
 
@@ -528,7 +528,9 @@ class NavigationWatchdog(BaseWatchdog):
 			if self.browser_session.cdp_session:
 				self.browser_session.cdp_session.target_id = targets[-1]['targetId']
 			await self._dispatch_focus_changed()
-			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None)
+			target_url = await self._get_target_url(
+				self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None
+			)
 			tab_index = await self._get_current_tab_index()
 			self.logger.info(f'[NavigationWatchdog] 👀 Agent focus moved to new tab {tab_index}: {target_url}')
 
@@ -539,7 +541,9 @@ class NavigationWatchdog(BaseWatchdog):
 			if self.browser_session.cdp_session:
 				self.browser_session.cdp_session.target_id = targets[tab_index]['targetId']
 			await self._dispatch_focus_changed()
-			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None)
+			target_url = await self._get_target_url(
+				self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None
+			)
 			self.logger.info(f'[NavigationWatchdog] Agent focus switched to tab {tab_index}: {target_url}')
 
 	async def _find_new_agent_target(self) -> None:
@@ -549,9 +553,10 @@ class NavigationWatchdog(BaseWatchdog):
 			# Try to stay at the same index, or go to the previous one
 			current_index = await self._get_current_tab_index()
 			new_index = min(current_index, len(targets) - 1)
-			self.browser_session.cdp_session.target_id = targets[new_index]['targetId']
+			if self.browser_session.cdp_session:
+				self.browser_session.cdp_session.target_id = targets[new_index]['targetId']
 			await self._dispatch_focus_changed()
-			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id)
+			target_url = await self._get_target_url(self.browser_session.cdp_session.target_id if self.browser_session.cdp_session else None)
 			self.logger.info(f'[NavigationWatchdog] Agent focus moved to tab {new_index}: {target_url}')
 		else:
 			if self.browser_session:

@@ -89,9 +89,7 @@ async def test_highlight_elements():
 
 				# check if index of selector map are the same as index of items in dom_items
 
-				event = browser_session.event_bus.dispatch(
-					ClickElementEvent(element_node=node_element)
-				)
+				event = browser_session.event_bus.dispatch(ClickElementEvent(element_node=node_element))
 				await event
 
 			except Exception as e:

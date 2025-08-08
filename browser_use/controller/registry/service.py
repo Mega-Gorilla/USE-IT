@@ -363,7 +363,7 @@ class Registry(Generic[Context]):
 					special_context['page_url'] = await browser_session.get_current_page_url()
 				except Exception:
 					special_context['page_url'] = None
-				
+
 				# Add cdp_client
 				special_context['cdp_client'] = browser_session.cdp_client
 

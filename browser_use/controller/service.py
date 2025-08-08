@@ -333,7 +333,9 @@ class Controller(Generic[Context]):
 				page_html = re.sub(r'(?P<q>["\'])data:[^"\']*(?P=q)', r'\g<q>\g<q>', page_html, flags=re.I)
 				page_html = re.sub(r'\bdata:[^)\s>"\']+', '', page_html, flags=re.I)
 			except Exception as e:
-				logger.warning(f'Error stripping data:... blobs from page html while converting to markdown: {type(e).__name__}: {e}')
+				logger.warning(
+					f'Error stripping data:... blobs from page html while converting to markdown: {type(e).__name__}: {e}'
+				)
 
 			markdownify_func = partial(markdownify.markdownify, strip=strip)
 

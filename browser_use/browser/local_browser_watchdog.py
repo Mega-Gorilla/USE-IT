@@ -85,6 +85,34 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self.logger.info('[LocalBrowserWatchdog] BrowserStopEvent received, dispatching BrowserKillEvent')
 			# Dispatch BrowserKillEvent without awaiting so it gets processed after all BrowserStopEvent handlers
 			self.event_bus.dispatch(BrowserKillEvent())
+	
+	async def _delayed_eventbus_cleanup(self, delay: float = 5.0) -> None:
+		"""Clean up the EventBus after a delay to allow for potential reuse."""
+		try:
+			self.logger.debug(f'[LocalBrowserWatchdog] Scheduling EventBus cleanup in {delay} seconds')
+			
+			# Use a shorter delay for immediate cleanup if we're shutting down
+			# Check if the event loop is stopping (script is exiting)
+			loop = asyncio.get_event_loop()
+			if loop.is_stopping() or not loop.is_running():
+				delay = 0.1  # Almost immediate cleanup if shutting down
+			
+			await asyncio.sleep(delay)
+			
+			# Check if EventBus is still running (might have been restarted)
+			if hasattr(self.browser_session, 'event_bus') and self.browser_session.event_bus._is_running:
+				self.logger.debug('[LocalBrowserWatchdog] Stopping and clearing EventBus for complete cleanup')
+				await self.browser_session.event_bus.stop(timeout=1.0, clear=True)
+			else:
+				self.logger.debug('[LocalBrowserWatchdog] EventBus already stopped, skipping cleanup')
+		except asyncio.CancelledError:
+			# Task was cancelled, do immediate cleanup
+			if hasattr(self.browser_session, 'event_bus') and self.browser_session.event_bus._is_running:
+				await self.browser_session.event_bus.stop(timeout=0.1, clear=True)
+			raise
+		except Exception as e:
+			# Don't let cleanup errors propagate
+			self.logger.debug(f'[LocalBrowserWatchdog] Error during delayed EventBus cleanup: {e}')
 
 	async def _launch_browser(self, max_retries: int = 3) -> tuple[psutil.Process, str]:
 		"""Launch browser process and return (process, cdp_url).
@@ -190,9 +218,9 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	@staticmethod
 	async def _get_browser_path_via_subprocess() -> str:
 		"""Get browser executable path from playwright in a subprocess to avoid thread issues."""
-		import sys
 		import json
-		
+		import sys
+
 		# Python code to run in subprocess
 		get_path_code = """
 import asyncio
@@ -210,38 +238,40 @@ async def get_path():
 
 asyncio.run(get_path())
 """
-		
+
 		# Run in subprocess with timeout
 		process = await asyncio.create_subprocess_exec(
-			sys.executable, '-c', get_path_code,
+			sys.executable,
+			'-c',
+			get_path_code,
 			stdout=asyncio.subprocess.PIPE,
 			stderr=asyncio.subprocess.PIPE,
 		)
-		
+
 		try:
 			# Wait for result with timeout
 			stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
-			
+
 			# Parse the result
 			if stdout:
 				result = json.loads(stdout.decode())
 				return result['path']
 			else:
 				# Fallback to default location if subprocess fails
-				error_msg = stderr.decode() if stderr else "Unknown error"
-				raise RuntimeError(f"Failed to get browser path from playwright: {error_msg}")
-				
-		except asyncio.TimeoutError:
+				error_msg = stderr.decode() if stderr else 'Unknown error'
+				raise RuntimeError(f'Failed to get browser path from playwright: {error_msg}')
+
+		except TimeoutError:
 			# Kill the subprocess if it times out
 			process.kill()
 			await process.wait()
-			raise RuntimeError("Timeout getting browser path from playwright")
+			raise RuntimeError('Timeout getting browser path from playwright')
 		except Exception as e:
 			# Make sure subprocess is terminated
 			if process.returncode is None:
 				process.kill()
 				await process.wait()
-			raise RuntimeError(f"Error getting browser path: {e}")
+			raise RuntimeError(f'Error getting browser path: {e}')
 
 	@staticmethod
 	def _find_free_port() -> int:

@@ -420,11 +420,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Type the text character by character
 			for char in text:
-				# Send keydown
+				# Send keydown (without text to avoid duplication)
 				await cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
-						'text': char,
 						'key': char,
 					},
 					session_id=session_id,
@@ -438,11 +437,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
-				# Send keyup
+				# Send keyup (without text to avoid duplication)
 				await cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
-						'text': char,
 						'key': char,
 					},
 					session_id=session_id,

@@ -72,7 +72,7 @@ class CDPSession(BaseModel):
 			params={
 				'targetId': self.target_id,
 				'flatten': True,
-				'filter': [                                 # type: ignore
+				'filter': [  # type: ignore
 					{'type': 'page', 'exclude': False},
 					{'type': 'iframe', 'exclude': False},
 				],
@@ -205,11 +205,20 @@ class BrowserSession(BaseModel):
 
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
-		# Register BrowserSession's event handlers manually since it's not a BaseWatchdog
-		if not getattr(self.event_bus, '_attached_root_listeners', None):
-			self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
-			self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
-			self.event_bus._attached_root_listeners = True  # type: ignore
+		# Check if handlers are already registered to prevent duplicates
+		start_handlers = self.event_bus.handlers.get('BrowserStartEvent', [])
+		start_handler_names = [getattr(h, '__name__', str(h)) for h in start_handlers]
+		
+		if any('on_BrowserStartEvent' in name for name in start_handler_names):
+			raise RuntimeError(
+				f'[BrowserSession] Duplicate handler registration attempted! '
+				f'on_BrowserStartEvent is already registered. '
+				f'This likely means BrowserSession was initialized multiple times with the same EventBus.'
+			)
+			
+		# Register BrowserSession's event handlers
+		self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
+		self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
 
 	async def start(self) -> None:
 		"""Start the browser session."""
@@ -357,6 +366,11 @@ class BrowserSession(BaseModel):
 
 	async def attach_all_watchdogs(self) -> None:
 		"""Initialize and attach all watchdogs with explicit handler registration."""
+		# Prevent duplicate watchdog attachment
+		if hasattr(self, '_watchdogs_attached') and self._watchdogs_attached:
+			self.logger.debug('Watchdogs already attached, skipping duplicate attachment')
+			return
+		
 		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
 		from browser_use.browser.crash_watchdog import CrashWatchdog
 		from browser_use.browser.default_action_watchdog import DefaultActionWatchdog
@@ -451,6 +465,9 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStoppedEvent, self._screenshot_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(ScreenshotEvent, self._screenshot_watchdog.on_ScreenshotEvent)
 		await self._screenshot_watchdog.attach_to_session()
+		
+		# Mark watchdogs as attached to prevent duplicate attachment
+		self._watchdogs_attached = True
 
 	async def connect(self, cdp_url: str | None = None) -> Self:
 		"""Connect to a remote chromium-based browser via CDP using cdp-use.
@@ -832,7 +849,7 @@ class BrowserSession(BaseModel):
 		# Storage.setCookies expects params dict with 'cookies' key
 		await cdp_session.cdp_client.send.Storage.setCookies(
 			params={'cookies': cookies},  # type: ignore[arg-type]
-			session_id=cdp_session.session_id
+			session_id=cdp_session.session_id,
 		)
 
 	async def _cdp_clear_cookies(self) -> None:

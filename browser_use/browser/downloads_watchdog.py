@@ -20,6 +20,7 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
+from cdp_use.cdp.browser import DownloadProgressEvent, DownloadWillBeginEvent
 
 if TYPE_CHECKING:
 	pass
@@ -149,7 +150,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				)
 
 				# Register download event handlers
-				def download_will_begin_handler(event: dict, session_id: str | None):
+				def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: str | None):
 					self.logger.info(f'[DownloadsWatchdog] Download will begin: {event}')
 					# Create and track the task
 					task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
@@ -157,7 +158,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					# Remove from set when done
 					task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
-				def download_progress_handler(event: dict, session_id: str | None):
+				def download_progress_handler(event: DownloadProgressEvent, session_id: str | None):
 					# Check if download is complete
 					if event.get('state') == 'completed':
 						file_path = event.get('filePath')
@@ -208,7 +209,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		except Exception as e:
 			self.logger.error(f'[DownloadsWatchdog] Error tracking download: {e}')
 
-	async def _handle_cdp_download(self, event: dict, target_id: str, session_id: str | None) -> None:
+	async def _handle_cdp_download(self, event: DownloadWillBeginEvent, target_id: str, session_id: str | None) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
 		try:
 			download_url = event.get('url', '')

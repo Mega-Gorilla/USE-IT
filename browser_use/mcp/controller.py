@@ -12,7 +12,6 @@ from pydantic import Field, create_model
 
 from browser_use.agent.views import ActionResult
 from browser_use.controller.registry.service import Registry
-from browser_use.utils import is_new_tab_page
 
 logger = logging.getLogger(__name__)
 
@@ -192,9 +191,9 @@ class MCPToolWrapper:
 		description = tool.description or f'MCP tool: {tool_name}'
 
 		# Use the decorator to register the action
-		decorated_wrapper = self.registry.action(
-			description=description, param_model=param_model, domains=domains
-		)(mcp_action_wrapper)
+		decorated_wrapper = self.registry.action(description=description, param_model=param_model, domains=domains)(
+			mcp_action_wrapper
+		)
 
 		self._registered_actions.add(tool_name)
 		logger.info(f'✅ Registered MCP tool as action: {tool_name}')
