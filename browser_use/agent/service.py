@@ -483,7 +483,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		_browser_session_id = self.browser_session.id if self.browser_session else self.id
 		_current_page_id = (
-			self.browser_session.agent_focus.target_id[-2:] if self.browser_session and self.browser_session.agent_focus else '--'
+			self.browser_session.agent_focus.target_id[-2:]
+			if self.browser_session and self.browser_session.agent_focus and self.browser_session.agent_focus.target_id
+			else '--'
 		)
 		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]} 🅟 {_current_page_id}')
 
