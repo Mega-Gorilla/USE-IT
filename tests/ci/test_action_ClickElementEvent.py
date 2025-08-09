@@ -230,7 +230,8 @@ class TestClickElementEvent:
 		await asyncio.sleep(1)  # Wait for page to load
 
 		# Count initial tabs
-		initial_tab_count = len(browser_session.tabs)
+		tabs = await browser_session.get_tabs()
+		initial_tab_count = len(tabs)
 
 		# Get the link element (assuming it will be at index 0)
 		# First get the browser state to see what elements are available
@@ -297,7 +298,8 @@ class TestClickElementEvent:
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(1)
 
-		initial_tab_count = len(browser_session.tabs)
+		tabs = await browser_session.get_tabs()
+		initial_tab_count = len(tabs)
 
 		# Get browser state and find link elements
 		state = await browser_session.get_browser_state_with_recovery()
