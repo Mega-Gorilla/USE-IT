@@ -184,6 +184,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 60,
 		step_timeout: int = 180,
+		preload: bool = False,
 		**kwargs,
 	):
 		if not isinstance(llm, BaseChatModel):
@@ -231,6 +232,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Core components
 		self.task = task
 		self.llm = llm
+		self.preload = preload
 		self.controller = (
 			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
 		)
@@ -699,7 +701,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached=True')
+		self.logger.debug('📸 Requesting browser state with include_screenshot=True, cached=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,
@@ -708,7 +710,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if browser_state_summary.screenshot:
 			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')
 		else:
-			self.logger.debug(f'📸 Got browser state WITHOUT screenshot')
+			self.logger.debug('📸 Got browser state WITHOUT screenshot')
 
 		# Check for new downloads after getting browser state (catches PDF auto-downloads and previous step downloads)
 		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
@@ -989,11 +991,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Store screenshot and get path
 		screenshot_path = None
 		if browser_state_summary.screenshot:
-			self.logger.debug(f"📸 Storing screenshot for step {self.state.n_steps}, screenshot length: {len(browser_state_summary.screenshot)}")
+			self.logger.debug(
+				f'📸 Storing screenshot for step {self.state.n_steps}, screenshot length: {len(browser_state_summary.screenshot)}'
+			)
 			screenshot_path = await self.screenshot_service.store_screenshot(browser_state_summary.screenshot, self.state.n_steps)
-			self.logger.debug(f"📸 Screenshot stored at: {screenshot_path}")
+			self.logger.debug(f'📸 Screenshot stored at: {screenshot_path}')
 		else:
-			self.logger.debug(f"📸 No screenshot in browser_state_summary for step {self.state.n_steps}")
+			self.logger.debug(f'📸 No screenshot in browser_state_summary for step {self.state.n_steps}')
 
 		state_history = BrowserStateHistory(
 			url=browser_state_summary.url,
@@ -1281,16 +1285,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and navigate to it immediately
-			initial_url = self._extract_url_from_task(self.task)
-			if initial_url:
-				self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
-				self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
+			# Check if task contains a URL and navigate to it immediately (only if preload is enabled)
+			if self.preload:
+				initial_url = self._extract_url_from_task(self.task)
+				if initial_url:
+					self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
+					self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
 
-				# this one is just for element higlighting as a loading animation, not technically used by anything but nice to see what the agent will see as the browser starts up
-				self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
+					# warms up the cache and element highlighting is more useful as a better loading animation than a DVD screensaver
+					self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
 
-				self.logger.debug(f'✅ Navigated to {initial_url}')
+					self.logger.debug(f'✅ Navigated to {initial_url}')
 
 			# Execute initial actions if provided
 			if self.initial_actions:
@@ -1726,7 +1731,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# The signal handler should have already reset the flags
 		# through its reset() method when called from run()
-
 
 	def stop(self) -> None:
 		"""Stop the agent"""
