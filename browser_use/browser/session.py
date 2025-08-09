@@ -14,17 +14,8 @@ from cdp_use.cdp.network import Cookie
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
-# Note: CDP logging level is controlled by the CLI when needed
-# By default we silence it unless explicitly enabled
-if os.environ.get('BROWSER_USE_CDP_DEBUG') != 'true':
-	# Silence cdp_use logging - it's too verbose at DEBUG level
-	cdp_use.client.logger.setLevel(logging.ERROR)
-	
-	# Also configure all cdp_use loggers
-	for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
-		cdp_logger = logging.getLogger(logger_name)
-		cdp_logger.setLevel(logging.ERROR)
-		cdp_logger.propagate = False  # Don't propagate to root logger
+# CDP logging is now handled by setup_logging() in logging_config.py
+# It automatically sets CDP logs to the same level as browser_use logs
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
@@ -1279,6 +1270,12 @@ class BrowserSession(BaseModel):
 		url = target_info.get('url', '')
 
 		url_allowed, type_allowed = False, False
+
+		# Always allow new tab pages (chrome://new-tab-page/, chrome://newtab/, about:blank)
+		# so they can be redirected to about:blank in connect()
+		from browser_use.utils import is_new_tab_page
+		if is_new_tab_page(url):
+			url_allowed = True
 
 		if url.startswith('chrome-error://') and include_chrome_error:
 			url_allowed = True

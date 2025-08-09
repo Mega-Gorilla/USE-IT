@@ -8,9 +8,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Enable CDP debug logging BEFORE importing anything that uses cdp_use
-os.environ['BROWSER_USE_CDP_DEBUG'] = 'true'
-
 from dotenv import load_dotenv
 
 from browser_use.llm.anthropic.chat import ChatAnthropic
@@ -406,6 +403,7 @@ class BrowserUseApp(App):
 		self._telemetry = ProductTelemetry()
 		# Store for event bus handler
 		self._event_bus_handler_id = None
+		self._event_bus_handler_func = None
 
 	def setup_richlog_logging(self) -> None:
 		"""Set up logging to redirect to RichLog widget instead of stdout."""
@@ -659,15 +657,19 @@ class BrowserUseApp(App):
 			return
 		
 		# Clean up any existing handler before registering a new one
-		if self._event_bus_handler_id is not None:
+		if self._event_bus_handler_func is not None:
 			try:
 				# Remove handler from the event bus's internal handlers dict
 				if hasattr(self.browser_session.event_bus, 'handlers'):
-					for event_type, handlers in list(self.browser_session.event_bus.handlers.items()):
-						if self._event_bus_handler_id in handlers:
-							del handlers[self._event_bus_handler_id]
-			except Exception:
-				pass  # Handler might not exist anymore
+					# Find and remove our handler function from all event patterns
+					for event_type, handler_list in list(self.browser_session.event_bus.handlers.items()):
+						# Remove our specific handler function object
+						if self._event_bus_handler_func in handler_list:
+							handler_list.remove(self._event_bus_handler_func)
+							logging.debug(f'Removed old handler from event type: {event_type}')
+			except Exception as e:
+				logging.debug(f'Error cleaning up event bus handler: {e}')
+			self._event_bus_handler_func = None
 			self._event_bus_handler_id = None
 		
 		try:
@@ -701,15 +703,18 @@ class BrowserUseApp(App):
 			except Exception as e:
 				events_log.write(f'[red]→ {event_name}[/] (error formatting: {e})')
 
+		# Store the handler function before registering it
+		self._event_bus_handler_func = log_event
+		self._event_bus_handler_id = id(log_event)
+		
 		# Register wildcard handler for all events
-		self._event_bus_handler_id = self.browser_session.event_bus.on('*', log_event)
+		self.browser_session.event_bus.on('*', log_event)
+		logging.debug(f'Registered new event bus handler with id: {self._event_bus_handler_id}')
 
 	def setup_cdp_logger(self) -> None:
-		"""Setup CDP message logger."""
-		# CDP debug logging is enabled at module import time via environment variable
-		# Just configure the loggers to use our handler
-		import cdp_use.client
-		cdp_use.client.logger.setLevel(logging.DEBUG)
+		"""Setup CDP message logger to capture already-transformed CDP logs."""
+		# No need to configure levels - setup_logging() already handles that
+		# We just need to capture the transformed logs and route them to the CDP pane
 		
 		# Get the CDP log widget
 		cdp_log = self.query_one('#cdp-log', RichLog)
@@ -738,15 +743,16 @@ class BrowserUseApp(App):
 
 		# Setup handler for cdp_use loggers
 		cdp_handler = CDPLogHandler(cdp_log)
-		cdp_handler.setFormatter(logging.Formatter('%(name)s: %(message)s'))
+		cdp_handler.setFormatter(logging.Formatter('%(message)s'))
 		cdp_handler.setLevel(logging.DEBUG)
 
-		# Configure cdp_use loggers to use our handler
-		for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
-			cdp_logger = logging.getLogger(logger_name)
-			cdp_logger.setLevel(logging.DEBUG)
-			cdp_logger.handlers = [cdp_handler]  # Replace existing handlers
-			cdp_logger.propagate = False
+		# Route CDP logs to the CDP pane
+		# These are already transformed by cdp_use and at the right level from setup_logging
+		for logger_name in ['websockets.client', 'cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
+			logger = logging.getLogger(logger_name)
+			# Add our handler (don't replace - keep existing console handler too)
+			if cdp_handler not in logger.handlers:
+				logger.addHandler(cdp_handler)
 
 	def scroll_to_input(self) -> None:
 		"""Scroll to the input field to ensure it's visible."""
@@ -1031,9 +1037,16 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 		await agent.run()
 
-		# Note: We don't close the browser session here because:
-		# 1. The agent already called browser_session.stop() in its run() method
-		# 2. This prevents duplicate "stop() called" messages in the logs
+		# Ensure the browser session is fully stopped
+		# The agent's close() method only kills the browser if keep_alive=False,
+		# but we need to ensure all background tasks are stopped regardless
+		if browser_session:
+			try:
+				# Kill the browser session to stop all background tasks
+				await browser_session.kill()
+			except Exception:
+				# Ignore errors during cleanup
+				pass
 
 		# Capture telemetry for successful completion
 		telemetry.capture(
@@ -1071,6 +1084,18 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 	finally:
 		# Ensure telemetry is flushed
 		telemetry.flush()
+		
+		# Give a brief moment for cleanup to complete
+		await asyncio.sleep(0.1)
+		
+		# Cancel any remaining tasks to ensure clean exit
+		tasks = [t for t in asyncio.all_tasks() if t != asyncio.current_task()]
+		for task in tasks:
+			task.cancel()
+		
+		# Wait for all tasks to be cancelled
+		if tasks:
+			await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def textual_interface(config: dict[str, Any]):

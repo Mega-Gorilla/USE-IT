@@ -60,10 +60,21 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 		# Create script to remove all highlights
 		script = """
 		(function() {
-			// Remove any existing highlights
+			// Remove any existing highlights - be thorough
 			const existingHighlights = document.querySelectorAll('[data-browser-use-highlight]');
 			console.log('Removing', existingHighlights.length, 'browser-use highlight elements');
 			existingHighlights.forEach(el => el.remove());
+			
+			// Also remove by ID in case selector missed anything
+			const highlightContainer = document.getElementById('browser-use-debug-highlights');
+			if (highlightContainer) {
+				console.log('Removing highlight container by ID');
+				highlightContainer.remove();
+			}
+			
+			// Final cleanup - remove any orphaned tooltips
+			const orphanedTooltips = document.querySelectorAll('[data-browser-use-highlight="tooltip"]');
+			orphanedTooltips.forEach(el => el.remove());
 		})();
 		"""
 
@@ -90,8 +101,12 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 
 		print(f'📍 Creating CSP-safe highlighting for {len(converted_elements)} elements')
 
-		# Remove any existing highlights first
+		# ALWAYS remove any existing highlights first to prevent double-highlighting
 		await remove_highlighting_script(dom_service)
+		
+		# Add a small delay to ensure removal completes
+		import asyncio
+		await asyncio.sleep(0.05)
 
 		# Create CSP-safe highlighting script using DOM methods instead of innerHTML
 		# Uses outline-only highlights with reasonable z-index to avoid blocking page content
@@ -102,6 +117,20 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 			
 			console.log('=== BROWSER-USE HIGHLIGHTING ===');
 			console.log('Highlighting', interactiveElements.length, 'interactive elements');
+			
+			// Double-check: Remove any existing highlight container first to prevent duplicates
+			const existingContainer = document.getElementById('browser-use-debug-highlights');
+			if (existingContainer) {{
+				console.log('⚠️ Found existing highlight container, removing it first');
+				existingContainer.remove();
+			}}
+			
+			// Also remove any stray highlight elements
+			const strayHighlights = document.querySelectorAll('[data-browser-use-highlight]');
+			if (strayHighlights.length > 0) {{
+				console.log('⚠️ Found', strayHighlights.length, 'stray highlight elements, removing them');
+				strayHighlights.forEach(el => el.remove());
+			}}
 			
 			// Use a high but reasonable z-index to be visible without covering important content
 			// High enough for most content but not maximum to avoid blocking critical popups/modals
