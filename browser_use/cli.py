@@ -258,53 +258,58 @@ class BrowserUseApp(App):
 		layout: vertical;
 	}
 	
-	#logo-panel, #links-panel, #paths-panel, #info-panels {
+	#logo-panel, #links-panel, #paths-panel {
 		border: solid $primary;
 		margin: 0 0 0 0; 
 		padding: 0;
 	}
 	
-	#info-panels {
-		display: none;
-		layout: vertical;
-		height: auto;
-		min-height: 5;
-	}
-	
-	#top-panels {
-		layout: horizontal;
-		height: auto;
-		width: 100%;
-		min-height: 5;
-	}
-	
-	#browser-panel, #model-panel {
-		width: 1fr;
-		height: auto;
-		border: solid $primary-darken-2;
-		padding: 1;
-		overflow: auto;
-		margin: 0 1 0 0;
-		padding: 1;
-	}
-	
-	#tasks-panel {
-		width: 100%;
+	#three-column-container {
 		height: 1fr;
-		min-height: 20;
-		max-height: 60vh;
-		border: solid $primary-darken-2;
-		padding: 1;
-		overflow-y: scroll;
-		margin: 1 0 0 0;
-	}
-	
-	#browser-panel {
-		border-left: solid $primary-darken-2;
-	}
-	
-	#results-container {
+		layout: horizontal;
+		width: 100%;
 		display: none;
+	}
+	
+	#main-output-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $primary;
+		padding: 0;
+		margin: 0 1 0 0;
+	}
+	
+	#events-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $warning;
+		padding: 0;
+		margin: 0 1 0 0;
+	}
+	
+	#cdp-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $accent;
+		padding: 0;
+		margin: 0;
+	}
+	
+	#main-output-log, #events-log, #cdp-log {
+		height: 100%;
+		overflow-y: scroll;
+		background: $surface;
+		color: $text;
+		width: 100%;
+		padding: 1;
+	}
+	
+	#events-log {
+		color: $warning;
+	}
+	
+	#cdp-log {
+		color: $accent-lighten-2;
 	}
 	
 	#logo-panel {
@@ -374,46 +379,6 @@ class BrowserUseApp(App):
 	#task-input {
 		width: 100%;
 	}
-	
-	#working-panel {
-		border: solid $warning;
-		padding: 1;
-		margin: 1 0;
-	}
-	
-	#completion-panel {
-		border: solid $success;
-		padding: 1;
-		margin: 1 0;
-	}
-	
-	#results-container {
-		height: 1fr;
-		overflow: auto;
-		border: none;
-	}
-	
-	#results-log {
-		height: auto;
-		overflow-y: scroll;
-		background: $surface;
-		color: $text;
-		width: 100%;
-	}
-	
-	.log-entry {
-		margin: 0;
-		padding: 0;
-	}
-	
-	#browser-info, #model-info, #tasks-info {
-		height: auto;
-		margin: 0;
-		padding: 0;
-		background: transparent;
-		overflow-y: auto;
-		min-height: 5;
-	}
 	"""
 
 	BINDINGS = [
@@ -436,6 +401,8 @@ class BrowserUseApp(App):
 		self.history_index = len(self.task_history)
 		# Initialize telemetry
 		self._telemetry = ProductTelemetry()
+		# Store for event bus handler
+		self._event_bus_handler_id = None
 
 	def setup_richlog_logging(self) -> None:
 		"""Set up logging to redirect to RichLog widget instead of stdout."""
@@ -445,8 +412,8 @@ class BrowserUseApp(App):
 		except AttributeError:
 			pass  # Level already exists, which is fine
 
-		# Get the RichLog widget
-		rich_log = self.query_one('#results-log', RichLog)
+		# Get the main output RichLog widget
+		rich_log = self.query_one('#main-output-log', RichLog)
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
@@ -545,13 +512,13 @@ class BrowserUseApp(App):
 			logger.error(f'Error focusing input field: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
-		# Step 5: Start continuous info panel updates
-		logger.debug('Starting info panel updates...')
+		# Step 5: Setup CDP logger early (event bus listener will be set up when browser session is available)
+		logger.debug('Setting up CDP logging...')
 		try:
-			self.update_info_panels()
-			logger.debug('Info panel updates started')
+			self.setup_cdp_logger()
+			logger.debug('CDP logging setup complete')
 		except Exception as e:
-			logger.error(f'Error starting info panel updates: {str(e)}', exc_info=True)
+			logger.error(f'Error setting up CDP logging: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
 		# Capture telemetry for CLI start
@@ -651,328 +618,102 @@ class BrowserUseApp(App):
 			event.input.value = ''
 
 	def hide_intro_panels(self) -> None:
-		"""Hide the intro panels, show info panels, and expand the log view."""
+		"""Hide the intro panels and show the three-column view."""
 		try:
 			# Get the panels
 			logo_panel = self.query_one('#logo-panel')
 			links_panel = self.query_one('#links-panel')
 			paths_panel = self.query_one('#paths-panel')
-			info_panels = self.query_one('#info-panels')
-			tasks_panel = self.query_one('#tasks-panel')
-			# Hide intro panels if they're visible and show info panels
+			three_column = self.query_one('#three-column-container')
+
+			# Hide intro panels if they're visible and show three-column view
 			if logo_panel.display:
-				# Log for debugging
-				logging.info('Hiding intro panels and showing info panels')
+				logging.info('Hiding intro panels and showing three-column view')
 
 				logo_panel.display = False
 				links_panel.display = False
 				paths_panel.display = False
 
-				# Show info panels
-				info_panels.display = True
-				tasks_panel.display = True
+				# Show three-column container
+				three_column.display = True
 
-				# Make results container take full height
-				results_container = self.query_one('#results-container')
-				results_container.styles.height = '1fr'
-
-				# Configure the log
-				results_log = self.query_one('#results-log')
-				results_log.styles.height = 'auto'
-
-				logging.info('Panels should now be visible')
+				logging.info('Three-column view should now be visible')
 		except Exception as e:
 			logging.error(f'Error in hide_intro_panels: {str(e)}')
 
-	def update_info_panels(self) -> None:
-		"""Update all information panels with current state."""
-		try:
-			# Update actual content
-			self.update_browser_panel()
-			self.update_model_panel()
-			self.update_tasks_panel()
-		except Exception as e:
-			logging.error(f'Error in update_info_panels: {str(e)}')
-		finally:
-			# Always schedule the next update - will update at 1-second intervals
-			# This ensures continuous updates even if agent state changes
-			self.set_timer(1.0, self.update_info_panels)
+	def setup_event_bus_listener(self) -> None:
+		"""Setup listener for browser session event bus."""
+		if not self.browser_session or not self.browser_session.event_bus:
+			return
 
-	def update_browser_panel(self) -> None:
-		"""Update browser information panel with details about the browser."""
-		browser_info = self.query_one('#browser-info', RichLog)
-		browser_info.clear()
+		# Get the events log widget
+		events_log = self.query_one('#events-log', RichLog)
 
-		# Try to use the agent's browser session if available
-		browser_session = self.browser_session
-		if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'browser_session'):
-			browser_session = self.agent.browser_session
-
-		if browser_session:
+		# Create handler to log all events
+		def log_event(event):
+			event_name = event.__class__.__name__
+			# Format event data nicely
 			try:
-				# Check if browser session is connected
-				if not browser_session.cdp_url:
-					browser_info.write('[yellow]Browser session created, waiting for browser to launch...[/]')
-					return
+				if hasattr(event, 'model_dump'):
+					event_data = event.model_dump(exclude_unset=True)
+					# Remove large fields
+					if 'screenshot' in event_data:
+						event_data['screenshot'] = '<bytes>'
+					if 'dom_state' in event_data:
+						event_data['dom_state'] = '<truncated>'
+					event_str = str(event_data) if event_data else ''
+				else:
+					event_str = str(event)
 
-				# Update our reference if we're using the agent's session
-				if browser_session != self.browser_session:
-					self.browser_session = browser_session
+				# Truncate long strings
+				if len(event_str) > 200:
+					event_str = event_str[:200] + '...'
 
-				# Get basic browser info from browser_profile
-				browser_type = 'Chromium'
-				headless = browser_session.browser_profile.headless
-
-				# Determine connection type based on config
-				connection_type = 'playwright'  # Default
-				if browser_session.cdp_url:
-					connection_type = 'CDP'
-				elif browser_session.browser_profile.executable_path:
-					connection_type = 'user-provided'
-
-				# Get window size details from browser_profile
-				window_width = None
-				window_height = None
-				if browser_session.browser_profile.viewport:
-					window_width = browser_session.browser_profile.viewport.get('width')
-					window_height = browser_session.browser_profile.viewport.get('height')
-
-				# Try to get browser PID
-				browser_pid = 'Unknown'
-				connected = False
-				browser_status = '[red]Disconnected[/]'
-
-				try:
-					# Check if browser PID is available through LocalBrowserWatchdog
-					if hasattr(browser_session, '_local_browser_watchdog') and browser_session._local_browser_watchdog:
-						local_watchdog = browser_session._local_browser_watchdog
-						if hasattr(local_watchdog, 'browser_pid') and local_watchdog.browser_pid:
-							browser_pid = str(local_watchdog.browser_pid)
-							connected = True
-							browser_status = '[green]Connected[/]'
-					# Otherwise just check if we have a CDP URL
-					elif browser_session.cdp_url:
-						connected = True
-						browser_status = '[green]Connected[/]'
-						browser_pid = 'N/A'
-				except Exception as e:
-					browser_pid = f'Error: {str(e)}'
-
-				# Display browser information
-				browser_info.write(f'[bold cyan]Chromium[/] Browser ({browser_status})')
-				browser_info.write(
-					f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
-				)
-				browser_info.write(f'PID: [dim]{browser_pid}[/]')
-				browser_info.write(f'CDP Port: {browser_session.cdp_url}')
-
-				if window_width and window_height:
-					browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
-
-				# Include additional information about the browser if needed
-				if connected and hasattr(self, 'agent') and self.agent:
-					try:
-						# Show when the browser was connected
-						timestamp = int(time.time())
-						current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
-						browser_info.write(f'Last updated: [dim]{current_time}[/]')
-					except Exception:
-						pass
-
-					# Show the agent's current page URL if available
-					if browser_session._cached_browser_state_summary:
-						try:
-							# Use cached browser state to get URL
-							current_url = browser_session._cached_browser_state_summary.url
-							if current_url:
-								current_url = current_url.replace('https://', '').replace('http://', '').replace('www.', '')[:36]
-								if len(current_url) > 36:
-									current_url += '…'
-								browser_info.write(f'👁️  [green]{current_url}[/]')
-						except Exception:
-							pass
+				events_log.write(f'[yellow]→ {event_name}[/] {event_str}')
 			except Exception as e:
-				browser_info.write(f'[red]Error updating browser info: {str(e)}[/]')
-		else:
-			browser_info.write('[red]Browser not initialized[/]')
+				events_log.write(f'[red]→ {event_name}[/] (error formatting: {e})')
 
-	def update_model_panel(self) -> None:
-		"""Update model information panel with details about the LLM."""
-		model_info = self.query_one('#model-info', RichLog)
-		model_info.clear()
+		# Register wildcard handler for all events
+		self._event_bus_handler_id = self.browser_session.event_bus.on('*', log_event)
 
-		if self.llm:
-			# Get model details
-			model_name = 'Unknown'
-			if hasattr(self.llm, 'model_name'):
-				model_name = self.llm.model_name
-			elif hasattr(self.llm, 'model'):
-				model_name = self.llm.model
+	def setup_cdp_logger(self) -> None:
+		"""Setup CDP message logger."""
+		# Get the CDP log widget
+		cdp_log = self.query_one('#cdp-log', RichLog)
 
-			# Show model name
-			if self.agent:
-				temp_str = f'{self.llm.temperature}ºC ' if self.llm.temperature else ''
-				vision_str = '+ vision ' if self.agent.settings.use_vision else ''
-				planner_str = '+ planner' if self.agent.settings.planner_llm else ''
-				model_info.write(
-					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/] {temp_str}{vision_str}{planner_str}'
-				)
-			else:
-				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/]')
+		# Create custom handler for CDP logging
+		class CDPLogHandler(logging.Handler):
+			def __init__(self, rich_log: RichLog):
+				super().__init__()
+				self.rich_log = rich_log
 
-			# Show token usage statistics if agent exists and has history
-			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
-				# Get total tokens used
-				# total_tokens = self.agent.history.total_input_tokens()
-				# model_info.write(f'[white]Input tokens:[/] [green]{total_tokens:,}[/]')
-
-				# Calculate tokens per step
-				num_steps = len(self.agent.history.history)
-				# if num_steps > 0:
-				# avg_tokens_per_step = total_tokens / num_steps
-				# model_info.write(f'[white]Avg tokens/step:[/] [green]{avg_tokens_per_step:,.1f}[/]')
-
-				# Get the last step metadata to show the most recent LLM response time
-				if num_steps > 0 and self.agent.history.history[-1].metadata:
-					last_step = self.agent.history.history[-1]
-					if last_step.metadata:
-						step_duration = last_step.metadata.duration_seconds
+			def emit(self, record):
+				try:
+					msg = self.format(record)
+					# Truncate very long messages
+					if len(msg) > 300:
+						msg = msg[:300] + '...'
+					# Color code by level
+					if record.levelno >= logging.ERROR:
+						self.rich_log.write(f'[red]{msg}[/]')
+					elif record.levelno >= logging.WARNING:
+						self.rich_log.write(f'[yellow]{msg}[/]')
 					else:
-						step_duration = 0
-					# step_tokens = last_step.metadata.input_tokens
+						self.rich_log.write(f'[cyan]{msg}[/]')
+				except Exception:
+					self.handleError(record)
 
-					# if step_tokens > 0:
-					# 	tokens_per_second = step_tokens / step_duration if step_duration > 0 else 0
-					# 	model_info.write(f'[white]Avg tokens/sec:[/] [magenta]{tokens_per_second:.1f}[/]')
+		# Setup handler for cdp_use loggers
+		cdp_handler = CDPLogHandler(cdp_log)
+		cdp_handler.setFormatter(logging.Formatter('%(name)s: %(message)s'))
+		cdp_handler.setLevel(logging.DEBUG)
 
-				# Show total duration
-				total_duration = self.agent.history.total_duration_seconds()
-				if total_duration > 0:
-					model_info.write(f'[white]Total Duration:[/] [magenta]{total_duration:.2f}s[/]')
-
-					# Calculate response time metrics
-					model_info.write(f'[white]Last Step Duration:[/] [magenta]{step_duration:.2f}s[/]')
-
-				# Add current state information
-				if hasattr(self.agent, 'running'):
-					if getattr(self.agent, 'running', False):
-						model_info.write('[yellow]LLM is thinking[blink]...[/][/]')
-					elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
-						model_info.write('[orange]LLM paused[/]')
-		else:
-			model_info.write('[red]Model not initialized[/]')
-
-	def update_tasks_panel(self) -> None:
-		"""Update tasks information panel with details about the tasks and steps hierarchy."""
-		tasks_info = self.query_one('#tasks-info', RichLog)
-		tasks_info.clear()
-
-		if self.agent:
-			# Check if agent has tasks
-			task_history = []
-			message_history = []
-
-			# Try to extract tasks by looking at message history
-			if hasattr(self.agent, '_message_manager') and self.agent._message_manager:
-				message_history = self.agent._message_manager.state.history.get_messages()
-
-				# Extract original task(s)
-				original_tasks = []
-				for msg in message_history:
-					if hasattr(msg, 'content'):
-						content = msg.content
-						if isinstance(content, str) and 'Your ultimate task is:' in content:
-							task_text = content.split('"""')[1].strip()
-							original_tasks.append(task_text)
-
-				if original_tasks:
-					tasks_info.write('[bold green]TASK:[/]')
-					for i, task in enumerate(original_tasks, 1):
-						# Only show latest task if multiple task changes occurred
-						if i == len(original_tasks):
-							tasks_info.write(f'[white]{task}[/]')
-					tasks_info.write('')
-
-			# Get current state information
-			current_step = self.agent.state.n_steps if hasattr(self.agent, 'state') else 0
-
-			# Get all agent history items
-			history_items = []
-			if hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
-				history_items = self.agent.history.history
-
-				if history_items:
-					tasks_info.write('[bold yellow]STEPS:[/]')
-
-					for idx, item in enumerate(history_items, 1):
-						# Determine step status
-						step_style = '[green]✓[/]'
-
-						# For the current step, show it as in progress
-						if idx == current_step:
-							step_style = '[yellow]⟳[/]'
-
-						# Check if this step had an error
-						if item.result and any(result.error for result in item.result):
-							step_style = '[red]✗[/]'
-
-						# Show step number
-						tasks_info.write(f'{step_style} Step {idx}/{current_step}')
-
-						# Show goal if available
-						if item.model_output and hasattr(item.model_output, 'current_state'):
-							# Show goal for this step
-							goal = item.model_output.current_state.next_goal
-							if goal:
-								# Take just the first line for display
-								goal_lines = goal.strip().split('\n')
-								goal_summary = goal_lines[0]
-								tasks_info.write(f'   [cyan]Goal:[/] {goal_summary}')
-
-							# Show evaluation of previous goal (feedback)
-							eval_prev = item.model_output.current_state.evaluation_previous_goal
-							if eval_prev and idx > 1:  # Only show for steps after the first
-								eval_lines = eval_prev.strip().split('\n')
-								eval_summary = eval_lines[0]
-								eval_summary = eval_summary.replace('Success', '✅ ').replace('Failed', '❌ ').strip()
-								tasks_info.write(f'   [tan]Evaluation:[/] {eval_summary}')
-
-						# Show actions taken in this step
-						if item.model_output and item.model_output.action:
-							tasks_info.write('   [purple]Actions:[/]')
-							for action_idx, action in enumerate(item.model_output.action, 1):
-								action_type = action.__class__.__name__
-								if hasattr(action, 'model_dump'):
-									# For proper actions, show the action type
-									action_dict = action.model_dump(exclude_unset=True)
-									if action_dict:
-										action_name = list(action_dict.keys())[0]
-										tasks_info.write(f'     {action_idx}. [blue]{action_name}[/]')
-
-						# Show results or errors from this step
-						if item.result:
-							for result in item.result:
-								if result.error:
-									error_text = result.error
-									tasks_info.write(f'   [red]Error:[/] {error_text}')
-								elif result.extracted_content:
-									content = result.extracted_content
-									tasks_info.write(f'   [green]Result:[/] {content}')
-
-						# Add a space between steps for readability
-						tasks_info.write('')
-
-			# If agent is actively running, show a status indicator
-			if hasattr(self.agent, 'running') and getattr(self.agent, 'running', False):
-				tasks_info.write('[yellow]Agent is actively working[blink]...[/][/]')
-			elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
-				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
-		else:
-			tasks_info.write('[dim]Agent not initialized[/]')
-
-		# Force scroll to bottom
-		tasks_panel = self.query_one('#tasks-panel')
-		tasks_panel.scroll_end(animate=False)
+		# Configure cdp_use loggers to use our handler
+		for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp']:
+			cdp_logger = logging.getLogger(logger_name)
+			cdp_logger.setLevel(logging.DEBUG)
+			cdp_logger.handlers = [cdp_handler]  # Replace existing handlers
+			cdp_logger.propagate = False
 
 	def scroll_to_input(self) -> None:
 		"""Scroll to the input field to ensure it's visible."""
@@ -990,11 +731,8 @@ class BrowserUseApp(App):
 		# Make sure intro is hidden and log is ready
 		self.hide_intro_panels()
 
-		# Start continuous updates of all info panels
-		self.update_info_panels()
-
-		# Clear the log to start fresh
-		rich_log = self.query_one('#results-log', RichLog)
+		# Clear the main output log to start fresh
+		rich_log = self.query_one('#main-output-log', RichLog)
 		rich_log.clear()
 
 		if self.agent is None:
@@ -1011,6 +749,9 @@ class BrowserUseApp(App):
 			# Update our browser_session reference to point to the agent's
 			if hasattr(self.agent, 'browser_session'):
 				self.browser_session = self.agent.browser_session
+				# Set up event bus listener and CDP logger now that we have the browser session
+				self.setup_event_bus_listener()
+				self.setup_cdp_logger()
 		else:
 			self.agent.add_new_task(task)
 
@@ -1050,8 +791,6 @@ class BrowserUseApp(App):
 				# Clear the running flag
 				if self.agent:
 					self.agent.running = False  # type: ignore
-
-				# No need to call update_info_panels() here as it's already updating via timer
 
 				# Capture telemetry for task completion
 				duration = time.time() - task_start_time
@@ -1138,22 +877,6 @@ class BrowserUseApp(App):
 			# Logo panel
 			yield Static(BROWSER_LOGO, id='logo-panel', markup=True)
 
-			# Information panels (hidden by default)
-			with Container(id='info-panels'):
-				# Top row with browser and model panels side by side
-				with Container(id='top-panels'):
-					# Browser panel
-					with Container(id='browser-panel'):
-						yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
-
-					# Model panel
-					with Container(id='model-panel'):
-						yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
-
-				# Tasks panel (full width, below browser and model)
-				with VerticalScroll(id='tasks-panel'):
-					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True, auto_scroll=True)
-
 			# Links panel with URLs
 			with Container(id='links-panel'):
 				with HorizontalGroup(classes='link-row'):
@@ -1192,9 +915,28 @@ class BrowserUseApp(App):
 				markup=True,
 			)
 
-			# Results view with scrolling (place this before input to make input sticky at bottom)
-			with VerticalScroll(id='results-container'):
-				yield RichLog(highlight=True, markup=True, id='results-log', wrap=True, auto_scroll=True)
+			# Three-column container (hidden by default)
+			with Container(id='three-column-container'):
+				# Column 1: Main output
+				with VerticalScroll(id='main-output-column'):
+					rich_log = RichLog(highlight=True, markup=True, id='main-output-log', wrap=True, auto_scroll=True)
+					rich_log.write('[bold blue]Agent Output[/]')
+					rich_log.write('-' * 20)
+					yield rich_log
+
+				# Column 2: Event bus events
+				with VerticalScroll(id='events-column'):
+					events_log = RichLog(highlight=True, markup=True, id='events-log', wrap=True, auto_scroll=True)
+					events_log.write('[bold yellow]Browser Events[/]')
+					events_log.write('-' * 20)
+					yield events_log
+
+				# Column 3: CDP messages
+				with VerticalScroll(id='cdp-column'):
+					cdp_log = RichLog(highlight=True, markup=True, id='cdp-log', wrap=True, auto_scroll=True)
+					cdp_log.write('[bold cyan]CDP Messages[/]')
+					cdp_log.write('-' * 20)
+					yield cdp_log
 
 			# Task input container (now at the bottom)
 			with Container(id='task-input-container'):

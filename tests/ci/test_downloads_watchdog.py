@@ -456,7 +456,6 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 	# Debug: Log what we're about to click
 	print(f'Clicking download link with href: {download_node.attributes.get("href")}')
 	print(f'Download link has download attribute: {"download" in download_node.attributes}')
-	print(f'Auto download PDFs enabled: {browser_session._auto_download_pdfs}')
 
 	# Since the link has a download attribute, it will trigger a download, not navigation
 	# The downloads watchdog will handle the download automatically
@@ -465,7 +464,7 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 	# We don't need our own download handler - let the downloads watchdog handle it
 
 	# Click the download link with expect_download=True
-	event = browser_session.event_bus.dispatch(ClickElementEvent(element_node=download_node, expect_download=True))
+	event = browser_session.event_bus.dispatch(ClickElementEvent(element_node=download_node))
 	await event
 	duration = time.time() - start_time
 

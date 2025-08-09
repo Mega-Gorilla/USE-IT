@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 from typing import Any, Self, cast
 
+# Silence cdp_use logging - it's too verbose at DEBUG level
+# We need to patch the logger in the cdp_use.client module directly
+import cdp_use.client
 import httpx
 from bubus import EventBus
 from cdp_use import CDPClient
@@ -12,9 +15,6 @@ from cdp_use.cdp.network import Cookie
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
-# Silence cdp_use logging - it's too verbose at DEBUG level
-# We need to patch the logger in the cdp_use.client module directly
-import cdp_use.client
 cdp_use.client.logger.setLevel(logging.ERROR)
 
 # Also configure all cdp_use loggers
@@ -220,14 +220,14 @@ class BrowserSession(BaseModel):
 		# Check if handlers are already registered to prevent duplicates
 		start_handlers = self.event_bus.handlers.get('BrowserStartEvent', [])
 		start_handler_names = [getattr(h, '__name__', str(h)) for h in start_handlers]
-		
+
 		if any('on_BrowserStartEvent' in name for name in start_handler_names):
 			raise RuntimeError(
-				f'[BrowserSession] Duplicate handler registration attempted! '
-				f'on_BrowserStartEvent is already registered. '
-				f'This likely means BrowserSession was initialized multiple times with the same EventBus.'
+				'[BrowserSession] Duplicate handler registration attempted! '
+				'on_BrowserStartEvent is already registered. '
+				'This likely means BrowserSession was initialized multiple times with the same EventBus.'
 			)
-			
+
 		# Register BrowserSession's event handlers
 		self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
 		self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
@@ -333,11 +333,11 @@ class BrowserSession(BaseModel):
 
 	async def get_or_create_cdp_session(self, target_id: str | None = None, focus: bool = True) -> CDPSession:
 		"""Get or create a CDP session for a target.
-		
+
 		Args:
 			target_id: Target ID to get session for. If None, uses current agent focus.
 			focus: If True, switches agent focus to this target. If False, just returns session without changing focus.
-		
+
 		Returns:
 			CDPSession for the specified target.
 		"""
@@ -348,17 +348,19 @@ class BrowserSession(BaseModel):
 		# If no target_id specified, use the current target_id
 		if target_id is None:
 			target_id = self.agent_focus.target_id
-		
+
 		# Check if we already have a session for this target in the pool
 		if target_id in self._cdp_session_pool:
 			session = self._cdp_session_pool[target_id]
 			if focus and self.agent_focus.target_id != target_id:
-				self.logger.debug(f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}')
+				self.logger.debug(
+					f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}'
+				)
 				self.agent_focus = session
 			else:
 				self.logger.debug(f'[get_or_create_cdp_session] Reusing existing session for {target_id} (focus={focus})')
 			return session
-		
+
 		# If it's the current focus target, return that session
 		if self.agent_focus.target_id == target_id:
 			self._cdp_session_pool[target_id] = self.agent_focus
@@ -368,14 +370,18 @@ class BrowserSession(BaseModel):
 		self.logger.debug(f'[get_or_create_cdp_session] Creating new CDP session for target {target_id}')
 		session = await CDPSession.for_target(self._cdp_client_root, target_id)
 		self._cdp_session_pool[target_id] = session
-		
+
 		# Only change agent focus if requested
 		if focus:
-			self.logger.debug(f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}')
+			self.logger.debug(
+				f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}'
+			)
 			self.agent_focus = session
 		else:
-			self.logger.debug(f'[get_or_create_cdp_session] Created session for {target_id} without changing focus (still on {self.agent_focus.target_id})')
-		
+			self.logger.debug(
+				f'[get_or_create_cdp_session] Created session for {target_id} without changing focus (still on {self.agent_focus.target_id})'
+			)
+
 		return session
 
 	@property
@@ -394,7 +400,7 @@ class BrowserSession(BaseModel):
 		if cached and self._cached_browser_state_summary is not None and self._cached_browser_state_summary.dom_state:
 			# Don't use cached state if it has 0 interactive elements
 			selector_map = self._cached_browser_state_summary.dom_state.selector_map
-			
+
 			# Don't use cached state if we need a screenshot but the cached state doesn't have one
 			if include_screenshot and not self._cached_browser_state_summary.screenshot:
 				self.logger.debug('⚠️ Cached browser state has no screenshot, fetching fresh state with screenshot')
@@ -427,7 +433,7 @@ class BrowserSession(BaseModel):
 		if hasattr(self, '_watchdogs_attached') and self._watchdogs_attached:
 			self.logger.debug('Watchdogs already attached, skipping duplicate attachment')
 			return
-		
+
 		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
 		from browser_use.browser.crash_watchdog import CrashWatchdog
 		from browser_use.browser.default_action_watchdog import DefaultActionWatchdog
@@ -521,7 +527,7 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
 		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
 		await self._dom_watchdog.attach_to_session()
-		
+
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._watchdogs_attached = True
 
@@ -540,6 +546,8 @@ class BrowserSession(BaseModel):
 			url = self.cdp_url.rstrip('/')
 			if not url.endswith('/json/version'):
 				url = url + '/json/version'
+
+			# Run a tiny HTTP client to query for the WebSocket URL from the /json/version endpoint
 			async with httpx.AsyncClient() as client:
 				version_info = await client.get(url)
 				self.cdp_url = version_info.json()['webSocketDebuggerUrl']
@@ -601,7 +609,7 @@ class BrowserSession(BaseModel):
 						await asyncio.sleep(0.1)
 					except Exception as e:
 						self.logger.warning(f'Failed to redirect {target_url} to about:blank: {e}')
-			
+
 			# Log summary of redirections
 			if redirected_targets:
 				self.logger.info(f'✅ Redirected {len(redirected_targets)} chrome://newtab pages to about:blank')

@@ -87,32 +87,35 @@ class Controller(Generic[Context]):
 				tabs = await browser_session.get_tabs()
 				# Get last 4 chars of browser session ID to identify agent's tabs
 				browser_session_label = str(browser_session.id)[-4:]
-				
+
 				for i, tab in enumerate(tabs):
 					# Check if tab is on Google domain
-					if tab.url and 'google.com' in tab.url:
+					if tab.url and tab.url.strip('/').lower() in ('https://www.google.com', 'https://google.com'):
 						# Found existing Google tab, navigate in it
 						logger.debug(f'Found existing Google tab at index {i}: {tab.url}, reusing it')
-						
+
 						# Switch to this tab first if it's not the current one
 						from browser_use.browser.events import SwitchTabEvent
+
 						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
 							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
 							await switch_event
-						
+
 						use_new_tab = False
 						break
 					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
+					# IMPORTANT: about:blank is also used briefly for new tabs the agent is trying to open, dont take over those!
 					elif tab.url == 'about:blank' and tab.title and browser_session_label in tab.title:
 						# This is our agent's about:blank page with DVD animation
 						logger.debug(f'Found agent-owned about:blank tab at index {i} with title: {tab.title}, reusing it')
-						
+
 						# Switch to this tab first
 						from browser_use.browser.events import SwitchTabEvent
+
 						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
 							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
 							await switch_event
-						
+
 						use_new_tab = False
 						break
 			except Exception as e:
@@ -217,25 +220,12 @@ class Controller(Generic[Context]):
 
 			# Dispatch click event with node
 			try:
-				event = browser_session.event_bus.dispatch(
-					ClickElementEvent(node=node, expect_download=params.expect_download, new_tab=params.new_tab)
-				)
-				await event
+				await browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
 			except Exception as e:
 				logger.error(f'Failed to dispatch ClickElementEvent: {type(e).__name__}: {e}')
 				raise ValueError(f'Failed to click element {params.index}: {e}') from e
 
-			# Get the result if any (e.g., download path)
-			result = await event.event_result(raise_if_none=False, raise_if_any=True)
-			if result:
-				download_path = result.get('download_path')
-				if download_path:
-					msg = f'💾 Downloaded file to {download_path}' + (' (new tab)' if params.new_tab else '')
-				else:
-					msg = f'🖱️ Clicked element with index {params.index}'
-			else:
-				msg = f'🖱️ Clicked element with index {params.index}'
-
+			msg = f'🖱️ Clicked element with index {params.index}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 
@@ -475,11 +465,7 @@ Explain the content of the page and that the requested information is not availa
 			pixels = int(params.num_pages * 800)
 			try:
 				event = browser_session.event_bus.dispatch(
-					ScrollEvent(
-						direction='down' if params.down else 'up',
-						amount=pixels,
-						node=node
-					)
+					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
 				)
 				await event
 			except Exception as e:
@@ -505,9 +491,7 @@ Explain the content of the page and that the requested information is not availa
 		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
 			# Dispatch send keys event
 			try:
-				event = browser_session.event_bus.dispatch(
-					SendKeysEvent(keys=params.keys)
-				)
+				event = browser_session.event_bus.dispatch(SendKeysEvent(keys=params.keys))
 				await event
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
@@ -522,9 +506,7 @@ Explain the content of the page and that the requested information is not availa
 		)
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
-			event = browser_session.event_bus.dispatch(
-				ScrollToTextEvent(text=text)
-			)
+			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
 			await event
 
 			# Check result to see if text was found
@@ -532,9 +514,7 @@ Explain the content of the page and that the requested information is not availa
 			if result and result.get('found'):
 				msg = f'🔍  Scrolled to text: {text}'
 				logger.info(msg)
-				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}'
-				)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}')
 			else:
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)

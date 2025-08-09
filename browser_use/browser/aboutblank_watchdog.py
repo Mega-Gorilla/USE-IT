@@ -136,7 +136,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		try:
 			# Get just the page targets without expensive title fetching
 			page_targets = await self.browser_session._cdp_get_all_pages()
-			browser_session_id = str(self.browser_session.id)[-4:]
+			browser_session_label = str(self.browser_session.id)[-4:]
 
 			for page_target in page_targets:
 				target_id = page_target['targetId']
@@ -144,7 +144,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 				# Only target about:blank pages specifically
 				if url == 'about:blank':
-					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_id)
+					await self._show_dvd_screensaver_loading_animation_cdp(target_id, browser_session_label)
 
 		except Exception as e:
 			self.logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')

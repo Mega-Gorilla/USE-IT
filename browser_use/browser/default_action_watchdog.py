@@ -2,7 +2,6 @@
 
 import asyncio
 import platform
-from typing import TYPE_CHECKING
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -20,9 +19,6 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import EnhancedDOMTreeNode
-
-if TYPE_CHECKING:
-	pass
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
@@ -61,9 +57,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			download_path = await self._click_element_node_impl(
-				element_node, expect_download=event.expect_download, new_tab=event.new_tab
-			)
+			await self._click_element_node_impl(element_node, new_tab=event.new_tab)
+			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
 			if download_path:
@@ -77,7 +72,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
 			await asyncio.sleep(0.5)
-			
+
 			# Clear cached state after click action since DOM might have changed
 			self.logger.debug('🔄 Click action completed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
@@ -123,14 +118,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Log success
 			self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
-			
+
 			# Clear cached state after type action since DOM might have changed
 			self.logger.debug('🔄 Type action completed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
 			self.browser_session._cached_selector_map.clear()
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
-			
+
 			return {'success': True}
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -192,17 +187,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, expect_download: bool = False, new_tab: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
 		"""
 		Click an element using pure CDP.
 
 		Args:
 			element_node: The DOM element to click
-			expect_download: If True, wait for download and handle it inline
 			new_tab: If True, open any resulting navigation in a new tab
-
-		Returns:
-			The download path if a download was triggered, None otherwise
 		"""
 
 		try:
@@ -236,27 +227,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await asyncio.sleep(0.1)  # Wait for scroll to complete
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
-
-			# Set up download detection if downloads are enabled
-			# download_path = None
-			# download_event = asyncio.Event()
-			# download_guid = None
-
-			if self.browser_session.browser_profile.downloads_path and expect_download:
-				# Enable download events
-				await cdp_session.cdp_client.send.Page.setDownloadBehavior(
-					params={'behavior': 'allow', 'downloadPath': str(self.browser_session.browser_profile.downloads_path)},
-					session_id=session_id,
-				)
-
-				# # Set up download listener
-				# async def on_download_will_begin(event):
-				# 	nonlocal download_guid
-				# 	download_guid = event['guid']
-				# 	download_event.set()
-
-				# TODO: fix this with download_watchdog.py
-				# cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
 
 			# Perform the click using CDP
 			# TODO: do occlusion detection first, if element is not on the top, fire JS-based
@@ -315,44 +285,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
-
-				# Handle download if expected: should be handled by downloads_watchdog.py now using browser-level download event listeners
-				# if self.browser_session.browser_profile.downloads_path:
-				# 	try:
-				# 		# Wait for download to start (with timeout)
-				# 		await asyncio.wait_for(download_event.wait(), timeout=5.0)
-
-				# 		# Wait for download to complete
-				# 		download_complete = False
-				# 		for _ in range(60):  # Wait up to 60 seconds
-				# 			try:
-				# 				# Check download progress
-				# 				response = await cdp_client.send.Page.getDownloadProgress(
-				# 					params={'guid': download_guid}, session_id=session_id
-				# 				)
-				# 				if response['state'] == 'completed':
-				# 					download_complete = True
-				# 					break
-				# 				elif response['state'] == 'canceled':
-				# 					self.logger.warning('Download was canceled')
-				# 					break
-				# 			except Exception:
-				# 				pass
-				# 			await asyncio.sleep(1)
-
-				# 		if download_complete and download_guid:
-				# 			self.logger.info('⬇️ Download completed via CDP')
-				# 			# Note: DownloadsWatchdog handles download tracking via events
-				# 			return f'download_{download_guid}'  # Return guid as placeholder
-				# 	except TimeoutError:
-				# 		# No download triggered, normal click
-				# 		self.logger.debug('No download triggered within timeout.')
-
-				# # Wait for navigation/changes
-				# await asyncio.sleep(0.5)
-				# # Navigation is handled by NavigationWatchdog via events
-
-				# return download_path
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
@@ -650,14 +582,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for reload
 			await asyncio.sleep(1.0)
-			
+
 			# Clear cached state after refresh since DOM has been reloaded
 			self.logger.debug('🔄 Page refreshed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
 			self.browser_session._cached_selector_map.clear()
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
-			
+
 			# Navigation is handled by NavigationWatchdog via events
 
 			self.logger.info('🔄 Target refreshed')
@@ -770,7 +702,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
-			
+
 			# Clear cached state if Enter key was pressed (might submit form and change DOM)
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
 				self.logger.debug('🔄 Enter key pressed, clearing cached browser state')
