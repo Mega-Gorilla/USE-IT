@@ -184,7 +184,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		llm_timeout: int = 60,
 		step_timeout: int = 180,
 		preload: bool = False,
-		recent_events: bool = False,
+		include_recent_events: bool = False,
 		**kwargs,
 	):
 		if not isinstance(llm, BaseChatModel):
@@ -233,7 +233,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task = task
 		self.llm = llm
 		self.preload = preload
-		self.recent_events = recent_events
+		self.include_recent_events = include_recent_events
 		self.controller = (
 			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
 		)

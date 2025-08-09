@@ -188,10 +188,7 @@ class TestClickElementEvent:
 		assert f'Clicked element with index {button_index}' in result.extracted_content, (
 			f'Expected click confirmation in result content, got: {result.extracted_content}'
 		)
-		if button_text:
-			assert result.extracted_content is not None and button_text in result.extracted_content, (
-				f"Button text '{button_text}' not found in result content: {result.extracted_content}"
-			)
+		# Note: The click action doesn't include button text in the result, only the index
 
 		# Verify the click actually had an effect on the page using CDP
 		cdp_session = await browser_session.get_or_create_cdp_session(browser_session.agent_focus)

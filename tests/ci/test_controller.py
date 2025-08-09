@@ -16,7 +16,6 @@ from browser_use.controller.views import (
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
-	ScrollAction,
 	SearchGoogleAction,
 	SendKeysAction,
 	SwitchTabAction,

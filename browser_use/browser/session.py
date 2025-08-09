@@ -2,11 +2,10 @@
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any, Self, cast
 
-# Silence cdp_use logging - it's too verbose at DEBUG level
-# We need to patch the logger in the cdp_use.client module directly
 import cdp_use.client
 import httpx
 from bubus import EventBus
@@ -15,13 +14,17 @@ from cdp_use.cdp.network import Cookie
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
-cdp_use.client.logger.setLevel(logging.ERROR)
-
-# Also configure all cdp_use loggers
-for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
-	cdp_logger = logging.getLogger(logger_name)
-	cdp_logger.setLevel(logging.ERROR)
-	cdp_logger.propagate = False  # Don't propagate to root logger
+# Note: CDP logging level is controlled by the CLI when needed
+# By default we silence it unless explicitly enabled
+if os.environ.get('BROWSER_USE_CDP_DEBUG') != 'true':
+	# Silence cdp_use logging - it's too verbose at DEBUG level
+	cdp_use.client.logger.setLevel(logging.ERROR)
+	
+	# Also configure all cdp_use loggers
+	for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
+		cdp_logger = logging.getLogger(logger_name)
+		cdp_logger.setLevel(logging.ERROR)
+		cdp_logger.propagate = False  # Don't propagate to root logger
 
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
@@ -83,18 +86,18 @@ class CDPSession(BaseModel):
 	owns_cdp_client: bool = False
 
 	@classmethod
-	async def for_target(cls, cdp_client: CDPClient, target_id: str, create_own_connection: bool = False, cdp_url: str | None = None):
+	async def for_target(cls, cdp_client: CDPClient, target_id: str, new_socket: bool = False, cdp_url: str | None = None):
 		"""Create a CDP session for a target.
 		
 		Args:
 			cdp_client: Existing CDP client to use (or just for reference if creating own)
 			target_id: Target ID to attach to
-			create_own_connection: If True, create a dedicated WebSocket connection for this target
-			cdp_url: CDP URL (required if create_own_connection is True)
+			new_socket: If True, create a dedicated WebSocket connection for this target
+			cdp_url: CDP URL (required if new_socket is True)
 		"""
-		if create_own_connection:
+		if new_socket:
 			if not cdp_url:
-				raise ValueError('cdp_url required when create_own_connection=True')
+				raise ValueError('cdp_url required when new_socket=True')
 			# Create a new CDP client with its own WebSocket connection
 			import logging
 			logger = logging.getLogger(f'browser_use.CDPSession.{target_id[-4:]}')
@@ -245,6 +248,12 @@ class BrowserSession(BaseModel):
 		# TODO: clear the event bus queue here, implement this helper
 		# await self.event_bus.wait_for_idle(timeout=5.0)
 		# await self.event_bus.clear()
+		
+		# Disconnect sessions that own their WebSocket connections
+		for session in self._cdp_session_pool.values():
+			if hasattr(session, 'disconnect'):
+				await session.disconnect()
+		self._cdp_session_pool.clear()
 
 		self._cdp_client_root = None  # type: ignore
 		self._cached_browser_state_summary = None
@@ -534,12 +543,13 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	async def get_or_create_cdp_session(self, target_id: str | None = None, focus: bool = True) -> CDPSession:
+	async def get_or_create_cdp_session(self, target_id: str | None = None, focus: bool = True, new_socket: bool = False) -> CDPSession:
 		"""Get or create a CDP session for a target.
 
 		Args:
 			target_id: Target ID to get session for. If None, uses current agent focus.
 			focus: If True, switches agent focus to this target. If False, just returns session without changing focus.
+			new_socket: If True, create a dedicated WebSocket connection for this target.
 
 		Returns:
 			CDPSession for the specified target.
@@ -570,8 +580,13 @@ class BrowserSession(BaseModel):
 			return self.agent_focus
 
 		# Create new session for this target
-		self.logger.debug(f'[get_or_create_cdp_session] Creating new CDP session for target {target_id}')
-		session = await CDPSession.for_target(self._cdp_client_root, target_id)
+		self.logger.debug(f'[get_or_create_cdp_session] Creating new CDP session for target {target_id} (new_socket={new_socket})')
+		session = await CDPSession.for_target(
+			self._cdp_client_root, 
+			target_id,
+			new_socket=new_socket,
+			cdp_url=self.cdp_url if new_socket else None
+		)
 		self._cdp_session_pool[target_id] = session
 
 		# Only change agent focus if requested

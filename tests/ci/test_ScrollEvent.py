@@ -3,12 +3,11 @@ import asyncio
 import pytest
 from pytest_httpserver import HTTPServer
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.controller.service import Controller
 from browser_use.controller.views import (
-	ActionModel,
 	GoToUrlAction,
 	ScrollAction,
 )
@@ -166,25 +165,89 @@ class TestScrollActions:
 		assert event_result is not None
 		assert event_result.get('success') is True
 
-	async def test_scroll_with_element_node(self, browser_session, base_url):
-		"""Test scrolling a specific element via node."""
+	async def test_scroll_with_element_node(self, browser_session, base_url, http_server):
+		"""Test scrolling a specific element via node parameter."""
 		from browser_use.browser.events import ScrollEvent
-		from browser_use.dom.service import EnhancedDOMTreeNode
 		
-		# Navigate to scrollable page
-		await browser_session._cdp_navigate(f'{base_url}/scrollable')
+		# Add a page with a scrollable div element
+		http_server.expect_request('/scrollable-div').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Scrollable Div Test</title>
+				<style>
+					body { margin: 0; padding: 20px; }
+					#scrollable-container {
+						width: 400px;
+						height: 300px;
+						overflow-y: scroll;
+						border: 2px solid #333;
+						background: #f0f0f0;
+					}
+					.inner-content {
+						height: 1500px;
+						background: linear-gradient(to bottom, #f0f0f0, #333);
+						padding: 20px;
+					}
+					.marker {
+						padding: 20px;
+						background: #007bff;
+						color: white;
+						margin: 200px 0;
+					}
+				</style>
+			</head>
+			<body>
+				<h1>Page with Scrollable Div</h1>
+				<div id="scrollable-container">
+					<div class="inner-content">
+						<p>Start of scrollable content</p>
+						<div class="marker">Marker 1</div>
+						<div class="marker">Marker 2</div>
+						<div class="marker">Marker 3</div>
+						<p>End of scrollable content</p>
+					</div>
+				</div>
+				<p>Content outside scrollable div</p>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+		
+		# Navigate to the page with scrollable div
+		await browser_session._cdp_navigate(f'{base_url}/scrollable-div')
 		await asyncio.sleep(0.5)
 		
-		# Create a mock node with frame_id to test cross-origin handling
-		class MockNode:
-			def __init__(self):
-				self.frame_id = None  # No frame_id for simple element
-				self.backend_node_id = 1
+		# Get browser state to find the scrollable element
+		state = await browser_session.get_browser_state_summary()
 		
-		mock_node = MockNode()
+		# Find the scrollable container element in the selector map
+		scrollable_node = None
+		for index, node in state.selector_map.items():
+			# Look for the div with id="scrollable-container"
+			if (hasattr(node, 'attributes') and 
+				node.attributes.get('id') == 'scrollable-container'):
+				scrollable_node = node
+				break
 		
-		# Test element scroll - should use main session when cross_origin_iframes=False
-		event = browser_session.event_bus.dispatch(ScrollEvent(direction='down', amount=300, node=mock_node))
+		assert scrollable_node is not None, "Could not find scrollable-container element"
+		
+		# Test scrolling the specific element down
+		event = browser_session.event_bus.dispatch(
+			ScrollEvent(direction='down', amount=300, node=scrollable_node)
+		)
 		result = await asyncio.wait_for(event, timeout=3.0)
 		event_result = await result.event_result()
 		assert event_result is not None
+		assert event_result.get('success') is True
+		
+		# Test scrolling the specific element up
+		event = browser_session.event_bus.dispatch(
+			ScrollEvent(direction='up', amount=150, node=scrollable_node)
+		)
+		result = await asyncio.wait_for(event, timeout=3.0)
+		event_result = await result.event_result()
+		assert event_result is not None
+		assert event_result.get('success') is True

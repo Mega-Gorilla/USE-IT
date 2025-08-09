@@ -197,6 +197,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""
 
 		try:
+			# Check if element is a file input or select dropdown - these should not be clicked
+			tag_name = element_node.tag_name.lower() if element_node.tag_name else ''
+			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
+			
+			if tag_name == 'select':
+				raise Exception('Cannot click on <select> elements. Use select_dropdown_option action instead.')
+			
+			if tag_name == 'input' and element_type == 'file':
+				raise Exception('Cannot click on file input elements. File uploads must be handled programmatically.')
+			
 			# Get CDP client
 			cdp_session = await self.browser_session.get_or_create_cdp_session()
 
@@ -427,7 +437,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						session_id=session_id,
 					)
 					await asyncio.sleep(0.5)
-					# Navigation is handled by NavigationWatchdog via events
+					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
 					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
@@ -649,7 +659,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			# Navigation is handled by NavigationWatchdog via events
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
 		except Exception as e:
@@ -682,7 +692,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			# Navigation is handled by NavigationWatchdog via events
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
 		except Exception as e:
@@ -710,7 +720,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
 
-			# Navigation is handled by NavigationWatchdog via events
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info('🔄 Target refreshed')
 		except Exception as e:

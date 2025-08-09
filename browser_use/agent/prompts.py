@@ -92,6 +92,7 @@ class AgentMessagePrompt:
 		available_file_paths: list[str] | None = None,
 		screenshots: list[str] | None = None,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
+		include_recent_events: bool = False,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -106,6 +107,7 @@ class AgentMessagePrompt:
 		self.available_file_paths: list[str] | None = available_file_paths
 		self.screenshots = screenshots or []
 		self.vision_detail_level = vision_detail_level
+		self.include_recent_events = include_recent_events
 		assert self.browser_state
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_get_browser_state_description')

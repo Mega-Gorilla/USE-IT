@@ -688,6 +688,13 @@ class BrowserUseApp(App):
 
 	def setup_cdp_logger(self) -> None:
 		"""Setup CDP message logger."""
+		# Enable CDP debug logging
+		os.environ['BROWSER_USE_CDP_DEBUG'] = 'true'
+		
+		# Need to re-import cdp_use.client to apply the new setting
+		import cdp_use.client
+		cdp_use.client.logger.setLevel(logging.DEBUG)
+		
 		# Get the CDP log widget
 		cdp_log = self.query_one('#cdp-log', RichLog)
 
@@ -719,7 +726,7 @@ class BrowserUseApp(App):
 		cdp_handler.setLevel(logging.DEBUG)
 
 		# Configure cdp_use loggers to use our handler
-		for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp']:
+		for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
 			cdp_logger = logging.getLogger(logger_name)
 			cdp_logger.setLevel(logging.DEBUG)
 			cdp_logger.handlers = [cdp_handler]  # Replace existing handlers
@@ -759,9 +766,9 @@ class BrowserUseApp(App):
 			# Update our browser_session reference to point to the agent's
 			if hasattr(self.agent, 'browser_session'):
 				self.browser_session = self.agent.browser_session
-				# Set up event bus listener and CDP logger now that we have the browser session
-				self.setup_event_bus_listener()
-				self.setup_cdp_logger()
+				# Set up event bus listener if not already set up
+				if self._event_bus_handler_id is None:
+					self.setup_event_bus_listener()
 		else:
 			self.agent.add_new_task(task)
 
@@ -929,24 +936,15 @@ class BrowserUseApp(App):
 			with Container(id='three-column-container'):
 				# Column 1: Main output
 				with VerticalScroll(id='main-output-column'):
-					rich_log = RichLog(highlight=True, markup=True, id='main-output-log', wrap=True, auto_scroll=True)
-					rich_log.write('[bold blue]Agent Output[/]')
-					rich_log.write('-' * 20)
-					yield rich_log
+					yield RichLog(highlight=True, markup=True, id='main-output-log', wrap=True, auto_scroll=True)
 
 				# Column 2: Event bus events
 				with VerticalScroll(id='events-column'):
-					events_log = RichLog(highlight=True, markup=True, id='events-log', wrap=True, auto_scroll=True)
-					events_log.write('[bold yellow]Browser Events[/]')
-					events_log.write('-' * 20)
-					yield events_log
+					yield RichLog(highlight=True, markup=True, id='events-log', wrap=True, auto_scroll=True)
 
 				# Column 3: CDP messages
 				with VerticalScroll(id='cdp-column'):
-					cdp_log = RichLog(highlight=True, markup=True, id='cdp-log', wrap=True, auto_scroll=True)
-					cdp_log.write('[bold cyan]CDP Messages[/]')
-					cdp_log.write('-' * 20)
-					yield cdp_log
+					yield RichLog(highlight=True, markup=True, id='cdp-log', wrap=True, auto_scroll=True)
 
 			# Task input container (now at the bottom)
 			with Container(id='task-input-container'):

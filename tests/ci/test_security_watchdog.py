@@ -1,4 +1,4 @@
-"""Test NavigationWatchdog functionality."""
+"""Test navigation and security functionality."""
 
 from typing import cast
 
@@ -18,8 +18,8 @@ from browser_use.browser.session import BrowserSession
 
 
 @pytest.mark.asyncio
-async def test_navigation_watchdog_tab_created_events():
-	"""Test that the NavigationWatchdog properly emits TabCreatedEvent when pages are added."""
+async def test_navigation_tab_created_events():
+	"""Test that BrowserSession properly emits TabCreatedEvent when pages are added."""
 	profile = BrowserProfile(headless=True)
 	session = BrowserSession(browser_profile=profile)
 
@@ -32,9 +32,9 @@ async def test_navigation_watchdog_tab_created_events():
 		session.event_bus.dispatch(BrowserStartEvent())
 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-		# Verify navigation watchdog was created
-		assert hasattr(session, '_navigation_watchdog'), 'NavigationWatchdog should be created'
-		assert session._navigation_watchdog is not None, 'NavigationWatchdog should not be None'
+		# Verify security watchdog was created (replaces navigation watchdog)
+		assert hasattr(session, '_security_watchdog'), 'SecurityWatchdog should be created'
+		assert session._security_watchdog is not None, 'SecurityWatchdog should not be None'
 
 		# Create first tab - should emit TabCreatedEvent
 		session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Tab 1</h1>', new_tab=True))
@@ -67,8 +67,8 @@ async def test_navigation_watchdog_tab_created_events():
 
 
 @pytest.mark.asyncio
-async def test_navigation_watchdog_security_enforcement():
-	"""Test that the NavigationWatchdog enforces allowed_domains security."""
+async def test_security_watchdog_enforcement():
+	"""Test that the SecurityWatchdog enforces allowed_domains security."""
 	# Create a profile with restricted domains
 	profile = BrowserProfile(
 		headless=True,
@@ -85,32 +85,32 @@ async def test_navigation_watchdog_security_enforcement():
 		session.event_bus.dispatch(BrowserStartEvent())
 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-		# Verify navigation watchdog was created and has security check
-		assert hasattr(session, '_navigation_watchdog'), 'NavigationWatchdog should be created'
-		assert session._navigation_watchdog is not None, 'NavigationWatchdog should not be None'
+		# Verify security watchdog was created and has security check
+		assert hasattr(session, '_security_watchdog'), 'SecurityWatchdog should be created'
+		assert session._security_watchdog is not None, 'SecurityWatchdog should not be None'
 
 		# Test that allowed domains work
 		allowed_url = 'https://httpbin.org/get'
-		allowed = session._navigation_watchdog._is_url_allowed(allowed_url)
+		allowed = session._security_watchdog._is_url_allowed(allowed_url)
 		assert allowed, f'Should allow {allowed_url}'
 
 		# Test that disallowed domains are blocked
 		disallowed_url = 'https://malicious-site.com/bad'
-		disallowed = session._navigation_watchdog._is_url_allowed(disallowed_url)
+		disallowed = session._security_watchdog._is_url_allowed(disallowed_url)
 		assert not disallowed, f'Should block {disallowed_url}'
 
 		# Test internal URLs are always allowed
 		internal_urls = ['about:blank', 'chrome://newtab/', 'chrome://new-tab-page/']
 		for url in internal_urls:
-			assert session._navigation_watchdog._is_url_allowed(url), f'Should allow internal URL: {url}'
+			assert session._security_watchdog._is_url_allowed(url), f'Should allow internal URL: {url}'
 
 		# Test glob patterns work
 		profile_with_glob = BrowserProfile(headless=True, allowed_domains=['*.github.com'])
-		session._navigation_watchdog.browser_session.browser_profile = profile_with_glob
+		session._security_watchdog.browser_session.browser_profile = profile_with_glob
 
-		assert session._navigation_watchdog._is_url_allowed('https://api.github.com/repos'), 'Should allow subdomain'
-		assert session._navigation_watchdog._is_url_allowed('https://github.com/user'), 'Should allow main domain'
-		assert not session._navigation_watchdog._is_url_allowed('https://evil.com/github.com'), 'Should block non-matching domain'
+		assert session._security_watchdog._is_url_allowed('https://api.github.com/repos'), 'Should allow subdomain'
+		assert session._security_watchdog._is_url_allowed('https://github.com/user'), 'Should allow main domain'
+		assert not session._security_watchdog._is_url_allowed('https://evil.com/github.com'), 'Should block non-matching domain'
 
 	finally:
 		# Stop browser
