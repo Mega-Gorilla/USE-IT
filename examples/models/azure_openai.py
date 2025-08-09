@@ -23,8 +23,12 @@ llm = ChatAzureOpenAI(
 	model='o4-mini',
 )
 
+TASK = """
+Go to google.com/travel/flights and find the cheapest flight from New York to Paris on 2025-10-15
+"""
+
 agent = Agent(
-	task='Go to google.com/travel/flights and find the cheapest flight from New York to Paris on 2025-10-15',
+	task=TASK,
 	llm=llm,
 )
 

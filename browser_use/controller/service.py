@@ -361,7 +361,7 @@ class Controller(Generic[Context]):
 				# )  # includes OOPIF content automatically, but is often too large and contains base64 data: urls that crash the parser
 				body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
 				page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
-					params={'backendNodeId': body_id['root']['nodeId']}, session_id=cdp_session.session_id
+					params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=cdp_session.session_id
 				)
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
