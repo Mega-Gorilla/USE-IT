@@ -47,8 +47,8 @@ class ChatOpenAI(BaseChatModel):
 
 	# Model params
 	# set to 0.1 because browser-use aims to be more reliable and deterministic
-	temperature: float | None = 0.1
-	frequency_penalty: float | None = None
+	temperature: float | None = 0.2
+	frequency_penalty: float | None = 0.1
 	reasoning_effort: ReasoningEffort = 'low'
 	seed: int | None = None
 	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
@@ -183,8 +183,8 @@ class ChatOpenAI(BaseChatModel):
 
 			if self.model in ReasoningModels:
 				model_params['reasoning_effort'] = self.reasoning_effort
-				model_params['temperature'] = 1
-				model_params['frequency_penalty'] = 0
+				del model_params['temperature']
+				del model_params['frequency_penalty']
 
 			if output_format is None:
 				# Return string response
