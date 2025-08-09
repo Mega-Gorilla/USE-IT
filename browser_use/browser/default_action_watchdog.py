@@ -34,6 +34,19 @@ class DefaultActionWatchdog(BaseWatchdog):
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, str] | None:
 		"""Handle click request with CDP."""
 		try:
+			# Check if session is alive before attempting any operations
+			if not self.browser_session.agent_focus or not self.browser_session.agent_focus.target_id:
+				error_msg = 'Cannot execute click: browser session is corrupted (target_id=None). Session may have crashed.'
+				self.logger.error(f'⚠️ {error_msg}')
+				self.event_bus.dispatch(
+					BrowserErrorEvent(
+						error_type='SessionCorrupted',
+						message=error_msg,
+						details={'action': 'click', 'target_id': None},
+					)
+				)
+				return {'success': 'false', 'error': error_msg}
+
 			# Use the provided node
 			element_node = event.node
 			index_for_logging = element_node.element_index or 'unknown'
