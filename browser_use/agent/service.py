@@ -31,7 +31,7 @@ from browser_use.tokens.service import TokenCost
 load_dotenv()
 
 from bubus import EventBus
-from pydantic import PrivateAttr, ValidationError
+from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
 # Lazy import for gif to avoid heavy agent.views import at startup
@@ -755,6 +755,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
 			)
 		except TimeoutError:
+
+			@observe(name='_llm_call_timed_out_with_input')
+			async def _log_model_input_to_lmnr(input_messages: list[BaseMessage]) -> None:
+				"""Log the model input"""
+				pass
+
+			await _log_model_input_to_lmnr(input_messages)
+
 			raise TimeoutError(
 				f'LLM call timed out after {self.settings.llm_timeout} seconds. Keep your thinking and output short.'
 			)
