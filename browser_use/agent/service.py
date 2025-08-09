@@ -182,7 +182,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_tool_call_examples: bool = False,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 60,
-		step_timeout: int = 180,
+		step_timeout: int = 120,
 		preload: bool = False,
 		include_recent_events: bool = False,
 		**kwargs,
