@@ -183,7 +183,7 @@ class ChatOpenAI(BaseChatModel):
 
 			if self.model in ReasoningModels:
 				model_params['reasoning_effort'] = self.reasoning_effort
-				model_params['temperature'] = 1
+				del model_params['temperature']
 				del model_params['frequency_penalty']
 
 			if output_format is None:
