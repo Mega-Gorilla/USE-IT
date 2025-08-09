@@ -444,13 +444,14 @@ Explain the content of the page and that the requested information is not availa
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
-			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components).',
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). Use index=0 or omit index to scroll the entire page.',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
 			# Look up the node from the selector map if index is provided
+			# Special case: index 0 means scroll the whole page (root/body element)
 			node = None
-			if params.index is not None:
+			if params.index is not None and params.index != 0:
 				try:
 					node = await browser_session.get_element_by_index(params.index)
 					if node is None:
@@ -473,7 +474,8 @@ Explain the content of the page and that the requested information is not availa
 				raise ValueError(f'Failed to scroll: {e}') from e
 
 			direction = 'down' if params.down else 'up'
-			target = f'element {params.index}' if params.index is not None else 'the page'
+			# If index is 0 or None, we're scrolling the page
+			target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
 
 			if params.num_pages == 1.0:
 				long_term_memory = f'Scrolled {direction} {target} by one page'
@@ -524,66 +526,66 @@ Explain the content of the page and that the requested information is not availa
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
-	# # File System Actions
-	# @self.registry.action(
-	# 	'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
-	# )
-	# async def write_file(
-	# 	file_name: str,
-	# 	content: str,
-	# 	file_system: FileSystem,
-	# 	append: bool = False,
-	# 	trailing_newline: bool = True,
-	# 	leading_newline: bool = False,
-	# ):
-	# 	if trailing_newline:
-	# 		content += '\n'
-	# 	if leading_newline:
-	# 		content = '\n' + content
-	# 	if append:
-	# 		result = await file_system.append_file(file_name, content)
-	# 	else:
-	# 		result = await file_system.write_file(file_name, content)
-	# 	logger.info(f'💾 {result}')
-	# 	return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+		# File System Actions
+		@self.registry.action(
+			'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
+		)
+		async def write_file(
+			file_name: str,
+			content: str,
+			file_system: FileSystem,
+			append: bool = False,
+			trailing_newline: bool = True,
+			leading_newline: bool = False,
+		):
+			if trailing_newline:
+				content += '\n'
+			if leading_newline:
+				content = '\n' + content
+			if append:
+				result = await file_system.append_file(file_name, content)
+			else:
+				result = await file_system.write_file(file_name, content)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-	# @self.registry.action(
-	# 	'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
-	# )
-	# async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
-	# 	result = await file_system.replace_file_str(file_name, old_str, new_str)
-	# 	logger.info(f'💾 {result}')
-	# 	return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+		@self.registry.action(
+			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
+		)
+		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
+			result = await file_system.replace_file_str(file_name, old_str, new_str)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-	# @self.registry.action('Read file_name from file system')
-	# async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
-	# 	if available_file_paths and file_name in available_file_paths:
-	# 		result = await file_system.read_file(file_name, external_file=True)
-	# 	else:
-	# 		result = await file_system.read_file(file_name)
+		@self.registry.action('Read file_name from file system')
+		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
+			if available_file_paths and file_name in available_file_paths:
+				result = await file_system.read_file(file_name, external_file=True)
+			else:
+				result = await file_system.read_file(file_name)
 
-	# 	MAX_MEMORY_SIZE = 1000
-	# 	if len(result) > MAX_MEMORY_SIZE:
-	# 		lines = result.splitlines()
-	# 		display = ''
-	# 		lines_count = 0
-	# 		for line in lines:
-	# 			if len(display) + len(line) < MAX_MEMORY_SIZE:
-	# 				display += line + '\n'
-	# 				lines_count += 1
-	# 			else:
-	# 				break
-	# 		remaining_lines = len(lines) - lines_count
-	# 		memory = f'{display}{remaining_lines} more lines...' if remaining_lines > 0 else display
-	# 	else:
-	# 		memory = result
-	# 	logger.info(f'💾 {memory}')
-	# 	return ActionResult(
-	# 		extracted_content=result,
-	# 		include_in_memory=True,
-	# 		long_term_memory=memory,
-	# 		include_extracted_content_only_once=True,
-	# 	)
+			MAX_MEMORY_SIZE = 1000
+			if len(result) > MAX_MEMORY_SIZE:
+				lines = result.splitlines()
+				display = ''
+				lines_count = 0
+				for line in lines:
+					if len(display) + len(line) < MAX_MEMORY_SIZE:
+						display += line + '\n'
+						lines_count += 1
+					else:
+						break
+				remaining_lines = len(lines) - lines_count
+				memory = f'{display}{remaining_lines} more lines...' if remaining_lines > 0 else display
+			else:
+				memory = result
+			logger.info(f'💾 {memory}')
+			return ActionResult(
+				extracted_content=result,
+				include_in_memory=True,
+				long_term_memory=memory,
+				include_extracted_content_only_once=True,
+			)
 
 	# TODO: Refactor to use events instead of direct page/dom access
 	# @self.registry.action(

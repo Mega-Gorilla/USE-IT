@@ -109,6 +109,7 @@ class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
 	include_dom: bool = True
 	include_screenshot: bool = False
 	cache_clickable_elements_hashes: bool = True
+	include_recent_events: bool = False
 
 
 # class WaitForConditionEvent(BaseEvent):

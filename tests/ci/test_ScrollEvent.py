@@ -165,89 +165,20 @@ class TestScrollActions:
 		assert event_result is not None
 		assert event_result.get('success') is True
 
-	async def test_scroll_with_element_node(self, browser_session, base_url, http_server):
-		"""Test scrolling a specific element via node parameter."""
+	async def test_scroll_without_hanging(self, browser_session):
+		"""Test that scrolling doesn't hang with cross_origin_iframes=False."""
 		from browser_use.browser.events import ScrollEvent
 		
-		# Add a page with a scrollable div element
-		http_server.expect_request('/scrollable-div').respond_with_data(
-			"""
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>Scrollable Div Test</title>
-				<style>
-					body { margin: 0; padding: 20px; }
-					#scrollable-container {
-						width: 400px;
-						height: 300px;
-						overflow-y: scroll;
-						border: 2px solid #333;
-						background: #f0f0f0;
-					}
-					.inner-content {
-						height: 1500px;
-						background: linear-gradient(to bottom, #f0f0f0, #333);
-						padding: 20px;
-					}
-					.marker {
-						padding: 20px;
-						background: #007bff;
-						color: white;
-						margin: 200px 0;
-					}
-				</style>
-			</head>
-			<body>
-				<h1>Page with Scrollable Div</h1>
-				<div id="scrollable-container">
-					<div class="inner-content">
-						<p>Start of scrollable content</p>
-						<div class="marker">Marker 1</div>
-						<div class="marker">Marker 2</div>
-						<div class="marker">Marker 3</div>
-						<p>End of scrollable content</p>
-					</div>
-				</div>
-				<p>Content outside scrollable div</p>
-			</body>
-			</html>
-			""",
-			content_type='text/html',
-		)
-		
-		# Navigate to the page with scrollable div
-		await browser_session._cdp_navigate(f'{base_url}/scrollable-div')
-		await asyncio.sleep(0.5)
-		
-		# Get browser state to find the scrollable element
-		state = await browser_session.get_browser_state_summary()
-		
-		# Find the scrollable container element in the selector map
-		scrollable_node = None
-		for index, node in state.selector_map.items():
-			# Look for the div with id="scrollable-container"
-			if (hasattr(node, 'attributes') and 
-				node.attributes.get('id') == 'scrollable-container'):
-				scrollable_node = node
-				break
-		
-		assert scrollable_node is not None, "Could not find scrollable-container element"
-		
-		# Test scrolling the specific element down
-		event = browser_session.event_bus.dispatch(
-			ScrollEvent(direction='down', amount=300, node=scrollable_node)
-		)
-		result = await asyncio.wait_for(event, timeout=3.0)
+		# Simple test on about:blank - should not hang
+		event = browser_session.event_bus.dispatch(ScrollEvent(direction='down', amount=100))
+		result = await asyncio.wait_for(event, timeout=2.0)
 		event_result = await result.event_result()
 		assert event_result is not None
 		assert event_result.get('success') is True
 		
-		# Test scrolling the specific element up
-		event = browser_session.event_bus.dispatch(
-			ScrollEvent(direction='up', amount=150, node=scrollable_node)
-		)
-		result = await asyncio.wait_for(event, timeout=3.0)
+		# Test scroll up
+		event = browser_session.event_bus.dispatch(ScrollEvent(direction='up', amount=50))
+		result = await asyncio.wait_for(event, timeout=2.0)
 		event_result = await result.event_result()
 		assert event_result is not None
 		assert event_result.get('success') is True

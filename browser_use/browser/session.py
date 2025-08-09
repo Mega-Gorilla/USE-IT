@@ -49,22 +49,8 @@ from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
-_GLOB_WARNING_SHOWN = False  # used inside _is_url_allowed to avoid spamming the logs with the same warning multiple times
-
 MAX_SCREENSHOT_HEIGHT = 2000
 MAX_SCREENSHOT_WIDTH = 1920
-
-
-def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
-	global _GLOB_WARNING_SHOWN
-	if not _GLOB_WARNING_SHOWN:
-		logger.warning(
-			# glob patterns are very easy to mess up and match too many domains by accident
-			# e.g. if you only need to access gmail, don't use *.google.com because an attacker could convince the agent to visit a malicious doc
-			# on docs.google.com/s/some/evil/doc to set up a prompt injection attack
-			f"⚠️ Allowing agent to visit {domain} based on allowed_domains=['{glob}', ...]. Set allowed_domains=['{domain}', ...] explicitly to avoid matching too many domains!"
-		)
-		_GLOB_WARNING_SHOWN = True
 
 
 class CDPSession(BaseModel):
@@ -299,9 +285,27 @@ class BrowserSession(BaseModel):
 		await self.event_bus.dispatch(BrowserStartEvent())
 
 	async def kill(self) -> None:
-		"""Kill the browser session."""
+		"""Kill the browser session and reset all state."""
+		# Dispatch stop event to kill the browser
 		await self.event_bus.dispatch(BrowserStopEvent(force=True))
+		# Stop the event bus
 		await self.event_bus.stop(clear=True, timeout=5)
+		# Reset all state
+		await self.reset()
+		# Create fresh event bus
+		self.event_bus = EventBus()
+	
+	async def stop(self) -> None:
+		"""Stop the browser session without killing the browser process.
+		
+		This clears event buses and cached state but keeps the browser alive.
+		Useful when you want to clean up resources but plan to reconnect later.
+		"""
+		# Stop the event bus without dispatching BrowserStopEvent
+		await self.event_bus.stop(clear=True, timeout=5)
+		# Reset all state
+		await self.reset()
+		# Create fresh event bus
 		self.event_bus = EventBus()
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
@@ -543,13 +547,13 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	async def get_or_create_cdp_session(self, target_id: str | None = None, focus: bool = True, new_socket: bool = False) -> CDPSession:
+	async def get_or_create_cdp_session(self, target_id: str | None = None, focus: bool = True, new_socket: bool | None = None) -> CDPSession:
 		"""Get or create a CDP session for a target.
 
 		Args:
 			target_id: Target ID to get session for. If None, uses current agent focus.
 			focus: If True, switches agent focus to this target. If False, just returns session without changing focus.
-			new_socket: If True, create a dedicated WebSocket connection for this target.
+			new_socket: If True, create a dedicated WebSocket connection. If None (default), creates new socket for new targets only.
 
 		Returns:
 			CDPSession for the specified target.
@@ -580,12 +584,14 @@ class BrowserSession(BaseModel):
 			return self.agent_focus
 
 		# Create new session for this target
-		self.logger.debug(f'[get_or_create_cdp_session] Creating new CDP session for target {target_id} (new_socket={new_socket})')
+		# Default to True for new sessions (each new target gets its own WebSocket)
+		should_use_new_socket = True if new_socket is None else new_socket
+		self.logger.debug(f'[get_or_create_cdp_session] Creating new CDP session for target {target_id} (new_socket={should_use_new_socket})')
 		session = await CDPSession.for_target(
 			self._cdp_client_root, 
 			target_id,
-			new_socket=new_socket,
-			cdp_url=self.cdp_url if new_socket else None
+			new_socket=should_use_new_socket,
+			cdp_url=self.cdp_url if should_use_new_socket else None
 		)
 		self._cdp_session_pool[target_id] = session
 
@@ -613,7 +619,7 @@ class BrowserSession(BaseModel):
 	# ========== Helper Methods ==========
 
 	async def get_browser_state_summary(
-		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True, cached: bool = False
+		self, cache_clickable_elements_hashes: bool = True, include_screenshot: bool = True, cached: bool = False, include_recent_events: bool = False
 	) -> BrowserStateSummary:
 		if cached and self._cached_browser_state_summary is not None and self._cached_browser_state_summary.dom_state:
 			# Don't use cached state if it has 0 interactive elements
@@ -636,6 +642,7 @@ class BrowserSession(BaseModel):
 					include_dom=True,
 					include_screenshot=include_screenshot,
 					cache_clickable_elements_hashes=cache_clickable_elements_hashes,
+					include_recent_events=include_recent_events,
 				)
 			),
 		)
@@ -809,7 +816,7 @@ class BrowserSession(BaseModel):
 					target_id = target['targetId']
 					self.logger.info(f'🔄 Redirecting {target_url} to about:blank for target {target_id}')
 					try:
-						# Create a CDP session for this target
+						# Create a temporary CDP session for this target
 						temp_session = await CDPSession.for_target(self._cdp_client_root, target_id)
 						# Navigate to about:blank
 						await temp_session.cdp_client.send.Page.navigate(
@@ -838,7 +845,8 @@ class BrowserSession(BaseModel):
 				self.logger.info(f'📄 Using existing page with target ID: {target_id}')
 
 			# Store the current page target ID and add to pool
-			self.agent_focus = await CDPSession.for_target(self._cdp_client_root, target_id)
+			# For the initial connection, we'll use the shared root WebSocket
+			self.agent_focus = await CDPSession.for_target(self._cdp_client_root, target_id, new_socket=False)
 			self._cdp_session_pool[target_id] = self.agent_focus
 
 			# Verify the session is working
@@ -1236,7 +1244,7 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		assert self.agent_focus is not None, 'CDP session not initialized - browser may not be connected yet'
 
-		self.agent_focus = await CDPSession.for_target(self._cdp_client_root, target_id or self.agent_focus.target_id)
+		self.agent_focus = await self.get_or_create_cdp_session(target_id or self.agent_focus.target_id, focus=True)
 
 		# Use helper to navigate on the target
 		await self.agent_focus.cdp_client.send.Page.navigate(params={'url': url}, session_id=self.agent_focus.session_id)

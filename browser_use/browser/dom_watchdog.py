@@ -108,6 +108,33 @@ class DOMWatchdog(BaseWatchdog):
 				# Re-raise other errors
 				raise
 
+	def _get_recent_events_csv(self, limit: int = 10) -> str | None:
+		"""Get the most recent event names from the event bus as CSV.
+		
+		Args:
+			limit: Maximum number of recent events to include
+			
+		Returns:
+			CSV string of recent event names or None if not available
+		"""
+		try:
+			# Get all events from history, sorted by creation time (most recent first)
+			all_events = sorted(
+				self.browser_session.event_bus.event_history.values(),
+				key=lambda e: e.event_created_at.timestamp(),
+				reverse=True
+			)
+			
+			# Take the most recent events and get their names
+			recent_event_names = [event.event_type for event in all_events[:limit]]
+			
+			if recent_event_names:
+				return ', '.join(recent_event_names)
+		except Exception as e:
+			self.logger.debug(f'Failed to get recent events: {e}')
+		
+		return None
+
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
 
@@ -173,6 +200,7 @@ class DOMWatchdog(BaseWatchdog):
 					pixels_below=0,
 					browser_errors=[],
 					is_pdf_viewer=False,
+					recent_events=self._get_recent_events_csv() if event.include_recent_events else None,
 				)
 
 			# Normal path: Build DOM tree if requested
@@ -280,6 +308,7 @@ class DOMWatchdog(BaseWatchdog):
 				pixels_below=0,
 				browser_errors=[],
 				is_pdf_viewer=is_pdf_viewer,
+				recent_events=self._get_recent_events_csv() if event.include_recent_events else None,
 			)
 
 			# Cache the state
@@ -314,6 +343,7 @@ class DOMWatchdog(BaseWatchdog):
 				pixels_below=0,
 				browser_errors=[str(e)],
 				is_pdf_viewer=False,
+				recent_events=None,
 			)
 
 	async def _build_dom_tree(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:

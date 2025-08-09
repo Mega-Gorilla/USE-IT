@@ -91,42 +91,15 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# For quick checks, just get page targets without titles to reduce noise
 			page_targets = await self.browser_session._cdp_get_all_pages()
 
-			# Only get full tabs info if we actually need to check titles
-			tabs_info = None
-
-			# For AboutBlankWatchdog, we only care about tab count not titles
-			# Only get full tabs info if we actually have animation tabs to check
+			# If no tabs exist at all, create one to keep browser alive
 			if len(page_targets) == 0:
-				tabs_info = []
-			else:
-				# Skip the expensive get_tabs_info call - we just need tab count
-				tabs_info = None
-
-			# We don't need to track animation tabs anymore since we're only ensuring
-			# that there's at least one tab open
-			animation_tabs = []
-
-			# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs out of {len(page_targets)} total tabs')
-
-			# If no animation tabs exist, create one only if there are no tabs at all
-			if not animation_tabs:
-				if len(page_targets) == 0:
-					# Only create a new tab if there are no tabs at all
-					# logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
-					navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
-					await navigate_event
-					# Show DVD screensaver on the new tab
-					await self._show_dvd_screensaver_on_about_blank_tabs()
-				else:
-					# There are other tabs - don't create new about:blank tabs during scripting
-					# logger.debug(
-					# 	f'[AboutBlankWatchdog] {len(tabs_info)} tabs exist, not creating animation tab to avoid interfering with scripting'
-					# )
-					pass
-			# If more than one animation tab exists, just log it - don't close anything
-			elif len(animation_tabs) > 1:
-				# logger.debug(f'[AboutBlankWatchdog] Found {len(animation_tabs)} animation tabs, allowing them to exist')
-				pass
+				# Only create a new tab if there are no tabs at all
+				self.logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
+				navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+				await navigate_event
+				# Show DVD screensaver on the new tab
+				await self._show_dvd_screensaver_on_about_blank_tabs()
+			# Otherwise there are tabs, don't create new ones to avoid interfering
 
 		except Exception as e:
 			self.logger.error(f'[AboutBlankWatchdog] Error ensuring about:blank tab: {e}')

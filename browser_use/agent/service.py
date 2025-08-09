@@ -350,6 +350,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			max_history_items=self.settings.max_history_items,
 			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
+			include_recent_events=self.include_recent_events,
 		)
 
 		if isinstance(browser, BrowserSession):
@@ -705,6 +706,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,
 			cached=use_cache,
+			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
 			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')

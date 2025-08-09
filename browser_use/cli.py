@@ -8,6 +8,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Enable CDP debug logging BEFORE importing anything that uses cdp_use
+os.environ['BROWSER_USE_CDP_DEBUG'] = 'true'
+
 from dotenv import load_dotenv
 
 from browser_use.llm.anthropic.chat import ChatAnthropic
@@ -430,7 +433,7 @@ class BrowserUseApp(App):
 			log_handler.setLevel('RESULT')
 			log_handler.setFormatter(BrowserUseFormatter('%(message)s'))
 		else:
-			log_handler.setFormatter(BrowserUseFormatter('%(levelname)-8s [%(name)s] %(message)s'))
+			log_handler.setFormatter(BrowserUseFormatter('%(message)s'))
 
 		# Configure root logger - Replace ALL handlers, not just stdout handlers
 		root = logging.getLogger()
@@ -447,11 +450,18 @@ class BrowserUseApp(App):
 		else:
 			root.setLevel(logging.INFO)
 
-		# Configure browser_use logger
+		# Configure browser_use logger and all its sub-loggers
 		browser_use_logger = logging.getLogger('browser_use')
 		browser_use_logger.propagate = False  # Don't propagate to root logger
 		browser_use_logger.handlers = [log_handler]  # Replace any existing handlers
 		browser_use_logger.setLevel(root.level)
+		
+		# Also ensure agent loggers go to the main output
+		for logger_name in ['browser_use.Agent', 'browser_use.controller']:
+			agent_logger = logging.getLogger(logger_name)
+			agent_logger.propagate = False
+			agent_logger.handlers = [log_handler]
+			agent_logger.setLevel(root.level)
 
 		# Silence third-party loggers
 		for logger_name in [
@@ -648,9 +658,17 @@ class BrowserUseApp(App):
 		if not self.browser_session or not self.browser_session.event_bus:
 			return
 		
-		# Check if we already have a handler registered
+		# Clean up any existing handler before registering a new one
 		if self._event_bus_handler_id is not None:
-			return
+			try:
+				# Remove handler from the event bus's internal handlers dict
+				if hasattr(self.browser_session.event_bus, 'handlers'):
+					for event_type, handlers in list(self.browser_session.event_bus.handlers.items()):
+						if self._event_bus_handler_id in handlers:
+							del handlers[self._event_bus_handler_id]
+			except Exception:
+				pass  # Handler might not exist anymore
+			self._event_bus_handler_id = None
 		
 		try:
 			# Get the events log widget
@@ -688,10 +706,8 @@ class BrowserUseApp(App):
 
 	def setup_cdp_logger(self) -> None:
 		"""Setup CDP message logger."""
-		# Enable CDP debug logging
-		os.environ['BROWSER_USE_CDP_DEBUG'] = 'true'
-		
-		# Need to re-import cdp_use.client to apply the new setting
+		# CDP debug logging is enabled at module import time via environment variable
+		# Just configure the loggers to use our handler
 		import cdp_use.client
 		cdp_use.client.logger.setLevel(logging.DEBUG)
 		
@@ -766,9 +782,8 @@ class BrowserUseApp(App):
 			# Update our browser_session reference to point to the agent's
 			if hasattr(self.agent, 'browser_session'):
 				self.browser_session = self.agent.browser_session
-				# Set up event bus listener if not already set up
-				if self._event_bus_handler_id is None:
-					self.setup_event_bus_listener()
+				# Set up event bus listener (will clean up any old handler first)
+				self.setup_event_bus_listener()
 		else:
 			self.agent.add_new_task(task)
 

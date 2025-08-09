@@ -81,13 +81,13 @@ class TestBrowserContext:
 		the allowed domains configuration.
 		"""
 		# Scenario 1: allowed_domains is None, any URL should be allowed.
-		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.security_watchdog import SecurityWatchdog
 		from bubus import EventBus
 		
 		config1 = BrowserProfile(allowed_domains=None, headless=True, user_data_dir=None)
 		context1 = BrowserSession(browser_profile=config1)
 		event_bus1 = EventBus()
-		watchdog1 = NavigationWatchdog(browser_session=context1, event_bus=event_bus1)
+		watchdog1 = SecurityWatchdog(browser_session=context1, event_bus=event_bus1)
 		assert watchdog1._is_url_allowed('http://anydomain.com') is True
 		assert watchdog1._is_url_allowed('https://anotherdomain.org/path') is True
 
@@ -97,7 +97,7 @@ class TestBrowserContext:
 		config2 = BrowserProfile(allowed_domains=allowed, headless=True, user_data_dir=None)
 		context2 = BrowserSession(browser_profile=config2)
 		event_bus2 = EventBus()
-		watchdog2 = NavigationWatchdog(browser_session=context2, event_bus=event_bus2)
+		watchdog2 = SecurityWatchdog(browser_session=context2, event_bus=event_bus2)
 
 		# URL exactly matching
 		assert watchdog2._is_url_allowed('http://example.com') is True

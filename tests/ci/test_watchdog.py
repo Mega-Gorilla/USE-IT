@@ -57,7 +57,7 @@ async def test_watchdog_integration_with_session_lifecycle():
 	# Verify all watchdogs are still operational
 	assert session._crash_watchdog is not None
 	assert session._downloads_watchdog is not None
-	assert session._navigation_watchdog is not None
+	assert session._security_watchdog is not None
 	assert session._storage_state_watchdog is not None
 	assert session._aboutblank_watchdog is not None
 
@@ -92,7 +92,7 @@ async def test_watchdog_event_handler_registration():
 		for watchdog in [
 			session._crash_watchdog,
 			session._downloads_watchdog,
-			session._navigation_watchdog,
+			session._security_watchdog,
 			session._storage_state_watchdog,
 			session._aboutblank_watchdog,
 		]:

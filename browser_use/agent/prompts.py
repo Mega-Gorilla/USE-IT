@@ -178,11 +178,16 @@ class AgentMessagePrompt:
 		if self.browser_state.is_pdf_viewer:
 			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the extract_structured_data action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
 
+		# Add recent events if available and requested
+		recent_events_text = ''
+		if self.include_recent_events and self.browser_state.recent_events:
+			recent_events_text = f'Recent browser events: {self.browser_state.recent_events}\n'
+		
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
 {page_info_text}
-{pdf_message}Interactive elements from top layer of the current page inside the viewport{truncated_text}:
+{recent_events_text}{pdf_message}Interactive elements from top layer of the current page inside the viewport{truncated_text}:
 {elements_text}
 """
 		return browser_state

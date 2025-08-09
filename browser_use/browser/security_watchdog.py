@@ -17,6 +17,9 @@ from browser_use.browser.watchdog_base import BaseWatchdog
 if TYPE_CHECKING:
 	pass
 
+# Track if we've shown the glob warning
+_GLOB_WARNING_SHOWN = False
+
 
 class SecurityWatchdog(BaseWatchdog):
 	"""Monitors and enforces security policies for URL access."""
@@ -95,6 +98,16 @@ class SecurityWatchdog(BaseWatchdog):
 			except Exception as e:
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {str(e)}')
 
+	def _log_glob_warning(self) -> None:
+		"""Log a warning about glob patterns in allowed_domains."""
+		global _GLOB_WARNING_SHOWN
+		if not _GLOB_WARNING_SHOWN:
+			_GLOB_WARNING_SHOWN = True
+			self.logger.warning(
+				'⚠️ Using glob patterns in allowed_domains. '
+				'Note: Patterns like "*.example.com" will match both subdomains AND the main domain.'
+			)
+
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.
 
@@ -133,6 +146,7 @@ class SecurityWatchdog(BaseWatchdog):
 		for pattern in self.browser_session.browser_profile.allowed_domains:
 			# Handle glob patterns
 			if '*' in pattern:
+				self._log_glob_warning()
 				import fnmatch
 
 				# Check if pattern matches the host
