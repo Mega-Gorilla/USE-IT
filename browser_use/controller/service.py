@@ -87,8 +87,10 @@ class Controller(Generic[Context]):
 				tabs = await browser_session.get_tabs()
 				# Get last 4 chars of browser session ID to identify agent's tabs
 				browser_session_label = str(browser_session.id)[-4:]
+				logger.debug(f'Checking {len(tabs)} tabs for reusable tab (browser_session_label: {browser_session_label})')
 
 				for i, tab in enumerate(tabs):
+					logger.debug(f'Tab {i}: url="{tab.url}", title="{tab.title}"')
 					# Check if tab is on Google domain
 					if tab.url and tab.url.strip('/').lower() in ('https://www.google.com', 'https://google.com'):
 						# Found existing Google tab, navigate in it
@@ -105,19 +107,23 @@ class Controller(Generic[Context]):
 						break
 					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
 					# IMPORTANT: about:blank is also used briefly for new tabs the agent is trying to open, dont take over those!
-					elif tab.url == 'about:blank' and tab.title and browser_session_label in tab.title:
-						# This is our agent's about:blank page with DVD animation
-						logger.debug(f'Found agent-owned about:blank tab at index {i} with title: {tab.title}, reusing it')
+					elif tab.url == 'about:blank' and tab.title:
+						# Check if this is our agent's about:blank page with DVD animation
+						# The title should be "Starting agent XXXX..." where XXXX is the browser_session_label
+						expected_title = f'Starting agent {browser_session_label}...'
+						if tab.title == expected_title or browser_session_label in tab.title:
+							# This is our agent's about:blank page
+							logger.debug(f'Found agent-owned about:blank tab at index {i} with title: "{tab.title}", reusing it')
 
-						# Switch to this tab first
-						from browser_use.browser.events import SwitchTabEvent
+							# Switch to this tab first
+							from browser_use.browser.events import SwitchTabEvent
 
-						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
-							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
-							await switch_event
+							if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
+								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+								await switch_event
 
-						use_new_tab = False
-						break
+							use_new_tab = False
+							break
 			except Exception as e:
 				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
 
@@ -350,15 +356,19 @@ class Controller(Generic[Context]):
 			cdp_session = await browser_session.get_or_create_cdp_session()
 
 			try:
-				page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
-					params={'format': 'mhtml'}, session_id=cdp_session.session_id
-				)  # includes OOPIF content automatically
+				# page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
+				# 	params={'format': 'mhtml'}, session_id=cdp_session.session_id
+				# )  # includes OOPIF content automatically, but is often too large and contains base64 data: urls that crash the parser
+				body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
+				page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
+					params={'backendNodeId': body_id['root']['nodeId']}, session_id=cdp_session.session_id
+				)
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
 				raise RuntimeError(f"Couldn't extract page content: {e}")
 
-			page_html = page_html_result['data']
+			page_html = page_html_result['outerHTML']
 
 			try:
 				# strip large data:... base64 encoded images, fonts, css, etc. from mhtml captureSnapshot output

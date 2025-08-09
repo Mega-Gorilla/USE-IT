@@ -260,7 +260,8 @@ class TestClickElementEvent:
 		assert result.extracted_content is not None
 
 		# Verify that a new tab was opened
-		final_tab_count = len(browser_session.tabs)
+		tabs = await browser_session.get_tabs()
+		final_tab_count = len(tabs)
 		assert final_tab_count == initial_tab_count + 1, f'Expected {initial_tab_count + 1} tabs, got {final_tab_count}'
 
 		# Verify we switched to the new tab and it has the correct URL
@@ -320,7 +321,8 @@ class TestClickElementEvent:
 		await asyncio.sleep(1)
 
 		# Should still have same number of tabs
-		assert len(browser_session.tabs) == initial_tab_count
+		tabs = await browser_session.get_tabs()
+		assert len(tabs) == initial_tab_count
 
 		# Navigate back to comparison page for second test
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
@@ -332,7 +334,8 @@ class TestClickElementEvent:
 		await asyncio.sleep(1)
 
 		# Should have one more tab
-		assert len(browser_session.tabs) == initial_tab_count + 1
+		tabs = await browser_session.get_tabs()
+		assert len(tabs) == initial_tab_count + 1
 
 	async def test_inline_element_mostly_offscreen(self, controller, browser_session, base_url, http_server):
 		"""Test clicking an inline element that's mostly outside the viewport."""
