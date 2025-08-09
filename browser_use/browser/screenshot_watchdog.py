@@ -57,6 +57,14 @@ class ScreenshotWatchdog(BaseWatchdog):
 			# Return base64-encoded screenshot data
 			if result and 'data' in result:
 				self.logger.debug('[ScreenshotWatchdog] Screenshot captured successfully')
+				
+				# Remove highlights after screenshot to clean up the page
+				try:
+					await self.browser_session.remove_highlights()
+					self.logger.debug('[ScreenshotWatchdog] Removed element highlights after screenshot')
+				except Exception as e:
+					self.logger.debug(f'[ScreenshotWatchdog] Failed to remove highlights: {e}')
+				
 				return {'screenshot': result['data']}
 			else:
 				self.logger.warning('[ScreenshotWatchdog] Screenshot result missing data')
@@ -64,4 +72,9 @@ class ScreenshotWatchdog(BaseWatchdog):
 
 		except Exception as e:
 			self.logger.error(f'[ScreenshotWatchdog] Screenshot failed: {e}')
+			# Try to remove highlights even on failure
+			try:
+				await self.browser_session.remove_highlights()
+			except:
+				pass
 			return {'screenshot': None}

@@ -1083,11 +1083,17 @@ class BrowserSession(BaseModel):
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()
 
-			# Remove highlights via JavaScript
+			# Remove highlights via JavaScript - be thorough
 			script = """
 					// Remove all browser-use highlight elements
 					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
 					highlights.forEach(el => el.remove());
+					
+					// Also remove by ID in case selector missed anything
+					const highlightContainer = document.getElementById('browser-use-debug-highlights');
+					if (highlightContainer) {
+						highlightContainer.remove();
+					}
 			"""
 			await cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=cdp_session.session_id)
 		except Exception as e:
