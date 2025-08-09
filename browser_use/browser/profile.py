@@ -586,6 +586,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default_factory=lambda: {'width': 0, 'height': 0},
 		description='Window position to use for the browser x,y from the top left when headless=False.',
 	)
+	cross_origin_iframes: bool = Field(
+		default=False,
+		description='Enable cross-origin iframe support (OOPIF/Out-of-Process iframes). When False (default), only same-origin frames are processed to avoid complexity and hanging.',
+	)
 
 	# --- Page load/wait timings ---
 	default_navigation_timeout: float | None = Field(default=None, description='Default page navigation timeout.')

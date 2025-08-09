@@ -24,6 +24,7 @@ for logger_name in ['cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.reg
 	cdp_logger.propagate = False  # Don't propagate to root logger
 
 from browser_use.browser.events import (
+	AgentFocusChangedEvent,
 	BrowserConnectedEvent,
 	BrowserErrorEvent,
 	BrowserLaunchEvent,
@@ -31,6 +32,12 @@ from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	BrowserStopEvent,
 	BrowserStoppedEvent,
+	NavigateToUrlEvent,
+	NavigationCompleteEvent,
+	NavigationStartedEvent,
+	SwitchTabEvent,
+	TabClosedEvent,
+	TabCreatedEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.views import BrowserStateSummary, TabInfo
@@ -58,7 +65,10 @@ def _log_glob_warning(domain: str, glob: str, logger: logging.Logger):
 
 
 class CDPSession(BaseModel):
-	"""Info about a single CDP session bound to a specific target."""
+	"""Info about a single CDP session bound to a specific target.
+	
+	Can optionally use its own WebSocket connection for better isolation.
+	"""
 
 	model_config = ConfigDict(arbitrary_types_allowed=True, revalidate_instances='never')
 
@@ -68,14 +78,45 @@ class CDPSession(BaseModel):
 	session_id: str
 	title: str = 'Unknown title'
 	url: str = 'about:blank'
+	
+	# Track if this session owns its CDP client (for cleanup)
+	owns_cdp_client: bool = False
 
 	@classmethod
-	async def for_target(cls, cdp_client: CDPClient, target_id: str):
-		cdp_session = cls(
-			cdp_client=cdp_client,
-			target_id=target_id,
-			session_id='connecting',
-		)
+	async def for_target(cls, cdp_client: CDPClient, target_id: str, create_own_connection: bool = False, cdp_url: str | None = None):
+		"""Create a CDP session for a target.
+		
+		Args:
+			cdp_client: Existing CDP client to use (or just for reference if creating own)
+			target_id: Target ID to attach to
+			create_own_connection: If True, create a dedicated WebSocket connection for this target
+			cdp_url: CDP URL (required if create_own_connection is True)
+		"""
+		if create_own_connection:
+			if not cdp_url:
+				raise ValueError('cdp_url required when create_own_connection=True')
+			# Create a new CDP client with its own WebSocket connection
+			import logging
+			logger = logging.getLogger(f'browser_use.CDPSession.{target_id[-4:]}')
+			logger.info(f'🔌 Creating dedicated WebSocket connection for target {target_id}')
+			
+			target_cdp_client = CDPClient(cdp_url)
+			await target_cdp_client.start()
+			
+			cdp_session = cls(
+				cdp_client=target_cdp_client,
+				target_id=target_id,
+				session_id='connecting',
+				owns_cdp_client=True,
+			)
+		else:
+			# Use shared CDP client
+			cdp_session = cls(
+				cdp_client=cdp_client,
+				target_id=target_id,
+				session_id='connecting',
+				owns_cdp_client=False,
+			)
 		return await cdp_session.attach()
 
 	async def attach(self) -> Self:
@@ -107,6 +148,14 @@ class CDPSession(BaseModel):
 		self.title = target_info['title']
 		self.url = target_info['url']
 		return self
+	
+	async def disconnect(self) -> None:
+		"""Disconnect and cleanup if this session owns its CDP client."""
+		if self.owns_cdp_client and self.cdp_client:
+			try:
+				await self.cdp_client.stop()
+			except Exception:
+				pass  # Ignore errors during cleanup
 
 	async def get_tab_info(self) -> TabInfo:
 		target_info = await self.get_target_info()
@@ -164,7 +213,7 @@ class BrowserSession(BaseModel):
 	_crash_watchdog: Any | None = PrivateAttr(default=None)
 	_downloads_watchdog: Any | None = PrivateAttr(default=None)
 	_aboutblank_watchdog: Any | None = PrivateAttr(default=None)
-	_navigation_watchdog: Any | None = PrivateAttr(default=None)
+	_security_watchdog: Any | None = PrivateAttr(default=None)
 	_storage_state_watchdog: Any | None = PrivateAttr(default=None)
 	_local_browser_watchdog: Any | None = PrivateAttr(default=None)
 	_default_action_watchdog: Any | None = PrivateAttr(default=None)
@@ -208,7 +257,7 @@ class BrowserSession(BaseModel):
 		self._crash_watchdog = None
 		self._downloads_watchdog = None
 		self._aboutblank_watchdog = None
-		self._navigation_watchdog = None
+		self._security_watchdog = None
 		self._storage_state_watchdog = None
 		self._local_browser_watchdog = None
 		self._default_action_watchdog = None
@@ -231,6 +280,10 @@ class BrowserSession(BaseModel):
 		# Register BrowserSession's event handlers
 		self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
 		self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
+		# Core navigation events that shouldn't be in optional watchdogs
+		self.event_bus.on(NavigateToUrlEvent, self.on_NavigateToUrlEvent)
+		self.event_bus.on(SwitchTabEvent, self.on_SwitchTabEvent)
+		self.event_bus.on(TabClosedEvent, self.on_TabClosedEvent)
 
 	async def start(self) -> None:
 		"""Start the browser session."""
@@ -294,6 +347,156 @@ class BrowserSession(BaseModel):
 				)
 			)
 			raise
+	
+	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
+		"""Handle navigation requests - core browser functionality."""
+		if not self.agent_focus:
+			self.logger.warning('Cannot navigate - browser not connected')
+			return
+		
+		try:
+			# Find or create target for navigation
+			target_id = None
+			tab_index = 0
+			
+			if event.new_tab:
+				# Look for existing about:blank tab that's not the current one
+				targets = await self._cdp_get_all_pages()
+				current_target_id = self.agent_focus.target_id if self.agent_focus else None
+				
+				for idx, target in enumerate(targets):
+					if target.get('url') == 'about:blank' and target['targetId'] != current_target_id:
+						target_id = target['targetId']
+						tab_index = idx
+						self.logger.info(f'Reusing existing about:blank tab at index {tab_index}')
+						break
+				
+				# Create new tab if no reusable one found
+				if not target_id:
+					target_id = await self._cdp_create_new_page('about:blank')
+					targets = await self._cdp_get_all_pages()
+					tab_index = len(targets) - 1
+					self.logger.info(f'Created new tab at index {tab_index}')
+					# Dispatch TabCreatedEvent for new tab
+					self.event_bus.dispatch(TabCreatedEvent(tab_index=tab_index, url='about:blank'))
+			else:
+				# Use current tab
+				target_id = self.agent_focus.target_id
+				tab_index = await self.get_tab_index(target_id)
+			
+			# Activate target (bring to foreground)
+			await self.cdp_client.send.Target.activateTarget(params={'targetId': target_id})
+			
+			# Update agent focus to the target
+			self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			
+			# Clear any cached state since we're navigating
+			if self._dom_watchdog:
+				self._dom_watchdog.clear_cache()
+			
+			# Dispatch focus changed event
+			self.event_bus.dispatch(AgentFocusChangedEvent(
+				tab_index=tab_index,
+				url=event.url,
+			))
+			
+			# Dispatch navigation started
+			self.event_bus.dispatch(NavigationStartedEvent(
+				tab_index=tab_index,
+				url=event.url,
+			))
+			
+			# Navigate to URL
+			await self.agent_focus.cdp_client.send.Page.navigate(
+				params={'url': event.url},
+				session_id=self.agent_focus.session_id
+			)
+			
+			# Wait a bit to ensure page starts loading
+			await asyncio.sleep(0.5)
+			
+			# Dispatch navigation complete
+			self.event_bus.dispatch(NavigationCompleteEvent(
+				tab_index=tab_index,
+				url=event.url,
+				status=None,  # CDP doesn't provide status directly
+			))
+			
+			# Note: These should be handled by dedicated watchdogs:
+			# - Security checks (security_watchdog)
+			# - Page health checks (crash_watchdog)
+			# - Dialog handling (dialog_watchdog)
+			# - Download handling (downloads_watchdog)
+			# - DOM rebuilding (dom_watchdog)
+			
+		except Exception as e:
+			self.logger.error(f'Navigation failed: {e}')
+			self.event_bus.dispatch(NavigationCompleteEvent(
+				tab_index=tab_index if 'tab_index' in locals() else 0,
+				url=event.url,
+				status=None,
+				error_message=str(e),
+			))
+	
+	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> None:
+		"""Handle tab switching - core browser functionality."""
+		if not self.agent_focus:
+			self.logger.warning('Cannot switch tabs - browser not connected')
+			return
+		
+		targets = await self._cdp_get_all_pages()
+		if 0 <= event.tab_index < len(targets):
+			target_id = targets[event.tab_index]['targetId']
+			
+			# Activate target
+			await self.cdp_client.send.Target.activateTarget(params={'targetId': target_id})
+			
+			# Update agent focus
+			self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			
+			# Clear cached state when switching tabs
+			if self._dom_watchdog:
+				self._dom_watchdog.clear_cache()
+			
+			# Dispatch focus changed event
+			target_url = targets[event.tab_index].get('url', '')
+			self.event_bus.dispatch(AgentFocusChangedEvent(
+				tab_index=event.tab_index,
+				url=target_url,
+			))
+			
+			self.logger.info(f'Switched to tab {event.tab_index}: {target_url}')
+		else:
+			self.logger.warning(f'Invalid tab index: {event.tab_index}')
+	
+	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
+		"""Handle tab closure - update focus if needed."""
+		if not self.agent_focus:
+			return
+		
+		# Get current tab index
+		current_tab_index = await self.get_tab_index(self.agent_focus.target_id)
+		
+		# If the closed tab was the current one, find a new target
+		if current_tab_index == event.tab_index:
+			targets = await self._cdp_get_all_pages()
+			if targets:
+				# Try to stay at same index or go to previous
+				new_index = min(current_tab_index, len(targets) - 1)
+				if new_index >= 0:
+					new_target_id = targets[new_index]['targetId']
+					self.agent_focus = await self.get_or_create_cdp_session(new_target_id)
+					
+					# Dispatch focus changed
+					self.event_bus.dispatch(AgentFocusChangedEvent(
+						tab_index=new_index,
+						url=targets[new_index].get('url', ''),
+					))
+					self.logger.info(f'Moved focus to tab {new_index} after tab closure')
+				else:
+					self.agent_focus = None
+			else:
+				self.agent_focus = None
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Handle browser stop request."""
@@ -440,7 +643,7 @@ class BrowserSession(BaseModel):
 		from browser_use.browser.dom_watchdog import DOMWatchdog
 		from browser_use.browser.downloads_watchdog import DownloadsWatchdog
 		from browser_use.browser.local_browser_watchdog import LocalBrowserWatchdog
-		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.security_watchdog import SecurityWatchdog
 		from browser_use.browser.screenshot_watchdog import ScreenshotWatchdog
 		from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
 
@@ -478,17 +681,12 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStopEvent, self._local_browser_watchdog.on_BrowserStopEvent)
 		await self._local_browser_watchdog.attach_to_session()
 
-		# Initialize NavigationWatchdog
-		NavigationWatchdog.model_rebuild()
-		self._navigation_watchdog = NavigationWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserConnectedEvent, self._navigation_watchdog.on_BrowserConnectedEvent)
-		# self.event_bus.on(BrowserStoppedEvent, self._navigation_watchdog.on_BrowserStoppedEvent)
-		# self.event_bus.on(TabCreatedEvent, self._navigation_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(TabClosedEvent, self._navigation_watchdog.on_TabClosedEvent)
-		# self.event_bus.on(SwitchTabEvent, self._navigation_watchdog.on_SwitchTabEvent)
-		# self.event_bus.on(NavigateToUrlEvent, self._navigation_watchdog.on_NavigateToUrlEvent)
-		# self.event_bus.on(NavigationCompleteEvent, self._navigation_watchdog.on_NavigationCompleteEvent)
-		await self._navigation_watchdog.attach_to_session()
+		# Initialize SecurityWatchdog (replaces NavigationWatchdog for security checks only)
+		SecurityWatchdog.model_rebuild()
+		self._security_watchdog = SecurityWatchdog(event_bus=self.event_bus, browser_session=self)
+		# Core navigation is now handled in BrowserSession directly
+		# SecurityWatchdog only handles security policy enforcement
+		await self._security_watchdog.attach_to_session()
 
 		# Initialize AboutBlankWatchdog
 		AboutBlankWatchdog.model_rebuild()
@@ -634,6 +832,19 @@ class BrowserSession(BaseModel):
 			except Exception as e:
 				self.logger.warning(f'Failed to create CDP session: {e}')
 				raise
+			
+			# Dispatch TabCreatedEvent for all initial tabs (so watchdogs can initialize)
+			# This replaces the duplicated logic from navigation_watchdog's _initialize_agent_focus
+			for idx, target in enumerate(page_targets):
+				target_url = target.get('url', '')
+				self.logger.debug(f'Dispatching TabCreatedEvent for initial tab {idx}: {target_url}')
+				self.event_bus.dispatch(TabCreatedEvent(tab_index=idx, url=target_url))
+			
+			# Dispatch initial focus event
+			if page_targets:
+				initial_url = page_targets[0].get('url', '')
+				self.event_bus.dispatch(AgentFocusChangedEvent(tab_index=0, url=initial_url))
+				self.logger.info(f'Initial agent focus set to tab 0: {initial_url}')
 
 		except Exception as e:
 			# Fatal error - browser is not usable without CDP connection
@@ -650,6 +861,10 @@ class BrowserSession(BaseModel):
 	async def get_tabs(self) -> list[TabInfo]:
 		"""Get information about all open tabs using CDP Target.getTargetInfo for speed."""
 		tabs = []
+		
+		# Safety check - return empty list if browser not connected yet
+		if not self._cdp_client_root:
+			return tabs
 
 		# Get all page targets using CDP
 		pages = await self._cdp_get_all_pages()
@@ -883,6 +1098,9 @@ class BrowserSession(BaseModel):
 		include_chrome_error: bool = False,
 	) -> list[TargetInfo]:
 		"""Get all browser pages/tabs using CDP Target.getTargets."""
+		# Safety check - return empty list if browser not connected yet
+		if not self._cdp_client_root:
+			return []
 		targets = await self.cdp_client.send.Target.getTargets()
 		# Filter for valid page/tab targets only
 		return [
@@ -1071,26 +1289,43 @@ class BrowserSession(BaseModel):
 		all_frames = {}  # frame_id -> FrameInfo dict
 		target_sessions = {}  # target_id -> session_id (keep sessions alive during collection)
 
-		# Get all targets
+		# Check if cross-origin iframe support is enabled
+		include_cross_origin = self.browser_profile.cross_origin_iframes
+
+		# Get all targets - only include iframes if cross-origin support is enabled
 		targets = await self._cdp_get_all_pages(
 			include_http=True,
 			include_about=True,
 			include_pages=True,
-			include_iframes=True,
+			include_iframes=include_cross_origin,  # Only include iframe targets if flag is set
 			include_workers=False,
 			include_chrome=False,
 			include_chrome_extensions=False,
-			include_chrome_error=True,
+			include_chrome_error=include_cross_origin,  # Only include error pages if cross-origin is enabled
 		)
 		all_targets = targets
 
 		# First pass: collect frame trees from ALL targets
 		for target in all_targets:
 			target_id = target['targetId']
+			
+			# Skip iframe targets if cross-origin support is disabled
+			if not include_cross_origin and target.get('type') == 'iframe':
+				continue
 
-			# Get cached session for this target (don't change focus - iterating frames)
-			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
-			target_sessions[target_id] = cdp_session.session_id
+			# When cross-origin support is disabled, only process the current target
+			if not include_cross_origin:
+				# Only process the current focus target
+				if self.agent_focus and target_id != self.agent_focus.target_id:
+					continue
+				# Use the existing agent_focus session
+				cdp_session = self.agent_focus
+			else:
+				# Get cached session for this target (don't change focus - iterating frames)
+				cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
+			
+			if cdp_session:
+				target_sessions[target_id] = cdp_session.session_id
 
 			try:
 				# Try to get frame tree (not all target types support this)
@@ -1136,6 +1371,10 @@ class BrowserSession(BaseModel):
 							# For iframe targets, the frame itself is likely cross-origin
 							if target.get('type') == 'iframe':
 								frame_info['isCrossOrigin'] = True
+							
+							# Skip cross-origin frames if support is disabled
+							if not include_cross_origin and frame_info.get('isCrossOrigin'):
+								return  # Skip this frame and its children
 
 							# Add child frame IDs (note: OOPIFs won't appear here)
 							child_frames = node.get('childFrames', [])
@@ -1156,9 +1395,10 @@ class BrowserSession(BaseModel):
 							else:
 								all_frames[current_frame_id] = frame_info
 
-							# Process child frames recursively
-							for child in child_frames:
-								process_frame_tree(child, current_frame_id)
+							# Process child frames recursively (only if we're not skipping this frame)
+							if include_cross_origin or not frame_info.get('isCrossOrigin'):
+								for child in child_frames:
+									process_frame_tree(child, current_frame_id)
 
 					# Process the entire frame tree
 					process_frame_tree(frame_tree_result.get('frameTree', {}))
@@ -1172,7 +1412,9 @@ class BrowserSession(BaseModel):
 				pass
 
 		# Second pass: populate backend node IDs and parent target IDs
-		await self._populate_frame_metadata(all_frames, target_sessions)
+		# Only do this if cross-origin support is enabled
+		if include_cross_origin:
+			await self._populate_frame_metadata(all_frames, target_sessions)
 
 		return all_frames, target_sessions
 
@@ -1247,6 +1489,10 @@ class BrowserSession(BaseModel):
 		Raises:
 			ValueError: If the frame is not found in any target
 		"""
+		# If cross-origin iframes are disabled, just use the main session
+		if not self.browser_profile.cross_origin_iframes:
+			return await self.get_or_create_cdp_session()
+		
 		# Get complete frame hierarchy
 		all_frames, target_sessions = await self.get_all_frames()
 
@@ -1269,8 +1515,20 @@ class BrowserSession(BaseModel):
 	async def cdp_client_for_node(self, node: EnhancedDOMTreeNode) -> CDPSession:
 		"""Get CDP client for a specific DOM node based on its frame."""
 		if node.frame_id:
-			return await self.cdp_client_for_frame(node.frame_id)
-		return await self.get_or_create_cdp_session()
+			# If cross-origin iframes are disabled, always use the main session
+			if not self.browser_profile.cross_origin_iframes:
+				assert self.agent_focus is not None, 'No active CDP session'
+				return self.agent_focus
+			# Otherwise, try to get the frame-specific session
+			try:
+				return await self.cdp_client_for_frame(node.frame_id)
+			except (ValueError, Exception) as e:
+				# Fall back to main session if frame not found
+				self.logger.debug(f'Failed to get CDP client for frame {node.frame_id}: {e}, using main session')
+				assert self.agent_focus is not None, 'No active CDP session'
+				return self.agent_focus
+		assert self.agent_focus is not None, 'No active CDP session'
+		return self.agent_focus
 
 
 # Fix Pydantic circular dependency for all watchdogs
@@ -1280,7 +1538,7 @@ _watchdog_modules = [
 	'browser_use.browser.downloads_watchdog.DownloadsWatchdog',
 	'browser_use.browser.local_browser_watchdog.LocalBrowserWatchdog',
 	'browser_use.browser.storage_state_watchdog.StorageStateWatchdog',
-	'browser_use.browser.navigation_watchdog.NavigationWatchdog',
+	'browser_use.browser.security_watchdog.SecurityWatchdog',
 	'browser_use.browser.aboutblank_watchdog.AboutBlankWatchdog',
 	'browser_use.browser.default_action_watchdog.DefaultActionWatchdog',
 	'browser_use.browser.dom_watchdog.DOMWatchdog',

@@ -130,14 +130,15 @@ async def openai_cua_fallback(params: OpenAICUAAction, browser_session: BrowserS
 	print(f'🎯 CUA Action Starting - Goal: {params.description}')
 
 	try:
-		page = await browser_session.get_current_page()
-		page_info = browser_session.browser_state_summary.page_info
+		# Get browser state summary
+		state = await browser_session.get_browser_state_summary()
+		page_info = state.page_info
 		if not page_info:
 			raise Exception('Page info not found - cannot execute CUA action')
 
 		print(f'📐 Viewport size: {page_info.viewport_width}x{page_info.viewport_height}')
 
-		screenshot_b64 = browser_session.browser_state_summary.screenshot
+		screenshot_b64 = state.screenshot
 		if not screenshot_b64:
 			raise Exception('Screenshot not found - cannot execute CUA action')
 

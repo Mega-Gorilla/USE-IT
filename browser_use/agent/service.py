@@ -120,7 +120,6 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 class Agent(Generic[Context, AgentStructuredOutput]):
 	browser_session: BrowserSession | None = None
 	_logger: logging.Logger | None = None
-	_owns_browser_session: bool = PrivateAttr(default=False)
 
 	@time_execution_sync('--init')
 	def __init__(
@@ -185,6 +184,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		llm_timeout: int = 60,
 		step_timeout: int = 180,
 		preload: bool = False,
+		recent_events: bool = False,
 		**kwargs,
 	):
 		if not isinstance(llm, BaseChatModel):
@@ -233,6 +233,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task = task
 		self.llm = llm
 		self.preload = preload
+		self.recent_events = recent_events
 		self.controller = (
 			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
 		)
@@ -367,8 +368,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Use the browser session directly without copying
 			# This ensures the CDP client and watchdogs are properly accessible
 			self.browser_session = browser_session
-			# Browser session was provided externally, don't own it
-			self._owns_browser_session = False
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
@@ -376,8 +375,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				browser_profile=browser_profile,
 				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
-			# We created the browser session, so we own it
-			self._owns_browser_session = True
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
@@ -701,11 +698,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		self.logger.debug('📸 Requesting browser state with include_screenshot=True, cached=True')
+		# Use caching based on preload setting - if preload is False, don't use cached state
+		use_cache = self.preload
+		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,
-			cached=True,
+			cached=use_cache,
 		)
 		if browser_state_summary.screenshot:
 			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')
@@ -1779,12 +1778,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def close(self):
 		"""Close all resources"""
 		try:
-			# Only close browser resources if we created them
-			if self._owns_browser_session:
-				assert self.browser_session is not None, 'BrowserSession is not set up'
-				# Kill the browser session - this dispatches BrowserStopEvent,
-				# stops the EventBus with clear=True, and recreates a fresh EventBus
-				await self.browser_session.kill()
+			# Only close browser if keep_alive is False (or not set)
+			if self.browser_session is not None:
+				if not self.browser_session.browser_profile.keep_alive:
+					# Kill the browser session - this dispatches BrowserStopEvent,
+					# stops the EventBus with clear=True, and recreates a fresh EventBus
+					await self.browser_session.kill()
 
 			# Force garbage collection
 			gc.collect()

@@ -512,13 +512,15 @@ class BrowserUseApp(App):
 			logger.error(f'Error focusing input field: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
-		# Step 5: Setup CDP logger early (event bus listener will be set up when browser session is available)
-		logger.debug('Setting up CDP logging...')
+		# Step 5: Setup CDP logger and event bus listener if browser session is available
+		logger.debug('Setting up CDP logging and event bus listener...')
 		try:
 			self.setup_cdp_logger()
-			logger.debug('CDP logging setup complete')
+			if self.browser_session:
+				self.setup_event_bus_listener()
+			logger.debug('CDP logging and event bus setup complete')
 		except Exception as e:
-			logger.error(f'Error setting up CDP logging: {str(e)}', exc_info=True)
+			logger.error(f'Error setting up CDP logging/event bus: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
 		# Capture telemetry for CLI start
@@ -645,9 +647,17 @@ class BrowserUseApp(App):
 		"""Setup listener for browser session event bus."""
 		if not self.browser_session or not self.browser_session.event_bus:
 			return
-
-		# Get the events log widget
-		events_log = self.query_one('#events-log', RichLog)
+		
+		# Check if we already have a handler registered
+		if self._event_bus_handler_id is not None:
+			return
+		
+		try:
+			# Get the events log widget
+			events_log = self.query_one('#events-log', RichLog)
+		except Exception:
+			# Widget not ready yet
+			return
 
 		# Create handler to log all events
 		def log_event(event):
@@ -1127,6 +1137,10 @@ async def textual_interface(config: dict[str, Any]):
 		app.browser_session = browser_session
 		app.controller = controller
 		app.llm = llm
+		
+		# Set up event bus listener now that browser session is available
+		# Note: This needs to be called before run_async() but after browser_session is set
+		# We'll defer this to on_mount() since it needs the widgets to be available
 
 		# Configure logging for Textual UI before going fullscreen
 		setup_textual_logging()

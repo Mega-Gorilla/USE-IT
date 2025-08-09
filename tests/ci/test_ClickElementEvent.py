@@ -140,7 +140,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)  # Give page time to load
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -153,7 +153,7 @@ class TestClickElementEvent:
 			# Look for the first div with class "clickable"
 			if element.tag_name.lower() == 'div' and 'clickable' in str(element.attributes.get('class', '')):
 				button_index = idx
-				button_text = element.get_all_text_till_next_clickable_element(max_depth=2).strip()
+				button_text = element.get_all_children_text(max_depth=2).strip()
 				break
 
 		# Verify we found a clickable element
@@ -185,7 +185,7 @@ class TestClickElementEvent:
 
 		# Core logic validation: Verify click was successful
 		assert result.extracted_content is not None
-		assert f'Clicked button with index {button_index}' in result.extracted_content, (
+		assert f'Clicked element with index {button_index}' in result.extracted_content, (
 			f'Expected click confirmation in result content, got: {result.extracted_content}'
 		)
 		if button_text:
@@ -240,7 +240,7 @@ class TestClickElementEvent:
 		await asyncio.sleep(0.5)  # Give page time to load
 
 		# Get the page state which includes clickable elements
-		state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+		state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 		# Find the custom element index
 		custom_element_index = None

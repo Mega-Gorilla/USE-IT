@@ -189,7 +189,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
 		"""
-		Click an element using pure CDP.
+		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
 		Args:
 			element_node: The DOM element to click
@@ -207,17 +207,137 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Get element bounds
 			backend_node_id = element_node.backend_node_id
 
-			# Get bounds from CDP
-			box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
-				params={'backendNodeId': backend_node_id}, session_id=session_id
-			)
-			content_quad = box_model['model']['content']
-			if len(content_quad) < 8:
-				raise Exception('Invalid content quad')
-
-			# Calculate center point from quad
-			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
-			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
+			# Get viewport dimensions for visibility checks
+			layout_metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			viewport_width = layout_metrics['layoutViewport']['clientWidth']
+			viewport_height = layout_metrics['layoutViewport']['clientHeight']
+			
+			# Try multiple methods to get element geometry
+			quads = []
+			
+			# Method 1: Try DOM.getContentQuads first (best for inline elements and complex layouts)
+			try:
+				content_quads_result = await cdp_session.cdp_client.send.DOM.getContentQuads(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
+				if 'quads' in content_quads_result and content_quads_result['quads']:
+					quads = content_quads_result['quads']
+					self.logger.debug(f'Got {len(quads)} quads from DOM.getContentQuads')
+			except Exception as e:
+				self.logger.debug(f'DOM.getContentQuads failed: {e}')
+			
+			# Method 2: Fall back to DOM.getBoxModel
+			if not quads:
+				try:
+					box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
+						params={'backendNodeId': backend_node_id}, session_id=session_id
+					)
+					if 'model' in box_model and 'content' in box_model['model']:
+						content_quad = box_model['model']['content']
+						if len(content_quad) >= 8:
+							# Convert box model format to quad format
+							quads = [[
+								content_quad[0], content_quad[1],  # x1, y1
+								content_quad[2], content_quad[3],  # x2, y2
+								content_quad[4], content_quad[5],  # x3, y3
+								content_quad[6], content_quad[7]   # x4, y4
+							]]
+							self.logger.debug('Got quad from DOM.getBoxModel')
+				except Exception as e:
+					self.logger.debug(f'DOM.getBoxModel failed: {e}')
+			
+			# Method 3: Fall back to JavaScript getBoundingClientRect
+			if not quads:
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					if 'object' in result and 'objectId' in result['object']:
+						object_id = result['object']['objectId']
+						
+						# Get bounding rect via JavaScript
+						bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+							params={
+								'functionDeclaration': '''
+									function() {
+										const rect = this.getBoundingClientRect();
+										return {
+											x: rect.left,
+											y: rect.top,
+											width: rect.width,
+											height: rect.height
+										};
+									}
+								''',
+								'objectId': object_id,
+								'returnByValue': True
+							},
+							session_id=session_id,
+						)
+						
+						if 'result' in bounds_result and 'value' in bounds_result['result']:
+							rect = bounds_result['result']['value']
+							# Convert rect to quad format
+							x, y, w, h = rect['x'], rect['y'], rect['width'], rect['height']
+							quads = [[
+								x, y,           # top-left
+								x + w, y,       # top-right
+								x + w, y + h,   # bottom-right
+								x, y + h        # bottom-left
+							]]
+							self.logger.debug('Got quad from getBoundingClientRect')
+				except Exception as e:
+					self.logger.debug(f'JavaScript getBoundingClientRect failed: {e}')
+			
+			# If we still don't have quads, fail
+			if not quads:
+				raise Exception('Could not get element geometry from any method')
+			
+			# Find the largest visible quad within the viewport
+			best_quad = None
+			best_area = 0
+			
+			for quad in quads:
+				if len(quad) < 8:
+					continue
+					
+				# Calculate quad bounds
+				xs = [quad[i] for i in range(0, 8, 2)]
+				ys = [quad[i] for i in range(1, 8, 2)]
+				min_x, max_x = min(xs), max(xs)
+				min_y, max_y = min(ys), max(ys)
+				
+				# Check if quad intersects with viewport
+				if max_x < 0 or max_y < 0 or min_x > viewport_width or min_y > viewport_height:
+					continue  # Quad is completely outside viewport
+				
+				# Calculate visible area (intersection with viewport)
+				visible_min_x = max(0, min_x)
+				visible_max_x = min(viewport_width, max_x)
+				visible_min_y = max(0, min_y)
+				visible_max_y = min(viewport_height, max_y)
+				
+				visible_width = visible_max_x - visible_min_x
+				visible_height = visible_max_y - visible_min_y
+				visible_area = visible_width * visible_height
+				
+				if visible_area > best_area:
+					best_area = visible_area
+					best_quad = quad
+			
+			if not best_quad:
+				# No visible quad found, use the first quad anyway
+				best_quad = quads[0]
+				self.logger.warning('No visible quad found, using first quad')
+			
+			# Calculate center point of the best quad
+			center_x = sum(best_quad[i] for i in range(0, 8, 2)) / 4
+			center_y = sum(best_quad[i] for i in range(1, 8, 2)) / 4
+			
+			# Ensure click point is within viewport bounds
+			center_x = max(0, min(viewport_width - 1, center_x))
+			center_y = max(0, min(viewport_height - 1, center_y))
 
 			# Scroll element into view
 			try:
