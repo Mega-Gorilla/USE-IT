@@ -87,34 +87,43 @@ class Controller(Generic[Context]):
 				tabs = await browser_session.get_tabs()
 				# Get last 4 chars of browser session ID to identify agent's tabs
 				browser_session_label = str(browser_session.id)[-4:]
-				
+				logger.debug(f'Checking {len(tabs)} tabs for reusable tab (browser_session_label: {browser_session_label})')
+
 				for i, tab in enumerate(tabs):
+					logger.debug(f'Tab {i}: url="{tab.url}", title="{tab.title}"')
 					# Check if tab is on Google domain
-					if tab.url and 'google.com' in tab.url:
+					if tab.url and tab.url.strip('/').lower() in ('https://www.google.com', 'https://google.com'):
 						# Found existing Google tab, navigate in it
 						logger.debug(f'Found existing Google tab at index {i}: {tab.url}, reusing it')
-						
+
 						# Switch to this tab first if it's not the current one
 						from browser_use.browser.events import SwitchTabEvent
+
 						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
 							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
 							await switch_event
-						
+
 						use_new_tab = False
 						break
 					# Check if it's an agent-owned about:blank page (has "Starting agent XXXX..." title)
-					elif tab.url == 'about:blank' and tab.title and browser_session_label in tab.title:
-						# This is our agent's about:blank page with DVD animation
-						logger.debug(f'Found agent-owned about:blank tab at index {i} with title: {tab.title}, reusing it')
-						
-						# Switch to this tab first
-						from browser_use.browser.events import SwitchTabEvent
-						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
-							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
-							await switch_event
-						
-						use_new_tab = False
-						break
+					# IMPORTANT: about:blank is also used briefly for new tabs the agent is trying to open, dont take over those!
+					elif tab.url == 'about:blank' and tab.title:
+						# Check if this is our agent's about:blank page with DVD animation
+						# The title should be "Starting agent XXXX..." where XXXX is the browser_session_label
+						expected_title = f'Starting agent {browser_session_label}...'
+						if tab.title == expected_title or browser_session_label in tab.title:
+							# This is our agent's about:blank page
+							logger.debug(f'Found agent-owned about:blank tab at index {i} with title: "{tab.title}", reusing it')
+
+							# Switch to this tab first
+							from browser_use.browser.events import SwitchTabEvent
+
+							if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
+								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+								await switch_event
+
+							use_new_tab = False
+							break
 			except Exception as e:
 				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
 
@@ -217,25 +226,12 @@ class Controller(Generic[Context]):
 
 			# Dispatch click event with node
 			try:
-				event = browser_session.event_bus.dispatch(
-					ClickElementEvent(node=node, expect_download=params.expect_download, new_tab=params.new_tab)
-				)
-				await event
+				await browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
 			except Exception as e:
 				logger.error(f'Failed to dispatch ClickElementEvent: {type(e).__name__}: {e}')
 				raise ValueError(f'Failed to click element {params.index}: {e}') from e
 
-			# Get the result if any (e.g., download path)
-			result = await event.event_result(raise_if_none=False, raise_if_any=True)
-			if result:
-				download_path = result.get('download_path')
-				if download_path:
-					msg = f'💾 Downloaded file to {download_path}' + (' (new tab)' if params.new_tab else '')
-				else:
-					msg = f'🖱️ Clicked element with index {params.index}'
-			else:
-				msg = f'🖱️ Clicked element with index {params.index}'
-
+			msg = f'🖱️ Clicked element with index {params.index}'
 			logger.info(msg)
 			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 
@@ -360,15 +356,19 @@ class Controller(Generic[Context]):
 			cdp_session = await browser_session.get_or_create_cdp_session()
 
 			try:
-				page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
-					params={'format': 'mhtml'}, session_id=cdp_session.session_id
-				)  # includes OOPIF content automatically
+				# page_html_result = await cdp_session.cdp_client.send.Page.captureSnapshot(
+				# 	params={'format': 'mhtml'}, session_id=cdp_session.session_id
+				# )  # includes OOPIF content automatically, but is often too large and contains base64 data: urls that crash the parser
+				body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
+				page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
+					params={'backendNodeId': body_id['root']['nodeId']}, session_id=cdp_session.session_id
+				)
 			except TimeoutError:
 				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
 				raise RuntimeError(f"Couldn't extract page content: {e}")
 
-			page_html = page_html_result['data']
+			page_html = page_html_result['outerHTML']
 
 			try:
 				# strip large data:... base64 encoded images, fonts, css, etc. from mhtml captureSnapshot output
@@ -454,13 +454,14 @@ Explain the content of the page and that the requested information is not availa
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
-			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components).',
+			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). Use index=0 or omit index to scroll the entire page.',
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
 			# Look up the node from the selector map if index is provided
+			# Special case: index 0 means scroll the whole page (root/body element)
 			node = None
-			if params.index is not None:
+			if params.index is not None and params.index != 0:
 				try:
 					node = await browser_session.get_element_by_index(params.index)
 					if node is None:
@@ -475,11 +476,7 @@ Explain the content of the page and that the requested information is not availa
 			pixels = int(params.num_pages * 800)
 			try:
 				event = browser_session.event_bus.dispatch(
-					ScrollEvent(
-						direction='down' if params.down else 'up',
-						amount=pixels,
-						node=node
-					)
+					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
 				)
 				await event
 			except Exception as e:
@@ -487,7 +484,8 @@ Explain the content of the page and that the requested information is not availa
 				raise ValueError(f'Failed to scroll: {e}') from e
 
 			direction = 'down' if params.down else 'up'
-			target = f'element {params.index}' if params.index is not None else 'the page'
+			# If index is 0 or None, we're scrolling the page
+			target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
 
 			if params.num_pages == 1.0:
 				long_term_memory = f'Scrolled {direction} {target} by one page'
@@ -505,9 +503,7 @@ Explain the content of the page and that the requested information is not availa
 		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
 			# Dispatch send keys event
 			try:
-				event = browser_session.event_bus.dispatch(
-					SendKeysEvent(keys=params.keys)
-				)
+				event = browser_session.event_bus.dispatch(SendKeysEvent(keys=params.keys))
 				await event
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
@@ -522,9 +518,7 @@ Explain the content of the page and that the requested information is not availa
 		)
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
-			event = browser_session.event_bus.dispatch(
-				ScrollToTextEvent(text=text)
-			)
+			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
 			await event
 
 			# Check result to see if text was found
@@ -532,9 +526,7 @@ Explain the content of the page and that the requested information is not availa
 			if result and result.get('found'):
 				msg = f'🔍  Scrolled to text: {text}'
 				logger.info(msg)
-				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}'
-				)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}')
 			else:
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
@@ -544,66 +536,66 @@ Explain the content of the page and that the requested information is not availa
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
-	# # File System Actions
-	# @self.registry.action(
-	# 	'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
-	# )
-	# async def write_file(
-	# 	file_name: str,
-	# 	content: str,
-	# 	file_system: FileSystem,
-	# 	append: bool = False,
-	# 	trailing_newline: bool = True,
-	# 	leading_newline: bool = False,
-	# ):
-	# 	if trailing_newline:
-	# 		content += '\n'
-	# 	if leading_newline:
-	# 		content = '\n' + content
-	# 	if append:
-	# 		result = await file_system.append_file(file_name, content)
-	# 	else:
-	# 		result = await file_system.write_file(file_name, content)
-	# 	logger.info(f'💾 {result}')
-	# 	return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+		# File System Actions
+		@self.registry.action(
+			'Write or append content to file_name in file system. Allowed extensions are .md, .txt, .json, .csv, .pdf. For .pdf files, write the content in markdown format and it will automatically be converted to a properly formatted PDF document.'
+		)
+		async def write_file(
+			file_name: str,
+			content: str,
+			file_system: FileSystem,
+			append: bool = False,
+			trailing_newline: bool = True,
+			leading_newline: bool = False,
+		):
+			if trailing_newline:
+				content += '\n'
+			if leading_newline:
+				content = '\n' + content
+			if append:
+				result = await file_system.append_file(file_name, content)
+			else:
+				result = await file_system.write_file(file_name, content)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-	# @self.registry.action(
-	# 	'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
-	# )
-	# async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
-	# 	result = await file_system.replace_file_str(file_name, old_str, new_str)
-	# 	logger.info(f'💾 {result}')
-	# 	return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+		@self.registry.action(
+			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
+		)
+		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
+			result = await file_system.replace_file_str(file_name, old_str, new_str)
+			logger.info(f'💾 {result}')
+			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
 
-	# @self.registry.action('Read file_name from file system')
-	# async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
-	# 	if available_file_paths and file_name in available_file_paths:
-	# 		result = await file_system.read_file(file_name, external_file=True)
-	# 	else:
-	# 		result = await file_system.read_file(file_name)
+		@self.registry.action('Read file_name from file system')
+		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
+			if available_file_paths and file_name in available_file_paths:
+				result = await file_system.read_file(file_name, external_file=True)
+			else:
+				result = await file_system.read_file(file_name)
 
-	# 	MAX_MEMORY_SIZE = 1000
-	# 	if len(result) > MAX_MEMORY_SIZE:
-	# 		lines = result.splitlines()
-	# 		display = ''
-	# 		lines_count = 0
-	# 		for line in lines:
-	# 			if len(display) + len(line) < MAX_MEMORY_SIZE:
-	# 				display += line + '\n'
-	# 				lines_count += 1
-	# 			else:
-	# 				break
-	# 		remaining_lines = len(lines) - lines_count
-	# 		memory = f'{display}{remaining_lines} more lines...' if remaining_lines > 0 else display
-	# 	else:
-	# 		memory = result
-	# 	logger.info(f'💾 {memory}')
-	# 	return ActionResult(
-	# 		extracted_content=result,
-	# 		include_in_memory=True,
-	# 		long_term_memory=memory,
-	# 		include_extracted_content_only_once=True,
-	# 	)
+			MAX_MEMORY_SIZE = 1000
+			if len(result) > MAX_MEMORY_SIZE:
+				lines = result.splitlines()
+				display = ''
+				lines_count = 0
+				for line in lines:
+					if len(display) + len(line) < MAX_MEMORY_SIZE:
+						display += line + '\n'
+						lines_count += 1
+					else:
+						break
+				remaining_lines = len(lines) - lines_count
+				memory = f'{display}{remaining_lines} more lines...' if remaining_lines > 0 else display
+			else:
+				memory = result
+			logger.info(f'💾 {memory}')
+			return ActionResult(
+				extracted_content=result,
+				include_in_memory=True,
+				long_term_memory=memory,
+				include_extracted_content_only_once=True,
+			)
 
 	# TODO: Refactor to use events instead of direct page/dom access
 	# @self.registry.action(

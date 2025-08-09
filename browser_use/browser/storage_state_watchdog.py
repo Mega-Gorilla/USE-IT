@@ -175,8 +175,9 @@ class StorageStateWatchdog(BaseWatchdog):
 	async def _save_storage_state(self, path: str | None = None) -> None:
 		"""Save browser storage state to file."""
 		async with self._save_lock:
-			if not self.browser_session.cdp_client:
-				self.logger.warning('[StorageStateWatchdog] No CDP client available for saving')
+			# Check if CDP client is available without raising an assertion error
+			if self.browser_session._cdp_client_root is None:
+				self.logger.debug('[StorageStateWatchdog] CDP client already disconnected, skipping save')
 				return
 
 			save_path = path or self.browser_session.browser_profile.storage_state

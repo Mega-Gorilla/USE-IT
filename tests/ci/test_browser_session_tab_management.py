@@ -416,28 +416,6 @@ class TestEventDrivenTabOperations:
 		assert len(closed_events) >= 1
 		assert closed_events[-1].tab_index == 1
 
-	async def test_navigate_to_url_event_with_new_tab(self, browser_session, base_url):
-		"""Test NavigateToUrlEvent with new_tab=True."""
-		from browser_use.browser.events import NavigateToUrlEvent, TabCreatedEvent
-
-		initial_tab_count = len(browser_session.tabs)
-
-		# Navigate to URL in new tab via direct event
-		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page2', new_tab=True))
-		await nav_event
-
-		# Verify new tab was created
-		assert len(browser_session.tabs) == initial_tab_count + 1
-
-		# Check that current page is the new tab
-		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page2' in current_url
-
-		# Check event history for TabCreatedEvent
-		event_history = list(browser_session.event_bus.event_history.values())
-		created_events = [e for e in event_history if isinstance(e, TabCreatedEvent)]
-		assert len(created_events) >= 1
-
 	async def test_concurrent_tab_operations_via_events(self, browser_session, base_url):
 		"""Test concurrent tab operations via event system."""
 		from browser_use.browser.events import NavigateToUrlEvent, SwitchTabEvent

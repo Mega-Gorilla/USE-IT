@@ -31,7 +31,7 @@ from browser_use.tokens.service import TokenCost
 load_dotenv()
 
 from bubus import EventBus
-from pydantic import PrivateAttr, ValidationError
+from pydantic import ValidationError
 from uuid_extensions import uuid7str
 
 # Lazy import for gif to avoid heavy agent.views import at startup
@@ -120,7 +120,6 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 class Agent(Generic[Context, AgentStructuredOutput]):
 	browser_session: BrowserSession | None = None
 	_logger: logging.Logger | None = None
-	_owns_browser_session: bool = PrivateAttr(default=False)
 
 	@time_execution_sync('--init')
 	def __init__(
@@ -184,6 +183,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 60,
 		step_timeout: int = 180,
+		preload: bool = False,
+		include_recent_events: bool = False,
 		**kwargs,
 	):
 		if not isinstance(llm, BaseChatModel):
@@ -231,6 +232,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Core components
 		self.task = task
 		self.llm = llm
+		self.preload = preload
+		self.include_recent_events = include_recent_events
 		self.controller = (
 			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
 		)
@@ -347,6 +350,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			max_history_items=self.settings.max_history_items,
 			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
+			include_recent_events=self.include_recent_events,
 		)
 
 		if isinstance(browser, BrowserSession):
@@ -365,8 +369,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Use the browser session directly without copying
 			# This ensures the CDP client and watchdogs are properly accessible
 			self.browser_session = browser_session
-			# Browser session was provided externally, don't own it
-			self._owns_browser_session = False
 		else:
 			if browser is not None:
 				assert isinstance(browser, Browser), 'Browser is not set up'
@@ -374,8 +376,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				browser_profile=browser_profile,
 				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 			)
-			# We created the browser session, so we own it
-			self._owns_browser_session = True
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
@@ -699,11 +699,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		self.logger.debug('📸 Requesting browser state with include_screenshot=True, cached=True')
+		# Use caching based on preload setting - if preload is False, don't use cached state
+		use_cache = self.preload
+		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,
-			cached=True,
+			cached=use_cache,
+			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
 			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')
@@ -1291,16 +1294,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and navigate to it immediately
-			initial_url = self._extract_url_from_task(self.task)
-			if initial_url:
-				self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
-				self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
+			# Check if task contains a URL and navigate to it immediately (only if preload is enabled)
+			if self.preload:
+				initial_url = self._extract_url_from_task(self.task)
+				if initial_url:
+					self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
+					self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
 
-				# this one is just for element higlighting as a loading animation, not technically used by anything but nice to see what the agent will see as the browser starts up
-				self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
+					# warms up the cache and element highlighting is more useful as a better loading animation than a DVD screensaver
+					self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
 
-				self.logger.debug(f'✅ Navigated to {initial_url}')
+					self.logger.debug(f'✅ Navigated to {initial_url}')
 
 			# Execute initial actions if provided
 			if self.initial_actions:
@@ -1784,12 +1788,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	async def close(self):
 		"""Close all resources"""
 		try:
-			# Only close browser resources if we created them
-			if self._owns_browser_session:
-				assert self.browser_session is not None, 'BrowserSession is not set up'
-				# Kill the browser session - this dispatches BrowserStopEvent,
-				# stops the EventBus with clear=True, and recreates a fresh EventBus
-				await self.browser_session.kill()
+			# Only close browser if keep_alive is False (or not set)
+			if self.browser_session is not None:
+				if not self.browser_session.browser_profile.keep_alive:
+					# Kill the browser session - this dispatches BrowserStopEvent,
+					# stops the EventBus with clear=True, and recreates a fresh EventBus
+					await self.browser_session.kill()
 
 			# Force garbage collection
 			gc.collect()

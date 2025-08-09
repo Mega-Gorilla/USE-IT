@@ -63,9 +63,9 @@ class ClickElementEvent(ElementSelectedEvent[dict[str, str] | None]):
 
 	node: 'EnhancedDOMTreeNode'
 	button: Literal['left', 'right', 'middle'] = 'left'
-	click_count: int = 1
-	expect_download: bool = False
 	new_tab: bool = False
+	# click_count: int = 1           # TODO
+	# expect_download: bool = False  # moved to downloads_watchdog.py
 
 
 class TypeTextEvent(ElementSelectedEvent):
@@ -109,6 +109,7 @@ class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
 	include_dom: bool = True
 	include_screenshot: bool = False
 	cache_clickable_elements_hashes: bool = True
+	include_recent_events: bool = False
 
 
 # class WaitForConditionEvent(BaseEvent):

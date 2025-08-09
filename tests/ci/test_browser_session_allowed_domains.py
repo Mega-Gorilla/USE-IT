@@ -6,14 +6,14 @@ class TestUrlAllowlistSecurity:
 
 	def test_authentication_bypass_prevention(self):
 		"""Test that the URL allowlist cannot be bypassed using authentication credentials."""
-		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.security_watchdog import SecurityWatchdog
 		from bubus import EventBus
 		
 		# Create a context config with a sample allowed domain
 		browser_profile = BrowserProfile(allowed_domains=['example.com'], headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
-		watchdog = NavigationWatchdog(browser_session=browser_session, event_bus=event_bus)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Security vulnerability test cases
 		# These should all be detected as malicious despite containing "example.com"
@@ -27,14 +27,14 @@ class TestUrlAllowlistSecurity:
 
 	def test_glob_pattern_matching(self):
 		"""Test that glob patterns in allowed_domains work correctly."""
-		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.security_watchdog import SecurityWatchdog
 		from bubus import EventBus
 		
 		# Test *.example.com pattern (should match subdomains and main domain)
 		browser_profile = BrowserProfile(allowed_domains=['*.example.com'], headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
-		watchdog = NavigationWatchdog(browser_session=browser_session, event_bus=event_bus)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Should match subdomains
 		assert watchdog._is_url_allowed('https://sub.example.com') is True
@@ -55,7 +55,7 @@ class TestUrlAllowlistSecurity:
 		)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
-		watchdog = NavigationWatchdog(browser_session=browser_session, event_bus=event_bus)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Should match domains ending with google.com
 		assert watchdog._is_url_allowed('https://google.com') is True
@@ -90,14 +90,14 @@ class TestUrlAllowlistSecurity:
 
 	def test_glob_pattern_edge_cases(self):
 		"""Test edge cases for glob pattern matching to ensure proper behavior."""
-		from browser_use.browser.navigation_watchdog import NavigationWatchdog
+		from browser_use.browser.security_watchdog import SecurityWatchdog
 		from bubus import EventBus
 		
 		# Test with domains containing glob pattern in the middle
 		browser_profile = BrowserProfile(allowed_domains=['*.google.com', 'https://wiki.org'], headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
-		watchdog = NavigationWatchdog(browser_session=browser_session, event_bus=event_bus)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Verify that 'wiki*' pattern doesn't match domains that merely contain 'wiki' in the middle
 		assert watchdog._is_url_allowed('https://notawiki.com') is False
@@ -111,7 +111,7 @@ class TestUrlAllowlistSecurity:
 		browser_profile = BrowserProfile(allowed_domains=['*.google.com', '*.google.co.uk'], headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
-		watchdog = NavigationWatchdog(browser_session=browser_session, event_bus=event_bus)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Should match legitimate Google domains
 		assert watchdog._is_url_allowed('https://www.google.com') is True

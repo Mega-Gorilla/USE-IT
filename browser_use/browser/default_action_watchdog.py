@@ -2,7 +2,6 @@
 
 import asyncio
 import platform
-from typing import TYPE_CHECKING
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -20,9 +19,6 @@ from browser_use.browser.events import (
 from browser_use.browser.views import BrowserError, URLNotAllowedError
 from browser_use.browser.watchdog_base import BaseWatchdog
 from browser_use.dom.service import EnhancedDOMTreeNode
-
-if TYPE_CHECKING:
-	pass
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
@@ -61,9 +57,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			download_path = await self._click_element_node_impl(
-				element_node, expect_download=event.expect_download, new_tab=event.new_tab
-			)
+			await self._click_element_node_impl(element_node, new_tab=event.new_tab)
+			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
 			if download_path:
@@ -77,7 +72,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
 			await asyncio.sleep(0.5)
-			
+
 			# Clear cached state after click action since DOM might have changed
 			self.logger.debug('🔄 Click action completed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
@@ -117,20 +112,30 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_node = event.node
 			index_for_logging = element_node.element_index or 'unknown'
 
-			# Perform the actual text input
-			await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
+			# Check if this is index 0 or a falsy index - type to the page (whatever has focus)
+			if not element_node.element_index or element_node.element_index == 0:
+				# Type to the page without focusing any specific element
+				await self._type_to_page(event.text)
+				self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
+			else:
+				try:
+					# Try to type to the specific element
+					await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
+					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
+					self.logger.debug(f'Element xpath: {element_node.xpath}')
+				except Exception as e:
+					# Element not found or error - fall back to typing to the page
+					self.logger.warning(f'Failed to type to element {index_for_logging}: {e}. Falling back to page typing.')
+					await self._type_to_page(event.text)
+					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
 
-			# Log success
-			self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
-			self.logger.debug(f'Element xpath: {element_node.xpath}')
-			
 			# Clear cached state after type action since DOM might have changed
 			self.logger.debug('🔄 Type action completed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
 			self.browser_session._cached_selector_map.clear()
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
-			
+
 			return {'success': True}
 		except Exception as e:
 			self.event_bus.dispatch(
@@ -140,6 +145,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					details={'index': element_node.element_index or 'unknown', 'text': event.text},
 				)
 			)
+			return {'success': False, 'error': str(e)}
 
 	async def on_ScrollEvent(self, event: ScrollEvent) -> dict[str, str | bool] | None:
 		"""Handle scroll request with CDP."""
@@ -192,20 +198,26 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, expect_download: bool = False, new_tab: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
 		"""
-		Click an element using pure CDP.
+		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
 		Args:
 			element_node: The DOM element to click
-			expect_download: If True, wait for download and handle it inline
 			new_tab: If True, open any resulting navigation in a new tab
-
-		Returns:
-			The download path if a download was triggered, None otherwise
 		"""
 
 		try:
+			# Check if element is a file input or select dropdown - these should not be clicked
+			tag_name = element_node.tag_name.lower() if element_node.tag_name else ''
+			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
+
+			if tag_name == 'select':
+				raise Exception('Cannot click on <select> elements. Use select_dropdown_option action instead.')
+
+			if tag_name == 'input' and element_type == 'file':
+				raise Exception('Cannot click on file input elements. File uploads must be handled programmatically.')
+
 			# Get CDP client
 			cdp_session = await self.browser_session.get_or_create_cdp_session()
 
@@ -216,17 +228,149 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Get element bounds
 			backend_node_id = element_node.backend_node_id
 
-			# Get bounds from CDP
-			box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
-				params={'backendNodeId': backend_node_id}, session_id=session_id
-			)
-			content_quad = box_model['model']['content']
-			if len(content_quad) < 8:
-				raise Exception('Invalid content quad')
+			# Get viewport dimensions for visibility checks
+			layout_metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			viewport_width = layout_metrics['layoutViewport']['clientWidth']
+			viewport_height = layout_metrics['layoutViewport']['clientHeight']
 
-			# Calculate center point from quad
-			center_x = (content_quad[0] + content_quad[2] + content_quad[4] + content_quad[6]) / 4
-			center_y = (content_quad[1] + content_quad[3] + content_quad[5] + content_quad[7]) / 4
+			# Try multiple methods to get element geometry
+			quads = []
+
+			# Method 1: Try DOM.getContentQuads first (best for inline elements and complex layouts)
+			try:
+				content_quads_result = await cdp_session.cdp_client.send.DOM.getContentQuads(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
+				if 'quads' in content_quads_result and content_quads_result['quads']:
+					quads = content_quads_result['quads']
+					self.logger.debug(f'Got {len(quads)} quads from DOM.getContentQuads')
+			except Exception as e:
+				self.logger.debug(f'DOM.getContentQuads failed: {e}')
+
+			# Method 2: Fall back to DOM.getBoxModel
+			if not quads:
+				try:
+					box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
+						params={'backendNodeId': backend_node_id}, session_id=session_id
+					)
+					if 'model' in box_model and 'content' in box_model['model']:
+						content_quad = box_model['model']['content']
+						if len(content_quad) >= 8:
+							# Convert box model format to quad format
+							quads = [
+								[
+									content_quad[0],
+									content_quad[1],  # x1, y1
+									content_quad[2],
+									content_quad[3],  # x2, y2
+									content_quad[4],
+									content_quad[5],  # x3, y3
+									content_quad[6],
+									content_quad[7],  # x4, y4
+								]
+							]
+							self.logger.debug('Got quad from DOM.getBoxModel')
+				except Exception as e:
+					self.logger.debug(f'DOM.getBoxModel failed: {e}')
+
+			# Method 3: Fall back to JavaScript getBoundingClientRect
+			if not quads:
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					if 'object' in result and 'objectId' in result['object']:
+						object_id = result['object']['objectId']
+
+						# Get bounding rect via JavaScript
+						bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+							params={
+								'functionDeclaration': """
+									function() {
+										const rect = this.getBoundingClientRect();
+										return {
+											x: rect.left,
+											y: rect.top,
+											width: rect.width,
+											height: rect.height
+										};
+									}
+								""",
+								'objectId': object_id,
+								'returnByValue': True,
+							},
+							session_id=session_id,
+						)
+
+						if 'result' in bounds_result and 'value' in bounds_result['result']:
+							rect = bounds_result['result']['value']
+							# Convert rect to quad format
+							x, y, w, h = rect['x'], rect['y'], rect['width'], rect['height']
+							quads = [
+								[
+									x,
+									y,  # top-left
+									x + w,
+									y,  # top-right
+									x + w,
+									y + h,  # bottom-right
+									x,
+									y + h,  # bottom-left
+								]
+							]
+							self.logger.debug('Got quad from getBoundingClientRect')
+				except Exception as e:
+					self.logger.debug(f'JavaScript getBoundingClientRect failed: {e}')
+
+			# If we still don't have quads, fail
+			if not quads:
+				raise Exception('Could not get element geometry from any method')
+
+			# Find the largest visible quad within the viewport
+			best_quad = None
+			best_area = 0
+
+			for quad in quads:
+				if len(quad) < 8:
+					continue
+
+				# Calculate quad bounds
+				xs = [quad[i] for i in range(0, 8, 2)]
+				ys = [quad[i] for i in range(1, 8, 2)]
+				min_x, max_x = min(xs), max(xs)
+				min_y, max_y = min(ys), max(ys)
+
+				# Check if quad intersects with viewport
+				if max_x < 0 or max_y < 0 or min_x > viewport_width or min_y > viewport_height:
+					continue  # Quad is completely outside viewport
+
+				# Calculate visible area (intersection with viewport)
+				visible_min_x = max(0, min_x)
+				visible_max_x = min(viewport_width, max_x)
+				visible_min_y = max(0, min_y)
+				visible_max_y = min(viewport_height, max_y)
+
+				visible_width = visible_max_x - visible_min_x
+				visible_height = visible_max_y - visible_min_y
+				visible_area = visible_width * visible_height
+
+				if visible_area > best_area:
+					best_area = visible_area
+					best_quad = quad
+
+			if not best_quad:
+				# No visible quad found, use the first quad anyway
+				best_quad = quads[0]
+				self.logger.warning('No visible quad found, using first quad')
+
+			# Calculate center point of the best quad
+			center_x = sum(best_quad[i] for i in range(0, 8, 2)) / 4
+			center_y = sum(best_quad[i] for i in range(1, 8, 2)) / 4
+
+			# Ensure click point is within viewport bounds
+			center_x = max(0, min(viewport_width - 1, center_x))
+			center_y = max(0, min(viewport_height - 1, center_y))
 
 			# Scroll element into view
 			try:
@@ -236,27 +380,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await asyncio.sleep(0.1)  # Wait for scroll to complete
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
-
-			# Set up download detection if downloads are enabled
-			# download_path = None
-			# download_event = asyncio.Event()
-			# download_guid = None
-
-			if self.browser_session.browser_profile.downloads_path and expect_download:
-				# Enable download events
-				await cdp_session.cdp_client.send.Page.setDownloadBehavior(
-					params={'behavior': 'allow', 'downloadPath': str(self.browser_session.browser_profile.downloads_path)},
-					session_id=session_id,
-				)
-
-				# # Set up download listener
-				# async def on_download_will_begin(event):
-				# 	nonlocal download_guid
-				# 	download_guid = event['guid']
-				# 	download_event.set()
-
-				# TODO: fix this with download_watchdog.py
-				# cdp_client.on('Page.downloadWillBegin', on_download_will_begin, session_id=session_id)  # type: ignore[attr-defined]
 
 			# Perform the click using CDP
 			# TODO: do occlusion detection first, if element is not on the top, fire JS-based
@@ -316,44 +439,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
 
-				# Handle download if expected: should be handled by downloads_watchdog.py now using browser-level download event listeners
-				# if self.browser_session.browser_profile.downloads_path:
-				# 	try:
-				# 		# Wait for download to start (with timeout)
-				# 		await asyncio.wait_for(download_event.wait(), timeout=5.0)
-
-				# 		# Wait for download to complete
-				# 		download_complete = False
-				# 		for _ in range(60):  # Wait up to 60 seconds
-				# 			try:
-				# 				# Check download progress
-				# 				response = await cdp_client.send.Page.getDownloadProgress(
-				# 					params={'guid': download_guid}, session_id=session_id
-				# 				)
-				# 				if response['state'] == 'completed':
-				# 					download_complete = True
-				# 					break
-				# 				elif response['state'] == 'canceled':
-				# 					self.logger.warning('Download was canceled')
-				# 					break
-				# 			except Exception:
-				# 				pass
-				# 			await asyncio.sleep(1)
-
-				# 		if download_complete and download_guid:
-				# 			self.logger.info('⬇️ Download completed via CDP')
-				# 			# Note: DownloadsWatchdog handles download tracking via events
-				# 			return f'download_{download_guid}'  # Return guid as placeholder
-				# 	except TimeoutError:
-				# 		# No download triggered, normal click
-				# 		self.logger.debug('No download triggered within timeout.')
-
-				# # Wait for navigation/changes
-				# await asyncio.sleep(0.5)
-				# # Navigation is handled by NavigationWatchdog via events
-
-				# return download_path
-
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
 				# Fall back to JavaScript click via CDP
@@ -375,7 +460,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						session_id=session_id,
 					)
 					await asyncio.sleep(0.5)
-					# Navigation is handled by NavigationWatchdog via events
+					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
 					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
@@ -385,6 +470,48 @@ class DefaultActionWatchdog(BaseWatchdog):
 			raise e
 		except Exception as e:
 			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
+
+	async def _type_to_page(self, text: str):
+		"""
+		Type text to the page (whatever element currently has focus).
+		This is used when index is 0 or when an element can't be found.
+		"""
+		try:
+			# Get CDP client and session
+			cdp_client = self.browser_session.cdp_client
+			session_id = (await self.browser_session.get_or_create_cdp_session()).session_id
+
+			# Type the text character by character to the focused element
+			for char in text:
+				# Send keydown
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': char,
+					},
+					session_id=session_id,
+				)
+				# Send char for actual text input
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'char',
+						'text': char,
+					},
+					session_id=session_id,
+				)
+				# Send keyup
+				await cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': char,
+					},
+					session_id=session_id,
+				)
+				# Add 18ms delay between keystrokes
+				await asyncio.sleep(0.018)
+
+		except Exception as e:
+			raise Exception(f'Failed to type to page: {str(e)}')
 
 	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True):
 		"""
@@ -597,7 +724,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			# Navigation is handled by NavigationWatchdog via events
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
 		except Exception as e:
@@ -630,7 +757,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for navigation
 			await asyncio.sleep(0.5)
-			# Navigation is handled by NavigationWatchdog via events
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
 		except Exception as e:
@@ -650,15 +777,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait for reload
 			await asyncio.sleep(1.0)
-			
+
 			# Clear cached state after refresh since DOM has been reloaded
 			self.logger.debug('🔄 Page refreshed, clearing cached browser state')
 			self.browser_session._cached_browser_state_summary = None
 			self.browser_session._cached_selector_map.clear()
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
-			
-			# Navigation is handled by NavigationWatchdog via events
+
+			# Navigation is handled by BrowserSession via events
 
 			self.logger.info('🔄 Target refreshed')
 		except Exception as e:
@@ -770,7 +897,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
-			
+
 			# Clear cached state if Enter key was pressed (might submit form and change DOM)
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
 				self.logger.debug('🔄 Enter key pressed, clearing cached browser state')
