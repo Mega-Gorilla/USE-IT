@@ -181,7 +181,7 @@ class ChatOpenAI(BaseChatModel):
 			if self.service_tier is not None:
 				model_params['service_tier'] = self.service_tier
 
-			if self.model in ReasoningModels:
+			if any(str(m).lower() in str(self.model).lower() for m in ReasoningModels):
 				model_params['reasoning_effort'] = self.reasoning_effort
 				model_params['temperature'] = 1
 				del model_params['frequency_penalty']
