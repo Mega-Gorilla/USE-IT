@@ -453,7 +453,7 @@ class BrowserUseApp(App):
 		browser_use_logger.propagate = False  # Don't propagate to root logger
 		browser_use_logger.handlers = [log_handler]  # Replace any existing handlers
 		browser_use_logger.setLevel(root.level)
-		
+
 		# Also ensure agent loggers go to the main output
 		for logger_name in ['browser_use.Agent', 'browser_use.controller']:
 			agent_logger = logging.getLogger(logger_name)
@@ -655,7 +655,7 @@ class BrowserUseApp(App):
 		"""Setup listener for browser session event bus."""
 		if not self.browser_session or not self.browser_session.event_bus:
 			return
-		
+
 		# Clean up any existing handler before registering a new one
 		if self._event_bus_handler_func is not None:
 			try:
@@ -671,7 +671,7 @@ class BrowserUseApp(App):
 				logging.debug(f'Error cleaning up event bus handler: {e}')
 			self._event_bus_handler_func = None
 			self._event_bus_handler_id = None
-		
+
 		try:
 			# Get the events log widget
 			events_log = self.query_one('#events-log', RichLog)
@@ -706,7 +706,7 @@ class BrowserUseApp(App):
 		# Store the handler function before registering it
 		self._event_bus_handler_func = log_event
 		self._event_bus_handler_id = id(log_event)
-		
+
 		# Register wildcard handler for all events
 		self.browser_session.event_bus.on('*', log_event)
 		logging.debug(f'Registered new event bus handler with id: {self._event_bus_handler_id}')
@@ -715,7 +715,7 @@ class BrowserUseApp(App):
 		"""Setup CDP message logger to capture already-transformed CDP logs."""
 		# No need to configure levels - setup_logging() already handles that
 		# We just need to capture the transformed logs and route them to the CDP pane
-		
+
 		# Get the CDP log widget
 		cdp_log = self.query_one('#cdp-log', RichLog)
 
@@ -1084,15 +1084,15 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 	finally:
 		# Ensure telemetry is flushed
 		telemetry.flush()
-		
+
 		# Give a brief moment for cleanup to complete
 		await asyncio.sleep(0.1)
-		
+
 		# Cancel any remaining tasks to ensure clean exit
 		tasks = [t for t in asyncio.all_tasks() if t != asyncio.current_task()]
 		for task in tasks:
 			task.cancel()
-		
+
 		# Wait for all tasks to be cancelled
 		if tasks:
 			await asyncio.gather(*tasks, return_exceptions=True)
@@ -1175,7 +1175,7 @@ async def textual_interface(config: dict[str, Any]):
 		app.browser_session = browser_session
 		app.controller = controller
 		app.llm = llm
-		
+
 		# Set up event bus listener now that browser session is available
 		# Note: This needs to be called before run_async() but after browser_session is set
 		# We'll defer this to on_mount() since it needs the widgets to be available

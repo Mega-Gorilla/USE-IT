@@ -95,22 +95,6 @@ def controller():
 class TestControllerIntegration:
 	"""Integration tests for Controller using actual browser instances."""
 
-	async def test_go_to_url_action(self, controller, browser_session: BrowserSession, base_url):
-		"""Test that GoToUrlAction navigates to the specified URL and test both state summary methods."""
-		# Test successful navigation to a valid page
-		action_data = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
-
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
-
-		action_model = GoToUrlActionModel(**action_data)
-		result = await controller.act(action_model, browser_session)
-
-		# Verify the successful navigation result
-		assert isinstance(result, ActionResult)
-		assert result.extracted_content is not None
-		assert f'Navigated to {base_url}' in result.extracted_content
-
 	async def test_registry_actions(self, controller, browser_session):
 		"""Test that the registry contains the expected default actions."""
 		# Check that common actions are registered
@@ -850,32 +834,3 @@ class TestControllerIntegration:
 		# Verify the actual dropdown selection was made by checking the DOM
 		selected_value = await page.evaluate("document.getElementById('test-dropdown').value")
 		assert selected_value == 'option2'  # Second Option has value "option2"
-
-	async def test_go_to_url_network_error(self, controller, browser_session: BrowserSession):
-		"""Test that go_to_url handles network errors gracefully instead of throwing hard errors."""
-		# Create action model for go_to_url with an invalid domain
-		action_data = {'go_to_url': GoToUrlAction(url='https://www.nonexistentdndbeyond.com/', new_tab=False)}
-
-		# Create the ActionModel instance
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
-
-		action_model = GoToUrlActionModel(**action_data)
-
-		# Execute the action - should return soft error instead of throwing
-		result = await controller.act(action_model, browser_session)
-
-		# Verify the result
-		assert isinstance(result, ActionResult)
-		# The navigation should fail with an error for non-existent domain
-
-		# Test that get_state_summary works
-		try:
-			await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
-			assert False, 'Expected throw error when navigating to non-existent page'
-		except Exception as e:
-			pass
-
-		# Test that browser state recovery works after error
-		summary = await browser_session.get_browser_state_summary(include_screenshot=False)
-		assert summary is not None

@@ -124,7 +124,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	cdp_loggers = [
 		'websockets.client',  # Controls emission of transformed cdp_use.client logs
 		'cdp_use',
-		'cdp_use.client', 
+		'cdp_use.client',
 		'cdp_use.cdp',
 		'cdp_use.cdp.registry',
 	]
@@ -136,7 +136,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 
 	logger = logging.getLogger('browser_use')
 	# logger.info('BrowserUse logging setup complete with level %s', log_type)
-	
+
 	# Silence third-party loggers (but not CDP ones which we configured above)
 	third_party_loggers = [
 		'WDM',

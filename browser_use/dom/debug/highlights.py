@@ -103,9 +103,10 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 
 		# ALWAYS remove any existing highlights first to prevent double-highlighting
 		await remove_highlighting_script(dom_service)
-		
+
 		# Add a small delay to ensure removal completes
 		import asyncio
+
 		await asyncio.sleep(0.05)
 
 		# Create CSP-safe highlighting script using DOM methods instead of innerHTML
