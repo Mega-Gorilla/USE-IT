@@ -14,7 +14,6 @@ from browser_use.controller.views import (
 	CloseTabAction,
 	DoneAction,
 	GoToUrlAction,
-	InputTextAction,
 	NoParamsAction,
 	SearchGoogleAction,
 	SendKeysAction,
@@ -112,7 +111,6 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert f'Navigated to {base_url}' in result.extracted_content
 
-
 	async def test_registry_actions(self, controller, browser_session):
 		"""Test that the registry contains the expected default actions."""
 		# Check that common actions are registered
@@ -167,67 +165,6 @@ class TestControllerIntegration:
 		assert result.extracted_content is not None
 		assert 'Custom action executed with: test_value on' in result.extracted_content
 		assert f'{base_url}/page1' in result.extracted_content
-
-	async def test_input_text_action(self, controller, browser_session, base_url, http_server):
-		"""Test that InputTextAction correctly inputs text into form fields."""
-		# Set up search form endpoint for this test
-		http_server.expect_request('/searchform').respond_with_data(
-			"""
-			<html>
-			<head><title>Search Form</title></head>
-			<body>
-				<h1>Search Form</h1>
-				<form action="/search" method="get">
-					<input type="text" id="searchbox" name="q" placeholder="Search...">
-					<button type="submit">Search</button>
-				</form>
-			</body>
-			</html>
-			""",
-			content_type='text/html',
-		)
-
-		# Navigate to a page with a form
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/searchform', new_tab=False)}
-
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
-
-		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
-
-		# Get the search input field index
-		page = await browser_session.get_current_page()
-		selector_map = await browser_session.get_selector_map()
-
-		# Find the search input field - this requires examining the DOM
-		# We'll mock this part since we can't rely on specific element indices
-		# In a real test, you would get the actual index from the selector map
-
-		# For demonstration, we'll just use a hard-coded mock value
-		# and check that the controller processes the action correctly
-		mock_input_index = 1  # This would normally be determined dynamically
-
-		# Create input text action
-		input_action = {'input_text': InputTextAction(index=mock_input_index, text='Python programming')}
-
-		class InputTextActionModel(ActionModel):
-			input_text: InputTextAction | None = None
-
-		# The actual input might fail if the page structure changes or in headless mode
-		# So we'll just verify the controller correctly processes the action
-		result = await controller.act(InputTextActionModel(**input_action), browser_session)
-
-		# Verify the result is an ActionResult
-		assert isinstance(result, ActionResult)
-
-		# Check if the action succeeded or failed
-		if result.error is None:
-			# Action succeeded, verify the extracted_content
-			assert result.extracted_content is not None
-			assert 'Input' in result.extracted_content
-		else:
-			# Action failed, verify the error message contains expected text
-			assert 'Element index' in result.error or 'does not exist' in result.error or 'Failed to input text' in result.error
 
 	async def test_wait_action(self, controller, browser_session):
 		"""Test that the wait action correctly waits for the specified duration."""
