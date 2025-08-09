@@ -199,7 +199,6 @@ class TestClickElementEvent:
 		result_text = result_js.get('result', {}).get('value', '')
 		assert result_text == expected_result_text, f"Expected result text '{expected_result_text}', got '{result_text}'"
 
-
 	async def test_click_element_new_tab(self, controller, browser_session, base_url, http_server):
 		"""Test that click_element_by_index with new_tab=True opens links in new tabs."""
 		# Add route for new tab test page
@@ -373,44 +372,43 @@ class TestClickElementEvent:
 
 		# Navigate to the page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/inline_offscreen', new_tab=False)}
-		
+
 		from browser_use.agent.views import ActionModel
-		
+
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
-		
+
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
-		
+
 		# Get the clickable elements
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 		selector_map = await browser_session.get_selector_map()
-		
+
 		# Find the inline element
 		inline_index = None
 		for idx, element in selector_map.items():
 			if 'inline-link' in str(element.attributes.get('class', '')):
 				inline_index = idx
 				break
-		
+
 		assert inline_index is not None, 'Could not find inline element'
-		
+
 		# Click the element - should click the visible portion
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
-		
+
 		result = await controller.act(
-			ClickActionModel(click_element_by_index=ClickElementAction(index=inline_index)),
-			browser_session
+			ClickActionModel(click_element_by_index=ClickElementAction(index=inline_index)), browser_session
 		)
-		
+
 		assert result.error is None, f'Click failed: {result.error}'
-		
+
 		# Verify click worked using CDP
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		result_js = await browser_session.cdp_client.send.Runtime.evaluate(
 			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
-			session_id=cdp_session.session_id
+			session_id=cdp_session.session_id,
 		)
 		assert result_js.get('result', {}).get('value') == 'Inline clicked'
 
@@ -458,44 +456,43 @@ class TestClickElementEvent:
 
 		# Navigate to the page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/block_in_inline', new_tab=False)}
-		
+
 		from browser_use.agent.views import ActionModel
-		
+
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
-		
+
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
-		
+
 		# Get the clickable elements
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 		selector_map = await browser_session.get_selector_map()
-		
+
 		# Find the block element inside inline
 		block_index = None
 		for idx, element in selector_map.items():
 			if 'block-inside' in str(element.attributes.get('class', '')):
 				block_index = idx
 				break
-		
+
 		assert block_index is not None, 'Could not find block element'
-		
+
 		# Click the block element
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
-		
+
 		result = await controller.act(
-			ClickActionModel(click_element_by_index=ClickElementAction(index=block_index)),
-			browser_session
+			ClickActionModel(click_element_by_index=ClickElementAction(index=block_index)), browser_session
 		)
-		
+
 		assert result.error is None, f'Click failed: {result.error}'
-		
+
 		# Verify click worked
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		result_js = await browser_session.cdp_client.send.Runtime.evaluate(
 			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
-			session_id=cdp_session.session_id
+			session_id=cdp_session.session_id,
 		)
 		assert result_js.get('result', {}).get('value') == 'Block clicked'
 
@@ -549,44 +546,43 @@ class TestClickElementEvent:
 
 		# Navigate to the page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/covered_element', new_tab=False)}
-		
+
 		from browser_use.agent.views import ActionModel
-		
+
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
-		
+
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
-		
+
 		# Get the clickable elements
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 		selector_map = await browser_session.get_selector_map()
-		
+
 		# Find the target element
 		target_index = None
 		for idx, element in selector_map.items():
 			if 'target' in str(element.attributes.get('class', '')):
 				target_index = idx
 				break
-		
+
 		assert target_index is not None, 'Could not find target element'
-		
+
 		# Click should still work on the visible portion
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
-		
+
 		result = await controller.act(
-			ClickActionModel(click_element_by_index=ClickElementAction(index=target_index)),
-			browser_session
+			ClickActionModel(click_element_by_index=ClickElementAction(index=target_index)), browser_session
 		)
-		
+
 		assert result.error is None, f'Click failed: {result.error}'
-		
+
 		# Verify click worked
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		result_js = await browser_session.cdp_client.send.Runtime.evaluate(
 			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
-			session_id=cdp_session.session_id
+			session_id=cdp_session.session_id,
 		)
 		assert result_js.get('result', {}).get('value') == 'Target clicked'
 
@@ -612,19 +608,19 @@ class TestClickElementEvent:
 
 		# Navigate to the page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/file_input', new_tab=False)}
-		
+
 		from browser_use.agent.views import ActionModel
-		
+
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
-		
+
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
-		
+
 		# Get the clickable elements
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 		selector_map = await browser_session.get_selector_map()
-		
+
 		# Find the file input
 		file_input_index = None
 		for idx, element in selector_map.items():
@@ -632,22 +628,22 @@ class TestClickElementEvent:
 				if element.attributes and element.attributes.get('type') == 'file':
 					file_input_index = idx
 					break
-		
+
 		assert file_input_index is not None, 'Could not find file input element'
-		
+
 		# Attempt to click should raise an exception
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
-		
+
 		result = await controller.act(
-			ClickActionModel(click_element_by_index=ClickElementAction(index=file_input_index)),
-			browser_session
+			ClickActionModel(click_element_by_index=ClickElementAction(index=file_input_index)), browser_session
 		)
-		
+
 		# Should have an error about file inputs
 		assert result.error is not None, 'Expected error for file input click'
-		assert 'file input' in result.error.lower() or 'file upload' in result.error.lower(), \
+		assert 'file input' in result.error.lower() or 'file upload' in result.error.lower(), (
 			f'Error message should mention file input, got: {result.error}'
+		)
 
 	async def test_select_dropdown_click_prevention(self, controller, browser_session, base_url, http_server):
 		"""Test that clicking a select dropdown element raises an exception."""
@@ -675,38 +671,38 @@ class TestClickElementEvent:
 
 		# Navigate to the page
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/select_dropdown', new_tab=False)}
-		
+
 		from browser_use.agent.views import ActionModel
-		
+
 		class GoToUrlActionModel(ActionModel):
 			go_to_url: GoToUrlAction | None = None
-		
+
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 		await asyncio.sleep(0.5)
-		
+
 		# Get the clickable elements
 		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 		selector_map = await browser_session.get_selector_map()
-		
+
 		# Find the select element
 		select_index = None
 		for idx, element in selector_map.items():
 			if element.tag_name and element.tag_name.lower() == 'select':
 				select_index = idx
 				break
-		
+
 		assert select_index is not None, 'Could not find select element'
-		
+
 		# Attempt to click should raise an exception
 		class ClickActionModel(ActionModel):
 			click_element_by_index: ClickElementAction | None = None
-		
+
 		result = await controller.act(
-			ClickActionModel(click_element_by_index=ClickElementAction(index=select_index)),
-			browser_session
+			ClickActionModel(click_element_by_index=ClickElementAction(index=select_index)), browser_session
 		)
-		
+
 		# Should have an error about select elements
 		assert result.error is not None, 'Expected error for select element click'
-		assert 'select' in result.error.lower() and 'dropdown' in result.error.lower(), \
+		assert 'select' in result.error.lower() and 'dropdown' in result.error.lower(), (
 			f'Error message should mention select/dropdown, got: {result.error}'
+		)

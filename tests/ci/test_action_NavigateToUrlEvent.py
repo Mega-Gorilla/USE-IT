@@ -167,7 +167,7 @@ class TestNavigateToUrlEvent:
 		# Verify navigation worked
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
-		
+
 		# Check we're on the right page
 		current_url = await browser_session.get_current_page_url()
 		assert f'{base_url}/page1' in current_url
@@ -193,7 +193,7 @@ class TestNavigateToUrlEvent:
 		"""Test navigating to a data: URL."""
 		# Create a simple data URL
 		data_url = 'data:text/html,<html><head><title>Data URL Test</title></head><body><h1>Data URL Content</h1></body></html>'
-		
+
 		action_data = {'go_to_url': GoToUrlAction(url=data_url, new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
@@ -314,7 +314,7 @@ class TestNavigateToUrlEvent:
 		# Try to navigate to a URL that will likely timeout
 		# Using a private IP that's unlikely to respond
 		timeout_url = 'http://192.0.2.1:8080/timeout'
-		
+
 		action_data = {'go_to_url': GoToUrlAction(url=timeout_url, new_tab=False)}
 
 		class GoToUrlActionModel(ActionModel):
@@ -322,7 +322,7 @@ class TestNavigateToUrlEvent:
 
 		# This should complete without hanging indefinitely
 		result = await controller.act(GoToUrlActionModel(**action_data), browser_session)
-		
+
 		# Should get a result (possibly with error)
 		assert isinstance(result, ActionResult)
 
@@ -355,20 +355,20 @@ class TestNavigateToUrlEvent:
 	async def test_navigate_to_url_event_with_new_tab_and_tab_created_event(self, browser_session, base_url):
 		"""Test NavigateToUrlEvent with new_tab=True and verify TabCreatedEvent is emitted."""
 		from browser_use.browser.events import NavigateToUrlEvent, TabCreatedEvent
-		
+
 		initial_tab_count = len(browser_session.tabs)
-		
+
 		# Navigate to URL in new tab via direct event
 		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page2', new_tab=True))
 		await nav_event
-		
+
 		# Verify new tab was created
 		assert len(browser_session.tabs) == initial_tab_count + 1
-		
+
 		# Check that current page is the new tab
 		current_url = await browser_session.get_current_page_url()
 		assert f'{base_url}/page2' in current_url
-		
+
 		# Check event history for TabCreatedEvent
 		event_history = list(browser_session.event_bus.event_history.values())
 		created_events = [e for e in event_history if isinstance(e, TabCreatedEvent)]
@@ -377,26 +377,24 @@ class TestNavigateToUrlEvent:
 	async def test_navigate_with_new_tab_focuses_properly(self, browser_session):
 		"""Test that NavigateToUrlEvent with new_tab=True properly switches focus."""
 		from browser_use.browser.events import NavigateToUrlEvent
-		
+
 		# Get initial state
 		initial_tabs_count = len(browser_session.tabs)
 		initial_url = await browser_session.get_current_page_url()
-		
+
 		# Navigate to a URL in a new tab
-		nav_event = browser_session.event_bus.dispatch(
-			NavigateToUrlEvent(url='https://example.com', new_tab=True)
-		)
+		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url='https://example.com', new_tab=True))
 		await nav_event
-		
+
 		# Small delay to ensure navigation completes
 		await asyncio.sleep(1)
-		
+
 		# Get browser state after navigation
 		current_url = await browser_session.get_current_page_url()
-		
+
 		# Verify a new tab was created
 		assert len(browser_session.tabs) == initial_tabs_count + 1
-		
+
 		# Verify focus switched to the new tab
 		assert 'example.com' in current_url
 		assert current_url != initial_url
@@ -404,23 +402,23 @@ class TestNavigateToUrlEvent:
 	async def test_navigate_and_verify_page_properties(self, browser_session, base_url):
 		"""Test that NavigateToUrlEvent changes the URL and page properties are accessible."""
 		from browser_use.browser.events import NavigateToUrlEvent
-		
+
 		# Navigate to the test page
 		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
 		await event
-		
+
 		# Wait for navigation to complete
 		await asyncio.sleep(0.5)
-		
+
 		# Get the current page URL
 		current_url = await browser_session.get_current_page_url()
-		
+
 		# Verify the page URL matches what we navigated to
 		assert f'{base_url}/' in current_url
-		
+
 		# Get the actual page object
 		page = browser_session.page
-		
+
 		# Verify the page title
 		title = await page.title()
 		assert title == 'Test Home Page'
