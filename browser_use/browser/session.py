@@ -23,6 +23,7 @@ from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	BrowserStopEvent,
 	BrowserStoppedEvent,
+	FileDownloadedEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
 	NavigationStartedEvent,
@@ -186,6 +187,7 @@ class BrowserSession(BaseModel):
 	_cdp_session_pool: dict[str, CDPSession] = PrivateAttr(default_factory=dict)
 	_cached_browser_state_summary: Any = PrivateAttr(default=None)
 	_cached_selector_map: dict[int, EnhancedDOMTreeNode] = PrivateAttr(default_factory=dict)
+	_downloaded_files: list[str] = PrivateAttr(default_factory=list)  # Track files downloaded during this session
 
 	# Watchdogs
 	_crash_watchdog: Any | None = PrivateAttr(default=None)
@@ -233,6 +235,7 @@ class BrowserSession(BaseModel):
 		self._cdp_client_root = None  # type: ignore
 		self._cached_browser_state_summary = None
 		self._cached_selector_map.clear()
+		self._downloaded_files.clear()
 
 		self.agent_focus = None
 		if self.is_local:
@@ -268,6 +271,8 @@ class BrowserSession(BaseModel):
 		self.event_bus.on(NavigateToUrlEvent, self.on_NavigateToUrlEvent)
 		self.event_bus.on(SwitchTabEvent, self.on_SwitchTabEvent)
 		self.event_bus.on(TabClosedEvent, self.on_TabClosedEvent)
+		# Track downloaded files
+		self.event_bus.on(FileDownloadedEvent, self.on_FileDownloadedEvent)
 
 	async def start(self) -> None:
 		"""Start the browser session."""
@@ -421,6 +426,7 @@ class BrowserSession(BaseModel):
 			await asyncio.sleep(0.5)
 
 			# Dispatch navigation complete
+			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab_index={tab_index})')
 			self.event_bus.dispatch(
 				NavigationCompleteEvent(
 					tab_index=tab_index,
@@ -510,6 +516,18 @@ class BrowserSession(BaseModel):
 					self.agent_focus = None
 			else:
 				self.agent_focus = None
+
+	async def on_FileDownloadedEvent(self, event: FileDownloadedEvent) -> None:
+		"""Track downloaded files during this session."""
+		self.logger.debug(f'FileDownloadedEvent received: {event.file_name} at {event.path}')
+		if event.path and event.path not in self._downloaded_files:
+			self._downloaded_files.append(event.path)
+			self.logger.info(f'📁 Tracked download: {event.file_name} ({len(self._downloaded_files)} total downloads in session)')
+		else:
+			if not event.path:
+				self.logger.warning(f'FileDownloadedEvent has no path: {event}')
+			else:
+				self.logger.debug(f'File already tracked: {event.path}')
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
 		"""Handle browser stop request."""
@@ -693,6 +711,8 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStoppedEvent, self._downloads_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(NavigationCompleteEvent, self._downloads_watchdog.on_NavigationCompleteEvent)
 		await self._downloads_watchdog.attach_to_session()
+		if self.browser_profile.auto_download_pdfs:
+			self.logger.info('📄 PDF auto-download enabled for this session')
 
 		# Initialize StorageStateWatchdog
 		StorageStateWatchdog.model_rebuild()
@@ -1109,17 +1129,12 @@ class BrowserSession(BaseModel):
 
 	@property
 	def downloaded_files(self) -> list[str]:
-		"""Get list of downloaded files from the downloads directory."""
-		if not self.browser_profile.downloads_path:
-			return []
-
-		downloads_dir = Path(self.browser_profile.downloads_path)
-		if not downloads_dir.exists():
-			return []
-
-		# Get all files in downloads directory (not directories)
-		files = [str(f) for f in downloads_dir.iterdir() if f.is_file()]
-		return sorted(files)
+		"""Get list of files downloaded during this browser session.
+		
+		Returns:
+		    list[str]: List of absolute file paths to downloaded files in this session
+		"""
+		return self._downloaded_files.copy()
 
 	# ========== CDP-based replacements for browser_context operations ==========
 
