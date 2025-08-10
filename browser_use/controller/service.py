@@ -2,7 +2,6 @@ import asyncio
 import enum
 import json
 import logging
-import re
 from typing import Generic, TypeVar
 
 try:
@@ -391,7 +390,6 @@ class Controller(Generic[Context]):
 			file_system: FileSystem,
 		):
 			loop = asyncio.get_event_loop()
-
 			cdp_session = await browser_session.get_or_create_cdp_session()
 
 			try:
@@ -400,102 +398,51 @@ class Controller(Generic[Context]):
 				page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
 					params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=cdp_session.session_id
 				)
-			except TimeoutError:
-				raise RuntimeError('Page content extraction timed out after 5 seconds')
 			except Exception as e:
 				raise RuntimeError(f"Couldn't extract page content: {e}")
 
 			page_html = page_html_result['outerHTML']
 
+			# Simple markdown conversion
 			try:
-				# Clean HTML before processing
-				page_html = self._clean_html_for_extraction(page_html)
-			except Exception as e:
-				logger.warning(f'Error cleaning HTML: {type(e).__name__}: {e}')
+				import markdownify
 
-			# Convert to markdown with custom processing
-			try:
-				content = await asyncio.wait_for(
-					loop.run_in_executor(None, self._html_to_clean_markdown, page_html, extract_links), timeout=10.0
-				)
+				if extract_links:
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
+				else:
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
 			except Exception as e:
-				logger.warning(f'Markdown conversion failed: {type(e).__name__}')
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
-			# Clean and validate content
-			content = self._clean_and_validate_content(content, query)
+			# Simple truncation to 30k characters
+			if len(content) > 30000:
+				content = content[:30000] + '\n\n... [Content truncated at 30k characters] ...'
 
-			# Check if content is relevant to query
-			if not self._is_content_relevant(content, query):
-				error_response = {
-					'status': 'information_not_available',
-					'explanation': f"The webpage does not contain information relevant to the query: '{query}'. The page appears to contain different content.",
-					'page_content_summary': content[:200] + '...' if len(content) > 200 else content,
-					'requested_information': None,
-				}
-				extracted_content = (
-					f'Page Link: {cdp_session.url}\nQuery: {query}\nExtracted Content:\n{json.dumps(error_response, indent=2)}'
-				)
-				memory = f'Content extraction failed - query "{query}" not relevant to page content'
-				logger.info(f'📄 {memory}')
-				return ActionResult(
-					extracted_content=extracted_content,
-					include_extracted_content_only_once=False,
-					long_term_memory=memory,
-				)
+			# Simple prompt
+			prompt = f"""Extract the requested information from this webpage content.
 
-			# Limit content length intelligently
-			if len(content) > 25000:
-				content = self._smart_truncate_content(content, 25000)
+Query: {query}
 
-			# Improved prompt for better extraction
-			prompt = """You are an expert content extractor. Extract precise, structured information from this webpage based on the query.
+Webpage Content:
+{content}
 
-**Instructions:**
-1. Focus ONLY on content directly relevant to the query
-2. If the information is not available, clearly state so
-3. Provide structured, accurate information in JSON format
-4. Include specific details, numbers, quotes when available
-5. If extracting lists, maintain the original order
-
-**Query:** {query}
-
-**Webpage Content:**
-{page}
-
-**Response Format:** Provide a clean JSON response with the extracted information."""
+Provide the extracted information in a clear, structured format."""
 
 			try:
-				formatted_prompt = prompt.format(query=query, page=content)
 				response = await asyncio.wait_for(
-					page_extraction_llm.ainvoke([UserMessage(content=formatted_prompt)]),
+					page_extraction_llm.ainvoke([UserMessage(content=prompt)]),
 					timeout=120.0,
 				)
 
-				# Clean the response
-				cleaned_response = self._clean_llm_response(response.completion)
-				extracted_content = f'Page Link: {cdp_session.url}\nQuery: {query}\nExtracted Content:\n{cleaned_response}'
+				extracted_content = f'Page Link: {cdp_session.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
 
-				# Optimize memory usage
-				MAX_MEMORY_SIZE = 800
-				if len(extracted_content) < MAX_MEMORY_SIZE:
+				# Simple memory handling
+				if len(extracted_content) < 1000:
 					memory = extracted_content
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					# Create concise memory summary
-					try:
-						response_preview = json.loads(cleaned_response)
-						if isinstance(response_preview, dict):
-							summary_keys = list(response_preview.keys())[:3]
-							summary = {k: response_preview[k] for k in summary_keys}
-							summary_text = json.dumps(summary, indent=2)[:400]
-						else:
-							summary_text = str(response_preview)[:400]
-					except:
-						summary_text = cleaned_response[:400]
-
-					memory = f'Extracted content from {cdp_session.url}\n<query>{query}</query>\n<preview>\n{summary_text}...\n</preview>\n<file_system>{save_result}</file_system>'
+					memory = f'Extracted content from {cdp_session.url} for query: {query}\nContent saved to file system: {save_result}'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
@@ -504,14 +451,8 @@ class Controller(Generic[Context]):
 					include_extracted_content_only_once=include_extracted_content_only_once,
 					long_term_memory=memory,
 				)
-			except TimeoutError:
-				error_msg = f'LLM call timed out for query: {query}'
-				logger.warning(error_msg)
-				raise RuntimeError(error_msg)
 			except Exception as e:
 				logger.debug(f'Error extracting content: {e}')
-				msg = f'📄 Extraction failed for query: {query}'
-				logger.info(msg)
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
@@ -1210,163 +1151,3 @@ class Controller(Generic[Context]):
 				else:
 					raise ValueError(f'Invalid action result type: {type(result)} of {result}')
 		return ActionResult()
-
-	def _clean_html_for_extraction(self, html: str) -> str:
-		"""Clean HTML by removing unnecessary elements and attributes."""
-
-		# Remove script and style elements
-		html = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-		# Remove navigation and header elements
-		html = re.sub(r'<(nav|header|footer)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-		# Remove debugging elements (browser-use highlighting)
-		html = re.sub(r'<[^>]*data-browser-use[^>]*>.*?</[^>]*>', '', html, flags=re.DOTALL)
-		html = re.sub(r'<[^>]*browser-use[^>]*>', '', html, flags=re.IGNORECASE)
-
-		# Remove data URLs and base64 content
-		html = re.sub(r'data:[^;\s,]+;[^,\s]*,([^"\'\s>]+)', '', html, flags=re.IGNORECASE)
-
-		# Remove style attributes with positioning
-		html = re.sub(r'style\s*=\s*["\'][^"\']*position[^"\']*["\']', '', html, flags=re.IGNORECASE)
-
-		# Remove excessive whitespace
-		html = re.sub(r'\s+', ' ', html)
-
-		return html
-
-	def _html_to_clean_markdown(self, html: str, extract_links: bool = False) -> str:
-		"""Convert HTML to clean, semantic markdown."""
-		import markdownify
-
-		# Configure markdownify for cleaner output
-		if extract_links:
-			# Keep links when requested
-			content = markdownify.markdownify(
-				html, heading_style='ATX', bullets='-', strip=['script', 'style', 'meta', 'link', 'title', 'head']
-			)
-		else:
-			# Remove links for cleaner text-only content
-			content = markdownify.markdownify(
-				html, heading_style='ATX', bullets='-', strip=['script', 'style', 'meta', 'link', 'title', 'head', 'a']
-			)
-
-		return content
-
-	def _clean_and_validate_content(self, content: str, query: str) -> str:
-		"""Clean and validate the markdown content."""
-
-		# Remove excessive newlines
-		content = re.sub(r'\n{3,}', '\n\n', content)
-
-		# Remove browser-use debug elements
-		content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?UNKNOWN CONFIDENCE.*?(?=\n|$)', '', content, flags=re.MULTILINE)
-		content = re.sub(r'Primary:\s*UNKNOWN.*?(?=\n|$)', '', content, flags=re.MULTILINE)
-		content = re.sub(r'No specific evidence found.*?(?=\n|$)', '', content, flags=re.MULTILINE)
-		content = re.sub(r'Position:\s*\([^)]+\)\s*Size:\s*[^\n]*', '', content, flags=re.MULTILINE)
-
-		# Remove navigation elements
-		content = re.sub(r'(Home|About|Contact|Menu|Navigation|Login|Signin|Signup)[\|\s]*', '', content, flags=re.IGNORECASE)
-
-		# Remove common web elements
-		content = re.sub(r'(Cookie|Privacy Policy|Terms|Accept|Decline)[\|\s]*', '', content, flags=re.IGNORECASE)
-
-		# Clean up remaining artifacts
-		content = re.sub(r'^\s*[-=_|]+\s*$', '', content, flags=re.MULTILINE)  # Remove separator lines
-		content = re.sub(r'^\s*\d+\s*$', '', content, flags=re.MULTILINE)  # Remove standalone numbers
-
-		# Final cleanup
-		content = re.sub(r'\n{3,}', '\n\n', content)
-		content = content.strip()
-
-		return content
-
-	def _is_content_relevant(self, content: str, query: str) -> bool:
-		"""Check if content contains information relevant to the query."""
-		if len(content.strip()) < 50:  # Too little content
-			return False
-
-		# Extract key terms from query
-		query_words = set(query.lower().split())
-		content_lower = content.lower()
-
-		# Remove common stop words from query
-		stop_words = {
-			'the',
-			'a',
-			'an',
-			'and',
-			'or',
-			'but',
-			'in',
-			'on',
-			'at',
-			'to',
-			'for',
-			'of',
-			'with',
-			'by',
-			'what',
-			'how',
-			'when',
-			'where',
-			'why',
-			'who',
-		}
-		significant_words = query_words - stop_words
-
-		if len(significant_words) == 0:
-			return True  # Query too generic, assume relevant
-
-		# Check if at least some query terms appear in content
-		matches = sum(1 for word in significant_words if word in content_lower)
-		relevance_ratio = matches / len(significant_words)
-
-		return relevance_ratio >= 0.3  # At least 30% of significant query words should appear
-
-	def _smart_truncate_content(self, content: str, max_chars: int) -> str:
-		"""Intelligently truncate content while preserving structure."""
-		if len(content) <= max_chars:
-			return content
-
-		# Try to truncate at paragraph boundaries
-		paragraphs = content.split('\n\n')
-		truncated = ''
-
-		for para in paragraphs:
-			if len(truncated) + len(para) + 2 <= max_chars - 100:  # Leave room for truncation message
-				truncated += para + '\n\n'
-			else:
-				break
-
-		if len(truncated) < max_chars // 2:  # If we lost too much, use simple truncation
-			truncated = content[: max_chars - 100]
-
-		truncated += '\n\n... [Content truncated for length - full content available in extracted file] ...'
-		return truncated
-
-	def _clean_llm_response(self, response: str) -> str:
-		"""Clean and validate LLM response."""
-		import json
-
-		# Try to extract JSON from response
-		response = response.strip()
-
-		# Handle markdown code blocks
-		if response.startswith('```'):
-			lines = response.split('\n')
-			start_idx = 1 if lines[0].startswith('```') else 0
-			end_idx = len(lines)
-			for i, line in enumerate(lines[start_idx:], start_idx):
-				if line.strip() == '```':
-					end_idx = i
-					break
-			response = '\n'.join(lines[start_idx:end_idx])
-
-		# Validate JSON
-		try:
-			parsed = json.loads(response)
-			return json.dumps(parsed, indent=2, ensure_ascii=False)
-		except json.JSONDecodeError:
-			# If not valid JSON, return as-is but cleaned
-			return response.strip()
