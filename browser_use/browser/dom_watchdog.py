@@ -18,7 +18,7 @@ from browser_use.dom.views import (
 )
 
 if TYPE_CHECKING:
-	from browser_use.browser.views import BrowserStateSummary
+	from browser_use.browser.views import BrowserStateSummary, PageInfo
 
 
 class DOMWatchdog(BaseWatchdog):
@@ -95,7 +95,7 @@ class DOMWatchdog(BaseWatchdog):
 				})();
 			}
 		"""
-		
+
 		# Try to inject the script, but don't fail if the Page domain isn't ready yet
 		# This can happen when a new tab is created and the CDP session isn't fully attached
 		try:
@@ -110,29 +110,27 @@ class DOMWatchdog(BaseWatchdog):
 
 	def _get_recent_events_csv(self, limit: int = 10) -> str | None:
 		"""Get the most recent event names from the event bus as CSV.
-		
+
 		Args:
 			limit: Maximum number of recent events to include
-			
+
 		Returns:
 			CSV string of recent event names or None if not available
 		"""
 		try:
 			# Get all events from history, sorted by creation time (most recent first)
 			all_events = sorted(
-				self.browser_session.event_bus.event_history.values(),
-				key=lambda e: e.event_created_at.timestamp(),
-				reverse=True
+				self.browser_session.event_bus.event_history.values(), key=lambda e: e.event_created_at.timestamp(), reverse=True
 			)
-			
+
 			# Take the most recent events and get their names
 			recent_event_names = [event.event_type for event in all_events[:limit]]
-			
+
 			if recent_event_names:
 				return ', '.join(recent_event_names)
 		except Exception as e:
 			self.logger.debug(f'Failed to get recent events: {e}')
-		
+
 		return None
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
@@ -150,7 +148,9 @@ class DOMWatchdog(BaseWatchdog):
 
 		page_url = await self.browser_session.get_current_page_url()
 		if self.browser_session.agent_focus:
-			self.logger.debug(f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}')
+			self.logger.debug(
+				f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
+			)
 		else:
 			self.logger.debug(f'📍 Current page URL: {page_url}, no cdp_session attached')
 
@@ -174,20 +174,25 @@ class DOMWatchdog(BaseWatchdog):
 				# Skip screenshot for empty pages
 				screenshot_b64 = None
 
-				# Use default viewport dimensions
-				viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
-				page_info = PageInfo(
-					viewport_width=viewport['width'],
-					viewport_height=viewport['height'],
-					page_width=viewport['width'],
-					page_height=viewport['height'],
-					scroll_x=0,
-					scroll_y=0,
-					pixels_above=0,
-					pixels_below=0,
-					pixels_left=0,
-					pixels_right=0,
-				)
+				# Try to get page info from CDP, fall back to defaults if unavailable
+				try:
+					page_info = await self._get_page_info()
+				except Exception as e:
+					self.logger.debug(f'Failed to get page info from CDP for empty page: {e}, using fallback')
+					# Use default viewport dimensions
+					viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
+					page_info = PageInfo(
+						viewport_width=viewport['width'],
+						viewport_height=viewport['height'],
+						page_width=viewport['width'],
+						page_height=viewport['height'],
+						scroll_x=0,
+						scroll_y=0,
+						pixels_above=0,
+						pixels_below=0,
+						pixels_left=0,
+						pixels_right=0,
+					)
 
 				return BrowserStateSummary(
 					dom_state=content,
@@ -238,24 +243,24 @@ class DOMWatchdog(BaseWatchdog):
 					handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
 					handler_names = [getattr(h, '__name__', str(h)) for h in handlers]
 					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {handler_names}')
-					
+
 					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=6.0))
-					self.logger.debug(f'📸 Dispatched ScreenshotEvent, waiting for event to complete...')
-					
+					self.logger.debug('📸 Dispatched ScreenshotEvent, waiting for event to complete...')
+
 					# Wait for the event itself to complete (this waits for all handlers)
 					await screenshot_event
-					
+
 					# Now get the results after the event has completed
 					screenshot_result = await screenshot_event.event_results_flat_dict()
 					self.logger.debug(f'📸 Got screenshot result: {screenshot_result.keys() if screenshot_result else None}')
-					
+
 					if screenshot_result:
 						screenshot_b64 = screenshot_result.get('screenshot')
 						if screenshot_b64:
 							self.logger.debug(f'📸 Screenshot captured in DOM watchdog, length: {len(screenshot_b64)}')
 						else:
 							self.logger.warning('📸 Screenshot result returned but screenshot was None')
-				except asyncio.TimeoutError:
+				except TimeoutError:
 					self.logger.warning('📸 Screenshot timed out after 6 seconds - no handler registered or slow page?')
 				except Exception as e:
 					self.logger.warning(f'📸 Screenshot failed: {type(e).__name__}: {e}')
@@ -273,20 +278,27 @@ class DOMWatchdog(BaseWatchdog):
 				self.logger.debug(f'Failed to get title: {e}')
 				title = 'Page'
 
-			# TODO: Get proper target info from CDP
-			viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
-			page_info = PageInfo(
-				viewport_width=viewport['width'],
-				viewport_height=viewport['height'],
-				page_width=viewport['width'],
-				page_height=viewport['height'],
-				scroll_x=0,
-				scroll_y=0,
-				pixels_above=0,
-				pixels_below=0,
-				pixels_left=0,
-				pixels_right=0,
-			)
+			# Get comprehensive page info from CDP
+			try:
+				self.logger.debug('Getting page info from CDP...')
+				page_info = await self._get_page_info()
+				self.logger.debug(f'Got page info from CDP: {page_info}')
+			except Exception as e:
+				self.logger.debug(f'Failed to get page info from CDP: {e}, using fallback')
+				# Fallback to default viewport dimensions
+				viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
+				page_info = PageInfo(
+					viewport_width=viewport['width'],
+					viewport_height=viewport['height'],
+					page_width=viewport['width'],
+					page_height=viewport['height'],
+					scroll_x=0,
+					scroll_y=0,
+					pixels_above=0,
+					pixels_below=0,
+					pixels_left=0,
+					pixels_right=0,
+				)
 
 			# Check for PDF viewer
 			is_pdf_viewer = page_url.endswith('.pdf') or '/pdf/' in page_url
@@ -296,7 +308,7 @@ class DOMWatchdog(BaseWatchdog):
 				self.logger.debug(f'📸 Creating BrowserStateSummary with screenshot, length: {len(screenshot_b64)}')
 			else:
 				self.logger.debug('📸 Creating BrowserStateSummary WITHOUT screenshot')
-			
+
 			browser_state = BrowserStateSummary(
 				dom_state=content,
 				url=page_url,
@@ -410,6 +422,77 @@ class DOMWatchdog(BaseWatchdog):
 				)
 			)
 			raise
+
+	async def _get_page_info(self) -> 'PageInfo':
+		"""Get comprehensive page information using a single CDP call.
+
+		TODO: should we make this an event as well?
+
+		Returns:
+			PageInfo with all viewport, page dimensions, and scroll information
+		"""
+
+		from browser_use.browser.views import PageInfo
+
+		# Get CDP session for the current target
+		if not self.browser_session.agent_focus:
+			raise RuntimeError('No active CDP session - browser may not be connected yet')
+
+		cdp_session = self.browser_session.agent_focus
+
+		# Get layout metrics which includes all the information we need
+		metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+
+		# Extract different viewport types
+		layout_viewport = metrics.get('layoutViewport', {})
+		visual_viewport = metrics.get('visualViewport', {})
+		css_visual_viewport = metrics.get('cssVisualViewport', {})
+		css_layout_viewport = metrics.get('cssLayoutViewport', {})
+		content_size = metrics.get('contentSize', {})
+
+		# Calculate device pixel ratio to convert between device pixels and CSS pixels
+		# This matches the approach in dom/service.py _get_viewport_ratio method
+		css_width = css_visual_viewport.get('clientWidth', css_layout_viewport.get('clientWidth', 1280.0))
+		device_width = visual_viewport.get('clientWidth', css_width)
+		device_pixel_ratio = device_width / css_width if css_width > 0 else 1.0
+
+		# For viewport dimensions, use CSS pixels (what JavaScript sees)
+		# Prioritize CSS layout viewport, then fall back to layout viewport
+		viewport_width = int(css_layout_viewport.get('clientWidth') or layout_viewport.get('clientWidth', 1280))
+		viewport_height = int(css_layout_viewport.get('clientHeight') or layout_viewport.get('clientHeight', 720))
+
+		# For total page dimensions, content size is typically in device pixels, so convert to CSS pixels
+		# by dividing by device pixel ratio
+		raw_page_width = content_size.get('width', viewport_width * device_pixel_ratio)
+		raw_page_height = content_size.get('height', viewport_height * device_pixel_ratio)
+		page_width = int(raw_page_width / device_pixel_ratio)
+		page_height = int(raw_page_height / device_pixel_ratio)
+
+		# For scroll position, use CSS visual viewport if available, otherwise CSS layout viewport
+		# These should already be in CSS pixels
+		scroll_x = int(css_visual_viewport.get('pageX') or css_layout_viewport.get('pageX', 0))
+		scroll_y = int(css_visual_viewport.get('pageY') or css_layout_viewport.get('pageY', 0))
+
+		# Calculate scroll information - pixels that are above/below/left/right of current viewport
+		pixels_above = scroll_y
+		pixels_below = max(0, page_height - viewport_height - scroll_y)
+		pixels_left = scroll_x
+		pixels_right = max(0, page_width - viewport_width - scroll_x)
+
+		page_info = PageInfo(
+			viewport_width=viewport_width,
+			viewport_height=viewport_height,
+			page_width=page_width,
+			page_height=page_height,
+			scroll_x=scroll_x,
+			scroll_y=scroll_y,
+			pixels_above=pixels_above,
+			pixels_below=pixels_below,
+			pixels_left=pixels_left,
+			pixels_right=pixels_right,
+		)
+
+		return page_info
 
 	# ========== Public Helper Methods ==========
 
