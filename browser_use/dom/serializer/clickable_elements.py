@@ -18,7 +18,8 @@ class ClickableElementDetector:
 		if node.tag_name in {'html', 'body'}:
 			return False
 
-		# Super quick check: if the node is a div with no width or height, it's not clickable (basically invisible element on page)
+		# RELAXED SIZE CHECK: Allow small elements that might be icons
+		# Only exclude truly invisible elements (width AND height both 0)
 		if (
 			node.snapshot_node
 			and node.snapshot_node.bounds
@@ -26,6 +27,36 @@ class ClickableElementDetector:
 			and node.snapshot_node.bounds.height == 0
 		):
 			return False
+
+		# SEARCH ELEMENT DETECTION: Check for search-related classes and attributes
+		if node.attributes:
+			search_indicators = {
+				'search',
+				'magnify',
+				'glass',
+				'lookup',
+				'find',
+				'query',
+				'search-icon',
+				'search-btn',
+				'search-button',
+				'searchbox',
+			}
+
+			# Check class names for search indicators
+			class_list = node.attributes.get('class', '').lower().split()
+			if any(indicator in ' '.join(class_list) for indicator in search_indicators):
+				return True
+
+			# Check id for search indicators
+			element_id = node.attributes.get('id', '').lower()
+			if any(indicator in element_id for indicator in search_indicators):
+				return True
+
+			# Check data attributes for search functionality
+			for attr_name, attr_value in node.attributes.items():
+				if attr_name.startswith('data-') and any(indicator in attr_value.lower() for indicator in search_indicators):
+					return True
 
 		# Enhanced accessibility property checks - direct clear indicators only
 		if node.ax_node and node.ax_node.properties:
@@ -59,10 +90,33 @@ class ClickableElementDetector:
 					# Skip properties we can't process
 					continue
 
-		# Secondary check: intrinsically interactive HTML elements
-		interactive_tags = {'button', 'input', 'select', 'textarea', 'a', 'label', 'details', 'summary', 'option', 'optgroup'}
+		# ENHANCED TAG CHECK: Include SVG and other common interactive elements
+		interactive_tags = {
+			'button',
+			'input',
+			'select',
+			'textarea',
+			'a',
+			'label',
+			'details',
+			'summary',
+			'option',
+			'optgroup',
+			'svg',
+			'path',
+			'circle',
+			'rect',
+			'polygon',
+			'ellipse',
+		}
 		if node.tag_name in interactive_tags:
 			return True
+
+		# NAVIGATION ELEMENT CHECK: Include common navigation containers
+		if node.tag_name in {'nav', 'header'} and node.attributes:
+			# Navigation elements are often interactive if they have classes or roles
+			if 'class' in node.attributes or 'role' in node.attributes:
+				return True
 
 		# Tertiary check: elements with interactive attributes
 		if node.attributes:
@@ -85,6 +139,8 @@ class ClickableElementDetector:
 					'combobox',
 					'slider',
 					'spinbutton',
+					'search',
+					'searchbox',
 				}
 				if node.attributes['role'] in interactive_roles:
 					return True
@@ -104,9 +160,25 @@ class ClickableElementDetector:
 				'slider',
 				'spinbutton',
 				'listbox',
+				'search',
+				'searchbox',
 			}
 			if node.ax_node.role in interactive_ax_roles:
 				return True
+
+		# ICON AND SMALL ELEMENT CHECK: Elements that might be icons
+		if (
+			node.snapshot_node
+			and node.snapshot_node.bounds
+			and 10 <= node.snapshot_node.bounds.width <= 50  # Icon-sized elements
+			and 10 <= node.snapshot_node.bounds.height <= 50
+		):
+			# Check if this small element has interactive properties
+			if node.attributes:
+				# Small elements with these attributes are likely interactive icons
+				icon_attributes = {'class', 'role', 'onclick', 'data-action', 'aria-label'}
+				if any(attr in node.attributes for attr in icon_attributes):
+					return True
 
 		# Final fallback: cursor style indicates interactivity (for cases Chrome missed)
 		if node.snapshot_node and node.snapshot_node.cursor_style and node.snapshot_node.cursor_style == 'pointer':
