@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Any, Self, cast
 
 import httpx
@@ -1023,8 +1022,7 @@ class BrowserSession(BaseModel):
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
 		"""Get DOM element by index.
 
-		First checks cached selector map, then falls back to DOM watchdog
-		which may trigger a DOM rebuild if needed.
+		Get element from cached selector map.
 
 		Args:
 			index: The element index from the serialized DOM
@@ -1032,17 +1030,9 @@ class BrowserSession(BaseModel):
 		Returns:
 			EnhancedDOMTreeNode or None if index not found
 		"""
-		# First check cached selector map
+		#  Check cached selector map
 		if self._cached_selector_map and index in self._cached_selector_map:
 			return self._cached_selector_map[index]
-
-		# Fall back to DOM watchdog which may rebuild DOM
-		if self._dom_watchdog:
-			node = await self._dom_watchdog.get_element_by_index(index)
-			# Update cache if watchdog rebuilt the DOM
-			if self._dom_watchdog.selector_map:
-				self._cached_selector_map = self._dom_watchdog.selector_map
-			return node
 
 		return None
 
@@ -1130,7 +1120,7 @@ class BrowserSession(BaseModel):
 	@property
 	def downloaded_files(self) -> list[str]:
 		"""Get list of files downloaded during this browser session.
-		
+
 		Returns:
 		    list[str]: List of absolute file paths to downloaded files in this session
 		"""
