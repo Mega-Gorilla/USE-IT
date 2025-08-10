@@ -93,14 +93,18 @@ class BaseWatchdog(BaseModel):
 							)
 							try:
 								result = await actual_handler(event)
-								self.logger.debug(
-									f'[{self.__class__.__name__}] {actual_handler.__name__} completed successfully'
-								)
+								self.logger.debug(f'[{self.__class__.__name__}] {actual_handler.__name__} completed successfully')
 								return result
-							except Exception as e:
-								self.logger.error(
-									f'[{self.__class__.__name__}] {actual_handler.__name__} failed: {e}'
+							except TimeoutError as e:
+								# Handle timeouts gracefully - don't crash the agent
+								self.logger.warning(
+									f'⏰ [{self.__class__.__name__}] {actual_handler.__name__} timed out - continuing gracefully. '
+									f'Event: {event.__class__.__name__}. Error: {e}'
 								)
+								# Don't re-raise TimeoutError - let the agent continue
+								return None
+							except Exception as e:
+								self.logger.error(f'[{self.__class__.__name__}] {actual_handler.__name__} failed: {e}')
 								raise
 
 						return unique_handler
@@ -111,14 +115,14 @@ class BaseWatchdog(BaseModel):
 					# Check if this handler is already registered - throw error if duplicate
 					existing_handlers = self.event_bus.handlers.get(event_class.__name__, [])
 					handler_names = [getattr(h, '__name__', str(h)) for h in existing_handlers]
-					
+
 					if unique_handler.__name__ in handler_names:
 						raise RuntimeError(
 							f'[{self.__class__.__name__}] Duplicate handler registration attempted! '
 							f'Handler {unique_handler.__name__} is already registered for {event_name}. '
 							f'This likely means attach_to_session() was called multiple times.'
 						)
-					
+
 					self.event_bus.on(event_class, unique_handler)
 					registered_events.add(event_class)
 					# logger.debug(
