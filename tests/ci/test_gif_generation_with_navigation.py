@@ -170,16 +170,20 @@ async def test_gif_generation_without_vision(httpserver, tmp_path):
 
 		# Verify GIF was created even without vision
 		assert gif_path.exists(), f'GIF was not created at {gif_path} when use_vision=False'
-		
+
 		# Verify GIF has content (non-zero size)
 		assert gif_path.stat().st_size > 0, f'GIF file is empty at {gif_path}'
-		
+
 		# Verify we have screenshots in history for GIF generation
 		screenshots = history.screenshots(return_none_if_not_screenshot=True)
 		assert screenshots, 'No screenshots found in history for GIF generation'
-		
+
 		# Verify at least one valid screenshot exists (not all placeholders)
-		valid_screenshots = [s for s in screenshots if s and s != 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAE0lEQVR42mP8/5+BgYGBgYGBgQEAAP//AwMC/wE=']
+		valid_screenshots = [
+			s
+			for s in screenshots
+			if s and s != 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAE0lEQVR42mP8/5+BgYGBgYGBgQEAAP//AwMC/wE='
+		]
 		assert valid_screenshots, 'No valid screenshots found for GIF generation'
 
 	finally:
