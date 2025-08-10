@@ -434,7 +434,7 @@ Provide the extracted information in a clear, structured format."""
 					timeout=120.0,
 				)
 
-				extracted_content = f'Page Link: {cdp_session.url}\nQuery: {query}\nExtracted Content:\n{response.completion}'
+				extracted_content = f'Query: {query}\nExtracted Content:\n{response.completion}'
 
 				# Simple memory handling
 				if len(extracted_content) < 1000:
