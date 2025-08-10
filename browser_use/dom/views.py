@@ -374,7 +374,7 @@ class EnhancedDOMTreeNode:
 			f'num_children={num_children} >{self.node_value}</{self.tag_name}>'
 		)
 
-	def llm_representation(self, max_text_length: int = 25) -> str:
+	def llm_representation(self, max_text_length: int = 100) -> str:
 		"""
 		Token friendly representation of the node, used in the LLM
 		"""
