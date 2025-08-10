@@ -2,6 +2,7 @@
 
 import asyncio
 import platform
+from typing import Any
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -526,9 +527,82 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
 
+	async def _check_element_focusability(self, element_node, object_id: str, session_id: str) -> dict[str, Any]:
+		"""
+		Check if an element is likely to be focusable and visible.
+
+		Returns:
+			Dict with keys: 'visible', 'focusable', 'interactive', 'disabled'
+		"""
+		try:
+			cdp_client = self.browser_session.cdp_client
+
+			# Run comprehensive element checks via JavaScript
+			check_result = await cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': """
+						function() {
+							const element = this;
+							const computedStyle = window.getComputedStyle(element);
+							const rect = element.getBoundingClientRect();
+							
+							// Check basic visibility
+							const isVisible = rect.width > 0 && rect.height > 0 && 
+								computedStyle.visibility !== 'hidden' && 
+								computedStyle.display !== 'none' &&
+								computedStyle.opacity !== '0';
+								
+							// Check if element is disabled
+							const isDisabled = element.disabled || element.hasAttribute('disabled') ||
+								element.getAttribute('aria-disabled') === 'true';
+								
+							// Check if element is focusable by tag and attributes
+							const focusableTags = ['input', 'textarea', 'select', 'button', 'a'];
+							const hasFocusableTag = focusableTags.includes(element.tagName.toLowerCase());
+							const hasTabIndex = element.hasAttribute('tabindex') && element.tabIndex >= 0;
+							const isContentEditable = element.contentEditable === 'true';
+							
+							const isFocusable = !isDisabled && (hasFocusableTag || hasTabIndex || isContentEditable);
+							
+							// Check if element is interactive (clickable/editable)
+							const isInteractive = isFocusable || element.onclick !== null || 
+								element.getAttribute('role') === 'button' ||
+								element.classList.contains('clickable');
+								
+							return {
+								visible: isVisible,
+								focusable: isFocusable,
+								interactive: isInteractive,
+								disabled: isDisabled,
+								bounds: {
+									x: rect.left,
+									y: rect.top,
+									width: rect.width,
+									height: rect.height
+								},
+								tagName: element.tagName.toLowerCase(),
+								type: element.type || null
+							};
+						}
+					""",
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=session_id,
+			)
+
+			if 'result' in check_result and 'value' in check_result['result']:
+				return check_result['result']['value']
+			else:
+				self.logger.debug('Element focusability check returned no results')
+				return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
+		except Exception as e:
+			self.logger.debug(f'Element focusability check failed: {e}')
+			return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
+
 	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True):
 		"""
-		Input text into an element using pure CDP.
+		Input text into an element using pure CDP with improved focus fallbacks.
 		"""
 
 		try:
@@ -537,6 +611,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get the correct session ID for the element's frame
 			session_id = await self._get_session_id_for_element(element_node)
+
+			# Handle None session_id case
+			if session_id is None:
+				session_id = (await self.browser_session.get_or_create_cdp_session()).session_id
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
@@ -558,6 +636,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			object_id = result['object']['objectId']
 
+			# Check element focusability before attempting focus
+			element_info = await self._check_element_focusability(element_node, object_id, session_id)
+			self.logger.debug(f'Element focusability check: {element_info}')
+
+			# Provide helpful warnings for common issues
+			if not element_info.get('visible', False):
+				self.logger.warning('⚠️ Target element appears to be invisible or has zero dimensions')
+			if element_info.get('disabled', False):
+				self.logger.warning('⚠️ Target element appears to be disabled')
+			if not element_info.get('focusable', False):
+				self.logger.warning('⚠️ Target element may not be focusable by standard criteria')
+
 			# Clear existing text if requested
 			if clear_existing:
 				await cdp_client.send.Runtime.callFunctionOn(
@@ -568,11 +658,86 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=session_id,
 				)
 
-			# Focus the element
-			await cdp_client.send.DOM.focus(
-				params={'backendNodeId': backend_node_id},
-				session_id=session_id,
-			)
+			# Try multiple focus strategies
+			focused_successfully = False
+
+			# Strategy 1: Try CDP DOM.focus (original method)
+			try:
+				await cdp_client.send.DOM.focus(
+					params={'backendNodeId': backend_node_id},
+					session_id=session_id,
+				)
+				focused_successfully = True
+				self.logger.debug('✅ Element focused using CDP DOM.focus')
+			except Exception as e:
+				self.logger.debug(f'CDP DOM.focus failed: {e}')
+
+				# Strategy 2: Try JavaScript focus as fallback
+				try:
+					await cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.focus(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					focused_successfully = True
+					self.logger.debug('✅ Element focused using JavaScript focus()')
+				except Exception as js_e:
+					self.logger.debug(f'JavaScript focus failed: {js_e}')
+
+					# Strategy 3: Try click-to-focus for stubborn elements
+					try:
+						await cdp_client.send.Runtime.callFunctionOn(
+							params={
+								'functionDeclaration': 'function() { this.click(); this.focus(); }',
+								'objectId': object_id,
+							},
+							session_id=session_id,
+						)
+						focused_successfully = True
+						self.logger.debug('✅ Element focused using click + focus combination')
+					except Exception as click_e:
+						self.logger.debug(f'Click + focus failed: {click_e}')
+
+						# Strategy 4: Try simulated mouse click for maximum compatibility
+						try:
+							# Use bounds from focusability check if available
+							bounds = element_info.get('bounds', {})
+							if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
+								click_x = bounds['x'] + bounds['width'] / 2
+								click_y = bounds['y'] + bounds['height'] / 2
+
+								await cdp_client.send.Input.dispatchMouseEvent(
+									params={
+										'type': 'mousePressed',
+										'x': click_x,
+										'y': click_y,
+										'button': 'left',
+										'clickCount': 1,
+									},
+									session_id=session_id,
+								)
+								await cdp_client.send.Input.dispatchMouseEvent(
+									params={
+										'type': 'mouseReleased',
+										'x': click_x,
+										'y': click_y,
+										'button': 'left',
+										'clickCount': 1,
+									},
+									session_id=session_id,
+								)
+								focused_successfully = True
+								self.logger.debug('✅ Element focused using simulated mouse click')
+							else:
+								self.logger.debug('Element bounds not available for mouse click')
+						except Exception as mouse_e:
+							self.logger.debug(f'Simulated mouse click failed: {mouse_e}')
+
+			# Log focus result
+			if not focused_successfully:
+				self.logger.warning('⚠️ All focus strategies failed, typing without explicit focus')
 
 			# Type the text character by character
 			for char in text:
