@@ -1499,6 +1499,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					logger.info(msg)
 					break
 
+			# DOM synchronization check - verify element indexes are still valid AFTER first action
+			# This prevents stale element detection but doesn't refresh before execution
 			if action.get_index() is not None and i != 0:
 				new_browser_state_summary = await self.browser_session.get_browser_state_summary(
 					cache_clickable_elements_hashes=False
@@ -1523,6 +1525,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
+				# Check for new elements that appeared
 				new_element_hashes = {hash(e) for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
@@ -1537,7 +1540,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					)
 					break
 
-				# wait between actions
+			# wait between actions (only after first action)
+			if i > 0:
 				await asyncio.sleep(self.browser_profile.wait_between_actions)
 
 			try:
