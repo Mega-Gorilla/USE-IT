@@ -18,15 +18,9 @@ class ClickableElementDetector:
 		if node.tag_name in {'html', 'body'}:
 			return False
 
-		# RELAXED SIZE CHECK: Allow small elements that might be icons
-		# Only exclude truly invisible elements (width AND height both 0)
-		if (
-			node.snapshot_node
-			and node.snapshot_node.bounds
-			and node.snapshot_node.bounds.width == 0
-			and node.snapshot_node.bounds.height == 0
-		):
-			return False
+		# RELAXED SIZE CHECK: Allow all elements including size 0 (they might be interactive overlays, etc.)
+		# Note: Size 0 elements can still be interactive (e.g., invisible clickable overlays)
+		# Visibility is determined separately by CSS styles, not just bounding box size
 
 		# SEARCH ELEMENT DETECTION: Check for search-related classes and attributes
 		if node.attributes:

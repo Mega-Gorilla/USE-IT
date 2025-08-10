@@ -158,9 +158,10 @@ class DOMTreeSerializer:
 
 		# Keep meaningful nodes
 		is_interactive_opt = self._is_interactive_cached(node.original_node)
+		is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 
 		if (
-			is_interactive_opt
+			(is_interactive_opt and is_visible)  # Only keep interactive nodes that are visible
 			or node.original_node.is_scrollable
 			or node.original_node.node_type == NodeType.TEXT_NODE
 			or node.children
@@ -170,22 +171,28 @@ class DOMTreeSerializer:
 		return None
 
 	def _collect_interactive_elements(self, node: SimplifiedNode, elements: list[SimplifiedNode]) -> None:
-		"""Recursively collect interactive elements."""
-		if self._is_interactive_cached(node.original_node):
+		"""Recursively collect interactive elements that are also visible."""
+		is_interactive = self._is_interactive_cached(node.original_node)
+		is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+
+		# Only collect elements that are both interactive AND visible
+		if is_interactive and is_visible:
 			elements.append(node)
 
 		for child in node.children:
 			self._collect_interactive_elements(child, elements)
 
 	def _assign_interactive_indices_and_mark_new_nodes(self, node: SimplifiedNode | None) -> None:
-		"""Assign interactive indices to clickable elements."""
+		"""Assign interactive indices to clickable elements that are also visible."""
 		if not node:
 			return
 
-		# Assign index to clickable elements
+		# Assign index to clickable elements that are also visible
 		is_interactive_assign = self._is_interactive_cached(node.original_node)
+		is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 
-		if is_interactive_assign:
+		# Only add to selector map if element is both interactive AND visible
+		if is_interactive_assign and is_visible:
 			node.interactive_index = self._interactive_counter
 			node.original_node.element_index = self._interactive_counter
 			self._selector_map[self._interactive_counter] = node.original_node
