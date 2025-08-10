@@ -389,8 +389,15 @@ class Controller(Generic[Context]):
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
 		):
-			loop = asyncio.get_event_loop()
 			cdp_session = await browser_session.get_or_create_cdp_session()
+
+			# Wait for the page to be ready (same pattern used in DOM service)
+			try:
+				ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
+					params={'expression': 'document.readyState'}, session_id=cdp_session.session_id
+				)
+			except Exception:
+				pass  # Page might not be ready yet
 
 			try:
 				# Get the HTML content
