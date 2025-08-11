@@ -374,6 +374,7 @@ class Controller(Generic[Context]):
 				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'!\[.*?\]', '', content, flags=re.MULTILINE | re.DOTALL)
 			except Exception as e:
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
