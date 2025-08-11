@@ -599,7 +599,7 @@ Provide the extracted information in a clear, structured format."""
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get all options from a native dropdown (<select>) or ARIA menu (role="menu", role="listbox", role="combobox") by element index',
+			'Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns like Semantic UI). Searches target element and up to 4 levels of children to find dropdowns. Works on container elements too.',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
@@ -802,7 +802,7 @@ Provide the extracted information in a clear, structured format."""
 				raise ValueError(error_msg) from e
 
 		@self.registry.action(
-			'Select dropdown option or ARIA menu item by the exact text of the option you want to select',
+			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options.',
 			param_model=SelectDropdownOptionAction,
 		)
 		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
@@ -831,111 +831,150 @@ Provide the extracted information in a clear, structured format."""
 				# Use JavaScript to select the option
 				selection_script = """
 				function(targetText) {
-					const element = this;
+					const startElement = this;
 					
-					// Handle native select elements
-					if (element.tagName.toLowerCase() === 'select') {
-						const options = Array.from(element.options);
-						for (const option of options) {
-							if (option.text === targetText) {
-								element.value = option.value;
-								option.selected = true;
-								
-								// Trigger change events
-								const changeEvent = new Event('change', { bubbles: true });
-								element.dispatchEvent(changeEvent);
-								
-								return {
-									success: true,
-									message: `Selected option: ${targetText}`,
-									value: option.value
-								};
-							}
-						}
-						return {
-							success: false,
-							error: `Option with text '${targetText}' not found in select element`
-						};
-					}
-					
-					// Handle ARIA dropdowns/menus
-					const role = element.getAttribute('role');
-					if (role === 'menu' || role === 'listbox' || role === 'combobox') {
-						const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
-						
-						for (const item of menuItems) {
-							if (item.textContent && item.textContent.trim() === targetText) {
-								// Clear previous selections
-								menuItems.forEach(mi => {
-									mi.setAttribute('aria-selected', 'false');
-									mi.classList.remove('selected');
-								});
-								
-								// Select this item
-								item.setAttribute('aria-selected', 'true');
-								item.classList.add('selected');
-								
-								// Trigger click and change events
-								item.click();
-								const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
-								item.dispatchEvent(clickEvent);
-								
-								return {
-									success: true,
-									message: `Selected ARIA menu item: ${targetText}`
-								};
-							}
-						}
-						return {
-							success: false,
-							error: `Menu item with text '${targetText}' not found`
-						};
-					}
-					
-					// Handle Semantic UI or custom dropdowns
-					if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
-						const menuItems = element.querySelectorAll('.item, .option, [data-value]');
-						
-						for (const item of menuItems) {
-							if (item.textContent && item.textContent.trim() === targetText) {
-								// Clear previous selections
-								menuItems.forEach(mi => {
-									mi.classList.remove('selected', 'active');
-								});
-								
-								// Select this item
-								item.classList.add('selected', 'active');
-								
-								// Update dropdown text if there's a text element
-								const textElement = element.querySelector('.text');
-								if (textElement) {
-									textElement.textContent = targetText;
+					// Function to attempt selection on a dropdown element
+					function attemptSelection(element) {
+						// Handle native select elements
+						if (element.tagName.toLowerCase() === 'select') {
+							const options = Array.from(element.options);
+							for (const option of options) {
+								if (option.text === targetText) {
+									element.value = option.value;
+									option.selected = true;
+									
+									// Trigger change events
+									const changeEvent = new Event('change', { bubbles: true });
+									element.dispatchEvent(changeEvent);
+									
+									return {
+										success: true,
+										message: `Selected option: ${targetText}`,
+										value: option.value
+									};
 								}
-								
-								// Trigger click and change events
-								item.click();
-								const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
-								item.dispatchEvent(clickEvent);
-								
-								// Also dispatch on the main dropdown element
-								const dropdownChangeEvent = new Event('change', { bubbles: true });
-								element.dispatchEvent(dropdownChangeEvent);
-								
-								return {
-									success: true,
-									message: `Selected custom dropdown item: ${targetText}`
-								};
+							}
+							return {
+								success: false,
+								error: `Option with text '${targetText}' not found in select element`
+							};
+						}
+						
+						// Handle ARIA dropdowns/menus
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							
+							for (const item of menuItems) {
+								if (item.textContent && item.textContent.trim() === targetText) {
+									// Clear previous selections
+									menuItems.forEach(mi => {
+										mi.setAttribute('aria-selected', 'false');
+										mi.classList.remove('selected');
+									});
+									
+									// Select this item
+									item.setAttribute('aria-selected', 'true');
+									item.classList.add('selected');
+									
+									// Trigger click and change events
+									item.click();
+									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+									item.dispatchEvent(clickEvent);
+									
+									return {
+										success: true,
+										message: `Selected ARIA menu item: ${targetText}`
+									};
+								}
+							}
+							return {
+								success: false,
+								error: `Menu item with text '${targetText}' not found`
+							};
+						}
+						
+						// Handle Semantic UI or custom dropdowns
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							
+							for (const item of menuItems) {
+								if (item.textContent && item.textContent.trim() === targetText) {
+									// Clear previous selections
+									menuItems.forEach(mi => {
+										mi.classList.remove('selected', 'active');
+									});
+									
+									// Select this item
+									item.classList.add('selected', 'active');
+									
+									// Update dropdown text if there's a text element
+									const textElement = element.querySelector('.text');
+									if (textElement) {
+										textElement.textContent = targetText;
+									}
+									
+									// Trigger click and change events
+									item.click();
+									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+									item.dispatchEvent(clickEvent);
+									
+									// Also dispatch on the main dropdown element
+									const dropdownChangeEvent = new Event('change', { bubbles: true });
+									element.dispatchEvent(dropdownChangeEvent);
+									
+									return {
+										success: true,
+										message: `Selected custom dropdown item: ${targetText}`
+									};
+								}
+							}
+							return {
+								success: false,
+								error: `Custom dropdown item with text '${targetText}' not found`
+							};
+						}
+						
+						return null; // Not a dropdown element
+					}
+					
+					// Function to recursively search children for dropdowns
+					function searchChildrenForSelection(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Try selection on this child
+							const result = attemptSelection(child);
+							if (result && result.success) {
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForSelection(child, maxDepth, currentDepth + 1);
+							if (childResult && childResult.success) {
+								return childResult;
 							}
 						}
-						return {
-							success: false,
-							error: `Custom dropdown item with text '${targetText}' not found`
-						};
+						
+						return null;
+					}
+					
+					// First try the target element itself
+					let selectionResult = attemptSelection(startElement);
+					if (selectionResult && selectionResult.success) {
+						return selectionResult;
+					}
+					
+					// If target element selection failed, search children up to depth 4
+					selectionResult = searchChildrenForSelection(startElement, 4);
+					if (selectionResult && selectionResult.success) {
+						return selectionResult;
 					}
 					
 					return {
 						success: false,
-						error: `Element is not a recognizable dropdown type`
+						error: `Element and its children (depth 4) do not contain a dropdown with option '${targetText}' (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
 					};
 				}
 				"""
