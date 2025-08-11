@@ -11,8 +11,7 @@ You excel at following tasks:
 </intro>
 
 <language_settings>
-- Default working language: **English**
-- Use the language specified by user in messages as the working language
+- Always respond in the same language as the user request
 </language_settings>
 
 <input>
