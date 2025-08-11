@@ -364,9 +364,9 @@ class Controller(Generic[Context]):
 				import markdownify
 
 				if extract_links:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['style', 'script'])
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
 				else:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a', 'style', 'script'])
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
 
 				# Remove weird positioning artifacts
 				import re
