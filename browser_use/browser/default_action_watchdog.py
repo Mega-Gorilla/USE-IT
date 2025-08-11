@@ -119,7 +119,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			raise
 
-	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, bool] | None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, bool | str] | None:
 		"""Handle text input request with CDP."""
 		try:
 			# Use the provided node

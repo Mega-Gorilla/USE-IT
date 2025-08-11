@@ -22,6 +22,7 @@ from browser_use.browser.events import (
 	SendKeysEvent,
 	SwitchTabEvent,
 	TypeTextEvent,
+	UploadFileEvent,
 )
 from browser_use.browser.views import BrowserError
 from browser_use.controller.registry.service import Registry
@@ -37,7 +38,9 @@ from browser_use.controller.views import (
 	SendKeysAction,
 	StructuredOutputAction,
 	SwitchTabAction,
+	UploadFileAction,
 )
+from browser_use.dom.service import EnhancedDOMTreeNode
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import UserMessage
@@ -51,7 +54,7 @@ logger = logging.getLogger(__name__)
 ClickElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
 ScrollEvent.model_rebuild()
-# Note: UploadFileEvent also has node references but is not imported yet
+UploadFileEvent.model_rebuild()
 
 Context = TypeVar('Context')
 
@@ -262,33 +265,115 @@ class Controller(Generic[Context]):
 				long_term_memory=f"Input '{params.text}' into element {params.index}.",
 			)
 
-		# @self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
-		# async def upload_file(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str]):
-		# 	if params.path not in available_file_paths:
-		# 		raise BrowserError(f'File path {params.path} is not available')
+		@self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
+		async def upload_file(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str]):
+			if params.path not in available_file_paths:
+				raise BrowserError(f'File path {params.path} is not available')
 
-		# 	if not os.path.exists(params.path):
-		# 		raise BrowserError(f'File {params.path} does not exist')
+			if not os.path.exists(params.path):
+				raise BrowserError(f'File {params.path} does not exist')
 
-		# 	# Look up the node from the selector map
-		# 	node = EnhancedDOMTreeNode.from_element_index(browser_session, params.index)
+			# Get the selector map to find the node
+			selector_map = await browser_session.get_selector_map()
+			if params.index not in selector_map:
+				raise BrowserError(f'Element with index {params.index} not found in selector map')
+			
+			node = selector_map[params.index]
+			
+			# Helper function to find file input near the selected element
+			def find_file_input_near_element(node: EnhancedDOMTreeNode, max_height: int = 3, max_descendant_depth: int = 3) -> EnhancedDOMTreeNode | None:
+				"""Find the closest file input to the selected element."""
+				def find_file_input_in_descendants(n: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
+					if depth < 0:
+						return None
+					if browser_session.is_file_input(n):
+						return n
+					for child in n.children_nodes:
+						result = find_file_input_in_descendants(child, depth - 1)
+						if result:
+							return result
+					return None
+				
+				current = node
+				for _ in range(max_height + 1):
+					# Check the current node itself
+					if browser_session.is_file_input(current):
+						return current
+					# Check all descendants of the current node
+					result = find_file_input_in_descendants(current, max_descendant_depth)
+					if result:
+						return result
+					# Check all siblings and their descendants
+					if current.parent_node:
+						for sibling in current.parent_node.children_nodes:
+							if sibling is current:
+								continue
+							if browser_session.is_file_input(sibling):
+								return sibling
+							result = find_file_input_in_descendants(sibling, max_descendant_depth)
+							if result:
+								return result
+					current = current.parent_node
+					if not current:
+						break
+				return None
+			
+			# Try to find a file input element near the selected element
+			file_input_node = find_file_input_near_element(node)
+			
+			# If not found near the selected element, fallback to finding the closest file input to current scroll position
+			if file_input_node is None:
+				logger.info(f'No file upload element found near index {params.index}, searching for closest file input to scroll position')
+				
+				# Get current scroll position
+				cdp_session = await browser_session.get_or_create_cdp_session()
+				try:
+					scroll_info = await cdp_session.cdp_client.send.Runtime.evaluate(
+						params={'expression': 'window.scrollY || window.pageYOffset || 0'},
+						session_id=cdp_session.session_id
+					)
+					current_scroll_y = scroll_info.get('result', {}).get('value', 0)
+				except:
+					current_scroll_y = 0
+				
+				# Find all file inputs in the selector map and pick the closest one to scroll position
+				closest_file_input = None
+				min_distance = float('inf')
+				
+				for idx, element in selector_map.items():
+					if browser_session.is_file_input(element):
+						# Get element's Y position
+						if element.absolute_position:
+							element_y = element.absolute_position.get('y', 0)
+							distance = abs(element_y - current_scroll_y)
+							if distance < min_distance:
+								min_distance = distance
+								closest_file_input = element
+				
+				if closest_file_input:
+					file_input_node = closest_file_input
+					logger.info(f'Found file input closest to scroll position (distance: {min_distance}px)')
+				else:
+					msg = f'No file upload element found on the page'
+					logger.info(msg)
+					raise BrowserError(msg)
 
-		# 	# Dispatch upload file event with node
-		# 	event = browser_session.event_bus.dispatch(
-		# 		UploadFileEvent(
-		# 			node=node,
-		# 			file_path=params.path
-		# 		)
-		# 	)
-		# 	await event
+			# Dispatch upload file event with the file input node
+			event = browser_session.event_bus.dispatch(
+				UploadFileEvent(
+					node=file_input_node,
+					file_path=params.path
+				)
+			)
+			await event
 
-		# 	msg = f'📁 Successfully uploaded file to index {params.index}'
-		# 	logger.info(msg)
-		# 	return ActionResult(
-		# 		extracted_content=msg,
-		# 		include_in_memory=True,
-		# 		long_term_memory=f'Uploaded file {params.path} to element {params.index}',
-		# 	)
+			msg = f'📁 Successfully uploaded file to index {params.index}'
+			logger.info(msg)
+			return ActionResult(
+				extracted_content=msg,
+				include_in_memory=True,
+				long_term_memory=f'Uploaded file {params.path} to element {params.index}',
+			)
 
 		# Tab Management Actions
 
