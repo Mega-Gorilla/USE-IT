@@ -126,12 +126,12 @@ class PdfFile(BaseFile):
 			doc = SimpleDocTemplate(str(file_path), pagesize=letter)
 			styles = getSampleStyleSheet()
 			story = []
-			
+
 			# Convert markdown content to simple text and add to PDF
 			# For basic implementation, we'll treat content as plain text
 			# This avoids the AGPL license issue while maintaining functionality
 			content_lines = self.content.split('\n')
-			
+
 			for line in content_lines:
 				if line.strip():
 					# Handle basic markdown headers
@@ -146,7 +146,7 @@ class PdfFile(BaseFile):
 					story.append(para)
 				else:
 					story.append(Spacer(1, 6))
-			
+
 			doc.build(story)
 		except Exception as e:
 			raise FileSystemError(f"Error: Could not write to file '{self.full_name}'. {str(e)}")
