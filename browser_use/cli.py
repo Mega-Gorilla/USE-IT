@@ -1069,7 +1069,7 @@ class BrowserUseApp(App):
 				cdp_url = browser_session.cdp_url or 'Not connected'
 				is_local = browser_session.is_local
 				browser_type = 'Local' if is_local else 'Remote'
-				
+
 				# Format CDP URL for display
 				if cdp_url != 'Not connected':
 					port = cdp_url.split(':')[-1].split('/')[0] if ':' in cdp_url else 'unknown'
@@ -1077,7 +1077,7 @@ class BrowserUseApp(App):
 				else:
 					display_url = cdp_url
 
-				browser_info.write(f'[bold]🌐 Browser[/bold]')
+				browser_info.write('[bold]🌐 Browser[/bold]')
 				browser_info.write(f'Type: {browser_type}')
 				browser_info.write(f'CDP: {display_url}')
 			else:
@@ -1094,8 +1094,8 @@ class BrowserUseApp(App):
 			if self.llm:
 				model_name = getattr(self.llm, 'model', 'Unknown')
 				provider = getattr(self.llm, '__class__', type(self.llm)).__name__.replace('Chat', '')
-				
-				model_info.write(f'[bold]🤖 Model[/bold]')
+
+				model_info.write('[bold]🤖 Model[/bold]')
 				model_info.write(f'Provider: {provider}')
 				model_info.write(f'Model: {model_name}')
 			else:
@@ -1114,9 +1114,9 @@ class BrowserUseApp(App):
 				task = getattr(self.agent, 'task', 'No task')
 				if len(task) > 100:
 					task = task[:97] + '...'
-				tasks_info.write(f'[bold]📋 Current Task[/bold]')
+				tasks_info.write('[bold]📋 Current Task[/bold]')
 				tasks_info.write(f'{task}')
-				
+
 				# Show step counter
 				if hasattr(self.agent, 'state'):
 					step_count = getattr(self.agent.state, 'n_steps', 0)
