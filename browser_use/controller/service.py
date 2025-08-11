@@ -329,7 +329,7 @@ class Controller(Generic[Context]):
 		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
 		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
 		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. 
-		If there is no good result of this tool even you see the content is loaded, use the browser state and scrolling to get the information you need.
+		If you called extract_structured_data in the last step and the result was not good, use the current browser state and scrolling to get the information, dont call extract_structured_data again.
 		""",
 		)
 		async def extract_structured_data(
@@ -362,15 +362,21 @@ class Controller(Generic[Context]):
 
 			# Simple markdown conversion
 			try:
+				import re
+
 				import markdownify
 
 				if extract_links:
 					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
 				else:
 					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
+					# Remove all markdown links and images, keep only the text
+					content = re.sub(r'!\[.*?\]\([^)]*\)', '', content, flags=re.MULTILINE | re.DOTALL)  # Remove images
+					content = re.sub(
+						r'\[([^\]]*)\]\([^)]*\)', r'\1', content, flags=re.MULTILINE | re.DOTALL
+					)  # Convert [text](url) -> text
 
 				# Remove weird positioning artifacts
-				import re
 
 				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
