@@ -258,10 +258,52 @@ class BrowserUseApp(App):
 		layout: vertical;
 	}
 	
-	#logo-panel, #links-panel, #paths-panel {
+	#logo-panel, #links-panel, #paths-panel, #info-panels {
 		border: solid $primary;
 		margin: 0 0 0 0; 
 		padding: 0;
+	}
+	
+	#info-panels {
+		display: none;
+		layout: vertical;
+		height: auto;
+		min-height: 5;
+		margin: 0 0 1 0;
+	}
+	
+	#top-panels {
+		layout: horizontal;
+		height: auto;
+		width: 100%;
+	}
+	
+	#browser-panel, #model-panel {
+		width: 1fr;
+		height: 100%;
+		padding: 1;
+		border-right: solid $primary;
+	}
+	
+	#model-panel {
+		border-right: none;
+	}
+	
+	#tasks-panel {
+		height: auto;
+		max-height: 10;
+		overflow-y: scroll;
+		padding: 1;
+		border-top: solid $primary;
+	}
+	
+	#browser-info, #model-info, #tasks-info {
+		height: auto;
+		margin: 0;
+		padding: 0;
+		background: transparent;
+		overflow-y: auto;
+		min-height: 3;
 	}
 	
 	#three-column-container {
@@ -404,6 +446,8 @@ class BrowserUseApp(App):
 		# Store for event bus handler
 		self._event_bus_handler_id = None
 		self._event_bus_handler_func = None
+		# Timer for info panel updates
+		self._info_panel_timer = None
 
 	def setup_richlog_logging(self) -> None:
 		"""Set up logging to redirect to RichLog widget instead of stdout."""
@@ -628,26 +672,31 @@ class BrowserUseApp(App):
 			event.input.value = ''
 
 	def hide_intro_panels(self) -> None:
-		"""Hide the intro panels and show the three-column view."""
+		"""Hide the intro panels, show info panels and the three-column view."""
 		try:
 			# Get the panels
 			logo_panel = self.query_one('#logo-panel')
 			links_panel = self.query_one('#links-panel')
 			paths_panel = self.query_one('#paths-panel')
+			info_panels = self.query_one('#info-panels')
 			three_column = self.query_one('#three-column-container')
 
-			# Hide intro panels if they're visible and show three-column view
+			# Hide intro panels if they're visible and show info panels + three-column view
 			if logo_panel.display:
-				logging.info('Hiding intro panels and showing three-column view')
+				logging.info('Hiding intro panels and showing info panels + three-column view')
 
 				logo_panel.display = False
 				links_panel.display = False
 				paths_panel.display = False
 
-				# Show three-column container
+				# Show info panels and three-column container
+				info_panels.display = True
 				three_column.display = True
 
-				logging.info('Three-column view should now be visible')
+				# Start updating info panels
+				self.update_info_panels()
+
+				logging.info('Info panels and three-column view should now be visible')
 		except Exception as e:
 			logging.error(f'Error in hide_intro_panels: {str(e)}')
 
@@ -953,6 +1002,22 @@ class BrowserUseApp(App):
 				markup=True,
 			)
 
+			# Info panels (hidden by default, shown when task starts)
+			with Container(id='info-panels'):
+				# Top row with browser and model panels side by side
+				with Container(id='top-panels'):
+					# Browser panel
+					with Container(id='browser-panel'):
+						yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
+
+					# Model panel
+					with Container(id='model-panel'):
+						yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
+
+				# Tasks panel (full width, below browser and model)
+				with VerticalScroll(id='tasks-panel'):
+					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True, auto_scroll=True)
+
 			# Three-column container (hidden by default)
 			with Container(id='three-column-container'):
 				# Column 1: Main output
@@ -973,6 +1038,93 @@ class BrowserUseApp(App):
 				yield Input(placeholder='Enter your task...', id='task-input')
 
 		yield Footer()
+
+	def update_info_panels(self) -> None:
+		"""Update all information panels with current state."""
+		try:
+			# Update actual content
+			self.update_browser_panel()
+			self.update_model_panel()
+			self.update_tasks_panel()
+		except Exception as e:
+			logging.error(f'Error in update_info_panels: {str(e)}')
+		finally:
+			# Always schedule the next update - will update at 1-second intervals
+			# This ensures continuous updates even if agent state changes
+			self.set_timer(1.0, self.update_info_panels)
+
+	def update_browser_panel(self) -> None:
+		"""Update browser information panel with details about the browser."""
+		try:
+			browser_info = self.query_one('#browser-info', RichLog)
+			browser_info.clear()
+
+			# Try to use the agent's browser session if available
+			browser_session = self.browser_session
+			if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'browser_session'):
+				browser_session = self.agent.browser_session
+
+			if browser_session:
+				# Get browser state info
+				cdp_url = browser_session.cdp_url or 'Not connected'
+				is_local = browser_session.is_local
+				browser_type = 'Local' if is_local else 'Remote'
+				
+				# Format CDP URL for display
+				if cdp_url != 'Not connected':
+					port = cdp_url.split(':')[-1].split('/')[0] if ':' in cdp_url else 'unknown'
+					display_url = f'Port {port}'
+				else:
+					display_url = cdp_url
+
+				browser_info.write(f'[bold]🌐 Browser[/bold]')
+				browser_info.write(f'Type: {browser_type}')
+				browser_info.write(f'CDP: {display_url}')
+			else:
+				browser_info.write('[dim]No browser session[/dim]')
+		except Exception as e:
+			logging.debug(f'Error updating browser panel: {e}')
+
+	def update_model_panel(self) -> None:
+		"""Update model information panel."""
+		try:
+			model_info = self.query_one('#model-info', RichLog)
+			model_info.clear()
+
+			if self.llm:
+				model_name = getattr(self.llm, 'model', 'Unknown')
+				provider = getattr(self.llm, '__class__', type(self.llm)).__name__.replace('Chat', '')
+				
+				model_info.write(f'[bold]🤖 Model[/bold]')
+				model_info.write(f'Provider: {provider}')
+				model_info.write(f'Model: {model_name}')
+			else:
+				model_info.write('[dim]No model configured[/dim]')
+		except Exception as e:
+			logging.debug(f'Error updating model panel: {e}')
+
+	def update_tasks_panel(self) -> None:
+		"""Update tasks panel with agent state."""
+		try:
+			tasks_info = self.query_one('#tasks-info', RichLog)
+			tasks_info.clear()
+
+			if hasattr(self, 'agent') and self.agent:
+				# Show current task
+				task = getattr(self.agent, 'task', 'No task')
+				if len(task) > 100:
+					task = task[:97] + '...'
+				tasks_info.write(f'[bold]📋 Current Task[/bold]')
+				tasks_info.write(f'{task}')
+				
+				# Show step counter
+				if hasattr(self.agent, 'state'):
+					step_count = getattr(self.agent.state, 'n_steps', 0)
+					tasks_info.write(f'\nStep: {step_count}')
+			else:
+				tasks_info.write('[dim]No active task[/dim]')
+		except Exception as e:
+			logging.debug(f'Error updating tasks panel: {e}')
 
 
 async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
