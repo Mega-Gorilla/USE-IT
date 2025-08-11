@@ -254,64 +254,12 @@ class Controller(Generic[Context]):
 				# Re-raise with more context
 				raise ValueError(f'Failed to input text into element {params.index}: {e}') from e
 
-			# AUTO-ENTER for search fields: Automatically press Enter for search inputs
-			should_auto_enter = False
-
-			# Check if this is a search field based on element attributes
-			if node.attributes:
-				# Check for search-related attributes
-				search_indicators = {'search', 'query', 'find', 'lookup', 'searchbox', 'search-input'}
-
-				# Check input type
-				input_type = node.attributes.get('type', '').lower()
-				if input_type == 'search':
-					should_auto_enter = True
-
-				# Check class names
-				class_list = node.attributes.get('class', '').lower()
-				if any(indicator in class_list for indicator in search_indicators):
-					should_auto_enter = True
-
-				# Check id
-				element_id = node.attributes.get('id', '').lower()
-				if any(indicator in element_id for indicator in search_indicators):
-					should_auto_enter = True
-
-				# Check placeholder text
-				placeholder = node.attributes.get('placeholder', '').lower()
-				if any(indicator in placeholder for indicator in search_indicators):
-					should_auto_enter = True
-
-				# Check aria-label
-				aria_label = node.attributes.get('aria-label', '').lower()
-				if any(indicator in aria_label for indicator in search_indicators):
-					should_auto_enter = True
-
-			# Auto-press Enter for search fields
-			if should_auto_enter:
-				try:
-					logger.info('🔍 Detected search field, auto-pressing Enter after input')
-					enter_event = browser_session.event_bus.dispatch(SendKeysEvent(keys='Enter'))
-					await enter_event
-				except Exception as e:
-					logger.warning(f'Failed to auto-press Enter: {e}')
-					# Don't fail the entire action if Enter fails
-
-			if not has_sensitive_data:
-				msg = f'⌨️  Input {params.text} into index {params.index}'
-				if should_auto_enter:
-					msg += ' (+ Enter)'
-			else:
-				msg = f'⌨️  Input sensitive data into index {params.index}'
-				if should_auto_enter:
-					msg += ' (+ Enter)'
-
+			msg = f"Input '{params.text}' into element {params.index}."
 			logger.info(msg)
 			return ActionResult(
 				extracted_content=msg,
 				include_in_memory=True,
-				long_term_memory=f"Input '{params.text}' into element {params.index}."
-				+ (' Pressed Enter automatically.' if should_auto_enter else ''),
+				long_term_memory=f"Input '{params.text}' into element {params.index}.",
 			)
 
 		# @self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
@@ -380,6 +328,8 @@ class Controller(Generic[Context]):
 		This tool takes the entire markdown of the page and extracts the query from it.
 		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
 		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
+		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. 
+		If you called extract_structured_data in the last step and the result was not good, use the current browser state and scrolling to get the information, dont call extract_structured_data again.
 		""",
 		)
 		async def extract_structured_data(
@@ -412,12 +362,26 @@ class Controller(Generic[Context]):
 
 			# Simple markdown conversion
 			try:
+				import re
+
 				import markdownify
 
 				if extract_links:
 					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
 				else:
 					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
+					# Remove all markdown links and images, keep only the text
+					content = re.sub(r'!\[.*?\]\([^)]*\)', '', content, flags=re.MULTILINE | re.DOTALL)  # Remove images
+					content = re.sub(
+						r'\[([^\]]*)\]\([^)]*\)', r'\1', content, flags=re.MULTILINE | re.DOTALL
+					)  # Convert [text](url) -> text
+
+				# Remove weird positioning artifacts
+
+				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'!\[\]\(\)', '', content, flags=re.MULTILINE | re.DOTALL)
 			except Exception as e:
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 

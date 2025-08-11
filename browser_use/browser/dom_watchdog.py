@@ -157,6 +157,14 @@ class DOMWatchdog(BaseWatchdog):
 		# check if we should skip DOM tree build for pointless pages
 		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')
 
+		# Wait for page stability using browser profile settings (main branch pattern)
+		if not not_a_meaningful_website:
+			self.logger.debug('⏳ Waiting for page stability...')
+			try:
+				await self._wait_for_stable_network()
+			except Exception as e:
+				self.logger.warning(f'Network waiting failed: {e}, continuing anyway...')
+
 		# Get tabs info once at the beginning for all paths
 		self.logger.debug('Getting tabs info...')
 		tabs_info = await self.browser_session.get_tabs()
@@ -422,6 +430,25 @@ class DOMWatchdog(BaseWatchdog):
 				)
 			)
 			raise
+
+	async def _wait_for_stable_network(self):
+		"""Wait for page stability - simplified for CDP-only branch."""
+		start_time = time.time()
+
+		# Apply minimum wait time first (let page settle)
+		min_wait = self.browser_session.browser_profile.minimum_wait_page_load_time
+		if min_wait > 0:
+			self.logger.debug(f'⏳ Minimum wait: {min_wait}s')
+			await asyncio.sleep(min_wait)
+
+		# Apply network idle wait time (for dynamic content like iframes)
+		network_idle_wait = self.browser_session.browser_profile.wait_for_network_idle_page_load_time
+		if network_idle_wait > 0:
+			self.logger.debug(f'⏳ Network idle wait: {network_idle_wait}s')
+			await asyncio.sleep(network_idle_wait)
+
+		elapsed = time.time() - start_time
+		self.logger.debug(f'✅ Page stability wait completed in {elapsed:.2f}s')
 
 	async def _get_page_info(self) -> 'PageInfo':
 		"""Get comprehensive page information using a single CDP call.

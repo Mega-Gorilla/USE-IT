@@ -441,7 +441,7 @@ class SerializedDOMState:
 		from browser_use.dom.serializer.serializer import DOMTreeSerializer
 
 		if not self._root:
-			return 'Empty DOM tree'
+			return 'Empty DOM tree (you might have to wait for the page to load)'
 
 		include_attributes = include_attributes or DEFAULT_INCLUDE_ATTRIBUTES
 
