@@ -599,7 +599,7 @@ Provide the extracted information in a clear, structured format."""
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns like Semantic UI). Searches target element and up to 4 levels of children to find dropdowns. Works on container elements too.',
+			'Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns like Semantic UI). Searches target element and up to 4 levels of children to find dropdowns. This only works on dropdown elements.',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
@@ -802,7 +802,7 @@ Provide the extracted information in a clear, structured format."""
 				raise ValueError(error_msg) from e
 
 		@self.registry.action(
-			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options.',
+			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options. This only works on interactive elements which look like dropdowns.',
 			param_model=SelectDropdownOptionAction,
 		)
 		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
