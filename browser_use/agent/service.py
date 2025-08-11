@@ -1229,7 +1229,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.debug('📡 Dispatching CreateAgentSessionEvent...')
 				# Emit CreateAgentSessionEvent at the START of run()
 				self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
-				
+
 				self.state.session_initialized = True
 
 			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
