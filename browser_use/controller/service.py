@@ -364,9 +364,16 @@ class Controller(Generic[Context]):
 				import markdownify
 
 				if extract_links:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['style', 'script'])
 				else:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
+					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a', 'style', 'script'])
+
+				# Remove weird positioning artifacts
+				import re
+
+				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
+				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
 			except Exception as e:
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
