@@ -328,7 +328,8 @@ class Controller(Generic[Context]):
 		This tool takes the entire markdown of the page and extracts the query from it.
 		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
 		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient except you change the query.
+		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. 
+		If there is no good result of this tool even you see the content is loaded, use the browser state and scrolling to get the information you need.
 		""",
 		)
 		async def extract_structured_data(
