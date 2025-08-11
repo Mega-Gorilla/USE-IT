@@ -74,3 +74,12 @@ class NoParamsAction(BaseModel):
 
 	model_config = ConfigDict(extra='ignore')
 	# No fields defined - all inputs are ignored automatically
+
+
+class GetDropdownOptionsAction(BaseModel):
+	index: int
+
+
+class SelectDropdownOptionAction(BaseModel):
+	index: int
+	text: str
