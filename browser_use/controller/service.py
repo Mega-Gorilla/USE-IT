@@ -628,79 +628,122 @@ Provide the extracted information in a clear, structured format."""
 				# Use JavaScript to extract dropdown options
 				options_script = """
 				function() {
-					const element = this;
+					const startElement = this;
 					
-					// Check if it's a native select element
-					if (element.tagName.toLowerCase() === 'select') {
-						return {
-							type: 'select',
-							options: Array.from(element.options).map((opt, idx) => ({
-								text: opt.text,
-								value: opt.value,
-								index: idx,
-								selected: opt.selected
-							})),
-							id: element.id || '',
-							name: element.name || ''
-						};
-					}
-					
-					// Check if it's an ARIA dropdown/menu
-					const role = element.getAttribute('role');
-					if (role === 'menu' || role === 'listbox' || role === 'combobox') {
-						// Find all menu items/options
-						const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
-						const options = [];
-						
-						menuItems.forEach((item, idx) => {
-							const text = item.textContent ? item.textContent.trim() : '';
-							if (text) {
-								options.push({
-									text: text,
-									value: item.getAttribute('data-value') || text,
-									index: idx,
-									selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
-								});
-							}
-						});
-						
-						return {
-							type: 'aria',
-							options: options,
-							id: element.id || '',
-							name: element.getAttribute('aria-label') || ''
-						};
-					}
-					
-					// Check if it's a Semantic UI dropdown or similar
-					if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
-						const menuItems = element.querySelectorAll('.item, .option, [data-value]');
-						const options = [];
-						
-						menuItems.forEach((item, idx) => {
-							const text = item.textContent ? item.textContent.trim() : '';
-							if (text) {
-								options.push({
-									text: text,
-									value: item.getAttribute('data-value') || text,
-									index: idx,
-									selected: item.classList.contains('selected') || item.classList.contains('active')
-								});
-							}
-						});
-						
-						if (options.length > 0) {
+					// Function to check if an element is a dropdown and extract options
+					function checkDropdownElement(element) {
+						// Check if it's a native select element
+						if (element.tagName.toLowerCase() === 'select') {
 							return {
-								type: 'custom',
-								options: options,
+								type: 'select',
+								options: Array.from(element.options).map((opt, idx) => ({
+									text: opt.text,
+									value: opt.value,
+									index: idx,
+									selected: opt.selected
+								})),
 								id: element.id || '',
-								name: element.getAttribute('aria-label') || ''
+								name: element.name || '',
+								source: 'target'
 							};
 						}
+						
+						// Check if it's an ARIA dropdown/menu
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							// Find all menu items/options
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
+									});
+								}
+							});
+							
+							return {
+								type: 'aria',
+								options: options,
+								id: element.id || '',
+								name: element.getAttribute('aria-label') || '',
+								source: 'target'
+							};
+						}
+						
+						// Check if it's a Semantic UI dropdown or similar
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.classList.contains('selected') || item.classList.contains('active')
+									});
+								}
+							});
+							
+							if (options.length > 0) {
+								return {
+									type: 'custom',
+									options: options,
+									id: element.id || '',
+									name: element.getAttribute('aria-label') || '',
+									source: 'target'
+								};
+							}
+						}
+						
+						return null;
+					}
+					
+					// Function to recursively search children up to specified depth
+					function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Check if this child is a dropdown
+							const result = checkDropdownElement(child);
+							if (result) {
+								result.source = `child-depth-${currentDepth + 1}`;
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
+							if (childResult) {
+								return childResult;
+							}
+						}
+						
+						return null;
+					}
+					
+					// First check the target element itself
+					let dropdownResult = checkDropdownElement(startElement);
+					if (dropdownResult) {
+						return dropdownResult;
+					}
+					
+					// If target element is not a dropdown, search children up to depth 4
+					dropdownResult = searchChildrenForDropdowns(startElement, 4);
+					if (dropdownResult) {
+						return dropdownResult;
 					}
 					
 					return {
-						error: `Element is not a recognizable dropdown type (tag: ${element.tagName}, role: ${element.getAttribute('role')}, classes: ${element.className})`
+						error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
 					};
 				}
 				"""
@@ -732,11 +775,20 @@ Provide the extracted information in a clear, structured format."""
 
 				dropdown_type = dropdown_data.get('type', 'unknown')
 				element_info = f'ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+				source_info = dropdown_data.get('source', 'unknown')
 
-				msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+				if source_info == 'target':
+					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+				else:
+					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
 				msg += '\n\nUse the exact text string (without quotes) in select_dropdown_option'
 
-				logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {params.index}')
+				if source_info == 'target':
+					logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {params.index}')
+				else:
+					logger.info(
+						f'📋 Found {len(dropdown_data["options"])} dropdown options for index {params.index} in {source_info}'
+					)
 				return ActionResult(
 					extracted_content=msg,
 					include_in_memory=True,
