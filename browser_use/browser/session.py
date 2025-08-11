@@ -1095,27 +1095,59 @@ class BrowserSession(BaseModel):
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
 		try:
-			if not self.agent_focus or not self.agent_focus.target_id:
-				return
-
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()
 
 			# Remove highlights via JavaScript - be thorough
 			script = """
-					// Remove all browser-use highlight elements
-					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
-					highlights.forEach(el => el.remove());
-					
-					// Also remove by ID in case selector missed anything
-					const highlightContainer = document.getElementById('browser-use-debug-highlights');
-					if (highlightContainer) {
-						highlightContainer.remove();
-					}
+			(function() {
+				// Remove all browser-use highlight elements
+				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
+				console.log('Removing', highlights.length, 'browser-use highlight elements');
+				highlights.forEach(el => el.remove());
+				
+				// Also remove by ID in case selector missed anything
+				const highlightContainer = document.getElementById('browser-use-debug-highlights');
+				if (highlightContainer) {
+					console.log('Removing highlight container by ID');
+					highlightContainer.remove();
+				}
+				
+				// Final cleanup - remove any orphaned tooltips
+				const orphanedTooltips = document.querySelectorAll('[data-browser-use-highlight="tooltip"]');
+				orphanedTooltips.forEach(el => el.remove());
+				
+				return { removed: highlights.length };
+			})();
 			"""
-			await cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': script}, session_id=cdp_session.session_id)
+			result = await cdp_session.cdp_client.send.Runtime.evaluate(
+				params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
+			)
+
+			# Log the result for debugging
+			if result and 'result' in result and 'value' in result['result']:
+				removed_count = result['result']['value'].get('removed', 0)
+				self.logger.debug(f'Successfully removed {removed_count} highlight elements')
+			else:
+				self.logger.debug('Highlight removal completed')
+
 		except Exception as e:
-			self.logger.debug(f'Failed to remove highlights: {e}')
+			self.logger.warning(f'Failed to remove highlights: {e}')
+			# Try again with simpler script if the complex one fails
+			try:
+				simple_script = """
+				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
+				highlights.forEach(el => el.remove());
+				const container = document.getElementById('browser-use-debug-highlights');
+				if (container) container.remove();
+				"""
+				cdp_session = await self.get_or_create_cdp_session()
+				await cdp_session.cdp_client.send.Runtime.evaluate(
+					params={'expression': simple_script}, session_id=cdp_session.session_id
+				)
+				self.logger.debug('Fallback highlight removal completed')
+			except Exception as fallback_error:
+				self.logger.error(f'Both highlight removal attempts failed: {fallback_error}')
 
 	@property
 	def downloaded_files(self) -> list[str]:
