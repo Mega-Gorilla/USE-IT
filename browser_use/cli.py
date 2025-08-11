@@ -499,11 +499,20 @@ class BrowserUseApp(App):
 		browser_use_logger.setLevel(root.level)
 
 		# Also ensure agent loggers go to the main output
-		for logger_name in ['browser_use.Agent', 'browser_use.controller']:
+		# Use a wildcard pattern to catch all agent-related loggers
+		for logger_name in ['browser_use.Agent', 'browser_use.controller', 'browser_use.agent', 'browser_use.agent.service']:
 			agent_logger = logging.getLogger(logger_name)
 			agent_logger.propagate = False
 			agent_logger.handlers = [log_handler]
 			agent_logger.setLevel(root.level)
+
+		# Also catch any dynamically created agent loggers with task IDs
+		for name, logger in logging.Logger.manager.loggerDict.items():
+			if isinstance(name, str) and 'browser_use.Agent' in name:
+				if isinstance(logger, logging.Logger):
+					logger.propagate = False
+					logger.handlers = [log_handler]
+					logger.setLevel(root.level)
 
 		# Silence third-party loggers
 		for logger_name in [

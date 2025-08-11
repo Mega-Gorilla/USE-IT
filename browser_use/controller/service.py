@@ -2,6 +2,7 @@ import asyncio
 import enum
 import json
 import logging
+import os
 from typing import Generic, TypeVar
 
 try:
@@ -277,12 +278,15 @@ class Controller(Generic[Context]):
 			selector_map = await browser_session.get_selector_map()
 			if params.index not in selector_map:
 				raise BrowserError(f'Element with index {params.index} not found in selector map')
-			
+
 			node = selector_map[params.index]
-			
+
 			# Helper function to find file input near the selected element
-			def find_file_input_near_element(node: EnhancedDOMTreeNode, max_height: int = 3, max_descendant_depth: int = 3) -> EnhancedDOMTreeNode | None:
+			def find_file_input_near_element(
+				node: EnhancedDOMTreeNode, max_height: int = 3, max_descendant_depth: int = 3
+			) -> EnhancedDOMTreeNode | None:
 				"""Find the closest file input to the selected element."""
+
 				def find_file_input_in_descendants(n: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
 					if depth < 0:
 						return None
@@ -293,7 +297,7 @@ class Controller(Generic[Context]):
 						if result:
 							return result
 					return None
-				
+
 				current = node
 				for _ in range(max_height + 1):
 					# Check the current node itself
@@ -317,29 +321,30 @@ class Controller(Generic[Context]):
 					if not current:
 						break
 				return None
-			
+
 			# Try to find a file input element near the selected element
 			file_input_node = find_file_input_near_element(node)
-			
+
 			# If not found near the selected element, fallback to finding the closest file input to current scroll position
 			if file_input_node is None:
-				logger.info(f'No file upload element found near index {params.index}, searching for closest file input to scroll position')
-				
+				logger.info(
+					f'No file upload element found near index {params.index}, searching for closest file input to scroll position'
+				)
+
 				# Get current scroll position
 				cdp_session = await browser_session.get_or_create_cdp_session()
 				try:
 					scroll_info = await cdp_session.cdp_client.send.Runtime.evaluate(
-						params={'expression': 'window.scrollY || window.pageYOffset || 0'},
-						session_id=cdp_session.session_id
+						params={'expression': 'window.scrollY || window.pageYOffset || 0'}, session_id=cdp_session.session_id
 					)
 					current_scroll_y = scroll_info.get('result', {}).get('value', 0)
 				except:
 					current_scroll_y = 0
-				
+
 				# Find all file inputs in the selector map and pick the closest one to scroll position
 				closest_file_input = None
 				min_distance = float('inf')
-				
+
 				for idx, element in selector_map.items():
 					if browser_session.is_file_input(element):
 						# Get element's Y position
@@ -349,22 +354,17 @@ class Controller(Generic[Context]):
 							if distance < min_distance:
 								min_distance = distance
 								closest_file_input = element
-				
+
 				if closest_file_input:
 					file_input_node = closest_file_input
 					logger.info(f'Found file input closest to scroll position (distance: {min_distance}px)')
 				else:
-					msg = f'No file upload element found on the page'
+					msg = 'No file upload element found on the page'
 					logger.info(msg)
 					raise BrowserError(msg)
 
 			# Dispatch upload file event with the file input node
-			event = browser_session.event_bus.dispatch(
-				UploadFileEvent(
-					node=file_input_node,
-					file_path=params.path
-				)
-			)
+			event = browser_session.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=params.path))
 			await event
 
 			msg = f'📁 Successfully uploaded file to index {params.index}'
