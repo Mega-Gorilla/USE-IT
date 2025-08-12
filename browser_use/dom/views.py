@@ -565,6 +565,16 @@ class EnhancedDOMTreeNode:
 		# Convert to int for __hash__ return type - use first 16 chars and convert from hex to int
 		return int(element_hash[:16], 16)
 
+	def parent_branch_hash(self) -> int:
+		"""
+		Hash the element based on its parent branch path and attributes.
+		"""
+		parent_branch_path = self._get_parent_branch_path()
+		parent_branch_path_string = '/'.join(parent_branch_path)
+		element_hash = hashlib.sha256(parent_branch_path_string.encode()).hexdigest()
+
+		return int(element_hash[:16], 16)
+
 	def _get_parent_branch_path(self) -> list[str]:
 		"""Get the parent branch path as a list of tag names from root to current element."""
 		parents: list['EnhancedDOMTreeNode'] = []
