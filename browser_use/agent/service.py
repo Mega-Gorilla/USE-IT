@@ -1494,9 +1494,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
 				cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
 			else:
+				cached_selector_map = {}
 				cached_element_hashes = set()
 		except Exception as e:
 			self.logger.error(f'Error getting cached selector map: {e}')
+			cached_selector_map = {}
 			cached_element_hashes = set()
 
 		# await self.browser_session.remove_highlights()

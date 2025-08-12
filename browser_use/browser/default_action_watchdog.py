@@ -296,9 +296,32 @@ class DefaultActionWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.debug(f'JavaScript getBoundingClientRect failed: {e}')
 
-			# If we still don't have quads, fail
+			# If we still don't have quads, fall back to JS click
 			if not quads:
-				raise Exception('Could not get element geometry from any method')
+				self.logger.warning('⚠️ Could not get element geometry from any method, falling back to JavaScript click')
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+					)
+					object_id = result['object']['objectId']
+
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.5)
+					# Navigation is handled by BrowserSession via events
+					return None
+				except Exception as js_e:
+					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
+					raise Exception(f'Failed to click element: {js_e}')
 
 			# Find the largest visible quad within the viewport
 			best_quad = None

@@ -403,8 +403,9 @@ class Controller(Generic[Context]):
 					logger.info(f'Found file input closest to scroll position (distance: {min_distance}px)')
 				else:
 					msg = 'No file upload element found on the page'
-					logger.info(msg)
+					logger.error(msg)
 					raise BrowserError(msg)
+					# TODO: figure out why this fails sometimes + add fallback hail mary, just look for any file input on page
 
 			# Dispatch upload file event with the file input node
 			try:
