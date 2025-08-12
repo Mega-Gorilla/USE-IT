@@ -50,6 +50,15 @@ class TargetAllTrees:
 
 
 @dataclass(slots=True)
+class PropagatingBounds:
+	"""Track bounds that propagate from parent elements to filter children."""
+	tag: str           # The tag that started propagation ('a' or 'button')
+	bounds: 'DOMRect'  # The bounding box
+	node_id: int       # Node ID for debugging
+	depth: int         # How deep in tree this started (for debugging)
+
+
+@dataclass(slots=True)
 class SimplifiedNode:
 	"""Simplified tree node for optimization."""
 
@@ -59,6 +68,7 @@ class SimplifiedNode:
 	interactive_index: int | None = None
 
 	is_new: bool = False
+	excluded_by_parent: bool = False  # New field for bbox filtering
 
 	def __json__(self) -> dict:
 		original_node_json = self.original_node.__json__()
