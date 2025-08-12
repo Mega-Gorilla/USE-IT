@@ -6,6 +6,7 @@ from bubus import BaseEvent
 from cdp_use.cdp.page import CaptureScreenshotParameters
 
 from browser_use.browser.events import ScreenshotEvent
+from browser_use.browser.views import BrowserError
 from browser_use.browser.watchdog_base import BaseWatchdog
 
 if TYPE_CHECKING:
@@ -21,7 +22,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 	# Events this watchdog emits
 	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []
 
-	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> dict[str, str | None]:
+	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> str:
 		"""Handle screenshot request using CDP.
 
 		Args:
@@ -45,24 +46,15 @@ class ScreenshotWatchdog(BaseWatchdog):
 			# Return base64-encoded screenshot data
 			if result and 'data' in result:
 				self.logger.debug('[ScreenshotWatchdog] Screenshot captured successfully')
+				return result['data']
 
-				# Remove highlights after screenshot to clean up the page
-				try:
-					await self.browser_session.remove_highlights()
-					self.logger.debug('[ScreenshotWatchdog] Removed element highlights after screenshot')
-				except Exception as e:
-					self.logger.debug(f'[ScreenshotWatchdog] Failed to remove highlights: {e}')
-
-				return {'screenshot': result['data']}
-			else:
-				self.logger.warning('[ScreenshotWatchdog] Screenshot result missing data')
-				return {'screenshot': None}
-
+			raise BrowserError('[ScreenshotWatchdog] Screenshot result missing data')
 		except Exception as e:
 			self.logger.error(f'[ScreenshotWatchdog] Screenshot failed: {e}')
+			raise
+		finally:
 			# Try to remove highlights even on failure
 			try:
 				await self.browser_session.remove_highlights()
 			except Exception:
 				pass
-			return {'screenshot': None}

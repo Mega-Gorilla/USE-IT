@@ -93,18 +93,47 @@ class BaseWatchdog(BaseModel):
 							)
 							try:
 								result = await actual_handler(event)
-								self.logger.debug(f'[{self.__class__.__name__}] {actual_handler.__name__} completed successfully')
-								return result
-							except TimeoutError as e:
-								# Handle timeouts gracefully - don't crash the agent
-								self.logger.warning(
-									f'⏰ [{self.__class__.__name__}] {actual_handler.__name__} timed out - continuing gracefully. '
-									f'Event: {event.__class__.__name__}. Error: {e}'
+								self.logger.debug(
+									f'[{self.__class__.__name__}] {actual_handler.__name__}({event.event_type}) completed successfully'
 								)
-								# Don't re-raise TimeoutError - let the agent continue
-								return None
+								return result
+							# except TimeoutError as e:
+							# 	# Handle timeouts gracefully - don't crash the agent
+							# 	self.logger.warning(
+							# 		f'⏰ [{self.__class__.__name__}] {actual_handler.__name__} timed out - continuing gracefully. '
+							# 		f'Event: {event.__class__.__name__}. Error: {e}'
+							# 	)
+							# 	# Don't re-raise TimeoutError - let the agent continue
+							# 	return None
 							except Exception as e:
-								self.logger.error(f'[{self.__class__.__name__}] {actual_handler.__name__} failed: {e}')
+								original_error = e
+								self.logger.error(
+									f'[{self.__class__.__name__}] {actual_handler.__name__}({event.event_type}) failed: {type(e).__name__}: {e}'
+								)
+
+								# attempt to repair potentially crashed CDP session
+								try:
+									if self.browser_session.agent_focus and self.browser_session.agent_focus.target_id:
+										# Common issue with CDP, some calls need the target to be active/foreground to succeed:
+										#   screenshot, scroll, Page.handleJavaScriptDialog, and some others
+										self.logger.warning(
+											f'[{self.__class__.__name__}] Re-foregrounding target to try and recover crashed CDP session {self.browser_session.agent_focus}'
+										)
+										self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
+											target_id=self.browser_session.agent_focus.target_id, new_socket=True
+										)
+										await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
+											params={'targetId': self.browser_session.agent_focus.target_id}
+										)
+									else:
+										await self.browser_session.get_or_create_cdp_session(
+											target_id=None, new_socket=True, focus=True
+										)
+								except Exception as sub_error:
+									self.logger.error(
+										f'[{self.__class__.__name__}] Failed to re-create CDP session after original error {original_error}: due to {type(e).__name__}: {e}'
+									)
+
 								raise
 
 						return unique_handler

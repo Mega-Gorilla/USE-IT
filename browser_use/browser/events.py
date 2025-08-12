@@ -122,7 +122,7 @@ class ScrollEvent(ElementSelectedEvent[None]):
 	amount: int  # pixels
 	node: 'EnhancedDOMTreeNode | None' = None  # None means scroll page
 
-	event_timeout: float | None = 5.0  # seconds
+	event_timeout: float | None = 8.0  # seconds
 
 
 class SwitchTabEvent(BaseEvent[None]):
@@ -141,13 +141,13 @@ class CloseTabEvent(BaseEvent[None]):
 	event_timeout: float | None = 10.0  # seconds
 
 
-class ScreenshotEvent(BaseEvent):
+class ScreenshotEvent(BaseEvent[str]):
 	"""Request to take a screenshot."""
 
 	full_page: bool = False
 	clip: dict[str, float] | None = None  # {x, y, width, height}
 
-	event_timeout: float | None = 15.0  # seconds
+	event_timeout: float | None = 8.0  # seconds
 
 
 class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
