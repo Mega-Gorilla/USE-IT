@@ -1,6 +1,7 @@
 """Base watchdog class for browser monitoring components."""
 
 import inspect
+import time
 from collections.abc import Iterable
 from typing import Any, ClassVar
 
@@ -55,6 +56,14 @@ class BaseWatchdog(BaseModel):
 		"""
 		# Register event handlers automatically based on method names
 
+		red = '\033[91m'
+		green = '\033[92m'
+		yellow = '\033[93m'
+		blue = '\033[94m'
+		magenta = '\033[95m'
+		cyan = '\033[96m'
+		reset = '\033[0m'
+
 		assert self.browser_session is not None, 'Root CDP client not initialized - browser may not be connected yet'
 
 		from browser_use.browser import events
@@ -88,13 +97,28 @@ class BaseWatchdog(BaseModel):
 					# Capture handler by value to avoid closure issues
 					def make_unique_handler(actual_handler):
 						async def unique_handler(event):
+							parent_event = (
+								self.event_bus.event_history.get(event.event_parent_id) if event.event_parent_id else None
+							)
+							parent = (
+								f'{yellow}(during handling of parent: {parent_event.event_type}#{parent_event.event_id[-4:]}){reset}'
+								if parent_event
+								else f'{green}(dispatched by agent){reset}'
+							)
+							event_str = f'{event.event_type}#{event.event_id[-4:]}'
+							time_start = time.time()
 							self.logger.debug(
-								f'[{self.__class__.__name__}] calling {actual_handler.__name__}({event.__class__.__name__})'
+								f'{cyan}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ⏳ Starting...{reset} {parent}'
 							)
 							try:
 								result = await actual_handler(event)
+								if isinstance(result, Exception):
+									raise result
+								time_end = time.time()
+								time_elapsed = time_end - time_start
+								result_summary = '' if result is None else f' -> <{type(result).__name__}>'
 								self.logger.debug(
-									f'[{self.__class__.__name__}] {actual_handler.__name__}({event.event_type}) completed successfully'
+									f'{green}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ✅ Succeeded ({time_elapsed:.2f}s){result_summary}{reset}'
 								)
 								return result
 							# except TimeoutError as e:
@@ -106,9 +130,11 @@ class BaseWatchdog(BaseModel):
 							# 	# Don't re-raise TimeoutError - let the agent continue
 							# 	return None
 							except Exception as e:
+								time_end = time.time()
+								time_elapsed = time_end - time_start
 								original_error = e
 								self.logger.error(
-									f'[{self.__class__.__name__}] {actual_handler.__name__}({event.event_type}) failed: {type(e).__name__}: {e}'
+									f'{red}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ❌ Raised an error ({time_elapsed:.2f}s): {type(e).__name__}:\n\t{e}{reset}'
 								)
 
 								# attempt to repair potentially crashed CDP session
@@ -117,8 +143,9 @@ class BaseWatchdog(BaseModel):
 										# Common issue with CDP, some calls need the target to be active/foreground to succeed:
 										#   screenshot, scroll, Page.handleJavaScriptDialog, and some others
 										self.logger.warning(
-											f'[{self.__class__.__name__}] Re-foregrounding target to try and recover crashed CDP session {self.browser_session.agent_focus}'
+											f'{yellow}🚌 [{self.__class__.__name__}] ⚠️ Re-foregrounding target to try and recover crashed CDP session {self.browser_session.agent_focus}{reset}'
 										)
+										del self.browser_session._cdp_session_pool[self.browser_session.agent_focus.target_id]
 										self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
 											target_id=self.browser_session.agent_focus.target_id, new_socket=True
 										)
@@ -131,7 +158,7 @@ class BaseWatchdog(BaseModel):
 										)
 								except Exception as sub_error:
 									self.logger.error(
-										f'[{self.__class__.__name__}] Failed to re-create CDP session after original error {original_error}: due to {type(e).__name__}: {e}'
+										f'{red}🚌 [{self.__class__.__name__}] ❌ Failed to re-create CDP session after original error {original_error} in {actual_handler.__name__}({event.event_type}#{event.event_id[-4:]}): due to {type(sub_error).__name__}: {sub_error}{reset}'
 									)
 
 								raise
