@@ -103,7 +103,7 @@ class PopupsWatchdog(BaseWatchdog):
 			# delay to look more human
 			await asyncio.sleep(0.25)
 			assert self.browser_session._cdp_client_root
-			self.browser_session._cdp_client_root.register.Page.javascriptDialogClosed(lambda *args: None)
+			# self.browser_session._cdp_client_root.register.Page.javascriptDialogClosed(lambda *args: None)
 			await asyncio.wait_for(
 				self.browser_session._cdp_client_root.send.Page.handleJavaScriptDialog(
 					params={'accept': True},

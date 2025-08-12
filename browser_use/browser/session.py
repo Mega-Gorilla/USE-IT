@@ -741,11 +741,13 @@ class BrowserSession(BaseModel):
 			# Don't use cached state if we need a screenshot but the cached state doesn't have one
 			if include_screenshot and not self._cached_browser_state_summary.screenshot:
 				self.logger.debug('⚠️ Cached browser state has no screenshot, fetching fresh state with screenshot')
+				# Fall through to fetch fresh state with screenshot
 			elif selector_map and len(selector_map) > 0:
 				self.logger.debug('🔄 Using pre-cached browser state summary for open tab')
 				return self._cached_browser_state_summary
 			else:
 				self.logger.debug('⚠️ Cached browser state has 0 interactive elements, fetching fresh state')
+				# Fall through to fetch fresh state
 
 		# Dispatch the event and wait for result
 		event: BrowserStateRequestEvent = cast(

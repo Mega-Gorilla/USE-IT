@@ -164,7 +164,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				)
 
 				# Register download event handlers
-				def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: str | None):
+				async def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: str | None):
 					self.logger.info(f'[DownloadsWatchdog] Download will begin: {event}')
 					# Create and track the task
 					task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
@@ -172,7 +172,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					# Remove from set when done
 					task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
-				def download_progress_handler(event: DownloadProgressEvent, session_id: str | None):
+				async def download_progress_handler(event: DownloadProgressEvent, session_id: str | None):
 					# Check if download is complete
 					if event.get('state') == 'completed':
 						file_path = event.get('filePath')

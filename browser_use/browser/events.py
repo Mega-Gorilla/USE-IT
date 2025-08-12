@@ -154,7 +154,7 @@ class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
 	"""Request current browser state."""
 
 	include_dom: bool = True
-	include_screenshot: bool = False
+	include_screenshot: bool = True
 	cache_clickable_elements_hashes: bool = True
 	include_recent_events: bool = False
 
