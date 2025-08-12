@@ -235,7 +235,7 @@ class Controller(Generic[Context]):
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element by index, set new_tab=True to open any resulting navigation in a new tab',
+			'Click element by index, set new_tab=True to open any resulting navigation in a new tab. Only click on indices that are inside your current browser_state. Never click or assume not existing indices.',
 			param_model=ClickElementAction,
 		)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
@@ -259,7 +259,7 @@ class Controller(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Click and input text into a input interactive element',
+			'Click and input text into a input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state.',
 			param_model=InputTextAction,
 		)
 		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
