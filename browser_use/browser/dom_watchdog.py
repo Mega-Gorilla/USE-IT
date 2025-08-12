@@ -267,12 +267,14 @@ class DOMWatchdog(BaseWatchdog):
 					# Wait for the event itself to complete (this waits for all handlers)
 					await screenshot_event
 
-					# Now get the results after the event has completed
-					screenshot_result = await screenshot_event.event_results_flat_dict()
-					self.logger.debug(f'📸 Got screenshot result: {screenshot_result.keys() if screenshot_result else None}')
+					# Get the single handler result
+					screenshot_dict = await screenshot_event.event_result()
+					self.logger.debug(
+						f'📸 Got screenshot dict: {type(screenshot_dict)} with keys: {screenshot_dict.keys() if screenshot_dict else None}'
+					)
 
-					if screenshot_result:
-						screenshot_b64 = screenshot_result.get('screenshot')
+					if screenshot_dict:
+						screenshot_b64 = screenshot_dict.get('screenshot')
 						if screenshot_b64:
 							self.logger.debug(f'📸 Screenshot captured in DOM watchdog, length: {len(screenshot_b64)}')
 						else:
