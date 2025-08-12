@@ -31,11 +31,13 @@ from browser_use.controller.views import (
 	ClickElementAction,
 	CloseTabAction,
 	DoneAction,
+	GetDropdownOptionsAction,
 	GoToUrlAction,
 	InputTextAction,
 	NoParamsAction,
 	ScrollAction,
 	SearchGoogleAction,
+	SelectDropdownOptionAction,
 	SendKeysAction,
 	StructuredOutputAction,
 	SwitchTabAction,
@@ -413,8 +415,8 @@ class Controller(Generic[Context]):
 		This tool takes the entire markdown of the page and extracts the query from it.
 		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
 		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. 
-		If you called extract_structured_data in the last step and the result was not good, use the current browser state and scrolling to get the information, dont call extract_structured_data again.
+		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. If you want to scrape a listing of many elements always first scroll a lot until the page end to load everything and then call this tool in the end.
+		If you called extract_structured_data in the last step and the result was not good (e.g. because of antispam protection), use the current browser state and scrolling to get the information, dont call extract_structured_data again.
 		""",
 		)
 		async def extract_structured_data(
@@ -593,6 +595,419 @@ Provide the extracted information in a clear, structured format."""
 					include_in_memory=True,
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
+
+		# Dropdown Actions
+
+		@self.registry.action(
+			'Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns like Semantic UI). Searches target element and up to 4 levels of children to find dropdowns. This only works on dropdown elements.',
+			param_model=GetDropdownOptionsAction,
+		)
+		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
+			"""Get all options from a native dropdown or ARIA menu"""
+			# Look up the node from the selector map
+			node = await browser_session.get_element_by_index(params.index)
+			if node is None:
+				raise ValueError(f'Element index {params.index} not found in DOM')
+
+			# Get CDP session for this node
+			cdp_session = await browser_session.cdp_client_for_node(node)
+
+			# Convert node to object ID for CDP operations
+			try:
+				object_result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': node.backend_node_id}, session_id=cdp_session.session_id
+				)
+				remote_object = object_result.get('object', {})
+				object_id = remote_object.get('objectId')
+				if not object_id:
+					raise ValueError('Could not get object ID from resolved node')
+			except Exception as e:
+				raise ValueError(f'Failed to resolve node to object: {e}') from e
+
+			try:
+				# Use JavaScript to extract dropdown options
+				options_script = """
+				function() {
+					const startElement = this;
+					
+					// Function to check if an element is a dropdown and extract options
+					function checkDropdownElement(element) {
+						// Check if it's a native select element
+						if (element.tagName.toLowerCase() === 'select') {
+							return {
+								type: 'select',
+								options: Array.from(element.options).map((opt, idx) => ({
+									text: opt.text,
+									value: opt.value,
+									index: idx,
+									selected: opt.selected
+								})),
+								id: element.id || '',
+								name: element.name || '',
+								source: 'target'
+							};
+						}
+						
+						// Check if it's an ARIA dropdown/menu
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							// Find all menu items/options
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
+									});
+								}
+							});
+							
+							return {
+								type: 'aria',
+								options: options,
+								id: element.id || '',
+								name: element.getAttribute('aria-label') || '',
+								source: 'target'
+							};
+						}
+						
+						// Check if it's a Semantic UI dropdown or similar
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.classList.contains('selected') || item.classList.contains('active')
+									});
+								}
+							});
+							
+							if (options.length > 0) {
+								return {
+									type: 'custom',
+									options: options,
+									id: element.id || '',
+									name: element.getAttribute('aria-label') || '',
+									source: 'target'
+								};
+							}
+						}
+						
+						return null;
+					}
+					
+					// Function to recursively search children up to specified depth
+					function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Check if this child is a dropdown
+							const result = checkDropdownElement(child);
+							if (result) {
+								result.source = `child-depth-${currentDepth + 1}`;
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
+							if (childResult) {
+								return childResult;
+							}
+						}
+						
+						return null;
+					}
+					
+					// First check the target element itself
+					let dropdownResult = checkDropdownElement(startElement);
+					if (dropdownResult) {
+						return dropdownResult;
+					}
+					
+					// If target element is not a dropdown, search children up to depth 4
+					dropdownResult = searchChildrenForDropdowns(startElement, 4);
+					if (dropdownResult) {
+						return dropdownResult;
+					}
+					
+					return {
+						error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+					};
+				}
+				"""
+
+				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': options_script,
+						'objectId': object_id,
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				dropdown_data = result.get('result', {}).get('value', {})
+
+				if dropdown_data.get('error'):
+					raise ValueError(dropdown_data['error'])
+
+				if not dropdown_data.get('options'):
+					raise ValueError('No options found in dropdown')
+
+				# Format options for display
+				formatted_options = []
+				for opt in dropdown_data['options']:
+					# Use JSON encoding to ensure exact string matching
+					encoded_text = json.dumps(opt['text'])
+					status = ' (selected)' if opt.get('selected') else ''
+					formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
+
+				dropdown_type = dropdown_data.get('type', 'unknown')
+				element_info = f'ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+				source_info = dropdown_data.get('source', 'unknown')
+
+				if source_info == 'target':
+					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+				else:
+					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
+				msg += '\n\nUse the exact text string (without quotes) in select_dropdown_option'
+
+				if source_info == 'target':
+					logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {params.index}')
+				else:
+					logger.info(
+						f'📋 Found {len(dropdown_data["options"])} dropdown options for index {params.index} in {source_info}'
+					)
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f'Found {len(dropdown_data["options"])} dropdown options for index {params.index}',
+					include_extracted_content_only_once=True,
+				)
+
+			except Exception as e:
+				error_msg = f'Failed to get dropdown options: {str(e)}'
+				logger.error(error_msg)
+				raise ValueError(error_msg) from e
+
+		@self.registry.action(
+			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options. You only need this for native dropdowns - for most other dropdowns you can just click and select the option yourself. Only use this if the click apporach does not work. Dont use this for non dropdowns.',
+			param_model=SelectDropdownOptionAction,
+		)
+		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
+			"""Select dropdown option by the text of the option you want to select"""
+			# Look up the node from the selector map
+			node = await browser_session.get_element_by_index(params.index)
+			if node is None:
+				raise ValueError(f'Element index {params.index} not found in DOM')
+
+			# Get CDP session for this node
+			cdp_session = await browser_session.cdp_client_for_node(node)
+
+			# Convert node to object ID for CDP operations
+			try:
+				object_result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': node.backend_node_id}, session_id=cdp_session.session_id
+				)
+				remote_object = object_result.get('object', {})
+				object_id = remote_object.get('objectId')
+				if not object_id:
+					raise ValueError('Could not get object ID from resolved node')
+			except Exception as e:
+				raise ValueError(f'Failed to resolve node to object: {e}') from e
+
+			try:
+				# Use JavaScript to select the option
+				selection_script = """
+				function(targetText) {
+					const startElement = this;
+					
+					// Function to attempt selection on a dropdown element
+					function attemptSelection(element) {
+						// Handle native select elements
+						if (element.tagName.toLowerCase() === 'select') {
+							const options = Array.from(element.options);
+							for (const option of options) {
+								if (option.text === targetText) {
+									element.value = option.value;
+									option.selected = true;
+									
+									// Trigger change events
+									const changeEvent = new Event('change', { bubbles: true });
+									element.dispatchEvent(changeEvent);
+									
+									return {
+										success: true,
+										message: `Selected option: ${targetText}`,
+										value: option.value
+									};
+								}
+							}
+							return {
+								success: false,
+								error: `Option with text '${targetText}' not found in select element`
+							};
+						}
+						
+						// Handle ARIA dropdowns/menus
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							
+							for (const item of menuItems) {
+								if (item.textContent && item.textContent.trim() === targetText) {
+									// Clear previous selections
+									menuItems.forEach(mi => {
+										mi.setAttribute('aria-selected', 'false');
+										mi.classList.remove('selected');
+									});
+									
+									// Select this item
+									item.setAttribute('aria-selected', 'true');
+									item.classList.add('selected');
+									
+									// Trigger click and change events
+									item.click();
+									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+									item.dispatchEvent(clickEvent);
+									
+									return {
+										success: true,
+										message: `Selected ARIA menu item: ${targetText}`
+									};
+								}
+							}
+							return {
+								success: false,
+								error: `Menu item with text '${targetText}' not found`
+							};
+						}
+						
+						// Handle Semantic UI or custom dropdowns
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							
+							for (const item of menuItems) {
+								if (item.textContent && item.textContent.trim() === targetText) {
+									// Clear previous selections
+									menuItems.forEach(mi => {
+										mi.classList.remove('selected', 'active');
+									});
+									
+									// Select this item
+									item.classList.add('selected', 'active');
+									
+									// Update dropdown text if there's a text element
+									const textElement = element.querySelector('.text');
+									if (textElement) {
+										textElement.textContent = targetText;
+									}
+									
+									// Trigger click and change events
+									item.click();
+									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+									item.dispatchEvent(clickEvent);
+									
+									// Also dispatch on the main dropdown element
+									const dropdownChangeEvent = new Event('change', { bubbles: true });
+									element.dispatchEvent(dropdownChangeEvent);
+									
+									return {
+										success: true,
+										message: `Selected custom dropdown item: ${targetText}`
+									};
+								}
+							}
+							return {
+								success: false,
+								error: `Custom dropdown item with text '${targetText}' not found`
+							};
+						}
+						
+						return null; // Not a dropdown element
+					}
+					
+					// Function to recursively search children for dropdowns
+					function searchChildrenForSelection(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Try selection on this child
+							const result = attemptSelection(child);
+							if (result && result.success) {
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForSelection(child, maxDepth, currentDepth + 1);
+							if (childResult && childResult.success) {
+								return childResult;
+							}
+						}
+						
+						return null;
+					}
+					
+					// First try the target element itself
+					let selectionResult = attemptSelection(startElement);
+					if (selectionResult && selectionResult.success) {
+						return selectionResult;
+					}
+					
+					// If target element selection failed, search children up to depth 4
+					selectionResult = searchChildrenForSelection(startElement, 4);
+					if (selectionResult && selectionResult.success) {
+						return selectionResult;
+					}
+					
+					return {
+						success: false,
+						error: `Element and its children (depth 4) do not contain a dropdown with option '${targetText}' (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+					};
+				}
+				"""
+
+				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': selection_script,
+						'arguments': [{'value': params.text}],
+						'objectId': object_id,
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				selection_result = result.get('result', {}).get('value', {})
+
+				if selection_result.get('success'):
+					msg = selection_result.get('message', f'Selected option: {params.text}')
+					logger.info(f'✅ {msg}')
+					return ActionResult(
+						extracted_content=msg,
+						include_in_memory=True,
+						long_term_memory=f"Selected dropdown option '{params.text}' at index {params.index}",
+					)
+				else:
+					error_msg = selection_result.get('error', f'Failed to select option: {params.text}')
+					logger.error(f'❌ {error_msg}')
+					raise ValueError(error_msg)
+
+			except Exception as e:
+				error_msg = f'Failed to select dropdown option: {str(e)}'
+				logger.error(error_msg)
+				raise ValueError(error_msg) from e
 
 		# File System Actions
 		@self.registry.action(
