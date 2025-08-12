@@ -283,17 +283,6 @@ class BrowserSession(BaseModel):
 				'This likely means BrowserSession was initialized multiple times with the same EventBus.'
 			)
 
-		# Register BrowserSession's event handlers
-		# self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
-		# self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
-		# # Core navigation events that shouldn't be in optional watchdogs
-		# self.event_bus.on(NavigateToUrlEvent, self.on_NavigateToUrlEvent)
-		# self.event_bus.on(SwitchTabEvent, self.on_SwitchTabEvent)
-		# self.event_bus.on(TabClosedEvent, self.on_TabClosedEvent)
-		# self.event_bus.on(AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
-		# # Track downloaded files
-		# self.event_bus.on(FileDownloadedEvent, self.on_FileDownloadedEvent)
-
 		BaseWatchdog.attach_handler_to_session(self, BrowserStartEvent, self.on_BrowserStartEvent)
 		BaseWatchdog.attach_handler_to_session(self, BrowserStopEvent, self.on_BrowserStopEvent)
 		BaseWatchdog.attach_handler_to_session(self, NavigateToUrlEvent, self.on_NavigateToUrlEvent)
