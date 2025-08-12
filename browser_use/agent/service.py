@@ -798,6 +798,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Check for new downloads after executing actions
 		await self._check_and_update_downloads('after executing actions')
 
+		# check for action errors  and len more than 1
+		if self.state.last_result and len(self.state.last_result) > 1 and self.state.last_result[-1].error:
+			self.state.consecutive_failures += 1
+			self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures: {self.state.consecutive_failures}')
+			return
+
 		self.state.consecutive_failures = 0
 		self.logger.debug(f'🔄 Step {self.state.n_steps}: Consecutive failures reset to: {self.state.consecutive_failures}')
 
