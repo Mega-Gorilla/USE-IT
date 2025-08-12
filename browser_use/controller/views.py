@@ -14,7 +14,7 @@ class GoToUrlAction(BaseModel):
 
 
 class ClickElementAction(BaseModel):
-	index: int
+	index: int = Field(ge=1, description='index of the element to click')
 	new_tab: bool = Field(default=False, description='set True to open any resulting navigation in a new tab, False otherwise')
 	# expect_download: bool = Field(default=False, description='set True if expecting a download, False otherwise')  # moved to downloads_watchdog.py
 	# click_count: int = 1  # TODO

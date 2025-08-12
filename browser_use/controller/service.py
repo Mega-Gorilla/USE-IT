@@ -239,13 +239,15 @@ class Controller(Generic[Context]):
 			param_model=ClickElementAction,
 		)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
-			# Look up the node from the selector map
-			node = await browser_session.get_element_by_index(params.index)
-			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
-
 			# Dispatch click event with node
 			try:
+				assert params.index != 0, 'Cannot click on element with index 0. If there are no interactive elements use scroll(), wait(), refresh(), etc. to troubleshoot'
+
+				# Look up the node from the selector map
+				node = await browser_session.get_element_by_index(params.index)
+				if node is None:
+					raise ValueError(f'Element index {params.index} not found in DOM')
+				
 				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
 				await event
 				# Wait for handler to complete and get any exception (None is expected on success)
