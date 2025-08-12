@@ -802,7 +802,7 @@ Provide the extracted information in a clear, structured format."""
 				raise ValueError(error_msg) from e
 
 		@self.registry.action(
-			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options. This only works on interactive elements which look like dropdowns.',
+			'Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options. You only need this for native dropdowns - for most other dropdowns you can just click and select the option yourself. Only use this if the click apporach does not work. Dont use this for non dropdowns.',
 			param_model=SelectDropdownOptionAction,
 		)
 		async def select_dropdown_option(params: SelectDropdownOptionAction, browser_session: BrowserSession):
