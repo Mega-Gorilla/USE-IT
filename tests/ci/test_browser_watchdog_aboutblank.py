@@ -210,6 +210,7 @@ async def test_aboutblank_watchdog_javascript_execution():
 
 		# Test 2: Close the tab and verify watchdog creates new about:blank tab with animation
 		from browser_use.browser.events import CloseTabEvent
+
 		event = session.event_bus.dispatch(CloseTabEvent(tab_index=dvd_event1.tab_index))
 		await event
 

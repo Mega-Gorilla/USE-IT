@@ -86,7 +86,7 @@ async def solve_amazon_captcha(browser_session: BrowserSession):
 		},
 		session_id=browser_session.agent_focus.session_id,
 	)
-	
+
 	# Click submit button using CDP
 	await browser_session.agent_focus.cdp_client.send.Runtime.evaluate(
 		params={

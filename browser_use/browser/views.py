@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from bubus import BaseEvent
 from pydantic import BaseModel
 
 from browser_use.dom.views import DOMInteractedElement, SerializedDOMState
-from bubus import BaseEvent
 
 # Known placeholder image data for about:blank pages - a 4x4 white PNG
 PLACEHOLDER_4PX_SCREENSHOT = (

@@ -63,7 +63,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 				# Not handling things like middle click, etc.
 				if button != 'left' and button != 'right':
 					button = 'left'
-				
+
 				# Use CDP to click
 				await browser_session.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
 					params={
@@ -91,7 +91,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 				x, y = action.x, action.y
 				scroll_x, scroll_y = action.scroll_x, action.scroll_y
 				print(f'Action: scroll at ({x}, {y}) with offsets (scroll_x={scroll_x}, scroll_y={scroll_y})')
-				
+
 				# Move mouse to position first
 				await browser_session.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
 					params={
@@ -101,7 +101,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 					},
 					session_id=browser_session.agent_focus.session_id,
 				)
-				
+
 				# Execute scroll using JavaScript
 				await browser_session.agent_focus.cdp_client.send.Runtime.evaluate(
 					params={
@@ -122,7 +122,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 						key_code = 'Enter'
 					elif k.lower() == 'space':
 						key_code = 'Space'
-					
+
 					# Use CDP to send key
 					await browser_session.agent_focus.cdp_client.send.Input.dispatchKeyEvent(
 						params={
@@ -144,7 +144,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 			case 'type':
 				text = action.text
 				print(f'Action: type text: {text}')
-				
+
 				# Type text character by character
 				for char in text:
 					await browser_session.agent_focus.cdp_client.send.Input.dispatchKeyEvent(

@@ -85,7 +85,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
-				
+
 				# Optional:Switch to the newly created tab
 				# Not recommended usually in order to match normal behavior with Cmd/Ctrl+Click
 				# If agent wanted to focus on the new page they would've clicked without new_tab
@@ -397,10 +397,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 							},
 							session_id=session_id,
 						),
-						timeout=1.0  # 1 second timeout for mousePressed
+						timeout=1.0,  # 1 second timeout for mousePressed
 					)
 					await asyncio.sleep(0.145)
-				except asyncio.TimeoutError:
+				except TimeoutError:
 					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 					# Don't sleep if we timed out
 
@@ -418,9 +418,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 							},
 							session_id=session_id,
 						),
-						timeout=1.0  # 1 second timeout for mouseReleased
+						timeout=1.0,  # 1 second timeout for mouseReleased
 					)
-				except asyncio.TimeoutError:
+				except TimeoutError:
 					self.logger.debug('⏱️ Mouse up timed out (likely due to dialog), continuing...')
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
@@ -1123,8 +1123,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 		if not found:
 			# Fallback: Try JavaScript search
 			js_result = await cdp_client.send.Runtime.evaluate(
-					params={
-						'expression': f'''
+				params={
+					'expression': f'''
 							(() => {{
 								const walker = document.createTreeWalker(
 									document.body,
@@ -1142,9 +1142,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 								return false;
 							}})()
 						'''
-					},
-					session_id=session_id,
-				)
+				},
+				session_id=session_id,
+			)
 
 		if js_result.get('result', {}).get('value'):
 			self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
@@ -1152,7 +1152,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		else:
 			self.logger.warning(f'⚠️ Text not found: "{event.text}"')
 			raise BrowserError(f'Text not found: "{event.text}"', details={'text': event.text})
-		
+
 		# If we got here and found is True, return None (success)
 		if found:
 			return None

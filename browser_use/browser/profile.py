@@ -603,12 +603,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	include_dynamic_attributes: bool = Field(default=True, description='Include dynamic attributes in selectors.')
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
 	viewport_expansion: int = Field(default=500, description='Viewport expansion in pixels for LLM context.')
-	
+
 	# --- Downloads ---
-	auto_download_pdfs: bool = Field(
-		default=True,
-		description='Automatically download PDFs when navigating to PDF viewer pages.'
-	)
+	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
 
 	profile_directory: str = 'Default'  # e.g. 'Profile 1', 'Profile 2', 'Custom Profile', etc.
 

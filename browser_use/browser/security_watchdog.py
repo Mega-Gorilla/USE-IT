@@ -1,10 +1,8 @@
 """Security watchdog for enforcing URL access policies."""
 
-import asyncio
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent
-from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserErrorEvent,
@@ -54,7 +52,7 @@ class SecurityWatchdog(BaseWatchdog):
 		# Check if the navigated URL is allowed (in case of redirects)
 		if not self._is_url_allowed(event.url):
 			self.logger.warning(f'⛔️ Navigation to non-allowed URL detected: {event.url}')
-			
+
 			# Dispatch browser error
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -63,7 +61,7 @@ class SecurityWatchdog(BaseWatchdog):
 					details={'url': event.url, 'tab_index': event.tab_index},
 				)
 			)
-			
+
 			# Close the target that navigated to the disallowed URL
 			try:
 				targets = await self.browser_session._cdp_get_all_pages()
@@ -78,7 +76,7 @@ class SecurityWatchdog(BaseWatchdog):
 		"""Check if new tab URL is allowed."""
 		if not self._is_url_allowed(event.url):
 			self.logger.warning(f'⛔️ New tab created with disallowed URL: {event.url}')
-			
+
 			# Dispatch error and try to close the tab
 			self.event_bus.dispatch(
 				BrowserErrorEvent(
@@ -87,10 +85,10 @@ class SecurityWatchdog(BaseWatchdog):
 					details={'url': event.url, 'tab_index': event.tab_index, 'target_id': event.target_id},
 				)
 			)
-			
+
 			# Try to close the offending tab
 			try:
-				await self.browser_session._cdp_close_page(event.target_id)	
+				await self.browser_session._cdp_close_page(event.target_id)
 				self.logger.info(f'⛔️ Closed new tab with non-allowed URL: {event.url}')
 			except Exception as e:
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {str(e)}')

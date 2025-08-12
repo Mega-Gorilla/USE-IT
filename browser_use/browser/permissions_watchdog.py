@@ -3,8 +3,6 @@
 from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent
-from cdp_use.cdp import browser as cdp_browser
-from cdp_use.cdp.browser import GrantPermissionsParameters
 
 from browser_use.browser.events import BrowserConnectedEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
@@ -25,13 +23,13 @@ class PermissionsWatchdog(BaseWatchdog):
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""Grant permissions when browser connects."""
 		permissions = self.browser_session.browser_profile.permissions
-		
+
 		if not permissions:
 			self.logger.debug('No permissions to grant')
 			return
-			
+
 		self.logger.info(f'🔓 Granting browser permissions: {permissions}')
-		
+
 		try:
 			# Grant permissions using CDP Browser.grantPermissions
 			# origin=None means grant to all origins

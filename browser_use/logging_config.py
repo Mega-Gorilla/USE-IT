@@ -131,11 +131,12 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	# This enables the formatted CDP output at the same level as browser_use
 	try:
 		from cdp_use.logging import setup_cdp_logging  # type: ignore
+
 		# Use the same stream and level as browser_use
 		setup_cdp_logging(
 			level=log_level,
 			stream=stream or sys.stdout,
-			format_string='%(levelname)-8s [%(name)s] %(message)s' if log_type != 'result' else '%(message)s'
+			format_string='%(levelname)-8s [%(name)s] %(message)s' if log_type != 'result' else '%(message)s',
 		)
 	except ImportError:
 		# If cdp_use doesn't have the new logging module, fall back to manual config
@@ -187,19 +188,19 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 
 class FIFOHandler(logging.Handler):
 	"""Non-blocking handler that writes to a named pipe."""
-	
+
 	def __init__(self, fifo_path: str):
 		super().__init__()
 		self.fifo_path = fifo_path
 		Path(fifo_path).parent.mkdir(parents=True, exist_ok=True)
-		
+
 		# Create FIFO if it doesn't exist
 		if not os.path.exists(fifo_path):
 			os.mkfifo(fifo_path)
-		
+
 		# Don't open the FIFO yet - will open on first write
 		self.fd = None
-	
+
 	def emit(self, record):
 		try:
 			# Open FIFO on first write if not already open
@@ -209,8 +210,8 @@ class FIFOHandler(logging.Handler):
 				except OSError:
 					# No reader connected yet, skip this message
 					return
-			
-			msg = f"{self.format(record)}\n".encode()
+
+			msg = f'{self.format(record)}\n'.encode()
 			os.write(self.fd, msg)
 		except (OSError, BrokenPipeError):
 			# Reader disconnected, close and reset
@@ -220,7 +221,7 @@ class FIFOHandler(logging.Handler):
 				except:
 					pass
 				self.fd = None
-	
+
 	def close(self):
 		if hasattr(self, 'fd') and self.fd is not None:
 			try:
@@ -232,24 +233,24 @@ class FIFOHandler(logging.Handler):
 
 def setup_log_pipes(session_id: str, base_dir: str = None):
 	"""Setup named pipes for log streaming.
-	
+
 	Usage:
 		# In browser-use:
 		setup_log_pipes(session_id="abc123")
-		
+
 		# In consumer process:
 		tail -f {temp_dir}/buagent.c123/agent.pipe
 	"""
 	import tempfile
-	
+
 	if base_dir is None:
 		base_dir = tempfile.gettempdir()
-	
+
 	suffix = session_id[-4:]
-	pipe_dir = Path(base_dir) / f"buagent.{suffix}"
-	
+	pipe_dir = Path(base_dir) / f'buagent.{suffix}'
+
 	# Agent logs
-	agent_handler = FIFOHandler(str(pipe_dir / "agent.pipe"))
+	agent_handler = FIFOHandler(str(pipe_dir / 'agent.pipe'))
 	agent_handler.setLevel(logging.DEBUG)
 	agent_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
 	for name in ['browser_use.agent', 'browser_use.controller']:
@@ -257,9 +258,9 @@ def setup_log_pipes(session_id: str, base_dir: str = None):
 		logger.addHandler(agent_handler)
 		logger.setLevel(logging.DEBUG)
 		logger.propagate = True
-	
-	# CDP logs  
-	cdp_handler = FIFOHandler(str(pipe_dir / "cdp.pipe"))
+
+	# CDP logs
+	cdp_handler = FIFOHandler(str(pipe_dir / 'cdp.pipe'))
 	cdp_handler.setLevel(logging.DEBUG)
 	cdp_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
 	for name in ['websockets.client', 'cdp_use.client']:
@@ -267,9 +268,9 @@ def setup_log_pipes(session_id: str, base_dir: str = None):
 		logger.addHandler(cdp_handler)
 		logger.setLevel(logging.DEBUG)
 		logger.propagate = True
-	
+
 	# Event logs
-	event_handler = FIFOHandler(str(pipe_dir / "events.pipe"))
+	event_handler = FIFOHandler(str(pipe_dir / 'events.pipe'))
 	event_handler.setLevel(logging.INFO)
 	event_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
 	for name in ['bubus', 'browser_use.browser.session']:

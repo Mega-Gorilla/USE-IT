@@ -270,7 +270,7 @@ class TestClickElementEvent:
 		# Verify we're still on the original tab (not switched) - matches browser Cmd/Ctrl+click behavior
 		current_url = await browser_session.get_current_page_url()
 		assert f'{base_url}/newTab' in current_url, f'Should still be on original tab, but got {current_url}'
-		
+
 		# Wait for the new tab to finish navigating to the target URL
 		# New tabs initially open at the current URL then navigate to the target
 		max_wait = 5
@@ -280,7 +280,7 @@ class TestClickElementEvent:
 			new_tab = tabs[-1]  # Last tab is the newly opened one
 			if f'{base_url}/page1' in new_tab.url:
 				break
-		
+
 		# Verify the new tab has the correct URL
 		assert f'{base_url}/page1' in new_tab.url, f'New tab should have page1 URL, but got {new_tab.url}'
 
@@ -730,13 +730,8 @@ class TestClickElementEvent:
 
 	async def test_click_triggers_alert_popup(self, browser_session, base_url, http_server):
 		"""Test that clicking a button triggers an alert dialog that is auto-accepted."""
-		from browser_use.browser.events import (
-			NavigateToUrlEvent,
-			BrowserStateRequestEvent,
-			ClickElementEvent,
-			DialogOpenedEvent
-		)
-		
+		from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, DialogOpenedEvent, NavigateToUrlEvent
+
 		# Add route with alert dialog
 		http_server.expect_request('/alert_test').respond_with_data(
 			"""
@@ -758,9 +753,7 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the alert test page using events
-		nav_event = browser_session.event_bus.dispatch(
-			NavigateToUrlEvent(url=f'{base_url}/alert_test')
-		)
+		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/alert_test'))
 		await nav_event
 		await asyncio.sleep(0.5)
 
@@ -781,16 +774,14 @@ class TestClickElementEvent:
 		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
 
 		# Click the alert button using ClickElementEvent
-		click_event = browser_session.event_bus.dispatch(
-			ClickElementEvent(node=alert_button)
-		)
+		click_event = browser_session.event_bus.dispatch(ClickElementEvent(node=alert_button))
 		await click_event
 
 		# Wait for and verify DialogOpenedEvent was dispatched
 		dialog_event = await asyncio.wait_for(dialog_event_future, timeout=2.0)
 		assert dialog_event.dialog_type == 'alert'
 		assert 'This is an alert!' in dialog_event.message
-		
+
 		# Verify the page updated after alert was accepted
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		result_js = await cdp_session.cdp_client.send.Runtime.evaluate(
@@ -801,13 +792,8 @@ class TestClickElementEvent:
 
 	async def test_click_triggers_confirm_popup(self, browser_session, base_url, http_server):
 		"""Test that clicking a button triggers a confirm dialog that is auto-accepted."""
-		from browser_use.browser.events import (
-			NavigateToUrlEvent,
-			BrowserStateRequestEvent,
-			ClickElementEvent,
-			DialogOpenedEvent
-		)
-		
+		from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, DialogOpenedEvent, NavigateToUrlEvent
+
 		# Add route with confirm dialog
 		http_server.expect_request('/confirm_test').respond_with_data(
 			"""
@@ -829,16 +815,14 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the confirm test page
-		nav_event = browser_session.event_bus.dispatch(
-			NavigateToUrlEvent(url=f'{base_url}/confirm_test')
-		)
+		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/confirm_test'))
 		await nav_event
 		await asyncio.sleep(0.5)
 
 		# Get the browser state
 		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
 		browser_state = await state_event.event_result(raise_if_none=True, raise_if_any=True)
-		
+
 		# Find the confirm button
 		confirm_button = None
 		for element in browser_state.dom_state.selector_map.values():
@@ -852,9 +836,7 @@ class TestClickElementEvent:
 		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
 
 		# Click the confirm button
-		click_event = browser_session.event_bus.dispatch(
-			ClickElementEvent(node=confirm_button)
-		)
+		click_event = browser_session.event_bus.dispatch(ClickElementEvent(node=confirm_button))
 		await click_event
 
 		# Wait for and verify DialogOpenedEvent was dispatched
@@ -872,13 +854,8 @@ class TestClickElementEvent:
 
 	async def test_page_usable_after_popup_confirm(self, browser_session, base_url, http_server):
 		"""Test that the page remains usable after handling confirm dialogs."""
-		from browser_use.browser.events import (
-			NavigateToUrlEvent,
-			BrowserStateRequestEvent,
-			ClickElementEvent,
-			DialogOpenedEvent
-		)
-		
+		from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, DialogOpenedEvent, NavigateToUrlEvent
+
 		# Add route with confirm dialog and navigation
 		http_server.expect_request('/popup_nav_test').respond_with_data(
 			"""
@@ -901,16 +878,14 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the test page
-		nav_event = browser_session.event_bus.dispatch(
-			NavigateToUrlEvent(url=f'{base_url}/popup_nav_test')
-		)
+		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/popup_nav_test'))
 		await nav_event
 		await asyncio.sleep(0.5)
 
 		# Get browser state
 		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
 		browser_state = await state_event
-		
+
 		# Find and click the confirm button
 		confirm_button = None
 		for element in browser_state.dom_state.selector_map.values():
@@ -924,9 +899,7 @@ class TestClickElementEvent:
 		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
 
 		# Click confirm button
-		click_event = browser_session.event_bus.dispatch(
-			ClickElementEvent(node=confirm_button)
-		)
+		click_event = browser_session.event_bus.dispatch(ClickElementEvent(node=confirm_button))
 		await click_event
 
 		# Wait for dialog event
@@ -955,9 +928,7 @@ class TestClickElementEvent:
 		assert nav_link is not None, 'Could not find navigation link'
 
 		# Click the navigation link
-		click_event = browser_session.event_bus.dispatch(
-			ClickElementEvent(node=nav_link)
-		)
+		click_event = browser_session.event_bus.dispatch(ClickElementEvent(node=nav_link))
 		await click_event
 		await asyncio.sleep(1)
 
@@ -971,13 +942,8 @@ class TestClickElementEvent:
 
 	async def test_click_triggers_onbeforeunload_popup(self, browser_session, base_url, http_server):
 		"""Test that navigating away from a page with onbeforeunload triggers a dialog."""
-		from browser_use.browser.events import (
-			NavigateToUrlEvent,
-			BrowserStateRequestEvent,
-			ClickElementEvent,
-			DialogOpenedEvent
-		)
-		
+		from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, DialogOpenedEvent, NavigateToUrlEvent
+
 		# Add route with onbeforeunload handler
 		http_server.expect_request('/beforeunload_test').respond_with_data(
 			"""
@@ -1005,9 +971,7 @@ class TestClickElementEvent:
 		)
 
 		# Navigate to the beforeunload test page
-		nav_event = browser_session.event_bus.dispatch(
-			NavigateToUrlEvent(url=f'{base_url}/beforeunload_test')
-		)
+		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/beforeunload_test'))
 		await nav_event
 		await asyncio.sleep(0.5)
 
@@ -1028,9 +992,7 @@ class TestClickElementEvent:
 		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
 
 		# Click the navigation link - should trigger beforeunload popup
-		click_event = browser_session.event_bus.dispatch(
-			ClickElementEvent(node=nav_link)
-		)
+		click_event = browser_session.event_bus.dispatch(ClickElementEvent(node=nav_link))
 		await click_event
 
 		# Wait for and verify DialogOpenedEvent was dispatched
@@ -1043,16 +1005,19 @@ class TestClickElementEvent:
 
 		# Verify navigation succeeded after beforeunload was accepted
 		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page1' in current_url, f'Navigation should have succeeded after beforeunload was accepted, current URL: {current_url}'
+		assert f'{base_url}/page1' in current_url, (
+			f'Navigation should have succeeded after beforeunload was accepted, current URL: {current_url}'
+		)
 
 	async def test_file_upload_click_and_verify(self, controller, browser_session, base_url, http_server):
 		"""Test that clicking a file upload element and uploading a file works correctly."""
 		# Create a temporary test file
 		import tempfile as temp_module
+
 		with temp_module.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
 			temp_file.write('Test file content for upload')
 			temp_file_path = temp_file.name
-		
+
 		try:
 			# Add route for file upload test page
 			http_server.expect_request('/fileupload').respond_with_data(
@@ -1157,11 +1122,12 @@ class TestClickElementEvent:
 
 			# Create a temporary FileSystem for the test
 			import tempfile
+
 			from browser_use.filesystem.file_system import FileSystem
-			
+
 			with tempfile.TemporaryDirectory() as temp_dir:
 				file_system = FileSystem(base_dir=temp_dir)
-				
+
 				# Upload the file using the label index (should find the associated file input)
 				result = await controller.act(
 					UploadFileActionModel(upload_file_to_element=UploadFileAction(index=label_index, path=temp_file_path)),
@@ -1180,7 +1146,7 @@ class TestClickElementEvent:
 
 				# Verify the file was actually selected using CDP Runtime.evaluate
 				cdp_session = await browser_session.get_or_create_cdp_session()
-				
+
 				# Check if the file input has a file selected
 				file_check_js = await browser_session.cdp_client.send.Runtime.evaluate(
 					params={
@@ -1203,12 +1169,12 @@ class TestClickElementEvent:
 					},
 					session_id=cdp_session.session_id,
 				)
-				
+
 				file_info = file_check_js.get('result', {}).get('value', {})
-				
+
 				# Verify file was selected
 				assert file_info.get('hasFile') is True, 'File was not properly selected in the input element'
-				assert file_info.get('fileName', '').endswith('.txt'), f"Expected .txt file, got: {file_info.get('fileName')}"
+				assert file_info.get('fileName', '').endswith('.txt'), f'Expected .txt file, got: {file_info.get("fileName")}'
 				assert file_info.get('fileSize', 0) > 0, 'File size should be greater than 0'
 
 				# Also verify the UI was updated (the file info div)
@@ -1229,13 +1195,13 @@ class TestClickElementEvent:
 					},
 					session_id=cdp_session.session_id,
 				)
-				
+
 				ui_info = ui_check_js.get('result', {}).get('value', {})
-				
+
 				# Verify UI was updated
 				assert ui_info.get('hasFileInfo') is True, 'UI was not updated with file information'
-				assert '.txt' in ui_info.get('fileNameText', ''), f"File name not shown in UI: {ui_info.get('fileNameText')}"
-				assert 'bytes' in ui_info.get('fileSizeText', ''), f"File size not shown in UI: {ui_info.get('fileSizeText')}"
+				assert '.txt' in ui_info.get('fileNameText', ''), f'File name not shown in UI: {ui_info.get("fileNameText")}'
+				assert 'bytes' in ui_info.get('fileSizeText', ''), f'File size not shown in UI: {ui_info.get("fileSizeText")}'
 
 		finally:
 			# Clean up the temporary file
@@ -1243,11 +1209,11 @@ class TestClickElementEvent:
 
 	async def test_file_upload_path_validation(self, controller, browser_session, base_url, http_server):
 		"""Test that file upload validates paths correctly with available_file_paths, downloaded_files, and FileSystem."""
-		import tempfile
 		from pathlib import Path
+
 		from browser_use.browser.views import BrowserError
-		from browser_use.filesystem.file_system import FileSystem
 		from browser_use.controller.views import UploadFileAction
+		from browser_use.filesystem.file_system import FileSystem
 
 		# Create a temporary test file that's NOT in available_file_paths
 		with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
@@ -1280,6 +1246,7 @@ class TestClickElementEvent:
 
 			# Get browser state to populate selector map
 			from browser_use.browser.events import BrowserStateRequestEvent
+
 			event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
 			state = await event
 
@@ -1292,58 +1259,56 @@ class TestClickElementEvent:
 			# Create a temporary FileSystem for all tests
 			with tempfile.TemporaryDirectory() as temp_dir:
 				file_system = FileSystem(base_dir=temp_dir)
-				
+
 				try:
 					# This should fail because the file is not in available_file_paths
 					result = await controller.act(
-						upload_action, 
+						upload_action,
 						browser_session,
 						available_file_paths=[],  # Empty available_file_paths
-						file_system=file_system
+						file_system=file_system,
 					)
-					assert result.error is not None, "Upload should have failed for file not in available_file_paths"
-					assert "not available" in result.error, f"Error message should mention file not available: {result.error}"
+					assert result.error is not None, 'Upload should have failed for file not in available_file_paths'
+					assert 'not available' in result.error, f'Error message should mention file not available: {result.error}'
 				except BrowserError as e:
-					assert "not available" in str(e), f"Error should mention file not available: {e}"
+					assert 'not available' in str(e), f'Error should mention file not available: {e}'
 
 				# Test 2: Add file to available_file_paths - should succeed
 				result = await controller.act(
 					upload_action,
 					browser_session,
 					available_file_paths=[test_file_path],  # File is now in available_file_paths
-					file_system=file_system
+					file_system=file_system,
 				)
-				assert result.error is None, f"Upload should have succeeded with file in available_file_paths: {result.error}"
+				assert result.error is None, f'Upload should have succeeded with file in available_file_paths: {result.error}'
 
 				# Test 3: Test with FileSystem integration - write a test file to the FileSystem
 				await file_system.write_file('test.txt', 'FileSystem test content')
 				fs_file_path = str(file_system.get_dir() / 'test.txt')
-				
+
 				# Try to upload using just the filename (should check FileSystem)
-				upload_action_fs = UploadActionModel(
-					upload_file_to_element=UploadFileAction(index=1, path='test.txt')
-				)
-				
+				upload_action_fs = UploadActionModel(upload_file_to_element=UploadFileAction(index=1, path='test.txt'))
+
 				result = await controller.act(
 					upload_action_fs,
 					browser_session,
 					available_file_paths=[],  # Empty available_file_paths
-					file_system=file_system  # But FileSystem is provided
+					file_system=file_system,  # But FileSystem is provided
 				)
-				assert result.error is None, f"Upload should have succeeded with file in FileSystem: {result.error}"
+				assert result.error is None, f'Upload should have succeeded with file in FileSystem: {result.error}'
 
 				# Test 4: Simulate a downloaded file
 				# Manually add a file to browser_session._downloaded_files to simulate a download
 				browser_session._downloaded_files.append(test_file_path)
-				
+
 				# Try uploading with the file only in downloaded_files
 				result = await controller.act(
 					upload_action,
 					browser_session,
 					available_file_paths=[],  # Empty available_file_paths, but file is in downloaded_files
-					file_system=file_system
+					file_system=file_system,
 				)
-				assert result.error is None, f"Upload should have succeeded with file in downloaded_files: {result.error}"
+				assert result.error is None, f'Upload should have succeeded with file in downloaded_files: {result.error}'
 
 		finally:
 			# Clean up the temporary file

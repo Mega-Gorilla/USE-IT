@@ -288,7 +288,9 @@ class Controller(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
-		async def upload_file_to_element(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str], file_system: FileSystem):
+		async def upload_file_to_element(
+			params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str], file_system: FileSystem
+		):
 			# Check if file is in available_file_paths (user-provided or downloaded files)
 			if params.path not in available_file_paths:
 				# Also check if it's a recently downloaded file that might not be in available_file_paths yet
@@ -304,9 +306,13 @@ class Controller(Generic[Context]):
 							file_system_path = str(file_system.get_dir() / params.path)
 							params = UploadFileAction(index=params.index, path=file_system_path)
 						else:
-							raise BrowserError(f'File path {params.path} is not available. Must be in available_file_paths, downloaded_files, or a file managed by file_system.')
+							raise BrowserError(
+								f'File path {params.path} is not available. Must be in available_file_paths, downloaded_files, or a file managed by file_system.'
+							)
 					else:
-						raise BrowserError(f'File path {params.path} is not available. Must be in available_file_paths or downloaded_files.')
+						raise BrowserError(
+							f'File path {params.path} is not available. Must be in available_file_paths or downloaded_files.'
+						)
 
 			if not os.path.exists(params.path):
 				raise BrowserError(f'File {params.path} does not exist')
@@ -329,7 +335,7 @@ class Controller(Generic[Context]):
 						return None
 					if browser_session.is_file_input(n):
 						return n
-					for child in (n.children_nodes or []):
+					for child in n.children_nodes or []:
 						result = find_file_input_in_descendants(child, depth - 1)
 						if result:
 							return result
@@ -346,7 +352,7 @@ class Controller(Generic[Context]):
 						return result
 					# Check all siblings and their descendants
 					if current.parent_node:
-						for sibling in (current.parent_node.children_nodes or []):
+						for sibling in current.parent_node.children_nodes or []:
 							if sibling is current:
 								continue
 							if browser_session.is_file_input(sibling):
@@ -588,7 +594,7 @@ Provide the extracted information in a clear, structured format."""
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 				direction = 'down' if params.down else 'up'
-				
+
 				# If index is 0 or None, we're scrolling the page
 				target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
 
@@ -629,7 +635,7 @@ Provide the extracted information in a clear, structured format."""
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
 			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
-			
+
 			try:
 				# The handler returns None on success or raises an exception if text not found
 				await event.event_result(raise_if_any=True, raise_if_none=False)

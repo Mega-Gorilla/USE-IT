@@ -81,6 +81,7 @@ async def test_storage_state_watchdog_save_event():
 
 		# Navigate to create some context
 		from browser_use.browser.events import NavigateToUrlEvent
+
 		nav_event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Test Page</h1>'))
 		await nav_event
 
@@ -201,7 +202,10 @@ async def test_storage_state_watchdog_auto_save():
 
 		# Navigate to create some context that might change storage
 		from browser_use.browser.events import NavigateToUrlEvent
-		event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<script>document.cookie="auto_test=value"</script>'))
+
+		event = session.event_bus.dispatch(
+			NavigateToUrlEvent(url='data:text/html,<script>document.cookie="auto_test=value"</script>')
+		)
 		await event
 
 		# Wait a bit longer than auto-save interval

@@ -37,7 +37,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 		try:
 			# Get CDP client and session for current target
 			cdp_session = await self.browser_session.get_or_create_cdp_session()
-			
+
 			# Activate the target to ensure it's focused
 			self.logger.debug(f'[ScreenshotWatchdog] Activating target: {cdp_session.target_id}')
 			try:
@@ -45,9 +45,10 @@ class ScreenshotWatchdog(BaseWatchdog):
 				await self.browser_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
 			except Exception as e:
 				self.logger.debug(f'[ScreenshotWatchdog] Could not activate target: {e}')
-			
+
 			# Small delay to ensure the tab switch is complete
 			import asyncio
+
 			await asyncio.sleep(0.2)
 
 			# Prepare screenshot parameters
@@ -60,16 +61,17 @@ class ScreenshotWatchdog(BaseWatchdog):
 			# Return base64-encoded screenshot data as bytes
 			if result and 'data' in result:
 				self.logger.debug('[ScreenshotWatchdog] Screenshot captured successfully')
-				
+
 				# Remove highlights after screenshot to clean up the page
 				try:
 					await self.browser_session.remove_highlights()
 					self.logger.debug('[ScreenshotWatchdog] Removed element highlights after screenshot')
 				except Exception as e:
 					self.logger.debug(f'[ScreenshotWatchdog] Failed to remove highlights: {e}')
-				
+
 				# Convert base64 string to bytes
 				import base64
+
 				return base64.b64decode(result['data'])
 			else:
 				self.logger.warning('[ScreenshotWatchdog] Screenshot result missing data')

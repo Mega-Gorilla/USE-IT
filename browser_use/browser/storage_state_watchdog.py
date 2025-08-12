@@ -53,7 +53,6 @@ class StorageStateWatchdog(BaseWatchdog):
 		# Automatically load storage state after browser start
 		self.event_bus.dispatch(LoadStorageStateEvent())
 
-
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
 		"""Handle storage state save request."""
 		# Use provided path or fall back to profile default

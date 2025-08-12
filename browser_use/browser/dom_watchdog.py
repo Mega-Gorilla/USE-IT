@@ -166,7 +166,9 @@ class DOMWatchdog(BaseWatchdog):
 				await self._wait_for_stable_network()
 				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Page stability complete')
 			except Exception as e:
-				self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Network waiting failed: {e}, continuing anyway...')
+				self.logger.warning(
+					f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Network waiting failed: {e}, continuing anyway...'
+				)
 
 		# Get tabs info once at the beginning for all paths
 		self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: Getting tabs info...')
@@ -250,7 +252,9 @@ class DOMWatchdog(BaseWatchdog):
 			# Get screenshot if requested
 			screenshot_b64 = None
 			if event.include_screenshot:
-				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 DOM watchdog requesting screenshot, include_screenshot={event.include_screenshot}')
+				self.logger.debug(
+					f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 DOM watchdog requesting screenshot, include_screenshot={event.include_screenshot}'
+				)
 				try:
 					# Check if handler is registered
 					handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
@@ -265,6 +269,7 @@ class DOMWatchdog(BaseWatchdog):
 					if screenshot_bytes:
 						# Convert bytes back to base64 string for BrowserStateSummary
 						import base64
+
 						screenshot_b64 = base64.b64encode(screenshot_bytes).decode('utf-8')
 						self.logger.debug(f'📸 Got screenshot: {len(screenshot_bytes)} bytes')
 					else:
@@ -294,7 +299,9 @@ class DOMWatchdog(BaseWatchdog):
 				page_info = await self._get_page_info()
 				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got page info from CDP: {page_info}')
 			except Exception as e:
-				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Failed to get page info from CDP: {e}, using fallback')
+				self.logger.debug(
+					f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Failed to get page info from CDP: {e}, using fallback'
+				)
 				# Fallback to default viewport dimensions
 				viewport = self.browser_session.browser_profile.viewport or {'width': 1280, 'height': 720}
 				page_info = PageInfo(
@@ -315,9 +322,13 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Build and cache the browser state summary
 			if screenshot_b64:
-				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 Creating BrowserStateSummary with screenshot, length: {len(screenshot_b64)}')
+				self.logger.debug(
+					f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 Creating BrowserStateSummary with screenshot, length: {len(screenshot_b64)}'
+				)
 			else:
-				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 Creating BrowserStateSummary WITHOUT screenshot')
+				self.logger.debug(
+					'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 Creating BrowserStateSummary WITHOUT screenshot'
+				)
 
 			browser_state = BrowserStateSummary(
 				dom_state=content,
@@ -422,7 +433,9 @@ class DOMWatchdog(BaseWatchdog):
 					from browser_use.dom.debug.highlights import inject_highlighting_script
 
 					await inject_highlighting_script(self._dom_service, self.selector_map)
-					self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: ✅ Injected highlighting for {len(self.selector_map)} elements')
+					self.logger.debug(
+						f'🔍 DOMWatchdog._build_dom_tree: ✅ Injected highlighting for {len(self.selector_map)} elements'
+					)
 				except Exception as e:
 					self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to inject highlighting: {e}')
 

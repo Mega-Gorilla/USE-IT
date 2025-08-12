@@ -80,14 +80,14 @@ def read_cv():
 )
 async def upload_cv(index: int, browser_session: BrowserSession):
 	path = str(CV.absolute())
-	
+
 	# Get the element by index
 	dom_element = await browser_session.get_element_by_index(index)
-	
+
 	if dom_element is None:
 		logger.info(f'No element found at index {index}')
 		return ActionResult(error=f'No element found at index {index}')
-	
+
 	# Check if it's a file input element
 	if not browser_session.is_file_input(dom_element):
 		logger.info(f'Element at index {index} is not a file upload element')

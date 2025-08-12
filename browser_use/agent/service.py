@@ -709,7 +709,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
 			cached=use_cache,
 			include_recent_events=self.include_recent_events,
-    )
+		)
 		if browser_state_summary.screenshot:
 			self.logger.debug(f'📸 Got browser state WITH screenshot, length: {len(browser_state_summary.screenshot)}')
 		else:

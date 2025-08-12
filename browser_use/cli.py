@@ -1448,7 +1448,7 @@ async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
 	# Prevent browser_use from setting up logging at import time
 	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
-	
+
 	logger = logging.getLogger('browser_use.startup')
 
 	# Set up logging for Textual UI - prevent any logging to stdout
@@ -1488,10 +1488,11 @@ async def textual_interface(config: dict[str, Any]):
 			browser_profile=profile,
 		)
 		logger.debug('BrowserSession initialized successfully')
-		
+
 		# Set up FIFO logging pipes for streaming logs to UI
 		try:
 			from browser_use.logging_config import setup_log_pipes
+
 			setup_log_pipes(session_id=browser_session.id)
 			logger.debug(f'FIFO logging pipes set up for session {browser_session.id[-4:]}')
 		except Exception as e:

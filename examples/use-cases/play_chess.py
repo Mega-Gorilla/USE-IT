@@ -102,7 +102,7 @@ async def calculate_square_size(browser: BrowserSession) -> float | None:
 	try:
 		if not browser.agent_focus:
 			return None
-		
+
 		# Get board HTML using CDP
 		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
 			params={
@@ -174,7 +174,7 @@ async def get_current_board_info(browser: BrowserSession) -> tuple[str | None, f
 	try:
 		if not browser.agent_focus:
 			return None, None
-		
+
 		# Get board HTML using CDP
 		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
 			params={
@@ -227,7 +227,7 @@ async def read_board(browser: BrowserSession):
 	# Get the current page's CDP session
 	if not browser.agent_focus:
 		return ActionResult(extracted_content='No active page to read board from.')
-	
+
 	full_fen, _ = await get_current_board_info(browser)
 
 	if not full_fen:
@@ -319,7 +319,7 @@ async def play_move(params: PlayMoveParams, browser: BrowserSession):
 	try:
 		if not browser.agent_focus:
 			return ActionResult(extracted_content='No active page to play move on.')
-		
+
 		click_offset = square_size / 2
 		start_click_x = start_x + click_offset
 		start_click_y = start_y + click_offset
@@ -327,7 +327,7 @@ async def play_move(params: PlayMoveParams, browser: BrowserSession):
 		end_click_y = end_y + click_offset
 
 		logger.debug(f"DEBUG: Playing SAN '{san_move}' (UCI: {uci_move}).")
-		
+
 		# Get board element bounds first
 		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
 			params={
@@ -345,10 +345,10 @@ async def play_move(params: PlayMoveParams, browser: BrowserSession):
 			session_id=browser.agent_focus.session_id,
 		)
 		board_rect = result.get('result', {}).get('value')
-		
+
 		if not board_rect:
 			return ActionResult(extracted_content='Could not find chess board element.')
-		
+
 		# Click start position
 		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
 			params={
@@ -369,9 +369,9 @@ async def play_move(params: PlayMoveParams, browser: BrowserSession):
 			},
 			session_id=browser.agent_focus.session_id,
 		)
-		
+
 		await asyncio.sleep(0.5)
-		
+
 		# Click end position
 		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
 			params={

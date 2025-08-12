@@ -171,7 +171,7 @@ class CrashWatchdog(BaseWatchdog):
 		if session := self.browser_session._cdp_session_pool.pop(target_id, None):
 			await session.disconnect()
 			self.logger.info(f'[CrashWatchdog] Removed crashed session from pool: {target_id}')
-		
+
 		# Get target info
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
@@ -239,7 +239,7 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def _monitoring_loop(self) -> None:
 		"""Main monitoring loop."""
-		await asyncio.sleep(10) # give browser time to start up and load the first page after first LLM call
+		await asyncio.sleep(10)  # give browser time to start up and load the first page after first LLM call
 		while True:
 			try:
 				await self._check_network_timeouts()
@@ -296,14 +296,34 @@ class CrashWatchdog(BaseWatchdog):
 		"""Check if browser and targets are still responsive."""
 
 		try:
-			cdp_session = await self.browser_session.get_or_create_cdp_session()
+			try:
+				self.logger.debug(f'[CrashWatchdog] Checking browser health for target {self.browser_session.agent_focus}')
+				cdp_session = await self.browser_session.get_or_create_cdp_session()
+			except Exception as e:
+				self.logger.debug(f'[CrashWatchdog] Checking browser health for target {self.browser_session.agent_focus} error: {type(e).__name__}: {e}')
+				self.agent_focus = cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=self.agent_focus.target_id, new_socket=True, focus=True)
+
+			for target in (await self.browser_session.cdp_client.send.Target.getTargets()).get('targetInfos', []):
+				if target.get('type') == 'page':
+					cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=target.get('targetId'))
+					if self._is_new_tab_page(target.get('url')) and target.get('url') != 'about:blank':
+						self.logger.debug(f'[CrashWatchdog] Redirecting chrome://new-tab-page/ to about:blank {target.get("url")}')
+						await cdp_session.cdp_client.send.Page.navigate(params={'url': 'about:blank'}, session_id=cdp_session.session_id)
+
 			# Quick ping to check if session is alive
+			self.logger.debug(f'[CrashWatchdog] Attempting to run simple JS test expression in session {cdp_session} 1+1')
 			await asyncio.wait_for(
-				cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': '1'}, session_id=cdp_session.session_id),
+				cdp_session.cdp_client.send.Runtime.evaluate(params={'expression': '1+1'}, session_id=cdp_session.session_id),
 				timeout=1.0,
 			)
+			self.logger.debug(f'[CrashWatchdog] Browser health check passed for target {self.browser_session.agent_focus}')
 		except Exception as e:
-			self.logger.error(f'[CrashWatchdog] ❌ Crashed session detected for target {self.browser_session.agent_focus}')
+			self.logger.error(f'[CrashWatchdog] ❌ Crashed session detected for target {self.browser_session.agent_focus} error: {type(e).__name__}: {e}')
+			# Remove crashed session from pool
+			if self.browser_session.agent_focus and (target_id := self.browser_session.agent_focus.target_id):
+				if session := self.browser_session._cdp_session_pool.pop(target_id, None):
+					await session.disconnect()
+					self.logger.info(f'[CrashWatchdog] Removed crashed session from pool: {target_id}')
 			self.browser_session.agent_focus.target_id = None  # type: ignore
 
 		# Check browser process if we have PID
@@ -316,7 +336,7 @@ class CrashWatchdog(BaseWatchdog):
 						await session.disconnect()
 					self.browser_session._cdp_session_pool.clear()
 					self.logger.info('[CrashWatchdog] Cleared all sessions from pool due to browser crash')
-					
+
 					self.event_bus.dispatch(
 						BrowserErrorEvent(
 							error_type='BrowserProcessCrashed',

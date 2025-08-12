@@ -5,11 +5,10 @@ from typing import Any, Literal
 
 from bubus import BaseEvent
 from bubus.models import T_EventResultType
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.views import EnhancedDOMTreeNode
-from pydantic import BaseModel
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
@@ -50,6 +49,7 @@ class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 			snapshot_node=None,
 		)
 
+
 # TODO: add page handle to events
 # class PageHandle(share a base with browser.session.CDPSession?):
 # 	url: str
@@ -81,11 +81,13 @@ class NavigateToUrlEvent(BaseEvent[None]):
 	url: str
 	wait_until: Literal['load', 'domcontentloaded', 'networkidle', 'commit'] = 'load'
 	timeout_ms: int | None = None
-	new_tab: bool = Field(default=False, description='Set True to leave the current tab alone and open a new tab in the foreground for the new URL')
+	new_tab: bool = Field(
+		default=False, description='Set True to leave the current tab alone and open a new tab in the foreground for the new URL'
+	)
 	# existing_tab: PageHandle | None = None  # TODO
 
 	# limit enforced by bubus, not exposed to LLM:
-	event_timeout: float | None = 15.0   # seconds
+	event_timeout: float | None = 15.0  # seconds
 
 
 class ClickElementEvent(ElementSelectedEvent[None]):
@@ -93,7 +95,10 @@ class ClickElementEvent(ElementSelectedEvent[None]):
 
 	node: 'EnhancedDOMTreeNode'
 	button: Literal['left', 'right', 'middle'] = 'left'
-	new_tab: bool = Field(default=False, description='Set True to open any link clicked in a new tab in the background, can use switch_tab(page_id=-1) after to focus it')
+	new_tab: bool = Field(
+		default=False,
+		description='Set True to open any link clicked in a new tab in the background, can use switch_tab(page_id=-1) after to focus it',
+	)
 	# click_count: int = 1           # TODO
 	# expect_download: bool = False  # moved to downloads_watchdog.py
 
@@ -133,18 +138,16 @@ class CloseTabEvent(BaseEvent[None]):
 
 	tab_index: int
 
-
 	event_timeout: float | None = 10.0  # seconds
+
 
 class ScreenshotEvent(BaseEvent[bytes]):
 	"""Request to take a screenshot. Returns screenshot as bytes."""
 
 	full_page: bool = False
 	clip: dict[str, float] | None = None  # {x, y, width, height}
-	
 
 	event_timeout: float | None = 15.0  # seconds
-
 
 
 class BrowserStateRequestEvent(BaseEvent[BrowserStateSummary]):
@@ -242,6 +245,7 @@ class BrowserStopEvent(BaseEvent):
 
 class BrowserLaunchResult(BaseModel):
 	"""Result of launching a browser."""
+
 	# TODO: add browser executable_path, pid, version, latency, user_data_dir, X11 $DISPLAY, host IP address, etc.
 	cdp_url: str
 
@@ -285,7 +289,9 @@ class SetCookiesEvent(BaseEvent):
 
 	cookies: list[dict[str, Any]]
 
-	event_timeout: float | None = 30.0  # only long to support the edge case of restoring a big localStorage / on many origins (has to O(n) visit each origin to restore)
+	event_timeout: float | None = (
+		30.0  # only long to support the edge case of restoring a big localStorage / on many origins (has to O(n) visit each origin to restore)
+	)
 
 
 class GetCookiesEvent(BaseEvent):
@@ -334,7 +340,7 @@ class TabClosedEvent(BaseEvent):
 
 	# TODO:
 	# new_focus_tab_index: int | None = None
-    # new_focus_target_id: str | None = None
+	# new_focus_target_id: str | None = None
 	# new_focus_url: str | None = None
 
 	event_timeout: float | None = 10.0  # seconds
@@ -476,12 +482,11 @@ class AboutBlankDVDScreensaverShownEvent(BaseEvent):
 
 class DialogOpenedEvent(BaseEvent):
 	"""Event dispatched when a JavaScript dialog is opened and handled."""
-	
+
 	dialog_type: str  # 'alert', 'confirm', 'prompt', or 'beforeunload'
 	message: str
 	url: str
 	frame_id: str
-
 
 
 # Note: Model rebuilding for forward references is handled in the importing modules
