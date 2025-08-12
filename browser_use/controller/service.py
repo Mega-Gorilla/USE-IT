@@ -254,8 +254,8 @@ class Controller(Generic[Context]):
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
-				logger.error(f'Failed to dispatch ClickElementEvent: {type(e).__name__}: {e}')
-				error_msg = f'Failed to click element {params.index}: {e}'
+				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
+				error_msg = f'Failed to click element {params.index}: {type(e).__name__}: {e}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
