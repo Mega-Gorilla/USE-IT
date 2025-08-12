@@ -141,8 +141,8 @@ class CloseTabEvent(BaseEvent[None]):
 	event_timeout: float | None = 10.0  # seconds
 
 
-class ScreenshotEvent(BaseEvent[bytes]):
-	"""Request to take a screenshot. Returns screenshot as bytes."""
+class ScreenshotEvent(BaseEvent):
+	"""Request to take a screenshot."""
 
 	full_page: bool = False
 	clip: dict[str, float] | None = None  # {x, y, width, height}

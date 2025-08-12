@@ -21,35 +21,19 @@ class ScreenshotWatchdog(BaseWatchdog):
 	# Events this watchdog emits
 	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []
 
-	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> bytes:
+	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> dict[str, str | None]:
 		"""Handle screenshot request using CDP.
 
 		Args:
 			event: ScreenshotEvent with optional full_page and clip parameters
 
 		Returns:
-			Screenshot as bytes (base64-encoded PNG data)
-
-		Raises:
-			Exception: If screenshot capture fails
+			Dict with 'screenshot' key containing base64-encoded screenshot or None
 		"""
 		self.logger.debug('[ScreenshotWatchdog] Handler START - on_ScreenshotEvent called')
 		try:
 			# Get CDP client and session for current target
 			cdp_session = await self.browser_session.get_or_create_cdp_session()
-
-			# Activate the target to ensure it's focused
-			self.logger.debug(f'[ScreenshotWatchdog] Activating target: {cdp_session.target_id}')
-			try:
-				# Use Target.activateTarget to bring the tab to front
-				await self.browser_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
-			except Exception as e:
-				self.logger.debug(f'[ScreenshotWatchdog] Could not activate target: {e}')
-
-			# Small delay to ensure the tab switch is complete
-			import asyncio
-
-			await asyncio.sleep(0.2)
 
 			# Prepare screenshot parameters
 			params = CaptureScreenshotParameters(format='png', captureBeyondViewport=False)
@@ -58,7 +42,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 			self.logger.debug(f'[ScreenshotWatchdog] Taking screenshot with params: {params}')
 			result = await cdp_session.cdp_client.send.Page.captureScreenshot(params=params, session_id=cdp_session.session_id)
 
-			# Return base64-encoded screenshot data as bytes
+			# Return base64-encoded screenshot data
 			if result and 'data' in result:
 				self.logger.debug('[ScreenshotWatchdog] Screenshot captured successfully')
 
@@ -69,19 +53,16 @@ class ScreenshotWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.debug(f'[ScreenshotWatchdog] Failed to remove highlights: {e}')
 
-				# Convert base64 string to bytes
-				import base64
-
-				return base64.b64decode(result['data'])
+				return {'screenshot': result['data']}
 			else:
 				self.logger.warning('[ScreenshotWatchdog] Screenshot result missing data')
-				raise Exception('Screenshot capture failed: no data returned')
+				return {'screenshot': None}
 
 		except Exception as e:
 			self.logger.error(f'[ScreenshotWatchdog] Screenshot failed: {e}')
 			# Try to remove highlights even on failure
 			try:
 				await self.browser_session.remove_highlights()
-			except:
+			except Exception:
 				pass
-			raise
+			return {'screenshot': None}
