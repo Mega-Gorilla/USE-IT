@@ -916,9 +916,16 @@ Provide the extracted information in a clear, structured format."""
 									};
 								}
 							}
+							
+							// Show all available options for debugging
+							const availableOptions = options.map(opt => ({
+								text: opt.text.trim(),
+								value: opt.value
+							}));
+							
 							return {
 								success: false,
-								error: `Option with text or value '${targetText}' not found in select element`
+								error: `Option with text or value '${targetText}' not found in select element. Available options: ${JSON.stringify(availableOptions, null, 2)}`
 							};
 						}
 						
@@ -957,9 +964,16 @@ Provide the extracted information in a clear, structured format."""
 									}
 								}
 							}
+							
+							// Show all available options for debugging
+							const availableOptions = Array.from(menuItems).map(item => ({
+								text: item.textContent ? item.textContent.trim() : '',
+								value: item.getAttribute('data-value') || ''
+							})).filter(opt => opt.text || opt.value);
+							
 							return {
 								success: false,
-								error: `Menu item with text or value '${targetText}' not found`
+								error: `Menu item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
 							};
 						}
 						
@@ -1005,9 +1019,16 @@ Provide the extracted information in a clear, structured format."""
 									}
 								}
 							}
+							
+							// Show all available options for debugging
+							const availableOptions = Array.from(menuItems).map(item => ({
+								text: item.textContent ? item.textContent.trim() : '',
+								value: item.getAttribute('data-value') || ''
+							})).filter(opt => opt.text || opt.value);
+							
 							return {
 								success: false,
-								error: `Custom dropdown item with text or value '${targetText}' not found`
+								error: `Custom dropdown item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
 							};
 						}
 						
