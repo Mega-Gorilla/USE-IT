@@ -1492,7 +1492,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				and self.browser_session._cached_browser_state_summary.dom_state is not None
 			):
 				cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
-				cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
+				cached_element_hashes = {e.parent_branch_hash() for e in cached_selector_map.values()}
 			else:
 				cached_selector_map = {}
 				cached_element_hashes = set()
@@ -1521,10 +1521,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_selector_map = new_browser_state_summary.dom_state.selector_map
 
 				# Detect index change after previous action
-				orig_target = cached_selector_map.get(action.get_index())  # type: ignore
-				orig_target_hash = hash(orig_target) if orig_target else None
+				orig_target = cached_selector_map.get(action.get_index())
+				orig_target_hash = orig_target.parent_branch_hash() if orig_target else None
+
 				new_target = new_selector_map.get(action.get_index())  # type: ignore
-				new_target_hash = hash(new_target) if new_target else None
+				new_target_hash = new_target.parent_branch_hash() if new_target else None
 
 				if orig_target_hash != new_target_hash:
 					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
@@ -1539,7 +1540,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					break
 
 				# Check for new elements that appeared
-				new_element_hashes = {hash(e) for e in new_selector_map.values()}
+				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
 					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
