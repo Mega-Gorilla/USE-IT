@@ -614,27 +614,30 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Get CDP client
 			cdp_client = self.browser_session.cdp_client
 
-			# Get the correct session ID for the element's frame
-			session_id = await self._get_session_id_for_element(element_node)
+			# Get the correct session ID for the element's iframe
+			# session_id = await self._get_session_id_for_element(element_node)
 
-			# Handle None session_id case
-			if session_id is None:
-				session_id = (await self.browser_session.get_or_create_cdp_session()).session_id
+			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
 
 			# Scroll element into view
 			try:
-				await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'backendNodeId': backend_node_id}, session_id=session_id)
+				await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': element_node.target_id})
+				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
+				)
 				await asyncio.sleep(0.1)
 			except Exception as e:
-				self.logger.debug(f'Failed to scroll element into view: {e}')
+				self.logger.warning(
+					f'⚠️ Failed to focus the page {cdp_session} and scroll element {element_node} into view before typing in text: {type(e).__name__}: {e}'
+				)
 
 			# Get object ID for the element
 			result = await cdp_client.send.DOM.resolveNode(
 				params={'backendNodeId': backend_node_id},
-				session_id=session_id,
+				session_id=cdp_session.session_id,
 			)
 			assert 'object' in result and 'objectId' in result['object'], (
 				'Failed to find DOM element based on backendNodeId, maybe page content changed?'
@@ -642,7 +645,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			object_id = result['object']['objectId']
 
 			# Check element focusability before attempting focus
-			element_info = await self._check_element_focusability(element_node, object_id, session_id)
+			element_info = await self._check_element_focusability(element_node, object_id, cdp_session.session_id)
 			self.logger.debug(f'Element focusability check: {element_info}')
 
 			# Provide helpful warnings for common issues
@@ -655,12 +658,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Clear existing text if requested
 			if clear_existing:
-				await cdp_client.send.Runtime.callFunctionOn(
+				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 					params={
 						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; if (this.textContent !== undefined) this.textContent = ""; }',
 						'objectId': object_id,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 
 			# Try multiple focus strategies
@@ -668,9 +671,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Strategy 1: Try CDP DOM.focus (original method)
 			try:
-				await cdp_client.send.DOM.focus(
+				await cdp_session.cdp_client.send.DOM.focus(
 					params={'backendNodeId': backend_node_id},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				focused_successfully = True
 				self.logger.debug('✅ Element focused using CDP DOM.focus')
@@ -679,12 +682,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				# Strategy 2: Try JavaScript focus as fallback
 				try:
-					await cdp_client.send.Runtime.callFunctionOn(
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 						params={
 							'functionDeclaration': 'function() { this.focus(); }',
 							'objectId': object_id,
 						},
-						session_id=session_id,
+						session_id=cdp_session.session_id,
 					)
 					focused_successfully = True
 					self.logger.debug('✅ Element focused using JavaScript focus()')
@@ -693,12 +696,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 					# Strategy 3: Try click-to-focus for stubborn elements
 					try:
-						await cdp_client.send.Runtime.callFunctionOn(
+						await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 							params={
 								'functionDeclaration': 'function() { this.click(); this.focus(); }',
 								'objectId': object_id,
 							},
-							session_id=session_id,
+							session_id=cdp_session.session_id,
 						)
 						focused_successfully = True
 						self.logger.debug('✅ Element focused using click + focus combination')
@@ -713,7 +716,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								click_x = bounds['x'] + bounds['width'] / 2
 								click_y = bounds['y'] + bounds['height'] / 2
 
-								await cdp_client.send.Input.dispatchMouseEvent(
+								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 									params={
 										'type': 'mousePressed',
 										'x': click_x,
@@ -721,9 +724,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 										'button': 'left',
 										'clickCount': 1,
 									},
-									session_id=session_id,
+									session_id=cdp_session.session_id,
 								)
-								await cdp_client.send.Input.dispatchMouseEvent(
+								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 									params={
 										'type': 'mouseReleased',
 										'x': click_x,
@@ -731,7 +734,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 										'button': 'left',
 										'clickCount': 1,
 									},
-									session_id=session_id,
+									session_id=cdp_session.session_id,
 								)
 								focused_successfully = True
 								self.logger.debug('✅ Element focused using simulated mouse click')
@@ -747,29 +750,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Type the text character by character
 			for char in text:
 				# Send keydown (without text to avoid duplication)
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
 						'key': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Send char (for actual text input)
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'char',
 						'text': char,
 						'key': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Send keyup (without text to avoid duplication)
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
 						'key': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Small delay between characters
 				await asyncio.sleep(0.05)
