@@ -21,14 +21,14 @@ class ScreenshotWatchdog(BaseWatchdog):
 	# Events this watchdog emits
 	EMITS: ClassVar[list[type[BaseEvent[Any]]]] = []
 
-	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> bytes:
+	async def on_ScreenshotEvent(self, event: ScreenshotEvent) -> str:
 		"""Handle screenshot request using CDP.
 
 		Args:
 			event: ScreenshotEvent with optional full_page and clip parameters
 
 		Returns:
-			Screenshot as bytes (base64-encoded PNG data)
+			Screenshot as base64-encoded string
 
 		Raises:
 			Exception: If screenshot capture fails
@@ -58,7 +58,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 			self.logger.debug(f'[ScreenshotWatchdog] Taking screenshot with params: {params}')
 			result = await cdp_session.cdp_client.send.Page.captureScreenshot(params=params, session_id=cdp_session.session_id)
 
-			# Return base64-encoded screenshot data as bytes
+			# Return base64-encoded screenshot data as string
 			if result and 'data' in result:
 				self.logger.debug('[ScreenshotWatchdog] Screenshot captured successfully')
 
@@ -69,10 +69,8 @@ class ScreenshotWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.debug(f'[ScreenshotWatchdog] Failed to remove highlights: {e}')
 
-				# Convert base64 string to bytes
-				import base64
-
-				return base64.b64decode(result['data'])
+				# Return the base64 string directly (no need to decode and re-encode)
+				return result['data']
 			else:
 				self.logger.warning('[ScreenshotWatchdog] Screenshot result missing data')
 				raise Exception('Screenshot capture failed: no data returned')
