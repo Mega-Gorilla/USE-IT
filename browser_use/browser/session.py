@@ -1317,8 +1317,10 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_get_cookies(self) -> list[Cookie]:
 		"""Get cookies using CDP Network.getCookies."""
-		cdp_session = await self.get_or_create_cdp_session()
-		result = await cdp_session.cdp_client.send.Storage.getCookies(session_id=cdp_session.session_id)
+		cdp_session = await self.get_or_create_cdp_session(target_id=None, new_socket=False)
+		result = await asyncio.wait_for(
+			cdp_session.cdp_client.send.Storage.getCookies(session_id=cdp_session.session_id), timeout=8.0
+		)
 		return result.get('cookies', [])
 
 	async def _cdp_set_cookies(self, cookies: list[Cookie]) -> None:
@@ -1326,7 +1328,7 @@ class BrowserSession(BaseModel):
 		if not self.agent_focus or not cookies:
 			return
 
-		cdp_session = await self.get_or_create_cdp_session()
+		cdp_session = await self.get_or_create_cdp_session(target_id=None, new_socket=False)
 		# Storage.setCookies expects params dict with 'cookies' key
 		await cdp_session.cdp_client.send.Storage.setCookies(
 			params={'cookies': cookies},  # type: ignore[arg-type]
@@ -1378,7 +1380,7 @@ class BrowserSession(BaseModel):
 
 	async def _cdp_remove_init_script(self, identifier: str) -> None:
 		"""Remove script added with addScriptToEvaluateOnNewDocument."""
-		cdp_session = await self.get_or_create_cdp_session(target_id='main')
+		cdp_session = await self.get_or_create_cdp_session(target_id=None)
 		await cdp_session.cdp_client.send.Page.removeScriptToEvaluateOnNewDocument(
 			params={'identifier': identifier}, session_id=cdp_session.session_id
 		)

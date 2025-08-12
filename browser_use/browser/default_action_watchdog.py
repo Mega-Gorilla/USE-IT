@@ -147,6 +147,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Positive pixels = scroll down, negative = scroll up
 			pixels = event.amount if event.direction == 'down' else -event.amount
 
+			# CRITICAL: CDP calls time out without this, even if the target is already active
+			await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
+				params={'targetId': self.browser_session.agent_focus.target_id}
+			)
+
 			# Element-specific scrolling if node is provided
 			if event.node is not None:
 				element_node = event.node
@@ -162,6 +167,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Perform target-level scroll
 			await self._scroll_with_cdp_gesture(pixels)
+
+			# CRITICAL: CDP calls time out without this, even if the target is already active
+			await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
+				params={'targetId': self.browser_session.agent_focus.target_id}
+			)
 
 			# Log success
 			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
