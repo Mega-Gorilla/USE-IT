@@ -261,7 +261,7 @@ class DOMWatchdog(BaseWatchdog):
 					handler_names = [getattr(h, '__name__', str(h)) for h in handlers]
 					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {handler_names}')
 
-					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=6.0))
+					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False, event_timeout=15.0))
 					self.logger.debug('📸 Dispatched ScreenshotEvent, waiting for event to complete...')
 
 					# Get the screenshot base64 string directly from event_result()
@@ -272,7 +272,7 @@ class DOMWatchdog(BaseWatchdog):
 						screenshot_b64 = None
 						self.logger.warning('📸 Screenshot handler returned None')
 				except TimeoutError:
-					self.logger.warning('📸 Screenshot timed out after 6 seconds - no handler registered or slow page?')
+					self.logger.warning('📸 Screenshot timed out after 15 seconds - no handler registered or slow page?')
 				except Exception as e:
 					self.logger.warning(f'📸 Screenshot failed: {type(e).__name__}: {e}')
 			else:

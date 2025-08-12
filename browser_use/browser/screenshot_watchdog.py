@@ -49,7 +49,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 			# Small delay to ensure the tab switch is complete
 			import asyncio
 
-			await asyncio.sleep(0.2)
+			await asyncio.sleep(0.1)
 
 			# Prepare screenshot parameters
 			params = CaptureScreenshotParameters(format='png', captureBeyondViewport=False)
