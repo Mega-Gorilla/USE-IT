@@ -84,7 +84,7 @@ class ClickableElementDetector:
 					# Skip properties we can't process
 					continue
 
-		# ENHANCED TAG CHECK: Include SVG and other common interactive elements
+		# ENHANCED TAG CHECK: Include truly interactive elements
 		interactive_tags = {
 			'button',
 			'input',
@@ -96,21 +96,29 @@ class ClickableElementDetector:
 			'summary',
 			'option',
 			'optgroup',
-			'svg',
-			'path',
-			'circle',
-			'rect',
-			'polygon',
-			'ellipse',
 		}
 		if node.tag_name in interactive_tags:
 			return True
-
-		# NAVIGATION ELEMENT CHECK: Include common navigation containers
-		if node.tag_name in {'nav', 'header'} and node.attributes:
-			# Navigation elements are often interactive if they have classes or roles
-			if 'class' in node.attributes or 'role' in node.attributes:
-				return True
+		
+		# SVG elements need special handling - only interactive if they have explicit handlers
+		# svg_tags = {'svg', 'path', 'circle', 'rect', 'polygon', 'ellipse', 'line', 'polyline', 'g'}
+		# if node.tag_name in svg_tags:
+		# 	# Only consider SVG elements interactive if they have:
+		# 	# 1. Explicit event handlers
+		# 	# 2. Interactive role attributes
+		# 	# 3. Cursor pointer style
+		# 	if node.attributes:
+		# 		# Check for event handlers
+		# 		if any(attr.startswith('on') for attr in node.attributes):
+		# 			return True
+		# 		# Check for interactive roles
+		# 		if node.attributes.get('role') in {'button', 'link', 'menuitem'}:
+		# 			return True
+		# 		# Check for cursor pointer (indicating clickability)
+		# 		if node.attributes.get('style') and 'cursor: pointer' in node.attributes.get('style', ''):
+		# 			return True
+		# 	# Otherwise, SVG elements are decorative
+		# 	return False
 
 		# Tertiary check: elements with interactive attributes
 		if node.attributes:
