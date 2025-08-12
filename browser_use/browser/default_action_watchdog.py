@@ -5,7 +5,6 @@ import platform
 from typing import Any
 
 from browser_use.browser.events import (
-	BrowserErrorEvent,
 	ClickElementEvent,
 	GoBackEvent,
 	GoForwardEvent,
@@ -32,21 +31,14 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, str] | None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
 		"""Handle click request with CDP."""
 		try:
 			# Check if session is alive before attempting any operations
 			if not self.browser_session.agent_focus or not self.browser_session.agent_focus.target_id:
 				error_msg = 'Cannot execute click: browser session is corrupted (target_id=None). Session may have crashed.'
 				self.logger.error(f'⚠️ {error_msg}')
-				self.event_bus.dispatch(
-					BrowserErrorEvent(
-						error_type='SessionCorrupted',
-						message=error_msg,
-						details={'action': 'click', 'target_id': None},
-					)
-				)
-				return {'success': 'false', 'error': error_msg}
+				raise BrowserError(error_msg)
 
 			# Use the provided node
 			element_node = event.node
@@ -59,15 +51,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if self.browser_session.is_file_input(element_node):
 				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
 				self.logger.info(msg)
-				self.event_bus.dispatch(
-					BrowserErrorEvent(
-						error_type='FileInputElement',
-						message=msg,
-						details={'index': index_for_logging},
-					)
-				)
-				raise Exception(
-					'Click triggered a FileInputElement which could not be handled, use the dedicated upload file function instead'
+				raise BrowserError(
+					'Click triggered a file input element which could not be handled, use the dedicated file upload function instead'
 				)
 
 			# Perform the actual click using internal implementation
@@ -100,26 +85,22 @@ class DefaultActionWatchdog(BaseWatchdog):
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
-				# Switch to the last tab (newly created tab)
-				from browser_use.browser.events import SwitchTabEvent
+				
+				# Optional:Switch to the newly created tab
+				# Not recommended usually in order to match normal behavior with Cmd/Ctrl+Click
+				# If agent wanted to focus on the new page they would've clicked without new_tab
+				# from browser_use.browser.events import SwitchTabEvent
 
-				last_tab_index = len(after_target_ids) - 1
-				await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+				# last_tab_index = len(after_target_ids) - 1
+				# switch_event = self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+				# await switch_event
 
-			# Return download_path if any
-			if download_path:
-				return {'download_path': download_path}
+			# Successfully clicked, return None
+			return None
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='ClickFailed',
-					message=str(e),
-					details={'index': index_for_logging if 'index_for_logging' in locals() else 'unknown'},
-				)
-			)
 			raise
 
-	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, bool | str] | None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
 		"""Handle text input request with CDP."""
 		try:
 			# Use the provided node
@@ -150,31 +131,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
 
-			return {'success': True}
+			return None
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='InputTextFailed',
-					message=str(e),
-					details={'index': element_node.element_index or 'unknown', 'text': event.text},
-				)
-			)
-			return {'success': False, 'error': str(e)}
+			raise
 
-	async def on_ScrollEvent(self, event: ScrollEvent) -> dict[str, str | bool] | None:
+	async def on_ScrollEvent(self, event: ScrollEvent) -> None:
 		"""Handle scroll request with CDP."""
-		try:
-			# Check if we have a current target for scrolling
-			if not self.browser_session.agent_focus:
-				raise ValueError('No active target for scrolling')
-		except ValueError as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NoActivePage',
-					message=str(e),
-				)
-			)
-			return {'success': False, 'error': 'No active page for scrolling'}
+		# Check if we have a current target for scrolling
+		if not self.browser_session.agent_focus:
+			error_msg = 'No active target for scrolling'
+			raise BrowserError(error_msg)
 
 		try:
 			# Convert direction and amount to pixels
@@ -192,23 +158,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 					self.logger.info(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
 					)
-					return {'success': True}
+					return None
 
 			# Perform target-level scroll
 			await self._scroll_with_cdp_gesture(pixels)
 
 			# Log success
 			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
-			return {'success': True}
+			return None
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='ScrollFailed',
-					message=str(e),
-					details={'direction': event.direction, 'amount': event.amount},
-				)
-			)
-			return {'success': False, 'error': f'Scroll failed: {str(e)}'}
+			raise
 
 	# ========== Implementation Methods ==========
 
@@ -425,31 +384,44 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				# Mouse down
 				self.logger.debug(f'👆🏾 Clicking x: {center_x}px y: {center_y}px with modifiers: {modifiers} ...')
-				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-					params={
-						'type': 'mousePressed',
-						'x': center_x,
-						'y': center_y,
-						'button': 'left',
-						'clickCount': 1,
-						'modifiers': modifiers,
-					},
-					session_id=session_id,
-				)
-				await asyncio.sleep(0.145)
+				try:
+					await asyncio.wait_for(
+						cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mousePressed',
+								'x': center_x,
+								'y': center_y,
+								'button': 'left',
+								'clickCount': 1,
+								'modifiers': modifiers,
+							},
+							session_id=session_id,
+						),
+						timeout=1.0  # 1 second timeout for mousePressed
+					)
+					await asyncio.sleep(0.145)
+				except asyncio.TimeoutError:
+					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
+					# Don't sleep if we timed out
 
 				# Mouse up
-				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-					params={
-						'type': 'mouseReleased',
-						'x': center_x,
-						'y': center_y,
-						'button': 'left',
-						'clickCount': 1,
-						'modifiers': modifiers,
-					},
-					session_id=session_id,
-				)
+				try:
+					await asyncio.wait_for(
+						cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mouseReleased',
+								'x': center_x,
+								'y': center_y,
+								'button': 'left',
+								'clickCount': 1,
+								'modifiers': modifiers,
+							},
+							session_id=session_id,
+						),
+						timeout=1.0  # 1 second timeout for mouseReleased
+					)
+				except asyncio.TimeoutError:
+					self.logger.debug('⏱️ Mouse up timed out (likely due to dialog), continuing...')
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
 
@@ -906,12 +878,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.info(f'🔙 Navigated back to {entries[current_index - 1]["url"]}')
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NavigateBackFailed',
-					message=str(e),
-				)
-			)
+			raise
 
 	async def on_GoForwardEvent(self, event: GoForwardEvent) -> None:
 		"""Handle navigate forward request with CDP."""
@@ -939,12 +906,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.info(f'🔜 Navigated forward to {entries[current_index + 1]["url"]}')
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='NavigateForwardFailed',
-					message=str(e),
-				)
-			)
+			raise
 
 	async def on_RefreshEvent(self, event: RefreshEvent) -> None:
 		"""Handle target refresh request with CDP."""
@@ -967,12 +929,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.info('🔄 Target refreshed')
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='RefreshFailed',
-					message=str(e),
-				)
-			)
+			raise
 
 	async def on_WaitEvent(self, event: WaitEvent) -> None:
 		"""Handle wait request."""
@@ -986,12 +943,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			await asyncio.sleep(actual_seconds)
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='WaitFailed',
-					message=str(e),
-				)
-			)
+			raise
 
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		"""Handle send keys request with CDP."""
@@ -1084,13 +1036,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				if self.browser_session._dom_watchdog:
 					self.browser_session._dom_watchdog.clear_cache()
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='SendKeysFailed',
-					message=str(e),
-					details={'keys': event.keys},
-				)
-			)
+			raise
 
 	async def on_UploadFileEvent(self, event: UploadFileEvent) -> None:
 		"""Handle file upload request with CDP."""
@@ -1119,70 +1065,64 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.info(f'📎 Uploaded file {event.file_path} to element {index_for_logging}')
 		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='UploadFileFailed',
-					message=str(e),
-					details={'element_index': element_node.element_index or 'unknown', 'file_path': event.file_path},
-				)
-			)
+			raise
 
 	async def on_ScrollToTextEvent(self, event: ScrollToTextEvent) -> None:
-		"""Handle scroll to text request with CDP."""
-		try:
-			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			assert self.browser_session.agent_focus is not None, 'CDP session not initialized - browser may not be connected yet'
-			session_id = self.browser_session.agent_focus.session_id
+		"""Handle scroll to text request with CDP. Raises exception if text not found."""
+		# Get CDP client and session
+		cdp_client = self.browser_session.cdp_client
+		if self.browser_session.agent_focus is None:
+			raise BrowserError('CDP session not initialized - browser may not be connected yet')
+		session_id = self.browser_session.agent_focus.session_id
 
-			# Enable DOM
-			await cdp_client.send.DOM.enable(session_id=session_id)
+		# Enable DOM
+		await cdp_client.send.DOM.enable(session_id=session_id)
 
-			# Get document
-			doc = await cdp_client.send.DOM.getDocument(params={'depth': -1}, session_id=session_id)
-			root_node_id = doc['root']['nodeId']
+		# Get document
+		doc = await cdp_client.send.DOM.getDocument(params={'depth': -1}, session_id=session_id)
+		root_node_id = doc['root']['nodeId']
 
-			# Search for text using XPath
-			search_queries = [
-				f'//*[contains(text(), "{event.text}")]',
-				f'//*[contains(., "{event.text}")]',
-				f'//*[@*[contains(., "{event.text}")]]',
-			]
+		# Search for text using XPath
+		search_queries = [
+			f'//*[contains(text(), "{event.text}")]',
+			f'//*[contains(., "{event.text}")]',
+			f'//*[@*[contains(., "{event.text}")]]',
+		]
 
-			found = False
-			for query in search_queries:
-				try:
-					# Perform search
-					search_result = await cdp_client.send.DOM.performSearch(params={'query': query}, session_id=session_id)
-					search_id = search_result['searchId']
-					result_count = search_result['resultCount']
+		found = False
+		for query in search_queries:
+			try:
+				# Perform search
+				search_result = await cdp_client.send.DOM.performSearch(params={'query': query}, session_id=session_id)
+				search_id = search_result['searchId']
+				result_count = search_result['resultCount']
 
-					if result_count > 0:
-						# Get the first match
-						node_ids = await cdp_client.send.DOM.getSearchResults(
-							params={'searchId': search_id, 'fromIndex': 0, 'toIndex': 1},
-							session_id=session_id,
-						)
+				if result_count > 0:
+					# Get the first match
+					node_ids = await cdp_client.send.DOM.getSearchResults(
+						params={'searchId': search_id, 'fromIndex': 0, 'toIndex': 1},
+						session_id=session_id,
+					)
 
-						if node_ids['nodeIds']:
-							node_id = node_ids['nodeIds'][0]
+					if node_ids['nodeIds']:
+						node_id = node_ids['nodeIds'][0]
 
-							# Scroll the element into view
-							await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
+						# Scroll the element into view
+						await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
 
-							found = True
-							self.logger.info(f'📜 Scrolled to text: "{event.text}"')
-							break
+						found = True
+						self.logger.info(f'📜 Scrolled to text: "{event.text}"')
+						break
 
-					# Clean up search
-					await cdp_client.send.DOM.discardSearchResults(params={'searchId': search_id}, session_id=session_id)
-				except Exception as e:
-					self.logger.debug(f'Search query failed: {query}, error: {e}')
-					continue
+				# Clean up search
+				await cdp_client.send.DOM.discardSearchResults(params={'searchId': search_id}, session_id=session_id)
+			except Exception as e:
+				self.logger.debug(f'Search query failed: {query}, error: {e}')
+				continue
 
-			if not found:
-				# Fallback: Try JavaScript search
-				js_result = await cdp_client.send.Runtime.evaluate(
+		if not found:
+			# Fallback: Try JavaScript search
+			js_result = await cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': f'''
 							(() => {{
@@ -1206,15 +1146,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=session_id,
 				)
 
-				if js_result.get('result', {}).get('value'):
-					self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
-				else:
-					self.logger.warning(f'⚠️ Text not found: "{event.text}"')
-		except Exception as e:
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='ScrollToTextFailed',
-					message=str(e),
-					details={'text': event.text},
-				)
-			)
+		if js_result.get('result', {}).get('value'):
+			self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
+			return None
+		else:
+			self.logger.warning(f'⚠️ Text not found: "{event.text}"')
+			raise BrowserError(f'Text not found: "{event.text}"', details={'text': event.text})
+		
+		# If we got here and found is True, return None (success)
+		if found:
+			return None
+		else:
+			raise BrowserError(f'Text not found: "{event.text}"', details={'text': event.text})

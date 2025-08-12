@@ -1,5 +1,7 @@
 import logging
+import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -119,20 +121,36 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	browser_use_logger.addHandler(console)
 	browser_use_logger.setLevel(log_level)
 
-	# Configure CDP logging to match browser_use level
-	# websockets.client emits the logs that cdp_use transforms to appear as cdp_use.client
-	cdp_loggers = [
-		'websockets.client',  # Controls emission of transformed cdp_use.client logs
-		'cdp_use',
-		'cdp_use.client',
-		'cdp_use.cdp',
-		'cdp_use.cdp.registry',
-	]
-	for logger_name in cdp_loggers:
-		cdp_logger = logging.getLogger(logger_name)
-		cdp_logger.setLevel(log_level)  # Same level as browser_use
-		cdp_logger.addHandler(console)  # Same handler as browser_use
-		cdp_logger.propagate = False
+	# Configure bubus logger to allow INFO level logs
+	bubus_logger = logging.getLogger('bubus')
+	bubus_logger.propagate = False  # Don't propagate to root logger
+	bubus_logger.addHandler(console)
+	bubus_logger.setLevel(logging.INFO if log_type == 'result' else log_level)
+
+	# Configure CDP logging using cdp_use's setup function
+	# This enables the formatted CDP output at the same level as browser_use
+	try:
+		from cdp_use.logging import setup_cdp_logging  # type: ignore
+		# Use the same stream and level as browser_use
+		setup_cdp_logging(
+			level=log_level,
+			stream=stream or sys.stdout,
+			format_string='%(levelname)-8s [%(name)s] %(message)s' if log_type != 'result' else '%(message)s'
+		)
+	except ImportError:
+		# If cdp_use doesn't have the new logging module, fall back to manual config
+		cdp_loggers = [
+			'websockets.client',
+			'cdp_use',
+			'cdp_use.client',
+			'cdp_use.cdp',
+			'cdp_use.cdp.registry',
+		]
+		for logger_name in cdp_loggers:
+			cdp_logger = logging.getLogger(logger_name)
+			cdp_logger.setLevel(log_level)
+			cdp_logger.addHandler(console)
+			cdp_logger.propagate = False
 
 	logger = logging.getLogger('browser_use')
 	# logger.info('BrowserUse logging setup complete with level %s', log_type)
@@ -165,3 +183,97 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 		third_party.propagate = False
 
 	return logger
+
+
+class FIFOHandler(logging.Handler):
+	"""Non-blocking handler that writes to a named pipe."""
+	
+	def __init__(self, fifo_path: str):
+		super().__init__()
+		self.fifo_path = fifo_path
+		Path(fifo_path).parent.mkdir(parents=True, exist_ok=True)
+		
+		# Create FIFO if it doesn't exist
+		if not os.path.exists(fifo_path):
+			os.mkfifo(fifo_path)
+		
+		# Don't open the FIFO yet - will open on first write
+		self.fd = None
+	
+	def emit(self, record):
+		try:
+			# Open FIFO on first write if not already open
+			if self.fd is None:
+				try:
+					self.fd = os.open(self.fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+				except OSError:
+					# No reader connected yet, skip this message
+					return
+			
+			msg = f"{self.format(record)}\n".encode()
+			os.write(self.fd, msg)
+		except (OSError, BrokenPipeError):
+			# Reader disconnected, close and reset
+			if self.fd is not None:
+				try:
+					os.close(self.fd)
+				except:
+					pass
+				self.fd = None
+	
+	def close(self):
+		if hasattr(self, 'fd') and self.fd is not None:
+			try:
+				os.close(self.fd)
+			except:
+				pass
+		super().close()
+
+
+def setup_log_pipes(session_id: str, base_dir: str = None):
+	"""Setup named pipes for log streaming.
+	
+	Usage:
+		# In browser-use:
+		setup_log_pipes(session_id="abc123")
+		
+		# In consumer process:
+		tail -f {temp_dir}/buagent.c123/agent.pipe
+	"""
+	import tempfile
+	
+	if base_dir is None:
+		base_dir = tempfile.gettempdir()
+	
+	suffix = session_id[-4:]
+	pipe_dir = Path(base_dir) / f"buagent.{suffix}"
+	
+	# Agent logs
+	agent_handler = FIFOHandler(str(pipe_dir / "agent.pipe"))
+	agent_handler.setLevel(logging.DEBUG)
+	agent_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
+	for name in ['browser_use.agent', 'browser_use.controller']:
+		logger = logging.getLogger(name)
+		logger.addHandler(agent_handler)
+		logger.setLevel(logging.DEBUG)
+		logger.propagate = True
+	
+	# CDP logs  
+	cdp_handler = FIFOHandler(str(pipe_dir / "cdp.pipe"))
+	cdp_handler.setLevel(logging.DEBUG)
+	cdp_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
+	for name in ['websockets.client', 'cdp_use.client']:
+		logger = logging.getLogger(name)
+		logger.addHandler(cdp_handler)
+		logger.setLevel(logging.DEBUG)
+		logger.propagate = True
+	
+	# Event logs
+	event_handler = FIFOHandler(str(pipe_dir / "events.pipe"))
+	event_handler.setLevel(logging.INFO)
+	event_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
+	for name in ['bubus', 'browser_use.browser.session']:
+		logger = logging.getLogger(name)
+		logger.addHandler(event_handler)
+		logger.setLevel(logging.INFO)  # Enable INFO for event bus
+		logger.propagate = True

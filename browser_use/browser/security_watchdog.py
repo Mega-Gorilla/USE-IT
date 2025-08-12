@@ -84,17 +84,14 @@ class SecurityWatchdog(BaseWatchdog):
 				BrowserErrorEvent(
 					error_type='TabCreationBlocked',
 					message=f'Tab created with non-allowed URL: {event.url}',
-					details={'url': event.url, 'tab_index': event.tab_index},
+					details={'url': event.url, 'tab_index': event.tab_index, 'target_id': event.target_id},
 				)
 			)
 			
 			# Try to close the offending tab
 			try:
-				targets = await self.browser_session._cdp_get_all_pages()
-				if 0 <= event.tab_index < len(targets):
-					target_id = targets[event.tab_index]['targetId']
-					await self.browser_session._cdp_close_page(target_id)
-					self.logger.info(f'⛔️ Closed new tab with non-allowed URL: {event.url}')
+				await self.browser_session._cdp_close_page(event.target_id)	
+				self.logger.info(f'⛔️ Closed new tab with non-allowed URL: {event.url}')
 			except Exception as e:
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {str(e)}')
 

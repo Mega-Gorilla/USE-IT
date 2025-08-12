@@ -52,7 +52,7 @@ async def upload_file(index: int, path: str, browser_session: BrowserSession, av
 		
 		# Dispatch the upload file event
 		event = browser_session.event_bus.dispatch(
-			UploadFileEvent(element_node=dom_element, file_path=path)
+			UploadFileEvent(node=dom_element, file_path=path)
 		)
 		await event
 		

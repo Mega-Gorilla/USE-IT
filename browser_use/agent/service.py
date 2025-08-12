@@ -1487,8 +1487,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		try:
-			cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
-			cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
+			if (
+				self.browser_session._cached_browser_state_summary is not None
+				and self.browser_session._cached_browser_state_summary.dom_state is not None
+			):
+				cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
+				cached_element_hashes = {hash(e) for e in cached_selector_map.values()}
+			else:
+				cached_element_hashes = set()
 		except Exception as e:
 			self.logger.error(f'Error getting cached selector map: {e}')
 			cached_element_hashes = set()

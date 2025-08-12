@@ -3,12 +3,14 @@
 import asyncio
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlparse
 
 import anyio
 from bubus import BaseEvent
+from cdp_use.cdp.browser import DownloadProgressEvent, DownloadWillBeginEvent
 from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
@@ -20,7 +22,6 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from cdp_use.cdp.browser import DownloadProgressEvent, DownloadWillBeginEvent
 
 if TYPE_CHECKING:
 	pass
@@ -101,7 +102,7 @@ class DownloadsWatchdog(BaseWatchdog):
 	async def on_NavigationCompleteEvent(self, event: NavigationCompleteEvent) -> None:
 		"""Check for PDFs after navigation completes."""
 		self.logger.debug(f'[DownloadsWatchdog] NavigationCompleteEvent received for {event.url}, tab_index={event.tab_index}')
-		
+
 		# Clear PDF cache for the navigated URL since content may have changed
 		if event.url in self._pdf_viewer_cache:
 			del self._pdf_viewer_cache[event.url]
@@ -114,7 +115,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		target_id = await self.browser_session.get_target_id_by_tab_index(event.tab_index)
 		self.logger.debug(f'[DownloadsWatchdog] Got target_id={target_id} for tab_index={event.tab_index}')
-		
+
 		if target_id:
 			is_pdf = await self.check_for_pdf_viewer(target_id)
 			if is_pdf:
@@ -224,6 +225,10 @@ class DownloadsWatchdog(BaseWatchdog):
 
 	async def _handle_cdp_download(self, event: DownloadWillBeginEvent, target_id: str, session_id: str | None) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
+		downloads_dir = Path(
+			self.browser_session.browser_profile.downloads_path
+			or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
+		)
 		try:
 			download_url = event.get('url', '')
 			suggested_filename = event.get('suggestedFilename', 'download')
@@ -232,21 +237,14 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.logger.info(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
 			self.logger.debug(f'[DownloadsWatchdog] Full CDP event: {event}')
 
-			# Get download directory
-			downloads_dir = self.browser_session.browser_profile.downloads_path
-			if not downloads_dir:
-				downloads_dir = str(Path.home() / 'Downloads')
-			else:
-				downloads_dir = str(downloads_dir)
-
 			# Since Browser.setDownloadBehavior is already configured, the browser will download the file
 			# We just need to wait for it to appear in the downloads directory
-			expected_path = Path(downloads_dir) / suggested_filename
+			expected_path = downloads_dir / suggested_filename
 
 			# Debug: List current directory contents
 			self.logger.debug(f'[DownloadsWatchdog] Downloads directory: {downloads_dir}')
-			if Path(downloads_dir).exists():
-				files_before = list(Path(downloads_dir).iterdir())
+			if downloads_dir.exists():
+				files_before = list(downloads_dir.iterdir())
 				self.logger.debug(f'[DownloadsWatchdog] Files before download: {[f.name for f in files_before]}')
 
 			# Browser.setDownloadBehavior doesn't work reliably with CDP connections
@@ -258,9 +256,12 @@ class DownloadsWatchdog(BaseWatchdog):
 				import json
 
 				escaped_url = json.dumps(download_url)
-				cdp_client = self.browser_session.cdp_client
 
-				result = await cdp_client.send.Runtime.evaluate(
+				# Get the proper session for the frame that initiated the download
+				cdp_session = await self.browser_session.cdp_client_for_frame(event.get('frameId'))
+				assert cdp_session
+
+				result = await cdp_session.cdp_client.send.Runtime.evaluate(
 					params={
 						'expression': f"""
 						(async () => {{
@@ -285,7 +286,7 @@ class DownloadsWatchdog(BaseWatchdog):
 						'awaitPromise': True,
 						'returnByValue': True,
 					},
-					session_id=session_id if session_id else None,
+					session_id=cdp_session.session_id,
 				)
 				download_result = result.get('result', {}).get('value')
 
@@ -295,8 +296,8 @@ class DownloadsWatchdog(BaseWatchdog):
 					file_size = len(file_data)
 
 					# Ensure unique filename
-					unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
-					final_path = Path(downloads_dir) / unique_filename
+					unique_filename = await self._get_unique_filename(str(downloads_dir), suggested_filename)
+					final_path = downloads_dir / unique_filename
 
 					# Write the file
 					import anyio
@@ -308,11 +309,11 @@ class DownloadsWatchdog(BaseWatchdog):
 					expected_path = final_path
 				else:
 					self.logger.error('[DownloadsWatchdog] ❌ No data received from fetch')
-					return
+					# Fall through to polling logic
 
 			except Exception as fetch_error:
 				self.logger.error(f'[DownloadsWatchdog] ❌ Failed to download file via fetch: {fetch_error}')
-				return
+				# Fall through to polling logic
 
 			# Determine file type from extension
 			file_ext = expected_path.suffix.lower().lstrip('.')
@@ -326,7 +327,7 @@ class DownloadsWatchdog(BaseWatchdog):
 					file_name=unique_filename,
 					file_size=file_size,
 					file_type=file_type,
-					mime_type=download_result.get('contentType'),
+					mime_type=download_result.get('contentType') if download_result else None,
 					from_cache=False,
 					auto_download=False,
 				)
@@ -335,9 +336,62 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.logger.info(
 				f'[DownloadsWatchdog] ✅ File download completed via CDP: {suggested_filename} ({file_size} bytes) saved to {expected_path}'
 			)
-
+			# Success - return early
+			return
 		except Exception as e:
-			self.logger.error(f'[DownloadsWatchdog] ❌ Error handling CDP download: {e}')
+			self.logger.error(f'[DownloadsWatchdog] ❌ Error handling CDP download: {type(e).__name__} {e}')
+
+		# If we reach here, the fetch method failed, so wait for native download
+		# Poll the downloads directory for new files
+		self.logger.info(f'[DownloadsWatchdog] Checking if browser auto-download saved the file for us: {suggested_filename}')
+
+		# Get initial list of files in downloads directory
+		initial_files = set()
+		if Path(downloads_dir).exists():
+			for f in Path(downloads_dir).iterdir():
+				if f.is_file() and not f.name.startswith('.'):
+					initial_files.add(f.name)
+
+		# Poll for new files
+		max_wait = 20  # seconds
+		start_time = asyncio.get_event_loop().time()
+
+		while asyncio.get_event_loop().time() - start_time < max_wait:
+			await asyncio.sleep(2.0)  # Check every 2 seconds
+
+			if Path(downloads_dir).exists():
+				for file_path in Path(downloads_dir).iterdir():
+					# Skip hidden files and files that were already there
+					if file_path.is_file() and not file_path.name.startswith('.') and file_path.name not in initial_files:
+						# Check if file has content (> 4 bytes)
+						try:
+							file_size = file_path.stat().st_size
+							if file_size > 4:
+								# Found a new download!
+								self.logger.info(f'[DownloadsWatchdog] ✅ Found downloaded file: {file_path} ({file_size} bytes)')
+
+								# Track the download
+								self.browser_session._downloaded_files.append(str(file_path))
+
+								# Determine file type from extension
+								file_ext = file_path.suffix.lower().lstrip('.')
+								file_type = file_ext if file_ext else None
+
+								# Dispatch download event
+								self.event_bus.dispatch(
+									FileDownloadedEvent(
+										url=download_url,
+										path=str(file_path),
+										file_name=file_path.name,
+										file_size=file_size,
+										file_type=file_type,
+									)
+								)
+								return
+						except Exception as e:
+							self.logger.debug(f'[DownloadsWatchdog] Error checking file {file_path}: {e}')
+
+		self.logger.warning(f'[DownloadsWatchdog] Download did not complete within {max_wait} seconds')
 
 	async def _handle_download(self, download: Any) -> None:
 		"""Handle a download event."""
@@ -454,7 +508,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		Returns True if a PDF is detected and should be downloaded.
 		"""
 		self.logger.debug(f'[DownloadsWatchdog] Checking if target {target_id} is PDF viewer...')
-		
+
 		# Get target info to get URL
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
@@ -474,7 +528,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		try:
 			# Create a temporary CDP session for this target without switching focus
 			import asyncio
-			
+
 			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
 			result = await asyncio.wait_for(
@@ -570,7 +624,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		Returns the download path if successful, None otherwise.
 		"""
 		self.logger.debug(f'[DownloadsWatchdog] trigger_pdf_download called for target_id={target_id}')
-		
+
 		if not self.browser_session.browser_profile.downloads_path:
 			self.logger.warning('[DownloadsWatchdog] ❌ No downloads path configured, cannot save PDF download')
 			return None
@@ -581,7 +635,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		try:
 			# Create a temporary CDP session for this target without switching focus
 			import asyncio
-			
+
 			self.logger.debug(f'[DownloadsWatchdog] Creating CDP session for PDF download from target {target_id}')
 			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
@@ -623,7 +677,7 @@ class DownloadsWatchdog(BaseWatchdog):
 				pdf_filename = os.path.basename(parsed.path) or 'document.pdf'
 				if not pdf_filename.endswith('.pdf'):
 					pdf_filename += '.pdf'
-			
+
 			self.logger.debug(f'[DownloadsWatchdog] Generated filename: {pdf_filename}')
 
 			# Check if already downloaded by looking in the downloads directory
@@ -697,7 +751,9 @@ class DownloadsWatchdog(BaseWatchdog):
 					# Verify file was written successfully
 					if os.path.exists(download_path):
 						actual_size = os.path.getsize(download_path)
-						self.logger.debug(f'[DownloadsWatchdog] PDF file written successfully: {download_path} ({actual_size} bytes)')
+						self.logger.debug(
+							f'[DownloadsWatchdog] PDF file written successfully: {download_path} ({actual_size} bytes)'
+						)
 					else:
 						self.logger.error(f'[DownloadsWatchdog] ❌ Failed to write PDF file to: {download_path}')
 						return None

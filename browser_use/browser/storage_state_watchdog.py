@@ -12,7 +12,6 @@ from pydantic import Field, PrivateAttr
 
 from browser_use.browser.events import (
 	BrowserConnectedEvent,
-	BrowserStopEvent,
 	LoadStorageStateEvent,
 	SaveStorageStateEvent,
 	StorageStateLoadedEvent,
@@ -27,7 +26,6 @@ class StorageStateWatchdog(BaseWatchdog):
 	# Event contracts
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [
 		BrowserConnectedEvent,
-		BrowserStopEvent,
 		SaveStorageStateEvent,
 		LoadStorageStateEvent,
 	]
@@ -55,21 +53,6 @@ class StorageStateWatchdog(BaseWatchdog):
 		# Automatically load storage state after browser start
 		self.event_bus.dispatch(LoadStorageStateEvent())
 
-	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
-		"""Stop monitoring and save state when browser stop is requested."""
-		self.logger.info('[StorageStateWatchdog] Browser stop requested, saving final storage_state.json')
-
-		# Save storage state before stopping and wait for completion
-		# self.logger.info('[StorageStateWatchdog] Dispatching SaveStorageStateEvent...')
-		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
-		# self.logger.info('[StorageStateWatchdog] Waiting for save event to complete...')
-		await save_event
-		# self.logger.info('[StorageStateWatchdog] Save event completed, stopping monitoring...')
-
-		# Stop monitoring
-		await self._stop_monitoring()
-		# self.logger.info('[StorageStateWatchdog] Browser stop handling complete')
-		# No cleanup needed - browser context is managed by session
 
 	async def on_SaveStorageStateEvent(self, event: SaveStorageStateEvent) -> None:
 		"""Handle storage state save request."""
@@ -178,7 +161,8 @@ class StorageStateWatchdog(BaseWatchdog):
 			# Check if CDP client is available
 			try:
 				# Try to get a CDP session with a new socket for isolation during shutdown
-				await self.browser_session.get_or_create_cdp_session(new_socket=True)
+				# Use 'main' to get any about:blank target, only enable Storage domain to avoid duplicate Page events
+				await self.browser_session.get_or_create_cdp_session(target_id='main', new_socket=True, domains=['Storage'])
 			except (AssertionError, RuntimeError, Exception):
 				self.logger.debug('[StorageStateWatchdog] CDP client already disconnected, skipping save')
 				return

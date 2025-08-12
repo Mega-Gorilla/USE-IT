@@ -13,6 +13,7 @@ from pydantic import PrivateAttr
 from browser_use.browser.events import (
 	BrowserKillEvent,
 	BrowserLaunchEvent,
+	BrowserLaunchResult,
 	BrowserStopEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
@@ -40,8 +41,9 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	_temp_dirs_to_cleanup: list[Path] = PrivateAttr(default_factory=list)
 	_original_user_data_dir: str | None = PrivateAttr(default=None)
 
-	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> dict[str, str]:
+	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> BrowserLaunchResult:
 		"""Launch a local browser process."""
+
 		try:
 			self.logger.info(
 				f'[LocalBrowserWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}, launching local browser'
@@ -54,7 +56,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self._subprocess = process
 
 			self.logger.info(f'[LocalBrowserWatchdog] Browser launched successfully at {cdp_url}, PID: {process.pid}')
-			return {'cdp_url': cdp_url}
+			return BrowserLaunchResult(cdp_url=cdp_url)
 		except Exception as e:
 			self.logger.error(f'[LocalBrowserWatchdog] Exception in on_BrowserLaunchEvent: {e}', exc_info=True)
 			raise

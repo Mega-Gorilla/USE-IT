@@ -324,9 +324,9 @@ class BrowserContextArgs(BaseModel):
 	# Security options
 	proxy: ProxySettings | None = None
 	permissions: list[str] = Field(
-		default_factory=lambda: ['clipboard-read', 'clipboard-write', 'notifications'],
-		description='Browser permissions to grant (see playwright docs for valid permissions).',
-		# clipboard is for google sheets and pyperclip automations
+		default_factory=lambda: ['clipboardReadWrite', 'notifications'],
+		description='Browser permissions to grant (CDP Browser.grantPermissions).',
+		# clipboardReadWrite is for google sheets and pyperclip automations
 		# notifications are to avoid browser fingerprinting
 	)
 	bypass_csp: bool = False

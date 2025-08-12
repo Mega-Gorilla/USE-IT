@@ -43,7 +43,8 @@ async def main():
 		),
 	)
 
-	async with browser_session:
+	await browser_session.start()
+	try:
 		model = ChatOpenAI(model='gpt-4.1')
 
 		# eraser = Agent(
@@ -76,8 +77,10 @@ async def main():
 			controller=controller,
 		)
 		await researcher.run()
+	finally:
+		await browser_session.stop()
 
-		# improvised_continuer = Agent(
+	# improvised_continuer = Agent(
 		# 	task="""
 		#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
 		#         Add 3 more rows to the bottom continuing the existing pattern, make sure any data you add is sourced correctly.

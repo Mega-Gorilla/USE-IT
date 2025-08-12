@@ -105,8 +105,13 @@ class Controller(Generic[Context]):
 						from browser_use.browser.events import SwitchTabEvent
 
 						if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
-							switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
-							await switch_event
+							try:
+								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+								await switch_event
+								await switch_event.event_result(raise_if_none=False)
+							except Exception as e:
+								logger.warning(f'Failed to switch to existing Google tab: {e}, will use new tab')
+								continue
 
 						use_new_tab = False
 						break
@@ -124,8 +129,13 @@ class Controller(Generic[Context]):
 							from browser_use.browser.events import SwitchTabEvent
 
 							if browser_session.agent_focus and tab.id != browser_session.agent_focus.target_id:
-								switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
-								await switch_event
+								try:
+									switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=i))
+									await switch_event
+									await switch_event.event_result()
+								except Exception as e:
+									logger.warning(f'Failed to switch to agent-owned tab: {e}, will use new tab')
+									continue
 
 							use_new_tab = False
 							break
@@ -133,19 +143,23 @@ class Controller(Generic[Context]):
 				logger.debug(f'Could not check for existing tabs: {e}, using new tab')
 
 			# Dispatch navigation event
-			event = browser_session.event_bus.dispatch(
-				NavigateToUrlEvent(
-					url=search_url,
-					new_tab=use_new_tab,
+			try:
+				event = browser_session.event_bus.dispatch(
+					NavigateToUrlEvent(
+						url=search_url,
+						new_tab=use_new_tab,
+					)
 				)
-			)
-			await event
-
-			msg = f'🔍  Searched for "{params.query}" in Google'
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=f"Searched Google for '{params.query}'"
-			)
+				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'🔍  Searched for "{params.query}" in Google'
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg, include_in_memory=True, long_term_memory=f"Searched Google for '{params.query}'"
+				)
+			except Exception as e:
+				logger.error(f'Failed to search Google: {e}')
+				return ActionResult(error=f'Failed to search Google for "{params.query}": {e}')
 
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
@@ -155,6 +169,7 @@ class Controller(Generic[Context]):
 				# Dispatch navigation event
 				event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=params.new_tab))
 				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
 
 				if params.new_tab:
 					memory = f'Opened new tab with URL {params.url}'
@@ -173,7 +188,7 @@ class Controller(Generic[Context]):
 				# Check if it's specifically a RuntimeError about CDP client
 				if isinstance(e, RuntimeError) and 'CDP client not initialized' in error_msg:
 					browser_session.logger.error('❌ Browser connection failed - CDP client not properly initialized')
-					raise BrowserError(f'Browser connection error: {error_msg}')
+					return ActionResult(error=f'Browser connection error: {error_msg}')
 				# Check for network-related errors
 				elif any(
 					err in error_msg
@@ -187,22 +202,23 @@ class Controller(Generic[Context]):
 				):
 					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
 					browser_session.logger.warning(f'⚠️ {site_unavailable_msg}')
-					raise BrowserError(site_unavailable_msg)
+					return ActionResult(error=site_unavailable_msg)
 				else:
-					# Re-raise the original error
-					raise
+					# Return error in ActionResult instead of re-raising
+					return ActionResult(error=f'Navigation failed: {error_msg}')
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			try:
 				event = browser_session.event_bus.dispatch(GoBackEvent())
 				await event
+				msg = '🔙  Navigated back'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg)
 			except Exception as e:
 				logger.error(f'Failed to dispatch GoBackEvent: {type(e).__name__}: {e}')
-				raise ValueError(f'Failed to go back: {e}') from e
-			msg = '🔙  Navigated back'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg)
+				error_msg = f'Failed to go back: {e}'
+				return ActionResult(error=error_msg)
 
 		@self.registry.action(
 			'Wait for x seconds default 3 (max 10 seconds). This can be used to wait until the page is fully loaded.'
@@ -231,14 +247,17 @@ class Controller(Generic[Context]):
 
 			# Dispatch click event with node
 			try:
-				await browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
+				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
+				await event
+				# Wait for handler to complete and get any exception (None is expected on success)
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'🖱️ Clicked element with index {params.index}'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
 			except Exception as e:
 				logger.error(f'Failed to dispatch ClickElementEvent: {type(e).__name__}: {e}')
-				raise ValueError(f'Failed to click element {params.index}: {e}') from e
-
-			msg = f'🖱️ Clicked element with index {params.index}'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
+				error_msg = f'Failed to click element {params.index}: {e}'
+				return ActionResult(error=error_msg)
 
 		@self.registry.action(
 			'Click and input text into a input interactive element',
@@ -254,24 +273,40 @@ class Controller(Generic[Context]):
 			try:
 				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text))
 				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f"Input '{params.text}' into element {params.index}."
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f"Input '{params.text}' into element {params.index}.",
+				)
 			except Exception as e:
 				# Log the full error for debugging
 				logger.error(f'Failed to dispatch TypeTextEvent: {type(e).__name__}: {e}')
-				# Re-raise with more context
-				raise ValueError(f'Failed to input text into element {params.index}: {e}') from e
-
-			msg = f"Input '{params.text}' into element {params.index}."
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg,
-				include_in_memory=True,
-				long_term_memory=f"Input '{params.text}' into element {params.index}.",
-			)
+				error_msg = f'Failed to input text into element {params.index}: {e}'
+				return ActionResult(error=error_msg)
 
 		@self.registry.action('Upload file to interactive element with file path', param_model=UploadFileAction)
-		async def upload_file(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str]):
+		async def upload_file_to_element(params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str], file_system: FileSystem):
+			# Check if file is in available_file_paths (user-provided or downloaded files)
 			if params.path not in available_file_paths:
-				raise BrowserError(f'File path {params.path} is not available')
+				# Also check if it's a recently downloaded file that might not be in available_file_paths yet
+				downloaded_files = browser_session.downloaded_files
+				if params.path not in downloaded_files:
+					# Finally, check if it's a file in the FileSystem service
+					if file_system and file_system.get_dir():
+						# Check if the file is actually managed by the FileSystem service
+						# The path should be just the filename for FileSystem files
+						file_obj = file_system.get_file(params.path)
+						if file_obj:
+							# File is managed by FileSystem, construct the full path
+							file_system_path = str(file_system.get_dir() / params.path)
+							params = UploadFileAction(index=params.index, path=file_system_path)
+						else:
+							raise BrowserError(f'File path {params.path} is not available. Must be in available_file_paths, downloaded_files, or a file managed by file_system.')
+					else:
+						raise BrowserError(f'File path {params.path} is not available. Must be in available_file_paths or downloaded_files.')
 
 			if not os.path.exists(params.path):
 				raise BrowserError(f'File {params.path} does not exist')
@@ -294,7 +329,7 @@ class Controller(Generic[Context]):
 						return None
 					if browser_session.is_file_input(n):
 						return n
-					for child in n.children_nodes:
+					for child in (n.children_nodes or []):
 						result = find_file_input_in_descendants(child, depth - 1)
 						if result:
 							return result
@@ -311,7 +346,7 @@ class Controller(Generic[Context]):
 						return result
 					# Check all siblings and their descendants
 					if current.parent_node:
-						for sibling in current.parent_node.children_nodes:
+						for sibling in (current.parent_node.children_nodes or []):
 							if sibling is current:
 								continue
 							if browser_session.is_file_input(sibling):
@@ -340,7 +375,7 @@ class Controller(Generic[Context]):
 						params={'expression': 'window.scrollY || window.pageYOffset || 0'}, session_id=cdp_session.session_id
 					)
 					current_scroll_y = scroll_info.get('result', {}).get('value', 0)
-				except:
+				except Exception:
 					current_scroll_y = 0
 
 				# Find all file inputs in the selector map and pick the closest one to scroll position
@@ -351,7 +386,7 @@ class Controller(Generic[Context]):
 					if browser_session.is_file_input(element):
 						# Get element's Y position
 						if element.absolute_position:
-							element_y = element.absolute_position.get('y', 0)
+							element_y = element.absolute_position.y
 							distance = abs(element_y - current_scroll_y)
 							if distance < min_distance:
 								min_distance = distance
@@ -366,44 +401,56 @@ class Controller(Generic[Context]):
 					raise BrowserError(msg)
 
 			# Dispatch upload file event with the file input node
-			event = browser_session.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=params.path))
-			await event
-
-			msg = f'📁 Successfully uploaded file to index {params.index}'
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg,
-				include_in_memory=True,
-				long_term_memory=f'Uploaded file {params.path} to element {params.index}',
-			)
+			try:
+				event = browser_session.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=params.path))
+				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'📁 Successfully uploaded file to index {params.index}'
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f'Uploaded file {params.path} to element {params.index}',
+				)
+			except Exception as e:
+				logger.error(f'Failed to upload file: {e}')
+				raise BrowserError(f'Failed to upload file: {e}')
 
 		# Tab Management Actions
 
 		@self.registry.action('Switch tab', param_model=SwitchTabAction)
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Dispatch switch tab event
-			event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=params.page_id))
-			await event
-
-			msg = f'🔄  Switched to tab #{params.page_id}'
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg, include_in_memory=True, long_term_memory=f'Switched to tab {params.page_id}'
-			)
+			try:
+				event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=params.page_id))
+				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'🔄  Switched to tab #{params.page_id}'
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg, include_in_memory=True, long_term_memory=f'Switched to tab {params.page_id}'
+				)
+			except Exception as e:
+				logger.error(f'Failed to switch tab: {e}')
+				return ActionResult(error=f'Failed to switch to tab {params.page_id}: {e}')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
 			# Dispatch close tab event
-			event = browser_session.event_bus.dispatch(CloseTabEvent(tab_index=params.page_id))
-			await event
-
-			msg = f'❌  Closed tab #{params.page_id}'
-			logger.info(msg)
-			return ActionResult(
-				extracted_content=msg,
-				include_in_memory=True,
-				long_term_memory=f'Closed tab {params.page_id}',
-			)
+			try:
+				event = browser_session.event_bus.dispatch(CloseTabEvent(tab_index=params.page_id))
+				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'❌  Closed tab #{params.page_id}'
+				logger.info(msg)
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f'Closed tab {params.page_id}',
+				)
+			except Exception as e:
+				logger.error(f'Failed to close tab: {e}')
+				return ActionResult(error=f'Failed to close tab {params.page_id}: {e}')
 
 		# Content Actions
 
@@ -518,43 +565,45 @@ Provide the extracted information in a clear, structured format."""
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
-			# Look up the node from the selector map if index is provided
-			# Special case: index 0 means scroll the whole page (root/body element)
-			node = None
-			if params.index is not None and params.index != 0:
-				try:
-					node = await browser_session.get_element_by_index(params.index)
-					if node is None:
-						# Element not found - return error
-						raise ValueError(f'Element index {params.index} not found in DOM')
-				except Exception as e:
-					# Error getting element - return error
-					raise ValueError(f'Failed to get element {params.index}: {e}') from e
-
-			# Dispatch scroll event with node - the complex logic is handled in the event handler
-			# Convert pages to pixels (assuming 800px per page as standard viewport height)
-			pixels = int(params.num_pages * 800)
 			try:
+				# Look up the node from the selector map if index is provided
+				# Special case: index 0 means scroll the whole page (root/body element)
+				node = None
+				if params.index is not None and params.index != 0:
+					try:
+						node = await browser_session.get_element_by_index(params.index)
+						if node is None:
+							# Element not found - return error
+							raise ValueError(f'Element index {params.index} not found in DOM')
+					except Exception as e:
+						# Error getting element - return error
+						raise ValueError(f'Failed to get element {params.index}: {e}') from e
+
+				# Dispatch scroll event with node - the complex logic is handled in the event handler
+				# Convert pages to pixels (assuming 800px per page as standard viewport height)
+				pixels = int(params.num_pages * 800)
 				event = browser_session.event_bus.dispatch(
 					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
 				)
 				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				direction = 'down' if params.down else 'up'
+				
+				# If index is 0 or None, we're scrolling the page
+				target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
+
+				if params.num_pages == 1.0:
+					long_term_memory = f'Scrolled {direction} {target} by one page'
+				else:
+					long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
+
+				msg = f'🔍 {long_term_memory}'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
-				raise ValueError(f'Failed to scroll: {e}') from e
-
-			direction = 'down' if params.down else 'up'
-			# If index is 0 or None, we're scrolling the page
-			target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
-
-			if params.num_pages == 1.0:
-				long_term_memory = f'Scrolled {direction} {target} by one page'
-			else:
-				long_term_memory = f'Scrolled {direction} {target} by {params.num_pages} pages'
-
-			msg = f'🔍 {long_term_memory}'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
+				error_msg = f'Failed to scroll: {e}'
+				return ActionResult(error=error_msg)
 
 		@self.registry.action(
 			'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
@@ -565,13 +614,14 @@ Provide the extracted information in a clear, structured format."""
 			try:
 				event = browser_session.event_bus.dispatch(SendKeysEvent(keys=params.keys))
 				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
+				msg = f'⌨️  Sent keys: {params.keys}'
+				logger.info(msg)
+				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
-				raise ValueError(f'Failed to send keys: {e}') from e
-
-			msg = f'⌨️  Sent keys: {params.keys}'
-			logger.info(msg)
-			return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
+				error_msg = f'Failed to send keys: {e}'
+				return ActionResult(error=error_msg)
 
 		@self.registry.action(
 			description='Scroll to a text in the current page',
@@ -579,15 +629,15 @@ Provide the extracted information in a clear, structured format."""
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
 			event = browser_session.event_bus.dispatch(ScrollToTextEvent(text=text))
-			await event
-
-			# Check result to see if text was found
-			result = await event.event_result()
-			if result and result.get('found'):
+			
+			try:
+				# The handler returns None on success or raises an exception if text not found
+				await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f'🔍  Scrolled to text: {text}'
 				logger.info(msg)
 				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}')
-			else:
+			except Exception as e:
+				# Text not found
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
 				return ActionResult(

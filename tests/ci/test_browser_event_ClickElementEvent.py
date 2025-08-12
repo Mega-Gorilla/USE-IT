@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+from pathlib import Path
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -10,6 +12,7 @@ from browser_use.controller.service import Controller
 from browser_use.controller.views import (
 	ClickElementAction,
 	GoToUrlAction,
+	UploadFileAction,
 )
 
 
@@ -235,7 +238,7 @@ class TestClickElementEvent:
 
 		# Get the link element (assuming it will be at index 0)
 		# First get the browser state to see what elements are available
-		state = await browser_session.get_browser_state_with_recovery()
+		state = await browser_session.get_browser_state_summary()
 
 		# Find the link element in the selector map
 		link_index = None
@@ -264,9 +267,22 @@ class TestClickElementEvent:
 		final_tab_count = len(tabs)
 		assert final_tab_count == initial_tab_count + 1, f'Expected {initial_tab_count + 1} tabs, got {final_tab_count}'
 
-		# Verify we switched to the new tab and it has the correct URL
+		# Verify we're still on the original tab (not switched) - matches browser Cmd/Ctrl+click behavior
 		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page1' in current_url
+		assert f'{base_url}/newTab' in current_url, f'Should still be on original tab, but got {current_url}'
+		
+		# Wait for the new tab to finish navigating to the target URL
+		# New tabs initially open at the current URL then navigate to the target
+		max_wait = 5
+		for _ in range(max_wait):
+			await asyncio.sleep(0.5)
+			tabs = await browser_session.get_tabs()
+			new_tab = tabs[-1]  # Last tab is the newly opened one
+			if f'{base_url}/page1' in new_tab.url:
+				break
+		
+		# Verify the new tab has the correct URL
+		assert f'{base_url}/page1' in new_tab.url, f'New tab should have page1 URL, but got {new_tab.url}'
 
 	async def test_click_element_normal_vs_new_tab(self, controller, browser_session, base_url, http_server):
 		"""Test that click_element_by_index behaves differently with new_tab=False vs new_tab=True."""
@@ -303,7 +319,7 @@ class TestClickElementEvent:
 		initial_tab_count = len(tabs)
 
 		# Get browser state and find link elements
-		state = await browser_session.get_browser_state_with_recovery()
+		state = await browser_session.get_browser_state_summary()
 		link_indices = []
 		for index, element in state.dom_state.selector_map.items():
 			if hasattr(element, 'tag_name') and element.tag_name == 'a':
@@ -711,3 +727,624 @@ class TestClickElementEvent:
 		assert 'select' in result.error.lower() and 'dropdown' in result.error.lower(), (
 			f'Error message should mention select/dropdown, got: {result.error}'
 		)
+
+	async def test_click_triggers_alert_popup(self, browser_session, base_url, http_server):
+		"""Test that clicking a button triggers an alert dialog that is auto-accepted."""
+		from browser_use.browser.events import (
+			NavigateToUrlEvent,
+			BrowserStateRequestEvent,
+			ClickElementEvent,
+			DialogOpenedEvent
+		)
+		
+		# Add route with alert dialog
+		http_server.expect_request('/alert_test').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Alert Test</title>
+			</head>
+			<body>
+				<h1>Alert Dialog Test</h1>
+				<button id="alertButton" onclick="alert('This is an alert!'); document.getElementById('result').textContent = 'Alert shown';">
+					Show Alert
+				</button>
+				<div id="result">No popup shown</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the alert test page using events
+		nav_event = browser_session.event_bus.dispatch(
+			NavigateToUrlEvent(url=f'{base_url}/alert_test')
+		)
+		await nav_event
+		await asyncio.sleep(0.5)
+
+		# Get the browser state to find clickable elements
+		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+		browser_state = await state_event.event_result(raise_if_none=True, raise_if_any=True)
+
+		# Find the alert button
+		alert_button = None
+		for element in browser_state.dom_state.selector_map.values():
+			if element.attributes and element.attributes.get('id') == 'alertButton':
+				alert_button = element
+				break
+
+		assert alert_button is not None, 'Could not find alert button'
+
+		# Expect the DialogOpenedEvent
+		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
+
+		# Click the alert button using ClickElementEvent
+		click_event = browser_session.event_bus.dispatch(
+			ClickElementEvent(node=alert_button)
+		)
+		await click_event
+
+		# Wait for and verify DialogOpenedEvent was dispatched
+		dialog_event = await asyncio.wait_for(dialog_event_future, timeout=2.0)
+		assert dialog_event.dialog_type == 'alert'
+		assert 'This is an alert!' in dialog_event.message
+		
+		# Verify the page updated after alert was accepted
+		cdp_session = await browser_session.get_or_create_cdp_session()
+		result_js = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
+			session_id=cdp_session.session_id,
+		)
+		assert result_js.get('result', {}).get('value') == 'Alert shown'
+
+	async def test_click_triggers_confirm_popup(self, browser_session, base_url, http_server):
+		"""Test that clicking a button triggers a confirm dialog that is auto-accepted."""
+		from browser_use.browser.events import (
+			NavigateToUrlEvent,
+			BrowserStateRequestEvent,
+			ClickElementEvent,
+			DialogOpenedEvent
+		)
+		
+		# Add route with confirm dialog
+		http_server.expect_request('/confirm_test').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Confirm Test</title>
+			</head>
+			<body>
+				<h1>Confirm Dialog Test</h1>
+				<button id="confirmButton" onclick="if(confirm('Are you sure?')) { document.getElementById('result').textContent = 'Confirmed'; } else { document.getElementById('result').textContent = 'Cancelled'; }">
+					Show Confirm
+				</button>
+				<div id="result">No popup shown</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the confirm test page
+		nav_event = browser_session.event_bus.dispatch(
+			NavigateToUrlEvent(url=f'{base_url}/confirm_test')
+		)
+		await nav_event
+		await asyncio.sleep(0.5)
+
+		# Get the browser state
+		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+		browser_state = await state_event.event_result(raise_if_none=True, raise_if_any=True)
+		
+		# Find the confirm button
+		confirm_button = None
+		for element in browser_state.dom_state.selector_map.values():
+			if element.attributes and element.attributes.get('id') == 'confirmButton':
+				confirm_button = element
+				break
+
+		assert confirm_button is not None, 'Could not find confirm button'
+
+		# Expect the DialogOpenedEvent
+		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
+
+		# Click the confirm button
+		click_event = browser_session.event_bus.dispatch(
+			ClickElementEvent(node=confirm_button)
+		)
+		await click_event
+
+		# Wait for and verify DialogOpenedEvent was dispatched
+		dialog_event = await asyncio.wait_for(dialog_event_future, timeout=2.0)
+		assert dialog_event.dialog_type == 'confirm'
+		assert 'Are you sure?' in dialog_event.message
+
+		# Verify the page updated after confirm was accepted (auto-accepts with True)
+		cdp_session = await browser_session.get_or_create_cdp_session()
+		result_js = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
+			session_id=cdp_session.session_id,
+		)
+		assert result_js.get('result', {}).get('value') == 'Confirmed'
+
+	async def test_page_usable_after_popup_confirm(self, browser_session, base_url, http_server):
+		"""Test that the page remains usable after handling confirm dialogs."""
+		from browser_use.browser.events import (
+			NavigateToUrlEvent,
+			BrowserStateRequestEvent,
+			ClickElementEvent,
+			DialogOpenedEvent
+		)
+		
+		# Add route with confirm dialog and navigation
+		http_server.expect_request('/popup_nav_test').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Popup Navigation Test</title>
+			</head>
+			<body>
+				<h1>Popup and Navigation Test</h1>
+				<button id="confirmButton" onclick="if(confirm('Continue to navigation?')) { document.getElementById('result').textContent = 'Ready to navigate'; }">
+					Show Confirm
+				</button>
+				<a href="/page1" id="navLink">Navigate to Page 1</a>
+				<div id="result">No popup shown</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the test page
+		nav_event = browser_session.event_bus.dispatch(
+			NavigateToUrlEvent(url=f'{base_url}/popup_nav_test')
+		)
+		await nav_event
+		await asyncio.sleep(0.5)
+
+		# Get browser state
+		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+		browser_state = await state_event
+		
+		# Find and click the confirm button
+		confirm_button = None
+		for element in browser_state.dom_state.selector_map.values():
+			if element.attributes and element.attributes.get('id') == 'confirmButton':
+				confirm_button = element
+				break
+
+		assert confirm_button is not None, 'Could not find confirm button'
+
+		# Expect dialog event
+		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
+
+		# Click confirm button
+		click_event = browser_session.event_bus.dispatch(
+			ClickElementEvent(node=confirm_button)
+		)
+		await click_event
+
+		# Wait for dialog event
+		dialog_event = await asyncio.wait_for(dialog_event_future, timeout=2.0)
+		assert dialog_event.dialog_type == 'confirm'
+
+		# Verify page was updated
+		cdp_session = await browser_session.get_or_create_cdp_session()
+		result_js = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': "document.getElementById('result').textContent", 'returnByValue': True},
+			session_id=cdp_session.session_id,
+		)
+		assert result_js.get('result', {}).get('value') == 'Ready to navigate'
+
+		# Refresh browser state after handling dialog
+		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+		browser_state = await state_event
+
+		# Find and click navigation link to verify page is still usable
+		nav_link = None
+		for element in browser_state.dom_state.selector_map.values():
+			if element.attributes and element.attributes.get('id') == 'navLink':
+				nav_link = element
+				break
+
+		assert nav_link is not None, 'Could not find navigation link'
+
+		# Click the navigation link
+		click_event = browser_session.event_bus.dispatch(
+			ClickElementEvent(node=nav_link)
+		)
+		await click_event
+		await asyncio.sleep(1)
+
+		# Verify navigation succeeded
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/page1' in current_url, f'Navigation failed, current URL: {current_url}'
+
+		# Verify browser is still responsive
+		current_title = await browser_session.get_current_page_title()
+		assert 'Test Page 1' in current_title, f'Page title incorrect: {current_title}'
+
+	async def test_click_triggers_onbeforeunload_popup(self, browser_session, base_url, http_server):
+		"""Test that navigating away from a page with onbeforeunload triggers a dialog."""
+		from browser_use.browser.events import (
+			NavigateToUrlEvent,
+			BrowserStateRequestEvent,
+			ClickElementEvent,
+			DialogOpenedEvent
+		)
+		
+		# Add route with onbeforeunload handler
+		http_server.expect_request('/beforeunload_test').respond_with_data(
+			"""
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>BeforeUnload Test</title>
+				<script>
+					window.onbeforeunload = function(e) {
+						e.preventDefault();
+						e.returnValue = 'You have unsaved changes!';
+						return 'You have unsaved changes!';
+					};
+				</script>
+			</head>
+			<body>
+				<h1>BeforeUnload Test</h1>
+				<p>This page has unsaved changes.</p>
+				<a href="/page1" id="navLink">Navigate Away</a>
+				<div id="result">Page loaded</div>
+			</body>
+			</html>
+			""",
+			content_type='text/html',
+		)
+
+		# Navigate to the beforeunload test page
+		nav_event = browser_session.event_bus.dispatch(
+			NavigateToUrlEvent(url=f'{base_url}/beforeunload_test')
+		)
+		await nav_event
+		await asyncio.sleep(0.5)
+
+		# Get browser state
+		state_event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+		browser_state = await state_event
+
+		# Find the navigation link
+		nav_link = None
+		for element in browser_state.dom_state.selector_map.values():
+			if element.attributes and element.attributes.get('id') == 'navLink':
+				nav_link = element
+				break
+
+		assert nav_link is not None, 'Could not find navigation link'
+
+		# Expect the DialogOpenedEvent for beforeunload
+		dialog_event_future = browser_session.event_bus.expect(DialogOpenedEvent)
+
+		# Click the navigation link - should trigger beforeunload popup
+		click_event = browser_session.event_bus.dispatch(
+			ClickElementEvent(node=nav_link)
+		)
+		await click_event
+
+		# Wait for and verify DialogOpenedEvent was dispatched
+		dialog_event = await asyncio.wait_for(dialog_event_future, timeout=2.0)
+		assert dialog_event.dialog_type == 'beforeunload'
+		# Note: beforeunload messages are often browser-controlled and may not match our custom message
+
+		# Wait a bit for navigation to complete after dialog is auto-accepted
+		await asyncio.sleep(1)
+
+		# Verify navigation succeeded after beforeunload was accepted
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/page1' in current_url, f'Navigation should have succeeded after beforeunload was accepted, current URL: {current_url}'
+
+	async def test_file_upload_click_and_verify(self, controller, browser_session, base_url, http_server):
+		"""Test that clicking a file upload element and uploading a file works correctly."""
+		# Create a temporary test file
+		import tempfile as temp_module
+		with temp_module.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+			temp_file.write('Test file content for upload')
+			temp_file_path = temp_file.name
+		
+		try:
+			# Add route for file upload test page
+			http_server.expect_request('/fileupload').respond_with_data(
+				"""
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<title>File Upload Test</title>
+					<style>
+						.upload-section {
+							margin: 20px;
+							padding: 20px;
+							border: 2px dashed #ccc;
+						}
+						#fileInfo {
+							margin-top: 20px;
+							padding: 10px;
+							border: 1px solid #ddd;
+							min-height: 50px;
+						}
+						.upload-label {
+							display: inline-block;
+							padding: 10px 20px;
+							background-color: #4CAF50;
+							color: white;
+							cursor: pointer;
+							border-radius: 4px;
+						}
+						.upload-label:hover {
+							background-color: #45a049;
+						}
+						input[type="file"] {
+							/* Hide the default file input */
+							display: none;
+						}
+					</style>
+				</head>
+				<body>
+					<h1>File Upload Test</h1>
+					<div class="upload-section">
+						<p>Click the button below to select a file:</p>
+						<label for="fileInput" class="upload-label">Choose File</label>
+						<input type="file" id="fileInput" name="fileInput" />
+						<div id="fileInfo">
+							<p id="fileName">No file selected</p>
+							<p id="fileSize"></p>
+							<p id="fileType"></p>
+						</div>
+					</div>
+					
+					<script>
+						document.getElementById('fileInput').addEventListener('change', function(e) {
+							const file = e.target.files[0];
+							if (file) {
+								document.getElementById('fileName').textContent = 'File name: ' + file.name;
+								document.getElementById('fileSize').textContent = 'File size: ' + file.size + ' bytes';
+								document.getElementById('fileType').textContent = 'File type: ' + (file.type || 'unknown');
+							} else {
+								document.getElementById('fileName').textContent = 'No file selected';
+								document.getElementById('fileSize').textContent = '';
+								document.getElementById('fileType').textContent = '';
+							}
+						});
+					</script>
+				</body>
+				</html>
+				""",
+				content_type='text/html',
+			)
+
+			# Navigate to the file upload test page
+			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/fileupload', new_tab=False)}
+
+			from browser_use.agent.views import ActionModel
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			await controller.act(GoToUrlActionModel(**goto_action), browser_session)
+
+			# Wait for the page to load
+			await asyncio.sleep(0.5)
+
+			# Initialize the DOM state to populate the selector map
+			await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
+
+			# Get the selector map
+			selector_map = await browser_session.get_selector_map()
+
+			# Find the label element that triggers the file input
+			label_index = None
+			for idx, element in selector_map.items():
+				if element.tag_name.lower() == 'label' and 'upload-label' in str(element.attributes.get('class', '')):
+					label_index = idx
+					break
+
+			assert label_index is not None, 'Could not find file upload label element'
+
+			# Create action model for file upload
+			class UploadFileActionModel(ActionModel):
+				upload_file_to_element: UploadFileAction | None = None
+
+			# Create a temporary FileSystem for the test
+			import tempfile
+			from browser_use.filesystem.file_system import FileSystem
+			
+			with tempfile.TemporaryDirectory() as temp_dir:
+				file_system = FileSystem(base_dir=temp_dir)
+				
+				# Upload the file using the label index (should find the associated file input)
+				result = await controller.act(
+					UploadFileActionModel(upload_file_to_element=UploadFileAction(index=label_index, path=temp_file_path)),
+					browser_session,
+					available_file_paths=[temp_file_path],  # Pass the file path as available
+					file_system=file_system,  # Pass the required file_system parameter
+				)
+
+				# Verify the upload action succeeded
+				assert result.error is None, f'File upload failed: {result.error}'
+				assert result.extracted_content is not None
+				assert 'Successfully uploaded file' in result.extracted_content
+
+				# Wait a moment for the JavaScript to process the file
+				await asyncio.sleep(0.5)
+
+				# Verify the file was actually selected using CDP Runtime.evaluate
+				cdp_session = await browser_session.get_or_create_cdp_session()
+				
+				# Check if the file input has a file selected
+				file_check_js = await browser_session.cdp_client.send.Runtime.evaluate(
+					params={
+						'expression': """
+							(() => {
+								const input = document.getElementById('fileInput');
+								if (!input || !input.files || input.files.length === 0) {
+									return { hasFile: false };
+								}
+								const file = input.files[0];
+								return {
+									hasFile: true,
+									fileName: file.name,
+									fileSize: file.size,
+									fileType: file.type || 'text/plain'
+								};
+							})()
+						""",
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+				
+				file_info = file_check_js.get('result', {}).get('value', {})
+				
+				# Verify file was selected
+				assert file_info.get('hasFile') is True, 'File was not properly selected in the input element'
+				assert file_info.get('fileName', '').endswith('.txt'), f"Expected .txt file, got: {file_info.get('fileName')}"
+				assert file_info.get('fileSize', 0) > 0, 'File size should be greater than 0'
+
+				# Also verify the UI was updated (the file info div)
+				ui_check_js = await browser_session.cdp_client.send.Runtime.evaluate(
+					params={
+						'expression': """
+							(() => {
+								const fileName = document.getElementById('fileName').textContent;
+								const fileSize = document.getElementById('fileSize').textContent;
+								return {
+									fileNameText: fileName,
+									fileSizeText: fileSize,
+									hasFileInfo: !fileName.includes('No file selected')
+								};
+							})()
+						""",
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+				
+				ui_info = ui_check_js.get('result', {}).get('value', {})
+				
+				# Verify UI was updated
+				assert ui_info.get('hasFileInfo') is True, 'UI was not updated with file information'
+				assert '.txt' in ui_info.get('fileNameText', ''), f"File name not shown in UI: {ui_info.get('fileNameText')}"
+				assert 'bytes' in ui_info.get('fileSizeText', ''), f"File size not shown in UI: {ui_info.get('fileSizeText')}"
+
+		finally:
+			# Clean up the temporary file
+			Path(temp_file_path).unlink(missing_ok=True)
+
+	async def test_file_upload_path_validation(self, controller, browser_session, base_url, http_server):
+		"""Test that file upload validates paths correctly with available_file_paths, downloaded_files, and FileSystem."""
+		import tempfile
+		from pathlib import Path
+		from browser_use.browser.views import BrowserError
+		from browser_use.filesystem.file_system import FileSystem
+		from browser_use.controller.views import UploadFileAction
+
+		# Create a temporary test file that's NOT in available_file_paths
+		with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+			temp_file.write('Test file content')
+			test_file_path = temp_file.name
+
+		try:
+			# Set up test page with file input
+			http_server.expect_request('/upload-test').respond_with_data(
+				"""
+				<html>
+				<body>
+					<h1>File Upload Test</h1>
+					<input type="file" id="fileInput" />
+				</body>
+				</html>
+				""",
+				content_type='text/html',
+			)
+
+			# Navigate to the test page
+			goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/upload-test', new_tab=False)}
+			from browser_use.agent.views import ActionModel
+
+			class GoToUrlActionModel(ActionModel):
+				go_to_url: GoToUrlAction | None = None
+
+			await controller.act(GoToUrlActionModel(**goto_action), browser_session)
+			await asyncio.sleep(0.5)
+
+			# Get browser state to populate selector map
+			from browser_use.browser.events import BrowserStateRequestEvent
+			event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
+			state = await event
+
+			# Test 1: Try to upload a file that's not in available_file_paths - should fail
+			class UploadActionModel(ActionModel):
+				upload_file_to_element: UploadFileAction | None = None
+
+			upload_action = UploadActionModel(upload_file_to_element=UploadFileAction(index=1, path=test_file_path))
+
+			# Create a temporary FileSystem for all tests
+			with tempfile.TemporaryDirectory() as temp_dir:
+				file_system = FileSystem(base_dir=temp_dir)
+				
+				try:
+					# This should fail because the file is not in available_file_paths
+					result = await controller.act(
+						upload_action, 
+						browser_session,
+						available_file_paths=[],  # Empty available_file_paths
+						file_system=file_system
+					)
+					assert result.error is not None, "Upload should have failed for file not in available_file_paths"
+					assert "not available" in result.error, f"Error message should mention file not available: {result.error}"
+				except BrowserError as e:
+					assert "not available" in str(e), f"Error should mention file not available: {e}"
+
+				# Test 2: Add file to available_file_paths - should succeed
+				result = await controller.act(
+					upload_action,
+					browser_session,
+					available_file_paths=[test_file_path],  # File is now in available_file_paths
+					file_system=file_system
+				)
+				assert result.error is None, f"Upload should have succeeded with file in available_file_paths: {result.error}"
+
+				# Test 3: Test with FileSystem integration - write a test file to the FileSystem
+				await file_system.write_file('test.txt', 'FileSystem test content')
+				fs_file_path = str(file_system.get_dir() / 'test.txt')
+				
+				# Try to upload using just the filename (should check FileSystem)
+				upload_action_fs = UploadActionModel(
+					upload_file_to_element=UploadFileAction(index=1, path='test.txt')
+				)
+				
+				result = await controller.act(
+					upload_action_fs,
+					browser_session,
+					available_file_paths=[],  # Empty available_file_paths
+					file_system=file_system  # But FileSystem is provided
+				)
+				assert result.error is None, f"Upload should have succeeded with file in FileSystem: {result.error}"
+
+				# Test 4: Simulate a downloaded file
+				# Manually add a file to browser_session._downloaded_files to simulate a download
+				browser_session._downloaded_files.append(test_file_path)
+				
+				# Try uploading with the file only in downloaded_files
+				result = await controller.act(
+					upload_action,
+					browser_session,
+					available_file_paths=[],  # Empty available_file_paths, but file is in downloaded_files
+					file_system=file_system
+				)
+				assert result.error is None, f"Upload should have succeeded with file in downloaded_files: {result.error}"
+
+		finally:
+			# Clean up the temporary file
+			Path(test_file_path).unlink(missing_ok=True)

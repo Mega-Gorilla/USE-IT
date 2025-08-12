@@ -475,12 +475,12 @@ class BrowserUseApp(App):
 			log_handler.setLevel('RESULT')
 			log_handler.setFormatter(BrowserUseFormatter('%(message)s'))
 		else:
-			log_handler.setFormatter(BrowserUseFormatter('%(message)s'))
+			log_handler.setFormatter(BrowserUseFormatter('%(levelname)-8s [%(name)s] %(message)s'))
 
 		# Configure root logger - Replace ALL handlers, not just stdout handlers
 		root = logging.getLogger()
 
-		# Clear all existing handlers and add only our richlog handler
+		# Clear all existing handlers to prevent output to stdout/stderr
 		root.handlers = []
 		root.addHandler(log_handler)
 
@@ -514,7 +514,7 @@ class BrowserUseApp(App):
 					logger.handlers = [log_handler]
 					logger.setLevel(root.level)
 
-		# Silence third-party loggers
+		# Silence third-party loggers but keep them using our handler
 		for logger_name in [
 			'WDM',
 			'httpx',
@@ -529,11 +529,14 @@ class BrowserUseApp(App):
 			'PIL.PngImagePlugin',
 			'trafilatura.htmlprocessing',
 			'trafilatura',
+			'groq',
+			'portalocker',
+			'portalocker.utils',
 		]:
 			third_party = logging.getLogger(logger_name)
 			third_party.setLevel(logging.ERROR)
 			third_party.propagate = False
-			third_party.handlers = []  # Clear any existing handlers
+			third_party.handlers = [log_handler]  # Use our handler to prevent stdout/stderr leakage
 
 	def on_mount(self) -> None:
 		"""Set up components when app is mounted."""
@@ -1064,76 +1067,258 @@ class BrowserUseApp(App):
 
 	def update_browser_panel(self) -> None:
 		"""Update browser information panel with details about the browser."""
-		try:
-			browser_info = self.query_one('#browser-info', RichLog)
-			browser_info.clear()
+		browser_info = self.query_one('#browser-info', RichLog)
+		browser_info.clear()
 
-			# Try to use the agent's browser session if available
-			browser_session = self.browser_session
-			if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'browser_session'):
-				browser_session = self.agent.browser_session
+		# Try to use the agent's browser session if available
+		browser_session = self.browser_session
+		if hasattr(self, 'agent') and self.agent and hasattr(self.agent, 'browser_session'):
+			browser_session = self.agent.browser_session
 
-			if browser_session:
-				# Get browser state info
-				cdp_url = browser_session.cdp_url or 'Not connected'
-				is_local = browser_session.is_local
-				browser_type = 'Local' if is_local else 'Remote'
+		if browser_session:
+			try:
+				# Check if browser session has a CDP client
+				if not hasattr(browser_session, 'cdp_client') or browser_session.cdp_client is None:
+					browser_info.write('[yellow]Browser session created, waiting for browser to launch...[/]')
+					return
 
-				# Format CDP URL for display
-				if cdp_url != 'Not connected':
-					port = cdp_url.split(':')[-1].split('/')[0] if ':' in cdp_url else 'unknown'
-					display_url = f'Port {port}'
-				else:
-					display_url = cdp_url
+				# Update our reference if we're using the agent's session
+				if browser_session != self.browser_session:
+					self.browser_session = browser_session
 
-				browser_info.write('[bold]🌐 Browser[/bold]')
-				browser_info.write(f'Type: {browser_type}')
-				browser_info.write(f'CDP: {display_url}')
-			else:
-				browser_info.write('[dim]No browser session[/dim]')
-		except Exception as e:
-			logging.debug(f'Error updating browser panel: {e}')
+				# Get basic browser info from browser_profile
+				browser_type = 'Chromium'
+				headless = browser_session.browser_profile.headless
+
+				# Determine connection type based on config
+				connection_type = 'playwright'  # Default
+				if browser_session.cdp_url:
+					connection_type = 'CDP'
+				elif browser_session.browser_profile.executable_path:
+					connection_type = 'user-provided'
+
+				# Get window size details from browser_profile
+				window_width = None
+				window_height = None
+				if browser_session.browser_profile.viewport:
+					window_width = browser_session.browser_profile.viewport.get('width')
+					window_height = browser_session.browser_profile.viewport.get('height')
+
+				# Try to get browser PID
+				browser_pid = 'Unknown'
+				connected = False
+				browser_status = '[red]Disconnected[/]'
+
+				try:
+					# Check if browser PID is available
+					# Check if we have a CDP client
+					if browser_session.cdp_client is not None:
+						connected = True
+						browser_status = '[green]Connected[/]'
+						browser_pid = 'N/A'
+				except Exception as e:
+					browser_pid = f'Error: {str(e)}'
+
+				# Display browser information
+				browser_info.write(f'[bold cyan]Chromium[/] Browser ({browser_status})')
+				browser_info.write(
+					f'Type: [yellow]{connection_type}[/] [{"green" if not headless else "red"}]{" (headless)" if headless else ""}[/]'
+				)
+				browser_info.write(f'PID: [dim]{browser_pid}[/]')
+				browser_info.write(f'CDP Port: {browser_session.cdp_url}')
+
+				if window_width and window_height:
+					browser_info.write(f'Window: [blue]{window_width}[/] × [blue]{window_height}[/]')
+
+				# Include additional information about the browser if needed
+				if connected and hasattr(self, 'agent') and self.agent:
+					try:
+						# Show when the browser was connected
+						timestamp = int(time.time())
+						current_time = time.strftime('%H:%M:%S', time.localtime(timestamp))
+						browser_info.write(f'Last updated: [dim]{current_time}[/]')
+					except Exception:
+						pass
+
+					# Show the agent's current page URL if available
+					if browser_session.agent_focus:
+						current_url = (
+							browser_session.agent_focus.url.replace('https://', '')
+							.replace('http://', '')
+							.replace('www.', '')[:36]
+							+ '…'
+						)
+						browser_info.write(f'👁️  [green]{current_url}[/]')
+			except Exception as e:
+				browser_info.write(f'[red]Error updating browser info: {str(e)}[/]')
+		else:
+			browser_info.write('[red]Browser not initialized[/]')
 
 	def update_model_panel(self) -> None:
-		"""Update model information panel."""
-		try:
-			model_info = self.query_one('#model-info', RichLog)
-			model_info.clear()
+		"""Update model information panel with details about the LLM."""
+		model_info = self.query_one('#model-info', RichLog)
+		model_info.clear()
 
-			if self.llm:
-				model_name = getattr(self.llm, 'model', 'Unknown')
-				provider = getattr(self.llm, '__class__', type(self.llm)).__name__.replace('Chat', '')
+		if self.llm:
+			# Get model details
+			model_name = 'Unknown'
+			if hasattr(self.llm, 'model_name'):
+				model_name = self.llm.model_name
+			elif hasattr(self.llm, 'model'):
+				model_name = self.llm.model
 
-				model_info.write('[bold]🤖 Model[/bold]')
-				model_info.write(f'Provider: {provider}')
-				model_info.write(f'Model: {model_name}')
+			# Show model name
+			if self.agent:
+				temp_str = f'{self.llm.temperature}ºC ' if self.llm.temperature else ''
+				vision_str = '+ vision ' if self.agent.settings.use_vision else ''
+				planner_str = '+ planner' if self.agent.settings.planner_llm else ''
+				model_info.write(
+					f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/] {temp_str}{vision_str}{planner_str}'
+				)
 			else:
-				model_info.write('[dim]No model configured[/dim]')
-		except Exception as e:
-			logging.debug(f'Error updating model panel: {e}')
+				model_info.write(f'[white]LLM:[/] [blue]{self.llm.__class__.__name__} [yellow]{model_name}[/]')
+
+			# Show token usage statistics if agent exists and has history
+			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
+				# Calculate tokens per step
+				num_steps = len(self.agent.history.history)
+
+				# Get the last step metadata to show the most recent LLM response time
+				if num_steps > 0 and self.agent.history.history[-1].metadata:
+					last_step = self.agent.history.history[-1]
+					if last_step.metadata:
+						step_duration = last_step.metadata.duration_seconds
+					else:
+						step_duration = 0
+
+				# Show total duration
+				total_duration = self.agent.history.total_duration_seconds()
+				if total_duration > 0:
+					model_info.write(f'[white]Total Duration:[/] [magenta]{total_duration:.2f}s[/]')
+
+					# Calculate response time metrics
+					model_info.write(f'[white]Last Step Duration:[/] [magenta]{step_duration:.2f}s[/]')
+
+				# Add current state information
+				if hasattr(self.agent, 'running'):
+					if getattr(self.agent, 'running', False):
+						model_info.write('[yellow]LLM is thinking[blink]...[/][/]')
+					elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
+						model_info.write('[orange]LLM paused[/]')
+		else:
+			model_info.write('[red]Model not initialized[/]')
 
 	def update_tasks_panel(self) -> None:
-		"""Update tasks panel with agent state."""
-		try:
-			tasks_info = self.query_one('#tasks-info', RichLog)
-			tasks_info.clear()
+		"""Update tasks information panel with details about the tasks and steps hierarchy."""
+		tasks_info = self.query_one('#tasks-info', RichLog)
+		tasks_info.clear()
 
-			if hasattr(self, 'agent') and self.agent:
-				# Show current task
-				task = getattr(self.agent, 'task', 'No task')
-				if len(task) > 100:
-					task = task[:97] + '...'
-				tasks_info.write('[bold]📋 Current Task[/bold]')
-				tasks_info.write(f'{task}')
+		if self.agent:
+			# Check if agent has tasks
+			task_history = []
+			message_history = []
 
-				# Show step counter
-				if hasattr(self.agent, 'state'):
-					step_count = getattr(self.agent.state, 'n_steps', 0)
-					tasks_info.write(f'\nStep: {step_count}')
-			else:
-				tasks_info.write('[dim]No active task[/dim]')
-		except Exception as e:
-			logging.debug(f'Error updating tasks panel: {e}')
+			# Try to extract tasks by looking at message history
+			if hasattr(self.agent, '_message_manager') and self.agent._message_manager:
+				message_history = self.agent._message_manager.state.history.get_messages()
+
+				# Extract original task(s)
+				original_tasks = []
+				for msg in message_history:
+					if hasattr(msg, 'content'):
+						content = msg.content
+						if isinstance(content, str) and 'Your ultimate task is:' in content:
+							task_text = content.split('"""')[1].strip()
+							original_tasks.append(task_text)
+
+				if original_tasks:
+					tasks_info.write('[bold green]TASK:[/]')
+					for i, task in enumerate(original_tasks, 1):
+						# Only show latest task if multiple task changes occurred
+						if i == len(original_tasks):
+							tasks_info.write(f'[white]{task}[/]')
+					tasks_info.write('')
+
+			# Get current state information
+			current_step = self.agent.state.n_steps if hasattr(self.agent, 'state') else 0
+
+			# Get all agent history items
+			history_items = []
+			if hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
+				history_items = self.agent.history.history
+
+				if history_items:
+					tasks_info.write('[bold yellow]STEPS:[/]')
+
+					for idx, item in enumerate(history_items, 1):
+						# Determine step status
+						step_style = '[green]✓[/]'
+
+						# For the current step, show it as in progress
+						if idx == current_step:
+							step_style = '[yellow]⟳[/]'
+
+						# Check if this step had an error
+						if item.result and any(result.error for result in item.result):
+							step_style = '[red]✗[/]'
+
+						# Show step number
+						tasks_info.write(f'{step_style} Step {idx}/{current_step}')
+
+						# Show goal if available
+						if item.model_output and hasattr(item.model_output, 'current_state'):
+							# Show goal for this step
+							goal = item.model_output.current_state.next_goal
+							if goal:
+								# Take just the first line for display
+								goal_lines = goal.strip().split('\n')
+								goal_summary = goal_lines[0]
+								tasks_info.write(f'   [cyan]Goal:[/] {goal_summary}')
+
+							# Show evaluation of previous goal (feedback)
+							eval_prev = item.model_output.current_state.evaluation_previous_goal
+							if eval_prev and idx > 1:  # Only show for steps after the first
+								eval_lines = eval_prev.strip().split('\n')
+								eval_summary = eval_lines[0]
+								eval_summary = eval_summary.replace('Success', '✅ ').replace('Failed', '❌ ').strip()
+								tasks_info.write(f'   [tan]Evaluation:[/] {eval_summary}')
+
+						# Show actions taken in this step
+						if item.model_output and item.model_output.action:
+							tasks_info.write('   [purple]Actions:[/]')
+							for action_idx, action in enumerate(item.model_output.action, 1):
+								action_type = action.__class__.__name__
+								if hasattr(action, 'model_dump'):
+									# For proper actions, show the action type
+									action_dict = action.model_dump(exclude_unset=True)
+									if action_dict:
+										action_name = list(action_dict.keys())[0]
+										tasks_info.write(f'     {action_idx}. [blue]{action_name}[/]')
+
+						# Show results or errors from this step
+						if item.result:
+							for result in item.result:
+								if result.error:
+									error_text = result.error
+									tasks_info.write(f'   [red]Error:[/] {error_text}')
+								elif result.extracted_content:
+									content = result.extracted_content
+									tasks_info.write(f'   [green]Result:[/] {content}')
+
+						# Add a space between steps for readability
+						tasks_info.write('')
+
+			# If agent is actively running, show a status indicator
+			if hasattr(self.agent, 'running') and getattr(self.agent, 'running', False):
+				tasks_info.write('[yellow]Agent is actively working[blink]...[/][/]')
+			elif hasattr(self.agent, 'state') and hasattr(self.agent.state, 'paused') and self.agent.state.paused:
+				tasks_info.write('[orange]Agent is paused (press Enter to resume)[/]')
+		else:
+			tasks_info.write('[dim]Agent not initialized[/]')
+
+		# Force scroll to bottom
+		tasks_panel = self.query_one('#tasks-panel')
+		tasks_panel.scroll_end(animate=False)
 
 
 async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
@@ -1261,6 +1446,9 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
+	# Prevent browser_use from setting up logging at import time
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
+	
 	logger = logging.getLogger('browser_use.startup')
 
 	# Set up logging for Textual UI - prevent any logging to stdout
@@ -1300,6 +1488,14 @@ async def textual_interface(config: dict[str, Any]):
 			browser_profile=profile,
 		)
 		logger.debug('BrowserSession initialized successfully')
+		
+		# Set up FIFO logging pipes for streaming logs to UI
+		try:
+			from browser_use.logging_config import setup_log_pipes
+			setup_log_pipes(session_id=browser_session.id)
+			logger.debug(f'FIFO logging pipes set up for session {browser_session.id[-4:]}')
+		except Exception as e:
+			logger.debug(f'Could not set up FIFO logging pipes: {e}')
 
 		# Browser version logging not available with CDP implementation
 	except Exception as e:
@@ -1318,6 +1514,8 @@ async def textual_interface(config: dict[str, Any]):
 	# Step 4: Get LLM
 	logger.debug('Getting LLM...')
 	try:
+		# Ensure setup_logging is not called when importing modules
+		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
 		llm = get_llm(config)
 		# Log LLM details
 		model_name = getattr(llm, 'model_name', None) or getattr(llm, 'model', 'Unknown model')

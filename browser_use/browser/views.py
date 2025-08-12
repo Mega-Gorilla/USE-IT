@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from browser_use.dom.views import DOMInteractedElement, SerializedDOMState
+from bubus import BaseEvent
 
 # Known placeholder image data for about:blank pages - a 4x4 white PNG
 PLACEHOLDER_4PX_SCREENSHOT = (
@@ -112,6 +113,22 @@ class BrowserStateHistory:
 
 class BrowserError(Exception):
 	"""Base class for all browser errors"""
+
+	message: str
+	details: dict[str, Any] | None = None
+	while_handling_event: BaseEvent[Any] | None = None
+
+	def __init__(self, message: str, details: dict[str, Any] | None = None, event: BaseEvent[Any] | None = None):
+		self.message = message
+		super().__init__(message)
+		self.details = details
+		self.while_handling_event = event
+
+	def __str__(self) -> str:
+		if self.details:
+			return f'{self.message} ({self.details}) during: {self.while_handling_event}'
+		else:
+			return f'{self.message} (while handling event: {self.while_handling_event})'
 
 
 class URLNotAllowedError(BrowserError):

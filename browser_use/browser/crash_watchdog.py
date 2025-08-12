@@ -45,7 +45,7 @@ class CrashWatchdog(BaseWatchdog):
 
 	# Configuration
 	network_timeout_seconds: float = Field(default=10.0)
-	check_interval_seconds: float = Field(default=30.0)  # Reduced frequency to reduce noise
+	check_interval_seconds: float = Field(default=5.0)  # Reduced frequency to reduce noise
 
 	# Private state
 	_active_requests: dict[str, NetworkRequestTracker] = PrivateAttr(default_factory=dict)
@@ -58,7 +58,7 @@ class CrashWatchdog(BaseWatchdog):
 		"""Start monitoring when browser is connected."""
 		# logger.debug('[CrashWatchdog] Browser connected event received, beginning monitoring')
 
-		await self._start_monitoring()
+		asyncio.create_task(self._start_monitoring())
 		# logger.debug(f'[CrashWatchdog] Monitoring task started: {self._monitoring_task and not self._monitoring_task.done()}')
 
 	async def on_BrowserStoppedEvent(self, event: BrowserStoppedEvent) -> None:
@@ -167,6 +167,11 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def _on_target_crash_cdp(self, target_id: str) -> None:
 		"""Handle target crash detected via CDP."""
+		# Remove crashed session from pool
+		if session := self.browser_session._cdp_session_pool.pop(target_id, None):
+			await session.disconnect()
+			self.logger.info(f'[CrashWatchdog] Removed crashed session from pool: {target_id}')
+		
 		# Get target info
 		cdp_client = self.browser_session.cdp_client
 		targets = await cdp_client.send.Target.getTargets()
@@ -234,6 +239,7 @@ class CrashWatchdog(BaseWatchdog):
 
 	async def _monitoring_loop(self) -> None:
 		"""Main monitoring loop."""
+		await asyncio.sleep(10) # give browser time to start up and load the first page after first LLM call
 		while True:
 			try:
 				await self._check_network_timeouts()
@@ -305,6 +311,12 @@ class CrashWatchdog(BaseWatchdog):
 			try:
 				if proc.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
 					self.logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')
+					# Clear all sessions from pool when browser crashes
+					for session in self.browser_session._cdp_session_pool.values():
+						await session.disconnect()
+					self.browser_session._cdp_session_pool.clear()
+					self.logger.info('[CrashWatchdog] Cleared all sessions from pool due to browser crash')
+					
 					self.event_bus.dispatch(
 						BrowserErrorEvent(
 							error_type='BrowserProcessCrashed',
