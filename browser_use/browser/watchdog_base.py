@@ -106,13 +106,14 @@ class BaseWatchdog(BaseModel):
 							# 	# Don't re-raise TimeoutError - let the agent continue
 							# 	return None
 							except Exception as e:
+								original_error = e
 								self.logger.error(
 									f'[{self.__class__.__name__}] {actual_handler.__name__}({event.event_type}) failed: {type(e).__name__}: {e}'
 								)
 
 								# attempt to repair potentially crashed CDP session
-								if self.browser_session.agent_focus and self.browser_session.agent_focus.target_id:
-									try:
+								try:
+									if self.browser_session.agent_focus and self.browser_session.agent_focus.target_id:
 										# Common issue with CDP, some calls need the target to be active/foreground to succeed:
 										#   screenshot, scroll, Page.handleJavaScriptDialog, and some others
 										self.logger.warning(
@@ -124,10 +125,14 @@ class BaseWatchdog(BaseModel):
 										await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
 											params={'targetId': self.browser_session.agent_focus.target_id}
 										)
-									except Exception as e:
-										self.logger.error(
-											f'[{self.__class__.__name__}] Failed to activate target: {type(e).__name__}: {e}'
+									else:
+										await self.browser_session.get_or_create_cdp_session(
+											target_id=None, new_socket=True, focus=True
 										)
+								except Exception as sub_error:
+									self.logger.error(
+										f'[{self.__class__.__name__}] Failed to re-create CDP session after original error {original_error}: due to {type(e).__name__}: {e}'
+									)
 
 								raise
 
