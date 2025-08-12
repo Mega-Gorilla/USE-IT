@@ -270,6 +270,9 @@ class BrowserSession(BaseModel):
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
 		# Check if handlers are already registered to prevent duplicates
+
+		from browser_use.browser.watchdog_base import BaseWatchdog
+
 		start_handlers = self.event_bus.handlers.get('BrowserStartEvent', [])
 		start_handler_names = [getattr(h, '__name__', str(h)) for h in start_handlers]
 
@@ -281,15 +284,23 @@ class BrowserSession(BaseModel):
 			)
 
 		# Register BrowserSession's event handlers
-		self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
-		self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
-		# Core navigation events that shouldn't be in optional watchdogs
-		self.event_bus.on(NavigateToUrlEvent, self.on_NavigateToUrlEvent)
-		self.event_bus.on(SwitchTabEvent, self.on_SwitchTabEvent)
-		self.event_bus.on(TabClosedEvent, self.on_TabClosedEvent)
-		self.event_bus.on(AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
-		# Track downloaded files
-		self.event_bus.on(FileDownloadedEvent, self.on_FileDownloadedEvent)
+		# self.event_bus.on(BrowserStartEvent, self.on_BrowserStartEvent)
+		# self.event_bus.on(BrowserStopEvent, self.on_BrowserStopEvent)
+		# # Core navigation events that shouldn't be in optional watchdogs
+		# self.event_bus.on(NavigateToUrlEvent, self.on_NavigateToUrlEvent)
+		# self.event_bus.on(SwitchTabEvent, self.on_SwitchTabEvent)
+		# self.event_bus.on(TabClosedEvent, self.on_TabClosedEvent)
+		# self.event_bus.on(AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
+		# # Track downloaded files
+		# self.event_bus.on(FileDownloadedEvent, self.on_FileDownloadedEvent)
+
+		BaseWatchdog.attach_handler_to_session(self, BrowserStartEvent, self.on_BrowserStartEvent)
+		BaseWatchdog.attach_handler_to_session(self, BrowserStopEvent, self.on_BrowserStopEvent)
+		BaseWatchdog.attach_handler_to_session(self, NavigateToUrlEvent, self.on_NavigateToUrlEvent)
+		BaseWatchdog.attach_handler_to_session(self, SwitchTabEvent, self.on_SwitchTabEvent)
+		BaseWatchdog.attach_handler_to_session(self, TabClosedEvent, self.on_TabClosedEvent)
+		BaseWatchdog.attach_handler_to_session(self, AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
+		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
 
 	async def start(self) -> None:
 		"""Start the browser session."""
@@ -783,7 +794,7 @@ class BrowserSession(BaseModel):
 		# self._crash_watchdog = CrashWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(BrowserConnectedEvent, self._crash_watchdog.on_BrowserConnectedEvent)
 		# self.event_bus.on(BrowserStoppedEvent, self._crash_watchdog.on_BrowserStoppedEvent)
-		# await self._crash_watchdog.attach_to_session()
+		# self._crash_watchdog.attach_to_session()
 
 		# Initialize DownloadsWatchdog
 		DownloadsWatchdog.model_rebuild()
@@ -793,7 +804,7 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(TabClosedEvent, self._downloads_watchdog.on_TabClosedEvent)
 		# self.event_bus.on(BrowserStoppedEvent, self._downloads_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(NavigationCompleteEvent, self._downloads_watchdog.on_NavigationCompleteEvent)
-		await self._downloads_watchdog.attach_to_session()
+		self._downloads_watchdog.attach_to_session()
 		if self.browser_profile.auto_download_pdfs:
 			self.logger.info('📄 PDF auto-download enabled for this session')
 
@@ -804,7 +815,7 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStopEvent, self._storage_state_watchdog.on_BrowserStopEvent)
 		# self.event_bus.on(SaveStorageStateEvent, self._storage_state_watchdog.on_SaveStorageStateEvent)
 		# self.event_bus.on(LoadStorageStateEvent, self._storage_state_watchdog.on_LoadStorageStateEvent)
-		await self._storage_state_watchdog.attach_to_session()
+		self._storage_state_watchdog.attach_to_session()
 
 		# Initialize LocalBrowserWatchdog
 		LocalBrowserWatchdog.model_rebuild()
@@ -812,14 +823,14 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserLaunchEvent, self._local_browser_watchdog.on_BrowserLaunchEvent)
 		# self.event_bus.on(BrowserKillEvent, self._local_browser_watchdog.on_BrowserKillEvent)
 		# self.event_bus.on(BrowserStopEvent, self._local_browser_watchdog.on_BrowserStopEvent)
-		await self._local_browser_watchdog.attach_to_session()
+		self._local_browser_watchdog.attach_to_session()
 
 		# Initialize SecurityWatchdog (replaces NavigationWatchdog for security checks only)
 		SecurityWatchdog.model_rebuild()
 		self._security_watchdog = SecurityWatchdog(event_bus=self.event_bus, browser_session=self)
 		# Core navigation is now handled in BrowserSession directly
 		# SecurityWatchdog only handles security policy enforcement
-		await self._security_watchdog.attach_to_session()
+		self._security_watchdog.attach_to_session()
 
 		# Initialize AboutBlankWatchdog
 		AboutBlankWatchdog.model_rebuild()
@@ -828,20 +839,20 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(BrowserStoppedEvent, self._aboutblank_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(TabCreatedEvent, self._aboutblank_watchdog.on_TabCreatedEvent)
 		# self.event_bus.on(TabClosedEvent, self._aboutblank_watchdog.on_TabClosedEvent)
-		await self._aboutblank_watchdog.attach_to_session()
+		self._aboutblank_watchdog.attach_to_session()
 
 		# Initialize PopupsWatchdog
 		PopupsWatchdog.model_rebuild()
 		self._popups_watchdog = PopupsWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(TabCreatedEvent, self._popups_watchdog.on_TabCreatedEvent)
 		# self.event_bus.on(DialogCloseEvent, self._popups_watchdog.on_DialogCloseEvent)
-		await self._popups_watchdog.attach_to_session()
+		self._popups_watchdog.attach_to_session()
 
 		# Initialize PermissionsWatchdog
 		PermissionsWatchdog.model_rebuild()
 		self._permissions_watchdog = PermissionsWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(BrowserConnectedEvent, self._permissions_watchdog.on_BrowserConnectedEvent)
-		await self._permissions_watchdog.attach_to_session()
+		self._permissions_watchdog.attach_to_session()
 
 		# Initialize DefaultActionWatchdog
 		DefaultActionWatchdog.model_rebuild()
@@ -856,21 +867,21 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(SendKeysEvent, self._default_action_watchdog.on_SendKeysEvent)
 		# self.event_bus.on(UploadFileEvent, self._default_action_watchdog.on_UploadFileEvent)
 		# self.event_bus.on(ScrollToTextEvent, self._default_action_watchdog.on_ScrollToTextEvent)
-		await self._default_action_watchdog.attach_to_session()
+		self._default_action_watchdog.attach_to_session()
 
 		ScreenshotWatchdog.model_rebuild()
 		self._screenshot_watchdog = ScreenshotWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(BrowserStartEvent, self._screenshot_watchdog.on_BrowserStartEvent)
 		# self.event_bus.on(BrowserStoppedEvent, self._screenshot_watchdog.on_BrowserStoppedEvent)
 		# self.event_bus.on(ScreenshotEvent, self._screenshot_watchdog.on_ScreenshotEvent)
-		await self._screenshot_watchdog.attach_to_session()
+		self._screenshot_watchdog.attach_to_session()
 
 		# Initialize DOMWatchdog (depends on ScreenshotWatchdog being registered)
 		DOMWatchdog.model_rebuild()
 		self._dom_watchdog = DOMWatchdog(event_bus=self.event_bus, browser_session=self)
 		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
 		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
-		await self._dom_watchdog.attach_to_session()
+		self._dom_watchdog.attach_to_session()
 
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._watchdogs_attached = True

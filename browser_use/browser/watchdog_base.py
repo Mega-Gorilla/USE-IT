@@ -48,22 +48,149 @@ class BaseWatchdog(BaseModel):
 		"""Get the logger from the browser session."""
 		return self.browser_session.logger
 
-	async def attach_to_session(self) -> None:
+	@staticmethod
+	def attach_handler_to_session(browser_session: 'BrowserSession', event_class: type[BaseEvent], handler) -> None:
+		"""Attach a single event handler to a browser session.
+
+		Args:
+			browser_session: The browser session to attach to
+			event_class: The event class to listen for
+			handler: The handler method (must start with 'on_' and end with event type)
+		"""
+		event_bus = browser_session.event_bus
+
+		# Validate handler naming convention
+		assert hasattr(handler, '__name__'), 'Handler must have a __name__ attribute'
+		assert handler.__name__.startswith('on_'), f'Handler {handler.__name__} must start with "on_"'
+		assert handler.__name__.endswith(event_class.__name__), (
+			f'Handler {handler.__name__} must end with event type {event_class.__name__}'
+		)
+
+		# Get the watchdog instance if this is a bound method
+		watchdog_instance = getattr(handler, '__self__', None)
+		watchdog_class_name = watchdog_instance.__class__.__name__ if watchdog_instance else 'Unknown'
+
+		# Color codes for logging
+		red = '\033[91m'
+		green = '\033[92m'
+		yellow = '\033[93m'
+		magenta = '\033[95m'
+		cyan = '\033[96m'
+		reset = '\033[0m'
+
+		# Create a wrapper function with unique name to avoid duplicate handler warnings
+		# Capture handler by value to avoid closure issues
+		def make_unique_handler(actual_handler):
+			async def unique_handler(event):
+				# just for debug logging, not used for anything else
+				parent_event = event_bus.event_history.get(event.event_parent_id) if event.event_parent_id else None
+				grandparent_event = (
+					event_bus.event_history.get(parent_event.event_parent_id)
+					if parent_event and parent_event.event_parent_id
+					else None
+				)
+				parent = (
+					f'{yellow}↲  triggered by {cyan}on_{parent_event.event_type}#{parent_event.event_id[-4:]}{reset}'
+					if parent_event
+					else f'{magenta}👈 by Agent{reset}'
+				)
+				grandparent = (
+					(
+						f'{yellow}↲  under {cyan}{grandparent_event.event_type}#{grandparent_event.event_id[-4:]}{reset}'
+						if grandparent_event
+						else f'{magenta}👈 by Agent{reset}'
+					)
+					if parent_event
+					else ''
+				)
+				event_str = f'#{event.event_id[-4:]}'
+				time_start = time.time()
+				watchdog_and_handler_str = f'[{watchdog_class_name}.{actual_handler.__name__}({event_str})]'.ljust(54)
+				browser_session.logger.debug(
+					f'{cyan}🚌 {watchdog_and_handler_str} ⏳ Starting...      {reset} {parent} {grandparent}'
+				)
+
+				try:
+					# **EXECUTE THE EVENT HANDLER FUNCTION**
+					result = await actual_handler(event)
+
+					if isinstance(result, Exception):
+						raise result
+
+					# just for debug logging, not used for anything else
+					time_end = time.time()
+					time_elapsed = time_end - time_start
+					result_summary = '' if result is None else f' ➡️ {magenta}<{type(result).__name__}>{reset}'
+					parents_summary = f' {parent}'.replace('↲  triggered by ', f'⤴  {green}returned to  {cyan}').replace(
+						'👈 by Agent', f'👉 {green}returned to  {magenta}Agent{reset}'
+					)
+					browser_session.logger.debug(
+						f'{green}🚌 {watchdog_and_handler_str} ✅ Succeeded ({time_elapsed:.2f}s){reset}{result_summary}{parents_summary}'
+					)
+					return result
+				except Exception as e:
+					time_end = time.time()
+					time_elapsed = time_end - time_start
+					original_error = e
+					browser_session.logger.error(
+						f'{red}🚌 {watchdog_and_handler_str} ❌ Failed ({time_elapsed:.2f}s): {type(e).__name__}: {e}{reset}'
+					)
+
+					# attempt to repair potentially crashed CDP session
+					try:
+						if browser_session.agent_focus and browser_session.agent_focus.target_id:
+							# Common issue with CDP, some calls need the target to be active/foreground to succeed:
+							#   screenshot, scroll, Page.handleJavaScriptDialog, and some others
+							browser_session.logger.debug(
+								f'{yellow}🚌 {watchdog_and_handler_str} ⚠️ Re-foregrounding target to try and recover crashed CDP session\n\t{browser_session.agent_focus}{reset}'
+							)
+							del browser_session._cdp_session_pool[browser_session.agent_focus.target_id]
+							browser_session.agent_focus = await browser_session.get_or_create_cdp_session(
+								target_id=browser_session.agent_focus.target_id, new_socket=True
+							)
+							await browser_session.agent_focus.cdp_client.send.Target.activateTarget(
+								params={'targetId': browser_session.agent_focus.target_id}
+							)
+						else:
+							await browser_session.get_or_create_cdp_session(target_id=None, new_socket=True, focus=True)
+					except Exception as sub_error:
+						if 'ConnectionClosedError' in str(type(sub_error)):
+							browser_session.logger.error(
+								f'{red}🚌 {watchdog_and_handler_str} ❌ Browser closed or CDP Connection disconnected by remote. {red}{type(sub_error).__name__}: {sub_error}{reset}\n'
+							)
+							raise
+						else:
+							browser_session.logger.error(
+								f'{red}🚌 {watchdog_and_handler_str} ❌ CDP connected but failed to re-create CDP session after error "{type(original_error).__name__}: {original_error}" in {cyan}{actual_handler.__name__}({event.event_type}#{event.event_id[-4:]}){reset}: due to {red}{type(sub_error).__name__}: {sub_error}{reset}\n'
+							)
+
+					raise
+
+			return unique_handler
+
+		unique_handler = make_unique_handler(handler)
+		unique_handler.__name__ = f'{watchdog_class_name}.{handler.__name__}'
+
+		# Check if this handler is already registered - throw error if duplicate
+		existing_handlers = event_bus.handlers.get(event_class.__name__, [])
+		handler_names = [getattr(h, '__name__', str(h)) for h in existing_handlers]
+
+		if unique_handler.__name__ in handler_names:
+			raise RuntimeError(
+				f'[{watchdog_class_name}] Duplicate handler registration attempted! '
+				f'Handler {unique_handler.__name__} is already registered for {event_class.__name__}. '
+				f'This likely means attach_to_session() was called multiple times.'
+			)
+
+		event_bus.on(event_class, unique_handler)
+
+	def attach_to_session(self) -> None:
 		"""Attach watchdog to its browser session and start monitoring.
 
 		This method handles event listener registration. The watchdog is already
 		bound to a browser session via self.browser_session from initialization.
 		"""
 		# Register event handlers automatically based on method names
-
-		red = '\033[91m'
-		green = '\033[92m'
-		yellow = '\033[93m'
-		blue = '\033[94m'
-		magenta = '\033[95m'
-		cyan = '\033[96m'
-		reset = '\033[0m'
-
 		assert self.browser_session is not None, 'Root CDP client not initialized - browser may not be connected yet'
 
 		from browser_use.browser import events
@@ -93,103 +220,9 @@ class BaseWatchdog(BaseModel):
 
 					handler = getattr(self, method_name)
 
-					# Create a wrapper function with unique name to avoid duplicate handler warnings
-					# Capture handler by value to avoid closure issues
-					def make_unique_handler(actual_handler):
-						async def unique_handler(event):
-							parent_event = (
-								self.event_bus.event_history.get(event.event_parent_id) if event.event_parent_id else None
-							)
-							parent = (
-								f'{yellow}(during handling of parent: {parent_event.event_type}#{parent_event.event_id[-4:]}){reset}'
-								if parent_event
-								else f'{green}(dispatched by agent){reset}'
-							)
-							event_str = f'{event.event_type}#{event.event_id[-4:]}'
-							time_start = time.time()
-							self.logger.debug(
-								f'{cyan}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ⏳ Starting...{reset} {parent}'
-							)
-							try:
-								result = await actual_handler(event)
-								if isinstance(result, Exception):
-									raise result
-								time_end = time.time()
-								time_elapsed = time_end - time_start
-								result_summary = '' if result is None else f' -> <{type(result).__name__}>'
-								self.logger.debug(
-									f'{green}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ✅ Succeeded ({time_elapsed:.2f}s){result_summary}{reset}'
-								)
-								return result
-							# except TimeoutError as e:
-							# 	# Handle timeouts gracefully - don't crash the agent
-							# 	self.logger.warning(
-							# 		f'⏰ [{self.__class__.__name__}] {actual_handler.__name__} timed out - continuing gracefully. '
-							# 		f'Event: {event.__class__.__name__}. Error: {e}'
-							# 	)
-							# 	# Don't re-raise TimeoutError - let the agent continue
-							# 	return None
-							except Exception as e:
-								time_end = time.time()
-								time_elapsed = time_end - time_start
-								original_error = e
-								self.logger.error(
-									f'{red}🚌 [{self.__class__.__name__}] {actual_handler.__name__}({event_str}) ❌ Raised an error ({time_elapsed:.2f}s): {type(e).__name__}:\n\t{e}{reset}'
-								)
-
-								# attempt to repair potentially crashed CDP session
-								try:
-									if self.browser_session.agent_focus and self.browser_session.agent_focus.target_id:
-										# Common issue with CDP, some calls need the target to be active/foreground to succeed:
-										#   screenshot, scroll, Page.handleJavaScriptDialog, and some others
-										self.logger.warning(
-											f'{yellow}🚌 [{self.__class__.__name__}] ⚠️ Re-foregrounding target to try and recover crashed CDP session {self.browser_session.agent_focus}{reset}'
-										)
-										del self.browser_session._cdp_session_pool[self.browser_session.agent_focus.target_id]
-										self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
-											target_id=self.browser_session.agent_focus.target_id, new_socket=True
-										)
-										await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
-											params={'targetId': self.browser_session.agent_focus.target_id}
-										)
-									else:
-										await self.browser_session.get_or_create_cdp_session(
-											target_id=None, new_socket=True, focus=True
-										)
-								except Exception as sub_error:
-									self.logger.error(
-										f'{red}🚌 [{self.__class__.__name__}] ❌ Failed to re-create CDP session after original error {original_error} in {actual_handler.__name__}({event.event_type}#{event.event_id[-4:]}): due to {type(sub_error).__name__}: {sub_error}{reset}'
-									)
-
-								raise
-
-						return unique_handler
-
-					unique_handler = make_unique_handler(handler)
-					unique_handler.__name__ = f'{self.__class__.__name__}.{method_name}'
-
-					# Check if this handler is already registered - throw error if duplicate
-					existing_handlers = self.event_bus.handlers.get(event_class.__name__, [])
-					handler_names = [getattr(h, '__name__', str(h)) for h in existing_handlers]
-
-					if unique_handler.__name__ in handler_names:
-						raise RuntimeError(
-							f'[{self.__class__.__name__}] Duplicate handler registration attempted! '
-							f'Handler {unique_handler.__name__} is already registered for {event_name}. '
-							f'This likely means attach_to_session() was called multiple times.'
-						)
-
-					self.event_bus.on(event_class, unique_handler)
+					# Use the static helper to attach the handler
+					self.attach_handler_to_session(self.browser_session, event_class, handler)
 					registered_events.add(event_class)
-					# logger.debug(
-					# 	f'[{self.__class__.__name__}] Registered handler {method_name} for {event_name}, event_class ID: {id(event_class)}, module: {event_class.__module__}'
-					# )
-
-					# Debug: Verify handler was actually stored
-					# stored_handlers = self.event_bus.handlers.get(event_class, [])
-					# logger.debug(
-					# 	f'[{self.__class__.__name__}] After registration, {event_name} has {len(stored_handlers)} handlers in EventBus'
-					# )
 
 		# ASSERTION: If LISTENS_TO is defined, ensure all declared events have handlers
 		if self.LISTENS_TO:
