@@ -115,7 +115,7 @@ class DOMTreeSerializer:
 			is_interactive = self._is_interactive_cached(node)
 
 			is_visible = node.snapshot_node and node.is_visible
-			is_scrollable = node.is_scrollable
+			is_scrollable = node.is_actually_scrollable
 
 			# Include if interactive (regardless of visibility), or scrollable, or has children to process
 			should_include = (is_interactive and is_visible) or is_scrollable or node.children_and_shadow_roots
@@ -162,7 +162,7 @@ class DOMTreeSerializer:
 
 		if (
 			(is_interactive_opt and is_visible)  # Only keep interactive nodes that are visible
-			or node.original_node.is_scrollable
+			or node.original_node.is_actually_scrollable
 			or node.original_node.node_type == NodeType.TEXT_NODE
 			or node.children
 		):
@@ -228,24 +228,21 @@ class DOMTreeSerializer:
 				return '\n'.join(formatted_text)
 
 			# Add element with interactive_index if clickable, scrollable, or iframe
-			if (
-				node.interactive_index is not None
-				or node.original_node.is_scrollable
-				or node.original_node.tag_name.upper() == 'IFRAME'
-			):
+			is_any_scrollable = node.original_node.is_actually_scrollable
+			if node.interactive_index is not None or is_any_scrollable or node.original_node.tag_name.upper() == 'IFRAME':
 				next_depth += 1
 
 				# Build attributes string
 				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, '')
 
 				# Build the line
-				if node.original_node.is_scrollable and node.interactive_index is None:
+				if is_any_scrollable and node.interactive_index is None:
 					# Scrollable but not clickable
 					line = f'{depth_str}|SCROLL|<{node.original_node.tag_name}'
 				elif node.interactive_index is not None:
 					# Clickable (and possibly scrollable)
 					new_prefix = '*' if node.is_new else ''
-					scroll_prefix = '|SCROLL+' if node.original_node.is_scrollable else '['
+					scroll_prefix = '|SCROLL+' if is_any_scrollable else '['
 					line = f'{depth_str}{new_prefix}{scroll_prefix}{node.interactive_index}]<{node.original_node.tag_name}'
 				elif node.original_node.tag_name.upper() == 'IFRAME':
 					# Iframe element (not interactive)
@@ -257,6 +254,13 @@ class DOMTreeSerializer:
 					line += f' {attributes_html_str}'
 
 				line += ' />'
+
+				# Add scroll information for scrollable elements
+				if is_any_scrollable:
+					scroll_info_text = node.original_node.get_scroll_info_text()
+					if scroll_info_text:
+						line += f' ({scroll_info_text})'
+
 				formatted_text.append(line)
 
 		elif node.original_node.node_type == NodeType.TEXT_NODE:
