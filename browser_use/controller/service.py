@@ -693,7 +693,7 @@ Provide the extracted information in a clear, structured format."""
 							return {
 								type: 'select',
 								options: Array.from(element.options).map((opt, idx) => ({
-									text: opt.text,
+									text: opt.text.trim(),
 									value: opt.value,
 									index: idx,
 									selected: opt.selected
@@ -894,8 +894,14 @@ Provide the extracted information in a clear, structured format."""
 						// Handle native select elements
 						if (element.tagName.toLowerCase() === 'select') {
 							const options = Array.from(element.options);
+							const targetTextLower = targetText.toLowerCase();
+							
 							for (const option of options) {
-								if (option.text === targetText) {
+								const optionTextLower = option.text.trim().toLowerCase();
+								const optionValueLower = option.value.toLowerCase();
+								
+								// Match against both text and value (case-insensitive)
+								if (optionTextLower === targetTextLower || optionValueLower === targetTextLower) {
 									element.value = option.value;
 									option.selected = true;
 									
@@ -905,14 +911,14 @@ Provide the extracted information in a clear, structured format."""
 									
 									return {
 										success: true,
-										message: `Selected option: ${targetText}`,
+										message: `Selected option: ${option.text.trim()} (value: ${option.value})`,
 										value: option.value
 									};
 								}
 							}
 							return {
 								success: false,
-								error: `Option with text '${targetText}' not found in select element`
+								error: `Option with text or value '${targetText}' not found in select element`
 							};
 						}
 						
@@ -920,74 +926,88 @@ Provide the extracted information in a clear, structured format."""
 						const role = element.getAttribute('role');
 						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
 							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							const targetTextLower = targetText.toLowerCase();
 							
 							for (const item of menuItems) {
-								if (item.textContent && item.textContent.trim() === targetText) {
-									// Clear previous selections
-									menuItems.forEach(mi => {
-										mi.setAttribute('aria-selected', 'false');
-										mi.classList.remove('selected');
-									});
+								if (item.textContent) {
+									const itemTextLower = item.textContent.trim().toLowerCase();
+									const itemValueLower = (item.getAttribute('data-value') || '').toLowerCase();
 									
-									// Select this item
-									item.setAttribute('aria-selected', 'true');
-									item.classList.add('selected');
-									
-									// Trigger click and change events
-									item.click();
-									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
-									item.dispatchEvent(clickEvent);
-									
-									return {
-										success: true,
-										message: `Selected ARIA menu item: ${targetText}`
-									};
+									// Match against both text and data-value (case-insensitive)
+									if (itemTextLower === targetTextLower || itemValueLower === targetTextLower) {
+										// Clear previous selections
+										menuItems.forEach(mi => {
+											mi.setAttribute('aria-selected', 'false');
+											mi.classList.remove('selected');
+										});
+										
+										// Select this item
+										item.setAttribute('aria-selected', 'true');
+										item.classList.add('selected');
+										
+										// Trigger click and change events
+										item.click();
+										const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+										item.dispatchEvent(clickEvent);
+										
+										return {
+											success: true,
+											message: `Selected ARIA menu item: ${item.textContent.trim()}`
+										};
+									}
 								}
 							}
 							return {
 								success: false,
-								error: `Menu item with text '${targetText}' not found`
+								error: `Menu item with text or value '${targetText}' not found`
 							};
 						}
 						
 						// Handle Semantic UI or custom dropdowns
 						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
 							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							const targetTextLower = targetText.toLowerCase();
 							
 							for (const item of menuItems) {
-								if (item.textContent && item.textContent.trim() === targetText) {
-									// Clear previous selections
-									menuItems.forEach(mi => {
-										mi.classList.remove('selected', 'active');
-									});
+								if (item.textContent) {
+									const itemTextLower = item.textContent.trim().toLowerCase();
+									const itemValueLower = (item.getAttribute('data-value') || '').toLowerCase();
 									
-									// Select this item
-									item.classList.add('selected', 'active');
-									
-									// Update dropdown text if there's a text element
-									const textElement = element.querySelector('.text');
-									if (textElement) {
-										textElement.textContent = targetText;
+									// Match against both text and data-value (case-insensitive)
+									if (itemTextLower === targetTextLower || itemValueLower === targetTextLower) {
+										// Clear previous selections
+										menuItems.forEach(mi => {
+											mi.classList.remove('selected', 'active');
+										});
+										
+										// Select this item
+										item.classList.add('selected', 'active');
+										
+										// Update dropdown text if there's a text element
+										const textElement = element.querySelector('.text');
+										if (textElement) {
+											textElement.textContent = item.textContent.trim();
+										}
+										
+										// Trigger click and change events
+										item.click();
+										const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+										item.dispatchEvent(clickEvent);
+										
+										// Also dispatch on the main dropdown element
+										const dropdownChangeEvent = new Event('change', { bubbles: true });
+										element.dispatchEvent(dropdownChangeEvent);
+										
+										return {
+											success: true,
+											message: `Selected custom dropdown item: ${item.textContent.trim()}`
+										};
 									}
-									
-									// Trigger click and change events
-									item.click();
-									const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
-									item.dispatchEvent(clickEvent);
-									
-									// Also dispatch on the main dropdown element
-									const dropdownChangeEvent = new Event('change', { bubbles: true });
-									element.dispatchEvent(dropdownChangeEvent);
-									
-									return {
-										success: true,
-										message: `Selected custom dropdown item: ${targetText}`
-									};
 								}
 							}
 							return {
 								success: false,
-								error: `Custom dropdown item with text '${targetText}' not found`
+								error: `Custom dropdown item with text or value '${targetText}' not found`
 							};
 						}
 						
@@ -1018,11 +1038,13 @@ Provide the extracted information in a clear, structured format."""
 					
 					// First try the target element itself
 					let selectionResult = attemptSelection(startElement);
-					if (selectionResult && selectionResult.success) {
+					if (selectionResult) {
+						// If attemptSelection returned a result (success or failure), use it
+						// Don't search children if we found a dropdown element but selection failed
 						return selectionResult;
 					}
 					
-					// If target element selection failed, search children up to depth 4
+					// Only search children if target element is not a dropdown element
 					selectionResult = searchChildrenForSelection(startElement, 4);
 					if (selectionResult && selectionResult.success) {
 						return selectionResult;
