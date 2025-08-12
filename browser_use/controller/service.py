@@ -120,8 +120,7 @@ class Controller(Generic[Context]):
 					elif tab.url == 'about:blank' and tab.title:
 						# Check if this is our agent's about:blank page with DVD animation
 						# The title should be "Starting agent XXXX..." where XXXX is the browser_session_label
-						expected_title = f'Starting agent {browser_session_label}...'
-						if tab.title == expected_title or browser_session_label in tab.title:
+						if browser_session_label in tab.title:
 							# This is our agent's about:blank page
 							logger.debug(f'Found agent-owned about:blank tab at index {i} with title: "{tab.title}", reusing it')
 

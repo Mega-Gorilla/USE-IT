@@ -97,7 +97,7 @@ class ClickElementEvent(ElementSelectedEvent[None]):
 	button: Literal['left', 'right', 'middle'] = 'left'
 	new_tab: bool = Field(
 		default=False,
-		description='Set True to open any link clicked in a new tab in the background, can use switch_tab(page_id=-1) after to focus it',
+		description='Set True to open any link clicked in a new tab in the background, can use switch_tab(page_id=0) after to focus it',
 	)
 	# click_count: int = 1           # TODO
 	# expect_download: bool = False  # moved to downloads_watchdog.py
