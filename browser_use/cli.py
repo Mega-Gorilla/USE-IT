@@ -269,42 +269,89 @@ class BrowserUseApp(App):
 		layout: vertical;
 		height: auto;
 		min-height: 5;
+		margin: 0 0 1 0;
 	}
 	
 	#top-panels {
 		layout: horizontal;
 		height: auto;
 		width: 100%;
-		min-height: 5;
 	}
 	
 	#browser-panel, #model-panel {
 		width: 1fr;
-		height: auto;
-		border: solid $primary-darken-2;
+		height: 100%;
 		padding: 1;
-		overflow: auto;
-		margin: 0 1 0 0;
-		padding: 1;
+		border-right: solid $primary;
+	}
+	
+	#model-panel {
+		border-right: none;
 	}
 	
 	#tasks-panel {
-		width: 100%;
-		height: 1fr;
-		min-height: 20;
-		max-height: 60vh;
-		border: solid $primary-darken-2;
-		padding: 1;
+		height: auto;
+		max-height: 10;
 		overflow-y: scroll;
-		margin: 1 0 0 0;
+		padding: 1;
+		border-top: solid $primary;
 	}
 	
-	#browser-panel {
-		border-left: solid $primary-darken-2;
+	#browser-info, #model-info, #tasks-info {
+		height: auto;
+		margin: 0;
+		padding: 0;
+		background: transparent;
+		overflow-y: auto;
+		min-height: 3;
 	}
 	
-	#results-container {
+	#three-column-container {
+		height: 1fr;
+		layout: horizontal;
+		width: 100%;
 		display: none;
+	}
+	
+	#main-output-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $primary;
+		padding: 0;
+		margin: 0 1 0 0;
+	}
+	
+	#events-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $warning;
+		padding: 0;
+		margin: 0 1 0 0;
+	}
+	
+	#cdp-column {
+		width: 1fr;
+		height: 100%;
+		border: solid $accent;
+		padding: 0;
+		margin: 0;
+	}
+	
+	#main-output-log, #events-log, #cdp-log {
+		height: 100%;
+		overflow-y: scroll;
+		background: $surface;
+		color: $text;
+		width: 100%;
+		padding: 1;
+	}
+	
+	#events-log {
+		color: $warning;
+	}
+	
+	#cdp-log {
+		color: $accent-lighten-2;
 	}
 	
 	#logo-panel {
@@ -374,46 +421,6 @@ class BrowserUseApp(App):
 	#task-input {
 		width: 100%;
 	}
-	
-	#working-panel {
-		border: solid $warning;
-		padding: 1;
-		margin: 1 0;
-	}
-	
-	#completion-panel {
-		border: solid $success;
-		padding: 1;
-		margin: 1 0;
-	}
-	
-	#results-container {
-		height: 1fr;
-		overflow: auto;
-		border: none;
-	}
-	
-	#results-log {
-		height: auto;
-		overflow-y: scroll;
-		background: $surface;
-		color: $text;
-		width: 100%;
-	}
-	
-	.log-entry {
-		margin: 0;
-		padding: 0;
-	}
-	
-	#browser-info, #model-info, #tasks-info {
-		height: auto;
-		margin: 0;
-		padding: 0;
-		background: transparent;
-		overflow-y: auto;
-		min-height: 5;
-	}
 	"""
 
 	BINDINGS = [
@@ -436,6 +443,11 @@ class BrowserUseApp(App):
 		self.history_index = len(self.task_history)
 		# Initialize telemetry
 		self._telemetry = ProductTelemetry()
+		# Store for event bus handler
+		self._event_bus_handler_id = None
+		self._event_bus_handler_func = None
+		# Timer for info panel updates
+		self._info_panel_timer = None
 
 	def setup_richlog_logging(self) -> None:
 		"""Set up logging to redirect to RichLog widget instead of stdout."""
@@ -445,8 +457,8 @@ class BrowserUseApp(App):
 		except AttributeError:
 			pass  # Level already exists, which is fine
 
-		# Get the RichLog widget
-		rich_log = self.query_one('#results-log', RichLog)
+		# Get the main output RichLog widget
+		rich_log = self.query_one('#main-output-log', RichLog)
 
 		# Create and set up the custom handler
 		log_handler = RichLogHandler(rich_log)
@@ -468,7 +480,7 @@ class BrowserUseApp(App):
 		# Configure root logger - Replace ALL handlers, not just stdout handlers
 		root = logging.getLogger()
 
-		# Clear all existing handlers and add only our richlog handler
+		# Clear all existing handlers to prevent output to stdout/stderr
 		root.handlers = []
 		root.addHandler(log_handler)
 
@@ -480,13 +492,29 @@ class BrowserUseApp(App):
 		else:
 			root.setLevel(logging.INFO)
 
-		# Configure browser_use logger
+		# Configure browser_use logger and all its sub-loggers
 		browser_use_logger = logging.getLogger('browser_use')
 		browser_use_logger.propagate = False  # Don't propagate to root logger
 		browser_use_logger.handlers = [log_handler]  # Replace any existing handlers
 		browser_use_logger.setLevel(root.level)
 
-		# Silence third-party loggers
+		# Also ensure agent loggers go to the main output
+		# Use a wildcard pattern to catch all agent-related loggers
+		for logger_name in ['browser_use.Agent', 'browser_use.controller', 'browser_use.agent', 'browser_use.agent.service']:
+			agent_logger = logging.getLogger(logger_name)
+			agent_logger.propagate = False
+			agent_logger.handlers = [log_handler]
+			agent_logger.setLevel(root.level)
+
+		# Also catch any dynamically created agent loggers with task IDs
+		for name, logger in logging.Logger.manager.loggerDict.items():
+			if isinstance(name, str) and 'browser_use.Agent' in name:
+				if isinstance(logger, logging.Logger):
+					logger.propagate = False
+					logger.handlers = [log_handler]
+					logger.setLevel(root.level)
+
+		# Silence third-party loggers but keep them using our handler
 		for logger_name in [
 			'WDM',
 			'httpx',
@@ -501,11 +529,14 @@ class BrowserUseApp(App):
 			'PIL.PngImagePlugin',
 			'trafilatura.htmlprocessing',
 			'trafilatura',
+			'groq',
+			'portalocker',
+			'portalocker.utils',
 		]:
 			third_party = logging.getLogger(logger_name)
 			third_party.setLevel(logging.ERROR)
 			third_party.propagate = False
-			third_party.handlers = []  # Clear any existing handlers
+			third_party.handlers = [log_handler]  # Use our handler to prevent stdout/stderr leakage
 
 	def on_mount(self) -> None:
 		"""Set up components when app is mounted."""
@@ -545,13 +576,15 @@ class BrowserUseApp(App):
 			logger.error(f'Error focusing input field: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
-		# Step 5: Start continuous info panel updates
-		logger.debug('Starting info panel updates...')
+		# Step 5: Setup CDP logger and event bus listener if browser session is available
+		logger.debug('Setting up CDP logging and event bus listener...')
 		try:
-			self.update_info_panels()
-			logger.debug('Info panel updates started')
+			self.setup_cdp_logger()
+			if self.browser_session:
+				self.setup_event_bus_listener()
+			logger.debug('CDP logging and event bus setup complete')
 		except Exception as e:
-			logger.error(f'Error starting info panel updates: {str(e)}', exc_info=True)
+			logger.error(f'Error setting up CDP logging/event bus: {str(e)}', exc_info=True)
 			# Non-critical, continue
 
 		# Capture telemetry for CLI start
@@ -651,38 +684,372 @@ class BrowserUseApp(App):
 			event.input.value = ''
 
 	def hide_intro_panels(self) -> None:
-		"""Hide the intro panels, show info panels, and expand the log view."""
+		"""Hide the intro panels, show info panels and the three-column view."""
 		try:
 			# Get the panels
 			logo_panel = self.query_one('#logo-panel')
 			links_panel = self.query_one('#links-panel')
 			paths_panel = self.query_one('#paths-panel')
 			info_panels = self.query_one('#info-panels')
-			tasks_panel = self.query_one('#tasks-panel')
-			# Hide intro panels if they're visible and show info panels
+			three_column = self.query_one('#three-column-container')
+
+			# Hide intro panels if they're visible and show info panels + three-column view
 			if logo_panel.display:
-				# Log for debugging
-				logging.info('Hiding intro panels and showing info panels')
+				logging.info('Hiding intro panels and showing info panels + three-column view')
 
 				logo_panel.display = False
 				links_panel.display = False
 				paths_panel.display = False
 
-				# Show info panels
+				# Show info panels and three-column container
 				info_panels.display = True
-				tasks_panel.display = True
+				three_column.display = True
 
-				# Make results container take full height
-				results_container = self.query_one('#results-container')
-				results_container.styles.height = '1fr'
+				# Start updating info panels
+				self.update_info_panels()
 
-				# Configure the log
-				results_log = self.query_one('#results-log')
-				results_log.styles.height = 'auto'
-
-				logging.info('Panels should now be visible')
+				logging.info('Info panels and three-column view should now be visible')
 		except Exception as e:
 			logging.error(f'Error in hide_intro_panels: {str(e)}')
+
+	def setup_event_bus_listener(self) -> None:
+		"""Setup listener for browser session event bus."""
+		if not self.browser_session or not self.browser_session.event_bus:
+			return
+
+		# Clean up any existing handler before registering a new one
+		if self._event_bus_handler_func is not None:
+			try:
+				# Remove handler from the event bus's internal handlers dict
+				if hasattr(self.browser_session.event_bus, 'handlers'):
+					# Find and remove our handler function from all event patterns
+					for event_type, handler_list in list(self.browser_session.event_bus.handlers.items()):
+						# Remove our specific handler function object
+						if self._event_bus_handler_func in handler_list:
+							handler_list.remove(self._event_bus_handler_func)
+							logging.debug(f'Removed old handler from event type: {event_type}')
+			except Exception as e:
+				logging.debug(f'Error cleaning up event bus handler: {e}')
+			self._event_bus_handler_func = None
+			self._event_bus_handler_id = None
+
+		try:
+			# Get the events log widget
+			events_log = self.query_one('#events-log', RichLog)
+		except Exception:
+			# Widget not ready yet
+			return
+
+		# Create handler to log all events
+		def log_event(event):
+			event_name = event.__class__.__name__
+			# Format event data nicely
+			try:
+				if hasattr(event, 'model_dump'):
+					event_data = event.model_dump(exclude_unset=True)
+					# Remove large fields
+					if 'screenshot' in event_data:
+						event_data['screenshot'] = '<bytes>'
+					if 'dom_state' in event_data:
+						event_data['dom_state'] = '<truncated>'
+					event_str = str(event_data) if event_data else ''
+				else:
+					event_str = str(event)
+
+				# Truncate long strings
+				if len(event_str) > 200:
+					event_str = event_str[:200] + '...'
+
+				events_log.write(f'[yellow]→ {event_name}[/] {event_str}')
+			except Exception as e:
+				events_log.write(f'[red]→ {event_name}[/] (error formatting: {e})')
+
+		# Store the handler function before registering it
+		self._event_bus_handler_func = log_event
+		self._event_bus_handler_id = id(log_event)
+
+		# Register wildcard handler for all events
+		self.browser_session.event_bus.on('*', log_event)
+		logging.debug(f'Registered new event bus handler with id: {self._event_bus_handler_id}')
+
+	def setup_cdp_logger(self) -> None:
+		"""Setup CDP message logger to capture already-transformed CDP logs."""
+		# No need to configure levels - setup_logging() already handles that
+		# We just need to capture the transformed logs and route them to the CDP pane
+
+		# Get the CDP log widget
+		cdp_log = self.query_one('#cdp-log', RichLog)
+
+		# Create custom handler for CDP logging
+		class CDPLogHandler(logging.Handler):
+			def __init__(self, rich_log: RichLog):
+				super().__init__()
+				self.rich_log = rich_log
+
+			def emit(self, record):
+				try:
+					msg = self.format(record)
+					# Truncate very long messages
+					if len(msg) > 300:
+						msg = msg[:300] + '...'
+					# Color code by level
+					if record.levelno >= logging.ERROR:
+						self.rich_log.write(f'[red]{msg}[/]')
+					elif record.levelno >= logging.WARNING:
+						self.rich_log.write(f'[yellow]{msg}[/]')
+					else:
+						self.rich_log.write(f'[cyan]{msg}[/]')
+				except Exception:
+					self.handleError(record)
+
+		# Setup handler for cdp_use loggers
+		cdp_handler = CDPLogHandler(cdp_log)
+		cdp_handler.setFormatter(logging.Formatter('%(message)s'))
+		cdp_handler.setLevel(logging.DEBUG)
+
+		# Route CDP logs to the CDP pane
+		# These are already transformed by cdp_use and at the right level from setup_logging
+		for logger_name in ['websockets.client', 'cdp_use', 'cdp_use.client', 'cdp_use.cdp', 'cdp_use.cdp.registry']:
+			logger = logging.getLogger(logger_name)
+			# Add our handler (don't replace - keep existing console handler too)
+			if cdp_handler not in logger.handlers:
+				logger.addHandler(cdp_handler)
+
+	def scroll_to_input(self) -> None:
+		"""Scroll to the input field to ensure it's visible."""
+		input_container = self.query_one('#task-input-container')
+		input_container.scroll_visible()
+
+	def run_task(self, task: str) -> None:
+		"""Launch the task in a background worker."""
+		# Create or update the agent
+		agent_settings = AgentSettings.model_validate(self.config.get('agent', {}))
+
+		# Get the logger
+		logger = logging.getLogger('browser_use.app')
+
+		# Make sure intro is hidden and log is ready
+		self.hide_intro_panels()
+
+		# Clear the main output log to start fresh
+		rich_log = self.query_one('#main-output-log', RichLog)
+		rich_log.clear()
+
+		if self.agent is None:
+			if not self.llm:
+				raise RuntimeError('LLM not initialized')
+			self.agent = Agent(
+				task=task,
+				llm=self.llm,
+				controller=self.controller if self.controller else Controller(),
+				browser_session=self.browser_session,
+				source='cli',
+				**agent_settings.model_dump(),
+			)
+			# Update our browser_session reference to point to the agent's
+			if hasattr(self.agent, 'browser_session'):
+				self.browser_session = self.agent.browser_session
+				# Set up event bus listener (will clean up any old handler first)
+				self.setup_event_bus_listener()
+		else:
+			self.agent.add_new_task(task)
+
+		# Let the agent run in the background
+		async def agent_task_worker() -> None:
+			logger.debug('\n🚀 Working on task: %s', task)
+
+			# Set flags to indicate the agent is running
+			if self.agent:
+				self.agent.running = True  # type: ignore
+				self.agent.last_response_time = 0  # type: ignore
+
+			# Panel updates are already happening via the timer in update_info_panels
+
+			task_start_time = time.time()
+			error_msg = None
+
+			try:
+				# Capture telemetry for message sent
+				self._telemetry.capture(
+					CLITelemetryEvent(
+						version=get_browser_use_version(),
+						action='message_sent',
+						mode='interactive',
+						model=self.llm.model if self.llm and hasattr(self.llm, 'model') else None,
+						model_provider=self.llm.provider if self.llm and hasattr(self.llm, 'provider') else None,
+					)
+				)
+
+				# Run the agent task, redirecting output to RichLog through our handler
+				if self.agent:
+					await self.agent.run()
+			except Exception as e:
+				error_msg = str(e)
+				logger.error('\nError running agent: %s', str(e))
+			finally:
+				# Clear the running flag
+				if self.agent:
+					self.agent.running = False  # type: ignore
+
+				# Capture telemetry for task completion
+				duration = time.time() - task_start_time
+				self._telemetry.capture(
+					CLITelemetryEvent(
+						version=get_browser_use_version(),
+						action='task_completed' if error_msg is None else 'error',
+						mode='interactive',
+						model=self.llm.model if self.llm and hasattr(self.llm, 'model') else None,
+						model_provider=self.llm.provider if self.llm and hasattr(self.llm, 'provider') else None,
+						duration_seconds=duration,
+						error_message=error_msg,
+					)
+				)
+
+				logger.debug('\n✅ Task completed!')
+
+				# Make sure the task input container is visible
+				task_input_container = self.query_one('#task-input-container')
+				task_input_container.display = True
+
+				# Refocus the input field
+				input_field = self.query_one('#task-input', Input)
+				input_field.focus()
+
+				# Ensure the input is visible by scrolling to it
+				self.call_after_refresh(self.scroll_to_input)
+
+		# Run the worker
+		self.run_worker(agent_task_worker, name='agent_task')
+
+	def action_input_history_prev(self) -> None:
+		"""Navigate to the previous item in command history."""
+		# Only process if we have history and input is focused
+		input_field = self.query_one('#task-input', Input)
+		if not input_field.has_focus or not self.task_history:
+			return
+
+		# Move back in history if possible
+		if self.history_index > 0:
+			self.history_index -= 1
+			input_field.value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			input_field.cursor_position = len(input_field.value)
+
+	def action_input_history_next(self) -> None:
+		"""Navigate to the next item in command history or clear input."""
+		# Only process if we have history and input is focused
+		input_field = self.query_one('#task-input', Input)
+		if not input_field.has_focus or not self.task_history:
+			return
+
+		# Move forward in history or clear input if at the end
+		if self.history_index < len(self.task_history) - 1:
+			self.history_index += 1
+			input_field.value = self.task_history[self.history_index]
+			# Move cursor to end of text
+			input_field.cursor_position = len(input_field.value)
+		elif self.history_index == len(self.task_history) - 1:
+			# At the end of history, go to "new line" state
+			self.history_index += 1
+			input_field.value = ''
+
+	async def action_quit(self) -> None:
+		"""Quit the application and clean up resources."""
+		# Note: We don't need to close the browser session here because:
+		# 1. If an agent exists, it already called browser_session.stop() in its run() method
+		# 2. If keep_alive=True (default), we want to leave the browser running anyway
+		# This prevents the duplicate "stop() called" messages in the logs
+
+		# Flush telemetry before exiting
+		self._telemetry.flush()
+
+		# Exit the application
+		self.exit()
+		print('\nTry running tasks on our cloud: https://browser-use.com')
+
+	def compose(self) -> ComposeResult:
+		"""Create the UI layout."""
+		yield Header()
+
+		# Main container for app content
+		with Container(id='main-container'):
+			# Logo panel
+			yield Static(BROWSER_LOGO, id='logo-panel', markup=True)
+
+			# Links panel with URLs
+			with Container(id='links-panel'):
+				with HorizontalGroup(classes='link-row'):
+					yield Static('Run at scale on cloud:    [blink]☁️[/]  ', markup=True, classes='link-label')
+					yield Link('https://browser-use.com', url='https://browser-use.com', classes='link-white link-url')
+
+				yield Static('')  # Empty line
+
+				with HorizontalGroup(classes='link-row'):
+					yield Static('Chat & share on Discord:  🚀 ', markup=True, classes='link-label')
+					yield Link(
+						'https://discord.gg/ESAUZAdxXY', url='https://discord.gg/ESAUZAdxXY', classes='link-purple link-url'
+					)
+
+				with HorizontalGroup(classes='link-row'):
+					yield Static('Get prompt inspiration:   🦸 ', markup=True, classes='link-label')
+					yield Link(
+						'https://github.com/browser-use/awesome-prompts',
+						url='https://github.com/browser-use/awesome-prompts',
+						classes='link-magenta link-url',
+					)
+
+				with HorizontalGroup(classes='link-row'):
+					yield Static('[dim]Report any issues:[/]        🐛 ', markup=True, classes='link-label')
+					yield Link(
+						'https://github.com/browser-use/browser-use/issues',
+						url='https://github.com/browser-use/browser-use/issues',
+						classes='link-green link-url',
+					)
+
+			# Paths panel
+			yield Static(
+				f' ⚙️  Settings saved to:              {str(CONFIG.BROWSER_USE_CONFIG_FILE.resolve()).replace(str(Path.home()), "~")}\n'
+				f' 📁 Outputs & recordings saved to:  {str(Path(".").resolve()).replace(str(Path.home()), "~")}',
+				id='paths-panel',
+				markup=True,
+			)
+
+			# Info panels (hidden by default, shown when task starts)
+			with Container(id='info-panels'):
+				# Top row with browser and model panels side by side
+				with Container(id='top-panels'):
+					# Browser panel
+					with Container(id='browser-panel'):
+						yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
+
+					# Model panel
+					with Container(id='model-panel'):
+						yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
+
+				# Tasks panel (full width, below browser and model)
+				with VerticalScroll(id='tasks-panel'):
+					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True, auto_scroll=True)
+
+			# Three-column container (hidden by default)
+			with Container(id='three-column-container'):
+				# Column 1: Main output
+				with VerticalScroll(id='main-output-column'):
+					yield RichLog(highlight=True, markup=True, id='main-output-log', wrap=True, auto_scroll=True)
+
+				# Column 2: Event bus events
+				with VerticalScroll(id='events-column'):
+					yield RichLog(highlight=True, markup=True, id='events-log', wrap=True, auto_scroll=True)
+
+				# Column 3: CDP messages
+				with VerticalScroll(id='cdp-column'):
+					yield RichLog(highlight=True, markup=True, id='cdp-log', wrap=True, auto_scroll=True)
+
+			# Task input container (now at the bottom)
+			with Container(id='task-input-container'):
+				yield Label('🔍 What would you like me to do on the web?', id='task-label')
+				yield Input(placeholder='Enter your task...', id='task-input')
+
+		yield Footer()
 
 	def update_info_panels(self) -> None:
 		"""Update all information panels with current state."""
@@ -710,8 +1077,8 @@ class BrowserUseApp(App):
 
 		if browser_session:
 			try:
-				# Check if browser session has a browser context
-				if not hasattr(browser_session, 'browser_context') or browser_session.browser_context is None:
+				# Check if browser session has a CDP client
+				if not hasattr(browser_session, 'cdp_client') or browser_session.cdp_client is None:
 					browser_info.write('[yellow]Browser session created, waiting for browser to launch...[/]')
 					return
 
@@ -727,8 +1094,6 @@ class BrowserUseApp(App):
 				connection_type = 'playwright'  # Default
 				if browser_session.cdp_url:
 					connection_type = 'CDP'
-				elif browser_session.wss_url:
-					connection_type = 'WSS'
 				elif browser_session.browser_profile.executable_path:
 					connection_type = 'user-provided'
 
@@ -746,12 +1111,8 @@ class BrowserUseApp(App):
 
 				try:
 					# Check if browser PID is available
-					if hasattr(browser_session, 'browser_pid') and browser_session.browser_pid:
-						browser_pid = str(browser_session.browser_pid)
-						connected = True
-						browser_status = '[green]Connected[/]'
-					# Otherwise just check if we have a browser context
-					elif browser_session.browser_context is not None:
+					# Check if we have a CDP client
+					if browser_session.cdp_client is not None:
 						connected = True
 						browser_status = '[green]Connected[/]'
 						browser_pid = 'N/A'
@@ -780,9 +1141,9 @@ class BrowserUseApp(App):
 						pass
 
 					# Show the agent's current page URL if available
-					if browser_session.agent_current_page:
+					if browser_session.agent_focus:
 						current_url = (
-							browser_session.agent_current_page.url.replace('https://', '')
+							browser_session.agent_focus.url.replace('https://', '')
 							.replace('http://', '')
 							.replace('www.', '')[:36]
 							+ '…'
@@ -819,15 +1180,8 @@ class BrowserUseApp(App):
 
 			# Show token usage statistics if agent exists and has history
 			if self.agent and hasattr(self.agent, 'state') and hasattr(self.agent.state, 'history'):
-				# Get total tokens used
-				# total_tokens = self.agent.history.total_input_tokens()
-				# model_info.write(f'[white]Input tokens:[/] [green]{total_tokens:,}[/]')
-
 				# Calculate tokens per step
 				num_steps = len(self.agent.history.history)
-				# if num_steps > 0:
-				# avg_tokens_per_step = total_tokens / num_steps
-				# model_info.write(f'[white]Avg tokens/step:[/] [green]{avg_tokens_per_step:,.1f}[/]')
 
 				# Get the last step metadata to show the most recent LLM response time
 				if num_steps > 0 and self.agent.history.history[-1].metadata:
@@ -836,11 +1190,6 @@ class BrowserUseApp(App):
 						step_duration = last_step.metadata.duration_seconds
 					else:
 						step_duration = 0
-					# step_tokens = last_step.metadata.input_tokens
-
-					# if step_tokens > 0:
-					# 	tokens_per_second = step_tokens / step_duration if step_duration > 0 else 0
-					# 	model_info.write(f'[white]Avg tokens/sec:[/] [magenta]{tokens_per_second:.1f}[/]')
 
 				# Show total duration
 				total_duration = self.agent.history.total_duration_seconds()
@@ -971,235 +1320,6 @@ class BrowserUseApp(App):
 		tasks_panel = self.query_one('#tasks-panel')
 		tasks_panel.scroll_end(animate=False)
 
-	def scroll_to_input(self) -> None:
-		"""Scroll to the input field to ensure it's visible."""
-		input_container = self.query_one('#task-input-container')
-		input_container.scroll_visible()
-
-	def run_task(self, task: str) -> None:
-		"""Launch the task in a background worker."""
-		# Create or update the agent
-		agent_settings = AgentSettings.model_validate(self.config.get('agent', {}))
-
-		# Get the logger
-		logger = logging.getLogger('browser_use.app')
-
-		# Make sure intro is hidden and log is ready
-		self.hide_intro_panels()
-
-		# Start continuous updates of all info panels
-		self.update_info_panels()
-
-		# Clear the log to start fresh
-		rich_log = self.query_one('#results-log', RichLog)
-		rich_log.clear()
-
-		if self.agent is None:
-			if not self.llm:
-				raise RuntimeError('LLM not initialized')
-			self.agent = Agent(
-				task=task,
-				llm=self.llm,
-				controller=self.controller if self.controller else Controller(),
-				browser_session=self.browser_session,
-				source='cli',
-				**agent_settings.model_dump(),
-			)
-			# Update our browser_session reference to point to the agent's
-			if hasattr(self.agent, 'browser_session'):
-				self.browser_session = self.agent.browser_session
-		else:
-			self.agent.add_new_task(task)
-
-		# Let the agent run in the background
-		async def agent_task_worker() -> None:
-			logger.debug('\n🚀 Working on task: %s', task)
-
-			# Set flags to indicate the agent is running
-			if self.agent:
-				self.agent.running = True  # type: ignore
-				self.agent.last_response_time = 0  # type: ignore
-
-			# Panel updates are already happening via the timer in update_info_panels
-
-			task_start_time = time.time()
-			error_msg = None
-
-			try:
-				# Capture telemetry for message sent
-				self._telemetry.capture(
-					CLITelemetryEvent(
-						version=get_browser_use_version(),
-						action='message_sent',
-						mode='interactive',
-						model=self.llm.model if self.llm and hasattr(self.llm, 'model') else None,
-						model_provider=self.llm.provider if self.llm and hasattr(self.llm, 'provider') else None,
-					)
-				)
-
-				# Run the agent task, redirecting output to RichLog through our handler
-				if self.agent:
-					await self.agent.run()
-			except Exception as e:
-				error_msg = str(e)
-				logger.error('\nError running agent: %s', str(e))
-			finally:
-				# Clear the running flag
-				if self.agent:
-					self.agent.running = False  # type: ignore
-
-				# No need to call update_info_panels() here as it's already updating via timer
-
-				# Capture telemetry for task completion
-				duration = time.time() - task_start_time
-				self._telemetry.capture(
-					CLITelemetryEvent(
-						version=get_browser_use_version(),
-						action='task_completed' if error_msg is None else 'error',
-						mode='interactive',
-						model=self.llm.model if self.llm and hasattr(self.llm, 'model') else None,
-						model_provider=self.llm.provider if self.llm and hasattr(self.llm, 'provider') else None,
-						duration_seconds=duration,
-						error_message=error_msg,
-					)
-				)
-
-				logger.debug('\n✅ Task completed!')
-
-				# Make sure the task input container is visible
-				task_input_container = self.query_one('#task-input-container')
-				task_input_container.display = True
-
-				# Refocus the input field
-				input_field = self.query_one('#task-input', Input)
-				input_field.focus()
-
-				# Ensure the input is visible by scrolling to it
-				self.call_after_refresh(self.scroll_to_input)
-
-		# Run the worker
-		self.run_worker(agent_task_worker, name='agent_task')
-
-	def action_input_history_prev(self) -> None:
-		"""Navigate to the previous item in command history."""
-		# Only process if we have history and input is focused
-		input_field = self.query_one('#task-input', Input)
-		if not input_field.has_focus or not self.task_history:
-			return
-
-		# Move back in history if possible
-		if self.history_index > 0:
-			self.history_index -= 1
-			input_field.value = self.task_history[self.history_index]
-			# Move cursor to end of text
-			input_field.cursor_position = len(input_field.value)
-
-	def action_input_history_next(self) -> None:
-		"""Navigate to the next item in command history or clear input."""
-		# Only process if we have history and input is focused
-		input_field = self.query_one('#task-input', Input)
-		if not input_field.has_focus or not self.task_history:
-			return
-
-		# Move forward in history or clear input if at the end
-		if self.history_index < len(self.task_history) - 1:
-			self.history_index += 1
-			input_field.value = self.task_history[self.history_index]
-			# Move cursor to end of text
-			input_field.cursor_position = len(input_field.value)
-		elif self.history_index == len(self.task_history) - 1:
-			# At the end of history, go to "new line" state
-			self.history_index += 1
-			input_field.value = ''
-
-	async def action_quit(self) -> None:
-		"""Quit the application and clean up resources."""
-		# Note: We don't need to close the browser session here because:
-		# 1. If an agent exists, it already called browser_session.stop() in its run() method
-		# 2. If keep_alive=True (default), we want to leave the browser running anyway
-		# This prevents the duplicate "stop() called" messages in the logs
-
-		# Flush telemetry before exiting
-		self._telemetry.flush()
-
-		# Exit the application
-		self.exit()
-		print('\nTry running tasks on our cloud: https://browser-use.com')
-
-	def compose(self) -> ComposeResult:
-		"""Create the UI layout."""
-		yield Header()
-
-		# Main container for app content
-		with Container(id='main-container'):
-			# Logo panel
-			yield Static(BROWSER_LOGO, id='logo-panel', markup=True)
-
-			# Information panels (hidden by default)
-			with Container(id='info-panels'):
-				# Top row with browser and model panels side by side
-				with Container(id='top-panels'):
-					# Browser panel
-					with Container(id='browser-panel'):
-						yield RichLog(id='browser-info', markup=True, highlight=True, wrap=True)
-
-					# Model panel
-					with Container(id='model-panel'):
-						yield RichLog(id='model-info', markup=True, highlight=True, wrap=True)
-
-				# Tasks panel (full width, below browser and model)
-				with VerticalScroll(id='tasks-panel'):
-					yield RichLog(id='tasks-info', markup=True, highlight=True, wrap=True, auto_scroll=True)
-
-			# Links panel with URLs
-			with Container(id='links-panel'):
-				with HorizontalGroup(classes='link-row'):
-					yield Static('Run at scale on cloud:    [blink]☁️[/]  ', markup=True, classes='link-label')
-					yield Link('https://browser-use.com', url='https://browser-use.com', classes='link-white link-url')
-
-				yield Static('')  # Empty line
-
-				with HorizontalGroup(classes='link-row'):
-					yield Static('Chat & share on Discord:  🚀 ', markup=True, classes='link-label')
-					yield Link(
-						'https://discord.gg/ESAUZAdxXY', url='https://discord.gg/ESAUZAdxXY', classes='link-purple link-url'
-					)
-
-				with HorizontalGroup(classes='link-row'):
-					yield Static('Get prompt inspiration:   🦸 ', markup=True, classes='link-label')
-					yield Link(
-						'https://github.com/browser-use/awesome-prompts',
-						url='https://github.com/browser-use/awesome-prompts',
-						classes='link-magenta link-url',
-					)
-
-				with HorizontalGroup(classes='link-row'):
-					yield Static('[dim]Report any issues:[/]        🐛 ', markup=True, classes='link-label')
-					yield Link(
-						'https://github.com/browser-use/browser-use/issues',
-						url='https://github.com/browser-use/browser-use/issues',
-						classes='link-green link-url',
-					)
-
-			# Paths panel
-			yield Static(
-				f' ⚙️  Settings saved to:              {str(CONFIG.BROWSER_USE_CONFIG_FILE.resolve()).replace(str(Path.home()), "~")}\n'
-				f' 📁 Outputs & recordings saved to:  {str(Path(".").resolve()).replace(str(Path.home()), "~")}',
-				id='paths-panel',
-				markup=True,
-			)
-
-			# Results view with scrolling (place this before input to make input sticky at bottom)
-			with VerticalScroll(id='results-container'):
-				yield RichLog(highlight=True, markup=True, id='results-log', wrap=True, auto_scroll=True)
-
-			# Task input container (now at the bottom)
-			with Container(id='task-input-container'):
-				yield Label('🔍 What would you like me to do on the web?', id='task-label')
-				yield Input(placeholder='Enter your task...', id='task-input')
-
-		yield Footer()
-
 
 async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 	"""Run browser-use in non-interactive mode with a single prompt."""
@@ -1263,9 +1383,16 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 
 		await agent.run()
 
-		# Note: We don't close the browser session here because:
-		# 1. The agent already called browser_session.stop() in its run() method
-		# 2. This prevents duplicate "stop() called" messages in the logs
+		# Ensure the browser session is fully stopped
+		# The agent's close() method only kills the browser if keep_alive=False,
+		# but we need to ensure all background tasks are stopped regardless
+		if browser_session:
+			try:
+				# Kill the browser session to stop all background tasks
+				await browser_session.kill()
+			except Exception:
+				# Ignore errors during cleanup
+				pass
 
 		# Capture telemetry for successful completion
 		telemetry.capture(
@@ -1304,9 +1431,24 @@ async def run_prompt_mode(prompt: str, ctx: click.Context, debug: bool = False):
 		# Ensure telemetry is flushed
 		telemetry.flush()
 
+		# Give a brief moment for cleanup to complete
+		await asyncio.sleep(0.1)
+
+		# Cancel any remaining tasks to ensure clean exit
+		tasks = [t for t in asyncio.all_tasks() if t != asyncio.current_task()]
+		for task in tasks:
+			task.cancel()
+
+		# Wait for all tasks to be cancelled
+		if tasks:
+			await asyncio.gather(*tasks, return_exceptions=True)
+
 
 async def textual_interface(config: dict[str, Any]):
 	"""Run the Textual interface."""
+	# Prevent browser_use from setting up logging at import time
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
+
 	logger = logging.getLogger('browser_use.startup')
 
 	# Set up logging for Textual UI - prevent any logging to stdout
@@ -1347,13 +1489,16 @@ async def textual_interface(config: dict[str, Any]):
 		)
 		logger.debug('BrowserSession initialized successfully')
 
-		# Log browser version if available
+		# Set up FIFO logging pipes for streaming logs to UI
 		try:
-			if hasattr(browser_session, 'browser') and browser_session.browser:
-				version = browser_session.browser.version
-				logger.info(f'Browser version: {version}')
+			from browser_use.logging_config import setup_log_pipes
+
+			setup_log_pipes(session_id=browser_session.id)
+			logger.debug(f'FIFO logging pipes set up for session {browser_session.id[-4:]}')
 		except Exception as e:
-			logger.debug(f'Could not determine browser version: {e}')
+			logger.debug(f'Could not set up FIFO logging pipes: {e}')
+
+		# Browser version logging not available with CDP implementation
 	except Exception as e:
 		logger.error(f'Error initializing BrowserSession: {str(e)}', exc_info=True)
 		raise RuntimeError(f'Failed to initialize BrowserSession: {str(e)}')
@@ -1370,6 +1515,8 @@ async def textual_interface(config: dict[str, Any]):
 	# Step 4: Get LLM
 	logger.debug('Getting LLM...')
 	try:
+		# Ensure setup_logging is not called when importing modules
+		os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
 		llm = get_llm(config)
 		# Log LLM details
 		model_name = getattr(llm, 'model_name', None) or getattr(llm, 'model', 'Unknown model')
@@ -1388,6 +1535,10 @@ async def textual_interface(config: dict[str, Any]):
 		app.browser_session = browser_session
 		app.controller = controller
 		app.llm = llm
+
+		# Set up event bus listener now that browser session is available
+		# Note: This needs to be called before run_async() but after browser_session is set
+		# We'll defer this to on_mount() since it needs the widgets to be available
 
 		# Configure logging for Textual UI before going fullscreen
 		setup_textual_logging()
