@@ -154,7 +154,7 @@ class BaseWatchdog(BaseModel):
 						else:
 							await browser_session.get_or_create_cdp_session(target_id=None, new_socket=True, focus=True)
 					except Exception as sub_error:
-						if 'ConnectionClosedError' in str(type(sub_error)):
+						if 'ConnectionClosedError' in str(type(sub_error)) or 'ConnectionError' in str(type(sub_error)):
 							browser_session.logger.error(
 								f'{red}🚌 {watchdog_and_handler_str} ❌ Browser closed or CDP Connection disconnected by remote. {red}{type(sub_error).__name__}: {sub_error}{reset}\n'
 							)

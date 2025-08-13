@@ -561,24 +561,9 @@ class DOMWatchdog(BaseWatchdog):
 
 		return self.selector_map.get(index) if self.selector_map else None
 
-	async def get_element_by_uuid(self, uuid: str) -> EnhancedDOMTreeNode | None:
-		"""Get DOM element by UUID from cached selector map.
-
-		Builds DOM if not cached.
-
-		Returns:
-			EnhancedDOMTreeNode or None if UUID not found
-		"""
-		if not self.uuid_selector_map:
-			# Build DOM if not cached
-			await self._build_dom_tree()
-
-		return self.uuid_selector_map.get(uuid) if self.uuid_selector_map else None
-
 	def clear_cache(self) -> None:
 		"""Clear cached DOM state to force rebuild on next access."""
 		self.selector_map = None
-		self.uuid_selector_map = None
 		self.current_dom_state = None
 		self.enhanced_dom_tree = None
 		# Keep the DOM service instance to reuse its CDP client connection
