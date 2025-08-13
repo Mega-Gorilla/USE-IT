@@ -519,12 +519,6 @@ class DOMTreeSerializer:
 				except (AttributeError, ValueError):
 					continue
 
-		# Include accessibility name (contains StaticText content)
-		if node.ax_node and node.ax_node.name and 'ax_name' in include_attributes:
-			ax_name_str = str(node.ax_node.name).strip()
-			if ax_name_str:
-				attributes_to_include['ax_name'] = ax_name_str
-
 		if not attributes_to_include:
 			return ''
 
