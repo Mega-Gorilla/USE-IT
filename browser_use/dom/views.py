@@ -28,6 +28,24 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'aria-expanded',
 	'data-state',
 	'aria-checked',
+	# Accessibility properties from ax_node (ordered by importance for automation)
+	'checked',
+	'selected',
+	'expanded',
+	'pressed',
+	'disabled',
+	# 'invalid',
+	'valuenow',
+	'keyshortcuts',
+	'haspopup',
+	'multiselectable',
+	# Less commonly needed (uncomment if required):
+	# 'readonly',
+	'required',
+	'valuetext',
+	'level',
+	'busy',
+	'live',
 ]
 
 
@@ -52,10 +70,11 @@ class TargetAllTrees:
 @dataclass(slots=True)
 class PropagatingBounds:
 	"""Track bounds that propagate from parent elements to filter children."""
-	tag: str           # The tag that started propagation ('a' or 'button')
+
+	tag: str  # The tag that started propagation ('a' or 'button')
 	bounds: 'DOMRect'  # The bounding box
-	node_id: int       # Node ID for debugging
-	depth: int         # How deep in tree this started (for debugging)
+	node_id: int  # Node ID for debugging
+	depth: int  # How deep in tree this started (for debugging)
 
 
 @dataclass(slots=True)
