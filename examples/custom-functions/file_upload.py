@@ -87,9 +87,7 @@ async def main():
 	# Create the agent with file upload capability
 	agent = Agent(
 		task="""
-            Go to a website with a file upload form and upload a test document.
-            For example, go to https://www.w3schools.com/howto/howto_html_file_upload_button.asp
-            and try to upload one of the available test files.
+            Go to https://www.w3schools.com/howto/howto_html_file_upload_button.asp and try to upload one of the available test files.
         """,
 		llm=llm,
 		browser_session=browser_session,
