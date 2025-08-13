@@ -21,16 +21,16 @@ class DOMTreeSerializer:
 
 	# Configuration - elements that propagate bounds to their children
 	PROPAGATING_ELEMENTS = [
-		{'tag': 'a', 'role': None},         # Any <a> tag
-		{'tag': 'button', 'role': None},    # Any <button> tag
-		{'tag': 'div', 'role': 'button'},   # <div role="button">
-		{'tag': 'div', 'role': 'combobox'}, # <div role="combobox"> - dropdowns/selects
+		{'tag': 'a', 'role': None},  # Any <a> tag
+		{'tag': 'button', 'role': None},  # Any <button> tag
+		{'tag': 'div', 'role': 'button'},  # <div role="button">
+		{'tag': 'div', 'role': 'combobox'},  # <div role="combobox"> - dropdowns/selects
 		{'tag': 'span', 'role': 'button'},  # <span role="button">
-		{'tag': 'span', 'role': 'combobox'},# <span role="combobox">
-		{'tag': 'input', 'role': 'combobox'},# <input role="combobox"> - autocomplete inputs
-		{'tag': 'input', 'role': 'combobox'},   # <input type="text"> - text inputs with suggestions
-		#{'tag': 'div', 'role': 'link'},     # <div role="link">
-		#{'tag': 'span', 'role': 'link'},    # <span role="link">
+		{'tag': 'span', 'role': 'combobox'},  # <span role="combobox">
+		{'tag': 'input', 'role': 'combobox'},  # <input role="combobox"> - autocomplete inputs
+		{'tag': 'input', 'role': 'combobox'},  # <input type="text"> - text inputs with suggestions
+		# {'tag': 'div', 'role': 'link'},     # <div role="link">
+		# {'tag': 'span', 'role': 'link'},    # <span role="link">
 	]
 	DEFAULT_CONTAINMENT_THRESHOLD = 0.99  # 99% containment by default
 
@@ -76,9 +76,9 @@ class DOMTreeSerializer:
 		end_step2 = time.time()
 		self.timing_info['optimize_tree'] = end_step2 - start_step2
 
-        # # Step 3: Detect and group semantic elements
-        # if optimized_tree:
-        #   self._detect_semantic_groups(optimized_tree)
+		# # Step 3: Detect and group semantic elements
+		# if optimized_tree:
+		#   self._detect_semantic_groups(optimized_tree)
 
 		# Step 3: Apply bounding box filtering (NEW)
 		if self.enable_bbox_filtering and optimized_tree:
@@ -263,13 +263,12 @@ class DOMTreeSerializer:
 		excluded_count = self._count_excluded_nodes(node)
 		if excluded_count > 0:
 			import logging
-			logging.debug(f"BBox filtering excluded {excluded_count} nodes")
+
+			logging.debug(f'BBox filtering excluded {excluded_count} nodes')
 
 		return node
 
-	def _filter_tree_recursive(
-		self, node: SimplifiedNode, active_bounds: PropagatingBounds | None = None, depth: int = 0
-	):
+	def _filter_tree_recursive(self, node: SimplifiedNode, active_bounds: PropagatingBounds | None = None, depth: int = 0):
 		"""
 		Recursively filter tree with bounding box propagation.
 		Bounds propagate to ALL descendants until overridden.
@@ -310,7 +309,7 @@ class DOMTreeSerializer:
 		"""
 		Determine if child should be excluded based on propagating bounds.
 		"""
-		
+
 		# Never exclude text nodes - we always want to preserve text content
 		if node.original_node.node_type == NodeType.TEXT_NODE:
 			return False
@@ -402,7 +401,7 @@ class DOMTreeSerializer:
 			check = [pattern.get(key) is None or pattern.get(key) == attributes.get(key) for key in keys_to_check]
 			if all(check):
 				return True
-		
+
 		return False
 
 	@staticmethod
@@ -492,14 +491,35 @@ class DOMTreeSerializer:
 	@staticmethod
 	def _build_attributes_string(node: EnhancedDOMTreeNode, include_attributes: list[str], text: str) -> str:
 		"""Build the attributes string for an element."""
-		if not node.attributes:
-			return ''
+		attributes_to_include = {}
 
-		attributes_to_include = {
-			key: str(value).strip()
-			for key, value in node.attributes.items()
-			if key in include_attributes and str(value).strip() != ''
-		}
+		# Include HTML attributes
+		if node.attributes:
+			attributes_to_include.update(
+				{
+					key: str(value).strip()
+					for key, value in node.attributes.items()
+					if key in include_attributes and str(value).strip() != ''
+				}
+			)
+
+		# Include accessibility properties
+		if node.ax_node and node.ax_node.properties:
+			for prop in node.ax_node.properties:
+				try:
+					if prop.name in include_attributes and prop.value is not None:
+						# Convert boolean to lowercase string, keep others as-is
+						if isinstance(prop.value, bool):
+							attributes_to_include[prop.name] = str(prop.value).lower()
+						else:
+							prop_value_str = str(prop.value).strip()
+							if prop_value_str:
+								attributes_to_include[prop.name] = prop_value_str
+				except (AttributeError, ValueError):
+					continue
+
+		if not attributes_to_include:
+			return ''
 
 		# Remove duplicate values
 		ordered_keys = [key for key in include_attributes if key in attributes_to_include]
