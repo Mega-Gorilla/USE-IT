@@ -241,13 +241,15 @@ class Controller(Generic[Context]):
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
 			# Dispatch click event with node
 			try:
-				assert params.index != 0, 'Cannot click on element with index 0. If there are no interactive elements use scroll(), wait(), refresh(), etc. to troubleshoot'
+				assert params.index != 0, (
+					'Cannot click on element with index 0. If there are no interactive elements use scroll(), wait(), refresh(), etc. to troubleshoot'
+				)
 
 				# Look up the node from the selector map
 				node = await browser_session.get_element_by_index(params.index)
 				if node is None:
 					raise ValueError(f'Element index {params.index} not found in DOM')
-				
+
 				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
 				await event
 				# Wait for handler to complete and get any exception (None is expected on success)
@@ -533,7 +535,8 @@ class Controller(Generic[Context]):
 
 			# Simple prompt
 			prompt = f"""Extract the requested information from this webpage content.
-
+If you get a query which does not make sense given the content - explain briefly whats on the page, and that you don't have access to the requested information.
+			
 Query: {query}
 
 Webpage Content:
