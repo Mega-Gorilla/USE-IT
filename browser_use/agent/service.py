@@ -1490,6 +1490,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	) -> list[ActionResult]:
 		"""Execute multiple actions"""
 		results: list[ActionResult] = []
+		time_elapsed = 0
+		total_actions = len(actions)
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 		try:
@@ -1513,7 +1515,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if i > 0:
 				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
 				if action.model_dump(exclude_unset=True).get('done') is not None:
-					msg = f'Done action is allowed only as a single action - stopped after action {i} / {len(actions)}.'
+					msg = f'Done action is allowed only as a single action - stopped after action {i} / {total_actions}.'
 					logger.info(msg)
 					break
 
@@ -1534,7 +1536,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_target_hash = new_target.parent_branch_hash() if new_target else None
 
 				if orig_target_hash != new_target_hash:
-					msg = f'Element index changed after action {i} / {len(actions)}, because page changed.'
+					msg = f'Element index changed after action {i} / {total_actions}, because page changed.'
 					logger.info(msg)
 					results.append(
 						ActionResult(
@@ -1549,7 +1551,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {len(actions)}, following actions are NOT executed and should be retried.'
+					msg = f'Something new appeared after action {i} / {total_actions}, following actions are NOT executed and should be retried.'
 					logger.info(msg)
 					results.append(
 						ActionResult(
@@ -1577,10 +1579,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				action_params = getattr(action, action_name, '') or str(action.model_dump(mode='json'))[:40].replace(
 					'"', ''
 				).replace('{', '').replace('}', '').replace("'", '').strip().strip(',')
+				# Ensure action_params is always a string before checking length
+				action_params = str(action_params)
 				action_params = f'{action_params[:20]}...' if len(action_params) > 24 else action_params
 				time_start = time.time()
 
-				self.logger.info(f'🦾 Executing action {i + 1}/{len(actions)}: {cyan}{action_name}({action_params}){reset}...')
+				self.logger.info(f'🦾 Executing action {i + 1}/{total_actions}: {cyan}{action_name}({action_params}){reset}...')
 
 				result = await self.controller.act(
 					action=action,
@@ -1597,9 +1601,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				results.append(result)
 
 				self.logger.info(
-					f'☑️ Executed action {i + 1}/{len(actions)}: {green}{action_name}({action_params}){reset} in {time_elapsed:.2f}s'
+					f'☑️ Executed action {i + 1}/{total_actions}: {green}{action_name}({action_params}){reset} in {time_elapsed:.2f}s'
 				)
-				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
+				if results[-1].is_done or results[-1].error or i == total_actions - 1:
 					break
 
 			except Exception as e:
