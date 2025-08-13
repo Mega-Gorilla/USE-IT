@@ -433,7 +433,8 @@ class DOMTreeSerializer:
 				return '\n'.join(formatted_text)
 
 			# Add element with interactive_index if clickable, scrollable, or iframe
-			is_any_scrollable = node.original_node.is_actually_scrollable
+			is_any_scrollable = node.original_node.is_actually_scrollable or node.original_node.is_scrollable
+			should_show_scroll = node.original_node.should_show_scroll_info
 			if node.interactive_index is not None or is_any_scrollable or node.original_node.tag_name.upper() == 'IFRAME':
 				next_depth += 1
 
@@ -441,13 +442,13 @@ class DOMTreeSerializer:
 				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, '')
 
 				# Build the line
-				if is_any_scrollable and node.interactive_index is None:
-					# Scrollable but not clickable
+				if should_show_scroll and node.interactive_index is None:
+					# Scrollable container but not clickable
 					line = f'{depth_str}|SCROLL|<{node.original_node.tag_name}'
 				elif node.interactive_index is not None:
 					# Clickable (and possibly scrollable)
 					new_prefix = '*' if node.is_new else ''
-					scroll_prefix = '|SCROLL+' if is_any_scrollable else '['
+					scroll_prefix = '|SCROLL+' if should_show_scroll else '['
 					line = f'{depth_str}{new_prefix}{scroll_prefix}{node.interactive_index}]<{node.original_node.tag_name}'
 				elif node.original_node.tag_name.upper() == 'IFRAME':
 					# Iframe element (not interactive)
@@ -460,8 +461,8 @@ class DOMTreeSerializer:
 
 				line += ' />'
 
-				# Add scroll information for scrollable elements
-				if is_any_scrollable:
+				# Add scroll information only when we should show it
+				if should_show_scroll:
 					scroll_info_text = node.original_node.get_scroll_info_text()
 					if scroll_info_text:
 						line += f' ({scroll_info_text})'
@@ -517,6 +518,12 @@ class DOMTreeSerializer:
 								attributes_to_include[prop.name] = prop_value_str
 				except (AttributeError, ValueError):
 					continue
+
+		# Include accessibility name (contains StaticText content)
+		if node.ax_node and node.ax_node.name and 'ax_name' in include_attributes:
+			ax_name_str = str(node.ax_node.name).strip()
+			if ax_name_str:
+				attributes_to_include['ax_name'] = ax_name_str
 
 		if not attributes_to_include:
 			return ''
