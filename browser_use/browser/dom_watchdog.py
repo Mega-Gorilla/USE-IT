@@ -34,7 +34,6 @@ class DOMWatchdog(BaseWatchdog):
 
 	# Public properties for other watchdogs
 	selector_map: dict[int, EnhancedDOMTreeNode] | None = None
-	uuid_selector_map: dict[str, EnhancedDOMTreeNode] | None = None
 	current_dom_state: SerializedDOMState | None = None
 	enhanced_dom_tree: EnhancedDOMTreeNode | None = None
 
@@ -433,14 +432,6 @@ class DOMWatchdog(BaseWatchdog):
 					)
 				except Exception as e:
 					self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to inject highlighting: {e}')
-
-			# Build UUID selector map
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Building UUID selector map...')
-			self.uuid_selector_map = {}
-			if self.selector_map:
-				for node in self.selector_map.values():
-					if hasattr(node, 'uuid'):
-						self.uuid_selector_map[node.uuid] = node
 
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ COMPLETED DOM tree build')
 			return self.current_dom_state
