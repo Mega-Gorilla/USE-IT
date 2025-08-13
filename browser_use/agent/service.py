@@ -1564,8 +1564,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if i > 0:
 				await asyncio.sleep(self.browser_profile.wait_between_actions)
 
+			red = '\033[91m'
+			green = '\033[92m'
+			cyan = '\033[96m'
+			reset = '\033[0m'
+
 			try:
 				await self._raise_if_stopped_or_paused()
+				# Get action name from the action model
+				action_data = action.model_dump(exclude_unset=True)
+				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+				action_params = getattr(action, action_name, '') or str(action.model_dump(mode='json'))[:40].replace(
+					'"', ''
+				).replace('{', '').replace('}', '').replace("'", '').strip().strip(',')
+				action_params = f'{action_params[:20]}...' if len(action_params) > 24 else action_params
+				time_start = time.time()
+
+				self.logger.info(f'🦾 Executing action {i + 1}/{len(actions)}: {cyan}{action_name}({action_params}){reset}...')
 
 				result = await self.controller.act(
 					action=action,
@@ -1577,19 +1592,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					context=self.context,
 				)
 
+				time_end = time.time()
+				time_elapsed = time_end - time_start
 				results.append(result)
 
-				# Get action name from the action model
-				action_data = action.model_dump(exclude_unset=True)
-				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
-				action_params = getattr(action, action_name, '')
-				self.logger.info(f'☑️ Executed action {i + 1}/{len(actions)}: {action_name}({action_params})')
+				self.logger.info(
+					f'☑️ Executed action {i + 1}/{len(actions)}: {green}{action_name}({action_params}){reset} in {time_elapsed:.2f}s'
+				)
 				if results[-1].is_done or results[-1].error or i == len(actions) - 1:
 					break
 
 			except Exception as e:
 				# Handle any exceptions during action execution
-				self.logger.error(f'Action {i + 1} failed: {type(e).__name__}: {e}')
+				self.logger.error(
+					f'❌ Executing action {i + 1} failed in {time_elapsed:.2f}s {red}{action_name}({action_params}) -> {type(e).__name__}: {e}{reset}'
+				)
 				raise e
 
 		return results
