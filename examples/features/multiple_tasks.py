@@ -10,8 +10,7 @@ load_dotenv()
 
 
 from browser_use import Agent
-from browser_use.browser import BrowserSession
-from browser_use.browser.types import async_playwright
+from browser_use.browser import BrowserSession, BrowserProfile
 from browser_use.llm import ChatGoogle
 
 api_key = os.getenv('GOOGLE_API_KEY')
@@ -23,23 +22,26 @@ llm = ChatGoogle(model='gemini-2.0-flash', api_key=api_key)
 
 
 async def main():
-	async with async_playwright() as p:
-		browser = await p.chromium.launch(
-			headless=False,
-		)
+	# Create browser profile with settings
+	browser_profile = BrowserProfile(
+		headless=False,
+		viewport={'width': 1502, 'height': 853},
+		ignore_https_errors=True,
+	)
+	
+	# Create browser session
+	browser_session = BrowserSession(
+		browser_profile=browser_profile,
+	)
+	
+	# Start the browser
+	await browser_session.start()
 
-		context = await browser.new_context(
-			viewport={'width': 1502, 'height': 853},
-			ignore_https_errors=True,
-		)
-
-		agent = Agent(
-			browser_session=BrowserSession(
-				browser_context=context,
-			),
-			task='Go to https://browser-use.com/',
-			llm=llm,
-		)
+	agent = Agent(
+		browser_session=browser_session,
+		task='Go to https://browser-use.com/',
+		llm=llm,
+	)
 
 		try:
 			result = await agent.run()
@@ -73,8 +75,8 @@ async def main():
 					continue
 
 		finally:
-			await context.close()
-			await browser.close()
+			# Stop the browser session
+			await browser_session.stop()
 
 
 if __name__ == '__main__':

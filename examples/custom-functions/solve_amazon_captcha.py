@@ -48,11 +48,21 @@ controller = Controller()
 	],
 )
 async def solve_amazon_captcha(browser_session: BrowserSession):
-	page = await browser_session.get_current_page()
+	if not browser_session.agent_focus:
+		raise ValueError('No active browser session')
 
-	# Find the captcha image and extract its src
-	captcha_img = page.locator('img[src*="amazon.com/captcha"]')
-	link = await captcha_img.get_attribute('src')
+	# Find the captcha image and extract its src using CDP
+	result = await browser_session.agent_focus.cdp_client.send.Runtime.evaluate(
+		params={
+			'expression': """
+				const img = document.querySelector('img[src*="amazon.com/captcha"]');
+				img ? img.src : null;
+			""",
+			'returnByValue': True,
+		},
+		session_id=browser_session.agent_focus.session_id,
+	)
+	link = result.get('result', {}).get('value')
 
 	if not link:
 		raise ValueError('Could not find captcha image on the page')
@@ -62,8 +72,31 @@ async def solve_amazon_captcha(browser_session: BrowserSession):
 	if not solution or solution == 'Not solved':
 		raise ValueError('Captcha could not be solved')
 
-	await page.locator('#captchacharacters').fill(solution)
-	await page.locator('button[type="submit"]').click()
+	# Fill the captcha solution using CDP
+	await browser_session.agent_focus.cdp_client.send.Runtime.evaluate(
+		params={
+			'expression': f"""
+				const input = document.querySelector('#captchacharacters');
+				if (input) {{
+					input.value = '{solution}';
+					input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+					input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+				}}
+			""",
+		},
+		session_id=browser_session.agent_focus.session_id,
+	)
+
+	# Click submit button using CDP
+	await browser_session.agent_focus.cdp_client.send.Runtime.evaluate(
+		params={
+			'expression': """
+				const button = document.querySelector('button[type="submit"]');
+				if (button) button.click();
+			""",
+		},
+		session_id=browser_session.agent_focus.session_id,
+	)
 
 	return ActionResult(extracted_content=solution)
 
@@ -77,7 +110,7 @@ async def main():
 	agent = Agent(task=task, llm=model, controller=controller, browser_session=browser_session)
 
 	await agent.run()
-	await browser_session.stop()
+	await browser_session.kill()
 
 	input('Press Enter to close...')
 
