@@ -1685,7 +1685,7 @@ Provide the extracted information in a clear, structured format."""
 			if params is not None:
 				# Use Laminar span if available, otherwise use no-op context manager
 				if Laminar is not None:
-					span_context = Laminar.start_as_current_span(
+					span = Laminar.start_as_current_span(
 						name=action_name,
 						input={
 							'action': action_name,
@@ -1697,9 +1697,9 @@ Provide the extracted information in a clear, structured format."""
 					# No-op context manager when lmnr is not available
 					from contextlib import nullcontext
 
-					span_context = nullcontext()
+					span = nullcontext()
 
-				with span_context:
+				with span:
 					try:
 						result = await self.registry.execute_action(
 							action_name=action_name,
@@ -1712,6 +1712,8 @@ Provide the extracted information in a clear, structured format."""
 							context=context,
 						)
 					except Exception as e:
+						if Laminar is not None:
+							span.record_exception(e)
 						result = ActionResult(error=str(e))
 
 					if Laminar is not None:
