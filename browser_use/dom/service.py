@@ -193,6 +193,7 @@ class DomService:
 			):
 				iframe_bounds = frame.snapshot_node.bounds
 
+				# negate the values added in `_construct_enhanced_node`
 				current_bounds.x += iframe_bounds.x
 				current_bounds.y += iframe_bounds.y
 
@@ -217,6 +218,10 @@ class DomService:
 
 				if not frame_intersects:
 					return False
+
+				# negate the values added in `_construct_enhanced_node`
+				current_bounds.x -= frame.snapshot_node.scrollRects.x
+				current_bounds.y -= frame.snapshot_node.scrollRects.y
 
 		# If we reach here, element is visible in main viewport and all containing iframes
 		return True
