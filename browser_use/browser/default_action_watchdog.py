@@ -497,34 +497,34 @@ class DefaultActionWatchdog(BaseWatchdog):
 		"""
 		try:
 			# Get CDP client and session
-			cdp_client = self.browser_session.cdp_client
-			session_id = (await self.browser_session.get_or_create_cdp_session()).session_id
+			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=None, focus=True)
+			await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
 
 			# Type the text character by character to the focused element
 			for char in text:
 				# Send keydown
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
 						'key': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Send char for actual text input
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'char',
 						'text': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Send keyup
-				await cdp_client.send.Input.dispatchKeyEvent(
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
 						'key': char,
 					},
-					session_id=session_id,
+					session_id=cdp_session.session_id,
 				)
 				# Add 18ms delay between keystrokes
 				await asyncio.sleep(0.018)
