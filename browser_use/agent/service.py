@@ -702,7 +702,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
 		# Use caching based on preload setting - if preload is False, don't use cached state
-		use_cache = self.preload
+		is_first_step = self.state.n_steps in (0, 1)
+		use_cache = is_first_step and self.preload
 		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
