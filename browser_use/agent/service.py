@@ -23,7 +23,6 @@ from browser_use.agent.cloud_events import (
 	UpdateAgentTaskEvent,
 )
 from browser_use.agent.message_manager.utils import save_conversation
-from browser_use.browser.events import BrowserStateRequestEvent
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.tokens.service import TokenCost
@@ -1279,24 +1278,45 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Start browser session and attach watchdogs
 			assert self.browser_session is not None, 'Browser session must be initialized before starting'
 			self.logger.debug('🌐 Starting browser session...')
-			from browser_use.browser.events import BrowserStartEvent, NavigateToUrlEvent
+			from browser_use.browser.events import BrowserStartEvent
 
 			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
 			await event
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and navigate to it immediately (only if preload is enabled)
+			# Check if task contains a URL and add it as an initial action (only if preload is enabled)
 			if self.preload:
 				initial_url = self._extract_url_from_task(self.task)
 				if initial_url:
-					self.logger.info(f'🔗 Found URL in task: {initial_url}, navigating immediately...')
-					self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=initial_url))
+					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
 
-					# warms up the cache and element highlighting is more useful as a better loading animation than a DVD screensaver
-					self.browser_session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=True))
+					# Create a go_to_url action for the initial URL
+					go_to_url_action = {
+						'go_to_url': {
+							'url': initial_url,
+							'new_tab': False,  # Navigate in current tab
+						}
+					}
 
-					self.logger.debug(f'✅ Navigated to {initial_url}')
+					# Add to initial_actions or create new list if none exist
+					if self.initial_actions:
+						# Convert back to dict format, prepend URL navigation, then convert back
+						initial_actions_dicts = []
+						for action in self.initial_actions:
+							action_data = action.model_dump(exclude_unset=True)
+							initial_actions_dicts.append(action_data)
+
+						# Prepend the go_to_url action
+						initial_actions_dicts = [go_to_url_action] + initial_actions_dicts
+
+						# Convert back to ActionModel instances
+						self.initial_actions = self._convert_initial_actions(initial_actions_dicts)
+					else:
+						# Create new initial_actions with just the go_to_url
+						self.initial_actions = self._convert_initial_actions([go_to_url_action])
+
+					self.logger.debug(f'✅ Added navigation to {initial_url} as initial action')
 
 			# Execute initial actions if provided
 			if self.initial_actions:
