@@ -225,10 +225,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				raise Exception('Cannot click on <select> elements. Use select_dropdown_option action instead.')
+				raise Exception('<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option action instead.</llm_error_msg>')
 
 			if tag_name == 'input' and element_type == 'file':
-				raise Exception('Cannot click on file input elements. File uploads must be handled programmatically.')
+				raise Exception('<llm_error_msg>Cannot click on file input elements. File uploads must be handled programmatically.</llm_error_msg>')
 
 			# Get CDP client
 			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
@@ -516,7 +516,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except URLNotAllowedError as e:
 			raise e
 		except Exception as e:
-			raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
+			# Extract key element info for error message
+			element_info = f"<{element_node.tag_name or 'unknown'}"
+			if element_node.element_index:
+				element_info += f" index={element_node.element_index}"
+			element_info += ">"
+			raise Exception(f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible.</llm_error_msg> Details: {str(e)}')
 
 	async def _type_to_page(self, text: str):
 		"""
@@ -1168,7 +1173,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if it's a file input
 			if not self.browser_session.is_file_input(element_node):
-				raise Exception(f'Element {index_for_logging} is not a file input')
+				raise Exception(f'<llm_error_msg>Element {index_for_logging} is not a file input. Use click_element_by_index for non-file input elements.</llm_error_msg>')
 
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client

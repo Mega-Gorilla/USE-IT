@@ -64,6 +64,28 @@ Context = TypeVar('Context')
 T = TypeVar('T', bound=BaseModel)
 
 
+def extract_llm_error_message(error: Exception) -> str:
+	"""
+	Extract the clean error message from an exception that may contain <llm_error_msg> tags.
+	
+	If the tags are found, returns the content between them.
+	Otherwise, returns the original error string.
+	"""
+	import re
+	
+	error_str = str(error)
+	
+	# Look for content between <llm_error_msg> tags
+	pattern = r'<llm_error_msg>(.*?)</llm_error_msg>'
+	match = re.search(pattern, error_str, re.DOTALL)
+	
+	if match:
+		return match.group(1).strip()
+	
+	# Fallback: return the original error string
+	return error_str
+
+
 class Controller(Generic[Context]):
 	def __init__(
 		self,
@@ -151,14 +173,16 @@ class Controller(Generic[Context]):
 				)
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'🔍  Searched for "{params.query}" in Google'
+				memory = f"Searched Google for '{params.query}'"
+				msg = f'🔍  {memory}'
 				logger.info(msg)
 				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f"Searched Google for '{params.query}'"
+					extracted_content=memory, include_in_memory=True, long_term_memory=memory
 				)
 			except Exception as e:
 				logger.error(f'Failed to search Google: {e}')
-				return ActionResult(error=f'Failed to search Google for "{params.query}": {e}')
+				clean_msg = extract_llm_error_message(e)
+				return ActionResult(error=f'Failed to search Google for "{params.query}": {clean_msg}')
 
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
@@ -183,6 +207,7 @@ class Controller(Generic[Context]):
 				error_msg = str(e)
 				# Always log the actual error first for debugging
 				browser_session.logger.error(f'❌ Navigation failed: {error_msg}')
+				clean_msg = extract_llm_error_message(e)
 
 				# Check if it's specifically a RuntimeError about CDP client
 				if isinstance(e, RuntimeError) and 'CDP client not initialized' in error_msg:
@@ -204,19 +229,21 @@ class Controller(Generic[Context]):
 					return ActionResult(error=site_unavailable_msg)
 				else:
 					# Return error in ActionResult instead of re-raising
-					return ActionResult(error=f'Navigation failed: {error_msg}')
+					return ActionResult(error=f'Navigation failed: {clean_msg}')
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
 			try:
 				event = browser_session.event_bus.dispatch(GoBackEvent())
 				await event
-				msg = '🔙  Navigated back'
+				memory = 'Navigated back'
+				msg = f'🔙  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg)
+				return ActionResult(extracted_content=memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch GoBackEvent: {type(e).__name__}: {e}')
-				error_msg = f'Failed to go back: {e}'
+				clean_msg = extract_llm_error_message(e)
+				error_msg = f'Failed to go back: {clean_msg}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -226,11 +253,13 @@ class Controller(Generic[Context]):
 			# Cap wait time at maximum 10 seconds
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
 			# So if the model decides to wait for 5 seconds, the llm call took at least 3 seconds, so we only need to wait for 2 seconds
-			actual_seconds = min(max(seconds - 3, 0), 10)
-			msg = f'🕒  Waiting for {actual_seconds + 3} seconds'
-			logger.info(msg)
+			# Note by Mert: the above doesnt make sense because we do the LLM call right after this or this could be followed by another action after which we would like to wait
+			# so I revert this.
+			actual_seconds = min(max(seconds, 0), 10)
+			memory = f'Waited for {actual_seconds} seconds'
+			logger.info(f'🕒 {memory}')
 			await asyncio.sleep(actual_seconds)
-			return ActionResult(extracted_content=msg)
+			return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		# Element Interaction Actions
 
@@ -254,12 +283,14 @@ class Controller(Generic[Context]):
 				await event
 				# Wait for handler to complete and get any exception (None is expected on success)
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'🖱️ Clicked element with index {params.index}'
+				memory = f'Clicked element with index {params.index}'
+				msg = f'🖱️ {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=msg)
+				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
-				error_msg = f'Failed to click element {params.index}: {type(e).__name__}: {e}'
+				clean_msg = extract_llm_error_message(e)
+				error_msg = f'Failed to click element {params.index}: {clean_msg}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -437,14 +468,16 @@ class Controller(Generic[Context]):
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=params.page_id))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'🔄  Switched to tab #{params.page_id}'
+				memory = f'Switched to tab #{params.page_id}'
+				msg = f'🔄  {memory}'
 				logger.info(msg)
 				return ActionResult(
-					extracted_content=msg, include_in_memory=True, long_term_memory=f'Switched to tab {params.page_id}'
+					extracted_content=memory, include_in_memory=True, long_term_memory=memory
 				)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {e}')
-				return ActionResult(error=f'Failed to switch to tab {params.page_id}: {e}')
+				clean_msg = extract_llm_error_message(e)
+				return ActionResult(error=f'Failed to switch to tab {params.page_id}: {clean_msg}')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
@@ -453,16 +486,18 @@ class Controller(Generic[Context]):
 				event = browser_session.event_bus.dispatch(CloseTabEvent(tab_index=params.page_id))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'❌  Closed tab #{params.page_id}'
+				memory = f'Closed tab #{params.page_id}'
+				msg = f'❌  {memory}'
 				logger.info(msg)
 				return ActionResult(
-					extracted_content=msg,
+					extracted_content=memory,
 					include_in_memory=True,
-					long_term_memory=f'Closed tab {params.page_id}',
+					long_term_memory=memory,
 				)
 			except Exception as e:
 				logger.error(f'Failed to close tab: {e}')
-				return ActionResult(error=f'Failed to close tab {params.page_id}: {e}')
+				clean_msg = extract_llm_error_message(e)
+				return ActionResult(error=f'Failed to close tab {params.page_id}: {clean_msg}')
 
 		# Content Actions
 
@@ -559,7 +594,8 @@ Provide the extracted information in a clear, structured format."""
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					memory = f'Extracted content from {cdp_session.url} for query: {query}\nContent saved to file system: {save_result}'
+					current_url = await browser_session.get_current_page_url()
+					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
@@ -618,7 +654,8 @@ Provide the extracted information in a clear, structured format."""
 				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
-				error_msg = f'Failed to scroll: {e}'
+				clean_msg = extract_llm_error_message(e)
+				error_msg = f'Failed to scroll: {clean_msg}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -631,12 +668,14 @@ Provide the extracted information in a clear, structured format."""
 				event = browser_session.event_bus.dispatch(SendKeysEvent(keys=params.keys))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'⌨️  Sent keys: {params.keys}'
+				memory = f'Sent keys: {params.keys}'
+				msg = f'⌨️  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Sent keys: {params.keys}')
+				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
-				error_msg = f'Failed to send keys: {e}'
+				clean_msg = extract_llm_error_message(e)
+				error_msg = f'Failed to send keys: {clean_msg}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -649,9 +688,10 @@ Provide the extracted information in a clear, structured format."""
 			try:
 				# The handler returns None on success or raises an exception if text not found
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'🔍  Scrolled to text: {text}'
+				memory = f'Scrolled to text: {text}'
+				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=f'Scrolled to text: {text}')
+				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				# Text not found
 				msg = f"Text '{text}' not found or not visible on page"
@@ -1109,14 +1149,54 @@ Provide the extracted information in a clear, structured format."""
 						long_term_memory=f"Selected dropdown option '{params.text}' at index {params.index}",
 					)
 				else:
-					error_msg = selection_result.get('error', f'Failed to select option: {params.text}')
-					logger.error(f'❌ {error_msg}')
-					raise ValueError(error_msg)
+					# Handle error case with clean error message and extracted options
+					full_error = selection_result.get('error', f'Failed to select option: {params.text}')
+					
+					# Parse available options from the error message if present
+					available_options = None
+					if 'Available options:' in full_error:
+						try:
+							# Extract JSON part from error message
+							json_start = full_error.find('Available options:') + len('Available options:')
+							json_str = full_error[json_start:].strip()
+							available_options = json.loads(json_str)
+						except (json.JSONDecodeError, ValueError):
+							# If parsing fails, just use the full error
+							pass
+					
+					# Create clean error message
+					clean_error = f"Failed to select dropdown option: {params.text}"
+					logger.error(f'❌ {clean_error}')
+					
+					# Format available options for extracted_content if we have them
+					if available_options:
+						formatted_options = []
+						for i, opt in enumerate(available_options):
+							text = opt.get('text', '')
+							value = opt.get('value', '')
+							if text:
+								formatted_options.append(f'{i}: text="{text}", value="{value}"')
+						
+						extracted_content = 'Available dropdown options:\n' + '\n'.join(formatted_options)
+						
+						return ActionResult(
+							error=clean_error,
+							extracted_content=extracted_content,
+							include_extracted_content_only_once=True,						
+						)
+					else:
+						# No parseable options, return the clean error
+						return ActionResult(
+							error=clean_error,
+						)
 
 			except Exception as e:
-				error_msg = f'Failed to select dropdown option: {str(e)}'
-				logger.error(error_msg)
-				raise ValueError(error_msg) from e
+				# Handle unexpected exceptions
+				clean_error = f"Failed to select dropdown option: {params.text}"
+				logger.error(f'❌ {clean_error} - Details: {str(e)}')
+				return ActionResult(
+					error=clean_error,
+				)
 
 		# File System Actions
 		@self.registry.action(
