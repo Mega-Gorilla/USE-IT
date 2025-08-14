@@ -1576,12 +1576,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Get action name from the action model
 				action_data = action.model_dump(exclude_unset=True)
 				action_name = next(iter(action_data.keys())) if action_data else 'unknown'
-				action_params = getattr(action, action_name, '') or str(action.model_dump(mode='json'))[:40].replace(
+				action_params = getattr(action, action_name, '') or str(action.model_dump(mode='json'))[:56].replace(
 					'"', ''
 				).replace('{', '').replace('}', '').replace("'", '').strip().strip(',')
 				# Ensure action_params is always a string before checking length
 				action_params = str(action_params)
-				action_params = f'{action_params[:20]}...' if len(action_params) > 24 else action_params
+				action_params = f'{action_params[:50]}...' if len(action_params) > 54 else action_params
 				time_start = time.time()
 
 				self.logger.info(f'🦾 Executing action {i + 1}/{total_actions}: {cyan}{action_name}({action_params}){reset}...')

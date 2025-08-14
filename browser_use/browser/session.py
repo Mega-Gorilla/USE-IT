@@ -672,8 +672,8 @@ class BrowserSession(BaseModel):
 					f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}'
 				)
 				self.agent_focus = session
-			else:
-				self.logger.debug(f'[get_or_create_cdp_session] Reusing existing session for {target_id} (focus={focus})')
+			# else:
+			# self.logger.debug(f'[get_or_create_cdp_session] Reusing existing session for {target_id} (focus={focus})')
 			return session
 
 		# If it's the current focus target, return that session
