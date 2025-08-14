@@ -1,16 +1,19 @@
 """Default browser action handlers using CDP."""
 
 import asyncio
+import json
 import platform
 from typing import Any
 
 from browser_use.browser.events import (
 	ClickElementEvent,
+	GetDropdownOptionsEvent,
 	GoBackEvent,
 	GoForwardEvent,
 	RefreshEvent,
 	ScrollEvent,
 	ScrollToTextEvent,
+	SelectDropdownOptionEvent,
 	SendKeysEvent,
 	TypeTextEvent,
 	UploadFileEvent,
@@ -23,6 +26,8 @@ from browser_use.dom.service import EnhancedDOMTreeNode
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
 ClickElementEvent.model_rebuild()
+GetDropdownOptionsEvent.model_rebuild()
+SelectDropdownOptionEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
 ScrollEvent.model_rebuild()
 UploadFileEvent.model_rebuild()
@@ -225,10 +230,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				raise Exception('<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option action instead.</llm_error_msg>')
+				try:
+					dropdown_options = await self.event_bus.dispatch(GetDropdownOptionsEvent(node=element_node)).event_result(raise_if_none=True) or {}
+				except Exception as e:
+					self.logger.warning(f'Failed to get dropdown options: {type(e).__name__}: {e}')
+					dropdown_options = {}
+				available_options = ("Available options: [" + ", ".join(dropdown_options.keys()) + "]") if dropdown_options else "Call get_dropdown_options() to get available options list."
+				self.logger.warning(f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}]')
+				raise Exception(f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}')
 
 			if tag_name == 'input' and element_type == 'file':
-				raise Exception('<llm_error_msg>Cannot click on file input elements. File uploads must be handled programmatically.</llm_error_msg>')
+				raise Exception('Cannot click on file input elements. File uploads must be handled using upload_file_to_element()')
 
 			# Get CDP client
 			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
@@ -1284,3 +1296,467 @@ class DefaultActionWatchdog(BaseWatchdog):
 			return None
 		else:
 			raise BrowserError(f'Text not found: "{event.text}"', details={'text': event.text})
+
+	async def on_GetDropdownOptionsEvent(self, event: GetDropdownOptionsEvent) -> dict[str, str]:
+		"""Handle get dropdown options request with CDP."""
+		try:
+			# Use the provided node
+			element_node = event.node
+			index_for_logging = element_node.element_index or 'unknown'
+
+			# Get CDP session for this node
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+
+			# Convert node to object ID for CDP operations
+			try:
+				object_result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': element_node.backend_node_id}, session_id=cdp_session.session_id
+				)
+				remote_object = object_result.get('object', {})
+				object_id = remote_object.get('objectId')
+				if not object_id:
+					raise ValueError('Could not get object ID from resolved node')
+			except Exception as e:
+				raise ValueError(f'Failed to resolve node to object: {e}') from e
+
+			try:
+				# Use JavaScript to extract dropdown options
+				options_script = """
+				function() {
+					const startElement = this;
+					
+					// Function to check if an element is a dropdown and extract options
+					function checkDropdownElement(element) {
+						// Check if it's a native select element
+						if (element.tagName.toLowerCase() === 'select') {
+							return {
+								type: 'select',
+								options: Array.from(element.options).map((opt, idx) => ({
+									text: opt.text.trim(),
+									value: opt.value,
+									index: idx,
+									selected: opt.selected
+								})),
+								id: element.id || '',
+								name: element.name || '',
+								source: 'target'
+							};
+						}
+						
+						// Check if it's an ARIA dropdown/menu
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							// Find all menu items/options
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
+									});
+								}
+							});
+							
+							return {
+								type: 'aria',
+								options: options,
+								id: element.id || '',
+								name: element.getAttribute('aria-label') || '',
+								source: 'target'
+							};
+						}
+						
+						// Check if it's a Semantic UI dropdown or similar
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							const options = [];
+							
+							menuItems.forEach((item, idx) => {
+								const text = item.textContent ? item.textContent.trim() : '';
+								if (text) {
+									options.push({
+										text: text,
+										value: item.getAttribute('data-value') || text,
+										index: idx,
+										selected: item.classList.contains('selected') || item.classList.contains('active')
+									});
+								}
+							});
+							
+							if (options.length > 0) {
+								return {
+									type: 'custom',
+									options: options,
+									id: element.id || '',
+									name: element.getAttribute('aria-label') || '',
+									source: 'target'
+								};
+							}
+						}
+						
+						return null;
+					}
+					
+					// Function to recursively search children up to specified depth
+					function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Check if this child is a dropdown
+							const result = checkDropdownElement(child);
+							if (result) {
+								result.source = `child-depth-${currentDepth + 1}`;
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
+							if (childResult) {
+								return childResult;
+							}
+						}
+						
+						return null;
+					}
+					
+					// First check the target element itself
+					let dropdownResult = checkDropdownElement(startElement);
+					if (dropdownResult) {
+						return dropdownResult;
+					}
+					
+					// If target element is not a dropdown, search children up to depth 4
+					dropdownResult = searchChildrenForDropdowns(startElement, 4);
+					if (dropdownResult) {
+						return dropdownResult;
+					}
+					
+					return {
+						error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+					};
+				}
+				"""
+
+				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': options_script,
+						'objectId': object_id,
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				dropdown_data = result.get('result', {}).get('value', {})
+
+				if dropdown_data.get('error'):
+					raise ValueError(dropdown_data['error'])
+
+				if not dropdown_data.get('options'):
+					raise ValueError('No options found in dropdown')
+
+				# Format options for display
+				formatted_options = []
+				for opt in dropdown_data['options']:
+					# Use JSON encoding to ensure exact string matching
+					encoded_text = json.dumps(opt['text'])
+					status = ' (selected)' if opt.get('selected') else ''
+					formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
+
+				dropdown_type = dropdown_data.get('type', 'unknown')
+				element_info = f'ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+				source_info = dropdown_data.get('source', 'unknown')
+
+				if source_info == 'target':
+					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+				else:
+					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
+				msg += '\n\nUse the exact text string (without quotes) in select_dropdown_option'
+
+				if source_info == 'target':
+					self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
+				else:
+					self.logger.info(
+						f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging} in {source_info}'
+					)
+
+				# Return the dropdown data as a dict
+				return {
+					'type': dropdown_type,
+					'options': json.dumps(dropdown_data['options']),  # Convert list to JSON string for dict[str, str] type
+					'element_info': element_info,
+					'source': source_info,
+					'formatted_options': '\n'.join(formatted_options),
+					'message': msg
+				}
+
+			except Exception as e:
+				error_msg = f'Failed to get dropdown options: {str(e)}'
+				self.logger.error(error_msg)
+				raise ValueError(error_msg) from e
+
+		except Exception as e:
+			error_msg = f'Failed to get dropdown options for element {index_for_logging}: {str(e)}'
+			self.logger.error(error_msg)
+			raise ValueError(error_msg) from e
+
+	async def on_SelectDropdownOptionEvent(self, event: SelectDropdownOptionEvent) -> dict[str, str]:
+		"""Handle select dropdown option request with CDP."""
+		try:
+			# Use the provided node
+			element_node = event.node
+			index_for_logging = element_node.element_index or 'unknown'
+			target_text = event.text
+
+			# Get CDP session for this node
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+
+			# Convert node to object ID for CDP operations
+			try:
+				object_result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': element_node.backend_node_id}, session_id=cdp_session.session_id
+				)
+				remote_object = object_result.get('object', {})
+				object_id = remote_object.get('objectId')
+				if not object_id:
+					raise ValueError('Could not get object ID from resolved node')
+			except Exception as e:
+				raise ValueError(f'Failed to resolve node to object: {e}') from e
+
+			try:
+				# Use JavaScript to select the option
+				selection_script = """
+				function(targetText) {
+					const startElement = this;
+					
+					// Function to attempt selection on a dropdown element
+					function attemptSelection(element) {
+						// Handle native select elements
+						if (element.tagName.toLowerCase() === 'select') {
+							const options = Array.from(element.options);
+							const targetTextLower = targetText.toLowerCase();
+							
+							for (const option of options) {
+								const optionTextLower = option.text.trim().toLowerCase();
+								const optionValueLower = option.value.toLowerCase();
+								
+								// Match against both text and value (case-insensitive)
+								if (optionTextLower === targetTextLower || optionValueLower === targetTextLower) {
+									element.value = option.value;
+									option.selected = true;
+									
+									// Trigger change events
+									const changeEvent = new Event('change', { bubbles: true });
+									element.dispatchEvent(changeEvent);
+									
+									return {
+										success: true,
+										message: `Selected option: ${option.text.trim()} (value: ${option.value})`,
+										value: option.value
+									};
+								}
+							}
+							
+							// Show all available options for debugging
+							const availableOptions = options.map(opt => ({
+								text: opt.text.trim(),
+								value: opt.value
+							}));
+							
+							return {
+								success: false,
+								error: `Option with text or value '${targetText}' not found in select element. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+							};
+						}
+						
+						// Handle ARIA dropdowns/menus
+						const role = element.getAttribute('role');
+						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+							const targetTextLower = targetText.toLowerCase();
+							
+							for (const item of menuItems) {
+								if (item.textContent) {
+									const itemTextLower = item.textContent.trim().toLowerCase();
+									const itemValueLower = (item.getAttribute('data-value') || '').toLowerCase();
+									
+									// Match against both text and data-value (case-insensitive)
+									if (itemTextLower === targetTextLower || itemValueLower === targetTextLower) {
+										// Clear previous selections
+										menuItems.forEach(mi => {
+											mi.setAttribute('aria-selected', 'false');
+											mi.classList.remove('selected');
+										});
+										
+										// Select this item
+										item.setAttribute('aria-selected', 'true');
+										item.classList.add('selected');
+										
+										// Trigger click and change events
+										item.click();
+										const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+										item.dispatchEvent(clickEvent);
+										
+										return {
+											success: true,
+											message: `Selected ARIA menu item: ${item.textContent.trim()}`
+										};
+									}
+								}
+							}
+							
+							// Show all available options for debugging
+							const availableOptions = Array.from(menuItems).map(item => ({
+								text: item.textContent ? item.textContent.trim() : '',
+								value: item.getAttribute('data-value') || ''
+							})).filter(opt => opt.text || opt.value);
+							
+							return {
+								success: false,
+								error: `Menu item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+							};
+						}
+						
+						// Handle Semantic UI or custom dropdowns
+						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+							const targetTextLower = targetText.toLowerCase();
+							
+							for (const item of menuItems) {
+								if (item.textContent) {
+									const itemTextLower = item.textContent.trim().toLowerCase();
+									const itemValueLower = (item.getAttribute('data-value') || '').toLowerCase();
+									
+									// Match against both text and data-value (case-insensitive)
+									if (itemTextLower === targetTextLower || itemValueLower === targetTextLower) {
+										// Clear previous selections
+										menuItems.forEach(mi => {
+											mi.classList.remove('selected', 'active');
+										});
+										
+										// Select this item
+										item.classList.add('selected', 'active');
+										
+										// Update dropdown text if there's a text element
+										const textElement = element.querySelector('.text');
+										if (textElement) {
+											textElement.textContent = item.textContent.trim();
+										}
+										
+										// Trigger click and change events
+										item.click();
+										const clickEvent = new MouseEvent('click', { view: window, bubbles: true, cancelable: true });
+										item.dispatchEvent(clickEvent);
+										
+										// Also dispatch on the main dropdown element
+										const dropdownChangeEvent = new Event('change', { bubbles: true });
+										element.dispatchEvent(dropdownChangeEvent);
+										
+										return {
+											success: true,
+											message: `Selected custom dropdown item: ${item.textContent.trim()}`
+										};
+									}
+								}
+							}
+							
+							// Show all available options for debugging
+							const availableOptions = Array.from(menuItems).map(item => ({
+								text: item.textContent ? item.textContent.trim() : '',
+								value: item.getAttribute('data-value') || ''
+							})).filter(opt => opt.text || opt.value);
+							
+							return {
+								success: false,
+								error: `Custom dropdown item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+							};
+						}
+						
+						return null; // Not a dropdown element
+					}
+					
+					// Function to recursively search children for dropdowns
+					function searchChildrenForSelection(element, maxDepth, currentDepth = 0) {
+						if (currentDepth >= maxDepth) return null;
+						
+						// Check all direct children
+						for (let child of element.children) {
+							// Try selection on this child
+							const result = attemptSelection(child);
+							if (result && result.success) {
+								return result;
+							}
+							
+							// Recursively check this child's children
+							const childResult = searchChildrenForSelection(child, maxDepth, currentDepth + 1);
+							if (childResult && childResult.success) {
+								return childResult;
+							}
+						}
+						
+						return null;
+					}
+					
+					// First try the target element itself
+					let selectionResult = attemptSelection(startElement);
+					if (selectionResult) {
+						// If attemptSelection returned a result (success or failure), use it
+						// Don't search children if we found a dropdown element but selection failed
+						return selectionResult;
+					}
+					
+					// Only search children if target element is not a dropdown element
+					selectionResult = searchChildrenForSelection(startElement, 4);
+					if (selectionResult && selectionResult.success) {
+						return selectionResult;
+					}
+					
+					return {
+						success: false,
+						error: `Element and its children (depth 4) do not contain a dropdown with option '${targetText}' (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+					};
+				}
+				"""
+
+				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': selection_script,
+						'arguments': [{'value': target_text}],
+						'objectId': object_id,
+						'returnByValue': True,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				selection_result = result.get('result', {}).get('value', {})
+
+				if selection_result.get('success'):
+					msg = selection_result.get('message', f'Selected option: {target_text}')
+					self.logger.info(f'✅ {msg}')
+					
+					# Return the result as a dict
+					return {
+						'success': 'true',
+						'message': msg,
+						'value': selection_result.get('value', target_text),
+						'element_index': str(index_for_logging)
+					}
+				else:
+					error_msg = selection_result.get('error', f'Failed to select option: {target_text}')
+					self.logger.error(f'❌ {error_msg}')
+					raise ValueError(error_msg)
+
+			except Exception as e:
+				error_msg = f'Failed to select dropdown option: {str(e)}'
+				self.logger.error(error_msg)
+				raise ValueError(error_msg) from e
+
+		except Exception as e:
+			error_msg = f'Failed to select dropdown option "{target_text}" for element {index_for_logging}: {str(e)}'
+			self.logger.error(error_msg)
+			raise ValueError(error_msg) from e

@@ -681,17 +681,21 @@ class TestControllerIntegration:
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
-		# Wait for the page to load
-		page = await browser_session.get_current_page()
-		await page.wait_for_load_state()
+		# Wait for the page to load using CDP
+		cdp_session = browser_session.agent_focus
+		assert cdp_session is not None, "CDP session not initialized"
+		
+		# Wait for page load by checking document ready state
+		await asyncio.sleep(0.5)  # Brief wait for navigation to start
+		ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': 'document.readyState'}, 
+			session_id=cdp_session.session_id
+		)
+		# If not complete, wait a bit more
+		if ready_state.get('result', {}).get('value') != 'complete':
+			await asyncio.sleep(1.0)
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
-
-		# Interact with the dropdown to ensure it's recognized
-		await page.click('select#test-dropdown')
-
-		# Update the state after interaction
 		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
 
 		# Get the selector map
@@ -792,9 +796,19 @@ class TestControllerIntegration:
 
 		await controller.act(GoToUrlActionModel(**goto_action), browser_session)
 
-		# Wait for the page to load
-		page = await browser_session.get_current_page()
-		await page.wait_for_load_state()
+		# Wait for the page to load using CDP
+		cdp_session = browser_session.agent_focus
+		assert cdp_session is not None, "CDP session not initialized"
+		
+		# Wait for page load by checking document ready state
+		await asyncio.sleep(0.5)  # Brief wait for navigation to start
+		ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': 'document.readyState'}, 
+			session_id=cdp_session.session_id
+		)
+		# If not complete, wait a bit more
+		if ready_state.get('result', {}).get('value') != 'complete':
+			await asyncio.sleep(1.0)
 
 		# populate the selector map with highlight indices
 		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
@@ -831,6 +845,10 @@ class TestControllerIntegration:
 		assert 'selected option' in result.extracted_content.lower()
 		assert 'Second Option' in result.extracted_content
 
-		# Verify the actual dropdown selection was made by checking the DOM
-		selected_value = await page.evaluate("document.getElementById('test-dropdown').value")
+		# Verify the actual dropdown selection was made by checking the DOM using CDP
+		selected_value_result = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': "document.getElementById('test-dropdown').value"},
+			session_id=cdp_session.session_id
+		)
+		selected_value = selected_value_result.get('result', {}).get('value')
 		assert selected_value == 'option2'  # Second Option has value "option2"

@@ -214,6 +214,27 @@ class UploadFileEvent(ElementSelectedEvent[None]):
 	event_timeout: float | None = 30.0  # seconds
 
 
+class GetDropdownOptionsEvent(ElementSelectedEvent[dict[str, str]]):
+	"""Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns).
+	
+	Returns a dict containing dropdown type, options list, and element metadata."""
+
+	node: 'EnhancedDOMTreeNode'
+
+	event_timeout: float | None = 8.0  # seconds
+
+
+class SelectDropdownOptionEvent(ElementSelectedEvent[dict[str, str]]):
+	"""Select a dropdown option by exact text from any dropdown type.
+	
+	Returns a dict containing success status and selection details."""
+
+	node: 'EnhancedDOMTreeNode'
+	text: str  # The option text to select
+
+	event_timeout: float | None = 8.0  # seconds
+
+
 class ScrollToTextEvent(BaseEvent[None]):
 	"""Scroll to specific text on the page. Raises exception if text not found."""
 
