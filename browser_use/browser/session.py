@@ -120,7 +120,7 @@ class CDPSession(BaseModel):
 		self.session_id = result['sessionId']
 
 		# Use specified domains or default domains
-		domains = domains or ['Page', 'DOM', 'DOMSnapshot', 'Accessibility', 'Runtime', 'Inspector']
+		domains = domains or ['Page', 'DOM', 'DOMSnapshot', 'Accessibility', 'Runtime', 'Inspector', 'Debugger']
 
 		# Enable all domains in parallel
 		enable_tasks = []
@@ -137,6 +137,18 @@ class CDPSession(BaseModel):
 		results = await asyncio.gather(*enable_tasks, return_exceptions=True)
 		if any(isinstance(result, Exception) for result in results):
 			raise RuntimeError(f'Failed to enable requested CDP domain: {results}')
+
+		# disable breakpoints on the page so it doesnt pause on crashes / debugger statements
+		try:
+			await self.cdp_client.send.Debugger.setSkipAllPauses(params={'skip': True}, session_id=self.session_id)
+			if 'Debugger' not in domains:
+				await self.cdp_client.send.Debugger.disable()
+			# await cdp_session.cdp_client.send.EventBreakpoints.disable(session_id=cdp_session.session_id)
+		except Exception as e:
+			# self.logger.warning(f'Failed to disable page JS breakpoints: {e}')
+			pass
+
+
 		target_info = await self.get_target_info()
 		self.title = target_info['title']
 		self.url = target_info['url']
