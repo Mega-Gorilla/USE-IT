@@ -51,7 +51,7 @@ class CloseTabAction(BaseModel):
 class ScrollAction(BaseModel):
 	down: bool  # True to scroll down, False to scroll up
 	num_pages: float  # Number of pages to scroll (0.5 = half page, 1.0 = one page, etc.)
-	index: int | None = None  # Optional element index to find scroll container for
+	frame_element_index: int | None = None  # Optional element index to find scroll container for
 
 
 class SendKeysAction(BaseModel):
