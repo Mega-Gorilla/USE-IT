@@ -305,7 +305,9 @@ class Controller(Generic[Context]):
 
 			# Dispatch type text event with node
 			try:
-				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing))
+				event = browser_session.event_bus.dispatch(
+					TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing)
+				)
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
@@ -636,7 +638,11 @@ Provide the extracted information in a clear, structured format."""
 				direction = 'down' if params.down else 'up'
 
 				# If index is 0 or None, we're scrolling the page
-				target = 'the page' if params.frame_element_index is None or params.frame_element_index == 0 else f'element {params.frame_element_index}'
+				target = (
+					'the page'
+					if params.frame_element_index is None or params.frame_element_index == 0
+					else f'element {params.frame_element_index}'
+				)
 
 				if params.num_pages == 1.0:
 					long_term_memory = f'Scrolled {direction} {target} by one page'

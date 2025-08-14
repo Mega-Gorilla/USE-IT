@@ -120,7 +120,7 @@ class CDPSession(BaseModel):
 		self.session_id = result['sessionId']
 
 		# Use specified domains or default domains
-		domains = domains or ['Page', 'DOM', 'DOMSnapshot', 'Accessibility', 'Runtime', 'Inspector']
+		domains = domains or ['Page', 'DOM', 'DOMSnapshot', 'Accessibility', 'Runtime', 'Inspector', 'Debugger']
 
 		# Enable all domains in parallel
 		enable_tasks = []
@@ -137,6 +137,17 @@ class CDPSession(BaseModel):
 		results = await asyncio.gather(*enable_tasks, return_exceptions=True)
 		if any(isinstance(result, Exception) for result in results):
 			raise RuntimeError(f'Failed to enable requested CDP domain: {results}')
+
+		# disable breakpoints on the page so it doesnt pause on crashes / debugger statements
+		try:
+			await self.cdp_client.send.Debugger.setSkipAllPauses(params={'skip': True}, session_id=self.session_id)
+			if 'Debugger' not in domains:
+				await self.cdp_client.send.Debugger.disable()
+			# await cdp_session.cdp_client.send.EventBreakpoints.disable(session_id=cdp_session.session_id)
+		except Exception as e:
+			# self.logger.warning(f'Failed to disable page JS breakpoints: {e}')
+			pass
+
 		target_info = await self.get_target_info()
 		self.title = target_info['title']
 		self.url = target_info['url']
@@ -395,9 +406,18 @@ class BrowserSession(BaseModel):
 			self.logger.warning('Cannot navigate - browser not connected')
 			return
 
+		target_id = None
+
+		# check if the url is already open in a tab somewhere that we haven't interacted with yet, if so, short-circuit and just switch to it
+		targets = await self._cdp_get_all_pages()
+		for target in targets:
+			if target.get('url') == event.url and target['targetId'] != self.agent_focus.target_id and not event.new_tab:
+				target_id = target['targetId']
+				event.new_tab = False
+				# await self.event_bus.dispatch(SwitchTabEvent(tab_index=tab_index))
+
 		try:
 			# Find or create target for navigation
-			target_id = None
 			tab_index = 0
 
 			self.logger.info(f'[on_NavigateToUrlEvent] Processing new_tab={event.new_tab}')
@@ -439,7 +459,7 @@ class BrowserSession(BaseModel):
 						self.logger.warning(f'[on_NavigateToUrlEvent] Falling back to current tab at index {tab_index}')
 			else:
 				# Use current tab
-				target_id = self.agent_focus.target_id
+				target_id = target_id or self.agent_focus.target_id
 
 			# Activate target (bring to foreground)
 			tab_index = await self.get_tab_index(target_id)

@@ -182,7 +182,7 @@ class AgentMessagePrompt:
 		recent_events_text = ''
 		if self.include_recent_events and self.browser_state.recent_events:
 			recent_events_text = f'Recent browser events: {self.browser_state.recent_events}\n'
-		
+
 		browser_state = f"""{current_tab_text}
 Available tabs:
 {tabs_text}
