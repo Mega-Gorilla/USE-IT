@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Action Input Models
@@ -14,12 +14,16 @@ class GoToUrlAction(BaseModel):
 
 
 class ClickElementAction(BaseModel):
-	index: int
+	index: int = Field(ge=1, description='index of the element to click')
+	new_tab: bool = Field(default=False, description='set True to open any resulting navigation in a new tab, False otherwise')
+	# expect_download: bool = Field(default=False, description='set True if expecting a download, False otherwise')  # moved to downloads_watchdog.py
+	# click_count: int = 1  # TODO
 
 
 class InputTextAction(BaseModel):
 	index: int
 	text: str
+	clear_existing: bool = Field(default=True, description='set True to clear existing text, False to append to existing text')
 
 
 class DoneAction(BaseModel):
@@ -47,7 +51,7 @@ class CloseTabAction(BaseModel):
 class ScrollAction(BaseModel):
 	down: bool  # True to scroll down, False to scroll up
 	num_pages: float  # Number of pages to scroll (0.5 = half page, 1.0 = one page, etc.)
-	index: int | None = None  # Optional element index to find scroll container for
+	frame_element_index: int | None = None  # Optional element index to find scroll container for
 
 
 class SendKeysAction(BaseModel):
@@ -71,3 +75,12 @@ class NoParamsAction(BaseModel):
 
 	model_config = ConfigDict(extra='ignore')
 	# No fields defined - all inputs are ignored automatically
+
+
+class GetDropdownOptionsAction(BaseModel):
+	index: int
+
+
+class SelectDropdownOptionAction(BaseModel):
+	index: int
+	text: str

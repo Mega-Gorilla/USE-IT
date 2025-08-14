@@ -18,14 +18,16 @@ llm = ChatOpenAI(model='gpt-4.1')
 
 
 async def main():
-	async with BrowserSession(
+	browser_session = BrowserSession(
 		browser_profile=BrowserProfile(
 			headless=False,
 			traces_dir='./tmp/result_processing',
 			window_size={'width': 1280, 'height': 1000},
 			user_data_dir='~/.config/browseruse/profiles/default',
 		)
-	) as browser_session:
+	)
+	await browser_session.start()
+	try:
 		agent = Agent(
 			task="go to google.com and type 'OpenAI' click search and give me the first url",
 			llm=llm,
@@ -45,6 +47,8 @@ async def main():
 
 		print('\nThoughts:')
 		pprint(history.model_thoughts(), indent=4)
+	finally:
+		await browser_session.stop()
 
 
 if __name__ == '__main__':

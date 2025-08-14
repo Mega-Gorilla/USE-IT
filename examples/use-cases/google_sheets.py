@@ -43,7 +43,8 @@ async def main():
 		),
 	)
 
-	async with browser_session:
+	await browser_session.start()
+	try:
 		model = ChatOpenAI(model='gpt-4.1')
 
 		# eraser = Agent(
@@ -76,29 +77,31 @@ async def main():
 			controller=controller,
 		)
 		await researcher.run()
+	finally:
+		await browser_session.stop()
 
-		# improvised_continuer = Agent(
-		# 	task="""
-		#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
-		#         Add 3 more rows to the bottom continuing the existing pattern, make sure any data you add is sourced correctly.
-		#     """,
-		# 	llm=model,
-		# 	browser_session=browser_session,
-		# 	controller=controller,
-		# )
-		# await improvised_continuer.run()
+	# improvised_continuer = Agent(
+	# 	task="""
+	#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+	#         Add 3 more rows to the bottom continuing the existing pattern, make sure any data you add is sourced correctly.
+	#     """,
+	# 	llm=model,
+	# 	browser_session=browser_session,
+	# 	controller=controller,
+	# )
+	# await improvised_continuer.run()
 
-		# final_fact_checker = Agent(
-		# 	task="""
-		#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
-		#         Fact-check every entry, add a new column F with your findings for each row.
-		#         Make sure to check the source URL for each row, and make sure the information is correct.
-		#     """,
-		# 	llm=model,
-		# 	browser_session=browser_session,
-		# 	controller=controller,
-		# )
-		# await final_fact_checker.run()
+	# final_fact_checker = Agent(
+	# 	task="""
+	#         Read the Google Sheet https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit
+	#         Fact-check every entry, add a new column F with your findings for each row.
+	#         Make sure to check the source URL for each row, and make sure the information is correct.
+	#     """,
+	# 	llm=model,
+	# 	browser_session=browser_session,
+	# 	controller=controller,
+	# )
+	# await final_fact_checker.run()
 
 
 if __name__ == '__main__':
