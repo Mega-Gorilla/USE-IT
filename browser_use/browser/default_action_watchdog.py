@@ -173,6 +173,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 				params={'targetId': self.browser_session.agent_focus.target_id}
 			)
 
+			# IMPORTANT: clear the selector map cache even if no navigation has happened!
+			# it's calculated based on visible elements, and if we don't clear it, it will be wrong
+			self.browser_session._cached_browser_state_summary = None
+			self.browser_session._cached_selector_map.clear()
+			if self.browser_session._dom_watchdog:
+				self.browser_session._dom_watchdog.clear_cache()
+
 			# Log success
 			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
 			return None
