@@ -183,7 +183,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 60,
 		step_timeout: int = 120,
-		preload: bool = False,
+		preload: bool = True,
 		include_recent_events: bool = False,
 		**kwargs,
 	):
