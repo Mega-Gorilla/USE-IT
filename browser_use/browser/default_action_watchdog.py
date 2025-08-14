@@ -86,14 +86,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
 
-				# Optional:Switch to the newly created tab
-				# Not recommended usually in order to match normal behavior with Cmd/Ctrl+Click
-				# If agent wanted to focus on the new page they would've clicked without new_tab
-				# from browser_use.browser.events import SwitchTabEvent
+				if not event.new_tab:
+					# if new_tab=False it means agent was not expecting a new tab to be opened
+					# so we need to switch to the new tab to make the agent aware of the surprise new tab that was opened.
+					# slightly counter-intuitive, when new_tab=True we dont actually want to switch to it,
+					# the agent is instructed that new_tab=True is equivalent to ctrl+click which opens in the background,
+					# so in multi_act it usually already sends [click_element_by_index(123, new_tab=True), switch_tab(-1)] anyway
+					from browser_use.browser.events import SwitchTabEvent
 
-				# last_tab_index = len(after_target_ids) - 1
-				# switch_event = self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
-				# await switch_event
+					last_tab_index = len(after_target_ids) - 1
+					switch_event = self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+					await switch_event
 
 			# Successfully clicked, return None
 			return None

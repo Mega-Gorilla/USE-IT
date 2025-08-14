@@ -406,7 +406,7 @@ class DOMWatchdog(BaseWatchdog):
 				self._dom_service = DomService(browser_session=self.browser_session, logger=self.logger)
 				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService created')
 			# else:
-				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
+			# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
 
 			# Get serialized DOM tree using the service
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Calling DomService.get_serialized_dom_tree...')
