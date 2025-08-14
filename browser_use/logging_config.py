@@ -106,7 +106,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 
 	# Determine the log level to use
 	if log_type == 'result':
-		log_level = 'RESULT'  # string usage to avoid syntax error
+		log_level = 35  # RESULT level value
 	elif log_type == 'debug':
 		log_level = logging.DEBUG
 	else:
