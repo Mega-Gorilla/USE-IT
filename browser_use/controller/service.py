@@ -67,21 +67,21 @@ T = TypeVar('T', bound=BaseModel)
 def extract_llm_error_message(error: Exception) -> str:
 	"""
 	Extract the clean error message from an exception that may contain <llm_error_msg> tags.
-	
+
 	If the tags are found, returns the content between them.
 	Otherwise, returns the original error string.
 	"""
 	import re
-	
+
 	error_str = str(error)
-	
+
 	# Look for content between <llm_error_msg> tags
 	pattern = r'<llm_error_msg>(.*?)</llm_error_msg>'
 	match = re.search(pattern, error_str, re.DOTALL)
-	
+
 	if match:
 		return match.group(1).strip()
-	
+
 	# Fallback: return the original error string
 	return error_str
 
@@ -176,9 +176,7 @@ class Controller(Generic[Context]):
 				memory = f"Searched Google for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(
-					extracted_content=memory, include_in_memory=True, long_term_memory=memory
-				)
+				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to search Google: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -471,9 +469,7 @@ class Controller(Generic[Context]):
 				memory = f'Switched to tab #{params.page_id}'
 				msg = f'🔄  {memory}'
 				logger.info(msg)
-				return ActionResult(
-					extracted_content=memory, include_in_memory=True, long_term_memory=memory
-				)
+				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -595,7 +591,9 @@ Provide the extracted information in a clear, structured format."""
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
 					current_url = await browser_session.get_current_page_url()
-					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
+					memory = (
+						f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
+					)
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
@@ -716,9 +714,10 @@ Provide the extracted information in a clear, structured format."""
 				raise ValueError(f'Element index {params.index} not found in DOM')
 
 			# Dispatch GetDropdownOptionsEvent to the event handler
-			from browser_use.browser.events import GetDropdownOptionsEvent
 			import json
-			
+
+			from browser_use.browser.events import GetDropdownOptionsEvent
+
 			event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 			dropdown_data = await event.event_result()
 
@@ -728,7 +727,7 @@ Provide the extracted information in a clear, structured format."""
 			# Extract the message from the returned data
 			msg = dropdown_data.get('message', '')
 			options_count = len(json.loads(dropdown_data.get('options', '[]')))  # Parse the string back to list to get count
-			
+
 			return ActionResult(
 				extracted_content=msg,
 				include_in_memory=True,
@@ -749,7 +748,7 @@ Provide the extracted information in a clear, structured format."""
 
 			# Dispatch SelectDropdownOptionEvent to the event handler
 			from browser_use.browser.events import SelectDropdownOptionEvent
-			
+
 			event = browser_session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=params.text))
 			selection_data = await event.event_result()
 
@@ -758,7 +757,7 @@ Provide the extracted information in a clear, structured format."""
 
 			# Extract the message from the returned data
 			msg = selection_data.get('message', f'Selected option: {params.text}')
-			
+
 			return ActionResult(
 				extracted_content=msg,
 				include_in_memory=True,

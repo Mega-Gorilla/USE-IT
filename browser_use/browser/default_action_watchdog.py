@@ -231,16 +231,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if tag_name == 'select':
 				try:
-					dropdown_options = await self.event_bus.dispatch(GetDropdownOptionsEvent(node=element_node)).event_result(raise_if_none=True) or {}
+					dropdown_options = (
+						await self.event_bus.dispatch(GetDropdownOptionsEvent(node=element_node)).event_result(raise_if_none=True)
+						or {}
+					)
 				except Exception as e:
 					self.logger.warning(f'Failed to get dropdown options: {type(e).__name__}: {e}')
 					dropdown_options = {}
-				available_options = ("Available options: [" + ", ".join(dropdown_options.keys()) + "]") if dropdown_options else "Call get_dropdown_options() to get available options list."
-				self.logger.warning(f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}]')
-				raise Exception(f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}')
+				available_options = (
+					('Available options: [' + ', '.join(dropdown_options.keys()) + ']')
+					if dropdown_options
+					else 'Call get_dropdown_options() to get available options list.'
+				)
+				self.logger.warning(
+					f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}]'
+				)
+				raise Exception(
+					f'<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}</llm_error_msg>'
+				)
 
 			if tag_name == 'input' and element_type == 'file':
-				raise Exception('Cannot click on file input elements. File uploads must be handled using upload_file_to_element()')
+				raise Exception(
+					'<llm_error_msg>Cannot click on file input elements. File uploads must be handled using upload_file_to_element()</llm_error_msg>'
+				)
 
 			# Get CDP client
 			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
@@ -529,11 +542,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 			raise e
 		except Exception as e:
 			# Extract key element info for error message
-			element_info = f"<{element_node.tag_name or 'unknown'}"
+			element_info = f'<{element_node.tag_name or "unknown"}'
 			if element_node.element_index:
-				element_info += f" index={element_node.element_index}"
-			element_info += ">"
-			raise Exception(f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible.</llm_error_msg> Details: {str(e)}')
+				element_info += f' index={element_node.element_index}'
+			element_info += '>'
+			raise Exception(
+				f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible.</llm_error_msg> Details: {type(e).__name__}: {e}'
+			)
 
 	async def _type_to_page(self, text: str):
 		"""
@@ -1185,7 +1200,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if it's a file input
 			if not self.browser_session.is_file_input(element_node):
-				raise Exception(f'<llm_error_msg>Element {index_for_logging} is not a file input. Use click_element_by_index for non-file input elements.</llm_error_msg>')
+				raise Exception(
+					f'<llm_error_msg>Element {index_for_logging} is not a file input. Use click_element_by_index for non-file input elements.</llm_error_msg>'
+				)
 
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client
@@ -1492,7 +1509,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'element_info': element_info,
 					'source': source_info,
 					'formatted_options': '\n'.join(formatted_options),
-					'message': msg
+					'message': msg,
 				}
 
 			except Exception as e:
@@ -1738,13 +1755,13 @@ class DefaultActionWatchdog(BaseWatchdog):
 				if selection_result.get('success'):
 					msg = selection_result.get('message', f'Selected option: {target_text}')
 					self.logger.info(f'✅ {msg}')
-					
+
 					# Return the result as a dict
 					return {
 						'success': 'true',
 						'message': msg,
 						'value': selection_result.get('value', target_text),
-						'element_index': str(index_for_logging)
+						'element_index': str(index_for_logging),
 					}
 				else:
 					error_msg = selection_result.get('error', f'Failed to select option: {target_text}')
