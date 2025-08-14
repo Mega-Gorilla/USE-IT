@@ -115,7 +115,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			else:
 				try:
 					# Try to type to the specific element
-					await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
+					await self._input_text_element_node_impl(
+						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
+					)
 					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
 				except Exception as e:
@@ -157,12 +159,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 				element_node = event.node
 				index_for_logging = element_node.backend_node_id or 'unknown'
 
+				# Check if the element is an iframe
+				is_iframe = element_node.tag_name and element_node.tag_name.upper() == 'IFRAME'
+
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
 					self.logger.info(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
 					)
+
+					# CRITICAL: For iframe scrolling, we need to force a full DOM refresh
+					# because the iframe's content has changed position
+					if is_iframe:
+						self.logger.debug('🔄 Forcing DOM refresh after iframe scroll')
+						# Clear all caches to force complete DOM rebuild
+						self.browser_session._cached_browser_state_summary = None
+						self.browser_session._cached_selector_map.clear()
+						if self.browser_session._dom_watchdog:
+							self.browser_session._dom_watchdog.clear_cache()
+
+						# Wait a bit for the scroll to settle and DOM to update
+						await asyncio.sleep(0.5)
+
 					return None
 
 			# Perform target-level scroll
@@ -209,10 +228,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				raise Exception('<llm_error_msg>Cannot click on file input elements. File uploads must be handled programmatically.</llm_error_msg>')
 
 			# Get CDP client
-			cdp_session = await self.browser_session.get_or_create_cdp_session()
+			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
 
 			# Get the correct session ID for the element's frame
-			# session_id = await self._get_session_id_for_element(element_node)
 			session_id = cdp_session.session_id
 
 			# Get element bounds
@@ -461,7 +479,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						timeout=1.0,  # 1 second timeout for mouseReleased
 					)
 				except TimeoutError:
-					self.logger.debug('⏱️ Mouse up timed out (likely due to dialog), continuing...')
+					self.logger.debug('⏱️ Mouse up timed out (possibly due to lag or dialog popup), continuing...')
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
 
@@ -845,6 +863,63 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
+			# Check if this is an iframe - if so, scroll its content directly
+			if element_node.tag_name and element_node.tag_name.upper() == 'IFRAME':
+				# For iframes, we need to scroll the content document, not the iframe element itself
+				# Use JavaScript to directly scroll the iframe's content
+				backend_node_id = element_node.backend_node_id
+
+				# Resolve the node to get an object ID
+				result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': backend_node_id},
+					session_id=cdp_session.session_id,
+				)
+
+				if 'object' in result and 'objectId' in result['object']:
+					object_id = result['object']['objectId']
+
+					# Scroll the iframe's content directly
+					scroll_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': f"""
+								function() {{
+									try {{
+										const doc = this.contentDocument || this.contentWindow.document;
+										if (doc) {{
+											const scrollElement = doc.documentElement || doc.body;
+											if (scrollElement) {{
+												const oldScrollTop = scrollElement.scrollTop;
+												scrollElement.scrollTop += {pixels};
+												const newScrollTop = scrollElement.scrollTop;
+												return {{
+													success: true,
+													oldScrollTop: oldScrollTop,
+													newScrollTop: newScrollTop,
+													scrolled: newScrollTop - oldScrollTop
+												}};
+											}}
+										}}
+										return {{success: false, error: 'Could not access iframe content'}};
+									}} catch (e) {{
+										return {{success: false, error: e.toString()}};
+									}}
+								}}
+							""",
+							'objectId': object_id,
+							'returnByValue': True,
+						},
+						session_id=cdp_session.session_id,
+					)
+
+					if scroll_result and 'result' in scroll_result and 'value' in scroll_result['result']:
+						result_value = scroll_result['result']['value']
+						if result_value.get('success'):
+							self.logger.debug(f'Successfully scrolled iframe content by {result_value.get("scrolled", 0)}px')
+							return True
+						else:
+							self.logger.debug(f'Failed to scroll iframe: {result_value.get("error", "Unknown error")}')
+
+			# For non-iframe elements, use the standard mouse wheel approach
 			# Get element bounds to know where to scroll
 			backend_node_id = element_node.backend_node_id
 			box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(

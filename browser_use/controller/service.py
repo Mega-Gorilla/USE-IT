@@ -305,7 +305,7 @@ class Controller(Generic[Context]):
 
 			# Dispatch type text event with node
 			try:
-				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text))
+				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
@@ -614,15 +614,15 @@ Provide the extracted information in a clear, structured format."""
 				# Look up the node from the selector map if index is provided
 				# Special case: index 0 means scroll the whole page (root/body element)
 				node = None
-				if params.index is not None and params.index != 0:
+				if params.frame_element_index is not None and params.frame_element_index != 0:
 					try:
-						node = await browser_session.get_element_by_index(params.index)
+						node = await browser_session.get_element_by_index(params.frame_element_index)
 						if node is None:
 							# Element not found - return error
-							raise ValueError(f'Element index {params.index} not found in DOM')
+							raise ValueError(f'Element index {params.frame_element_index} not found in DOM')
 					except Exception as e:
 						# Error getting element - return error
-						raise ValueError(f'Failed to get element {params.index}: {e}') from e
+						raise ValueError(f'Failed to get element {params.frame_element_index}: {e}') from e
 
 				# Dispatch scroll event with node - the complex logic is handled in the event handler
 				# Convert pages to pixels (assuming 800px per page as standard viewport height)
@@ -635,7 +635,7 @@ Provide the extracted information in a clear, structured format."""
 				direction = 'down' if params.down else 'up'
 
 				# If index is 0 or None, we're scrolling the page
-				target = 'the page' if params.index is None or params.index == 0 else f'element {params.index}'
+				target = 'the page' if params.frame_element_index is None or params.frame_element_index == 0 else f'element {params.frame_element_index}'
 
 				if params.num_pages == 1.0:
 					long_term_memory = f'Scrolled {direction} {target} by one page'
