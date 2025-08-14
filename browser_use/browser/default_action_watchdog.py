@@ -547,7 +547,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				element_info += f' index={element_node.element_index}'
 			element_info += '>'
 			raise Exception(
-				f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible.</llm_error_msg> Details: {type(e).__name__}: {e}'
+				f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible. {type(e).__name__}: {e}</llm_error_msg>'
 			)
 
 	async def _type_to_page(self, text: str):
