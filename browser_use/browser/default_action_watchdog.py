@@ -240,7 +240,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					dropdown_options = {}
 				available_options = (
 					('Available options: [' + ', '.join(dropdown_options.keys()) + ']')
-					if dropdown_options
+					if dropdown_options and len(dropdown_options) < 100
 					else 'Call get_dropdown_options() to get available options list.'
 				)
 				self.logger.warning(
