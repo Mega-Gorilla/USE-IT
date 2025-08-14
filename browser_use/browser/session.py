@@ -148,7 +148,6 @@ class CDPSession(BaseModel):
 			# self.logger.warning(f'Failed to disable page JS breakpoints: {e}')
 			pass
 
-
 		target_info = await self.get_target_info()
 		self.title = target_info['title']
 		self.url = target_info['url']
@@ -407,9 +406,18 @@ class BrowserSession(BaseModel):
 			self.logger.warning('Cannot navigate - browser not connected')
 			return
 
+		target_id = None
+
+		# check if the url is already open in a tab somewhere that we haven't interacted with yet, if so, short-circuit and just switch to it
+		targets = await self._cdp_get_all_pages()
+		for target in targets:
+			if target.get('url') == event.url and target['targetId'] != self.agent_focus.target_id and not event.new_tab:
+				target_id = target['targetId']
+				event.new_tab = False
+				# await self.event_bus.dispatch(SwitchTabEvent(tab_index=tab_index))
+
 		try:
 			# Find or create target for navigation
-			target_id = None
 			tab_index = 0
 
 			self.logger.info(f'[on_NavigateToUrlEvent] Processing new_tab={event.new_tab}')
@@ -451,7 +459,7 @@ class BrowserSession(BaseModel):
 						self.logger.warning(f'[on_NavigateToUrlEvent] Falling back to current tab at index {tab_index}')
 			else:
 				# Use current tab
-				target_id = self.agent_focus.target_id
+				target_id = target_id or self.agent_focus.target_id
 
 			# Activate target (bring to foreground)
 			tab_index = await self.get_tab_index(target_id)
