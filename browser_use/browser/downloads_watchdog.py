@@ -182,8 +182,8 @@ class DownloadsWatchdog(BaseWatchdog):
 							self._track_download(file_path)
 
 				# Register the handlers with CDP
-				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)
-				cdp_client.register.Browser.downloadProgress(download_progress_handler)
+				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)  # type: ignore[arg-type]
+				cdp_client.register.Browser.downloadProgress(download_progress_handler)  # type: ignore[arg-type]
 
 				self._download_cdp_session_setup = True
 				self.logger.debug('[DownloadsWatchdog] Set up CDP download listeners')

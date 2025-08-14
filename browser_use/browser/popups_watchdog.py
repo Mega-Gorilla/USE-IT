@@ -75,7 +75,7 @@ class PopupsWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.error(f'Failed to accept dialog: {e}')
 
-			cdp_session.cdp_client.register.Page.javascriptDialogOpening(handle_dialog)
+			cdp_session.cdp_client.register.Page.javascriptDialogOpening(handle_dialog)  # type: ignore[arg-type]
 			self.logger.info(
 				f'✅ Successfully registered Page.javascriptDialogOpening handler for session {cdp_session.session_id}'
 			)
