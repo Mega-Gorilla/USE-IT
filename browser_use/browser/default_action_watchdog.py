@@ -115,7 +115,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			else:
 				try:
 					# Try to type to the specific element
-					await self._input_text_element_node_impl(element_node, event.text, event.clear_existing)
+					await self._input_text_element_node_impl(
+						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
+					)
 					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
 				except Exception as e:
