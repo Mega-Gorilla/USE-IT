@@ -274,7 +274,7 @@ class Controller(Generic[Context]):
 
 			# Dispatch type text event with node
 			try:
-				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text))
+				event = browser_session.event_bus.dispatch(TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."

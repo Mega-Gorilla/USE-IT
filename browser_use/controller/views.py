@@ -23,6 +23,7 @@ class ClickElementAction(BaseModel):
 class InputTextAction(BaseModel):
 	index: int
 	text: str
+	clear_existing: bool = Field(default=True, description='set True to clear existing text, False to append to existing text')
 
 
 class DoneAction(BaseModel):
