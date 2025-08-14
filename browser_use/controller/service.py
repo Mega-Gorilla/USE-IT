@@ -592,7 +592,8 @@ Provide the extracted information in a clear, structured format."""
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					memory = f'Extracted content from {cdp_session.url} for query: {query}\nContent saved to file system: {save_result}'
+					current_url = await browser_session.get_current_page_url()
+					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
