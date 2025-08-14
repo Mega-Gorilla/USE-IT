@@ -55,7 +55,6 @@ from browser_use.agent.views import (
 )
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
-from browser_use.browser.types import Browser, BrowserContext, Page
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
@@ -127,9 +126,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		task: str,
 		llm: BaseChatModel,
 		# Optional parameters
-		page: Page | None = None,
-		browser: Browser | BrowserSession | None = None,
-		browser_context: BrowserContext | None = None,
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
 		controller: Controller[Context] | None = None,
@@ -353,29 +349,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			include_recent_events=self.include_recent_events,
 		)
 
-		if isinstance(browser, BrowserSession):
-			browser_session = browser_session or browser
-
-		browser_context = page.context if page else browser_context
-		# assert not (browser_session and browser_profile), 'Cannot provide both browser_session and browser_profile'
-		# assert not (browser_session and browser), 'Cannot provide both browser_session and browser'
-		# assert not (browser_profile and browser), 'Cannot provide both browser_profile and browser'
-		# assert not (browser_profile and browser_context), 'Cannot provide both browser_profile and browser_context'
-		# assert not (browser and browser_context), 'Cannot provide both browser and browser_context'
-		# assert not (browser_session and browser_context), 'Cannot provide both browser_session and browser_context'
 		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 
-		if browser_session:
-			# Use the browser session directly without copying
-			# This ensures the CDP client and watchdogs are properly accessible
-			self.browser_session = browser_session
-		else:
-			if browser is not None:
-				assert isinstance(browser, Browser), 'Browser is not set up'
-			self.browser_session = BrowserSession(
-				browser_profile=browser_profile,
-				id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
-			)
+		self.browser_session = browser_session or BrowserSession(
+			browser_profile=browser_profile,
+			id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
+		)
 
 		if self.sensitive_data:
 			# Check if sensitive_data has domain-specific credentials
