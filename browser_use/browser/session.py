@@ -524,7 +524,7 @@ class BrowserSession(BaseModel):
 			target_id = targets[event.tab_index]['targetId']
 
 			# Activate target
-			await self.cdp_client.send.Target.activateTarget(params={'targetId': target_id})
+			self.agent_focus = await self.get_or_create_cdp_session(target_id=target_id, focus=True)
 
 			# Dispatch focus changed event
 			target_url = targets[event.tab_index].get('url', '')
