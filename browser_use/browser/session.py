@@ -694,6 +694,9 @@ class BrowserSession(BaseModel):
 					f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}'
 				)
 				self.agent_focus = session
+			if focus:
+				await session.cdp_client.send.Target.activateTarget(params={'targetId': session.target_id})
+				await session.cdp_client.send.Runtime.runIfWaitingForDebugger(session_id=session.session_id)
 			# else:
 			# self.logger.debug(f'[get_or_create_cdp_session] Reusing existing session for {target_id} (focus={focus})')
 			return session
@@ -723,6 +726,8 @@ class BrowserSession(BaseModel):
 				f'[get_or_create_cdp_session] Switching agent focus from {self.agent_focus.target_id} to {target_id}'
 			)
 			self.agent_focus = session
+			await session.cdp_client.send.Target.activateTarget(params={'targetId': session.target_id})
+			await session.cdp_client.send.Runtime.runIfWaitingForDebugger(session_id=session.session_id)
 		else:
 			self.logger.debug(
 				f'[get_or_create_cdp_session] Created session for {target_id} without changing focus (still on {self.agent_focus.target_id})'

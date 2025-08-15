@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 # TODO: enable cross origin iframes -> experimental for now
-ENABLE_CROSS_ORIGIN_IFRAMES = True
+ENABLE_CROSS_ORIGIN_IFRAMES = False
 
 
 class DomService:

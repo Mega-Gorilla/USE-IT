@@ -247,7 +247,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Get CDP client
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
+			await self.browser_session.get_or_create_cdp_session(focus=True)
+			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
 
 			# Get the correct session ID for the element's frame
 			session_id = cdp_session.session_id
@@ -495,7 +496,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 							},
 							session_id=session_id,
 						),
-						timeout=1.0,  # 1 second timeout for mouseReleased
+						timeout=3.0,  # 1 second timeout for mouseReleased
 					)
 				except TimeoutError:
 					self.logger.debug('⏱️ Mouse up timed out (possibly due to lag or dialog popup), continuing...')
@@ -528,6 +529,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				except Exception as js_e:
 					self.logger.error(f'CDP JavaScript click also failed: {js_e}')
 					raise Exception(f'Failed to click element: {e}')
+			finally:
+				# always re-focus back to original top-level page session context in case click opened a new tab/popup/window/dialog/etc.
+				await self.browser_session.get_or_create_cdp_session(focus=True)
 
 		except URLNotAllowedError as e:
 			raise e

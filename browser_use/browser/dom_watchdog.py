@@ -256,6 +256,10 @@ class DOMWatchdog(BaseWatchdog):
 				# Skip DOM building if not requested
 				content = SerializedDOMState(_root=None, selector_map={})
 
+			# re-focus top-level page session context
+			assert self.browser_session.agent_focus is not None, 'No current target ID'
+			await self.browser_session.get_or_create_cdp_session(target_id=self.browser_session.agent_focus.target_id, focus=True)
+
 			# Get screenshot if requested
 			screenshot_b64 = None
 			if event.include_screenshot:
