@@ -141,8 +141,8 @@ class CDPSession(BaseModel):
 		# disable breakpoints on the page so it doesnt pause on crashes / debugger statements
 		try:
 			await self.cdp_client.send.Debugger.setSkipAllPauses(params={'skip': True}, session_id=self.session_id)
-			if 'Debugger' not in domains:
-				await self.cdp_client.send.Debugger.disable()
+			# if 'Debugger' not in domains:
+			# 	await self.cdp_client.send.Debugger.disable()
 			# await cdp_session.cdp_client.send.EventBreakpoints.disable(session_id=cdp_session.session_id)
 		except Exception as e:
 			# self.logger.warning(f'Failed to disable page JS breakpoints: {e}')

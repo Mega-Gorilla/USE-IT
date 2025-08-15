@@ -230,7 +230,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				self.logger.warning(f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.')
+				self.logger.warning(
+					f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.'
+				)
 				raise Exception(
 					f'<llm_error_msg>Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.</llm_error_msg>'
 				)
@@ -241,7 +243,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Get CDP client
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
+			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
 
 			# Get the correct session ID for the element's frame
 			session_id = cdp_session.session_id

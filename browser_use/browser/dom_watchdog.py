@@ -488,10 +488,14 @@ class DOMWatchdog(BaseWatchdog):
 		if not self.browser_session.agent_focus:
 			raise RuntimeError('No active CDP session - browser may not be connected yet')
 
-		cdp_session = self.browser_session.agent_focus
+		cdp_session = await self.browser_session.get_or_create_cdp_session(
+			target_id=self.browser_session.agent_focus.target_id, focus=True
+		)
 
 		# Get layout metrics which includes all the information we need
-		metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+		metrics = await asyncio.wait_for(
+			cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id), timeout=10.0
+		)
 
 		# Extract different viewport types
 		layout_viewport = metrics.get('layoutViewport', {})
