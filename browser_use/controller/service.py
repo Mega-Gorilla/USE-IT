@@ -16,6 +16,7 @@ from browser_use.browser import BrowserSession
 from browser_use.browser.events import (
 	ClickElementEvent,
 	CloseTabEvent,
+	GetDropdownOptionsEvent,
 	GoBackEvent,
 	NavigateToUrlEvent,
 	ScrollEvent,
@@ -289,6 +290,14 @@ class Controller(Generic[Context]):
 				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
 				error_msg = f'Failed to click element {params.index}: {clean_msg}'
+
+				# If it's a select dropdown error, automatically get the dropdown options
+				if '<select> element' in str(e) and node:
+					try:
+						return await get_dropdown_options(index=params.index, browser_session=browser_session)
+					except Exception as dropdown_error:
+						pass
+
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -715,8 +724,6 @@ Provide the extracted information in a clear, structured format."""
 
 			# Dispatch GetDropdownOptionsEvent to the event handler
 			import json
-
-			from browser_use.browser.events import GetDropdownOptionsEvent
 
 			event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 			dropdown_data = await event.event_result(timeout=3.0, raise_if_none=True, raise_if_any=True)

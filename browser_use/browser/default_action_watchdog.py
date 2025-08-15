@@ -230,24 +230,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				try:
-					dropdown_options = (
-						await self.event_bus.dispatch(GetDropdownOptionsEvent(node=element_node)).event_result(raise_if_none=True)
-						or {}
-					)
-				except Exception as e:
-					self.logger.warning(f'Failed to get dropdown options: {type(e).__name__}: {e}')
-					dropdown_options = {}
-				available_options = (
-					('Available options: [' + ', '.join(dropdown_options.keys()) + ']')
-					if dropdown_options and len(dropdown_options) < 100
-					else 'Call get_dropdown_options() to get available options list.'
-				)
-				self.logger.warning(
-					f'Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}]'
-				)
+				self.logger.warning('Cannot click on <select> elements. Use select_dropdown_option() action instead.')
 				raise Exception(
-					f'<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option() action instead. {available_options}</llm_error_msg>'
+					'<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option() action instead.</llm_error_msg>'
 				)
 
 			if tag_name == 'input' and element_type == 'file':
@@ -1485,15 +1470,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 					status = ' (selected)' if opt.get('selected') else ''
 					formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
 
-				dropdown_type = dropdown_data.get('type', 'unknown')
-				element_info = f'ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+				dropdown_type = dropdown_data.get('type', 'select')
+				element_info = f'Index: {index_for_logging}, Type: {dropdown_type}, ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
 				source_info = dropdown_data.get('source', 'unknown')
 
 				if source_info == 'target':
 					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
 				else:
 					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
-				msg += '\n\nUse the exact text string (without quotes) in select_dropdown_option'
+				msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown_option(index={index_for_logging}, text=...)'
 
 				if source_info == 'target':
 					self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')

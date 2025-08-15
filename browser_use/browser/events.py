@@ -216,17 +216,19 @@ class UploadFileEvent(ElementSelectedEvent[None]):
 
 class GetDropdownOptionsEvent(ElementSelectedEvent[dict[str, str]]):
 	"""Get all options from any dropdown (native <select>, ARIA menus, or custom dropdowns).
-	
+
 	Returns a dict containing dropdown type, options list, and element metadata."""
 
 	node: 'EnhancedDOMTreeNode'
 
-	event_timeout: float | None = 8.0  # seconds
+	event_timeout: float | None = (
+		15.0  # some dropdowns lazy-load the list of options on first interaction, so we need to wait for them to load (e.g. table filter lists can have thousands of options)
+	)
 
 
 class SelectDropdownOptionEvent(ElementSelectedEvent[dict[str, str]]):
 	"""Select a dropdown option by exact text from any dropdown type.
-	
+
 	Returns a dict containing success status and selection details."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -367,7 +369,7 @@ class TabClosedEvent(BaseEvent):
 	event_timeout: float | None = 10.0  # seconds
 
 
-# TODO: emit this when DOM changes signficiantly, inner frame navigates, form submits, history.pushState(), etc.
+# TODO: emit this when DOM changes significantly, inner frame navigates, form submits, history.pushState(), etc.
 # class TabUpdatedEvent(BaseEvent):
 # 	"""Tab information updated (URL changed, etc.)."""
 
