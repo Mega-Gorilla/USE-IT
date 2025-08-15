@@ -703,7 +703,7 @@ Provide the extracted information in a clear, structured format."""
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get list of options from any dropdown (<select>, ARIA menus, or custom dropdowns like Semantic UI). Searches target element and up to 4 levels of children to find dropdowns. This only works on dropdown elements, not other input types.',
+			'Get list of option values exposed by a specific dropdown input field. Only works on dropdown-style form elements (<select>, Semantic UI/aria-labeled select, etc.).',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):

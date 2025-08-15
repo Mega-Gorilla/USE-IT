@@ -407,6 +407,7 @@ class BrowserSession(BaseModel):
 			return
 
 		target_id = None
+		tab_index = 0
 
 		# check if the url is already open in a tab somewhere that we haven't interacted with yet, if so, short-circuit and just switch to it
 		targets = await self._cdp_get_all_pages()
@@ -418,7 +419,6 @@ class BrowserSession(BaseModel):
 
 		try:
 			# Find or create target for navigation
-			tab_index = 0
 
 			self.logger.info(f'[on_NavigateToUrlEvent] Processing new_tab={event.new_tab}')
 			if event.new_tab:
@@ -503,15 +503,16 @@ class BrowserSession(BaseModel):
 			# - DOM rebuilding (dom_watchdog)
 
 		except Exception as e:
-			self.logger.error(f'Navigation failed: {e}')
-			self.event_bus.dispatch(
+			self.logger.error(f'Navigation failed: {type(e).__name__}: {e}')
+			await self.event_bus.dispatch(
 				NavigationCompleteEvent(
-					tab_index=tab_index if 'tab_index' in locals() else 0,
+					tab_index=tab_index,
 					url=event.url,
-					status=None,
-					error_message=str(e),
+					error_message=f'{type(e).__name__}: {e}',
 				)
 			)
+			await self.event_bus.dispatch(AgentFocusChangedEvent(tab_index=tab_index, url=event.url))
+			raise
 
 	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> None:
 		"""Handle tab switching - core browser functionality."""
