@@ -574,13 +574,13 @@ class BrowserSession(BaseModel):
 		self.logger.debug(f'🔄 AgentFocusChangedEvent received: tab_index={event.tab_index}, url={event.url}')
 
 		# Clear cached DOM state since focus changed
-		self.logger.debug('🔄 Clearing DOM cache...')
+		# self.logger.debug('🔄 Clearing DOM cache...')
 		if self._dom_watchdog:
 			self._dom_watchdog.clear_cache()
-			self.logger.debug('🔄 Cleared DOM cache after focus change')
+			# self.logger.debug('🔄 Cleared DOM cache after focus change')
 
 		# Clear cached browser state
-		self.logger.debug('🔄 Clearing cached browser state...')
+		# self.logger.debug('🔄 Clearing cached browser state...')
 		self._cached_browser_state_summary = None
 		self._cached_selector_map.clear()
 		self.logger.debug('🔄 Cached browser state cleared')
@@ -592,7 +592,7 @@ class BrowserSession(BaseModel):
 			self.logger.debug(f'🔄 Got {len(targets)} targets')
 			if 0 <= event.tab_index < len(targets):
 				target_id = targets[event.tab_index]['targetId']
-				self.logger.debug(f'🔄 Getting CDP session for target {target_id}...')
+				# self.logger.debug(f'🔄 Getting CDP session for target {target_id}...')
 				self.agent_focus = await self.get_or_create_cdp_session(target_id, focus=True)
 				self.logger.debug(f'🔄 Updated agent focus to tab {event.tab_index} (target {target_id})')
 
@@ -607,14 +607,15 @@ class BrowserSession(BaseModel):
 					timeout=2.0,
 				)
 				if test_result.get('result', {}).get('value') == 2:
-					self.logger.debug('🔄 ✅ Browser is responsive after focus change')
+					# self.logger.debug('🔄 ✅ Browser is responsive after focus change')
+					pass
 				else:
 					raise Exception('❌ Failed to execute test JS expression with Page.evaluate')
 			except Exception as e:
 				self.logger.error(f'🔄 ❌ Page appears crashed after focus change: {e}')
 				raise
 
-		self.logger.debug('🔄 AgentFocusChangedEvent handler completed successfully')
+		# self.logger.debug('🔄 AgentFocusChangedEvent handler completed successfully')
 
 	async def on_FileDownloadedEvent(self, event: FileDownloadedEvent) -> None:
 		"""Track downloaded files during this session."""
