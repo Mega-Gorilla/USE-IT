@@ -292,7 +292,7 @@ class Controller(Generic[Context]):
 				error_msg = f'Failed to click element {params.index}: {clean_msg}'
 
 				# If it's a select dropdown error, automatically get the dropdown options
-				if '<select> element' in str(e) and node:
+				if 'dropdown' in str(e) and node:
 					try:
 						return await get_dropdown_options(index=params.index, browser_session=browser_session)
 					except Exception as dropdown_error:

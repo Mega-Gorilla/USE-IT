@@ -230,9 +230,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				self.logger.warning('Cannot click on <select> elements. Use select_dropdown_option() action instead.')
+				self.logger.warning(f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.')
 				raise Exception(
-					'<llm_error_msg>Cannot click on <select> elements. Use select_dropdown_option() action instead.</llm_error_msg>'
+					f'<llm_error_msg>Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.</llm_error_msg>'
 				)
 
 			if tag_name == 'input' and element_type == 'file':
