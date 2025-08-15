@@ -30,7 +30,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 try:
 	import psutil
@@ -77,7 +77,6 @@ _configure_mcp_server_logging()
 # Import browser_use modules
 from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.browser.events import ClickElementEvent
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
 from browser_use.controller.service import Controller
 from browser_use.filesystem.file_system import FileSystem
@@ -117,10 +116,16 @@ _ensure_all_loggers_use_stderr()
 
 # Try to import MCP SDK
 try:
+	import contextlib
+
 	import mcp.server.stdio
 	import mcp.types as types
 	from mcp.server import NotificationOptions, Server
 	from mcp.server.models import InitializationOptions
+	from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+	from starlette.applications import Starlette
+	from starlette.routing import Mount
+	from starlette.types import Receive, Scope, Send
 
 	MCP_AVAILABLE = True
 
@@ -589,7 +594,7 @@ class BrowserUseServer:
 			return 'Error: No browser session active'
 
 		from browser_use.browser.events import NavigateToUrlEvent
-		
+
 		if new_tab:
 			event = self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=True))
 			await event
@@ -630,6 +635,7 @@ class BrowserUseServer:
 
 				# Open link in new tab
 				from browser_use.browser.events import NavigateToUrlEvent
+
 				event = self.browser_session.event_bus.dispatch(NavigateToUrlEvent(url=full_url, new_tab=True))
 				await event
 				tabs = await self.browser_session.get_tabs()
@@ -639,12 +645,14 @@ class BrowserUseServer:
 				# For non-link elements, just do a normal click
 				# Opening in new tab without href is not reliably supported
 				from browser_use.browser.events import ClickElementEvent
+
 				event = self.browser_session.event_bus.dispatch(ClickElementEvent(node=element))
 				await event
 				return f'Clicked element {index} (new tab not supported for non-link elements)'
 		else:
 			# Normal click
 			from browser_use.browser.events import ClickElementEvent
+
 			event = self.browser_session.event_bus.dispatch(ClickElementEvent(node=element))
 			await event
 			return f'Clicked element {index}'
@@ -659,6 +667,7 @@ class BrowserUseServer:
 			return f'Element with index {index} not found'
 
 		from browser_use.browser.events import TypeTextEvent
+
 		event = self.browser_session.event_bus.dispatch(TypeTextEvent(node=element, text=text))
 		await event
 		return f"Typed '{text}' into element {index}"
@@ -738,12 +747,14 @@ class BrowserUseServer:
 			return 'Error: No browser session active'
 
 		from browser_use.browser.events import ScrollEvent
-		
+
 		# Scroll by a standard amount (500 pixels)
-		event = self.browser_session.event_bus.dispatch(ScrollEvent(
-			direction=direction,  # type: ignore
-			amount=500
-		))
+		event = self.browser_session.event_bus.dispatch(
+			ScrollEvent(
+				direction=direction,  # type: ignore
+				amount=500,
+			)
+		)
 		await event
 		return f'Scrolled {direction}'
 
@@ -753,6 +764,7 @@ class BrowserUseServer:
 			return 'Error: No browser session active'
 
 		from browser_use.browser.events import GoBackEvent
+
 		event = self.browser_session.event_bus.dispatch(GoBackEvent())
 		await event
 		return 'Navigated back'
@@ -761,6 +773,7 @@ class BrowserUseServer:
 		"""Close the browser session."""
 		if self.browser_session:
 			from browser_use.browser.events import BrowserStopEvent
+
 			event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
 			await event
 			self.browser_session = None
@@ -785,6 +798,7 @@ class BrowserUseServer:
 			return 'Error: No browser session active'
 
 		from browser_use.browser.events import SwitchTabEvent
+
 		event = self.browser_session.event_bus.dispatch(SwitchTabEvent(tab_index=tab_index))
 		await event
 		state = await self.browser_session.get_browser_state_summary()
@@ -799,6 +813,7 @@ class BrowserUseServer:
 		if 0 <= tab_index < len(tabs):
 			url = tabs[tab_index].url
 			from browser_use.browser.events import CloseTabEvent
+
 			event = self.browser_session.event_bus.dispatch(CloseTabEvent(tab_index=tab_index))
 			await event
 			return f'Closed tab {tab_index}: {url}'
@@ -820,15 +835,45 @@ class BrowserUseServer:
 				),
 			)
 
+	async def run_http(self, port: int = 3000, json_response: bool = False):
+		"""Run the MCP server over Streamable HTTP."""
+		session_manager = StreamableHTTPSessionManager(
+			app=self.server,
+			event_store=None,
+			json_response=json_response,
+			stateless=True,
+		)
 
-async def main():
-	"""Main entry point."""
+		async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+			await session_manager.handle_request(scope, receive, send)
+
+		@contextlib.asynccontextmanager
+		async def lifespan(app: Starlette):
+			async with session_manager.run():
+				logger.info('BrowserUseServer started in Streamable HTTP mode')
+				yield
+
+		starlette_app = Starlette(
+			debug=False,
+			routes=[
+				Mount('/mcp', app=handle_streamable_http),
+			],
+			lifespan=lifespan,
+		)
+
+		import uvicorn
+
+		config = uvicorn.Config(starlette_app, host='127.0.0.1', port=port, loop='asyncio')
+		server = uvicorn.Server(config)
+		await server.serve()
+
+
+async def main(http: bool = False, port: int = 3000, json_response: bool = False):
 	if not MCP_AVAILABLE:
 		print('MCP SDK is required. Install with: pip install mcp', file=sys.stderr)
 		sys.exit(1)
 
 	server = BrowserUseServer()
-	# Capture telemetry for server start
 	server._telemetry.capture(
 		MCPServerTelemetryEvent(
 			version=get_browser_use_version(),
@@ -836,10 +881,13 @@ async def main():
 			parent_process_cmdline=get_parent_process_cmdline(),
 		)
 	)
+
 	try:
-		await server.run()
+		if http:
+			await server.run_http(port=port, json_response=json_response)
+		else:
+			await server.run()
 	finally:
-		# Capture telemetry for server stop
 		duration = time.time() - server._start_time
 		server._telemetry.capture(
 			MCPServerTelemetryEvent(
@@ -853,4 +901,12 @@ async def main():
 
 
 if __name__ == '__main__':
-	asyncio.run(main())
+	import argparse
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--http', action='store_true', help='Run in Streamable HTTP mode instead of stdio')
+	parser.add_argument('--port', type=int, default=3000, help='HTTP port (only in HTTP mode)')
+	parser.add_argument('--json-response', action='store_true', help='Use JSON responses instead of SSE')
+	args = parser.parse_args()
+
+	asyncio.run(main(http=args.http, port=args.port, json_response=args.json_response))

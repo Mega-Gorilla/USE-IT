@@ -23,6 +23,7 @@ class ClickElementAction(BaseModel):
 class InputTextAction(BaseModel):
 	index: int
 	text: str
+	clear_existing: bool = Field(default=True, description='set True to clear existing text, False to append to existing text')
 
 
 class DoneAction(BaseModel):
@@ -50,7 +51,7 @@ class CloseTabAction(BaseModel):
 class ScrollAction(BaseModel):
 	down: bool  # True to scroll down, False to scroll up
 	num_pages: float  # Number of pages to scroll (0.5 = half page, 1.0 = one page, etc.)
-	index: int | None = None  # Optional element index to find scroll container for
+	frame_element_index: int | None = None  # Optional element index to find scroll container for
 
 
 class SendKeysAction(BaseModel):
@@ -77,9 +78,9 @@ class NoParamsAction(BaseModel):
 
 
 class GetDropdownOptionsAction(BaseModel):
-	index: int
+	index: int = Field(ge=1, description='index of the dropdown element to get the option values for')
 
 
 class SelectDropdownOptionAction(BaseModel):
-	index: int
-	text: str
+	index: int = Field(ge=1, description='index of the dropdown element to select an option for')
+	text: str = Field(description='the text or exact value of the option to select')

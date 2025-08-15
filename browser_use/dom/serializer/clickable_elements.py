@@ -18,6 +18,16 @@ class ClickableElementDetector:
 		if node.tag_name in {'html', 'body'}:
 			return False
 
+		# IFRAME elements should be interactive if they're large enough to potentially need scrolling
+		# Small iframes (< 100px width or height) are unlikely to have scrollable content
+		if node.tag_name and node.tag_name.upper() == 'IFRAME':
+			if node.snapshot_node and node.snapshot_node.bounds:
+				width = node.snapshot_node.bounds.width
+				height = node.snapshot_node.bounds.height
+				# Only include iframes larger than 100x100px
+				if width > 100 and height > 100:
+					return True
+
 		# RELAXED SIZE CHECK: Allow all elements including size 0 (they might be interactive overlays, etc.)
 		# Note: Size 0 elements can still be interactive (e.g., invisible clickable overlays)
 		# Visibility is determined separately by CSS styles, not just bounding box size
@@ -99,7 +109,7 @@ class ClickableElementDetector:
 		}
 		if node.tag_name in interactive_tags:
 			return True
-		
+
 		# SVG elements need special handling - only interactive if they have explicit handlers
 		# svg_tags = {'svg', 'path', 'circle', 'rect', 'polygon', 'ellipse', 'line', 'polyline', 'g'}
 		# if node.tag_name in svg_tags:

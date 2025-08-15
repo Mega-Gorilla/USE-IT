@@ -174,6 +174,14 @@ class DOMWatchdog(BaseWatchdog):
 		tabs_info = await self.browser_session.get_tabs()
 		self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got {len(tabs_info)} tabs')
 
+		# Get viewport / scroll position info, remember changing scroll position should invalidate selector_map cache because it only includes visible elements
+		# cdp_session = await self.browser_session.get_or_create_cdp_session(focus=True)
+		# scroll_info = await cdp_session.cdp_client.send.Runtime.evaluate(
+		# 	params={'expression': 'JSON.stringify({y: document.body.scrollTop, x: document.body.scrollLeft, width: document.documentElement.clientWidth, height: document.documentElement.clientHeight})'},
+		# 	session_id=cdp_session.session_id,
+		# )
+		# self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got scroll info: {scroll_info["result"]}')
+
 		try:
 			# Fast path for empty pages
 			if not_a_meaningful_website:
@@ -247,6 +255,10 @@ class DOMWatchdog(BaseWatchdog):
 			else:
 				# Skip DOM building if not requested
 				content = SerializedDOMState(_root=None, selector_map={})
+
+			# re-focus top-level page session context
+			assert self.browser_session.agent_focus is not None, 'No current target ID'
+			await self.browser_session.get_or_create_cdp_session(target_id=self.browser_session.agent_focus.target_id, focus=True)
 
 			# Get screenshot if requested
 			screenshot_b64 = None
@@ -388,23 +400,23 @@ class DOMWatchdog(BaseWatchdog):
 			try:
 				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Removing existing highlights...')
 				await self.browser_session.remove_highlights()
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ Highlights removed')
+				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ Highlights removed')
 			except Exception as e:
 				self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to remove existing highlights: {e}')
 
 			# Create or reuse DOM service
 			if self._dom_service is None:
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Creating DomService...')
+				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Creating DomService...')
 				self._dom_service = DomService(browser_session=self.browser_session, logger=self.logger)
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService created')
-			else:
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
+				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService created')
+			# else:
+			# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
 
 			# Get serialized DOM tree using the service
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Calling DomService.get_serialized_dom_tree...')
 			start = time.time()
 			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
-				previous_cached_state=previous_state
+				previous_cached_state=previous_state,
 			)
 			end = time.time()
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService.get_serialized_dom_tree completed')
@@ -480,10 +492,14 @@ class DOMWatchdog(BaseWatchdog):
 		if not self.browser_session.agent_focus:
 			raise RuntimeError('No active CDP session - browser may not be connected yet')
 
-		cdp_session = self.browser_session.agent_focus
+		cdp_session = await self.browser_session.get_or_create_cdp_session(
+			target_id=self.browser_session.agent_focus.target_id, focus=True
+		)
 
 		# Get layout metrics which includes all the information we need
-		metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+		metrics = await asyncio.wait_for(
+			cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id), timeout=10.0
+		)
 
 		# Extract different viewport types
 		layout_viewport = metrics.get('layoutViewport', {})
