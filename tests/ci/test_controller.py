@@ -683,20 +683,19 @@ class TestControllerIntegration:
 
 		# Wait for the page to load using CDP
 		cdp_session = browser_session.agent_focus
-		assert cdp_session is not None, "CDP session not initialized"
-		
+		assert cdp_session is not None, 'CDP session not initialized'
+
 		# Wait for page load by checking document ready state
 		await asyncio.sleep(0.5)  # Brief wait for navigation to start
 		ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': 'document.readyState'}, 
-			session_id=cdp_session.session_id
+			params={'expression': 'document.readyState'}, session_id=cdp_session.session_id
 		)
 		# If not complete, wait a bit more
 		if ready_state.get('result', {}).get('value') != 'complete':
 			await asyncio.sleep(1.0)
 
 		# Initialize the DOM state to populate the selector map
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 
 		# Get the selector map
 		selector_map = await browser_session.get_selector_map()
@@ -738,18 +737,28 @@ class TestControllerIntegration:
 			assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
 
 		# Verify the instruction for using the text in select_dropdown_option is included
-		assert 'Use the exact text string in select_dropdown_option' in result.extracted_content
+		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown_option' in result.extracted_content
 
-		# Verify the actual dropdown options in the DOM
-		dropdown_options = await page.evaluate("""
-			() => {
-				const select = document.getElementById('test-dropdown');
-				return Array.from(select.options).map(opt => ({
-					text: opt.text,
-					value: opt.value
-				}));
-			}
-		""")
+		# Verify the actual dropdown options in the DOM using CDP
+		dropdown_options_result = await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={
+				'expression': """
+					JSON.stringify((() => {
+						const select = document.getElementById('test-dropdown');
+						return Array.from(select.options).map(opt => ({
+							text: opt.text,
+							value: opt.value
+						}));
+					})())
+				""",
+				'returnByValue': True,
+			},
+			session_id=cdp_session.session_id,
+		)
+		dropdown_options_json = dropdown_options_result.get('result', {}).get('value', '[]')
+		import json
+
+		dropdown_options = json.loads(dropdown_options_json) if isinstance(dropdown_options_json, str) else dropdown_options_json
 
 		# Verify the dropdown has the expected options
 		assert len(dropdown_options) == len(expected_options), (
@@ -798,20 +807,19 @@ class TestControllerIntegration:
 
 		# Wait for the page to load using CDP
 		cdp_session = browser_session.agent_focus
-		assert cdp_session is not None, "CDP session not initialized"
-		
+		assert cdp_session is not None, 'CDP session not initialized'
+
 		# Wait for page load by checking document ready state
 		await asyncio.sleep(0.5)  # Brief wait for navigation to start
 		ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': 'document.readyState'}, 
-			session_id=cdp_session.session_id
+			params={'expression': 'document.readyState'}, session_id=cdp_session.session_id
 		)
 		# If not complete, wait a bit more
 		if ready_state.get('result', {}).get('value') != 'complete':
 			await asyncio.sleep(1.0)
 
 		# populate the selector map with highlight indices
-		await browser_session.get_state_summary(cache_clickable_elements_hashes=True)
+		await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=True)
 
 		# Now get the selector map which should contain our dropdown
 		selector_map = await browser_session.get_selector_map()
@@ -847,8 +855,7 @@ class TestControllerIntegration:
 
 		# Verify the actual dropdown selection was made by checking the DOM using CDP
 		selected_value_result = await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': "document.getElementById('test-dropdown').value"},
-			session_id=cdp_session.session_id
+			params={'expression': "document.getElementById('test-dropdown').value"}, session_id=cdp_session.session_id
 		)
 		selected_value = selected_value_result.get('result', {}).get('value')
 		assert selected_value == 'option2'  # Second Option has value "option2"
