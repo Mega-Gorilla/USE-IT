@@ -48,6 +48,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Use the provided node
 			element_node = event.node
 			index_for_logging = element_node.element_index or 'unknown'
+			starting_target_id = self.browser_session.agent_focus.target_id
 
 			# Track initial number of tabs to detect new tab opening
 			initial_target_ids = await self.browser_session._cdp_get_all_pages()
@@ -83,6 +84,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.browser_session._cached_selector_map.clear()
 			if self.browser_session._dom_watchdog:
 				self.browser_session._dom_watchdog.clear_cache()
+			# Successfully clicked, always reset session back to parent page session context
+			self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
+				target_id=starting_target_id, focus=True
+			)
 
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
@@ -100,10 +105,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 					from browser_use.browser.events import SwitchTabEvent
 
 					last_tab_index = len(after_target_ids) - 1
-					switch_event = self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+					switch_event = await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
 					await switch_event
 
-			# Successfully clicked, return None
 			return None
 		except Exception as e:
 			raise
