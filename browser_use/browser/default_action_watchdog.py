@@ -91,7 +91,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
-			new_target_ids = set(t['targetId'] for t in after_target_ids) - set(t['targetId'] for t in initial_target_ids)
+			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
 			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
@@ -1164,14 +1164,33 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				key = key_map.get(keys, keys)
 
-				# Use rawKeyDown for special keys (non-text producing keys)
-				# Use keyDown only for regular text characters
-				key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
-
+				# Send rawKeyDown first
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={'type': key_type, 'key': key},
+					params={'type': 'rawKeyDown', 'key': key},
 					session_id=cdp_session.session_id,
 				)
+
+				# Send char event for text-producing keys
+				# Special handling for Enter key - send as \r
+				if keys in ['enter', 'return']:
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': '\r'},
+						session_id=cdp_session.session_id,
+					)
+				elif keys == 'space':
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': ' '},
+						session_id=cdp_session.session_id,
+					)
+				elif keys not in key_map:
+					# Regular character key - send char event
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': keys},
+						session_id=cdp_session.session_id,
+					)
+				# Note: No char event for non-text-producing keys like arrows, escape, etc.
+
+				# Send keyUp
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': 'keyUp', 'key': key},
 					session_id=cdp_session.session_id,
