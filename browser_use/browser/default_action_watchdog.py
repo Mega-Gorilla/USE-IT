@@ -62,7 +62,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			await self._click_element_node_impl(element_node, new_tab=event.new_tab)
+			await self._click_element_node_impl(element_node, while_holding_ctrl=event.while_holding_ctrl)
 			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
@@ -97,12 +97,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
 
-				if not event.new_tab:
-					# if new_tab=False it means agent was not expecting a new tab to be opened
+				if not event.while_holding_ctrl:
+					# if while_holding_ctrl=False it means agent was not expecting a new tab to be opened
 					# so we need to switch to the new tab to make the agent aware of the surprise new tab that was opened.
-					# slightly counter-intuitive, when new_tab=True we dont actually want to switch to it,
-					# the agent is instructed that new_tab=True is equivalent to ctrl+click which opens in the background,
-					# so in multi_act it usually already sends [click_element_by_index(123, new_tab=True), switch_tab(-1)] anyway
+					# when while_holding_ctrl=True we dont actually want to switch to it,
+					# we should match human expectations of ctrl+click which opens in the background,
+					# so in multi_act it usually already sends [click_element_by_index(123, while_holding_ctrl=True), switch_tab(tab_id=None)] anyway
 					from browser_use.browser.events import SwitchTabEvent
 
 					new_target_id = new_target_ids.pop()
@@ -220,7 +220,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, while_holding_ctrl: bool = False) -> str | None:
 		"""
 		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
@@ -452,7 +452,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
 				modifiers = 0
-				if new_tab:
+				if while_holding_ctrl:
 					# Use platform-appropriate modifier for "open in new tab"
 					if platform.system() == 'Darwin':
 						modifiers = 4  # Meta/Cmd key

@@ -794,7 +794,7 @@ class BrowserUseServer:
 
 		from browser_use.browser.events import SwitchTabEvent
 
-		target_id = self.browser_session.get_target_id_from_tab_id(tab_id)
+		target_id = await self.browser_session.get_target_id_from_tab_id(tab_id)
 		event = self.browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 		await event
 		state = await self.browser_session.get_browser_state_summary()
@@ -805,15 +805,13 @@ class BrowserUseServer:
 		if not self.browser_session:
 			return 'Error: No browser session active'
 
-
 		from browser_use.browser.events import CloseTabEvent
 
-		target_id = self.browser_session.get_target_id_from_tab_id(tab_id)
+		target_id = await self.browser_session.get_target_id_from_tab_id(tab_id)
 		event = self.browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 		await event
 		current_url = await self.browser_session.get_current_page_url()
 		return f'Closed tab # {tab_id}, now on {current_url}'
-
 
 	async def run(self):
 		"""Run the MCP server."""

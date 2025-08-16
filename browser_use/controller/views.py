@@ -15,7 +15,7 @@ class GoToUrlAction(BaseModel):
 
 class ClickElementAction(BaseModel):
 	index: int = Field(ge=1, description='index of the element to click')
-	new_tab: bool = Field(default=False, description='set True to open any resulting navigation in a new tab, False otherwise')
+	while_holding_ctrl: bool = Field(default=False, description='set True to open any resulting navigation in a new background tab, False otherwise')
 	# expect_download: bool = Field(default=False, description='set True if expecting a download, False otherwise')  # moved to downloads_watchdog.py
 	# click_count: int = 1  # TODO
 
@@ -41,7 +41,16 @@ class StructuredOutputAction(BaseModel, Generic[T]):
 
 
 class SwitchTabAction(BaseModel):
-	tab_id: str = Field(min_length=4, max_length=4, description='4 character Tab ID')  # last 4 chars of TargetID
+	url: str | None = Field(
+		default=None,
+		description='URL or URL substring of the tab to switch to, if not provided, the tab_id or most recently opened tab will be used',
+	)
+	tab_id: str | None = Field(
+		default=None,
+		min_length=4,
+		max_length=4,
+		description='exact 4 character Tab ID to match instead of URL, prefer using this if known',
+	)  # last 4 chars of TargetID
 
 
 class CloseTabAction(BaseModel):

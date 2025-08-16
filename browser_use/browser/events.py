@@ -1,15 +1,15 @@
 """Event definitions for browser communication."""
 
 import inspect
-from typing import Any, Generic, Literal
+from typing import Any, Literal
 
 from bubus import BaseEvent
 from bubus.models import T_EventResultType
+from cdp_use.cdp.target import TargetID
 from pydantic import BaseModel, Field, field_validator
 
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.views import EnhancedDOMTreeNode
-from cdp_use.cdp.target import TargetID
 
 # ============================================================================
 # Agent/Controller -> BrowserSession Events (High-level browser actions)
@@ -95,9 +95,9 @@ class ClickElementEvent(ElementSelectedEvent[None]):
 
 	node: 'EnhancedDOMTreeNode'
 	button: Literal['left', 'right', 'middle'] = 'left'
-	new_tab: bool = Field(
+	while_holding_ctrl: bool = Field(
 		default=False,
-		description='Set True to open any link clicked in a new tab in the background, can use switch_tab(tab_id=-1) after to focus it',
+		description='Set True to open any link clicked in a new tab in the background, can use switch_tab(tab_id=None) after to focus it',
 	)
 	# click_count: int = 1           # TODO
 	# expect_download: bool = False  # moved to downloads_watchdog.py
@@ -125,7 +125,7 @@ class ScrollEvent(ElementSelectedEvent[None]):
 	event_timeout: float | None = 8.0  # seconds
 
 
-class SwitchTabEvent(BaseEvent[None]):
+class SwitchTabEvent(BaseEvent[TargetID]):
 	"""Switch to a different tab."""
 
 	target_id: TargetID | None = Field(default=None, description='None means switch to the most recently opened tab')

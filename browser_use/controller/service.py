@@ -263,7 +263,7 @@ class Controller(Generic[Context]):
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element by index, set new_tab=True to open any resulting navigation in a new tab. Only click on indices that are inside your current browser_state. Never click or assume not existing indices.',
+			'Click element by index, set while_holding_ctrl=True to open any resulting navigation in a new tab. Only click on indices that are inside your current browser_state. Never click or assume not existing indices.',
 			param_model=ClickElementAction,
 		)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
@@ -278,7 +278,7 @@ class Controller(Generic[Context]):
 				if node is None:
 					raise ValueError(f'Element index {params.index} not found in DOM')
 
-				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, new_tab=params.new_tab))
+				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl))
 				await event
 				# Wait for handler to complete and get any exception (None is expected on success)
 				await event.event_result(raise_if_any=True, raise_if_none=False)
@@ -472,23 +472,30 @@ class Controller(Generic[Context]):
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Dispatch switch tab event
 			try:
-				target_id = browser_session.get_target_id_from_tab_id(params.tab_id)
+				if params.tab_id:
+					target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
+				elif params.url:
+					target_id = await browser_session.get_target_id_from_url(params.url)
+				else:
+					target_id = await browser_session.get_most_recently_opened_target_id()
+
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Switched to tab #{params.tab_id}'
+				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
+				assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
+				memory = f'Switched to Tab with ID {new_target_id[-4:]}'
 				logger.info(f'🔄  {memory}')
 				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id}: {clean_msg}')
+				return ActionResult(error=f'Failed to switch to tab {params.tab_id or params.url}: {clean_msg}')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
 			# Dispatch close tab event
 			try:
-				target_id = browser_session.get_target_id_from_tab_id(params.tab_id)
+				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
 				event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
