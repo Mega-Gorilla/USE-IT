@@ -128,13 +128,17 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	bubus_logger.setLevel(logging.INFO if log_type == 'result' else log_level)
 
 	# Configure CDP logging using cdp_use's setup function
-	# This enables the formatted CDP output at the same level as browser_use
+	# This enables the formatted CDP output using CDP_LOGGING_LEVEL environment variable
+	# Convert CDP_LOGGING_LEVEL string to logging level
+	cdp_level_str = CONFIG.CDP_LOGGING_LEVEL.upper()
+	cdp_level = getattr(logging, cdp_level_str, logging.WARNING)
+	
 	try:
 		from cdp_use.logging import setup_cdp_logging  # type: ignore
 
-		# Use the same stream and level as browser_use
+		# Use the CDP-specific logging level
 		setup_cdp_logging(
-			level=log_level,
+			level=cdp_level,
 			stream=stream or sys.stdout,
 			format_string='%(levelname)-8s [%(name)s] %(message)s' if log_type != 'result' else '%(message)s',
 		)
@@ -149,7 +153,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 		]
 		for logger_name in cdp_loggers:
 			cdp_logger = logging.getLogger(logger_name)
-			cdp_logger.setLevel(log_level)
+			cdp_logger.setLevel(cdp_level)
 			cdp_logger.addHandler(console)
 			cdp_logger.propagate = False
 
