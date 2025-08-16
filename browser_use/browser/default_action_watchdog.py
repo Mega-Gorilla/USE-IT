@@ -62,7 +62,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			await self._click_element_node_impl(element_node, new_tab=event.new_tab)
+			await self._click_element_node_impl(element_node, while_holding_ctrl=event.while_holding_ctrl)
 			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
@@ -91,21 +91,22 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
-			if len(after_target_ids) > len(initial_target_ids):
+			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
+			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
 
-				if not event.new_tab:
-					# if new_tab=False it means agent was not expecting a new tab to be opened
+				if not event.while_holding_ctrl:
+					# if while_holding_ctrl=False it means agent was not expecting a new tab to be opened
 					# so we need to switch to the new tab to make the agent aware of the surprise new tab that was opened.
-					# slightly counter-intuitive, when new_tab=True we dont actually want to switch to it,
-					# the agent is instructed that new_tab=True is equivalent to ctrl+click which opens in the background,
-					# so in multi_act it usually already sends [click_element_by_index(123, new_tab=True), switch_tab(-1)] anyway
+					# when while_holding_ctrl=True we dont actually want to switch to it,
+					# we should match human expectations of ctrl+click which opens in the background,
+					# so in multi_act it usually already sends [click_element_by_index(123, while_holding_ctrl=True), switch_tab(tab_id=None)] anyway
 					from browser_use.browser.events import SwitchTabEvent
 
-					last_tab_index = len(after_target_ids) - 1
-					switch_event = await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+					new_target_id = new_target_ids.pop()
+					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
 			return None
@@ -219,7 +220,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, while_holding_ctrl: bool = False) -> str | None:
 		"""
 		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
@@ -451,7 +452,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
 				modifiers = 0
-				if new_tab:
+				if while_holding_ctrl:
 					# Use platform-appropriate modifier for "open in new tab"
 					if platform.system() == 'Darwin':
 						modifiers = 4  # Meta/Cmd key
@@ -531,7 +532,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 					raise Exception(f'Failed to click element: {e}')
 			finally:
 				# always re-focus back to original top-level page session context in case click opened a new tab/popup/window/dialog/etc.
-				await self.browser_session.get_or_create_cdp_session(focus=True)
+				cdp_session = await self.browser_session.get_or_create_cdp_session(focus=True)
+				await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
+				await cdp_session.cdp_client.send.Runtime.runIfWaitingForDebugger(session_id=cdp_session.session_id)
 
 		except URLNotAllowedError as e:
 			raise e
@@ -1161,14 +1164,33 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				key = key_map.get(keys, keys)
 
-				# Use rawKeyDown for special keys (non-text producing keys)
-				# Use keyDown only for regular text characters
-				key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
-
+				# Send rawKeyDown first
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={'type': key_type, 'key': key},
+					params={'type': 'rawKeyDown', 'key': key},
 					session_id=cdp_session.session_id,
 				)
+
+				# Send char event for text-producing keys
+				# Special handling for Enter key - send as \r
+				if keys in ['enter', 'return']:
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': '\r'},
+						session_id=cdp_session.session_id,
+					)
+				elif keys == 'space':
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': ' '},
+						session_id=cdp_session.session_id,
+					)
+				elif keys not in key_map:
+					# Regular character key - send char event
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': keys},
+						session_id=cdp_session.session_id,
+					)
+				# Note: No char event for non-text-producing keys like arrows, escape, etc.
+
+				# Send keyUp
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={'type': 'keyUp', 'key': key},
 					session_id=cdp_session.session_id,
