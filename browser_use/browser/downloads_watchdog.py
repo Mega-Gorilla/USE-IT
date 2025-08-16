@@ -116,15 +116,12 @@ class DownloadsWatchdog(BaseWatchdog):
 		target_id = event.target_id
 		self.logger.debug(f'[DownloadsWatchdog] Got target_id={target_id} for tab #{event.target_id[-4:]}')
 
-		if target_id:
-			is_pdf = await self.check_for_pdf_viewer(target_id)
-			if is_pdf:
-				self.logger.info(f'[DownloadsWatchdog] 📄 PDF detected at {event.url}, triggering auto-download...')
-				download_path = await self.trigger_pdf_download(target_id)
-				if not download_path:
-					self.logger.warning(f'[DownloadsWatchdog] ⚠️ PDF download failed for {event.url}')
-		else:
-			self.logger.debug(f'[DownloadsWatchdog] Could not get target_id for tab #{event.target_id[-4:]}')
+		is_pdf = await self.check_for_pdf_viewer(target_id)
+		if is_pdf:
+			self.logger.info(f'[DownloadsWatchdog] 📄 PDF detected at {event.url}, triggering auto-download...')
+			download_path = await self.trigger_pdf_download(target_id)
+			if not download_path:
+				self.logger.warning(f'[DownloadsWatchdog] ⚠️ PDF download failed for {event.url}')
 
 	def _is_auto_download_enabled(self) -> bool:
 		"""Check if auto-download PDFs is enabled in browser profile."""
@@ -223,7 +220,9 @@ class DownloadsWatchdog(BaseWatchdog):
 		except Exception as e:
 			self.logger.error(f'[DownloadsWatchdog] Error tracking download: {e}')
 
-	async def _handle_cdp_download(self, event: DownloadWillBeginEvent, target_id: TargetID, session_id: SessionID | None) -> None:
+	async def _handle_cdp_download(
+		self, event: DownloadWillBeginEvent, target_id: TargetID, session_id: SessionID | None
+	) -> None:
 		"""Handle a CDP Page.downloadWillBegin event."""
 		downloads_dir = Path(
 			self.browser_session.browser_profile.downloads_path

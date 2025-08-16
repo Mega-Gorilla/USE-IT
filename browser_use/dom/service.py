@@ -405,7 +405,7 @@ class DomService:
 		"""Get the DOM tree for a specific target.
 
 		Args:
-			target_id: Optional target ID. If None, uses current target.
+			target_id: Target ID of the page to get the DOM tree for.
 			initial_html_frames: List of HTML frame nodes encountered so far
 			initial_total_frame_offset: Accumulated coordinate offset
 		"""
