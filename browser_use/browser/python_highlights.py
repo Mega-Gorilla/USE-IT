@@ -51,7 +51,8 @@ def should_show_text_overlay(text: Optional[str]) -> bool:
 	"""Determine if text overlay should be shown based on length."""
 	if not text:
 		return False
-	return len(text.strip()) <= 10
+	# Always show text overlay if we have text (since we now include element indices)
+	return True
 
 
 def draw_bounding_box_with_text(
@@ -64,9 +65,41 @@ def draw_bounding_box_with_text(
 	"""Draw a bounding box with optional text overlay."""
 	x1, y1, x2, y2 = bbox
 
-	# Draw bounding box with 2px width
-	for i in range(2):
-		draw.rectangle([x1 + i, y1 + i, x2 - i, y2 - i], outline=color, fill=None)
+	# Draw dashed bounding box
+	dash_length = 8
+	gap_length = 4
+
+	# Top edge
+	x = x1
+	while x < x2:
+		end_x = min(x + dash_length, x2)
+		draw.line([(x, y1), (end_x, y1)], fill=color, width=2)
+		draw.line([(x, y1 + 1), (end_x, y1 + 1)], fill=color, width=2)
+		x += dash_length + gap_length
+
+	# Bottom edge
+	x = x1
+	while x < x2:
+		end_x = min(x + dash_length, x2)
+		draw.line([(x, y2), (end_x, y2)], fill=color, width=2)
+		draw.line([(x, y2 - 1), (end_x, y2 - 1)], fill=color, width=2)
+		x += dash_length + gap_length
+
+	# Left edge
+	y = y1
+	while y < y2:
+		end_y = min(y + dash_length, y2)
+		draw.line([(x1, y), (x1, end_y)], fill=color, width=2)
+		draw.line([(x1 + 1, y), (x1 + 1, end_y)], fill=color, width=2)
+		y += dash_length + gap_length
+
+	# Right edge
+	y = y1
+	while y < y2:
+		end_y = min(y + dash_length, y2)
+		draw.line([(x2, y), (x2, end_y)], fill=color, width=2)
+		draw.line([(x2 - 1, y), (x2 - 1, end_y)], fill=color, width=2)
+		y += dash_length + gap_length
 
 	# Draw text overlay if provided and short enough
 	if text and should_show_text_overlay(text):
@@ -127,11 +160,11 @@ def create_highlighted_screenshot(
 		# Try to load a font, fall back to default if not available
 		font = None
 		try:
-			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
-		except:
+			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 9)
+		except (OSError, IOError):
 			try:
-				font = ImageFont.truetype('arial.ttf', 12)
-			except:
+				font = ImageFont.truetype('arial.ttf', 9)
+			except (OSError, IOError):
 				font = None  # Use default font
 
 		# Process each interactive element
@@ -175,16 +208,26 @@ def create_highlighted_screenshot(
 
 				# Get text for overlay (if short enough)
 				text = None
-				if hasattr(element, 'node_value') and element.node_value:
-					text = element.node_value.strip()
-				elif hasattr(element, 'attributes') and element.attributes:
-					# Try to get meaningful text from attributes
+
+				# First try to get element text content
+				if hasattr(element, 'get_all_children_text'):
+					element_text = element.get_all_children_text()
+					if element_text and element_text.strip():
+						text = element_text.strip()
+
+				# If no text content, try attributes
+				if not text and hasattr(element, 'attributes') and element.attributes:
 					text = (
 						element.attributes.get('aria-label')
 						or element.attributes.get('title')
 						or element.attributes.get('placeholder')
 						or element.attributes.get('value', '')
 					)
+
+				# Always show only the element index (no text content)
+				text = None
+				if hasattr(element, 'element_index') and element.element_index is not None:
+					text = str(element.element_index)
 
 				# Draw bounding box with optional text
 				draw_bounding_box_with_text(draw, (x1, y1, x2, y2), color, text, font)
@@ -240,6 +283,7 @@ async def get_viewport_info_from_cdp(cdp_session) -> Tuple[float, int, int]:
 		return 1.0, 0, 0
 
 
+@observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot_async')
 async def create_highlighted_screenshot_async(screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None) -> str:
 	"""Async wrapper for creating highlighted screenshots.
 
