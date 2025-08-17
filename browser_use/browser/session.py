@@ -504,21 +504,21 @@ class BrowserSession(BaseModel):
 
 		except Exception as e:
 			self.logger.error(f'Navigation failed: {type(e).__name__}: {e}')
-			await self.event_bus.dispatch(
-				NavigationCompleteEvent(
-					target_id=target_id,
-					url=event.url,
-					error_message=f'{type(e).__name__}: {e}',
+			if target_id:
+				await self.event_bus.dispatch(
+					NavigationCompleteEvent(
+						target_id=target_id,
+						url=event.url,
+						error_message=f'{type(e).__name__}: {e}',
+					)
 				)
-			)
-			await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=event.url))
+				await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=event.url))
 			raise
 
 	async def on_SwitchTabEvent(self, event: SwitchTabEvent) -> TargetID:
 		"""Handle tab switching - core browser functionality."""
 		if not self.agent_focus:
-			self.logger.warning('Cannot switch tabs - browser not connected')
-			return
+			raise RuntimeError('Cannot switch tabs - browser not connected')
 
 		all_pages = await self._cdp_get_all_pages()
 		if event.target_id is None:
@@ -528,10 +528,13 @@ class BrowserSession(BaseModel):
 				event.target_id = all_pages[-1]['targetId']
 			else:
 				# no pages open at all, create a new one (handles switching to it automatically)
-				self.event_bus.dispatch(
-					NavigateToUrlEvent(url='about:blank', new_tab=True)
-				)  # do not await! NavigateToUrlEvent calls SwitchTabEvent and it will deadlock, dispatch to enqueue and return
-				return
+				assert self._cdp_client_root is not None, 'CDP client root not initialized - browser may not be connected yet'
+				new_target = await self._cdp_client_root.send.Target.createTarget(params={'url': 'about:blank'})
+				target_id = new_target['targetId']
+				# do not await! these may circularly trigger SwitchTabEvent and could deadlock, dispatch to enqueue and return
+				self.event_bus.dispatch(TabCreatedEvent(url='about:blank', target_id=target_id))
+				self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url='about:blank'))
+				return target_id
 
 		# switch to the target
 		self.agent_focus = await self.get_or_create_cdp_session(target_id=event.target_id, focus=True)
@@ -1180,12 +1183,12 @@ class BrowserSession(BaseModel):
 		"""Get the TargetID from a URL."""
 		all_targets = await self.cdp_client.send.Target.getTargets()
 		for target in all_targets.get('targetInfos', []):
-			if target['url'] == url:
+			if target['url'] == url and target['type'] == 'page':
 				return target['targetId']
 
 		# still not found, try substring match as fallback
 		for target in all_targets.get('targetInfos', []):
-			if url in target['url']:
+			if url in target['url'] and target['type'] == 'page':
 				return target['targetId']
 
 		raise ValueError(f'No TargetID found for url={url}')
