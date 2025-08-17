@@ -278,7 +278,9 @@ class Controller(Generic[Context]):
 				if node is None:
 					raise ValueError(f'Element index {params.index} not found in DOM')
 
-				event = browser_session.event_bus.dispatch(ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl))
+				event = browser_session.event_bus.dispatch(
+					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl)
+				)
 				await event
 				# Wait for handler to complete and get any exception (None is expected on success)
 				await event.event_result(raise_if_any=True, raise_if_none=False)
@@ -294,9 +296,13 @@ class Controller(Generic[Context]):
 				# If it's a select dropdown error, automatically get the dropdown options
 				if 'dropdown' in str(e) and node:
 					try:
-						return await get_dropdown_options(index=params.index, browser_session=browser_session)
+						return await get_dropdown_options(
+							params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
+						)
 					except Exception as dropdown_error:
-						pass
+						logger.error(
+							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
+						)
 
 				return ActionResult(error=error_msg)
 
