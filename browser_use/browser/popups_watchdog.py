@@ -36,7 +36,9 @@ class PopupsWatchdog(BaseWatchdog):
 
 		self.logger.info(f'📌 Starting dialog handler setup for target {target_id}')
 		try:
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)  # don't auto-focus new tabs! sometimes we need to open tabs in background
+			cdp_session = await self.browser_session.get_or_create_cdp_session(
+				target_id, focus=False
+			)  # don't auto-focus new tabs! sometimes we need to open tabs in background
 
 			# Set up async handler for JavaScript dialogs - now we can handle them immediately!
 			async def handle_dialog(event_data, session_id: str | None = None):

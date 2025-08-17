@@ -210,6 +210,7 @@ class TestTabManagement:
 
 		# Switch agent back to the first tab using correct index
 		from browser_use.browser.events import SwitchTabEvent
+
 		await browser_session.event_bus.dispatch(SwitchTabEvent(target_id=first_tab_id))
 		await asyncio.sleep(0.5)
 

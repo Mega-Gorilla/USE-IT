@@ -345,37 +345,84 @@ class DomService:
 		except Exception as e:
 			self.logger.debug(f'Failed to get iframe scroll positions: {e}')
 
-		snapshot_request = cdp_session.cdp_client.send.DOMSnapshot.captureSnapshot(
-			params={
-				'computedStyles': REQUIRED_COMPUTED_STYLES,
-				'includePaintOrder': True,
-				'includeDOMRects': True,
-				'includeBlendedBackgroundColors': False,
-				'includeTextColorOpacities': False,
-			},
-			session_id=cdp_session.session_id,
-		)
+		# Define CDP request factories to avoid duplication
+		def create_snapshot_request():
+			return cdp_session.cdp_client.send.DOMSnapshot.captureSnapshot(
+				params={
+					'computedStyles': REQUIRED_COMPUTED_STYLES,
+					'includePaintOrder': True,
+					'includeDOMRects': True,
+					'includeBlendedBackgroundColors': False,
+					'includeTextColorOpacities': False,
+				},
+				session_id=cdp_session.session_id,
+			)
 
-		dom_tree_request = cdp_session.cdp_client.send.DOM.getDocument(
-			params={'depth': -1, 'pierce': True}, session_id=cdp_session.session_id
-		)
-
-		ax_tree_request = self._get_ax_tree_for_all_frames(target_id)
-
-		device_pixel_ratio_request = self._get_viewport_ratio(target_id)
+		def create_dom_tree_request():
+			return cdp_session.cdp_client.send.DOM.getDocument(
+				params={'depth': -1, 'pierce': True}, session_id=cdp_session.session_id
+			)
 
 		start = time.time()
-		# Gather all CDP requests with timeout
-		try:
-			snapshot, dom_tree, ax_tree, device_pixel_ratio = await asyncio.wait_for(
-				asyncio.gather(snapshot_request, dom_tree_request, ax_tree_request, device_pixel_ratio_request), timeout=10.0
-			)
-		except TimeoutError:
-			# Try to get them individually to see which one hangs
-			snapshot = await asyncio.wait_for(snapshot_request, timeout=2.0)
-			dom_tree = await asyncio.wait_for(dom_tree_request, timeout=2.0)
-			ax_tree = await asyncio.wait_for(ax_tree_request, timeout=2.0)
-			device_pixel_ratio = await asyncio.wait_for(device_pixel_ratio_request, timeout=2.0)
+
+		# Create initial tasks
+		tasks = {
+			'snapshot': asyncio.create_task(create_snapshot_request()),
+			'dom_tree': asyncio.create_task(create_dom_tree_request()),
+			'ax_tree': asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
+			'device_pixel_ratio': asyncio.create_task(self._get_viewport_ratio(target_id)),
+		}
+
+		# Wait for all tasks with timeout
+		done, pending = await asyncio.wait(tasks.values(), timeout=10.0)
+
+		# Retry any failed or timed out tasks
+		if pending:
+			for task in pending:
+				task.cancel()
+
+			# Retry mapping for pending tasks
+			retry_map = {
+				tasks['snapshot']: lambda: asyncio.create_task(create_snapshot_request()),
+				tasks['dom_tree']: lambda: asyncio.create_task(create_dom_tree_request()),
+				tasks['ax_tree']: lambda: asyncio.create_task(self._get_ax_tree_for_all_frames(target_id)),
+				tasks['device_pixel_ratio']: lambda: asyncio.create_task(self._get_viewport_ratio(target_id)),
+			}
+
+			# Create new tasks only for the ones that didn't complete
+			for key, task in tasks.items():
+				if task in pending and task in retry_map:
+					tasks[key] = retry_map[task]()
+
+			# Wait again with shorter timeout
+			done2, pending2 = await asyncio.wait([t for t in tasks.values() if not t.done()], timeout=2.0)
+
+			if pending2:
+				for task in pending2:
+					task.cancel()
+
+		# Extract results, tracking which ones failed
+		results = {}
+		failed = []
+		for key, task in tasks.items():
+			if task.done() and not task.cancelled():
+				try:
+					results[key] = task.result()
+				except Exception as e:
+					self.logger.warning(f'CDP request {key} failed with exception: {e}')
+					failed.append(key)
+			else:
+				self.logger.warning(f'CDP request {key} timed out')
+				failed.append(key)
+
+		# If any required tasks failed, raise an exception
+		if failed:
+			raise TimeoutError(f'CDP requests failed or timed out: {", ".join(failed)}')
+
+		snapshot = results['snapshot']
+		dom_tree = results['dom_tree']
+		ax_tree = results['ax_tree']
+		device_pixel_ratio = results['device_pixel_ratio']
 		end = time.time()
 		cdp_timing = {'cdp_calls_total': end - start}
 

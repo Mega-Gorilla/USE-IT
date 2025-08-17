@@ -308,7 +308,7 @@ class BrowserKillEvent(BaseEvent):
 # 	event_timeout: float | None = 15.0  # seconds
 
 
-# Moved to strorage state
+# Moved to storage state
 # class SetCookiesEvent(BaseEvent):
 # 	"""Set browser cookies."""
 
