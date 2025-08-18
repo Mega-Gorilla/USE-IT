@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import ActionResult
-from browser_use.browser.context import BrowserContext
+from browser_use.browser import BrowserSession
 from browser_use.llm import ChatOpenAI
 
 if not os.getenv('OPENAI_API_KEY'):
@@ -97,10 +97,23 @@ def pixels_to_algebraic(x_px: float, y_px: float, square_size: float) -> str:
 	raise ValueError(f'Pixel coordinates out of bounds: ({x_px}, {y_px})')
 
 
-async def calculate_square_size(page) -> float | None:
+async def calculate_square_size(browser: BrowserSession) -> float | None:
 	"""Dynamically calculates the size of a chess square in pixels."""
 	try:
-		board_html = await page.locator('cg-board').inner_html(timeout=3000)
+		if not browser.agent_focus:
+			return None
+
+		# Get board HTML using CDP
+		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
+			params={
+				'expression': "document.querySelector('cg-board') ? document.querySelector('cg-board').innerHTML : null",
+				'returnByValue': True,
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+		board_html = result.get('result', {}).get('value')
+		if not board_html:
+			raise ValueError('Failed to get board HTML')
 		soup = BeautifulSoup(board_html, 'html.parser')
 		pieces = soup.find_all('piece')
 		if not pieces:
@@ -154,17 +167,26 @@ def create_fen_board(board_state: dict) -> str:
 	return fen
 
 
-async def get_current_board_info(page) -> tuple[str | None, float | None]:
+async def get_current_board_info(browser: BrowserSession) -> tuple[str | None, float | None]:
 	"""Reads the current board HTML and returns FEN string and square size."""
 	board_state = {}
 	board_html = ''
 	square_size = None
 
 	try:
-		board_locator = page.locator('cg-board')
-		await board_locator.wait_for(state='visible', timeout=3000)
-		board_html = await board_locator.inner_html()
-		square_size = await calculate_square_size(page)
+		if not browser.agent_focus:
+			return None, None
+
+		# Get board HTML using CDP
+		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
+			params={
+				'expression': "document.querySelector('cg-board') ? document.querySelector('cg-board').innerHTML : null",
+				'returnByValue': True,
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+		board_html = result.get('result', {}).get('value')
+		square_size = await calculate_square_size(browser)
 	except Exception as e:
 		logger.error(f'Error (get_info): Could not read cg-board: {e}')
 		return None, None
@@ -202,10 +224,13 @@ async def get_current_board_info(page) -> tuple[str | None, float | None]:
 @controller.registry.action(
 	'Read Chess Board',
 )
-async def read_board(browser: BrowserContext):
+async def read_board(browser: BrowserSession):
 	"""Reads the board, returns FEN and legal moves in SAN (+/#), and the last move by opponent if possible."""
-	page = await browser.get_current_page()
-	full_fen, _ = await get_current_board_info(page)
+	# Get the current page's CDP session
+	if not browser.agent_focus:
+		return ActionResult(extracted_content='No active page to read board from.')
+
+	full_fen, _ = await get_current_board_info(browser)
 
 	if not full_fen:
 		return ActionResult(extracted_content='Could not read board state.')
@@ -214,7 +239,15 @@ async def read_board(browser: BrowserContext):
 	last_move_san = None
 
 	try:
-		move_list_html = await page.locator('l4x').inner_html(timeout=3000)
+		if browser.agent_focus:
+			result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
+				params={
+					'expression': "document.querySelector('l4x') ? document.querySelector('l4x').innerHTML : null",
+					'returnByValue': True,
+				},
+				session_id=browser.agent_focus.session_id,
+			)
+			move_list_html = result.get('result', {}).get('value') or ''
 		soup = BeautifulSoup(move_list_html, 'html.parser')
 		move_tags = soup.find_all('kwdb')
 		moves = [tag.get_text(strip=True) for tag in move_tags]
@@ -254,14 +287,13 @@ async def read_board(browser: BrowserContext):
 	'Play Chess Move',
 	param_model=PlayMoveParams,
 )
-async def play_move(params: PlayMoveParams, browser: BrowserContext):
+async def play_move(params: PlayMoveParams, browser: BrowserSession):
 	"""Plays a chess move given in SAN by converting it to UCI and clicking."""
 	san_move = params.move.strip()
-	page = await browser.get_current_page()
 	uci_move = ''
 
 	try:
-		current_fen, square_size = await get_current_board_info(page)
+		current_fen, square_size = await get_current_board_info(browser)
 		if not current_fen or square_size is None:
 			return ActionResult(extracted_content='Failed to get current FEN or square size to play move.')
 
@@ -287,8 +319,9 @@ async def play_move(params: PlayMoveParams, browser: BrowserContext):
 		return ActionResult(extracted_content=f"Could not convert UCI '{uci_move}' to coordinates: {e}")
 
 	try:
-		board_locator = page.locator('cg-board')
-		await board_locator.wait_for(state='visible', timeout=3000)
+		if not browser.agent_focus:
+			return ActionResult(extracted_content='No active page to play move on.')
+
 		click_offset = square_size / 2
 		start_click_x = start_x + click_offset
 		start_click_y = start_y + click_offset
@@ -296,9 +329,71 @@ async def play_move(params: PlayMoveParams, browser: BrowserContext):
 		end_click_y = end_y + click_offset
 
 		logger.debug(f"DEBUG: Playing SAN '{san_move}' (UCI: {uci_move}).")
-		await board_locator.click(position={'x': start_click_x, 'y': start_click_y}, timeout=3000)
+
+		# Get board element bounds first
+		result = await browser.agent_focus.cdp_client.send.Runtime.evaluate(
+			params={
+				'expression': """
+					const board = document.querySelector('cg-board');
+					if (board) {
+						const rect = board.getBoundingClientRect();
+						{x: rect.left, y: rect.top, width: rect.width, height: rect.height};
+					} else {
+						null;
+					}
+				""",
+				'returnByValue': True,
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+		board_rect = result.get('result', {}).get('value')
+
+		if not board_rect:
+			return ActionResult(extracted_content='Could not find chess board element.')
+
+		# Click start position
+		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
+			params={
+				'type': 'mousePressed',
+				'x': board_rect['x'] + start_click_x,
+				'y': board_rect['y'] + start_click_y,
+				'button': 'left',
+				'clickCount': 1,
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
+			params={
+				'type': 'mouseReleased',
+				'x': board_rect['x'] + start_click_x,
+				'y': board_rect['y'] + start_click_y,
+				'button': 'left',
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+
 		await asyncio.sleep(0.5)
-		await board_locator.click(position={'x': end_click_x, 'y': end_click_y}, timeout=3000)
+
+		# Click end position
+		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
+			params={
+				'type': 'mousePressed',
+				'x': board_rect['x'] + end_click_x,
+				'y': board_rect['y'] + end_click_y,
+				'button': 'left',
+				'clickCount': 1,
+			},
+			session_id=browser.agent_focus.session_id,
+		)
+		await browser.agent_focus.cdp_client.send.Input.dispatchMouseEvent(
+			params={
+				'type': 'mouseReleased',
+				'x': board_rect['x'] + end_click_x,
+				'y': board_rect['y'] + end_click_y,
+				'button': 'left',
+			},
+			session_id=browser.agent_focus.session_id,
+		)
 		await asyncio.sleep(0.5)
 		return ActionResult(extracted_content=f'Played move {san_move}.', include_in_memory=True)
 

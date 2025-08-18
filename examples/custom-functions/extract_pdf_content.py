@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from browser_use import Agent, Controller
 from browser_use.agent.views import ActionResult
-from browser_use.browser.context import BrowserContext
+from browser_use.browser import BrowserSession
 from browser_use.llm import ChatOpenAI
 
 if not os.getenv('OPENAI_API_KEY'):
@@ -43,7 +43,7 @@ class PdfExtractParams(BaseModel):
 	'Extract PDF Text',
 	param_model=PdfExtractParams,
 )
-def extract_mistral_ocr(params: PdfExtractParams, browser: BrowserContext) -> ActionResult:
+def extract_mistral_ocr(params: PdfExtractParams, browser: BrowserSession) -> ActionResult:
 	"""
 	Process a PDF URL using Mistral OCR API and return the OCR response.
 
