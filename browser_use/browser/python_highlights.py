@@ -112,10 +112,35 @@ def draw_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Position text at top-left of bounding box with padding
+			# Smart positioning based on element size
 			padding = 3
-			text_x = max(0, x1)
-			text_y = max(0, y1 - text_height - padding * 2) if y1 > text_height + padding * 2 else y1 + padding
+			element_width = x2 - x1
+			element_height = y2 - y1
+			element_area = element_width * element_height
+			index_box_area = (text_width + padding * 2) * (text_height + padding * 2)
+
+			# Calculate size ratio to determine positioning strategy
+			size_ratio = element_area / max(index_box_area, 1)
+
+			if size_ratio < 4:
+				# Very small elements: place outside in bottom-right corner
+				text_x = x2 + padding
+				text_y = y2 - text_height
+				# Ensure it doesn't go off screen
+				text_x = min(text_x, 1200 - text_width - padding)
+				text_y = max(text_y, 0)
+			elif size_ratio < 16:
+				# Medium elements: place in bottom-right corner inside
+				text_x = x2 - text_width - padding
+				text_y = y2 - text_height - padding
+			else:
+				# Large elements: place in center
+				text_x = x1 + (element_width - text_width) // 2
+				text_y = y1 + (element_height - text_height) // 2
+
+			# Ensure text stays within bounds
+			text_x = max(0, min(text_x, 1200 - text_width))
+			text_y = max(0, min(text_y, 800 - text_height))
 
 			# Draw background rectangle for maximum contrast
 			bg_x1 = text_x - padding
