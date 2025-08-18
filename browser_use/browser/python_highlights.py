@@ -47,12 +47,9 @@ def get_element_color(tag_name: str, element_type: Optional[str] = None) -> str:
 	return ELEMENT_COLORS.get(tag_name.lower(), ELEMENT_COLORS['default'])
 
 
-def should_show_text_overlay(text: Optional[str]) -> bool:
-	"""Determine if text overlay should be shown based on length."""
-	if not text:
-		return False
-	# Always show text overlay if we have text (since we now include element indices)
-	return True
+def should_show_index_overlay(element_index: Optional[int]) -> bool:
+	"""Determine if index overlay should be shown."""
+	return element_index is not None
 
 
 def draw_bounding_box_with_text(
@@ -66,8 +63,8 @@ def draw_bounding_box_with_text(
 	x1, y1, x2, y2 = bbox
 
 	# Draw dashed bounding box
-	dash_length = 8
-	gap_length = 4
+	dash_length = 2
+	gap_length = 6
 
 	# Top edge
 	x = x1
@@ -101,8 +98,8 @@ def draw_bounding_box_with_text(
 		draw.line([(x2 - 1, y), (x2 - 1, end_y)], fill=color, width=2)
 		y += dash_length + gap_length
 
-	# Draw text overlay if provided and short enough
-	if text and should_show_text_overlay(text):
+	# Draw index overlay if we have index text
+	if text:
 		try:
 			# Get text size
 			if font:
@@ -115,15 +112,22 @@ def draw_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Position text at top-left of bounding box
+			# Position text at top-left of bounding box with padding
+			padding = 3
 			text_x = max(0, x1)
-			text_y = max(0, y1 - text_height - 2)  # Above the box
+			text_y = max(0, y1 - text_height - padding * 2) if y1 > text_height + padding * 2 else y1 + padding
 
-			# Draw background rectangle for text
-			draw.rectangle([text_x - 2, text_y - 2, text_x + text_width + 2, text_y + text_height + 2], fill=color, outline=None)
+			# Draw background rectangle for maximum contrast
+			bg_x1 = text_x - padding
+			bg_y1 = text_y - padding
+			bg_x2 = text_x + text_width + padding
+			bg_y2 = text_y + text_height + padding
 
-			# Draw text
-			draw.text((text_x, text_y), text, fill='white', font=font)
+			# Use white background with thick black border for maximum visibility
+			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill='white', outline='black', width=2)
+
+			# Draw bold dark text on light background for best contrast
+			draw.text((text_x, text_y), text, fill='black', font=font)
 
 		except Exception as e:
 			logger.debug(f'Failed to draw text overlay: {e}')
@@ -160,10 +164,10 @@ def create_highlighted_screenshot(
 		# Try to load a font, fall back to default if not available
 		font = None
 		try:
-			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 9)
+			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
 		except (OSError, IOError):
 			try:
-				font = ImageFont.truetype('arial.ttf', 9)
+				font = ImageFont.truetype('arial.ttf', 12)
 			except (OSError, IOError):
 				font = None  # Use default font
 
@@ -206,31 +210,12 @@ def create_highlighted_screenshot(
 
 				color = get_element_color(tag_name, element_type)
 
-				# Get text for overlay (if short enough)
-				text = None
+				# Get element index for overlay
+				element_index = getattr(element, 'element_index', None)
+				index_text = str(element_index) if element_index is not None else None
 
-				# First try to get element text content
-				if hasattr(element, 'get_all_children_text'):
-					element_text = element.get_all_children_text()
-					if element_text and element_text.strip():
-						text = element_text.strip()
-
-				# If no text content, try attributes
-				if not text and hasattr(element, 'attributes') and element.attributes:
-					text = (
-						element.attributes.get('aria-label')
-						or element.attributes.get('title')
-						or element.attributes.get('placeholder')
-						or element.attributes.get('value', '')
-					)
-
-				# Always show only the element index (no text content)
-				text = None
-				if hasattr(element, 'element_index') and element.element_index is not None:
-					text = str(element.element_index)
-
-				# Draw bounding box with optional text
-				draw_bounding_box_with_text(draw, (x1, y1, x2, y2), color, text, font)
+				# Draw bounding box with index
+				draw_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font)
 
 			except Exception as e:
 				logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
