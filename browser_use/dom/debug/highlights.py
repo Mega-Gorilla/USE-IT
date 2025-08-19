@@ -87,7 +87,7 @@ async def remove_highlighting_script(dom_service: DomService) -> None:
 		)
 
 	except Exception as e:
-		traceback.logger.debug_exc()
+		logger.exception(f'Error removing highlighting elements: {e}', exc_info=True)
 
 
 async def inject_highlighting_script(dom_service: DomService, interactive_elements: DOMSelectorMap) -> None:
