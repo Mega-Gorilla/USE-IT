@@ -20,10 +20,9 @@ import chess  # type: ignore
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
-from browser_use import Agent, Controller
+from browser_use import Agent, ChatOpenAI, Controller
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
-from browser_use.llm import ChatOpenAI
 
 if not os.getenv('OPENAI_API_KEY'):
 	raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')

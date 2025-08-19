@@ -9,10 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent
+from browser_use import Agent, ChatOpenAI
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.llm import ChatOpenAI
 
 llm = ChatOpenAI(model='gpt-4.1-mini')
 
