@@ -123,7 +123,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 				# Check if cookies have changed
 				if await self._have_cookies_changed():
-					self.logger'[StorageStateWatchdog] Detected changes to sync with storage_state.json')
+					self.logger.debug('[StorageStateWatchdog] Detected changes to sync with storage_state.json')
 					await self._save_storage_state()
 
 			except asyncio.CancelledError:
@@ -241,7 +241,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			if 'cookies' in storage and storage['cookies']:
 				await self.browser_session._cdp_set_cookies(storage['cookies'])
 				self._last_cookie_state = storage['cookies'].copy()
-				self.logger.info(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
+				self.logger.debug(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
 
 			# Apply origins (localStorage/sessionStorage) if present
 			if 'origins' in storage and storage['origins']:
@@ -270,7 +270,7 @@ class StorageStateWatchdog(BaseWatchdog):
 				)
 			)
 
-			self.loggerf'[StorageStateWatchdog] Loaded storage state from: {load_path}')
+			self.logger.debug(f'[StorageStateWatchdog] Loaded storage state from: {load_path}')
 
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to load storage state: {e}')
@@ -323,6 +323,6 @@ class StorageStateWatchdog(BaseWatchdog):
 			cookie_objects = [Cookie(**cookie_dict) if isinstance(cookie_dict, dict) else cookie_dict for cookie_dict in cookies]
 			# Set cookies using CDP
 			await self.browser_session._cdp_set_cookies(cookie_objects)
-			self.loggerf'[StorageStateWatchdog] Added {len(cookies)} cookies')
+			self.logger.debug(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')

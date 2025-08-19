@@ -118,7 +118,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 		is_pdf = await self.check_for_pdf_viewer(target_id)
 		if is_pdf:
-			self.logger.info(f'[DownloadsWatchdog] 📄 PDF detected at {event.url}, triggering auto-download...')
+			self.logger.debug(f'[DownloadsWatchdog] 📄 PDF detected at {event.url}, triggering auto-download...')
 			download_path = await self.trigger_pdf_download(target_id)
 			if not download_path:
 				self.logger.warning(f'[DownloadsWatchdog] ⚠️ PDF download failed for {event.url}')
