@@ -254,7 +254,7 @@ class TokenCost:
 		else:
 			output_part = f'📤 {C_GREEN}{completion_tokens_fmt}{C_RESET}'
 
-		cost_logger.info(f'🧠 {C_CYAN}{model}{C_RESET} | {input_part} | {output_part}')
+		cost_logger.debug(f'🧠 {C_CYAN}{model}{C_RESET} | {input_part} | {output_part}')
 
 	def _build_input_tokens_display(self, usage: ChatInvokeUsage, cost: TokenCostCalculated | None) -> str:
 		"""Build a clear display of input tokens breakdown with emojis and optional costs"""
