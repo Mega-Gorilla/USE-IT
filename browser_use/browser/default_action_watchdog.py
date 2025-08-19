@@ -178,7 +178,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
-					self.logger.info(
+					self.logger.debug(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
 					)
 
@@ -213,7 +213,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.browser_session._dom_watchdog.clear_cache()
 
 			# Log success
-			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
+			self.logger.debug(f'📜 Scrolled {event.direction} by {event.amount} pixels')
 			return None
 		except Exception as e:
 			raise
@@ -1340,7 +1340,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
 
 						found = True
-						self.logger.info(f'📜 Scrolled to text: "{event.text}"')
+						self.logger.debug(f'📜 Scrolled to text: "{event.text}"')
 						break
 
 				# Clean up search
@@ -1376,7 +1376,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 		if js_result.get('result', {}).get('value'):
-			self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
+			self.logger.debug(f'📜 Scrolled to text: "{event.text}" (via JS)')
 			return None
 		else:
 			self.logger.warning(f'⚠️ Text not found: "{event.text}"')

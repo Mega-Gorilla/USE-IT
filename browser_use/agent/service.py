@@ -84,7 +84,7 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 
 	# Only log thinking if it's present
 	if response.current_state.thinking:
-		logger.info(f'💡 Thinking:\n{response.current_state.thinking}')
+		logger.debug(f'💡 Thinking:\n{response.current_state.thinking}')
 
 	# Only log evaluation if it's not empty
 	eval_goal = response.current_state.evaluation_previous_goal
@@ -99,7 +99,7 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 
 	# Always log memory if present
 	if response.current_state.memory:
-		logger.info(f'🧠 Memory: {response.current_state.memory}')
+		logger.debug(f'🧠 Memory: {response.current_state.memory}')
 
 	# Only log next goal if it's not empty
 	next_goal = response.current_state.next_goal
@@ -312,8 +312,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.settings.use_vision = False
 		# Note: No longer checking planner_llm for XAI models (deprecated)
 
-		self.logger.info(
-			f'🧠 Starting a browser-use agent {self.version} with base_model={self.llm.model}'
+		self.logger.info(f'🧠 Starting a browser-use version {self.version} with model={self.llm.model}')
+		logger.debug(
 			f'{" +vision" if self.settings.use_vision else ""}'
 			f' extraction_model={self.settings.page_extraction_llm.model if self.settings.page_extraction_llm else "Unknown"}'
 			# Note: No longer logging planner_model (deprecated)
@@ -450,7 +450,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.has_downloads_path = self.browser_session.browser_profile.downloads_path is not None
 		if self.has_downloads_path:
 			self._last_known_downloads: list[str] = []
-			self.logger.info('📁 Initialized download tracking for agent')
+			self.logger.debug('📁 Initialized download tracking for agent')
 
 		self._external_pause_event = asyncio.Event()
 		self._external_pause_event.set()
@@ -546,7 +546,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Save file system state to agent state
 		self.state.file_system_state = self.file_system.get_state()
 
-		logger.info(f'💾 File system path: {self.file_system_path}')
+		logger.debug(f'💾 File system path: {self.file_system_path}')
 
 	def _set_screenshot_service(self) -> None:
 		"""Initialize screenshot service using agent directory"""
@@ -554,7 +554,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			from browser_use.screenshots.service import ScreenshotService
 
 			self.screenshot_service = ScreenshotService(self.agent_directory)
-			logger.info(f'📸 Screenshot service initialized in: {self.agent_directory}/screenshots')
+			logger.debug(f'📸 Screenshot service initialized in: {self.agent_directory}/screenshots')
 		except Exception as e:
 			logger.error(f'📸 Failed to initialize screenshot service: {e}.')
 			raise e
@@ -1046,7 +1046,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
-		self.logger.info(f'🚀 Starting task: {self.task}')
+		self.logger.info(f'🚀 Task: {self.task}')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
@@ -1055,9 +1055,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		url = browser_state_summary.url if browser_state_summary else ''
 		url_short = url[:50] + '...' if len(url) > 50 else url
 		interactive_count = len(browser_state_summary.dom_state.selector_map) if browser_state_summary else 0
-		self.logger.info(
-			f'📍 Step {self.state.n_steps}: Evaluating page with {interactive_count} interactive elements on: {url_short}'
-		)
+		self.logger.info('')
+		self.logger.info(f'📍 Step {self.state.n_steps}:')
+		self.logger.debug(f'Evaluating page with {interactive_count} interactive elements on: {url_short}')
 
 	def _log_next_action_summary(self, parsed: 'AgentOutput') -> None:
 		"""Log a comprehensive summary of the next action(s)"""
@@ -1120,7 +1120,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		status_parts = [part for part in [success_indicator, failure_indicator] if part]
 		status_str = ' | '.join(status_parts) if status_parts else '✅ 0'
 
-		self.logger.info(f'📍 Step {self.state.n_steps}: Ran {action_count} actions in {step_duration:.2f}s: {status_str}')
+		self.logger.debug(
+			f'📍 Step {self.state.n_steps}: Ran {action_count} action{"" if action_count == 1 else "s"} in {step_duration:.2f}s: {status_str}'
+		)
 
 	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
 		"""Sent the agent event for this run to telemetry"""
@@ -1606,16 +1608,20 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				time_elapsed = time_end - time_start
 				results.append(result)
 
-				self.logger.info(
-					f'☑️ Executed action {i + 1}/{total_actions}: {green}{action_name}({action_params}){reset} in {time_elapsed:.2f}s'
-				)
+				if self.logger.isEnabledFor(logging.INFO):
+					self.logger.info(f'☑️ Action: {green}{action_params}{reset}')
+				else:
+					self.logger.debug(
+						f'☑️ Executed action {i + 1}/{total_actions}: {green}{action_params}{reset} in {time_elapsed:.2f}s'
+					)
+
 				if results[-1].is_done or results[-1].error or i == total_actions - 1:
 					break
 
 			except Exception as e:
 				# Handle any exceptions during action execution
 				self.logger.error(
-					f'❌ Executing action {i + 1} failed in {time_elapsed:.2f}s {red}{action_name}({action_params}) -> {type(e).__name__}: {e}{reset}'
+					f'❌ Executing action {i + 1} failed in {time_elapsed:.2f}s {red}({action_params}) -> {type(e).__name__}: {e}{reset}'
 				)
 				raise e
 

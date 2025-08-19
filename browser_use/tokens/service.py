@@ -227,7 +227,7 @@ class TokenCost:
 	# 	C_CYAN = '\033[96m'
 	# 	C_RESET = '\033[0m'
 
-	# 	cost_logger.info(f'🧠 llm : {C_CYAN}{llm.model}{C_RESET} (no usage found)')
+	# 	cost_logger.debug(f'🧠 llm : {C_CYAN}{llm.model}{C_RESET} (no usage found)')
 
 	async def _log_usage(self, model: str, usage: TokenUsageEntry) -> None:
 		"""Log usage to the logger"""
@@ -475,13 +475,13 @@ class TokenCost:
 			completion_cost_part = ''
 
 		if len(summary.by_model) > 1:
-			cost_logger.info(
+			cost_logger.debug(
 				f'💲 {C_BOLD}Total Usage Summary{C_RESET}: {C_BLUE}{total_tokens_fmt} tokens{C_RESET}{total_cost_part} | '
 				f'⬅️ {C_YELLOW}{prompt_tokens_fmt}{prompt_cost_part}{C_RESET} | ➡️ {C_GREEN}{completion_tokens_fmt}{completion_cost_part}{C_RESET}'
 			)
 
 		# Log per-model breakdown
-		cost_logger.info(f'📊 {C_BOLD}Per-Model Usage Breakdown{C_RESET}:')
+		cost_logger.debug(f'📊 {C_BOLD}Per-Model Usage Breakdown{C_RESET}:')
 
 		for model, stats in summary.by_model.items():
 			# Format tokens
@@ -520,7 +520,7 @@ class TokenCost:
 				prompt_part = f'{C_YELLOW}{model_prompt_fmt}{C_RESET}'
 				completion_part = f'{C_GREEN}{model_completion_fmt}{C_RESET}'
 
-			cost_logger.info(
+			cost_logger.debug(
 				f'  🤖 {C_CYAN}{model}{C_RESET}: {C_BLUE}{model_total_fmt} tokens{C_RESET}{cost_part} | '
 				f'⬅️ {prompt_part} | ➡️ {completion_part} | '
 				f'📞 {stats.invocations} calls | 📈 {avg_tokens_fmt}/call'
