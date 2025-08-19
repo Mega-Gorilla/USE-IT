@@ -91,11 +91,16 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	if eval_goal:
 		if 'success' in eval_goal.lower():
 			emoji = '👍'
+			# Green color for success
+			logger.info(f'  \033[32m{emoji} Eval: {eval_goal}\033[0m')
 		elif 'failure' in eval_goal.lower():
 			emoji = '⚠️'
+			# Red color for failure
+			logger.info(f'  \033[31m{emoji} Eval: {eval_goal}\033[0m')
 		else:
 			emoji = '❔'
-		logger.info(f'{emoji} Eval: {eval_goal}')
+			# No color for unknown/neutral
+			logger.info(f'  {emoji} Eval: {eval_goal}')
 
 	# Always log memory if present
 	if response.current_state.memory:
@@ -104,7 +109,8 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	# Only log next goal if it's not empty
 	next_goal = response.current_state.next_goal
 	if next_goal:
-		logger.info(f'🎯 Next goal: {next_goal}\n')
+		# Blue color for next goal
+		logger.info(f'  \033[34m🎯 Next goal: {next_goal}\033[0m\n')
 	else:
 		logger.info('')  # Add empty line for spacing
 
@@ -788,11 +794,16 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Log completion results
 		if self.state.last_result and len(self.state.last_result) > 0 and self.state.last_result[-1].is_done:
-			self.logger.info(f'📄 Result: {self.state.last_result[-1].extracted_content}')
+			success = self.state.last_result[-1].success
+			if success:
+				# Green color for success
+				self.logger.info(f'📄 \033[32m Result:\033[0m {self.state.last_result[-1].extracted_content}\n\n')
+			else:
+				# Red color for failure
+				self.logger.info(f'📄 \033[31m Result:\033[0m {self.state.last_result[-1].extracted_content}\n\n')
 			if self.state.last_result[-1].attachments:
-				self.logger.info('📎 Click links below to access the attachments:')
-				for file_path in self.state.last_result[-1].attachments:
-					self.logger.info(f'👉 {file_path}')
+				for i, file_path in enumerate(self.state.last_result[-1].attachments):
+					self.logger.info(f'👉 Attachment {i + 1}: {file_path}')
 
 	async def _handle_step_error(self, error: Exception) -> None:
 		"""Handle all types of errors that can occur during a step"""
@@ -1046,7 +1057,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""
-		self.logger.info(f'🚀 Task: {self.task}')
+		# Blue color for task
+		self.logger.info(f'\033[34m🚀 Task: {self.task}\033[0m')
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
@@ -1592,7 +1604,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				action_params = f'{action_params[:122]}...' if len(action_params) > 128 else action_params
 				time_start = time.time()
 
-				self.logger.info(f'🦾 {cyan}[ACTION {i + 1}/{total_actions}] {action_name}({action_params})... {reset}')
+				self.logger.info(f'  🦾 {cyan}[ACTION {i + 1}/{total_actions}] {action_name}({action_params})... {reset}')
 
 				result = await self.controller.act(
 					action=action,
