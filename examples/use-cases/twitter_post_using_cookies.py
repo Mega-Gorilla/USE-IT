@@ -25,7 +25,6 @@ llm = ChatGoogle(model='gemini-2.0-flash-exp', api_key=api_key)
 browser_session = BrowserSession(
 	browser_profile=BrowserProfile(
 		user_data_dir='~/.config/browseruse/profiles/default',
-		# headless=False,  # Uncomment to see the browser
 		# executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 	)
 )

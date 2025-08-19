@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import Agent, ChatOpenAI
-from browser_use.browser import BrowserSession
 
 task = """
    ### Prompt for Shopping Agent – Migros Online Grocery Order
@@ -108,19 +107,13 @@ At this stage, check the basket on the top right (indicates the price) and check
 
 **Important:** Ensure efficiency and accuracy throughout the process."""
 
-browser_session = BrowserSession()
 
-agent = Agent(
-	task=task,
-	llm=ChatOpenAI(model='gpt-4.1-mini'),
-	browser_session=browser_session,
-)
+agent = Agent(task=task, llm=ChatOpenAI(model='gpt-4.1-mini'))
 
 
 async def main():
 	await agent.run()
 	input('Press Enter to close the browser...')
-	await browser_session.kill()
 
 
 if __name__ == '__main__':
