@@ -211,7 +211,7 @@ class StorageStateWatchdog(BaseWatchdog):
 					)
 				)
 
-				self.logger
+				self.logger.debug(
 					f'[StorageStateWatchdog] Saved storage state to {json_path} '
 					f'({len(merged_state.get("cookies", []))} cookies, '
 					f'{len(merged_state.get("origins", []))} origins)'
@@ -258,7 +258,7 @@ class StorageStateWatchdog(BaseWatchdog):
 								window.sessionStorage.setItem({json.dumps(item['name'])}, {json.dumps(item['value'])});
 							"""
 							await self.browser_session._cdp_add_init_script(script)
-				self.logger
+				self.logger.debug(
 					f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins'
 				)
 
