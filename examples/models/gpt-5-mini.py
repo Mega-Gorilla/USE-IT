@@ -19,8 +19,8 @@ Laminar.initialize()
 # All the models are type safe from OpenAI in case you need a list of supported models
 llm = ChatOpenAI(model='gpt-5-mini')
 agent = Agent(
-	task='Find out which one is cooler: the monkey park or a dolphin tour in Tenerife?',
 	llm=llm,
+	task='Find out which one is cooler: the monkey park or a dolphin tour in Tenerife?',
 )
 
 
