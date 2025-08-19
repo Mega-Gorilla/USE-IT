@@ -160,7 +160,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	elif cdp_log_type == 'error':
 		cdp_log_level = logging.ERROR
 	else:
-		cdp_log_level = logging.ERROR  # Default to WARNING
+		cdp_log_level = logging.ERROR  # Default to ERROR
 
 	try:
 		from cdp_use.logging import setup_cdp_logging  # type: ignore
