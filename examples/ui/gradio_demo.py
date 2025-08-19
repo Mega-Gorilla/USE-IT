@@ -69,7 +69,7 @@ async def run_browser_task(
 	try:
 		agent = Agent(
 			task=task,
-			llm=ChatOpenAI(model='gpt-4.1'),
+			llm=ChatOpenAI(model='gpt-4.1-mini'),
 		)
 		result = await agent.run()
 		#  TODO: The result could be parsed better

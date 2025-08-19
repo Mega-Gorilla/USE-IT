@@ -35,7 +35,7 @@ async def main():
 	for i in range(10):
 		agent = Agent(
 			task=task,
-			llm=ChatOpenAI(model='gpt-4.1'),
+			llm=ChatOpenAI(model='gpt-4.1-mini'),
 			browser_session=browser_session,
 			injected_agent_state=agent_state,
 			page_extraction_llm=ChatOpenAI(model='gpt-4.1-mini'),

@@ -45,7 +45,7 @@ async def main():
 
 	await browser_session.start()
 	try:
-		model = ChatOpenAI(model='gpt-4.1')
+		model = ChatOpenAI(model='gpt-4.1-mini')
 
 		# eraser = Agent(
 		# 	task="""

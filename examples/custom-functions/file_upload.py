@@ -68,7 +68,7 @@ async def main():
 	"""Main function to run the example"""
 	browser_session = BrowserSession()
 	await browser_session.start()
-	llm = ChatOpenAI(model='gpt-4.1')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# List of file paths the agent is allowed to upload
 	# In a real scenario, you'd want to be very careful about what files

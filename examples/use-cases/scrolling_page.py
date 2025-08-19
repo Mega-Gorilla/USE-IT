@@ -40,7 +40,7 @@ This script demonstrates the new enhanced scrolling capabilities:
    - Container-aware scrolling prevents unwanted side effects
 """
 
-llm = ChatOpenAI(model='gpt-4.1')
+llm = ChatOpenAI(model='gpt-4.1-mini')
 
 browser_profile = BrowserProfile(headless=False)
 browser_session = BrowserSession(browser_profile=browser_profile)
