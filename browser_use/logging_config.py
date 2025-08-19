@@ -187,7 +187,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 			cdp_logger.propagate = False
 
 	logger = logging.getLogger('browser_use')
-	# logger.info('BrowserUse logging setup complete with level %s', log_type)
+	# logger.debug('BrowserUse logging setup complete with level %s', log_type)
 
 	# Silence third-party loggers (but not CDP ones which we configured above)
 	third_party_loggers = [

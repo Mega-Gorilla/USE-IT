@@ -176,7 +176,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 
 						# Update profile to use temp directory
 						profile.user_data_dir = str(tmp_dir)
-						self.logger.info(f'Retrying with temporary user_data_dir: {tmp_dir}')
+						self.logger.debug(f'Retrying with temporary user_data_dir: {tmp_dir}')
 
 						# Small delay before retry
 						await asyncio.sleep(0.5)

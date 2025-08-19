@@ -261,7 +261,7 @@ class DBStyleConfigJSON(BaseModel):
 
 def create_default_config() -> DBStyleConfigJSON:
 	"""Create a fresh default configuration."""
-	logger.info('Creating fresh default config.json')
+	logger.debug('Creating fresh default config.json')
 
 	new_config = DBStyleConfigJSON()
 
@@ -306,14 +306,14 @@ def load_and_migrate_config(config_path: Path) -> DBStyleConfigJSON:
 				return DBStyleConfigJSON(**data)
 
 		# Old format detected - delete it and create fresh config
-		logger.info(f'Old config format detected at {config_path}, creating fresh config')
+		logger.debug(f'Old config format detected at {config_path}, creating fresh config')
 		new_config = create_default_config()
 
 		# Overwrite with new config
 		with open(config_path, 'w') as f:
 			json.dump(new_config.model_dump(), f, indent=2)
 
-		logger.info(f'Created fresh config.json at {config_path}')
+		logger.debug(f'Created fresh config.json at {config_path}')
 		return new_config
 
 	except Exception as e:

@@ -435,7 +435,7 @@ class BrowserSession(BaseModel):
 					)
 					if target.get('url') == 'about:blank' and target['targetId'] != current_target_id:
 						target_id = target['targetId']
-						self.logger.info(f'Reusing existing about:blank tab #{target_id[-4:]}')
+						self.logger.debug(f'Reusing existing about:blank tab #{target_id[-4:]}')
 						break
 
 				# Create new tab if no reusable one found
@@ -446,7 +446,7 @@ class BrowserSession(BaseModel):
 						self.logger.debug(f'[on_NavigateToUrlEvent] Created new page with target_id: {target_id}')
 						targets = await self._cdp_get_all_pages()
 
-						self.logger.info(f'Created new tab #{target_id[-4:]}')
+						self.logger.debug(f'Created new tab #{target_id[-4:]}')
 						# Dispatch TabCreatedEvent for new tab
 						await self.event_bus.dispatch(TabCreatedEvent(target_id=target_id, url='about:blank'))
 					except Exception as e:
@@ -980,13 +980,13 @@ class BrowserSession(BaseModel):
 
 			# Log summary of redirections
 			if redirected_targets:
-				self.logger.info(f'Redirected {len(redirected_targets)} chrome://newtab pages to about:blank')
+				self.logger.debug(f'Redirected {len(redirected_targets)} chrome://newtab pages to about:blank')
 
 			if not page_targets:
 				# No pages found, create a new one
 				new_target = await self._cdp_client_root.send.Target.createTarget(params={'url': 'about:blank'})
 				target_id = new_target['targetId']
-				self.logger.info(f'📄 Created new blank page with target ID: {target_id}')
+				self.logger.debug(f'📄 Created new blank page with target ID: {target_id}')
 			else:
 				# Use the first available page
 				target_id = [page for page in page_targets if page.get('type') == 'page'][0]['targetId']

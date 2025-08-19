@@ -1828,7 +1828,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				if selection_result.get('success'):
 					msg = selection_result.get('message', f'Selected option: {target_text}')
-					self.logger.info(f'✅ {msg}')
+					self.logger.debug(f'{msg}')
 
 					# Return the result as a dict
 					return {

@@ -507,7 +507,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			for file_path in new_files:
 				self.logger.info(f'📄 New file available: {file_path}')
 		else:
-			self.logger.info(f'📁 No new downloads detected (tracking {len(current_files)} files)')
+			self.logger.debug(f'📁 No new downloads detected (tracking {len(current_files)} files)')
 
 	def _set_file_system(self, file_system_path: str | None = None) -> None:
 		# Check for conflicting parameters
@@ -524,7 +524,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.file_system = FileSystem.from_state(self.state.file_system_state)
 				# The parent directory of base_dir is the original file_system_path
 				self.file_system_path = str(self.file_system.base_dir)
-				logger.info(f'💾 File system restored from state to: {self.file_system_path}')
+				logger.debug(f'💾 File system restored from state to: {self.file_system_path}')
 				return
 			except Exception as e:
 				logger.error(f'💾 Failed to restore file system from state: {e}')
@@ -898,7 +898,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			msg += '\nIf the task is not yet fully finished as requested by the user, set success in "done" to false! E.g. if not all steps are fully completed.'
 			msg += '\nIf the task is fully finished, set success in "done" to true.'
 			msg += '\nInclude everything you found out for the ultimate task in the done text.'
-			self.logger.info('Last step finishing up')
+			self.logger.debug('Last step finishing up')
 			self._message_manager._add_context_message(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
@@ -1421,7 +1421,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		except KeyboardInterrupt:
 			# Already handled by our signal handler, but catch any direct KeyboardInterrupt as well
-			self.logger.info('Got KeyboardInterrupt during execution, returning current history')
+			self.logger.debug('Got KeyboardInterrupt during execution, returning current history')
 			agent_run_error = 'KeyboardInterrupt'
 
 			self.history.usage = await self.token_cost_service.get_usage_summary()
@@ -1447,7 +1447,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
 			else:
 				# ADDED: Info message when custom telemetry for SIGINT was already logged
-				self.logger.info('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
+				self.logger.debug('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
 
 			# NOTE: CreateAgentSessionEvent and CreateAgentTaskEvent are now emitted at the START of run()
 			# to match backend requirements for CREATE events to be fired when entities are created,
@@ -1479,7 +1479,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						# Wait up to 1 second for auth to start and print URL
 						await asyncio.wait_for(self.cloud_sync.auth_task, timeout=1.0)
 					except TimeoutError:
-						logger.info('Cloud authentication started - continuing in background')
+						logger.debug('Cloud authentication started - continuing in background')
 					except Exception as e:
 						logger.debug(f'Cloud authentication error: {e}')
 
@@ -1524,7 +1524,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# ONLY ALLOW TO CALL `done` IF IT IS A SINGLE ACTION
 				if action.model_dump(exclude_unset=True).get('done') is not None:
 					msg = f'Done action is allowed only as a single action - stopped after action {i} / {total_actions}.'
-					logger.info(msg)
+					self.logger.debug(msg)
 					break
 
 			# DOM synchronization check - verify element indexes are still valid AFTER first action
@@ -1544,7 +1544,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_target_hash = new_target.parent_branch_hash() if new_target else None
 
 				if orig_target_hash != new_target_hash:
-					msg = f'Element index changed after action {i} / {total_actions}, because page changed.'
+					msg = f'Page changed after action {i} / {total_actions}'
 					logger.info(msg)
 					results.append(
 						ActionResult(
@@ -1559,7 +1559,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {total_actions}, following actions are NOT executed and should be retried.'
+					msg = f'Something new appeared after action {i} / {total_actions}'
 					logger.info(msg)
 					results.append(
 						ActionResult(
@@ -1608,12 +1608,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				time_elapsed = time_end - time_start
 				results.append(result)
 
-				if self.logger.isEnabledFor(logging.INFO):
-					self.logger.info(f'☑️ Action: {green}{action_params}{reset}')
-				else:
-					self.logger.debug(
-						f'☑️ Executed action {i + 1}/{total_actions}: {green}{action_params}{reset} in {time_elapsed:.2f}s'
-					)
+				self.logger.debug(
+					f'☑️ Executed action {i + 1}/{total_actions}: {green}{action_params}{reset} in {time_elapsed:.2f}s'
+				)
 
 				if results[-1].is_done or results[-1].error or i == total_actions - 1:
 					break
