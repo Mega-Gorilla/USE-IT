@@ -67,7 +67,7 @@ class ChatOpenAI(BaseChatModel):
 	default_query: Mapping[str, object] | None = None
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
-	max_completion_tokens: int | None = 4000
+	max_completion_tokens: int | None = 4096
 
 	# Static
 	@property
