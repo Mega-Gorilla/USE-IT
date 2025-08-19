@@ -9,6 +9,8 @@ import logging
 import os
 import sys
 
+import aiofiles
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv
@@ -81,8 +83,8 @@ async def main():
 	# Create test files if they don't exist
 	for file_path in available_file_paths:
 		if not os.path.exists(file_path):
-			with open(file_path, 'w') as f:
-				f.write('Test file content for upload example')
+			async with aiofiles.open(file_path, 'w') as f:
+				await f.write('Test file content for upload example')
 
 	# Create the agent with file upload capability
 	agent = Agent(

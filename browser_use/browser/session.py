@@ -86,7 +86,7 @@ class CDPSession(BaseModel):
 			import logging
 
 			logger = logging.getLogger(f'browser_use.CDPSession.{target_id[-4:]}')
-			logger.info(f'🔌 Creating dedicated WebSocket connection for target {target_id}')
+			logger.debug(f'🔌 Creating dedicated WebSocket connection for target {target_id}')
 
 			target_cdp_client = CDPClient(cdp_url)
 			await target_cdp_client.start()
@@ -403,7 +403,7 @@ class BrowserSession(BaseModel):
 
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
 		"""Handle navigation requests - core browser functionality."""
-		self.logger.info(f'[on_NavigateToUrlEvent] Received NavigateToUrlEvent: url={event.url}, new_tab={event.new_tab}')
+		self.logger.debug(f'[on_NavigateToUrlEvent] Received NavigateToUrlEvent: url={event.url}, new_tab={event.new_tab}')
 		if not self.agent_focus:
 			self.logger.warning('Cannot navigate - browser not connected')
 			return
@@ -421,13 +421,13 @@ class BrowserSession(BaseModel):
 		try:
 			# Find or create target for navigation
 
-			self.logger.info(f'[on_NavigateToUrlEvent] Processing new_tab={event.new_tab}')
+			self.logger.debug(f'[on_NavigateToUrlEvent] Processing new_tab={event.new_tab}')
 			if event.new_tab:
 				# Look for existing about:blank tab that's not the current one
 				targets = await self._cdp_get_all_pages()
-				self.logger.info(f'[on_NavigateToUrlEvent] Found {len(targets)} existing tabs')
+				self.logger.debug(f'[on_NavigateToUrlEvent] Found {len(targets)} existing tabs')
 				current_target_id = self.agent_focus.target_id if self.agent_focus else None
-				self.logger.info(f'[on_NavigateToUrlEvent] Current target_id: {current_target_id}')
+				self.logger.debug(f'[on_NavigateToUrlEvent] Current target_id: {current_target_id}')
 
 				for idx, target in enumerate(targets):
 					self.logger.debug(
@@ -435,18 +435,18 @@ class BrowserSession(BaseModel):
 					)
 					if target.get('url') == 'about:blank' and target['targetId'] != current_target_id:
 						target_id = target['targetId']
-						self.logger.info(f'Reusing existing about:blank tab #{target_id[-4:]}')
+						self.logger.debug(f'Reusing existing about:blank tab #{target_id[-4:]}')
 						break
 
 				# Create new tab if no reusable one found
 				if not target_id:
-					self.logger.info('[on_NavigateToUrlEvent] No reusable about:blank tab found, creating new tab...')
+					self.logger.debug('[on_NavigateToUrlEvent] No reusable about:blank tab found, creating new tab...')
 					try:
 						target_id = await self._cdp_create_new_page('about:blank')
-						self.logger.info(f'[on_NavigateToUrlEvent] Created new page with target_id: {target_id}')
+						self.logger.debug(f'[on_NavigateToUrlEvent] Created new page with target_id: {target_id}')
 						targets = await self._cdp_get_all_pages()
 
-						self.logger.info(f'Created new tab #{target_id[-4:]}')
+						self.logger.debug(f'Created new tab #{target_id[-4:]}')
 						# Dispatch TabCreatedEvent for new tab
 						await self.event_bus.dispatch(TabCreatedEvent(target_id=target_id, url='about:blank'))
 					except Exception as e:
@@ -815,7 +815,7 @@ class BrowserSession(BaseModel):
 		# self.event_bus.on(NavigationCompleteEvent, self._downloads_watchdog.on_NavigationCompleteEvent)
 		self._downloads_watchdog.attach_to_session()
 		if self.browser_profile.auto_download_pdfs:
-			self.logger.info('📄 PDF auto-download enabled for this session')
+			self.logger.debug('📄 PDF auto-download enabled for this session')
 
 		# # Initialize StorageStateWatchdog
 		# StorageStateWatchdog.model_rebuild()
@@ -920,7 +920,7 @@ class BrowserSession(BaseModel):
 		assert self.cdp_url is not None
 
 		browser_location = 'local browser' if self.is_local else 'remote browser'
-		self.logger.info(f'🌎 Connecting to existing chromium-based browser via CDP: {self.cdp_url} -> ({browser_location})')
+		self.logger.debug(f'🌎 Connecting to existing chromium-based browser via CDP: {self.cdp_url} -> ({browser_location})')
 
 		try:
 			# Import cdp-use client
@@ -934,7 +934,7 @@ class BrowserSession(BaseModel):
 			await self._cdp_client_root.send.Target.setAutoAttach(
 				params={'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True}
 			)
-			self.logger.info('✅ CDP client connected successfully')
+			self.logger.debug('CDP client connected successfully')
 
 			# Get browser targets to find available contexts/pages
 			targets = await self._cdp_client_root.send.Target.getTargets()
@@ -960,7 +960,7 @@ class BrowserSession(BaseModel):
 				if is_new_tab_page(target_url) and target_url != 'about:blank':
 					# Redirect chrome://newtab to about:blank to avoid JS issues preventing driving chrome://newtab
 					target_id = target['targetId']
-					self.logger.info(f'🔄 Redirecting {target_url} to about:blank for target {target_id}')
+					self.logger.debug(f'🔄 Redirecting {target_url} to about:blank for target {target_id}')
 					try:
 						# Create a CDP session for redirection (minimal domains to avoid duplicate event handlers)
 						# Only enable Page domain for navigation, avoid duplicate event handlers
@@ -980,17 +980,17 @@ class BrowserSession(BaseModel):
 
 			# Log summary of redirections
 			if redirected_targets:
-				self.logger.info(f'✅ Redirected {len(redirected_targets)} chrome://newtab pages to about:blank')
+				self.logger.debug(f'Redirected {len(redirected_targets)} chrome://newtab pages to about:blank')
 
 			if not page_targets:
 				# No pages found, create a new one
 				new_target = await self._cdp_client_root.send.Target.createTarget(params={'url': 'about:blank'})
 				target_id = new_target['targetId']
-				self.logger.info(f'📄 Created new blank page with target ID: {target_id}')
+				self.logger.debug(f'📄 Created new blank page with target ID: {target_id}')
 			else:
 				# Use the first available page
 				target_id = [page for page in page_targets if page.get('type') == 'page'][0]['targetId']
-				self.logger.info(f'📄 Using existing page with target ID: {target_id}')
+				self.logger.debug(f'📄 Using existing page with target ID: {target_id}')
 
 			# Store the current page target ID and add to pool
 			# Reuse redirect session if available, otherwise create new one
@@ -1024,7 +1024,7 @@ class BrowserSession(BaseModel):
 			if page_targets:
 				initial_url = page_targets[0].get('url', '')
 				self.event_bus.dispatch(AgentFocusChangedEvent(target_id=page_targets[0]['targetId'], url=initial_url))
-				self.logger.info(f'Initial agent focus set to tab 0: {initial_url}')
+				self.logger.debug(f'Initial agent focus set to tab 0: {initial_url}')
 
 		except Exception as e:
 			# Fatal error - browser is not usable without CDP connection
