@@ -5,8 +5,7 @@ import shutil
 
 from dotenv import load_dotenv
 
-from browser_use import Agent
-from browser_use.llm import ChatOpenAI
+from browser_use import Agent, ChatOpenAI
 
 load_dotenv()
 

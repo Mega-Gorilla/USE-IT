@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent
-from browser_use.llm import ChatOpenAI
+from browser_use import Agent, ChatOpenAI
 
 # video: https://preview.screen.studio/share/clenCmS6
 llm = ChatOpenAI(model='gpt-4.1')
