@@ -1589,6 +1589,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			red = '\033[91m'
 			green = '\033[92m'
 			cyan = '\033[96m'
+			blue = '\033[34m'
 			reset = '\033[0m'
 
 			try:
@@ -1603,8 +1604,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				action_params = str(action_params)
 				action_params = f'{action_params[:122]}...' if len(action_params) > 128 else action_params
 				time_start = time.time()
-
-				self.logger.info(f'  🦾 [ACTION {i + 1}/{total_actions}] {action_params}')
+				self.logger.info(f'  🦾 {blue}[ACTION {i + 1}/{total_actions}]{reset} {action_params}')
 
 				result = await self.controller.act(
 					action=action,
