@@ -12,13 +12,6 @@ from browser_use import Agent
 from browser_use.browser import BrowserProfile
 from browser_use.llm import ChatOpenAI
 
-try:
-	from lmnr import Laminar
-
-	Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'))
-except Exception as e:
-	print(f'Error initializing Laminar: {e}')
-
 # Initialize the model
 llm = ChatOpenAI(
 	model='gpt-4.1',

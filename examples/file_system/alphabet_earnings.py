@@ -16,12 +16,6 @@ SCRIPT_DIR = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
 agent_dir = SCRIPT_DIR / 'alphabet_earnings'
 agent_dir.mkdir(exist_ok=True)
 
-try:
-	from lmnr import Laminar
-
-	Laminar.initialize(project_api_key=os.getenv('LMNR_PROJECT_API_KEY'))
-except Exception as e:
-	print(f'Error initializing Laminar: {e}')
 
 llm = ChatOpenAI(
 	model='o4-mini',
