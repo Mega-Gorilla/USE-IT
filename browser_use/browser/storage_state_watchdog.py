@@ -241,7 +241,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			if 'cookies' in storage and storage['cookies']:
 				await self.browser_session._cdp_set_cookies(storage['cookies'])
 				self._last_cookie_state = storage['cookies'].copy()
-				self.loggerf'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
+				self.logger.info(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
 
 			# Apply origins (localStorage/sessionStorage) if present
 			if 'origins' in storage and storage['origins']:
