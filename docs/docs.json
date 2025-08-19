@@ -18,7 +18,7 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "Documentation",
+        "tab": "Library",
         "groups": [
           {
             "group": "Get Started",
@@ -57,10 +57,12 @@
         "tab": "Cloud API",
         "groups": [
           {
-            "group": "Cloud API v1",
+            "group": "Get Started",
+            "pages": ["cloud/quickstart", "cloud/search", "cloud/pricing"]
+          },
+          {
+            "group": "Guides",
             "pages": [
-              "cloud/quickstart",
-              "cloud/search",
               "cloud/implementation",
               "cloud/custom-sdk",
               "cloud/webhooks",
