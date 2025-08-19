@@ -110,7 +110,7 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 	next_goal = response.current_state.next_goal
 	if next_goal:
 		# Blue color for next goal
-		logger.info(f'  \033[34m🎯 Next goal: {next_goal}\033[0m\n')
+		logger.info(f'  \033[34m🎯 Next goal: {next_goal}\033[0m')
 	else:
 		logger.info('')  # Add empty line for spacing
 
@@ -1067,7 +1067,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		url = browser_state_summary.url if browser_state_summary else ''
 		url_short = url[:50] + '...' if len(url) > 50 else url
 		interactive_count = len(browser_state_summary.dom_state.selector_map) if browser_state_summary else 0
-		self.logger.info('')
+		self.logger.info('\n')
 		self.logger.info(f'📍 Step {self.state.n_steps}:')
 		self.logger.debug(f'Evaluating page with {interactive_count} interactive elements on: {url_short}')
 
@@ -1604,7 +1604,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				action_params = f'{action_params[:122]}...' if len(action_params) > 128 else action_params
 				time_start = time.time()
 
-				self.logger.info(f'  🦾 {cyan}[ACTION {i + 1}/{total_actions}] {action_name}({action_params})... {reset}')
+				self.logger.info(f'  🦾 [ACTION {i + 1}/{total_actions}] {action_params}')
 
 				result = await self.controller.act(
 					action=action,
