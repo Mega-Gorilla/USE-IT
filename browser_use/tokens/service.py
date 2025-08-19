@@ -130,7 +130,7 @@ class TokenCost:
 				cached = CachedPricingData.model_validate_json(content)
 				self._pricing_data = cached.data
 		except Exception as e:
-			print(f'Error loading cached pricing data from {cache_file}: {e}')
+			logger.debug(f'Error loading cached pricing data from {cache_file}: {e}')
 			# Fall back to fetching
 			await self._fetch_and_cache_pricing_data()
 
@@ -157,7 +157,7 @@ class TokenCost:
 				await f.write(cached.model_dump_json(indent=2))
 
 		except Exception as e:
-			print(f'Error fetching pricing data: {e}')
+			logger.debug(f'Error fetching pricing data: {e}')
 			# Fall back to empty pricing data
 			self._pricing_data = {}
 
@@ -559,7 +559,7 @@ class TokenCost:
 				except Exception:
 					pass
 		except Exception as e:
-			print(f'Error cleaning old cache files: {e}')
+			logger.debug(f'Error cleaning old cache files: {e}')
 
 	async def ensure_pricing_loaded(self) -> None:
 		"""Ensure pricing data is loaded in the background. Call this after creating the service."""
