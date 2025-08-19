@@ -15,7 +15,7 @@
 [![Weave Badge](https://img.shields.io/endpoint?url=https%3A%2F%2Fapp.workweave.ai%2Fapi%2Frepository%2Fbadge%2Forg_T5Pvn3UBswTHIsN1dWS3voPg%2F881458615&labelColor=#EC6341)](https://app.workweave.ai/reports/repository/org_T5Pvn3UBswTHIsN1dWS3voPg/881458615)
 
 
-🌤️ Want to skip the setup? Use our <b>hosted version</b> for faster, scalable, stealth-enabled browser automation! <b>[Try the cloud ☁︎](https://cloud.browser-use.com)</b>.
+🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com)</b> for faster, scalable, stealth-enabled browser automation!
 
 # Quick start
 
