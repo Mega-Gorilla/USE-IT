@@ -13,7 +13,7 @@ from browser_use import Agent, ChatOpenAI
 
 async def main():
 	# Choose your model
-	llm = ChatOpenAI(model='gpt-5-mini')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Define your task
 	task = 'Go and find the founders of browser-use'
@@ -22,7 +22,7 @@ async def main():
 	agent = Agent(task=task, llm=llm)
 
 	# Start
-	await agent.run()
+	await agent.run(max_steps=2)
 
 
 if __name__ == '__main__':
