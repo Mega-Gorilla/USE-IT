@@ -23,6 +23,7 @@ browser_session = BrowserSession(
 llm = ChatOpenAI(model='gpt-4.1-mini')
 
 
+# NOTE: This is experimental - you will have multiple agents running in the same browser session
 async def main():
 	await browser_session.start()
 	agents = [
@@ -31,8 +32,8 @@ async def main():
 			'Search Google for weather in Tokyo',
 			'Check Reddit front page title',
 			'Look up Bitcoin price on Coinbase',
-			'Find NASA image of the day',
-			'Check top story on CNN',
+			# 'Find NASA image of the day',
+			# 'Check top story on CNN',
 			# 'Search latest SpaceX launch date',
 			# 'Look up population of Paris',
 			# 'Find current time in Sydney',
