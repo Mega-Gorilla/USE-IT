@@ -182,7 +182,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		display_files_in_done_text: bool = True,
 		include_tool_call_examples: bool = False,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
-		llm_timeout: int = 60,
+		llm_timeout: int = 90,
 		step_timeout: int = 120,
 		preload: bool = True,
 		include_recent_events: bool = False,
@@ -928,7 +928,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.warning('Model returned empty action. Retrying...')
 
 			clarification_message = UserMessage(
-				content='You forgot to return an action. Please respond only with a valid JSON action according to the expected format.'
+				content='You forgot to return an action. Please respond with a valid JSON action according to the expected schema with your assessment and next actions.'
 			)
 
 			retry_messages = input_messages + [clarification_message]
