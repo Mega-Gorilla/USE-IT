@@ -1744,20 +1744,43 @@ class BrowserSession(BaseModel):
 	async def cdp_client_for_node(self, node: EnhancedDOMTreeNode) -> CDPSession:
 		"""Get CDP client for a specific DOM node based on its frame."""
 		if node.frame_id:
-			# If cross-origin iframes are disabled, always use the main session
-			if not self.browser_profile.cross_origin_iframes:
-				assert self.agent_focus is not None, 'No active CDP session'
-				return self.agent_focus
+			# # If cross-origin iframes are disabled, always use the main session
+			# if not self.browser_profile.cross_origin_iframes:
+			# 	assert self.agent_focus is not None, 'No active CDP session'
+			# 	return self.agent_focus
 			# Otherwise, try to get the frame-specific session
 			try:
-				return await self.cdp_client_for_frame(node.frame_id)
+				cdp_session = await self.cdp_client_for_frame(node.frame_id)
+				result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': node.backend_node_id},
+					session_id=cdp_session.session_id,
+				)
+				object_id = result.get('object', {}).get('objectId')
+				if not object_id:
+					raise ValueError(
+						f'Could not find #{node.element_index} backendNodeId={node.backend_node_id} in target_id={cdp_session.target_id}'
+					)
+				return cdp_session
 			except (ValueError, Exception) as e:
 				# Fall back to main session if frame not found
 				self.logger.debug(f'Failed to get CDP client for frame {node.frame_id}: {e}, using main session')
-				assert self.agent_focus is not None, 'No active CDP session'
-				return self.agent_focus
-		assert self.agent_focus is not None, 'No active CDP session'
-		return self.agent_focus
+
+		if node.target_id:
+			try:
+				cdp_session = await self.get_or_create_cdp_session(target_id=node.target_id, focus=False)
+				result = await cdp_session.cdp_client.send.DOM.resolveNode(
+					params={'backendNodeId': node.backend_node_id},
+					session_id=cdp_session.session_id,
+				)
+				object_id = result.get('object', {}).get('objectId')
+				if not object_id:
+					raise ValueError(
+						f'Could not find #{node.element_index} backendNodeId={node.backend_node_id} in target_id={cdp_session.target_id}'
+					)
+			except Exception as e:
+				self.logger.debug(f'Failed to get CDP client for target {node.target_id}: {e}, using main session')
+
+		return await self.get_or_create_cdp_session()
 
 
 # # Fix Pydantic circular dependency for all watchdogs
