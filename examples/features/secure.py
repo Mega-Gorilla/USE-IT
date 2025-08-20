@@ -62,7 +62,7 @@ azure_endpoint = os.getenv('AZURE_OPENAI_ENDPOINT')
 llm = ChatAzureOpenAI(model='gpt-4.1-mini', api_key=api_key, azure_endpoint=azure_endpoint)
 
 # Configuration Task
-task = 'Find the founders of browser-use'
+task = 'Find the founders of the sensitive company_name'
 
 # Configuration Browser (optional)
 browser_profile = BrowserProfile(allowed_domains=['*google.com', 'browser-use.com'], enable_default_extensions=False)
