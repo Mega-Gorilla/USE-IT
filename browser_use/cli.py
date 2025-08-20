@@ -177,6 +177,14 @@ def update_config_with_click_args(config: dict[str, Any], ctx: click.Context) ->
 		config['browser']['profile_directory'] = ctx.params['profile_directory']
 	if ctx.params.get('cdp_url'):
 		config['browser']['cdp_url'] = ctx.params['cdp_url']
+	if ctx.params.get('proxy_url'):
+		config['browser']['proxy_server'] = ctx.params['proxy_url']
+	if ctx.params.get('no_proxy'):
+		config['browser']['proxy_bypass_list'] = [p.strip() for p in ctx.params['no_proxy'].split(',') if p.strip()]
+	if ctx.params.get('proxy_username'):
+		config['browser']['proxy_username'] = ctx.params['proxy_username']
+	if ctx.params.get('proxy_password'):
+		config['browser']['proxy_password'] = ctx.params['proxy_password']
 
 	return config
 
@@ -1573,6 +1581,10 @@ async def textual_interface(config: dict[str, Any]):
 )
 @click.option('--profile-directory', type=str, help='Chrome profile directory name (e.g. "Default", "Profile 1")')
 @click.option('--cdp-url', type=str, help='Connect to existing Chrome via CDP URL (e.g. http://localhost:9222)')
+@click.option('--proxy-url', type=str, help='Proxy server for Chromium traffic (e.g. http://host:8080 or socks5://host:1080)')
+@click.option('--no-proxy', type=str, help='Comma-separated hosts to bypass proxy (e.g. localhost,127.0.0.1,*.internal)')
+@click.option('--proxy-username', type=str, help='Proxy auth username')
+@click.option('--proxy-password', type=str, help='Proxy auth password')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.option('--mcp', is_flag=True, help='Run as MCP server (exposes JSON RPC via stdin/stdout)')
 @click.pass_context

@@ -213,6 +213,12 @@ class FlatEnvConfig(BaseSettings):
 	BROWSER_USE_ALLOWED_DOMAINS: str | None = Field(default=None)
 	BROWSER_USE_LLM_MODEL: str | None = Field(default=None)
 
+	# Proxy env vars
+	BROWSER_USE_PROXY_URL: str | None = Field(default=None)
+	BROWSER_USE_NO_PROXY: str | None = Field(default=None)
+	BROWSER_USE_PROXY_USERNAME: str | None = Field(default=None)
+	BROWSER_USE_PROXY_PASSWORD: str | None = Field(default=None)
+
 
 class DBStyleEntry(BaseModel):
 	"""Database-style entry with UUID and metadata."""
@@ -446,6 +452,17 @@ class Config:
 		if env_config.BROWSER_USE_ALLOWED_DOMAINS:
 			domains = [d.strip() for d in env_config.BROWSER_USE_ALLOWED_DOMAINS.split(',') if d.strip()]
 			config['browser_profile']['allowed_domains'] = domains
+
+		# Proxy settings (Chromium)
+		if env_config.BROWSER_USE_PROXY_URL:
+			config['browser_profile']['proxy_server'] = env_config.BROWSER_USE_PROXY_URL
+		if env_config.BROWSER_USE_NO_PROXY:
+			bypass = [d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()]
+			config['browser_profile']['proxy_bypass_list'] = bypass
+		if env_config.BROWSER_USE_PROXY_USERNAME:
+			config['browser_profile']['proxy_username'] = env_config.BROWSER_USE_PROXY_USERNAME
+		if env_config.BROWSER_USE_PROXY_PASSWORD:
+			config['browser_profile']['proxy_password'] = env_config.BROWSER_USE_PROXY_PASSWORD
 
 		if env_config.OPENAI_API_KEY:
 			config['llm']['api_key'] = env_config.OPENAI_API_KEY

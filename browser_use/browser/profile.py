@@ -592,6 +592,22 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		description='List of allowed domains for navigation e.g. ["*.google.com", "https://example.com", "chrome-extension://*"]',
 	)
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
+
+	# --- Proxy settings ---
+	proxy_server: str | None = Field(
+		default=None,
+		description='Proxy server URL for Chromium traffic. Example: http://proxy.local:8080 or socks5://host:1080',
+	)
+	proxy_bypass_list: list[str] | None = Field(
+		default=None,
+		description='Hosts/patterns to bypass proxy, e.g. ["localhost", "127.0.0.1", "*.internal"]',
+	)
+	proxy_pac_url: str | None = Field(
+		default=None,
+		description='Proxy PAC URL (mutually exclusive with proxy_server).',
+	)
+	proxy_username: str | None = Field(default=None, description='Proxy auth username (for authenticated proxies).')
+	proxy_password: str | None = Field(default=None, description='Proxy auth password (for authenticated proxies).')
 	enable_default_extensions: bool = Field(
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
@@ -716,6 +732,13 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			)
 		return self
 
+	@model_validator(mode='after')
+	def validate_proxy_settings(self) -> Self:
+		"""Ensure proxy configuration is consistent."""
+		if self.proxy_server and self.proxy_pac_url:
+			raise ValueError('proxy_server and proxy_pac_url cannot both be set. Choose one.')
+		return self
+
 	def get_args(self) -> list[str]:
 		"""Get the list of all Chrome CLI launch args for this profile (compiled from defaults, user-provided, and system-specific)."""
 
@@ -750,6 +773,14 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			),
 			*(self._get_extension_args() if self.enable_default_extensions else []),
 		]
+
+		# Proxy flags
+		if self.proxy_server and not self.proxy_pac_url:
+			pre_conversion_args.append(f'--proxy-server={self.proxy_server}')
+			if self.proxy_bypass_list:
+				pre_conversion_args.append(f'--proxy-bypass-list={",".join(self.proxy_bypass_list)}')
+		elif self.proxy_pac_url and not self.proxy_server:
+			pre_conversion_args.append(f'--proxy-pac-url={self.proxy_pac_url}')
 
 		# convert to dict and back to dedupe and merge duplicate args
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))
