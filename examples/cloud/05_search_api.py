@@ -13,6 +13,7 @@ Perfect for: Content extraction, research, competitive analysis
 
 import argparse
 import asyncio
+import json
 import os
 import time
 from typing import Any
@@ -60,9 +61,14 @@ async def simple_search(query: str, max_websites: int = 5, depth: int = 2) -> di
 		async with session.post(f'{BASE_URL}/simple-search', json=payload, headers=HEADERS) as response:
 			elapsed = time.time() - start_time
 			if response.status == 200:
-				result = await response.json()
-				print(f'✅ Found results from {len(result.get("results", []))} websites in {elapsed:.1f}s')
-				return result
+				try:
+					result = await response.json()
+					print(f'✅ Found results from {len(result.get("results", []))} websites in {elapsed:.1f}s')
+					return result
+				except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+					error_text = await response.text()
+					print(f'❌ Invalid JSON response: {e} (after {elapsed:.1f}s)')
+					return {'error': 'Invalid JSON', 'details': error_text}
 			else:
 				error_text = await response.text()
 				print(f'❌ Search failed: {response.status} - {error_text} (after {elapsed:.1f}s)')
@@ -100,9 +106,14 @@ async def search_url(url: str, query: str, depth: int = 2) -> dict[str, Any]:
 		async with session.post(f'{BASE_URL}/search-url', json=payload, headers=HEADERS) as response:
 			elapsed = time.time() - start_time
 			if response.status == 200:
-				result = await response.json()
-				print(f'✅ Extracted content from {result.get("url", "website")} in {elapsed:.1f}s')
-				return result
+				try:
+					result = await response.json()
+					print(f'✅ Extracted content from {result.get("url", "website")} in {elapsed:.1f}s')
+					return result
+				except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+					error_text = await response.text()
+					print(f'❌ Invalid JSON response: {e} (after {elapsed:.1f}s)')
+					return {'error': 'Invalid JSON', 'details': error_text}
 			else:
 				error_text = await response.text()
 				print(f'❌ URL search failed: {response.status} - {error_text} (after {elapsed:.1f}s)')

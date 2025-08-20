@@ -196,7 +196,10 @@ def run_speed_comparison():
 
 	print(f'\n⚡ Total time: {total_time:.1f}s')
 	print(f'🔥 Average per task: {total_time / len(results):.1f}s')
-	print(f'💨 Average per step: {total_time / total_steps:.1f}s')
+	if total_steps > 0:
+		print(f'💨 Average per step: {total_time / total_steps:.1f}s')
+	else:
+		print('💨 Average per step: N/A (no steps recorded)')
 
 
 def main():

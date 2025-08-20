@@ -126,9 +126,9 @@ def create_structured_task(instructions: str, schema_model: type[BaseModel], **k
 	return task_id
 
 
-def wait_for_structured_completion(task_id: str) -> dict[str, Any]:
+def wait_for_structured_completion(task_id: str, max_wait_time: int = 300) -> dict[str, Any]:
 	"""Wait for task completion and return the result."""
-	print('⏳ Waiting for structured output...')
+	print(f'⏳ Waiting for structured output (max {max_wait_time}s)...')
 
 	start_time = time.time()
 
@@ -136,6 +136,14 @@ def wait_for_structured_completion(task_id: str) -> dict[str, Any]:
 		response = _request_with_retry('get', f'{BASE_URL}/task/{task_id}/status', headers=HEADERS)
 		status = response.json()
 		elapsed = time.time() - start_time
+
+		# Check for timeout
+		if elapsed > max_wait_time:
+			print(f'\r⏰ Task timeout after {max_wait_time}s - stopping wait' + ' ' * 30)
+			# Get final details before timeout
+			details_response = _request_with_retry('get', f'{BASE_URL}/task/{task_id}', headers=HEADERS)
+			details = details_response.json()
+			return details
 
 		# Get step count from full details for better progress tracking
 		details_response = _request_with_retry('get', f'{BASE_URL}/task/{task_id}', headers=HEADERS)
