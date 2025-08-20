@@ -8,21 +8,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent, ChatOpenAI
+from browser_use import Agent, default_llm
 
 
 async def main():
-	# Choose your model
-	llm = ChatOpenAI(model='gpt-4.1-mini')
-
-	# Define your task
-	task = 'Go and find the founders of browser-use'
-
-	# Create the agent
-	agent = Agent(task=task, llm=llm)
-
-	# Start
-	await agent.run(max_steps=2)
+	await Agent('Find the founders of browser-use', default_llm).run()
 
 
 if __name__ == '__main__':
