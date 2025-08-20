@@ -136,6 +136,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 				except Exception as e:
 					# Element not found or error - fall back to typing to the page
 					self.logger.warning(f'Failed to type to element {index_for_logging}: {e}. Falling back to page typing.')
+					try:
+						await asyncio.wait_for(self._click_element_node_impl(element_node, while_holding_ctrl=False), timeout=3.0)
+					except Exception as e:
+						pass
 					await self._type_to_page(event.text)
 					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
 
@@ -248,8 +252,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Get CDP client
-			await self.browser_session.get_or_create_cdp_session(focus=True)
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
 			# Get the correct session ID for the element's frame
 			session_id = cdp_session.session_id
@@ -675,14 +678,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Get the correct session ID for the element's iframe
 			# session_id = await self._get_session_id_for_element(element_node)
 
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
+			# cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
 
 			# Scroll element into view
 			try:
-				await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': element_node.target_id})
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
 				)
