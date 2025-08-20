@@ -1110,11 +1110,30 @@ class BrowserSession(BaseModel):
 					if request_id:
 						asyncio.create_task(_default())
 
-			# Register event handler on root client (and focused session if present)
+			def _on_request_paused(event: dict, session_id: SessionID | None = None):
+				# Continue all paused requests to avoid stalling the network
+				request_id = event.get('requestId') or event.get('request_id')
+				if not request_id:
+					return
+
+				async def _continue():
+					try:
+						await self._cdp_client_root.send.Fetch.continueRequest(
+							params={'requestId': request_id},
+							session_id=session_id,
+						)
+					except Exception:
+						pass
+
+				asyncio.create_task(_continue())
+
+			# Register event handler on root client
 			try:
 				self._cdp_client_root.register.Fetch.authRequired(_on_auth_required)
+				self._cdp_client_root.register.Fetch.requestPaused(_on_request_paused)
 				if self.agent_focus:
 					self.agent_focus.cdp_client.register.Fetch.authRequired(_on_auth_required)
+					self.agent_focus.cdp_client.register.Fetch.requestPaused(_on_request_paused)
 				self.logger.debug('Registered Fetch.authRequired handlers')
 			except Exception as e:
 				self.logger.debug(f'Failed to register authRequired handlers: {type(e).__name__}: {e}')
@@ -1143,6 +1162,15 @@ class BrowserSession(BaseModel):
 			except Exception as e:
 				self.logger.debug(f'Failed to register attachedToTarget handler: {type(e).__name__}: {e}')
 
+			# Ensure Fetch is enabled for the current focused session, too
+			try:
+				if self.agent_focus:
+					await self.agent_focus.cdp_client.send.Fetch.enable(
+						params={'handleAuthRequests': True, 'patterns': [{'urlPattern': '*'}]},
+						session_id=self.agent_focus.session_id,
+					)
+			except Exception:
+				self.logger.debug(f'Fetch.enable on focused session failed: {type(e).__name__}: {e}')
 		except Exception as e:
 			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
