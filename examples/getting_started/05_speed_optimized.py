@@ -37,13 +37,15 @@ SPEED OPTIMIZATION INSTRUCTIONS:
 
 async def main():
 	# 1. Use fast LLM - Llama 4 on Groq for ultra-fast inference
-	# llm = ChatGroq(
-	# 	model='meta-llama/llama-4-maverick-17b-128e-instruct',
-	# 	temperature=0.0,
-	# )
-	from browser_use import ChatGoogle
+	from browser_use import ChatGroq
 
-	llm = ChatGoogle(model='gemini-2.5-flash')
+	llm = ChatGroq(
+		model='meta-llama/llama-4-maverick-17b-128e-instruct',
+		temperature=0.0,
+	)
+	# from browser_use import ChatGoogle
+
+	# llm = ChatGoogle(model='gemini-2.5-flash')
 
 	# 2. Create speed-optimized browser profile
 	browser_profile = BrowserProfile(
