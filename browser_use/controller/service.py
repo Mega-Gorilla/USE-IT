@@ -329,13 +329,16 @@ class Controller(Generic[Context]):
 					TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing)
 				)
 				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
+				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
 				logger.info(msg)
+				
+				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
 					include_in_memory=True,
 					long_term_memory=f"Input '{params.text}' into element {params.index}.",
+					metadata=input_metadata if isinstance(input_metadata, dict) else None
 				)
 			except Exception as e:
 				# Log the full error for debugging

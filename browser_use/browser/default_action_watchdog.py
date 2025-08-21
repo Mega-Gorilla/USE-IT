@@ -111,7 +111,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise
 
-	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict | None:
 		"""Handle text input request with CDP."""
 		try:
 			# Use the provided node
@@ -123,14 +123,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Type to the page without focusing any specific element
 				await self._type_to_page(event.text)
 				self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
+				return None  # No coordinates available for page typing
 			else:
 				try:
 					# Try to type to the specific element
-					await self._input_text_element_node_impl(
+					input_metadata = await self._input_text_element_node_impl(
 						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
 					)
 					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
+					return input_metadata  # Return coordinates if available
 				except Exception as e:
 					# Element not found or error - fall back to typing to the page
 					self.logger.warning(f'Failed to type to element {index_for_logging}: {e}. Falling back to page typing.')
@@ -140,11 +142,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 						pass
 					await self._type_to_page(event.text)
 					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
+					return None  # No coordinates available for fallback typing
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
 			# by explicitly rebuilding and comparing when needed
-
-			return None
 		except Exception as e:
 			raise
 
@@ -655,7 +656,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Element focusability check failed: {e}')
 			return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
 
-	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True):
+	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
 		"""
@@ -672,6 +673,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
+			
+			# Track coordinates for metadata
+			input_coordinates = None
 
 			# Scroll element into view
 			try:
@@ -697,6 +701,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check element focusability before attempting focus
 			element_info = await self._check_element_focusability(element_node, object_id, cdp_session.session_id)
 			self.logger.debug(f'Element focusability check: {element_info}')
+
+			# Extract coordinates from element bounds for metadata
+			bounds = element_info.get('bounds', {})
+			if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+				input_coordinates = {"input_x": center_x, "input_y": center_y}
+				self.logger.debug(f'📍 Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
 
 			# Provide helpful warnings for common issues
 			if not element_info.get('visible', False):
@@ -760,11 +772,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 						# Strategy 4: Try simulated mouse click for maximum compatibility
 						try:
-							# Use bounds from focusability check if available
-							bounds = element_info.get('bounds', {})
-							if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
-								click_x = bounds['x'] + bounds['width'] / 2
-								click_y = bounds['y'] + bounds['height'] / 2
+							# Use coordinates already calculated from element bounds
+							if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
+								click_x = input_coordinates['input_x']
+								click_y = input_coordinates['input_y']
 
 								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 									params={
@@ -826,6 +837,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 				# Small delay between characters
 				await asyncio.sleep(0.01)
+			
+			# Return coordinates metadata if available
+			return input_coordinates
 
 		except Exception as e:
 			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
