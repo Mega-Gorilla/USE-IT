@@ -1520,7 +1520,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.browser_session._cached_browser_state_summary is not None
 				and self.browser_session._cached_browser_state_summary.dom_state is not None
 			):
-				cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
+				cached_selector_map = dict(self.browser_session._cached_browser_state_summary.dom_state.selector_map)
 				cached_element_hashes = {e.parent_branch_hash() for e in cached_selector_map.values()}
 			else:
 				cached_selector_map = {}
