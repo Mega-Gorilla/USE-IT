@@ -1,17 +1,3 @@
-"""
-Getting Started Example 5: Speed-Optimized Browser Automation
-
-This example demonstrates how to configure browser-use for maximum speed:
-1. Flash mode enabled (disables thinking and evaluation steps)
-2. Fast LLM (Llama 4 on Groq for ultra-fast inference)
-3. Reduced wait times between actions
-4. Headless mode option (faster rendering, default off for visibility)
-5. Extended system prompt to encourage concise responses
-6. Optimized agent settings for speed
-
-Perfect for production environments where speed is critical.
-"""
-
 import asyncio
 import os
 import sys
@@ -54,7 +40,7 @@ async def main():
 		headless=False,
 	)
 
-	# Define a speed-focused task
+	# 3. Define a speed-focused task
 	task = """
 	1. Go to reddit https://www.reddit.com/search/?q=browser+agent&type=communities 
 	2. Click directly on the first 5 communities to open each in new tabs
@@ -62,16 +48,16 @@ async def main():
 	4. Return the latest post summary for each page
 	"""
 
-	# 5. Create agent with all speed optimizations
+	# 4. Create agent with all speed optimizations
 	agent = Agent(
 		task=task,
 		llm=llm,
+		flash_mode=True,  # Disables thinking in the LLM output for maximum speed
 		browser_profile=browser_profile,
-		flash_mode=True,  # Disables thinking and evaluation for maximum speed
 		extend_system_message=SPEED_OPTIMIZATION_PROMPT,
 	)
 
-	result = await agent.run()
+	await agent.run()
 
 
 if __name__ == '__main__':
