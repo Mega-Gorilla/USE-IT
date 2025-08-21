@@ -2006,12 +2006,3 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		import asyncio
 
 		return asyncio.run(self.run(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end))
-
-	def __call__(
-		self,
-		max_steps: int = 100,
-		on_step_start: AgentHookFunc | None = None,
-		on_step_end: AgentHookFunc | None = None,
-	) -> AgentHistoryList[AgentStructuredOutput]:
-		"""Make Agent instances callable for simple usage: Agent('task')()"""
-		return self.run_sync(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end)
