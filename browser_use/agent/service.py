@@ -797,10 +797,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			success = self.state.last_result[-1].success
 			if success:
 				# Green color for success
-				self.logger.info(f'📄 \033[32m Result:\033[0m {self.state.last_result[-1].extracted_content}\n\n')
+				self.logger.info(f'📄 \033[32m Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			else:
 				# Red color for failure
-				self.logger.info(f'📄 \033[31m Result:\033[0m {self.state.last_result[-1].extracted_content}\n\n')
+				self.logger.info(f'📄 \033[31m Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			if self.state.last_result[-1].attachments:
 				for i, file_path in enumerate(self.state.last_result[-1].attachments):
 					self.logger.info(f'👉 Attachment {i + 1}: {file_path}')
