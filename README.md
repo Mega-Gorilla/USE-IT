@@ -24,11 +24,12 @@ With pip (Python>=3.11):
 pip install browser-use
 ```
 
-Install the browser:
+If you don't already have Chrome or Chromium installed, you can also download the latest Chromium using playwright's install shortcut:
 
 ```bash
 uvx playwright install chromium --with-deps --no-shell
 ```
+
 
 Spin up your agent:
 
