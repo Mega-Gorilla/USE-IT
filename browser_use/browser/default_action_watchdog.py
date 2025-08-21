@@ -821,7 +821,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=cdp_session.session_id,
 				)
 				# Small delay between characters
-				await asyncio.sleep(0.09)
+				await asyncio.sleep(0.01)
 
 		except Exception as e:
 			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')

@@ -208,6 +208,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 		'trafilatura',
 		'groq',
 		'portalocker',
+		'google_genai',
 		'portalocker.utils',
 		'websockets',  # General websockets (but not websockets.client which we need)
 	]

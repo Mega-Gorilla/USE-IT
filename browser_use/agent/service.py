@@ -25,6 +25,7 @@ from browser_use.agent.cloud_events import (
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
+from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
 load_dotenv()
@@ -129,7 +130,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def __init__(
 		self,
 		task: str,
-		llm: BaseChatModel,
+		llm: BaseChatModel = ChatOpenAI(model='gpt-4.1-mini'),
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
@@ -802,8 +803,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Red color for failure
 				self.logger.info(f'📄 \033[31m Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			if self.state.last_result[-1].attachments:
+				total_attachments = len(self.state.last_result[-1].attachments)
 				for i, file_path in enumerate(self.state.last_result[-1].attachments):
-					self.logger.info(f'👉 Attachment {i + 1}: {file_path}')
+					self.logger.info(f'👉 Attachment {i + 1 if total_attachments > 1 else ""}: {file_path}')
 
 	async def _handle_step_error(self, error: Exception) -> None:
 		"""Handle all types of errors that can occur during a step"""
@@ -1519,7 +1521,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.browser_session._cached_browser_state_summary is not None
 				and self.browser_session._cached_browser_state_summary.dom_state is not None
 			):
-				cached_selector_map = self.browser_session._cached_browser_state_summary.dom_state.selector_map
+				cached_selector_map = dict(self.browser_session._cached_browser_state_summary.dom_state.selector_map)
 				cached_element_hashes = {e.parent_branch_hash() for e in cached_selector_map.values()}
 			else:
 				cached_selector_map = {}
@@ -1649,10 +1651,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
+		self._task_end_time = time.time()
+		self._task_duration = self._task_end_time - self._task_start_time
 		if self.history.is_successful():
-			self.logger.info('✅ Task completed successfully')
+			self.logger.info(f'✅ Task completed successfully in {self._task_duration:.2f}s')
 		else:
-			self.logger.info('❌ Task completed without success')
+			self.logger.info(f'❌ Task completed without success in {self._task_duration:.2f}s')
 
 	async def rerun_history(
 		self,
@@ -1991,3 +1995,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				'complete_history': _get_complete_history_without_screenshots(self.history.model_dump()),
 			},
 		}
+
+	def run_sync(
+		self,
+		max_steps: int = 100,
+		on_step_start: AgentHookFunc | None = None,
+		on_step_end: AgentHookFunc | None = None,
+	) -> AgentHistoryList[AgentStructuredOutput]:
+		"""Synchronous wrapper around the async run method for easier usage without asyncio."""
+		import asyncio
+
+		return asyncio.run(self.run(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end))
+
+	def __call__(
+		self,
+		max_steps: int = 100,
+		on_step_start: AgentHookFunc | None = None,
+		on_step_end: AgentHookFunc | None = None,
+	) -> AgentHistoryList[AgentStructuredOutput]:
+		"""Make Agent instances callable for simple usage: Agent('task')()"""
+		return self.run_sync(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end)
