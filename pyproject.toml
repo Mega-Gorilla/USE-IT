@@ -70,7 +70,7 @@ examples = [
     "langchain-openai>=0.3.26",
 ]
 eval = [
-    "lmnr[all]>=0.6.11",
+    "lmnr[all]==0.7.6",
     "anyio>=4.9.0",
     "Pillow>=11.2.1",
     "psutil>=7.0.0",
