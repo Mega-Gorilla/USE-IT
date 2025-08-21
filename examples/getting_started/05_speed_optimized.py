@@ -55,9 +55,9 @@ async def main():
 	# Define a speed-focused task
 	task = """
 	1. Go to reddit https://www.reddit.com/search/?q=browser+agent&type=communities 
-	2. click directly on the first 5 communities to open each in new tabs
-    3. switch to the first tab and extract a summary, switch directly to the next tab and extract a summary again for all the new tabs in one action
-	4. read the extracted summaries and consolidate them into a single summary
+	2. Click directly on the first 5 communities to open each in new tabs
+    3. Switch to tab and find out what the latest post is about
+	4. Return the latest post summary for each page
 	"""
 
 	# 5. Create agent with all speed optimizations
