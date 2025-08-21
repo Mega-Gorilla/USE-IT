@@ -802,8 +802,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				# Red color for failure
 				self.logger.info(f'📄 \033[31m Result:\033[0m \n{self.state.last_result[-1].extracted_content}\n\n')
 			if self.state.last_result[-1].attachments:
+				total_attachments = len(self.state.last_result[-1].attachments)
 				for i, file_path in enumerate(self.state.last_result[-1].attachments):
-					self.logger.info(f'👉 Attachment {i + 1}: {file_path}')
+					self.logger.info(f'👉 Attachment {i + 1 if total_attachments > 1 else ""}: {file_path}')
 
 	async def _handle_step_error(self, error: Exception) -> None:
 		"""Handle all types of errors that can occur during a step"""
@@ -1638,10 +1639,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
+		self._task_end_time = time.time()
+		self._task_duration = self._task_end_time - self._task_start_time
 		if self.history.is_successful():
-			self.logger.info('✅ Task completed successfully')
+			self.logger.info(f'✅ Task completed successfully in {self._task_duration:.2f}s')
 		else:
-			self.logger.info('❌ Task completed without success')
+			self.logger.info(f'❌ Task completed without success in {self._task_duration:.2f}s')
 
 	async def rerun_history(
 		self,
