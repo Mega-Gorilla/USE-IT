@@ -1,7 +1,11 @@
 import os
 from typing import TYPE_CHECKING
 
+# Default model - users can change this
+from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.logging_config import setup_logging
+
+default_llm = ChatOpenAI(model='gpt-4.1-mini')
 
 # Only set up logging if not in MCP mode or if explicitly requested
 if os.environ.get('BROWSER_USE_SETUP_LOGGING', 'true').lower() != 'false':
