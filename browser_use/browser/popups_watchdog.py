@@ -22,33 +22,35 @@ class PopupsWatchdog(BaseWatchdog):
 
 	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
-		self.logger.info(f'🚀 PopupsWatchdog initialized with browser_session={self.browser_session}, ID={id(self)}')
+		self.logger.debug(f'🚀 PopupsWatchdog initialized with browser_session={self.browser_session}, ID={id(self)}')
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Set up JavaScript dialog handling when a new tab is created."""
 		target_id = event.target_id
-		self.logger.info(f'🎯 PopupsWatchdog received TabCreatedEvent for target {target_id}')
+		self.logger.debug(f'🎯 PopupsWatchdog received TabCreatedEvent for target {target_id}')
 
 		# Skip if we've already registered for this target
 		if target_id in self._dialog_listeners_registered:
 			self.logger.debug(f'Already registered dialog handlers for target {target_id}')
 			return
 
-		self.logger.info(f'📌 Starting dialog handler setup for target {target_id}')
+		self.logger.debug(f'📌 Starting dialog handler setup for target {target_id}')
 		try:
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+			cdp_session = await self.browser_session.get_or_create_cdp_session(
+				target_id, focus=False
+			)  # don't auto-focus new tabs! sometimes we need to open tabs in background
 
 			# Set up async handler for JavaScript dialogs - now we can handle them immediately!
 			async def handle_dialog(event_data, session_id: str | None = None):
 				"""Handle JavaScript dialog events - accept immediately and dispatch event."""
-				self.logger.info(f'🚨 DIALOG EVENT RECEIVED: {event_data}, session_id={session_id}')
+				self.logger.debug(f'🚨 DIALOG EVENT RECEIVED: {event_data}, session_id={session_id}')
 
 				dialog_type = event_data.get('type', 'alert')
 				message = event_data.get('message', '')
 				url = event_data.get('url')
 				frame_id = event_data.get('frameId')
 
-				self.logger.info(f"🔔 JavaScript {dialog_type} dialog detected: '{message[:50]}...' - accepting immediately")
+				self.logger.debug(f"🔔 JavaScript {dialog_type} dialog detected: '{message[:50]}...' - accepting immediately")
 
 				# Dispatch the event first so tests can observe it
 				event = self.browser_session.event_bus.dispatch(
@@ -64,7 +66,7 @@ class PopupsWatchdog(BaseWatchdog):
 				# Accept the dialog immediately to unblock the browser
 				try:
 					if self.browser_session._cdp_client_root and session_id:
-						self.logger.info('🔄 Sending handleJavaScriptDialog command')
+						self.logger.debug('🔄 Sending handleJavaScriptDialog command')
 						await self.browser_session._cdp_client_root.send.Page.handleJavaScriptDialog(
 							params={'accept': True},
 							session_id=session_id,
@@ -76,21 +78,23 @@ class PopupsWatchdog(BaseWatchdog):
 					self.logger.error(f'Failed to accept dialog: {e}')
 
 			cdp_session.cdp_client.register.Page.javascriptDialogOpening(handle_dialog)  # type: ignore[arg-type]
-			self.logger.info(
-				f'✅ Successfully registered Page.javascriptDialogOpening handler for session {cdp_session.session_id}'
+			self.logger.debug(
+				f'Successfully registered Page.javascriptDialogOpening handler for session {cdp_session.session_id}'
 			)
 
 			# Mark this target as having dialog handling set up
 			self._dialog_listeners_registered.add(target_id)
 
-			self.logger.info(f'✅ Set up JavaScript dialog handling for tab {target_id}')
+			self.logger.debug(f'Set up JavaScript dialog handling for tab {target_id}')
 
 		except Exception as e:
 			self.logger.warning(f'Failed to set up dialog handling for tab {target_id}: {e}')
 
 	async def on_DialogOpenedEvent(self, event: DialogOpenedEvent) -> None:
 		"""Handle the async closing of JavaScript dialogs."""
-		self.logger.info(f'📋 on_DialogOpenedEvent called with frame_id={event.frame_id} url={event.url} message={event.message}')
+		self.logger.debug(
+			f'📋 on_DialogOpenedEvent called with frame_id={event.frame_id} url={event.url} message={event.message}'
+		)
 
 		assert self.browser_session.agent_focus is not None, 'Agent focus not set when handling DialogOpenedEvent'
 
@@ -99,7 +103,7 @@ class PopupsWatchdog(BaseWatchdog):
 
 		cdp_session = await asyncio.wait_for(self.browser_session.cdp_client_for_frame(event.frame_id), timeout=5.0)
 		try:
-			# delay to look more human
+			# delay to look more human before auto-closing, some popular antibot fingerprint tests check for modals closing too fast
 			await asyncio.sleep(0.25)
 			assert self.browser_session._cdp_client_root
 			# self.browser_session._cdp_client_root.register.Page.javascriptDialogClosed(lambda *args: None)
@@ -110,13 +114,11 @@ class PopupsWatchdog(BaseWatchdog):
 				),
 				timeout=5.0,
 			)
-			# CRITICAL: you must activate the target after handling the dialog, otherwise the browser will crash 5 seconds later
-			await self.browser_session.agent_focus.cdp_client.send.Target.activateTarget(
-				params={'targetId': current_focus_target_id}
-			)
+			# CRITICAL: you must re-focus (Target.activateTarget()) after handling the dialog, otherwise the browser will crash ~5 seconds later
+			await self.browser_session.get_or_create_cdp_session(target_id=current_focus_target_id, focus=True)
 			self.logger.info('✅ JS dialog popup handled successfully')
 
-			# graveyard:
+			# graveyard of past attempts:
 			# # new_target = await self.browser_session._cdp_client_root.send.Target.createTarget(params={'url': current_focus_url})
 			# # self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(target_id=new_target.get('targetId'), new_socket=True, focus=True)
 			# # raise NotImplementedError('TODO: figure out why this requires a hard refresh and new socket to avoid crashing the entire browser on JS dialogs')
@@ -135,6 +137,6 @@ class PopupsWatchdog(BaseWatchdog):
 			# raise
 		# finally:
 		# 	self.event_bus.dispatch(AgentFocusChangedEvent(
-		# 		tab_index=0,
+		# 		target_id=current_focus_target_id,
 		# 		url=self.browser_session.agent_focus.url,
 		# 	))

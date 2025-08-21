@@ -178,6 +178,20 @@ def update_config_with_click_args(config: dict[str, Any], ctx: click.Context) ->
 	if ctx.params.get('cdp_url'):
 		config['browser']['cdp_url'] = ctx.params['cdp_url']
 
+	# Consolidated proxy dict
+	proxy: dict[str, str] = {}
+	if ctx.params.get('proxy_url'):
+		proxy['server'] = ctx.params['proxy_url']
+	if ctx.params.get('no_proxy'):
+		# Store as comma-separated list string to match Chrome flag
+		proxy['bypass'] = ','.join([p.strip() for p in ctx.params['no_proxy'].split(',') if p.strip()])
+	if ctx.params.get('proxy_username'):
+		proxy['username'] = ctx.params['proxy_username']
+	if ctx.params.get('proxy_password'):
+		proxy['password'] = ctx.params['proxy_password']
+	if proxy:
+		config['browser']['proxy'] = proxy
+
 	return config
 
 
@@ -695,7 +709,7 @@ class BrowserUseApp(App):
 
 			# Hide intro panels if they're visible and show info panels + three-column view
 			if logo_panel.display:
-				logging.info('Hiding intro panels and showing info panels + three-column view')
+				logging.debug('Hiding intro panels and showing info panels + three-column view')
 
 				logo_panel.display = False
 				links_panel.display = False
@@ -708,7 +722,7 @@ class BrowserUseApp(App):
 				# Start updating info panels
 				self.update_info_panels()
 
-				logging.info('Info panels and three-column view should now be visible')
+				logging.debug('Info panels and three-column view should now be visible')
 		except Exception as e:
 			logging.error(f'Error in hide_intro_panels: {str(e)}')
 
@@ -1573,6 +1587,10 @@ async def textual_interface(config: dict[str, Any]):
 )
 @click.option('--profile-directory', type=str, help='Chrome profile directory name (e.g. "Default", "Profile 1")')
 @click.option('--cdp-url', type=str, help='Connect to existing Chrome via CDP URL (e.g. http://localhost:9222)')
+@click.option('--proxy-url', type=str, help='Proxy server for Chromium traffic (e.g. http://host:8080 or socks5://host:1080)')
+@click.option('--no-proxy', type=str, help='Comma-separated hosts to bypass proxy (e.g. localhost,127.0.0.1,*.internal)')
+@click.option('--proxy-username', type=str, help='Proxy auth username')
+@click.option('--proxy-password', type=str, help='Proxy auth password')
 @click.option('-p', '--prompt', type=str, help='Run a single task without the TUI (headless mode)')
 @click.option('--mcp', is_flag=True, help='Run as MCP server (exposes JSON RPC via stdin/stdout)')
 @click.pass_context

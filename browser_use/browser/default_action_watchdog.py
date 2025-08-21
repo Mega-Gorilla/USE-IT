@@ -36,7 +36,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict | None:
 		"""Handle click request with CDP."""
 		try:
 			# Check if session is alive before attempting any operations
@@ -62,7 +62,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			await self._click_element_node_impl(element_node, new_tab=event.new_tab)
+			click_metadata = None
+			click_metadata = await self._click_element_node_impl(element_node, while_holding_ctrl=event.while_holding_ctrl)
 			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
@@ -71,19 +72,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.info(f'💾 {msg}')
 			else:
 				msg = f'Clicked button with index {index_for_logging}: {element_node.get_all_children_text(max_depth=2)}'
-				self.logger.info(f'🖱️ {msg}')
+				self.logger.debug(f'🖱️ {msg}')
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
 			await asyncio.sleep(0.5)
 
-			# Clear cached state after click action since DOM might have changed
-			self.logger.debug('🔄 Click action completed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 			# Successfully clicked, always reset session back to parent page session context
 			self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
 				target_id=starting_target_id, focus=True
@@ -91,28 +88,30 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
-			if len(after_target_ids) > len(initial_target_ids):
+			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
+			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
 				self.logger.info(f'🔗 {new_tab_msg}')
 
-				if not event.new_tab:
-					# if new_tab=False it means agent was not expecting a new tab to be opened
+				if not event.while_holding_ctrl:
+					# if while_holding_ctrl=False it means agent was not expecting a new tab to be opened
 					# so we need to switch to the new tab to make the agent aware of the surprise new tab that was opened.
-					# slightly counter-intuitive, when new_tab=True we dont actually want to switch to it,
-					# the agent is instructed that new_tab=True is equivalent to ctrl+click which opens in the background,
-					# so in multi_act it usually already sends [click_element_by_index(123, new_tab=True), switch_tab(-1)] anyway
+					# when while_holding_ctrl=True we dont actually want to switch to it,
+					# we should match human expectations of ctrl+click which opens in the background,
+					# so in multi_act it usually already sends [click_element_by_index(123, while_holding_ctrl=True), switch_tab(tab_id=None)] anyway
 					from browser_use.browser.events import SwitchTabEvent
 
-					last_tab_index = len(after_target_ids) - 1
-					switch_event = await self.event_bus.dispatch(SwitchTabEvent(tab_index=last_tab_index))
+					new_target_id = new_target_ids.pop()
+					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
-			return None
+			# Return click metadata (coordinates) if available
+			return click_metadata
 		except Exception as e:
 			raise
 
-	async def on_TypeTextEvent(self, event: TypeTextEvent) -> None:
+	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict | None:
 		"""Handle text input request with CDP."""
 		try:
 			# Use the provided node
@@ -124,28 +123,29 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Type to the page without focusing any specific element
 				await self._type_to_page(event.text)
 				self.logger.info(f'⌨️ Typed "{event.text}" to the page (current focus)')
+				return None  # No coordinates available for page typing
 			else:
 				try:
 					# Try to type to the specific element
-					await self._input_text_element_node_impl(
+					input_metadata = await self._input_text_element_node_impl(
 						element_node, event.text, clear_existing=event.clear_existing or (not event.text)
 					)
 					self.logger.info(f'⌨️ Typed "{event.text}" into element with index {index_for_logging}')
 					self.logger.debug(f'Element xpath: {element_node.xpath}')
+					return input_metadata  # Return coordinates if available
 				except Exception as e:
 					# Element not found or error - fall back to typing to the page
 					self.logger.warning(f'Failed to type to element {index_for_logging}: {e}. Falling back to page typing.')
+					try:
+						await asyncio.wait_for(self._click_element_node_impl(element_node, while_holding_ctrl=False), timeout=3.0)
+					except Exception as e:
+						pass
 					await self._type_to_page(event.text)
 					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
+					return None  # No coordinates available for fallback typing
 
-			# Clear cached state after type action since DOM might have changed
-			self.logger.debug('🔄 Type action completed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
-
-			return None
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 		except Exception as e:
 			raise
 
@@ -177,7 +177,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Try to scroll the element's container
 				success = await self._scroll_element_container(element_node, pixels)
 				if success:
-					self.logger.info(
+					self.logger.debug(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
 					)
 
@@ -185,11 +185,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					# because the iframe's content has changed position
 					if is_iframe:
 						self.logger.debug('🔄 Forcing DOM refresh after iframe scroll')
-						# Clear all caches to force complete DOM rebuild
-						self.browser_session._cached_browser_state_summary = None
-						self.browser_session._cached_selector_map.clear()
-						if self.browser_session._dom_watchdog:
-							self.browser_session._dom_watchdog.clear_cache()
+						# Note: We don't clear cached state here - let multi_act handle DOM change detection
+						# by explicitly rebuilding and comparing when needed
 
 						# Wait a bit for the scroll to settle and DOM to update
 						await asyncio.sleep(0.5)
@@ -204,22 +201,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 				params={'targetId': self.browser_session.agent_focus.target_id}
 			)
 
-			# IMPORTANT: clear the selector map cache even if no navigation has happened!
-			# it's calculated based on visible elements, and if we don't clear it, it will be wrong
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 
 			# Log success
-			self.logger.info(f'📜 Scrolled {event.direction} by {event.amount} pixels')
+			self.logger.debug(f'📜 Scrolled {event.direction} by {event.amount} pixels')
 			return None
 		except Exception as e:
 			raise
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, new_tab: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, while_holding_ctrl: bool = False) -> dict | None:
 		"""
 		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
@@ -243,12 +236,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if tag_name == 'input' and element_type == 'file':
 				raise Exception(
-					'<llm_error_msg>Cannot click on file input elements. File uploads must be handled using upload_file_to_element()</llm_error_msg>'
+					f'<llm_error_msg>Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action</llm_error_msg>'
 				)
 
 			# Get CDP client
-			await self.browser_session.get_or_create_cdp_session(focus=True)
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=False)
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
 			# Get the correct session ID for the element's frame
 			session_id = cdp_session.session_id
@@ -451,7 +443,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
 				modifiers = 0
-				if new_tab:
+				if while_holding_ctrl:
 					# Use platform-appropriate modifier for "open in new tab"
 					if platform.system() == 'Darwin':
 						modifiers = 4  # Meta/Cmd key
@@ -502,6 +494,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					self.logger.debug('⏱️ Mouse up timed out (possibly due to lag or dialog popup), continuing...')
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
+				# Return coordinates as dict for metadata
+				return {"click_x": center_x, "click_y": center_y}
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
@@ -531,7 +525,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 					raise Exception(f'Failed to click element: {e}')
 			finally:
 				# always re-focus back to original top-level page session context in case click opened a new tab/popup/window/dialog/etc.
-				await self.browser_session.get_or_create_cdp_session(focus=True)
+				cdp_session = await self.browser_session.get_or_create_cdp_session(focus=True)
+				await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': cdp_session.target_id})
+				await cdp_session.cdp_client.send.Runtime.runIfWaitingForDebugger(session_id=cdp_session.session_id)
 
 		except URLNotAllowedError as e:
 			raise e
@@ -660,7 +656,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Element focusability check failed: {e}')
 			return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
 
-	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True):
+	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
 		"""
@@ -672,14 +668,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Get the correct session ID for the element's iframe
 			# session_id = await self._get_session_id_for_element(element_node)
 
-			cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
+			# cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
+			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
+			
+			# Track coordinates for metadata
+			input_coordinates = None
 
 			# Scroll element into view
 			try:
-				await cdp_session.cdp_client.send.Target.activateTarget(params={'targetId': element_node.target_id})
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
 				)
@@ -702,6 +701,14 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check element focusability before attempting focus
 			element_info = await self._check_element_focusability(element_node, object_id, cdp_session.session_id)
 			self.logger.debug(f'Element focusability check: {element_info}')
+
+			# Extract coordinates from element bounds for metadata
+			bounds = element_info.get('bounds', {})
+			if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+				input_coordinates = {"input_x": center_x, "input_y": center_y}
+				self.logger.debug(f'📍 Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
 
 			# Provide helpful warnings for common issues
 			if not element_info.get('visible', False):
@@ -765,11 +772,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 						# Strategy 4: Try simulated mouse click for maximum compatibility
 						try:
-							# Use bounds from focusability check if available
-							bounds = element_info.get('bounds', {})
-							if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
-								click_x = bounds['x'] + bounds['width'] / 2
-								click_y = bounds['y'] + bounds['height'] / 2
+							# Use coordinates already calculated from element bounds
+							if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
+								click_x = input_coordinates['input_x']
+								click_y = input_coordinates['input_y']
 
 								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 									params={
@@ -830,7 +836,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 					session_id=cdp_session.session_id,
 				)
 				# Small delay between characters
-				await asyncio.sleep(0.09)
+				await asyncio.sleep(0.01)
+			
+			# Return coordinates metadata if available
+			return input_coordinates
 
 		except Exception as e:
 			self.logger.error(f'Failed to input text via CDP: {type(e).__name__}: {e}')
@@ -1066,12 +1075,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Wait for reload
 			await asyncio.sleep(1.0)
 
-			# Clear cached state after refresh since DOM has been reloaded
-			self.logger.debug('🔄 Page refreshed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let the next state fetch rebuild as needed
 
 			# Navigation is handled by BrowserSession via events
 
@@ -1095,7 +1099,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		"""Handle send keys request with CDP."""
-		cdp_session = await self.browser_session.get_or_create_cdp_session()
+		cdp_session = await self.browser_session.get_or_create_cdp_session(focus=True)
 		try:
 			# Parse key combination
 			keys = event.keys.lower()
@@ -1161,28 +1165,98 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				key = key_map.get(keys, keys)
 
-				# Use rawKeyDown for special keys (non-text producing keys)
-				# Use keyDown only for regular text characters
-				key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
+				# Keys that need 3-step sequence (produce characters)
+				keys_needing_char_event = ['enter', 'return', 'space']
 
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={'type': key_type, 'key': key},
-					session_id=cdp_session.session_id,
-				)
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={'type': 'keyUp', 'key': key},
-					session_id=cdp_session.session_id,
-				)
+				# Virtual key codes for proper key identification
+				virtual_key_codes = {
+					'enter': 13,
+					'return': 13,
+					'tab': 9,
+					'escape': 27,
+					'esc': 27,
+					'space': 32,
+					'backspace': 8,
+					'delete': 46,
+					'up': 38,
+					'down': 40,
+					'left': 37,
+					'right': 39,
+					'home': 36,
+					'end': 35,
+					'pageup': 33,
+					'pagedown': 34,
+				}
+
+				if keys in keys_needing_char_event:
+					# 3-step sequence for keys that produce characters
+					vk_code = virtual_key_codes.get(keys, 0)
+					char_text = '\r' if keys in ['enter', 'return'] else ' ' if keys == 'space' else ''
+
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'rawKeyDown',
+							'windowsVirtualKeyCode': vk_code,
+							'code': key_map.get(keys, keys),
+							'key': key_map.get(keys, keys),
+						},
+						session_id=cdp_session.session_id,
+					)
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={'type': 'char', 'text': char_text, 'unmodifiedText': char_text},
+						session_id=cdp_session.session_id,
+					)
+					await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+						params={
+							'type': 'keyUp',
+							'windowsVirtualKeyCode': vk_code,
+							'code': key_map.get(keys, keys),
+							'key': key_map.get(keys, keys),
+						},
+						session_id=cdp_session.session_id,
+					)
+				else:
+					# 2-step sequence for other keys
+					key_type = 'rawKeyDown' if keys in key_map else 'keyDown'
+					vk_code = virtual_key_codes.get(keys)
+
+					if vk_code:
+						# Special keys with virtual key codes
+						await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+							params={
+								'type': key_type,
+								'key': key,
+								'windowsVirtualKeyCode': vk_code,
+								'code': key_map.get(keys, keys),
+							},
+							session_id=cdp_session.session_id,
+						)
+						await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+							params={
+								'type': 'keyUp',
+								'key': key,
+								'windowsVirtualKeyCode': vk_code,
+								'code': key_map.get(keys, keys),
+							},
+							session_id=cdp_session.session_id,
+						)
+					else:
+						# Regular characters without virtual key codes
+						await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+							params={'type': key_type, 'key': key},
+							session_id=cdp_session.session_id,
+						)
+						await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+							params={'type': 'keyUp', 'key': key},
+							session_id=cdp_session.session_id,
+						)
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
 
-			# Clear cached state if Enter key was pressed (might submit form and change DOM)
+			# Note: We don't clear cached state on Enter; multi_act will detect DOM changes
+			# and rebuild explicitly. We still wait briefly for potential navigation.
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
-				self.logger.debug('🔄 Enter key pressed, clearing cached browser state')
-				self.browser_session._cached_browser_state_summary = None
-				self.browser_session._cached_selector_map.clear()
-				if self.browser_session._dom_watchdog:
-					self.browser_session._dom_watchdog.clear_cache()
+				await asyncio.sleep(0.5)
 		except Exception as e:
 			raise
 
@@ -1261,7 +1335,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						await cdp_client.send.DOM.scrollIntoViewIfNeeded(params={'nodeId': node_id}, session_id=session_id)
 
 						found = True
-						self.logger.info(f'📜 Scrolled to text: "{event.text}"')
+						self.logger.debug(f'📜 Scrolled to text: "{event.text}"')
 						break
 
 				# Clean up search
@@ -1297,7 +1371,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 		if js_result.get('result', {}).get('value'):
-			self.logger.info(f'📜 Scrolled to text: "{event.text}" (via JS)')
+			self.logger.debug(f'📜 Scrolled to text: "{event.text}" (via JS)')
 			return None
 		else:
 			self.logger.warning(f'⚠️ Text not found: "{event.text}"')
@@ -1749,7 +1823,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				if selection_result.get('success'):
 					msg = selection_result.get('message', f'Selected option: {target_text}')
-					self.logger.info(f'✅ {msg}')
+					self.logger.debug(f'{msg}')
 
 					# Return the result as a dict
 					return {

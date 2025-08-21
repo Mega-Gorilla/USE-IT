@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, ClassVar
 
 from bubus import BaseEvent
+from cdp_use.cdp.target import TargetID
 from pydantic import PrivateAttr
 
 from browser_use.browser.events import (
@@ -69,7 +70,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		# Use _cdp_get_all_pages for quick check without fetching titles
 		page_targets = await self.browser_session._cdp_get_all_pages()
 		if len(page_targets) <= 1:
-			self.logger.info(
+			self.logger.debug(
 				'[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser'
 			)
 			# Create the animation tab since no tabs should remain
@@ -81,7 +82,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# Multiple tabs exist, check after close
 			await self._check_and_ensure_about_blank_tab()
 
-	async def attach_to_target(self, target_id: str) -> None:
+	async def attach_to_target(self, target_id: TargetID) -> None:
 		"""AboutBlankWatchdog doesn't monitor individual targets."""
 		pass
 
@@ -94,7 +95,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# If no tabs exist at all, create one to keep browser alive
 			if len(page_targets) == 0:
 				# Only create a new tab if there are no tabs at all
-				self.logger.info('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
+				self.logger.debug('[AboutBlankWatchdog] No tabs exist, creating new about:blank DVD screensaver tab')
 				navigate_event = self.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
 				await navigate_event
 				# Show DVD screensaver on the new tab
@@ -122,7 +123,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		except Exception as e:
 			self.logger.error(f'[AboutBlankWatchdog] Error showing DVD screensaver: {e}')
 
-	async def _show_dvd_screensaver_loading_animation_cdp(self, target_id: str, browser_session_label: str) -> None:
+	async def _show_dvd_screensaver_loading_animation_cdp(self, target_id: TargetID, browser_session_label: str) -> None:
 		"""
 		Injects a DVD screensaver-style bouncing logo loading animation overlay into the target using CDP.
 		This is used to visually indicate that the browser is setting up or waiting.
@@ -246,8 +247,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 			# No need to detach - session is cached
 
 			# Dispatch event
-			tab_index = await self.browser_session.get_tab_index(target_id)
-			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(tab_index=tab_index))
+			self.event_bus.dispatch(AboutBlankDVDScreensaverShownEvent(target_id=target_id))
 
 		except Exception as e:
 			self.logger.error(f'[AboutBlankWatchdog] Error injecting DVD screensaver: {e}')
