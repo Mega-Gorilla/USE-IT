@@ -1557,8 +1557,18 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_target = new_selector_map.get(action.get_index())  # type: ignore
 				new_target_hash = new_target.parent_branch_hash() if new_target else None
 
+				def get_remaining_actions_str(actions: list[ActionModel], index: int) -> str:
+					remaining_actions = []
+					for remaining_action in actions[index:]:
+						action_data = remaining_action.model_dump(exclude_unset=True)
+						action_name = next(iter(action_data.keys())) if action_data else 'unknown'
+						remaining_actions.append(action_name)
+					return ', '.join(remaining_actions)
+
 				if orig_target_hash != new_target_hash:
-					msg = f'Page changed after action {i} / {total_actions}'
+					# Get names of remaining actions that won't be executed
+					remaining_actions_str = get_remaining_actions_str(actions, i)
+					msg = f'Page changed after action {i} / {total_actions}: actions {remaining_actions_str} were not executed'
 					logger.info(msg)
 					results.append(
 						ActionResult(
@@ -1573,7 +1583,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
-					msg = f'Something new appeared after action {i} / {total_actions}'
+					remaining_actions_str = get_remaining_actions_str(actions, i)
+					msg = f'Something new appeared after action {i} / {total_actions}: actions {remaining_actions_str} were not executed'
 					logger.info(msg)
 					results.append(
 						ActionResult(
