@@ -14,7 +14,6 @@ from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from llm.openai.chat import ChatOpenAI
 
 from browser_use.agent.cloud_events import (
 	CreateAgentOutputFileEvent,
@@ -26,6 +25,7 @@ from browser_use.agent.cloud_events import (
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
+from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
 load_dotenv()
@@ -1984,3 +1984,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				'complete_history': _get_complete_history_without_screenshots(self.history.model_dump()),
 			},
 		}
+
+	def run_sync(
+		self,
+		max_steps: int = 100,
+		on_step_start: AgentHookFunc | None = None,
+		on_step_end: AgentHookFunc | None = None,
+	) -> AgentHistoryList[AgentStructuredOutput]:
+		"""Synchronous wrapper around the async run method for easier usage without asyncio."""
+		import asyncio
+
+		return asyncio.run(self.run(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end))
+
+	def __call__(
+		self,
+		max_steps: int = 100,
+		on_step_start: AgentHookFunc | None = None,
+		on_step_end: AgentHookFunc | None = None,
+	) -> AgentHistoryList[AgentStructuredOutput]:
+		"""Make Agent instances callable for simple usage: Agent('task')()"""
+		return self.run_sync(max_steps=max_steps, on_step_start=on_step_start, on_step_end=on_step_end)
