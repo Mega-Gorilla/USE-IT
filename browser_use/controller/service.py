@@ -282,12 +282,19 @@ class Controller(Generic[Context]):
 					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl)
 				)
 				await event
-				# Wait for handler to complete and get any exception (None is expected on success)
-				await event.event_result(raise_if_any=True, raise_if_none=False)
+				# Wait for handler to complete and get any exception or metadata
+				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				
+				# Include click coordinates in metadata if available
+				return ActionResult(
+					extracted_content=memory, 
+					include_in_memory=True, 
+					long_term_memory=memory,
+					metadata=click_metadata if isinstance(click_metadata, dict) else None
+				)
 			except Exception as e:
 				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)

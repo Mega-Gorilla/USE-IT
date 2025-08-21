@@ -36,7 +36,7 @@ UploadFileEvent.model_rebuild()
 class DefaultActionWatchdog(BaseWatchdog):
 	"""Handles default browser actions like click, type, and scroll using CDP."""
 
-	async def on_ClickElementEvent(self, event: ClickElementEvent) -> None:
+	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict | None:
 		"""Handle click request with CDP."""
 		try:
 			# Check if session is alive before attempting any operations
@@ -62,7 +62,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Perform the actual click using internal implementation
-			await self._click_element_node_impl(element_node, while_holding_ctrl=event.while_holding_ctrl)
+			click_metadata = None
+			click_metadata = await self._click_element_node_impl(element_node, while_holding_ctrl=event.while_holding_ctrl)
 			download_path = None  # moved to downloads_watchdog.py
 
 			# Build success message
@@ -105,7 +106,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
-			return None
+			# Return click metadata (coordinates) if available
+			return click_metadata
 		except Exception as e:
 			raise
 
@@ -209,7 +211,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	# ========== Implementation Methods ==========
 
-	async def _click_element_node_impl(self, element_node, while_holding_ctrl: bool = False) -> str | None:
+	async def _click_element_node_impl(self, element_node, while_holding_ctrl: bool = False) -> dict | None:
 		"""
 		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
@@ -491,6 +493,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					self.logger.debug('⏱️ Mouse up timed out (possibly due to lag or dialog popup), continuing...')
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
+				# Return coordinates as dict for metadata
+				return {"click_x": center_x, "click_y": center_y}
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
