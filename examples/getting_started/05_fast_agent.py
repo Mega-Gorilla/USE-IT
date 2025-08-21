@@ -44,7 +44,7 @@ async def main():
 	task = """
 	1. Go to reddit https://www.reddit.com/search/?q=browser+agent&type=communities 
 	2. Click directly on the first 5 communities to open each in new tabs
-    3. Switch to tab and find out what the latest post is about
+    3. Find out what the latest post is about, and switch directly to the next tab
 	4. Return the latest post summary for each page
 	"""
 
