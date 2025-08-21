@@ -14,6 +14,7 @@ from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
+from llm.openai.chat import ChatOpenAI
 
 from browser_use.agent.cloud_events import (
 	CreateAgentOutputFileEvent,
@@ -129,7 +130,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def __init__(
 		self,
 		task: str,
-		llm: BaseChatModel,
+		llm: BaseChatModel = ChatOpenAI(model='gpt-4.1-mini'),
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
