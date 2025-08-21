@@ -248,7 +248,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			if tag_name == 'input' and element_type == 'file':
 				raise Exception(
-					'<llm_error_msg>Cannot click on file input elements. File uploads must be handled using upload_file_to_element()</llm_error_msg>'
+					f'<llm_error_msg>Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action</llm_error_msg>'
 				)
 
 			# Get CDP client
