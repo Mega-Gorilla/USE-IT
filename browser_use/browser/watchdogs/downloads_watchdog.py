@@ -228,7 +228,7 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.browser_session.browser_profile.downloads_path
 			or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
 		)
-		
+
 		# Initialize variables that may be used outside try blocks
 		unique_filename = None
 		file_size = 0
@@ -236,7 +236,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		download_result = None
 		download_url = event.get('url', '')
 		suggested_filename = event.get('suggestedFilename', 'download')
-		
+
 		try:
 			guid = event.get('guid', '')
 
@@ -313,7 +313,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 					self.logger.debug(f'[DownloadsWatchdog] ✅ Downloaded and saved file: {final_path} ({file_size} bytes)')
 					expected_path = final_path
-					
+
 					# Determine file type from extension
 					file_ext = expected_path.suffix.lower().lstrip('.')
 					file_type = file_ext if file_ext else None
