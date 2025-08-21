@@ -1092,6 +1092,8 @@ Provide the extracted information in a clear, structured format."""
 							context=context,
 						)
 					except Exception as e:
+						# Log the original exception with traceback for observability
+						logger.error(f"Action '{action_name}' failed")
 						# Extract clean error message from llm_error_msg tags if present
 						clean_msg = extract_llm_error_message(e)
 						result = ActionResult(error=clean_msg)
