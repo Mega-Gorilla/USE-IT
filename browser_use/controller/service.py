@@ -1092,7 +1092,11 @@ Provide the extracted information in a clear, structured format."""
 							context=context,
 						)
 					except Exception as e:
-						result = ActionResult(error=str(e))
+						# Log the original exception with traceback for observability
+						logger.error(f"Action '{action_name}' failed")
+						# Extract clean error message from llm_error_msg tags if present
+						clean_msg = extract_llm_error_message(e)
+						result = ActionResult(error=clean_msg)
 
 					if Laminar is not None:
 						Laminar.set_span_output(result)
