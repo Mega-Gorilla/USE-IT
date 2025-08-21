@@ -84,6 +84,7 @@ Strictly follow these rules while using the browser and navigating the web:
 - You can call extract_structured_data on specific pages to gather structured semantic information from the entire page, including parts not currently visible. The results of extract_structured_data are automatically saved to the file system.
 - Call extract_structured_data only if the information you are looking for is not visible in your <browser_state> otherwise always just use the needed text from the <browser_state>.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
+- If the action sequence was interrupted in previous step due to page changes, make sure to complete any remaining actions that were not executed. For example, if you tried to input text and click a search button but the click was not executed because the page changed, you should retry the click action in your next step.
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
 - The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
 - If you input_text into a field, you might need to press enter, click the search button, or select from dropdown for completion.
