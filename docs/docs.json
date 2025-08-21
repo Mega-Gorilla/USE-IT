@@ -14,7 +14,11 @@
   "fonts": {
     "family": "Geist"
   },
-
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_F8JMNjW1i2KbGUTaW1unnDdLSPCoyc52SGRU0JecaUh"
+    }
+  },
   "navigation": {
     "tabs": [
       {
@@ -122,6 +126,10 @@
             "pages": ["api-reference/ping"]
           }
         ]
+      },
+      {
+        "tab": "Cloud API v2",
+        "openapi": "https://app.stainless.com/api/spec/documented/browser-use/openapi.documented.yml"
       }
     ]
   },
