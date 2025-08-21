@@ -488,10 +488,14 @@ Whether to automatically accept all downloads.
 #### `proxy`
 
 ```python
-proxy: dict | None = None
+proxy: ProxySettings | None = None
 ```
 
-Proxy settings. Example: `{"server": "http://proxy.com:8080", "username": "user", "password": "pass"}`. 
+Proxy settings (typed). Example:
+
+```python
+proxy=ProxySettings(server="http://proxy.com:8080", username="user", password="pass")
+```
 
 #### `permissions`
 
