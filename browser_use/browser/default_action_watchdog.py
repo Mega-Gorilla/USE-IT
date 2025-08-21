@@ -78,12 +78,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# This is necessary because tab creation is async and might not be immediate
 			await asyncio.sleep(0.5)
 
-			# Clear cached state after click action since DOM might have changed
-			self.logger.debug('🔄 Click action completed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 			# Successfully clicked, always reset session back to parent page session context
 			self.browser_session.agent_focus = await self.browser_session.get_or_create_cdp_session(
 				target_id=starting_target_id, focus=True
@@ -143,12 +139,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					await self._type_to_page(event.text)
 					self.logger.info(f'⌨️ Typed "{event.text}" to the page as fallback')
 
-			# Clear cached state after type action since DOM might have changed
-			self.logger.debug('🔄 Type action completed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 
 			return None
 		except Exception as e:
@@ -190,11 +182,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 					# because the iframe's content has changed position
 					if is_iframe:
 						self.logger.debug('🔄 Forcing DOM refresh after iframe scroll')
-						# Clear all caches to force complete DOM rebuild
-						self.browser_session._cached_browser_state_summary = None
-						self.browser_session._cached_selector_map.clear()
-						if self.browser_session._dom_watchdog:
-							self.browser_session._dom_watchdog.clear_cache()
+						# Note: We don't clear cached state here - let multi_act handle DOM change detection
+						# by explicitly rebuilding and comparing when needed
 
 						# Wait a bit for the scroll to settle and DOM to update
 						await asyncio.sleep(0.5)
@@ -209,12 +198,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				params={'targetId': self.browser_session.agent_focus.target_id}
 			)
 
-			# IMPORTANT: clear the selector map cache even if no navigation has happened!
-			# it's calculated based on visible elements, and if we don't clear it, it will be wrong
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let multi_act handle DOM change detection
+			# by explicitly rebuilding and comparing when needed
 
 			# Log success
 			self.logger.debug(f'📜 Scrolled {event.direction} by {event.amount} pixels')
@@ -1072,12 +1057,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Wait for reload
 			await asyncio.sleep(1.0)
 
-			# Clear cached state after refresh since DOM has been reloaded
-			self.logger.debug('🔄 Page refreshed, clearing cached browser state')
-			self.browser_session._cached_browser_state_summary = None
-			self.browser_session._cached_selector_map.clear()
-			if self.browser_session._dom_watchdog:
-				self.browser_session._dom_watchdog.clear_cache()
+			# Note: We don't clear cached state here - let the next state fetch rebuild as needed
 
 			# Navigation is handled by BrowserSession via events
 
@@ -1255,15 +1235,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			self.logger.info(f'⌨️ Sent keys: {event.keys}')
 
-			# Clear cached state if Enter key was pressed (might submit form and change DOM)
+			# Note: We don't clear cached state on Enter; multi_act will detect DOM changes
+			# and rebuild explicitly. We still wait briefly for potential navigation.
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
-				self.logger.debug('🔄 Enter key pressed, clearing cached browser state')
-				self.browser_session._cached_browser_state_summary = None
-				self.browser_session._cached_selector_map.clear()
-				if self.browser_session._dom_watchdog:
-					self.browser_session._dom_watchdog.clear_cache()
-
-				# Wait a moment for potential navigation
 				await asyncio.sleep(0.5)
 		except Exception as e:
 			raise
