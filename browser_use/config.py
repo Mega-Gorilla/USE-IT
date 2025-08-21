@@ -453,16 +453,23 @@ class Config:
 			domains = [d.strip() for d in env_config.BROWSER_USE_ALLOWED_DOMAINS.split(',') if d.strip()]
 			config['browser_profile']['allowed_domains'] = domains
 
-		# Proxy settings (Chromium)
+		# Proxy settings (Chromium) -> consolidated `proxy` dict
+		proxy_dict: dict[str, Any] = {}
 		if env_config.BROWSER_USE_PROXY_URL:
-			config['browser_profile']['proxy_server'] = env_config.BROWSER_USE_PROXY_URL
+			proxy_dict['server'] = env_config.BROWSER_USE_PROXY_URL
 		if env_config.BROWSER_USE_NO_PROXY:
-			bypass = [d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()]
-			config['browser_profile']['proxy_bypass_list'] = bypass
+			# store bypass as comma-separated string to match Chrome flag
+			proxy_dict['bypass'] = ','.join(
+				[d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()]
+			)
 		if env_config.BROWSER_USE_PROXY_USERNAME:
-			config['browser_profile']['proxy_username'] = env_config.BROWSER_USE_PROXY_USERNAME
+			proxy_dict['username'] = env_config.BROWSER_USE_PROXY_USERNAME
 		if env_config.BROWSER_USE_PROXY_PASSWORD:
-			config['browser_profile']['proxy_password'] = env_config.BROWSER_USE_PROXY_PASSWORD
+			proxy_dict['password'] = env_config.BROWSER_USE_PROXY_PASSWORD
+		if proxy_dict:
+			# ensure section exists
+			config.setdefault('browser_profile', {})
+			config['browser_profile']['proxy'] = proxy_dict
 
 		if env_config.OPENAI_API_KEY:
 			config['llm']['api_key'] = env_config.OPENAI_API_KEY

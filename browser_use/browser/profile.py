@@ -556,6 +556,20 @@ class BrowserLaunchPersistentContextArgs(BrowserLaunchArgs, BrowserContextArgs):
 		return Path(v).expanduser().resolve()
 
 
+class ProxySettings(BaseModel):
+	"""Typed proxy settings for Chromium traffic.
+
+	- server: Full proxy URL, e.g. "http://host:8080" or "socks5://host:1080"
+	- bypass: Comma-separated hosts to bypass (e.g. "localhost,127.0.0.1,*.internal")
+	- username/password: Optional credentials for authenticated proxies
+	"""
+
+	server: str | None = Field(default=None, description='Proxy URL, e.g. http://host:8080 or socks5://host:1080')
+	bypass: str | None = Field(default=None, description='Comma-separated hosts to bypass, e.g. localhost,127.0.0.1,*.internal')
+	username: str | None = Field(default=None, description='Proxy auth username')
+	password: str | None = Field(default=None, description='Proxy auth password')
+
+
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
 	"""
 	A BrowserProfile is a static template collection of kwargs that can be passed to:
@@ -594,20 +608,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	keep_alive: bool | None = Field(default=None, description='Keep browser alive after agent run.')
 
 	# --- Proxy settings ---
-	proxy_server: str | None = Field(
+	# New consolidated proxy config (typed)
+	proxy: ProxySettings | dict | None = Field(
 		default=None,
-		description='Proxy server URL for Chromium traffic. Example: http://proxy.local:8080 or socks5://host:1080',
+		description='Proxy settings. Use ProxySettings(server, bypass, username, password). Dicts are accepted and coerced.',
 	)
-	proxy_bypass_list: list[str] | None = Field(
-		default=None,
-		description='Hosts/patterns to bypass proxy, e.g. ["localhost", "127.0.0.1", "*.internal"]',
-	)
-	proxy_pac_url: str | None = Field(
-		default=None,
-		description='Proxy PAC URL (mutually exclusive with proxy_server).',
-	)
-	proxy_username: str | None = Field(default=None, description='Proxy auth username (for authenticated proxies).')
-	proxy_password: str | None = Field(default=None, description='Proxy auth password (for authenticated proxies).')
 	enable_default_extensions: bool = Field(
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
@@ -732,11 +737,21 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			)
 		return self
 
+	@field_validator('proxy', mode='before')
+	@classmethod
+	def _coerce_proxy(cls, v: Any) -> Any:
+		"""Accept dicts for proxy and coerce to ProxySettings."""
+		if v is None or isinstance(v, ProxySettings):
+			return v
+		if isinstance(v, dict):
+			return ProxySettings(**v)
+		return v
+
 	@model_validator(mode='after')
 	def validate_proxy_settings(self) -> Self:
 		"""Ensure proxy configuration is consistent."""
-		if self.proxy_server and self.proxy_pac_url:
-			raise ValueError('proxy_server and proxy_pac_url cannot both be set. Choose one.')
+		if self.proxy and (self.proxy.bypass and not self.proxy.server):
+			logger.warning('BrowserProfile.proxy.bypass provided but proxy has no server; bypass will be ignored.')
 		return self
 
 	def get_args(self) -> list[str]:
@@ -775,12 +790,13 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		]
 
 		# Proxy flags
-		if self.proxy_server and not self.proxy_pac_url:
-			pre_conversion_args.append(f'--proxy-server={self.proxy_server}')
-			if self.proxy_bypass_list:
-				pre_conversion_args.append(f'--proxy-bypass-list={",".join(self.proxy_bypass_list)}')
-		elif self.proxy_pac_url and not self.proxy_server:
-			pre_conversion_args.append(f'--proxy-pac-url={self.proxy_pac_url}')
+		proxy_server = self.proxy.server if self.proxy else None
+		proxy_bypass = self.proxy.bypass if self.proxy else None
+
+		if proxy_server:
+			pre_conversion_args.append(f'--proxy-server={proxy_server}')
+			if proxy_bypass:
+				pre_conversion_args.append(f'--proxy-bypass-list={proxy_bypass}')
 
 		# convert to dict and back to dedupe and merge duplicate args
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(pre_conversion_args))

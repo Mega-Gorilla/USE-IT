@@ -11,33 +11,15 @@ def test_chromium_args_include_proxy_flags():
     profile = BrowserProfile(
         headless=True,
         user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke'),
-        proxy_server='http://proxy.local:8080',
-        proxy_bypass_list=['localhost', '127.0.0.1'],
+        proxy={
+            'server': 'http://proxy.local:8080',
+            'bypass': 'localhost,127.0.0.1',
+        },
     )
     args = profile.get_args()
     assert any(a == '--proxy-server=http://proxy.local:8080' for a in args), args
     assert any(a == '--proxy-bypass-list=localhost,127.0.0.1' for a in args), args
 
-
-def test_chromium_args_include_pac_url_flag_and_exclusivity():
-    # PAC URL should produce --proxy-pac-url and not --proxy-server
-    profile = BrowserProfile(
-        headless=True,
-        user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke-pac'),
-        proxy_pac_url='http://proxy.local/proxy.pac',
-    )
-    args = profile.get_args()
-    assert any(a == '--proxy-pac-url=http://proxy.local/proxy.pac' for a in args), args
-    assert all(not a.startswith('--proxy-server=') for a in args), args
-
-    # Setting both PAC URL and server should raise
-    with pytest.raises(ValueError):
-        BrowserProfile(
-            headless=True,
-            user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke-bad'),
-            proxy_server='http://proxy.local:8080',
-            proxy_pac_url='http://proxy.local/proxy.pac',
-        )
 
 @pytest.mark.asyncio
 async def test_cdp_proxy_auth_handler_registers_and_responds():
@@ -45,8 +27,7 @@ async def test_cdp_proxy_auth_handler_registers_and_responds():
     profile = BrowserProfile(
         headless=True,
         user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke'),
-        proxy_username='user',
-        proxy_password='pass',
+        proxy={'username': 'user', 'password': 'pass'},
     )
     session = BrowserSession(browser_profile=profile)
 

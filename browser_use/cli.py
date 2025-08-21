@@ -177,14 +177,20 @@ def update_config_with_click_args(config: dict[str, Any], ctx: click.Context) ->
 		config['browser']['profile_directory'] = ctx.params['profile_directory']
 	if ctx.params.get('cdp_url'):
 		config['browser']['cdp_url'] = ctx.params['cdp_url']
+
+	# Consolidated proxy dict
+	proxy: dict[str, str] = {}
 	if ctx.params.get('proxy_url'):
-		config['browser']['proxy_server'] = ctx.params['proxy_url']
+		proxy['server'] = ctx.params['proxy_url']
 	if ctx.params.get('no_proxy'):
-		config['browser']['proxy_bypass_list'] = [p.strip() for p in ctx.params['no_proxy'].split(',') if p.strip()]
+		# Store as comma-separated list string to match Chrome flag
+		proxy['bypass'] = ','.join([p.strip() for p in ctx.params['no_proxy'].split(',') if p.strip()])
 	if ctx.params.get('proxy_username'):
-		config['browser']['proxy_username'] = ctx.params['proxy_username']
+		proxy['username'] = ctx.params['proxy_username']
 	if ctx.params.get('proxy_password'):
-		config['browser']['proxy_password'] = ctx.params['proxy_password']
+		proxy['password'] = ctx.params['proxy_password']
+	if proxy:
+		config['browser']['proxy'] = proxy
 
 	return config
 
