@@ -7,8 +7,9 @@ from typing import Any, Self, cast
 import httpx
 from bubus import EventBus
 from cdp_use import CDPClient
+from cdp_use.cdp.fetch import AuthRequiredEvent, RequestPausedEvent
 from cdp_use.cdp.network import Cookie
-from cdp_use.cdp.target import SessionID, TargetID
+from cdp_use.cdp.target import AttachedToTargetEvent, SessionID, TargetID
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
@@ -24,6 +25,7 @@ from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	BrowserStopEvent,
 	BrowserStoppedEvent,
+	CloseTabEvent,
 	FileDownloadedEvent,
 	NavigateToUrlEvent,
 	NavigationCompleteEvent,
@@ -303,6 +305,7 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, TabClosedEvent, self.on_TabClosedEvent)
 		BaseWatchdog.attach_handler_to_session(self, AgentFocusChangedEvent, self.on_AgentFocusChangedEvent)
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
+		BaseWatchdog.attach_handler_to_session(self, CloseTabEvent, self.on_CloseTabEvent)
 
 	async def start(self) -> None:
 		"""Start the browser session."""
@@ -547,6 +550,13 @@ class BrowserSession(BaseModel):
 			)
 		)
 		return self.agent_focus.target_id
+
+	async def on_CloseTabEvent(self, event: CloseTabEvent) -> None:
+		"""Handle tab closure - update focus if needed."""
+
+		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
+		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
@@ -1003,6 +1013,9 @@ class BrowserSession(BaseModel):
 			if self.agent_focus:
 				self._cdp_session_pool[target_id] = self.agent_focus
 
+			# Enable proxy authentication handling if configured
+			await self._setup_proxy_auth()
+
 			# Verify the session is working
 			try:
 				if self.agent_focus:
@@ -1037,6 +1050,152 @@ class BrowserSession(BaseModel):
 			raise RuntimeError(f'Failed to establish CDP connection to browser: {e}') from e
 
 		return self
+
+	async def _setup_proxy_auth(self) -> None:
+		"""Enable CDP Fetch auth handling for authenticated proxy, if credentials provided.
+
+		Handles HTTP proxy authentication challenges (Basic/Proxy) by providing
+		configured credentials from BrowserProfile.
+		"""
+
+		assert self._cdp_client_root
+
+		try:
+			proxy_cfg = self.browser_profile.proxy
+			username = proxy_cfg.username if proxy_cfg else None
+			password = proxy_cfg.password if proxy_cfg else None
+			if not username or not password:
+				self.logger.debug('Proxy credentials not provided; skipping proxy auth setup')
+				return
+
+			# Enable Fetch domain with auth handling (do not pause all requests)
+			try:
+				await self._cdp_client_root.send.Fetch.enable(params={'handleAuthRequests': True})
+				self.logger.debug('Fetch.enable(handleAuthRequests=True) enabled on root client')
+			except Exception as e:
+				self.logger.debug(f'Fetch.enable on root failed: {type(e).__name__}: {e}')
+
+			# Also enable on the focused session if available to ensure events are delivered
+			try:
+				if self.agent_focus:
+					await self.agent_focus.cdp_client.send.Fetch.enable(
+						params={'handleAuthRequests': True},
+						session_id=self.agent_focus.session_id,
+					)
+					self.logger.debug('Fetch.enable(handleAuthRequests=True) enabled on focused session')
+			except Exception as e:
+				self.logger.debug(f'Fetch.enable on focused session failed: {type(e).__name__}: {e}')
+
+			def _on_auth_required(event: AuthRequiredEvent, session_id: SessionID | None = None):
+				# event keys may be snake_case or camelCase depending on generator; handle both
+				request_id = event.get('requestId') or event.get('request_id')
+				if not request_id:
+					return
+
+				challenge = event.get('authChallenge') or event.get('auth_challenge') or {}
+				source = (challenge.get('source') or '').lower()
+				# Only respond to proxy challenges
+				if source == 'proxy' and request_id:
+
+					async def _respond():
+						assert self._cdp_client_root
+						try:
+							await self._cdp_client_root.send.Fetch.continueWithAuth(
+								params={
+									'requestId': request_id,
+									'authChallengeResponse': {
+										'response': 'ProvideCredentials',
+										'username': username,
+										'password': password,
+									},
+								},
+								session_id=session_id,
+							)
+						except Exception as e:
+							self.logger.debug(f'Proxy auth respond failed: {type(e).__name__}: {e}')
+
+					# schedule
+					asyncio.create_task(_respond())
+				else:
+					# Default behaviour for non-proxy challenges: let browser handle
+					async def _default():
+						assert self._cdp_client_root
+						try:
+							await self._cdp_client_root.send.Fetch.continueWithAuth(
+								params={'requestId': request_id, 'authChallengeResponse': {'response': 'Default'}},
+								session_id=session_id,
+							)
+						except Exception as e:
+							self.logger.debug(f'Default auth respond failed: {type(e).__name__}: {e}')
+
+					if request_id:
+						asyncio.create_task(_default())
+
+			def _on_request_paused(event: RequestPausedEvent, session_id: SessionID | None = None):
+				# Continue all paused requests to avoid stalling the network
+				request_id = event.get('requestId') or event.get('request_id')
+				if not request_id:
+					return
+
+				async def _continue():
+					assert self._cdp_client_root
+					try:
+						await self._cdp_client_root.send.Fetch.continueRequest(
+							params={'requestId': request_id},
+							session_id=session_id,
+						)
+					except Exception:
+						pass
+
+				asyncio.create_task(_continue())
+
+			# Register event handler on root client
+			try:
+				self._cdp_client_root.register.Fetch.authRequired(_on_auth_required)
+				self._cdp_client_root.register.Fetch.requestPaused(_on_request_paused)
+				if self.agent_focus:
+					self.agent_focus.cdp_client.register.Fetch.authRequired(_on_auth_required)
+					self.agent_focus.cdp_client.register.Fetch.requestPaused(_on_request_paused)
+				self.logger.debug('Registered Fetch.authRequired handlers')
+			except Exception as e:
+				self.logger.debug(f'Failed to register authRequired handlers: {type(e).__name__}: {e}')
+
+			# Auto-enable Fetch on every newly attached target to ensure auth callbacks fire
+			def _on_attached(event: AttachedToTargetEvent, session_id: SessionID | None = None):
+				sid = event.get('sessionId') or event.get('session_id') or session_id
+				if not sid:
+					return
+
+				async def _enable():
+					assert self._cdp_client_root
+					try:
+						await self._cdp_client_root.send.Fetch.enable(
+							params={'handleAuthRequests': True},
+							session_id=sid,
+						)
+						self.logger.debug(f'Fetch.enable(handleAuthRequests=True) enabled on attached session {sid}')
+					except Exception as e:
+						self.logger.debug(f'Fetch.enable on attached session failed: {type(e).__name__}: {e}')
+
+				asyncio.create_task(_enable())
+
+			try:
+				self._cdp_client_root.register.Target.attachedToTarget(_on_attached)
+				self.logger.debug('Registered Target.attachedToTarget handler for Fetch.enable')
+			except Exception as e:
+				self.logger.debug(f'Failed to register attachedToTarget handler: {type(e).__name__}: {e}')
+
+			# Ensure Fetch is enabled for the current focused session, too
+			try:
+				if self.agent_focus:
+					await self.agent_focus.cdp_client.send.Fetch.enable(
+						params={'handleAuthRequests': True, 'patterns': [{'urlPattern': '*'}]},
+						session_id=self.agent_focus.session_id,
+					)
+			except Exception as e:
+				self.logger.debug(f'Fetch.enable on focused session failed: {type(e).__name__}: {e}')
+		except Exception as e:
+			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
 	async def get_tabs(self) -> list[TabInfo]:
 		"""Get information about all open tabs using CDP Target.getTargetInfo for speed."""

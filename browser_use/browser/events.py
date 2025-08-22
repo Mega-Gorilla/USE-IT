@@ -90,7 +90,7 @@ class NavigateToUrlEvent(BaseEvent[None]):
 	event_timeout: float | None = 15.0  # seconds
 
 
-class ClickElementEvent(ElementSelectedEvent[None]):
+class ClickElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
 	"""Click an element."""
 
 	node: 'EnhancedDOMTreeNode'
@@ -105,7 +105,7 @@ class ClickElementEvent(ElementSelectedEvent[None]):
 	event_timeout: float | None = 15.0  # seconds
 
 
-class TypeTextEvent(ElementSelectedEvent[None]):
+class TypeTextEvent(ElementSelectedEvent[dict | None]):
 	"""Type text into an element."""
 
 	node: 'EnhancedDOMTreeNode'

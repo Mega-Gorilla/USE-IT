@@ -109,6 +109,9 @@ class ActionResult(BaseModel):
 	extracted_content: str | None = None
 	include_extracted_content_only_once: bool = False  # Whether the extracted content should be used to update the read_state
 
+	# Metadata for observability (e.g., click coordinates)
+	metadata: dict | None = None
+
 	# Deprecated
 	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory
 
