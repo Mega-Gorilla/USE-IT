@@ -94,9 +94,9 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 			# Only clean up names in INFO mode, keep everything in DEBUG mode
 			if self.log_level > logging.DEBUG and isinstance(record.name, str) and record.name.startswith('browser_use.'):
 				# Extract clean component names from logger names
-				if 'Agent🅰' in record.name:
+				if 'Agent' in record.name:
 					record.name = 'Agent'
-				elif 'BrowserSession🆂' in record.name:
+				elif 'BrowserSession' in record.name:
 					record.name = 'BrowserSession'
 				elif 'controller' in record.name:
 					record.name = 'controller'

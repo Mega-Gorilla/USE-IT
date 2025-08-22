@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from functools import cached_property
 from typing import Any, Self, cast
 
 import httpx
@@ -43,6 +44,10 @@ DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
 MAX_SCREENSHOT_HEIGHT = 2000
 MAX_SCREENSHOT_WIDTH = 1920
+
+_LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
+red = '\033[91m'
+reset = '\033[0m'
 
 
 class CDPSession(BaseModel):
@@ -88,7 +93,7 @@ class CDPSession(BaseModel):
 			import logging
 
 			logger = logging.getLogger(f'browser_use.CDPSession.{target_id[-4:]}')
-			logger.debug(f'🔌 Creating dedicated WebSocket connection for target {target_id}')
+			logger.debug(f'🔌 Creating new dedicated WebSocket connection for target 🅣 {target_id}')
 
 			target_cdp_client = CDPClient(cdp_url)
 			await target_cdp_client.start()
@@ -148,7 +153,7 @@ class CDPSession(BaseModel):
 			# if 'Debugger' not in domains:
 			# 	await self.cdp_client.send.Debugger.disable()
 			# await cdp_session.cdp_client.send.EventBreakpoints.disable(session_id=cdp_session.session_id)
-		except Exception as e:
+		except Exception:
 			# self.logger.warning(f'Failed to disable page JS breakpoints: {e}')
 			pass
 
@@ -240,14 +245,28 @@ class BrowserSession(BaseModel):
 		# 	self._logger = logging.getLogger(f'browser_use.{self}')
 		return logging.getLogger(f'browser_use.{self}')
 
+	@cached_property
+	def _id_for_logs(self) -> str:
+		"""Get human-friendly semi-unique identifier for differentiating different BrowserSession instances in logs"""
+		str_id = self.id[-4:]  # default to last 4 chars of truly random uuid, less helpful than cdp port but always unique enough
+		port_number = (self.cdp_url or 'no-cdp').rsplit(':', 1)[-1].split('/', 1)[0].strip()
+		port_is_random = not port_number.startswith('922')
+		port_is_unique_enough = port_number not in _LOGGED_UNIQUE_SESSION_IDS
+		if port_number and port_number.isdigit() and port_is_random and port_is_unique_enough:
+			# if cdp port is random/unique enough to identify this session, use it as our id in logs
+			_LOGGED_UNIQUE_SESSION_IDS.add(port_number)
+			str_id = port_number
+		return str_id
+
+	@property
+	def _tab_id_for_logs(self) -> str:
+		return self.agent_focus.target_id[-2:] if self.agent_focus and self.agent_focus.target_id else f'{red}--{reset}'
+
 	def __repr__(self) -> str:
-		port_number = (self.cdp_url or 'no-cdp').rsplit(':', 1)[-1].split('/', 1)[0]
-		return f'BrowserSession🆂 {self.id[-4:]}:{port_number} #{str(id(self))[-2:]} (cdp_url={self.cdp_url}, profile={self.browser_profile})'
+		return f'BrowserSession🅑 {self._id_for_logs} 🅣 {self._tab_id_for_logs} (cdp_url={self.cdp_url}, profile={self.browser_profile})'
 
 	def __str__(self) -> str:
-		# Note: _original_browser_session tracking moved to Agent class
-		port_number = (self.cdp_url or 'no-cdp').rsplit(':', 1)[-1].split('/', 1)[0]
-		return f'BrowserSession🆂 {self.id[-4:]}:{port_number} #{str(id(self))[-2:]}'  # ' 🅟 {str(id(self.cdp_session.target_id))[-2:]}'
+		return f'BrowserSession🅑 {self._id_for_logs} 🅣 {self._tab_id_for_logs}'
 
 	async def reset(self) -> None:
 		"""Clear all cached CDP sessions with proper cleanup."""

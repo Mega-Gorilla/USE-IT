@@ -323,7 +323,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		logger.debug(
 			f'{" +vision" if self.settings.use_vision else ""}'
 			f' extraction_model={self.settings.page_extraction_llm.model if self.settings.page_extraction_llm else "Unknown"}'
-			# Note: No longer logging planner_model (deprecated)
 			f'{" +file_system" if self.file_system else ""}'
 		)
 
@@ -466,13 +465,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def logger(self) -> logging.Logger:
 		"""Get instance-specific logger with task ID in the name"""
 
-		_browser_session_id = self.browser_session.id if self.browser_session else self.id
+		_browser_session_id = self.browser_session.id if self.browser_session else '----'
 		_current_target_id = (
-			self.browser_session.agent_focus.target_id[-4:]
+			self.browser_session.agent_focus.target_id[-2:]
 			if self.browser_session and self.browser_session.agent_focus and self.browser_session.agent_focus.target_id
 			else '--'
 		)
-		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} on 🆂 {_browser_session_id[-4:]} 🅟 {_current_target_id}')
+		return logging.getLogger(f'browser_use.Agent🅰 {self.task_id[-4:]} ⇢ 🅑 {_browser_session_id[-4:]} 🅣 {_current_target_id}')
 
 	@property
 	def browser_profile(self) -> BrowserProfile:
@@ -1274,7 +1273,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._log_agent_run()
 
 			self.logger.debug(
-				f'🔧 Agent setup: Task ID {self.task_id[-4:]}, Session ID {self.session_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"}'
+				f'🔧 Agent setup: Agent Session ID {self.session_id[-4:]}, Task ID {self.task_id[-4:]}, Browser Session ID {self.browser_session.id[-4:] if self.browser_session else "None"} {"(connecting via CDP)" if (self.browser_session and self.browser_session.cdp_url) else "(launching local browser)"}'
 			)
 
 			# Initialize timing for session and task
