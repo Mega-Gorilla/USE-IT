@@ -11,7 +11,7 @@ icon: "plug"
 > 3. Waits for the task to finish via a **webhook**
 > 4. Formats the output and drops a rich message into Slack
 
-You can grab the workflow JSON below – copy it and import it into n8n, plug in your API keys and hit *Execute* 🚀.
+You can grab the workflow JSON below – copy it and import it into n8n, plug in your API keys and hit _Execute_ 🚀.
 
 ---
 
@@ -19,7 +19,7 @@ You can grab the workflow JSON below – copy it and import it into n8n, plug in
 
 • **Autonomous browsing** – Browser Use opens pages like a real user (using Playwright + Chromium), follows links, clicks buttons and reads DOM content.
 
-• **Structured output** – You tell the agent *exactly* which fields you need. No brittle regex or XPaths.
+• **Structured output** – You tell the agent _exactly_ which fields you need. No brittle regex or XPaths.
 
 • **Scales effortlessly** – Kick off hundreds of tasks and monitor them through the Cloud API.
 
@@ -47,16 +47,18 @@ SLACK_WEBHOOK_URL="https://hooks.slack.com/services/…"
 1. Copy the [workflow JSON](#workflow-json) below to your clipboard.
 2. In n8n click **Import** → **From Clipboard** and paste the JSON.
 3. Hit **Import**
-4. Replace the *Browser-Use API Key* credential and *Slack webhook URL* credential with yours.
+4. Replace the _Browser-Use API Key_ credential and _Slack webhook URL_ credential with yours.
 
 ---
 
 ## How the workflow works
 
 ### 1. `Form Trigger` – collect the competitor’s name
+
 A public n8n form with a single required field. When a user submits, the workflow fires instantly.
 
 ### 2. `HTTP Request – Browser Use Run Task`
+
 We POST to `/api/v1/run-task` with the following body:
 
 ```json title="run-task payload"
@@ -64,35 +66,47 @@ We POST to `/api/v1/run-task` with the following body:
   "task": "Do exhaustive research on {{ $json[\"Competitor Name\"] }} and extract all pricing information, job postings, new features and announcements",
   "save_browser_data": true,
   "structured_output_json": {
-    "pricing": {"plans": ["string"], "prices": ["string"], "features": ["string"]},
-    "jobs": {"titles": ["string"], "departments": ["string"], "locations": ["string"]},
-    "new_features": {"titles": ["string"], "description": ["string"]},
-    "announcements": {"titles": ["string"], "description": ["string"]}
+    "pricing": {
+      "plans": ["string"],
+      "prices": ["string"],
+      "features": ["string"]
+    },
+    "jobs": {
+      "titles": ["string"],
+      "departments": ["string"],
+      "locations": ["string"]
+    },
+    "new_features": { "titles": ["string"], "description": ["string"] },
+    "announcements": { "titles": ["string"], "description": ["string"] }
   },
-  "metadata": {"source": "n8n-competitor-demo"}
+  "metadata": { "source": "n8n-competitor-demo" }
 }
 ```
 
 Important bits:
 
 • `structured_output_json` tells the agent which keys to return – no post-processing required.
-• We tag the task with `metadata.source` so the webhook can filter only *our* jobs.
+• We tag the task with `metadata.source` so the webhook can filter only _our_ jobs.
 
 ### 3. `Webhook` + `IF` – wait for task completion
-Browser Use sends a webhook when anything happens to a task (see our [Webhooks guide](/cloud/webhooks) for setup details). We expose an n8n Webhook node at `/get-research-data` and let the agent call it.
+
+Browser Use sends a webhook when anything happens to a task (see our [Webhooks guide](/cloud/v1/webhooks) for setup details). We expose an n8n Webhook node at `/get-research-data` and let the agent call it.
 
 We only proceed when **both** conditions are true:
 
-* `payload.status == "finished"`
-* `payload.metadata.source == "n8n-competitor-demo"`
+- `payload.status == "finished"`
+- `payload.metadata.source == "n8n-competitor-demo"`
 
 ### 4. `Get Task Details`
+
 The webhook body includes the `session_id`. We fetch the full task record so we get the `output` field containing the structured JSON from step 2.
 
 ### 5. `Code – Generate Slack message`
+
 A short JS snippet turns the JSON into a nicely-formatted Slack block with emojis and bullet points. Feel free to tweak the formatting.
 
 ### 6. `HTTP Request – Send to Slack`
+
 Finally we POST the message to your incoming webhook and celebrate 🎉.
 
 ---
@@ -101,15 +115,15 @@ Finally we POST the message to your incoming webhook and celebrate 🎉.
 
 This workflow is just the starting point – Browser Use + n8n gives you endless possibilities. Here are some ideas:
 
-| Want to... | How to do it |
-| ---- | ------ |
-| **Extract different data** | Edit `structured_output_json` to specify exactly what fields you need (pricing, reviews, contact info, etc.) and adjust the JS formatter. |
-| **Send to Teams/Email/Notion** | Swap the last Slack node for Teams, Gmail, or any of n8n's 400+ connectors. |
-| **Run automatically** | Replace the Form trigger with a Cron trigger for daily/weekly competitor monitoring. |
-| **Monitor multiple competitors** | Use a Google Sheets trigger with a list of companies and loop through them. |
-| **Add AI analysis** | Pipe the extracted data through OpenAI/Claude to generate insights and summaries. |
-| **Create alerts** | Set up conditional logic to only notify when competitors announce new features or price changes. |
-| **Build a dashboard** | Send data to Airtable, Notion, or Google Sheets to build a real-time competitor intelligence dashboard. |
+| Want to...                       | How to do it                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Extract different data**       | Edit `structured_output_json` to specify exactly what fields you need (pricing, reviews, contact info, etc.) and adjust the JS formatter. |
+| **Send to Teams/Email/Notion**   | Swap the last Slack node for Teams, Gmail, or any of n8n's 400+ connectors.                                                               |
+| **Run automatically**            | Replace the Form trigger with a Cron trigger for daily/weekly competitor monitoring.                                                      |
+| **Monitor multiple competitors** | Use a Google Sheets trigger with a list of companies and loop through them.                                                               |
+| **Add AI analysis**              | Pipe the extracted data through OpenAI/Claude to generate insights and summaries.                                                         |
+| **Create alerts**                | Set up conditional logic to only notify when competitors announce new features or price changes.                                          |
+| **Build a dashboard**            | Send data to Airtable, Notion, or Google Sheets to build a real-time competitor intelligence dashboard.                                   |
 
 The beauty of Browser Use is that it handles the complex web browsing while you focus on building the perfect workflow for your needs.
 
@@ -374,5 +388,6 @@ The beauty of Browser Use is that it handles the complex web browsing while you 
 Copy everything between the braces, import into n8n and you're good to go.
 
 <Note>
-Having trouble? Ping us in the #integrations channel on [Discord](https://discord.gg/fT6Re4KN) – we’re happy to help.
+  Having trouble? Ping us in the #integrations channel on
+  [Discord](https://discord.gg/fT6Re4KN) – we’re happy to help.
 </Note>
