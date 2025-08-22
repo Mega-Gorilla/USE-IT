@@ -94,9 +94,9 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 			# Only clean up names in INFO mode, keep everything in DEBUG mode
 			if self.log_level > logging.DEBUG and isinstance(record.name, str) and record.name.startswith('browser_use.'):
 				# Extract clean component names from logger names
-				if 'Agent🅰' in record.name:
+				if 'Agent' in record.name:
 					record.name = 'Agent'
-				elif 'BrowserSession🆂' in record.name:
+				elif 'BrowserSession' in record.name:
 					record.name = 'BrowserSession'
 				elif 'controller' in record.name:
 					record.name = 'controller'
@@ -150,7 +150,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	# Convert CDP_LOGGING_LEVEL string to logging level
 	cdp_level_str = CONFIG.CDP_LOGGING_LEVEL.upper()
 	cdp_level = getattr(logging, cdp_level_str, logging.WARNING)
-	
+
 	try:
 		from cdp_use.logging import setup_cdp_logging  # type: ignore
 
