@@ -569,6 +569,9 @@ class ProxySettings(BaseModel):
 	username: str | None = Field(default=None, description='Proxy auth username')
 	password: str | None = Field(default=None, description='Proxy auth password')
 
+	def __getitem__(self, key: str) -> str | None:
+		return getattr(self, key)
+
 
 class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs):
 	"""
@@ -609,9 +612,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	# --- Proxy settings ---
 	# New consolidated proxy config (typed)
-	proxy: ProxySettings | dict | None = Field(
+	proxy: ProxySettings | None = Field(
 		default=None,
-		description='Proxy settings. Use ProxySettings(server, bypass, username, password). Dicts are accepted and coerced.',
+		description='Proxy settings. Use browser_use.browser.profile.ProxySettings(server, bypass, username, password)',
 	)
 	enable_default_extensions: bool = Field(
 		default=True,
@@ -736,16 +739,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				'It hardcodes the JS random seed and forces browsers across Linux/Mac/Windows to use the same font rendering engine so that identical screenshots can be generated.'
 			)
 		return self
-
-	@field_validator('proxy', mode='before')
-	@classmethod
-	def _coerce_proxy(cls, v: Any) -> Any:
-		"""Accept dicts for proxy and coerce to ProxySettings."""
-		if v is None or isinstance(v, ProxySettings):
-			return v
-		if isinstance(v, dict):
-			return ProxySettings(**v)
-		return v
 
 	@model_validator(mode='after')
 	def validate_proxy_settings(self) -> Self:
