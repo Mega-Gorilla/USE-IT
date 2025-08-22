@@ -86,7 +86,8 @@ const stream = browseruse.tasks.stream({
 for await (const msg of stream) {
   switch (msg.status) {
     case "started":
-      console.log(`started: ${msg.})
+      console.log(`started: ${msg.data.session.liveUrl}`);
+      break;
     case "paused":
     case "stopped":
       console.log(`running: ${msg}`);
