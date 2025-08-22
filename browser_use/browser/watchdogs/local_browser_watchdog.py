@@ -46,9 +46,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		"""Launch a local browser process."""
 
 		try:
-			self.logger.debug(
-				'[LocalBrowserWatchdog] Received BrowserLaunchEvent, launching local browser...'
-			)
+			self.logger.debug('[LocalBrowserWatchdog] Received BrowserLaunchEvent, launching local browser...')
 
 			# self.logger.debug('[LocalBrowserWatchdog] Calling _launch_browser...')
 			process, cdp_url = await self._launch_browser()
@@ -143,7 +141,9 @@ class LocalBrowserWatchdog(BaseWatchdog):
 					stdout=asyncio.subprocess.PIPE,
 					stderr=asyncio.subprocess.PIPE,
 				)
-				self.logger.debug(f'[LocalBrowserWatchdog] 🎭 Browser running with browser_pid= {subprocess.pid} 🔗 listening on CDP port :{debug_port}')
+				self.logger.debug(
+					f'[LocalBrowserWatchdog] 🎭 Browser running with browser_pid= {subprocess.pid} 🔗 listening on CDP port :{debug_port}'
+				)
 
 				# Convert to psutil.Process
 				process = psutil.Process(subprocess.pid)
