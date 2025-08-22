@@ -41,6 +41,7 @@ class ElementSelectedEvent(BaseEvent[T_EventResultType]):
 			is_visible=data.is_visible,
 			absolute_position=data.absolute_position,
 			# override the circular reference fields in EnhancedDOMTreeNode as they cant be serialized and aren't needed by event handlers
+			# only used internally by the DOM service during DOM tree building process, not intended public API use
 			content_document=None,
 			shadow_root_type=None,
 			shadow_roots=[],
@@ -86,7 +87,7 @@ class NavigateToUrlEvent(BaseEvent[None]):
 	)
 	# existing_tab: PageHandle | None = None  # TODO
 
-	# limit enforced by bubus, not exposed to LLM:
+	# time limits enforced by bubus, not exposed to LLM:
 	event_timeout: float | None = 15.0  # seconds
 
 
