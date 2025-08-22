@@ -1,11 +1,12 @@
 ---
-title: "Search API Quickstart"
+title: "Search API"
 description: "Get started with Browser Use's search endpoints to extract content from websites"
 icon: "magnifying-glass"
 ---
 
 <Warning>
-**🧪 BETA - This API is in beta - it may change and might not be available at all times.**
+  **🧪 BETA - This API is in beta - it may change and might not be available at
+  all times.**
 </Warning>
 
 ## Why Browser Use Over Traditional Search?
@@ -14,7 +15,7 @@ icon: "magnifying-glass"
 
 - 🔍 **Deep navigation**: Clicks through menus, forms, and multiple pages to find buried content
 - 🚀 **Always current**: Live prices, breaking news, real-time analytics - not cached results
-- 🎯 **No stale data**: See exactly what's on the page right now  
+- 🎯 **No stale data**: See exactly what's on the page right now
 - 🌐 **Dynamic content**: Handles JavaScript, forms, and interactive elements
 - 🏠 **No surface limitations**: Gets data from pages that require navigation or interaction
 
@@ -27,6 +28,7 @@ The Search API allows you to quickly extract relevant content from websites usin
 💡 **Complete working examples** are available in the [examples/search](https://github.com/browser-use/browser-use/tree/main/examples/search) folder.
 
 ### Simple Search
+
 Search Google and extract content from multiple top results:
 
 ```python
@@ -39,12 +41,12 @@ async def simple_search():
         "max_websites": 5,
         "depth": 2
     }
-    
+
     headers = {
         "Authorization": "Bearer YOUR_API_KEY",
         "Content-Type": "application/json"
     }
-    
+
     async with aiohttp.ClientSession() as session:
         async with session.post(
             "https://api.browser-use.com/api/v1/simple-search",
@@ -58,21 +60,22 @@ asyncio.run(simple_search())
 ```
 
 ### Search URL
+
 Extract content from a specific URL:
 
 ```python
 async def search_url():
     payload = {
         "url": "https://browser-use.com/#pricing",
-        "query": "Find pricing information for Browser Use", 
+        "query": "Find pricing information for Browser Use",
         "depth": 2
     }
-    
+
     headers = {
         "Authorization": "Bearer YOUR_API_KEY",
         "Content-Type": "application/json"
     }
-    
+
     async with aiohttp.ClientSession() as session:
         async with session.post(
             "https://api.browser-use.com/api/v1/search-url",
@@ -90,7 +93,7 @@ asyncio.run(search_url())
 - **query**: Search query or content to extract
 - **depth**: How deep to navigate within each website (2-5, default: 2)
   - `depth=2`: Checks main page + 1 click deeper
-  - `depth=3`: Checks main page + 2 clicks deeper  
+  - `depth=3`: Checks main page + 2 clicks deeper
   - `depth=5`: Thoroughly explores multiple navigation levels
 - **max_websites**: Number of websites to process (simple-search only, default: 5)
 - **url**: Target URL to extract from (search-url only)
@@ -98,11 +101,13 @@ asyncio.run(search_url())
 ## Pricing
 
 ### Simple Search
+
 **Cost per request**: `1 cent × depth × max_websites`
 
 Example: depth=2, max_websites=3 = 6 cents per request
 
-### Search URL  
+### Search URL
+
 **Cost per request**: `1 cent × depth`
 
-Example: depth=2 = 2 cents per request 
+Example: depth=2 = 2 cents per request
