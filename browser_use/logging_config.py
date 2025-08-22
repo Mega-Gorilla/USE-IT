@@ -150,7 +150,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False):
 	# Convert CDP_LOGGING_LEVEL string to logging level
 	cdp_level_str = CONFIG.CDP_LOGGING_LEVEL.upper()
 	cdp_level = getattr(logging, cdp_level_str, logging.WARNING)
-	
+
 	try:
 		from cdp_use.logging import setup_cdp_logging  # type: ignore
 

@@ -411,7 +411,11 @@ class DOMWatchdog(BaseWatchdog):
 			# Create or reuse DOM service
 			if self._dom_service is None:
 				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Creating DomService...')
-				self._dom_service = DomService(browser_session=self.browser_session, logger=self.logger)
+				self._dom_service = DomService(
+					browser_session=self.browser_session,
+					logger=self.logger,
+					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
+				)
 				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService created')
 			# else:
 			# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
