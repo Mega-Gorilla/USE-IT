@@ -662,7 +662,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=None, description='File to save cookies to. DEPRECATED, use `storage_state` instead.'
 	)
 
-	# --- Recording Options ---
+    # these shadow the old playwright args on BrowserContextArgs, but it's ok
+    # because we handle them ourselves in a watchdog and we no longer use playwright, so they should live in the scope for our own config in BrowserProfile long-term
 	record_video_dir: Path | None = Field(
 		default=None,
 		description='Directory to save video recordings. If set, a video of the session will be recorded.',
