@@ -1062,8 +1062,8 @@ class BrowserSession(BaseModel):
 
 		try:
 			proxy_cfg = self.browser_profile.proxy
-			username = proxy_cfg['username'] if proxy_cfg else None
-			password = proxy_cfg['password'] if proxy_cfg else None
+			username = proxy_cfg.username if proxy_cfg else None
+			password = proxy_cfg.password if proxy_cfg else None
 			if not username or not password:
 				self.logger.debug('Proxy credentials not provided; skipping proxy auth setup')
 				return
