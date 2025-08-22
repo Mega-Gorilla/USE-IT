@@ -2,13 +2,18 @@
 
 import base64
 import logging
+import math
+import subprocess
 from pathlib import Path
 from typing import Optional
+
+import numpy as np
 
 from browser_use.browser.profile import ViewportSize
 
 try:
 	import imageio.v2 as iio
+	import imageio_ffmpeg
 	from imageio.core.format import Format
 
 	IMAGEIO_AVAILABLE = True
@@ -16,6 +21,13 @@ except ImportError:
 	IMAGEIO_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _get_padded_size(size: ViewportSize, macro_block_size: int = 16) -> ViewportSize:
+	"""Calculates the dimensions padded to the nearest multiple of macro_block_size."""
+	width = int(math.ceil(size['width'] / macro_block_size)) * macro_block_size
+	height = int(math.ceil(size['height'] / macro_block_size)) * macro_block_size
+	return ViewportSize(width=width, height=height)
 
 
 class VideoRecorderService:
@@ -41,6 +53,7 @@ class VideoRecorderService:
 		self.framerate = framerate
 		self._writer: Optional['Format.Writer'] = None
 		self._is_active = False
+		self.padded_size = _get_padded_size(self.size)
 
 	def start(self) -> None:
 		"""
@@ -57,13 +70,14 @@ class VideoRecorderService:
 
 		try:
 			self.output_path.parent.mkdir(parents=True, exist_ok=True)
+			# The macro_block_size is set to None because we handle padding ourselves
 			self._writer = iio.get_writer(
 				str(self.output_path),
 				fps=self.framerate,
 				codec='libx264',
 				quality=8,  # A good balance of quality and file size (1-10 scale)
 				pixelformat='yuv420p',  # Ensures compatibility with most players
-				macro_block_size=16,  # Recommended for h264
+				macro_block_size=None,
 			)
 			self._is_active = True
 			logger.debug(f'Video recorder started. Output will be saved to {self.output_path}')
@@ -73,10 +87,8 @@ class VideoRecorderService:
 
 	def add_frame(self, frame_data_b64: str) -> None:
 		"""
-		Decodes a base64-encoded PNG frame and appends it to the video.
-
-		This method is designed to be fast and non-blocking. It will
-		gracefully handle corrupted frames.
+		Decodes a base64-encoded PNG frame, resizes it, pads it to be codec-compatible,
+		and appends it to the video.
 
 		Args:
 		    frame_data_b64: A base64-encoded string of the PNG frame data.
@@ -86,21 +98,47 @@ class VideoRecorderService:
 
 		try:
 			frame_bytes = base64.b64decode(frame_data_b64)
-			# imageio reads bytes directly and converts to a numpy array
-			# The format is auto-detected from the bytes.
-			img_array = iio.imread(frame_bytes)
 
-			# Ensure frame dimensions match video dimensions
-			h, w, _ = img_array.shape
-			if w != self.size['width'] or h != self.size['height']:
-				# This can happen if the viewport changes mid-recording.
-				# A more robust solution could involve resizing, but that is non-trivial.
-				# For now, the video size must be the same as the viewport
-				logger.warning(
-					f'Frame size ({w}x{h}) does not match video size '
-					f'({self.size["width"]}x{self.size["height"]}). Skipping frame.'
-				)
-				return
+			# Build a filter chain for ffmpeg:
+			# 1. scale: Resizes the frame to the user-specified dimensions.
+			# 2. pad: Adds black bars to meet codec's macro-block requirements,
+			#    centering the original content.
+			vf_chain = (
+				f'scale={self.size["width"]}:{self.size["height"]},'
+				f'pad={self.padded_size["width"]}:{self.padded_size["height"]}:(ow-iw)/2:(oh-ih)/2:color=black'
+			)
+
+			output_pix_fmt = 'rgb24'
+			command = [
+				imageio_ffmpeg.get_ffmpeg_exe(),
+				'-f',
+				'image2pipe',  # Input format from a pipe
+				'-c:v',
+				'png',  # Specify input codec is PNG
+				'-i',
+				'-',  # Input from stdin
+				'-vf',
+				vf_chain,  # Video filter for resizing and padding
+				'-f',
+				'rawvideo',  # Output format is raw video
+				'-pix_fmt',
+				output_pix_fmt,  # Output pixel format
+				'-',  # Output to stdout
+			]
+
+			# Execute ffmpeg as a subprocess
+			proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			out, err = proc.communicate(input=frame_bytes)
+
+			if proc.returncode != 0:
+				err_msg = err.decode(errors='ignore').strip()
+				if 'deprecated pixel format used' not in err_msg.lower():
+					raise IOError(f'ffmpeg error during resizing/padding: {err_msg}')
+				else:
+					logger.debug(f'ffmpeg warning during resizing/padding: {err_msg}')
+
+			# Convert the raw output bytes to a numpy array with the padded dimensions
+			img_array = np.frombuffer(out, dtype=np.uint8).reshape((self.padded_size['height'], self.padded_size['width'], 3))
 
 			self._writer.append_data(img_array)
 		except Exception as e:

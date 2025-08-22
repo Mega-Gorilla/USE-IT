@@ -11,7 +11,7 @@ async def main():
 	browser_session = BrowserSession(browser_profile=video_profile)
 
 	agent = Agent(
-		task='Go to github.com/trending then navigate to the first trending repository.',
+		task='Go to github.com/trending then navigate to the first trending repository and report how many commits it has.',
 		llm=ChatOpenAI(model='gpt-4.1-mini'),
 		browser_session=browser_session,
 	)
