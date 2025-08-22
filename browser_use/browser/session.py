@@ -795,17 +795,17 @@ class BrowserSession(BaseModel):
 			self.logger.debug('Watchdogs already attached, skipping duplicate attachment')
 			return
 
-		from browser_use.browser.aboutblank_watchdog import AboutBlankWatchdog
+		from browser_use.browser.watchdogs.aboutblank_watchdog import AboutBlankWatchdog
 
 		# from browser_use.browser.crash_watchdog import CrashWatchdog
-		from browser_use.browser.default_action_watchdog import DefaultActionWatchdog
-		from browser_use.browser.dom_watchdog import DOMWatchdog
-		from browser_use.browser.downloads_watchdog import DownloadsWatchdog
-		from browser_use.browser.local_browser_watchdog import LocalBrowserWatchdog
-		from browser_use.browser.permissions_watchdog import PermissionsWatchdog
-		from browser_use.browser.popups_watchdog import PopupsWatchdog
-		from browser_use.browser.screenshot_watchdog import ScreenshotWatchdog
-		from browser_use.browser.security_watchdog import SecurityWatchdog
+		from browser_use.browser.watchdogs.default_action_watchdog import DefaultActionWatchdog
+		from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
+		from browser_use.browser.watchdogs.downloads_watchdog import DownloadsWatchdog
+		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
+		from browser_use.browser.watchdogs.permissions_watchdog import PermissionsWatchdog
+		from browser_use.browser.watchdogs.popups_watchdog import PopupsWatchdog
+		from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
 		# from browser_use.browser.storage_state_watchdog import StorageStateWatchdog
 
 		# Initialize CrashWatchdog

@@ -228,9 +228,16 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.browser_session.browser_profile.downloads_path
 			or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
 		)
+
+		# Initialize variables that may be used outside try blocks
+		unique_filename = None
+		file_size = 0
+		expected_path = None
+		download_result = None
+		download_url = event.get('url', '')
+		suggested_filename = event.get('suggestedFilename', 'download')
+
 		try:
-			download_url = event.get('url', '')
-			suggested_filename = event.get('suggestedFilename', 'download')
 			guid = event.get('guid', '')
 
 			self.logger.debug(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
@@ -306,6 +313,30 @@ class DownloadsWatchdog(BaseWatchdog):
 
 					self.logger.debug(f'[DownloadsWatchdog] ✅ Downloaded and saved file: {final_path} ({file_size} bytes)')
 					expected_path = final_path
+
+					# Determine file type from extension
+					file_ext = expected_path.suffix.lower().lstrip('.')
+					file_type = file_ext if file_ext else None
+
+					# Emit download event
+					self.event_bus.dispatch(
+						FileDownloadedEvent(
+							url=download_url,
+							path=str(expected_path),
+							file_name=unique_filename,
+							file_size=file_size,
+							file_type=file_type,
+							mime_type=download_result.get('contentType') if download_result else None,
+							from_cache=False,
+							auto_download=False,
+						)
+					)
+
+					self.logger.debug(
+						f'[DownloadsWatchdog] ✅ File download completed via CDP: {suggested_filename} ({file_size} bytes) saved to {expected_path}'
+					)
+					# Success - return early
+					return
 				else:
 					self.logger.error('[DownloadsWatchdog] ❌ No data received from fetch')
 					# Fall through to polling logic
@@ -313,30 +344,6 @@ class DownloadsWatchdog(BaseWatchdog):
 			except Exception as fetch_error:
 				self.logger.error(f'[DownloadsWatchdog] ❌ Failed to download file via fetch: {fetch_error}')
 				# Fall through to polling logic
-
-			# Determine file type from extension
-			file_ext = expected_path.suffix.lower().lstrip('.')
-			file_type = file_ext if file_ext else None
-
-			# Emit download event
-			self.event_bus.dispatch(
-				FileDownloadedEvent(
-					url=download_url,
-					path=str(expected_path),
-					file_name=unique_filename,
-					file_size=file_size,
-					file_type=file_type,
-					mime_type=download_result.get('contentType') if download_result else None,
-					from_cache=False,
-					auto_download=False,
-				)
-			)
-
-			self.logger.debug(
-				f'[DownloadsWatchdog] ✅ File download completed via CDP: {suggested_filename} ({file_size} bytes) saved to {expected_path}'
-			)
-			# Success - return early
-			return
 		except Exception as e:
 			self.logger.error(f'[DownloadsWatchdog] ❌ Error handling CDP download: {type(e).__name__} {e}')
 
