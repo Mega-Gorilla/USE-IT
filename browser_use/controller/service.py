@@ -49,7 +49,7 @@ from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import UserMessage
 from browser_use.observability import observe_debug
-from browser_use.utils import time_execution_sync
+from browser_use.utils import _log_pretty_url, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -282,12 +282,19 @@ class Controller(Generic[Context]):
 					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl)
 				)
 				await event
-				# Wait for handler to complete and get any exception (None is expected on success)
-				await event.event_result(raise_if_any=True, raise_if_none=False)
+				# Wait for handler to complete and get any exception or metadata
+				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+
+				# Include click coordinates in metadata if available
+				return ActionResult(
+					extracted_content=memory,
+					include_in_memory=True,
+					long_term_memory=memory,
+					metadata=click_metadata if isinstance(click_metadata, dict) else None,
+				)
 			except Exception as e:
 				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -322,13 +329,16 @@ class Controller(Generic[Context]):
 					TypeTextEvent(node=node, text=params.text, clear_existing=params.clear_existing)
 				)
 				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
+				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
 				logger.info(msg)
+
+				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
 					include_in_memory=True,
 					long_term_memory=f"Input '{params.text}' into element {params.index}.",
+					metadata=input_metadata if isinstance(input_metadata, dict) else None,
 				)
 			except Exception as e:
 				# Log the full error for debugging
@@ -502,11 +512,16 @@ class Controller(Generic[Context]):
 			# Dispatch close tab event
 			try:
 				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
+				cdp_session = await browser_session.get_or_create_cdp_session()
+				target_info = await cdp_session.cdp_client.send.Target.getTargetInfo(
+					params={'targetId': target_id}, session_id=cdp_session.session_id
+				)
+				tab_url = target_info['targetInfo']['url']
 				event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
-				memory = f'Closed tab # {params.tab_id}'
-				logger.info(f'❌  {memory}')
+				memory = f'Closed tab # {params.tab_id} ({_log_pretty_url(tab_url)})'
+				logger.info(f'🗑️  {memory}')
 				return ActionResult(
 					extracted_content=memory,
 					include_in_memory=True,
@@ -604,7 +619,7 @@ Provide the extracted information in a clear, structured format."""
 					timeout=120.0,
 				)
 
-				extracted_content = f'Query: {query}\nExtracted Content:\n{response.completion}'
+				extracted_content = f'Query: {query}\n Result:\n{response.completion}'
 
 				# Simple memory handling
 				if len(extracted_content) < 1000:
@@ -1092,7 +1107,11 @@ Provide the extracted information in a clear, structured format."""
 							context=context,
 						)
 					except Exception as e:
-						result = ActionResult(error=str(e))
+						# Log the original exception with traceback for observability
+						logger.error(f"Action '{action_name}' failed")
+						# Extract clean error message from llm_error_msg tags if present
+						clean_msg = extract_llm_error_message(e)
+						result = ActionResult(error=clean_msg)
 
 					if Laminar is not None:
 						Laminar.set_span_output(result)
