@@ -25,10 +25,6 @@ from browser_use import Agent, Controller
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.llm import ChatOpenAI
 
-api_key = os.getenv('OPENAI_API_KEY')
-if not api_key:
-	raise ValueError('OPENAI_API_KEY is not set')
-
 browser_session = BrowserSession(
 	browser_profile=BrowserProfile(
 		headless=False,
@@ -40,13 +36,9 @@ controller = Controller()
 
 
 async def main():
-	task = 'Go to "https://v0-download-and-upload-text.vercel.app/" download the text file, and upload it to the website.'
-	# Assert api_key is not None to satisfy type checker
-	assert api_key is not None, 'OPENAI_API_KEY must be set'
-	model = ChatOpenAI(model='gpt-4.1-mini', api_key=api_key)
 	agent = Agent(
-		task=task,
-		llm=model,
+		task='Visit https://duckduckgo.com and search for "browser-use founders"',
+		lllm=ChatOpenAI(model='gpt-4.1-mini'),
 		controller=controller,
 		browser_session=browser_session,
 	)
