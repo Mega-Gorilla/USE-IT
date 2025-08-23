@@ -459,9 +459,7 @@ class Config:
 			proxy_dict['server'] = env_config.BROWSER_USE_PROXY_URL
 		if env_config.BROWSER_USE_NO_PROXY:
 			# store bypass as comma-separated string to match Chrome flag
-			proxy_dict['bypass'] = ','.join(
-				[d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()]
-			)
+			proxy_dict['bypass'] = ','.join([d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()])
 		if env_config.BROWSER_USE_PROXY_USERNAME:
 			proxy_dict['username'] = env_config.BROWSER_USE_PROXY_USERNAME
 		if env_config.BROWSER_USE_PROXY_PASSWORD:
