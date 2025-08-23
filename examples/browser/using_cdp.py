@@ -21,10 +21,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from lmnr import Laminar
-
-Laminar.initialize()
-
 from browser_use import Agent, Controller
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.llm import ChatOpenAI
