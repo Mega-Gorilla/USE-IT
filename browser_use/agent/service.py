@@ -1243,12 +1243,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if len(found_urls) == 1:
 			return found_urls[0]
 
-		# If no URL found, check if task mentions Google or search
-		task_lower = task.lower()
-		if 'google' in task_lower or 'search' in task_lower:
-			self.logger.debug('📍 Task mentions "google" or "search", defaulting to https://google.com')
-			return 'https://google.com'
-
 		return None
 
 	@observe(name='agent.run', metadata={'task': '{{task}}', 'debug': '{{debug}}'})
