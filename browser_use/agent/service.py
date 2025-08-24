@@ -1216,16 +1216,32 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with subdomains and optional paths
 		]
 
+		# Email pattern to exclude
+		email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+
+		found_urls = []
 		for pattern in patterns:
-			match = re.search(pattern, task)
-			if match:
+			matches = re.finditer(pattern, task)
+			for match in matches:
 				url = match.group(0)
+				# Skip if this looks like an email address
+				if re.search(email_pattern, url):
+					continue
 				# Remove trailing punctuation that's not part of URLs
 				url = re.sub(r'[.,;:!?()\[\]]+$', '', url)
 				# Add https:// if missing
 				if not url.startswith(('http://', 'https://')):
 					url = 'https://' + url
-				return url
+				found_urls.append(url)
+
+		# If multiple URLs found, skip preloading
+		if len(found_urls) > 1:
+			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping preload to avoid ambiguity')
+			return None
+		
+		# If exactly one URL found, return it
+		if len(found_urls) == 1:
+			return found_urls[0]
 
 		# If no URL found, check if task mentions Google or search
 		task_lower = task.lower()
