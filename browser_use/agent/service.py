@@ -1234,14 +1234,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					url = 'https://' + url
 				found_urls.append(url)
 
+		unique_urls = list(set(found_urls))
 		# If multiple URLs found, skip preloading
-		if len(found_urls) > 1:
+		if len(unique_urls) > 1:
 			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping preload to avoid ambiguity')
 			return None
-		
+
 		# If exactly one URL found, return it
-		if len(found_urls) == 1:
-			return found_urls[0]
+		if len(unique_urls) == 1:
+			return unique_urls[0]
 
 		return None
 
