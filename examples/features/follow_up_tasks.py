@@ -21,13 +21,9 @@ task = """Go to reddit.com"""
 async def main():
 	agent = Agent(task=task, browser_profile=profile)
 	await agent.run(max_steps=1)
+
 	while True:
 		user_response = input('\n👤 New task or "q" to quit: ')
-		print()
-		if user_response == 'q':
-			break
-
-		print(f'🟢 Continuing with your input: {user_response}')
 		agent.add_new_task(f'New task: {user_response}')
 		await agent.run()
 
