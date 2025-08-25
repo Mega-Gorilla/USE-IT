@@ -31,7 +31,8 @@
             "group": "Get Started",
             "pages": [
               "introduction",
-              "quickstart"
+              "quickstart",
+              "quickstart_llm"
             ]
           },
           {
@@ -42,12 +43,8 @@
               "customize/browser-settings",
               "customize/real-browser",
               "customize/output-format",
-              "customize/system-prompt",
               "customize/sensitive-data",
-              "customize/custom-functions",
-              "customize/mcp-client",
-              "customize/mcp-server",
-              "customize/hooks"
+              "customize/custom-functions"
             ]
           },
           {
@@ -55,6 +52,9 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
+              "customize/mcp-client",
+              "customize/mcp-server",
+              "customize/hooks",
               "development/telemetry",
               "development/observability",
               "development/evaluations",
