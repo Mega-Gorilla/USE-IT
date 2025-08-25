@@ -9,7 +9,10 @@
   },
   "favicon": "/favicon.ico",
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "fonts": {
     "family": "Geist"
@@ -26,7 +29,10 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "cli"]
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
           },
           {
             "group": "Customize",
@@ -126,7 +132,11 @@
       "display": "interactive"
     },
     "examples": {
-      "languages": ["javascript", "curl", "python"],
+      "languages": [
+        "javascript",
+        "curl",
+        "python"
+      ],
       "required": true
     }
   },
