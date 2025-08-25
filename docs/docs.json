@@ -31,24 +31,26 @@
             "group": "Get Started",
             "pages": [
               "introduction",
-              {
-                "group": "Quickstart",
-                "icon": "rocket",
-                "pages": [
-                  "quickstart",
-                  "quickstart_llm"
-                ]
-              }
+              "quickstart",
+              "quickstart_llm"
             ]
           },
           {
             "group": "Customize",
             "pages": [
-              "customize/supported-models",
-              "customize/agent-settings",
+              {
+                "group": "Agent",
+                "icon": "robot",
+                "isDefaultOpen": true,
+                "pages": [
+                  "customize/agent-basic",
+                  "customize/supported-models",
+                  "customize/agent-parameters",
+                  "customize/agent-output-format"
+                ]
+              },
               "customize/browser-settings",
               "customize/real-browser",
-              "customize/output-format",
               "customize/sensitive-data",
               "customize/custom-functions"
             ]
