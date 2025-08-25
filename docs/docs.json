@@ -31,8 +31,14 @@
             "group": "Get Started",
             "pages": [
               "introduction",
-              "quickstart",
-              "quickstart_llm"
+              {
+                "group": "Quickstart",
+                "icon": "rocket",
+                "pages": [
+                  "quickstart",
+                  "quickstart_llm"
+                ]
+              }
             ]
           },
           {
