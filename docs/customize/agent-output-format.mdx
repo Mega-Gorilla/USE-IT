@@ -1,0 +1,79 @@
+---
+title: "Output Format"
+description: "Understanding agent execution results and structured output"
+icon: "arrow-right-to-bracket"
+mode: "wide"
+---
+
+## Output Format
+
+The `run()` method returns an `AgentHistoryList` object with the complete execution history:
+
+```python
+history = await agent.run()
+
+# Access useful information
+history.urls()                    # List of visited URLs
+history.screenshot_paths()        # List of screenshot paths  
+history.screenshots()             # List of screenshots as base64 strings
+history.action_names()            # Names of executed actions
+history.extracted_content()       # List of extracted content from all actions
+history.errors()                  # List of errors (with None for steps without errors)
+history.model_actions()           # All actions with their parameters
+history.model_outputs()           # All model outputs from history
+history.last_action()             # Last action in history
+
+# Analysis methods
+history.final_result()            # Get the final extracted content (last step)
+history.is_done()                 # Check if agent completed successfully
+history.is_successful()           # Check if agent completed successfully (returns None if not done)
+history.has_errors()              # Check if any errors occurred
+history.model_thoughts()          # Get the agent's reasoning process (AgentBrain objects)
+history.action_results()          # Get all ActionResult objects from history
+history.action_history()          # Get truncated action history with essential fields
+history.number_of_steps()         # Get the number of steps in the history
+history.total_duration_seconds()  # Get total duration of all steps in seconds
+
+# Structured output (when using output_model_schema)
+history.structured_output         # Property that returns parsed structured output
+```
+
+See all helper methods in the [AgentHistoryList source code](https://github.com/browser-use/browser-use/blob/main/browser_use/agent/views.py#L301).
+
+## Structured Output
+
+For structured data extraction, use the `output_model_schema` parameter with a Pydantic model:
+
+```python
+from pydantic import BaseModel
+from browser_use import Agent, ChatOpenAI
+
+class Post(BaseModel):
+    post_title: str
+    post_url: str
+    num_comments: int
+    hours_since_post: int
+
+class Posts(BaseModel):
+    posts: list[Post]
+
+# Create agent with structured output
+agent = Agent(
+    task="Go to hackernews show hn and give me the first 5 posts",
+    llm=ChatOpenAI(model="gpt-4.1-mini"),
+    output_model_schema=Posts
+)
+
+# Run and parse structured result
+history = await agent.run()
+result = history.final_result()
+
+if result:
+    parsed: Posts = Posts.model_validate_json(result)
+    for post in parsed.posts:
+        print(f"Title: {post.post_title}")
+        print(f"URL: {post.post_url}")
+        print(f"Comments: {post.num_comments}")
+```
+
+For a complete structured output example, see the [custom_output.py example](https://github.com/browser-use/browser-use/blob/main/examples/features/custom_output.py).
