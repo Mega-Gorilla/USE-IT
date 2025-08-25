@@ -637,6 +637,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# The task continues with new instructions, it doesn't end and start a new one
 		self.task = new_task
 		self._message_manager.add_new_task(new_task)
+		# Mark as follow-up task and recreate eventbus (gets shut down after each run)
+		self.state.follow_up_task = True
+		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-self.state.n_steps :]}')
+
+		# Re-register cloud sync handler if it exists (if not disabled)
+		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:
+			self.eventbus.on('*', self.cloud_sync.handle_event)
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_raise_if_stopped_or_paused')
 	async def _raise_if_stopped_or_paused(self) -> None:
@@ -1216,22 +1223,33 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			r'(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}(?:/[^\s<>"\']*)?',  # Domain names with subdomains and optional paths
 		]
 
+		# Email pattern to exclude
+		email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+
+		found_urls = []
 		for pattern in patterns:
-			match = re.search(pattern, task)
-			if match:
+			matches = re.finditer(pattern, task)
+			for match in matches:
 				url = match.group(0)
+				# Skip if this looks like an email address
+				if re.search(email_pattern, url):
+					continue
 				# Remove trailing punctuation that's not part of URLs
 				url = re.sub(r'[.,;:!?()\[\]]+$', '', url)
 				# Add https:// if missing
 				if not url.startswith(('http://', 'https://')):
 					url = 'https://' + url
-				return url
+				found_urls.append(url)
 
-		# If no URL found, check if task mentions Google or search
-		task_lower = task.lower()
-		if 'google' in task_lower or 'search' in task_lower:
-			self.logger.debug('📍 Task mentions "google" or "search", defaulting to https://google.com')
-			return 'https://google.com'
+		unique_urls = list(set(found_urls))
+		# If multiple URLs found, skip preloading
+		if len(unique_urls) > 1:
+			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping preload to avoid ambiguity')
+			return None
+
+		# If exactly one URL found, return it
+		if len(unique_urls) == 1:
+			return unique_urls[0]
 
 		return None
 
@@ -1303,7 +1321,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
 			# Check if task contains a URL and add it as an initial action (only if preload is enabled)
-			if self.preload:
+			if self.preload and not self.state.follow_up_task:
 				initial_url = self._extract_url_from_task(self.task)
 				if initial_url:
 					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
@@ -1336,7 +1354,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.debug(f'✅ Added navigation to {initial_url} as initial action')
 
 			# Execute initial actions if provided
-			if self.initial_actions:
+			if self.initial_actions and not self.state.follow_up_task:
 				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
 				self.state.last_result = result
@@ -1498,7 +1516,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Stop the event bus gracefully, waiting for all events to be processed
 			# Use longer timeout to avoid deadlocks in tests with multiple agents
-			await self.eventbus.stop(timeout=10.0)
+			await self.eventbus.stop(timeout=3.0)
 
 			await self.close()
 

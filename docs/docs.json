@@ -9,7 +9,10 @@
   },
   "favicon": "/favicon.ico",
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "fonts": {
     "family": "Geist"
@@ -26,7 +29,17 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "cli"]
+            "pages": [
+              "introduction",
+              {
+                "group": "Quickstart",
+                "icon": "rocket",
+                "pages": [
+                  "quickstart",
+                  "quickstart_llm"
+                ]
+              }
+            ]
           },
           {
             "group": "Customize",
@@ -36,12 +49,8 @@
               "customize/browser-settings",
               "customize/real-browser",
               "customize/output-format",
-              "customize/system-prompt",
               "customize/sensitive-data",
-              "customize/custom-functions",
-              "customize/mcp-client",
-              "customize/mcp-server",
-              "customize/hooks"
+              "customize/custom-functions"
             ]
           },
           {
@@ -49,6 +58,9 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
+              "customize/mcp-client",
+              "customize/mcp-server",
+              "customize/hooks",
               "development/telemetry",
               "development/observability",
               "development/evaluations",
@@ -126,7 +138,11 @@
       "display": "interactive"
     },
     "examples": {
-      "languages": ["javascript", "curl", "python"],
+      "languages": [
+        "javascript",
+        "curl",
+        "python"
+      ],
       "required": true
     }
   },
