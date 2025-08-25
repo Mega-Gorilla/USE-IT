@@ -1,11 +1,11 @@
 ---
 title: "Output Format"
-description: "Understanding agent execution results and structured output"
+description: ""
 icon: "arrow-right-to-bracket"
 mode: "wide"
 ---
 
-## Output Format
+## Agent History
 
 The `run()` method returns an `AgentHistoryList` object with the complete execution history:
 
@@ -42,38 +42,4 @@ See all helper methods in the [AgentHistoryList source code](https://github.com/
 
 ## Structured Output
 
-For structured data extraction, use the `output_model_schema` parameter with a Pydantic model:
-
-```python
-from pydantic import BaseModel
-from browser_use import Agent, ChatOpenAI
-
-class Post(BaseModel):
-    post_title: str
-    post_url: str
-    num_comments: int
-    hours_since_post: int
-
-class Posts(BaseModel):
-    posts: list[Post]
-
-# Create agent with structured output
-agent = Agent(
-    task="Go to hackernews show hn and give me the first 5 posts",
-    llm=ChatOpenAI(model="gpt-4.1-mini"),
-    output_model_schema=Posts
-)
-
-# Run and parse structured result
-history = await agent.run()
-result = history.final_result()
-
-if result:
-    parsed: Posts = Posts.model_validate_json(result)
-    for post in parsed.posts:
-        print(f"Title: {post.post_title}")
-        print(f"URL: {post.post_url}")
-        print(f"Comments: {post.num_comments}")
-```
-
-For a complete structured output example, see the [custom_output.py example](https://github.com/browser-use/browser-use/blob/main/examples/features/custom_output.py).
+For structured output, use the `output_model_schema` parameter with a Pydantic model. [Example](https://github.com/browser-use/browser-use/blob/main/examples/features/custom_output.py).
