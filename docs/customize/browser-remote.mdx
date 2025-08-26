@@ -1,35 +1,32 @@
 ---
-title: "Remote Browser Connections"
-description: "Connect to remote browsers running in containers, VMs, or cloud environments"
+title: "Remote Browser"
+description: ""
 icon: "cloud"
 mode: "wide"
 ---
 
 
-## Basic Remote Connection
-
 ### CDP URL Connection
 
-Connect to a browser with Chrome DevTools Protocol:
+Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.:
 
 ```python
 from browser_use import Browser
 
 # Connect to remote browser
-session = Browser(
+browser = Browser(
     cdp_url="http://remote-server:9222",
     is_local=False  # Important: don't try to launch local browser
 )
+agent = Agent(task="", browser=browser)
 ```
 
-## Advanced Remote Configuration
-
-### Proxy Through Remote Browser
+### Proxy Connection
 
 ```python
 from browser_use.browser.profile import ProxySettings
 
-session = Browser(
+browser = Browser(
     cdp_url="http://remote-server:9222",
     proxy=ProxySettings(
         server="http://proxy-server:8080",
@@ -39,17 +36,3 @@ session = Browser(
     is_local=False
 )
 ```
-
-### Remote with Specific Settings
-
-```python
-session = Browser(
-    cdp_url="http://remote-server:9222",
-    viewport={'width': 1920, 'height': 1080},
-    user_agent="Mozilla/5.0 Custom Agent",
-    timeout=60000,  # Longer timeout for remote connections
-    is_local=False
-)
-```
-
----
