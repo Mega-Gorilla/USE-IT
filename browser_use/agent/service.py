@@ -184,19 +184,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_recent_events: bool = False,
 		**kwargs,
 	):
-		if not isinstance(llm, BaseChatModel):
-			raise ValueError('invalid llm, must be from browser_use.llm')
-
-		# Check for deprecated memory parameters
-		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
-			logger.warning(
-				'Memory support has been removed as of version 0.3.2. '
-				'The agent context for memory is significantly improved and no longer requires the old memory system. '
-				"Please remove the 'enable_memory' and 'memory_config' parameters."
-			)
-			kwargs['enable_memory'] = False
-			kwargs['memory_config'] = None
-
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
