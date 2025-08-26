@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from browser_use.browser.crash_watchdog import CrashWatchdog
+from browser_use.browser.watchdogs.crash_watchdog import CrashWatchdog
 from browser_use.browser.events import (
 	AboutBlankDVDScreensaverShownEvent,
 	BrowserConnectedEvent,

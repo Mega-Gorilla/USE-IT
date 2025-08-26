@@ -537,7 +537,6 @@ class TestBrowserSessionReusePatterns:
 			task='The first task...',
 			llm=mock_llm,
 			browser_profile=reused_profile,
-			=False,  # Disable memory for tests
 		)
 		await agent1.run()
 
