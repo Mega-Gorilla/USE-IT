@@ -124,7 +124,6 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 
 
 class Agent(Generic[Context, AgentStructuredOutput]):
-	browser_session: BrowserSession | None = None
 	_logger: logging.Logger | None = None
 
 	@time_execution_sync('--init')
@@ -135,9 +134,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		browser: Browser | None = None,  # Alias for browser_session (cleaner naming)
+		browser: Browser | None = None,  # Alias for browser_session
 		tools: Tools[Context] | None = None,
-		controller: Tools[Context] | None = None,  # alias for tools for backwards compatibility
+		controller: Tools[Context] | None = None,  # Alias for tools
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
