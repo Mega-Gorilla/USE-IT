@@ -9,7 +9,6 @@ mode: "wide"
 ### Core Settings
 - `cdp_url`: CDP URL for connecting to existing browser instance (e.g., `http://localhost:9222`)
 - `is_local` (default: `True`): Whether this is a local browser instance. Set to `False` for remote browsers
-- `browser_profile`: BrowserProfile template for reusable configuration
 
 ### Display & Appearance
 - `headless` (default: `None`): Run browser without UI. Auto-detects based on display availability
@@ -81,3 +80,17 @@ mode: "wide"
 - `cross_origin_iframes` (default: `False`): Enable cross-origin iframe support
 
 ---
+
+## Outdated BrowserProfile
+For backward compatibility, you can pass all the parameters from above to the `BrowserProfile` and then to the `Browser`.
+```python
+from browser_use import BrowserProfile
+profile = BrowserProfile(headless=False, stealth=True)
+browser = Browser(browser_profile=profile)
+```
+
+
+## Browser vs BrowserSession
+
+`Browser` is an alias for `BrowserSession` - they are exactly the same class:
+Use `Browser` for cleaner, more intuitive code.
