@@ -388,6 +388,7 @@ class BrowserConnectArgs(BaseModel):
 
 	model_config = ConfigDict(extra='ignore', validate_assignment=True, revalidate_instances='always', populate_by_name=True)
 
+	cdp_url: UrlStr | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	headers: dict[str, str] | None = Field(default=None, description='Additional HTTP headers to be sent with connect request')
 	slow_mo: float = 0.0
 	timeout: float = 30_000
@@ -595,8 +596,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
 
-	# Session/connection configuration
-	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
+	# Session/connection configuration (cdp_url inherited from BrowserConnectArgs)
 	is_local: bool = Field(default=True, description='Whether this is a local browser instance')
 	# label: str = 'default'
 
@@ -676,7 +676,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return f'BrowserProfile(user_data_dir= {short_dir}, headless={self.headless})'
 
 	def __str__(self) -> str:
-		return 'BrowserProfile'
+		return f'BrowserProfile({_log_pretty_path(self.user_data_dir) if self.user_data_dir else "<incognito>"})'
 
 	@model_validator(mode='after')
 	def copy_old_config_names_to_new(self) -> Self:
