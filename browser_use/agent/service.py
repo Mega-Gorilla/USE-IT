@@ -167,7 +167,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_history_items: int | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		injected_agent_state: AgentState | None = None,
-		context: Context | None = None,
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
@@ -389,9 +388,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
-
-		# Context
-		self.context: Context | None = context
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
@@ -1573,7 +1569,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					page_extraction_llm=self.settings.page_extraction_llm,
 					sensitive_data=self.sensitive_data,
 					available_file_paths=self.available_file_paths,
-					context=self.context,
 				)
 
 				time_end = time.time()

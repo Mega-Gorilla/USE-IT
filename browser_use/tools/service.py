@@ -1082,8 +1082,6 @@ Provide the extracted information in a clear, structured format."""
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		file_system: FileSystem | None = None,
-		#
-		context: Context | None = None,
 	) -> ActionResult:
 		"""Execute an action"""
 
@@ -1115,7 +1113,6 @@ Provide the extracted information in a clear, structured format."""
 							file_system=file_system,
 							sensitive_data=sensitive_data,
 							available_file_paths=available_file_paths,
-							context=context,
 						)
 					except Exception as e:
 						# Log the original exception with traceback for observability
