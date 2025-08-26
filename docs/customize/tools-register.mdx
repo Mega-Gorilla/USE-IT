@@ -1,10 +1,21 @@
 ---
 title: "Add Tools"
-description: ""
+description: "You can add your own tools!"
 icon: "plus"
 mode: "wide"
 ---
 
+
+Examples:
+- deterministic clicks
+- file handling
+- calling APIs
+- human-in-the-loop
+- browser interactions
+- calling LLMs
+- get 2fa codes
+- send emails
+...
 
 To register your own custom functions (`sync` or `async`), add `@controller.action(...)`.
 
@@ -24,21 +35,22 @@ agent = Agent(task='...', llm=llm, controller=controller)
 ```
 
 
-<Note>
-  - The Agent chooses between tools to run solely based on the function name and description
-  - The Agent decides how to fill tool params based on their names, type hints, & defaults
-</Note>
 
 ## Decorator Parameters
 
 The `@controller.action()` decorator accepts these parameters:
 
-- **`description`** *(required)* - What the tool does (LLM uses this to decide when to call it)
+- **`description`** *(required)* - What the tool does, the LLM uses this to decide when to call it. Explain here the rules how to use the tool.
 - **`allowed_domains`** - List of domains where tool can run (e.g. `['*.example.com']`), defaults to all domains
 
-## Special Function Parameters
+<Note>
+  - The Agent chooses between tools to run solely based on the function name and description
+  - The Agent fills tool parameters based on their names, type hints, & defaults
+</Note>
 
-Your tool functions can request these special parameters:
+## Available Objects
+
+Your tools have access to these objects:
 
 - **`browser_session: BrowserSession`** - Current browser session for CDP access
 - **`cdp_client`** - Direct Chrome DevTools Protocol client
@@ -46,14 +58,6 @@ Your tool functions can request these special parameters:
 - **`file_system: FileSystem`** - File system access
 - **`available_file_paths: list[str]`** - Available files for upload/processing
 - **`has_sensitive_data: bool`** - Whether action contains sensitive data
-## Remove Tools
-
-You can exclude default tools:
-
-```python
-controller = Controller(exclude_actions=['search_google'])
-agent = Agent(controller=controller, ...)
-```
 
 ## Pydantic Input
 
