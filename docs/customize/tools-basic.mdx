@@ -1,0 +1,38 @@
+---
+title: "Basics"
+description: ""
+icon: "play"
+mode: "wide"
+---
+
+You can add custom tools to our [default tools](https://github.com/browser-use/browser-use/blob/main/browser_use/controller/service.py).
+
+Examples:
+- deterministic clicks
+- file handling
+- calling APIs
+- human-in-the-loop
+- browser interactions
+- calling other LLMs
+...
+
+
+## Quick Example
+
+
+```python
+from browser_use import Controller, ActionResult
+
+controller = Controller()
+
+@controller.action(description='Ask human for help with a question')
+def ask_human(question: str) -> ActionResult:
+    answer = input(f'{question} > ')
+    return f'The human responded with: {answer}'
+
+agent = Agent(
+    task='Ask human for help',
+    llm=llm,
+    controller=controller,
+)
+```

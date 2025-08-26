@@ -1,0 +1,69 @@
+---
+title: "Action Registration"
+description: "Register custom actions, manage controllers, and configure domain restrictions"
+icon: "plus"
+mode: "wide"
+---
+
+## Action Function Registration
+
+To register your own custom functions (which can be `sync` or `async`), decorate them with the `@controller.action(...)` decorator. This saves them into the `controller.registry`.
+
+```python
+from browser_use import Controller, ActionResult
+
+controller = Controller()
+
+@controller.action('Ask human for help with a question', domains=['example.com'])   # pass allowed_domains= or page_filter= to limit actions to certain pages
+def ask_human(question: str) -> ActionResult:
+    answer = input(f'{question} > ')
+    return ActionResult(extracted_content=f'The human responded with: {answer}', include_in_memory=True)
+```
+
+```python
+# Then pass your controller to the agent to use it
+agent = Agent(
+    task='...',
+    llm=llm,
+    controller=controller,
+)
+```
+
+<Note>
+  Keep your action function names and descriptions short and concise:
+  - The LLM chooses between actions to run solely based on the function name and description
+  - The LLM decides how to fill action params based on their names, type hints, & defaults
+</Note>
+### Excluding Actions
+
+If you want to exclude some registered actions and make them unavailable to the agent, you can do:
+
+```python
+controller = Controller(exclude_actions=['search_google'])
+agent = Agent(controller=controller, ...)
+```
+
+<Note>
+  The controller is stateless and can be used to register multiple actions and
+  multiple agents.
+</Note>
+
+## Domain Restrictions
+
+You can restrict actions to only run on specific domains or pages using the `allowed_domains` or `page_filter` parameters:
+
+### Domain-Based Restrictions
+
+```python
+@controller.action('Fill out secret_form', allowed_domains=['https://*.example.com'])
+def fill_out_form(...) -> ActionResult:
+    # This action will only be runnable by LLM on pages that match https://*.example.com
+    ...
+```
+
+## Next Steps
+
+- Understand [tool responses and ActionResult](/customize/tools-response)
+- Explore [real examples](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions)
+- Read the [tools overview](/customize/tools-basic)
+

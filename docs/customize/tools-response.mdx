@@ -1,0 +1,211 @@
+---
+title: "Tool Response"
+description: "Return structured responses from custom actions using ActionResult"
+icon: "arrow-turn-down-left"
+mode: "wide"
+---
+
+All custom actions must return an `ActionResult` object to communicate results back to the agent. The `ActionResult` provides a structured way to return content, handle errors, manage memory, and control task completion.
+
+## Basic ActionResult
+
+The simplest way to return a result:
+
+```python
+from browser_use import ActionResult
+
+@controller.action('Simple action')
+def my_action(param: str) -> ActionResult:
+    result = f"Processed: {param}"
+    return ActionResult(extracted_content=result)
+```
+
+## ActionResult Properties
+
+### Core Properties
+
+- **`extracted_content`** - The main result content that gets passed to the LLM
+- **`error`** - Error message if the action failed (automatically included in memory)
+- **`is_done`** - Set to `True` if this action completes the entire task
+- **`success`** - Whether the task completed successfully (only valid when `is_done=True`)
+
+### Memory Management
+
+- **`long_term_memory`** - Content to store in agent's long-term memory
+- **`include_extracted_content_only_once`** - Whether content should only be used for the next step
+- **`include_in_memory`** - *(Deprecated)* Whether to include extracted_content in memory
+
+### Additional Properties
+
+- **`attachments`** - List of file paths to display in the completion message
+- **`metadata`** - Dictionary for observability data (e.g., click coordinates)
+
+## Common Response Patterns
+
+### Success Response
+```python
+@controller.action('Process data')
+def process_data(data: str) -> ActionResult:
+    # Process the data
+    result = perform_processing(data)
+    
+    return ActionResult(
+        extracted_content=f"Successfully processed {len(data)} characters",
+        long_term_memory=f"Processed data: {data[:100]}..." if len(data) > 100 else f"Processed data: {data}"
+    )
+```
+
+### Error Response
+```python
+@controller.action('Risky operation')
+def risky_operation(param: str) -> ActionResult:
+    try:
+        result = dangerous_operation(param)
+        return ActionResult(extracted_content=f"Operation succeeded: {result}")
+    except Exception as e:
+        return ActionResult(
+            extracted_content="Operation failed",
+            error=str(e)  # Error is automatically included in memory
+        )
+```
+
+### Task Completion Response
+```python
+@controller.action('Complete task')
+def complete_task(summary: str) -> ActionResult:
+    return ActionResult(
+        extracted_content=summary,
+        is_done=True,
+        success=True,  # Only valid when is_done=True
+        long_term_memory=f"Task completed successfully: {summary}"
+    )
+```
+
+### Response with File Attachments
+```python
+@controller.action('Generate report')
+def generate_report(data: str) -> ActionResult:
+    # Generate report file
+    report_path = create_report(data)
+    
+    return ActionResult(
+        extracted_content="Report generated successfully",
+        attachments=[report_path],  # Files to show user
+        long_term_memory=f"Generated report with {len(data)} data points"
+    )
+```
+
+## Memory Behavior
+
+### Long-term Memory
+Content in `long_term_memory` is always persisted and available to the agent across all future steps:
+
+```python
+return ActionResult(
+    extracted_content="Found 5 products",
+    long_term_memory="Product search completed: found iPhone 15, Samsung Galaxy S24, etc."
+)
+```
+
+### One-time Content
+Use `include_extracted_content_only_once=True` for content that should only be available for the immediate next step:
+
+```python
+return ActionResult(
+    extracted_content="Temporary analysis results...",
+    include_extracted_content_only_once=True
+)
+```
+
+## Validation Rules
+
+### Task Completion Rules
+- `success=True` can only be set when `is_done=True`
+- Use `success=False` for failed task completion
+- For regular successful actions, leave `success` as `None`
+
+```python
+# ✅ Valid - Task completed successfully
+ActionResult(is_done=True, success=True, extracted_content="All done!")
+
+# ✅ Valid - Task completed but failed
+ActionResult(is_done=True, success=False, extracted_content="Could not complete")
+
+# ✅ Valid - Regular action success
+ActionResult(extracted_content="Step completed")
+
+# ❌ Invalid - success=True without is_done=True
+ActionResult(success=True, extracted_content="Step completed")  # Raises ValueError
+```
+
+## Return Type Options
+
+Actions can return multiple types:
+
+```python
+# ActionResult (recommended)
+def action1() -> ActionResult:
+    return ActionResult(extracted_content="Result")
+
+# String (converted to ActionResult internally)
+def action2() -> str:
+    return "Simple result"
+
+# None (no result)
+def action3() -> None:
+    # Action with side effects only
+    pass
+```
+
+## Advanced Examples
+
+### Conditional Memory Storage
+```python
+@controller.action('Smart search')
+def smart_search(query: str, save_results: bool = False) -> ActionResult:
+    results = search_database(query)
+    
+    if save_results:
+        return ActionResult(
+            extracted_content=f"Found {len(results)} results",
+            long_term_memory=f"Search '{query}' returned: {results}"
+        )
+    else:
+        return ActionResult(
+            extracted_content=f"Found {len(results)} results",
+            include_extracted_content_only_once=True
+        )
+```
+
+### Rich Metadata Response
+```python
+@controller.action('Click with tracking')
+def tracked_click(selector: str, browser_session: Browser) -> ActionResult:
+    # Perform click and get coordinates
+    coordinates = perform_click(selector)
+    
+    return ActionResult(
+        extracted_content=f"Clicked element {selector}",
+        metadata={
+            "action_type": "click",
+            "selector": selector,
+            "coordinates": coordinates,
+            "timestamp": time.time()
+        }
+    )
+```
+
+## Best Practices
+
+1. **Always provide extracted_content** for successful actions
+2. **Use long_term_memory** for important information the agent should remember
+3. **Include error details** in the `error` field for failed actions
+4. **Be descriptive** in your response messages to help the LLM understand results
+5. **Use attachments** to reference files the user should see
+6. **Add metadata** for debugging and observability
+
+## Next Steps
+
+- Learn about [action registration](/customize/tools-register)
+- Explore [tools overview](/customize/tools-basic)
+- Check out [real examples](https://github.com/browser-use/browser-use/tree/main/examples/custom-functions)
