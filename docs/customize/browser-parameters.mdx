@@ -24,7 +24,13 @@ mode: "wide"
 ## Browser Behavior
 - `stealth` (default: `False`): Use stealth techniques to avoid bot detection
 - `keep_alive` (default: `None`): Keep browser running after agent completes
-- `allowed_domains`: Restrict navigation to specific domains. Use list like `['*.google.com', 'https://example.com', 'chrome-extension://*']`
+- `allowed_domains`: Restrict navigation to specific domains. Domain pattern formats:
+  - `'example.com'` - Matches only `https://example.com/*`  
+  - `'*.example.com'` - Matches `https://example.com/*` and any subdomain `https://*.example.com/*`
+  - `'http*://example.com'` - Matches both `http://` and `https://` protocols
+  - `'chrome-extension://*'` - Matches any Chrome extension URL
+  - **Security**: Wildcards in TLD (e.g., `example.*`) are **not allowed** for security
+  - Use list like `['*.google.com', 'https://example.com', 'chrome-extension://*']`
 - `enable_default_extensions` (default: `True`): Load automation extensions (uBlock Origin, cookie handlers, ClearURLs)
 - `cross_origin_iframes` (default: `False`): Enable cross-origin iframe support (may cause complexity)
 
