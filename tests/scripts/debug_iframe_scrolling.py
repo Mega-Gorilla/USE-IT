@@ -173,7 +173,7 @@ async def debug_iframe_scrolling():
 		print('=' * 80)
 
 		# Navigate to the page first
-		from browser_use.controller.service import Controller
+		from browser_use.tools.service import Controller
 
 		controller = Controller()
 

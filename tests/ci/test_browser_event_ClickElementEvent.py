@@ -8,8 +8,8 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Tools
-from browser_use.controller.views import (
+from browser_use.tools.service import Tools
+from browser_use.tools.views import (
 	ClickElementAction,
 	GoToUrlAction,
 	UploadFileAction,
@@ -1212,8 +1212,8 @@ class TestClickElementEvent:
 		from pathlib import Path
 
 		from browser_use.browser.views import BrowserError
-		from browser_use.controller.views import UploadFileAction
 		from browser_use.filesystem.file_system import FileSystem
+		from browser_use.tools.views import UploadFileAction
 
 		# Create a temporary test file that's NOT in available_file_paths
 		with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:

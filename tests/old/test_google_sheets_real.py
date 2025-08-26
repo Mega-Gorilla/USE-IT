@@ -10,7 +10,7 @@ import os
 import pytest
 
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.controller.service import Controller
+from browser_use.tools.service import Controller
 
 # Test Google Sheets URL (public read-only spreadsheet for testing)
 TEST_GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit'

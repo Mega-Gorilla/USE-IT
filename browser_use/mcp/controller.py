@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import Field, create_model
 
 from browser_use.agent.views import ActionResult
-from browser_use.controller.registry.service import Registry
+from browser_use.tools.registry.service import Registry
 
 logger = logging.getLogger(__name__)
 

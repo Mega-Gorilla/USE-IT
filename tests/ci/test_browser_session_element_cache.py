@@ -9,7 +9,7 @@ pytest.skip('TODO: fix - uses removed get_current_page method', allow_module_lev
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 
 @pytest.fixture
@@ -334,7 +334,7 @@ async def test_assumption_9_pydantic_private_attrs(browser_session, controller, 
 	print(f'2. Original browser_session ID: {id(browser_session)}')
 
 	# Import the SpecialActionParameters to test directly
-	from browser_use.controller.registry.views import SpecialActionParameters
+	from browser_use.tools.registry.views import SpecialActionParameters
 
 	# Test what happens when we put browser_session through model_validate
 	special_params_data = {

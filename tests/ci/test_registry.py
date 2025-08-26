@@ -21,15 +21,15 @@ from pytest_httpserver.httpserver import HandlerType
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.registry.service import Registry
-from browser_use.controller.registry.views import ActionModel as BaseActionModel
-from browser_use.controller.views import (
+from browser_use.llm.messages import UserMessage
+from browser_use.tools.registry.service import Registry
+from browser_use.tools.registry.views import ActionModel as BaseActionModel
+from browser_use.tools.views import (
 	ClickElementAction,
 	InputTextAction,
 	NoParamsAction,
 	SearchGoogleAction,
 )
-from browser_use.llm.messages import UserMessage
 from tests.ci.conftest import create_mock_llm
 
 # Configure logging
@@ -985,8 +985,8 @@ class TestParamsModelArgsAndKwargs:
 		This test confirms that this approach works.
 		"""
 
-		from browser_use.controller.registry.service import Registry
-		from browser_use.controller.registry.views import ActionModel
+		from browser_use.tools.registry.service import Registry
+		from browser_use.tools.registry.views import ActionModel
 
 		# Simple context for testing
 		class TestContext:

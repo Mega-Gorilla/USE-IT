@@ -19,7 +19,7 @@ import streamlit as st  # type: ignore
 
 from browser_use import Agent
 from browser_use.browser import BrowserSession
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 if os.name == 'nt':
 	asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

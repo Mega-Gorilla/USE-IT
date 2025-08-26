@@ -78,9 +78,9 @@ _configure_mcp_server_logging()
 from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
-from browser_use.controller.service import Tools
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.openai.chat import ChatOpenAI
+from browser_use.tools.service import Tools
 
 logger = logging.getLogger(__name__)
 

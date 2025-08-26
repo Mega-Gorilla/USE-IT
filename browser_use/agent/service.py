@@ -58,14 +58,14 @@ from browser_use.agent.views import (
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
-from browser_use.controller.registry.views import ActionModel
-from browser_use.controller.service import Tools
 from browser_use.dom.views import DOMInteractedElement
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.observability import observe, observe_debug
 from browser_use.sync import CloudSync
 from browser_use.telemetry.service import ProductTelemetry
 from browser_use.telemetry.views import AgentTelemetryEvent
+from browser_use.tools.registry.views import ActionModel
+from browser_use.tools.service import Tools
 from browser_use.utils import (
 	_log_pretty_path,
 	get_browser_use_version,

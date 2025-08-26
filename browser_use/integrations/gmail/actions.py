@@ -9,7 +9,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from browser_use.agent.views import ActionResult
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 from .service import GmailService
 

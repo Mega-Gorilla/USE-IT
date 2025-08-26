@@ -50,7 +50,6 @@ if TYPE_CHECKING:
 	from browser_use.agent.views import ActionModel, ActionResult, AgentHistoryList
 	from browser_use.browser import BrowserProfile, BrowserSession
 	from browser_use.browser import BrowserSession as Browser
-	from browser_use.controller.service import Tools
 	from browser_use.dom.service import DomService
 	from browser_use.llm.anthropic.chat import ChatAnthropic
 	from browser_use.llm.azure.chat import ChatAzureOpenAI
@@ -58,6 +57,7 @@ if TYPE_CHECKING:
 	from browser_use.llm.groq.chat import ChatGroq
 	from browser_use.llm.ollama.chat import ChatOllama
 	from browser_use.llm.openai.chat import ChatOpenAI
+	from browser_use.tools.service import Tools
 
 
 # Lazy imports mapping - only import when actually accessed

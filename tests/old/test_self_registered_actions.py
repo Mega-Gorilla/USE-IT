@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from browser_use.agent.service import Agent
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.controller.service import Controller
 from browser_use.llm import ChatAzureOpenAI
+from browser_use.tools.service import Controller
 
 
 @pytest.fixture

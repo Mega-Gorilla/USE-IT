@@ -6,7 +6,7 @@ import pytest
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import BrowserStateRequestEvent, NavigateToUrlEvent
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 
 @pytest.fixture

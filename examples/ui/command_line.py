@@ -26,7 +26,7 @@ load_dotenv()
 
 from browser_use import Agent
 from browser_use.browser import BrowserSession
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 
 def get_llm(provider: str):

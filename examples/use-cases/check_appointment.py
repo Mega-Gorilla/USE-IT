@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent
-from browser_use.controller.service import Tools
+from browser_use.tools.service import Tools
 
 if not os.getenv('OPENAI_API_KEY'):
 	raise ValueError('OPENAI_API_KEY is not set. Please add it to your environment variables.')

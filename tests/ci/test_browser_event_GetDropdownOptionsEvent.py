@@ -13,8 +13,8 @@ from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import GetDropdownOptionsEvent, NavigationCompleteEvent, SelectDropdownOptionEvent
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Tools
-from browser_use.controller.views import GoToUrlAction
+from browser_use.tools.service import Tools
+from browser_use.tools.views import GoToUrlAction
 
 
 @pytest.fixture(scope='session')

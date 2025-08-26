@@ -20,9 +20,9 @@ socketserver.ThreadingMixIn.block_on_close = False
 socketserver.ThreadingMixIn.daemon_threads = True
 
 from browser_use.agent.views import AgentOutput
-from browser_use.controller.service import Tools
 from browser_use.llm import BaseChatModel
 from browser_use.llm.views import ChatInvokeCompletion
+from browser_use.tools.service import Tools
 
 # Load environment variables before any imports
 load_dotenv()
