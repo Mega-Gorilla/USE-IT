@@ -56,13 +56,20 @@
                 "pages": [
                   "customize/browser-basic",
                   "customize/browser-real-browser",
-                  "customize/browser-keep-open",
-                  "customize/browser-multiple",
                   "customize/browser-remote",
                   "customize/browser-parameters"
                 ]
               },
-              "customize/sensitive-data",
+              {
+                "group": "Examples",
+                "icon": "code",
+                "pages": [
+                  "customize/fast-agent",
+                  "customize/sensitive-data",
+                  "customize/chain-agents",
+                  "customize/parallel-browser"
+                ]
+              },
               "customize/custom-functions"
             ]
           },
@@ -71,13 +78,17 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
-              "customize/mcp-client",
-              "customize/mcp-server",
+              {
+                "group": "MCP",
+                "icon": "link",
+                "pages": [
+                  "customize/mcp-client",
+                  "customize/mcp-server"
+                ]
+              },
               "customize/hooks",
               "development/telemetry",
-              "development/observability",
-              "development/evaluations",
-              "development/roadmap"
+              "development/observability"
             ]
           }
         ]
