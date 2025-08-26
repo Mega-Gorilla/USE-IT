@@ -21,7 +21,7 @@ load_dotenv()
 from pydantic import BaseModel
 from PyPDF2 import PdfReader  # type: ignore
 
-from browser_use import ActionResult, Agent, ChatOpenAI, Controller
+from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 from browser_use.browser import BrowserProfile, BrowserSession
 
 required_env_vars = ['AZURE_OPENAI_KEY', 'AZURE_OPENAI_ENDPOINT']
@@ -31,7 +31,7 @@ for var in required_env_vars:
 
 logger = logging.getLogger(__name__)
 # full screen mode
-controller = Controller()
+controller = Tools()
 
 # NOTE: This is the path to your cv file
 # create a dummy cv

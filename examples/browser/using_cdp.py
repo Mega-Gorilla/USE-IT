@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent, Controller
+from browser_use import Agent, Tools
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.llm import ChatOpenAI
 
@@ -32,7 +32,7 @@ browser_session = BrowserSession(
 	cdp_url='http://localhost:9222',
 	is_local=True,  # set to False if you want to use a remote browser
 )
-controller = Controller()
+controller = Tools()
 
 
 async def main():

@@ -9,7 +9,7 @@ pytest.skip('TODO: fix - uses removed get_current_page method', allow_module_lev
 
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ async def browser_session():
 @pytest.fixture
 def controller():
 	"""Create a controller instance."""
-	return Controller()
+	return Tools()
 
 
 @pytest.mark.asyncio

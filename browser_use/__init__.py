@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 	from browser_use.agent.views import ActionModel, ActionResult, AgentHistoryList
 	from browser_use.browser import BrowserProfile, BrowserSession
 	from browser_use.browser import BrowserSession as Browser
-	from browser_use.controller.service import Controller
+	from browser_use.controller.service import Tools
 	from browser_use.dom.service import DomService
 	from browser_use.llm.anthropic.chat import ChatAnthropic
 	from browser_use.llm.azure.chat import ChatAzureOpenAI
@@ -111,7 +111,7 @@ __all__ = [
 	'BrowserSession',
 	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
-	'Controller',
+	'Tools',
 	'DomService',
 	'SystemPrompt',
 	'ActionResult',
@@ -124,4 +124,5 @@ __all__ = [
 	'ChatGroq',
 	'ChatAzureOpenAI',
 	'ChatOllama',
+	'Tools',
 ]

@@ -4,7 +4,7 @@ import os
 import tiktoken
 
 from browser_use.agent.views import AgentOutput
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.llm.schema import SchemaOptimizer
 
 
@@ -12,7 +12,7 @@ def test_optimized_schema():
 	"""Test the optimized schema generation and save to file."""
 
 	# Create controller and get all registered actions
-	controller = Controller()
+	controller = Tools()
 	ActionModel = controller.registry.create_action_model()
 
 	# Create the agent output model with custom actions

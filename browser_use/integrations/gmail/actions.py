@@ -9,7 +9,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from browser_use.agent.views import ActionResult
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 
 from .service import GmailService
 
@@ -27,8 +27,8 @@ class GetRecentEmailsParams(BaseModel):
 
 
 def register_gmail_actions(
-	controller: Controller, gmail_service: GmailService | None = None, access_token: str | None = None
-) -> Controller:
+	controller: Tools, gmail_service: GmailService | None = None, access_token: str | None = None
+) -> Tools:
 	"""
 	Register Gmail actions with the provided controller
 	Args:

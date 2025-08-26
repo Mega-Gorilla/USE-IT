@@ -87,7 +87,7 @@ def extract_llm_error_message(error: Exception) -> str:
 	return error_str
 
 
-class Controller(Generic[Context]):
+class Tools(Generic[Context]):
 	def __init__(
 		self,
 		exclude_actions: list[str] = [],
@@ -1125,3 +1125,7 @@ Provide the extracted information in a clear, structured format."""
 				else:
 					raise ValueError(f'Invalid action result type: {type(result)} of {result}')
 		return ActionResult()
+
+
+# Alias for backwards compatibility
+Controller = Tools

@@ -13,7 +13,7 @@ load_dotenv()
 from browser_use.agent.views import ActionModel
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 
 # Set up test logging
 logger = logging.getLogger('tab_tests')
@@ -86,7 +86,7 @@ async def browser_session(base_url):
 @pytest.fixture(scope='module')
 def controller():
 	"""Create and provide a Controller instance."""
-	return Controller()
+	return Tools()
 
 
 class TestTabManagement:

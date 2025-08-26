@@ -12,7 +12,7 @@ This example demonstrates how to:
 import asyncio
 import os
 
-from browser_use import Agent, Controller
+from browser_use import Agent, Tools
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.mcp.client import MCPClient
 
@@ -21,7 +21,7 @@ async def main():
 	"""Sign up for account, save details, and verify via Gmail."""
 
 	# Initialize controller
-	controller = Controller()
+	controller = Tools()
 
 	# Connect to Gmail MCP Server
 	# Requires Gmail API credentials - see: https://github.com/GongRzhe/Gmail-MCP-Server#setup

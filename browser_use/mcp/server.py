@@ -78,7 +78,7 @@ _configure_mcp_server_logging()
 from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.openai.chat import ChatOpenAI
 
@@ -186,7 +186,7 @@ class BrowserUseServer:
 		self.config = load_browser_use_config()
 		self.agent: Agent | None = None
 		self.browser_session: BrowserSession | None = None
-		self.controller: Controller | None = None
+		self.controller: Tools | None = None
 		self.llm: ChatOpenAI | None = None
 		self.file_system: FileSystem | None = None
 		self._telemetry = ProductTelemetry()
@@ -488,7 +488,7 @@ class BrowserUseServer:
 		await self.browser_session.start()
 
 		# Create controller for direct actions
-		self.controller = Controller()
+		self.controller = Tools()
 
 		# Initialize LLM from config
 		llm_config = get_default_llm(self.config)

@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import ActionResult, Agent, ChatOpenAI, Controller
+from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 
-controller = Controller()
+controller = Tools()
 
 
 @controller.registry.action('Done with task ')

@@ -59,7 +59,7 @@ from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.controller.registry.views import ActionModel
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.dom.views import DOMInteractedElement
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.observability import observe, observe_debug
@@ -136,7 +136,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
 		browser: Browser | None = None,  # Alias for browser_session (cleaner naming)
-		controller: Controller[Context] | None = None,
+		controller: Tools[Context] | None = None,
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
@@ -238,9 +238,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.llm = llm
 		self.preload = preload
 		self.include_recent_events = include_recent_events
-		self.controller = (
-			controller if controller is not None else Controller(display_files_in_done_text=display_files_in_done_text)
-		)
+		self.controller = controller if controller is not None else Tools(display_files_in_done_text=display_files_in_done_text)
 
 		# Structured output
 		self.output_model_schema = output_model_schema

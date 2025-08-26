@@ -12,10 +12,10 @@ from pydantic import BaseModel
 
 from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 
 # Initialize controller first
-controller = Controller()
+controller = Tools()
 
 
 class Model(BaseModel):

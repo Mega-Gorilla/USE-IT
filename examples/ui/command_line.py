@@ -26,7 +26,7 @@ load_dotenv()
 
 from browser_use import Agent
 from browser_use.browser import BrowserSession
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 
 
 def get_llm(provider: str):
@@ -70,7 +70,7 @@ def parse_arguments():
 def initialize_agent(query: str, provider: str):
 	"""Initialize the browser agent with the given query and provider."""
 	llm = get_llm(provider)
-	controller = Controller()
+	controller = Tools()
 	browser_session = BrowserSession()
 
 	return Agent(

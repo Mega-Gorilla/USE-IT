@@ -13,7 +13,7 @@ from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from pytest_httpserver import HTTPServer
 
-from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Controller
+from browser_use import ActionResult, Agent, BrowserProfile, BrowserSession, Tools
 from browser_use.mcp.client import MCPClient
 
 
@@ -230,7 +230,7 @@ async def test_mcp_server_script():
 
 async def test_mcp_client_basic_connection(test_mcp_server_script):
 	"""Test basic MCP client connection and tool discovery."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -286,7 +286,7 @@ async def test_mcp_tools_with_agent(test_mcp_server_script, httpserver: HTTPServ
 
 	browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None, keep_alive=True))
 	await browser_session.start()
-	controller = Controller()
+	controller = Tools()
 
 	# Connect MCP client
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
@@ -348,7 +348,7 @@ async def test_mcp_tools_with_agent(test_mcp_server_script, httpserver: HTTPServ
 
 async def test_mcp_tool_parameter_validation(test_mcp_server_script):
 	"""Test that MCP tool parameters are properly validated."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -391,7 +391,7 @@ async def test_mcp_tool_parameter_validation(test_mcp_server_script):
 
 async def test_mcp_client_prefix_and_filtering(test_mcp_server_script):
 	"""Test tool filtering and prefixing."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -420,7 +420,7 @@ async def test_mcp_client_prefix_and_filtering(test_mcp_server_script):
 
 async def test_mcp_tool_error_handling(test_mcp_server_script):
 	"""Test error handling in MCP tools."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -446,7 +446,7 @@ async def test_mcp_tool_error_handling(test_mcp_server_script):
 
 async def test_mcp_client_context_manager(test_mcp_server_script):
 	"""Test using MCP client as context manager."""
-	controller = Controller()
+	controller = Tools()
 
 	# Use as context manager
 	async with MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script]) as mcp_client:
@@ -468,7 +468,7 @@ async def test_mcp_client_context_manager(test_mcp_server_script):
 
 async def test_multiple_mcp_servers(test_mcp_server_script):
 	"""Test connecting multiple MCP servers to the same controller."""
-	controller = Controller()
+	controller = Tools()
 
 	# First MCP server with prefix
 	mcp1 = MCPClient(server_name='server1', command=sys.executable, args=[test_mcp_server_script])
@@ -512,7 +512,7 @@ async def test_multiple_mcp_servers(test_mcp_server_script):
 
 async def test_mcp_result_formatting(test_mcp_server_script):
 	"""Test that different MCP result formats are handled correctly."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -550,7 +550,7 @@ async def test_agent_with_multiple_mcp_servers(test_mcp_server_script, httpserve
 
 	browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None))
 	await browser_session.start()
-	controller = Controller()
+	controller = Tools()
 
 	# Connect two MCP servers with different prefixes
 	mcp_server1 = MCPClient(server_name='math-server', command=sys.executable, args=[test_mcp_server_script])
@@ -635,7 +635,7 @@ Use tools from both servers to complete the task.""",
 
 async def test_mcp_nested_object_parameters(test_mcp_server_script):
 	"""Test that MCP tools with nested object parameters are properly handled."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 
@@ -727,7 +727,7 @@ async def test_mcp_nested_object_parameters(test_mcp_server_script):
 
 async def test_mcp_array_type_inference(test_mcp_server_script):
 	"""Test that MCP tools with array parameters have proper type inference."""
-	controller = Controller()
+	controller = Tools()
 
 	mcp_client = MCPClient(server_name='test-server', command=sys.executable, args=[test_mcp_server_script])
 

@@ -28,7 +28,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 load_dotenv()
 
-from browser_use import Agent, ChatOpenAI, Controller
+from browser_use import Agent, ChatOpenAI, Tools
 from browser_use.config import CONFIG
 from browser_use.integrations.gmail import GmailService, register_gmail_actions
 
@@ -244,7 +244,7 @@ async def main():
 	# Step 3: Initialize controller with authenticated service
 	print('\n🔍 Step 3: Registering Gmail actions...')
 
-	controller = Controller()
+	controller = Tools()
 	register_gmail_actions(controller, gmail_service=gmail_service)
 
 	print('✅ Gmail actions registered with controller')

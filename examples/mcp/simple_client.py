@@ -7,14 +7,14 @@ This example shows how to connect to an MCP server and use its tools with an age
 import asyncio
 import os
 
-from browser_use import Agent, Controller
+from browser_use import Agent, Tools
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.mcp.client import MCPClient
 
 
 async def main():
 	# Initialize controller
-	controller = Controller()
+	controller = Tools()
 
 	# Connect to a filesystem MCP server
 	# This server provides tools to read/write files in a directory

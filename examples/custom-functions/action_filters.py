@@ -28,11 +28,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import ChatOpenAI
-from browser_use.agent.service import Agent, Controller
+from browser_use.agent.service import Agent, Tools
 from browser_use.browser import BrowserSession
 
 # Initialize controller and registry
-controller = Controller()
+controller = Tools()
 registry = controller.registry
 
 

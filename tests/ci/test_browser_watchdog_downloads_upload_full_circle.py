@@ -12,7 +12,7 @@ from browser_use.agent.views import ActionModel
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import BrowserStateRequestEvent, FileDownloadedEvent
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.controller.views import ClickElementAction, GoToUrlAction, UploadFileAction
 from browser_use.filesystem.file_system import FileSystem
 
@@ -152,7 +152,7 @@ class TestDownloadUploadFullCircle:
 			await browser_session.start()
 
 			# Create controller and file system
-			controller = Controller()
+			controller = Tools()
 			file_system = FileSystem(base_dir=tmpdir)
 
 			try:

@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from browser_use.agent.views import ActionResult
 from browser_use.controller.registry.service import Registry
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.telemetry import MCPClientTelemetryEvent, ProductTelemetry
 from browser_use.utils import get_browser_use_version
 
@@ -209,7 +209,7 @@ class MCPClient:
 
 	async def register_to_controller(
 		self,
-		controller: Controller,
+		controller: Tools,
 		tool_filter: list[str] | None = None,
 		prefix: str | None = None,
 	) -> None:

@@ -9,7 +9,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.controller.views import (
 	DoneAction,
 	GoToUrlAction,
@@ -87,7 +87,7 @@ async def browser_session():
 @pytest.fixture(scope='function')
 def controller():
 	"""Create and provide a Controller instance."""
-	return Controller()
+	return Tools()
 
 
 class TestControllerIntegration:
@@ -353,7 +353,7 @@ class TestControllerIntegration:
 	async def test_excluded_actions(self, browser_session):
 		"""Test that excluded actions are not registered."""
 		# Create controller with excluded actions
-		excluded_controller = Controller(exclude_actions=['search_google', 'scroll'])
+		excluded_controller = Tools(exclude_actions=['search_google', 'scroll'])
 
 		# Verify excluded actions are not in the registry
 		assert 'search_google' not in excluded_controller.registry.registry.actions

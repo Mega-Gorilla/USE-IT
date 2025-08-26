@@ -11,7 +11,7 @@ load_dotenv()
 
 from onepassword.client import Client  # type: ignore  # pip install onepassword-sdk
 
-from browser_use import ActionResult, Agent, ChatOpenAI, Controller
+from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +21,7 @@ OP_SERVICE_ACCOUNT_TOKEN = os.getenv('OP_SERVICE_ACCOUNT_TOKEN')
 OP_ITEM_ID = os.getenv('OP_ITEM_ID')  # Go to 1Password, right click on the item, click "Copy Secret Reference"
 
 
-controller = Controller()
+controller = Tools()
 
 
 @controller.registry.action('Get 2FA code from 1Password for Google Account', domains=['*.google.com', 'google.com'])

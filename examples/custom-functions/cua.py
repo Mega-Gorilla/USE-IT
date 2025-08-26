@@ -24,7 +24,7 @@ load_dotenv()
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from browser_use import Agent, ChatOpenAI, Controller
+from browser_use import Agent, ChatOpenAI, Tools
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 
@@ -177,7 +177,7 @@ async def handle_model_action(browser_session: BrowserSession, action) -> Action
 		return ActionResult(error=ERROR_MSG)
 
 
-controller = Controller()
+controller = Tools()
 
 
 @controller.registry.action(

@@ -13,7 +13,7 @@ from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import GetDropdownOptionsEvent, NavigationCompleteEvent, SelectDropdownOptionEvent
 from browser_use.browser.profile import BrowserProfile
-from browser_use.controller.service import Controller
+from browser_use.controller.service import Tools
 from browser_use.controller.views import GoToUrlAction
 
 
@@ -268,7 +268,7 @@ async def browser_session():
 @pytest.fixture(scope='function')
 def controller():
 	"""Create and provide a Controller instance."""
-	return Controller()
+	return Tools()
 
 
 class TestGetDropdownOptionsEvent:
