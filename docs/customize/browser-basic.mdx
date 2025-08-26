@@ -1,148 +1,28 @@
 ---
 title: "Browser Quickstart"
-description: "Get started with Browser Use browser management - launch browsers and configure basic settings"
+description: ""
 icon: "globe"
-mode: "wide"
 ---
 
-Browser Use manages real browsers for your AI agents using either local browser instances or remote connections. This guide shows you how to get started with browser configuration.
 
 ---
 
-## Quick Start
-
-The simplest way to start is with a basic `BrowserSession`:
-
 ```python
-from browser_use import Agent, BrowserSession
+from browser_use import Agent, Browser, ChatOpenAI
 
-# Simple local browser (headless by default if no display)
-session = BrowserSession()
-agent = Agent(task="Search for Browser Use on Google", browser_session=session)
-await agent.run()
-```
-
-## Basic Configuration
-
-Pass configuration directly to `BrowserSession`:
-
-```python
-from browser_use import BrowserSession, Agent
-
-session = BrowserSession(
-    headless=False,                    # Show browser window
-    user_data_dir="./my-profile",      # Persistent profile
-    viewport={'width': 1280, 'height': 1100}
+# Browser is an alias for BrowserSession - use whichever you prefer
+session = Browser(
+	headless=False,  # Show browser window
+	window_size={'width': 1000, 'height': 700},  # Set window size
 )
 
-agent = Agent(task="Fill out the form", browser_session=session)
-await agent.run()
-```
-
-## Using Browser Profiles
-
-For reusable configurations, use `BrowserProfile`:
-
-```python
-from browser_use.browser import BrowserProfile, BrowserSession
-
-# Create a reusable profile
-profile = BrowserProfile(
-    headless=False,
-    user_data_dir="./chrome-profile",
-    stealth=True,
-    viewport={'width': 1920, 'height': 1080},
-    allowed_domains=['*.example.com']
+agent = Agent(
+	task='Search for Browser Use',
+	browser_session=session,
+	llm=ChatOpenAI(model='gpt-4.1-mini'),
 )
 
-# Use the profile for multiple sessions
-session1 = BrowserSession(browser_profile=profile)
-session2 = BrowserSession(browser_profile=profile, headless=True)  # Override specific settings
+
+async def main():
+	await agent.run()
 ```
-
-## Session vs Profile
-
-- **`BrowserSession`**: Manages the active browser connection and runtime state
-- **`BrowserProfile`**: Reusable configuration template for browser settings
-
-```python
-# Direct configuration
-session = BrowserSession(headless=True, stealth=False)
-
-# Using profile with overrides  
-profile = BrowserProfile(headless=False, stealth=True)
-session = BrowserSession(browser_profile=profile, headless=True)  # headless=True overrides profile
-```
-
-## Essential Settings
-
-### Display Mode
-```python
-session = BrowserSession(
-    headless=False,      # Show browser window
-    window_size={'width': 1920, 'height': 1080}
-)
-```
-
-### User Data Directory
-```python
-session = BrowserSession(
-    user_data_dir="./my-profile",    # Persistent browser profile
-    # user_data_dir=None,            # Incognito/temporary profile
-)
-```
-
-### Stealth Mode
-```python
-session = BrowserSession(
-    stealth=True,        # Use stealth techniques to avoid detection
-)
-```
-
-### Domain Restrictions
-```python
-session = BrowserSession(
-    allowed_domains=['*.google.com', 'https://docs.google.com'],  # Restrict navigation
-)
-```
-
-## Common Patterns
-
-### Development Setup
-```python
-# Best for development - visible browser with dev tools
-dev_session = BrowserSession(
-    headless=False,
-    devtools=True,
-    user_data_dir="./dev-profile"
-)
-```
-
-### Production Setup
-```python
-# Best for production - headless with stealth
-prod_session = BrowserSession(
-    headless=True,
-    stealth=True,
-    user_data_dir=None,  # Don't persist data
-    viewport={'width': 1920, 'height': 1080}
-)
-```
-
-### Authenticated Sessions
-```python
-# Reuse login sessions
-auth_session = BrowserSession(
-    user_data_dir="./auth-profile",
-    storage_state="./cookies.json",  # Load saved authentication
-    keep_alive=True  # Keep browser open after task
-)
-```
-
-## Next Steps
-
-- Learn about [browser parameters](/customize/browser-parameters) for advanced configuration
-- Set up [real browser connections](/customize/browser-real-browser) for existing browsers  
-- Configure [remote browser connections](/customize/browser-remote) for cloud setups
-
----

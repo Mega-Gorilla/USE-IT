@@ -55,6 +55,7 @@
                 "isDefaultOpen": false,
                 "pages": [
                   "customize/browser-basic",
+                  "customize/browser-keep-open",
                   "customize/browser-real-browser",
                   "customize/browser-remote",
                   "customize/browser-parameters"

@@ -1,0 +1,33 @@
+---
+title: "Chain Agents in one browser"
+description: ""
+icon: "window-restore"
+mode: "wide"
+---
+
+```python
+from browser_use import Agent, Browser
+
+# Create browser and keep it alive
+browser = Browser(
+	headless=False,
+	keep_alive=True,  # Don't close browser after each agent
+)
+
+
+async def main():
+	# Run multiple agents with the same browser
+	agent1 = Agent(task='Search for Browser Use', browser_session=browser)
+	await agent1.run()
+
+	agent2 = Agent(task='Click on the first link', browser_session=browser)
+	await agent2.run()
+
+	agent3 = Agent(task='Find the social media page', browser_session=browser)
+	await agent3.run()
+
+	# Close browser when completely done
+	await browser.stop()
+
+```
+

@@ -1,517 +1,84 @@
 ---
-title: "Browser Parameters"
-description: "Complete reference for all Browser Use browser configuration parameters"
+title: "All Parameters"
+description: "Complete reference for all browser configuration options"
 icon: "sliders"
 mode: "wide"
 ---
 
-Complete reference for configuring browsers in Browser Use. All parameters can be passed to `BrowserSession(...)` directly or stored in a `BrowserProfile(...)` template.
-
----
-
-## Session vs Profile Parameters
-
-### Session-Specific (BrowserSession only)
-These parameters control the browser connection and cannot be stored in a `BrowserProfile`:
-
-- `id` - Session identifier  
-- `browser_profile` - BrowserProfile template to use
-
-### Shared Parameters
-All other parameters can be used in both `BrowserSession(...)` and `BrowserProfile(...)`.
-
----
-
-## Browser-Use Specific Parameters
-
-Enhanced functionality provided by Browser Use on top of standard browser features.
-
-### `stealth`
-```python
-stealth: bool = False
-```
-Use stealth techniques to avoid bot detection. Uses advanced browser fingerprint masking.
-
-### `disable_security` 
-```python
-disable_security: bool = False
-```
-<Warning>⚠️ NOT RECOMMENDED. Disables all browser security features - only use for debugging isolated environments.</Warning>
-
-### `deterministic_rendering`
-```python
-deterministic_rendering: bool = False
-```
-<Warning>⚠️ NOT RECOMMENDED. Forces consistent rendering across OS platforms but reduces performance and increases bot detection risk.</Warning>
-
-### `allowed_domains`
-```python
-allowed_domains: list[str] | None = None
-```
-Restrict agent navigation to specific domains. Supports glob patterns:
-- `['example.com']` - Only https://example.com/* 
-- `['*.example.com']` - All subdomains of example.com
-- `['https://docs.example.com', '*.api.example.com']` - Mixed patterns
-
-```python
-session = BrowserSession(
-    allowed_domains=['*.google.com', 'https://stackoverflow.com']
-)
-```
-
-### `keep_alive`
-```python
-keep_alive: bool | None = None
-```
-Keep browser running after agent completes. Default behavior:
-- `None` - Close browser if launched by Browser Use, keep open if connected to existing
-- `True` - Always keep browser running
-- `False` - Always close browser
-
-### `enable_default_extensions`
-```python
-enable_default_extensions: bool = True
-```
-Load automation-optimized extensions:
-- uBlock Origin (ad blocking)
-- I still don't care about cookies (cookie handling) 
-- ClearURLs (URL cleaning)
-
-### `cross_origin_iframes`
-```python
-cross_origin_iframes: bool = False
-```
-Enable cross-origin iframe support. When False (default), only same-origin frames are processed to avoid complexity.
-
----
-
-## Connection Parameters
-
-### `cdp_url`
-```python
-cdp_url: str | None = None
-```
-CDP URL for connecting to existing browser instance (e.g., `http://localhost:9222`).
-
-### `is_local`
-```python
-is_local: bool = True
-```
-Whether this is a local browser instance. Set to `False` when connecting to remote browsers.
-
----
-
-## Display & Viewport
-
-### `headless`
-```python
-headless: bool | None = None
-```
-Run browser without visible UI. If `None`, auto-detects based on display availability.
-
-### `window_size`
-```python
-window_size: dict | None = None
-```
-Browser window size for headful mode:
-```python
-window_size={'width': 1920, 'height': 1080}
-```
-
-### `window_position` 
-```python
-window_position: dict | None = {'width': 0, 'height': 0}
-```
-Window position from top-left corner:
-```python
-window_position={'width': 100, 'height': 50}
-```
-
-### `viewport`
-```python
-viewport: dict | None = None  
-```
-Content area size (used in headless mode):
-```python
-viewport={'width': 1280, 'height': 720}
-```
-
-### `no_viewport`
-```python
-no_viewport: bool | None = None
-```
-Disable fixed viewport - content resizes with window. Auto-configured based on `headless` setting.
-
-### `device_scale_factor`
-```python
-device_scale_factor: float | None = None
-```
-Device scale factor (DPI). Useful for high-resolution screenshots (set to 2 or 3).
-
-### `screen`
-```python
-screen: dict | None = None
-```
-Screen size available to browser. Auto-detected if not specified.
-
----
-
-## Browser Launch Options
-
-### `executable_path`
-```python
-executable_path: str | Path | None = None
-```
-Path to browser executable for custom installations.
-
-### `channel`
-```python
-channel: BrowserChannel | None = None
-```
-Browser channel: `'chromium'`, `'chrome'`, `'chrome-beta'`, `'chrome-dev'`, `'chrome-canary'`, `'msedge'`, etc.
-
-### `args`
-```python
-args: list[str] = []
-```
-Additional command-line arguments for the browser. See [Chrome command line switches](https://peter.sh/experiments/chromium-command-line-switches/).
-
-### `ignore_default_args`
-```python
-ignore_default_args: list[str] | Literal[True] = [...]
-```
-Default CLI args to exclude. Set to `True` to disable all defaults (not recommended).
-
-### `env`
-```python
-env: dict[str, str | float | bool] | None = None
-```
-Environment variables for browser process:
-```python
-env={'DISPLAY': ':1'}  # Use specific X11 display
-```
-
-### `chromium_sandbox`
-```python
-chromium_sandbox: bool = True  # False in Docker
-```
-Enable Chromium sandboxing. Automatically disabled in Docker environments.
-
-### `devtools`
-```python
-devtools: bool = False
-```
-Open DevTools panel automatically (requires `headless=False`).
-
----
-
-## User Data & Profiles
-
-### `user_data_dir`
-```python
-user_data_dir: str | Path | None = '~/.config/browseruse/profiles/default'
-```
-Directory for browser profile data. Set to `None` for incognito/temporary profile.
-
-<Warning>
-Multiple browsers cannot share the same `user_data_dir` simultaneously. Use unique directories or `None` for parallel browsers.
-</Warning>
-
-### `profile_directory`
-```python
-profile_directory: str = 'Default'
-```
-Chrome profile subdirectory name (e.g., `'Default'`, `'Profile 1'`, `'Work'`).
-
-### `storage_state`
-```python
-storage_state: str | Path | dict[str, Any] | None = None
-```
-Browser storage state (cookies, localStorage). Can be file path or dict:
-
-```python
-# From file
-storage_state='./auth.json'
-
-# From dict
-storage_state={
-    'cookies': [...],
-    'origins': [...]
-}
-```
-
----
-
-## Network & Security
-
-### `proxy`
-```python
-proxy: ProxySettings | None = None
-```
-Proxy configuration:
-```python
-from browser_use.browser.profile import ProxySettings
-
-proxy=ProxySettings(
-    server="http://proxy.com:8080",
-    username="user", 
-    password="pass",
-    bypass="localhost,127.0.0.1"
-)
-```
-
-### `permissions`
-```python
-permissions: list[str] = ['clipboardReadWrite', 'notifications']
-```
-Browser permissions to grant. Default includes clipboard access and notifications.
-
-### `bypass_csp`
-```python
-bypass_csp: bool = False
-```
-<Warning>⚠️ Increases security risk and bot fingerprinting. Only use when necessary for specific CSP-restricted sites.</Warning>
-
-### `ignore_https_errors`
-```python
-ignore_https_errors: bool = False
-```
-Ignore HTTPS certificate errors.
-
-### `java_script_enabled`
-```python
-java_script_enabled: bool = True
-```
-<Warning>⚠️ Not recommended. Disabling JavaScript will break most modern websites and Browser Use functionality.</Warning>
-
-### `extra_http_headers`
-```python
-extra_http_headers: dict[str, str] = {}
-```
-Additional HTTP headers sent with every request:
-```python
-extra_http_headers={'User-Agent': 'Custom Agent'}
-```
-
----
-
-## Page Behavior & Timing
-
-### `default_timeout`
-```python
-default_timeout: float | None = None
-```
-Default timeout for browser operations in milliseconds:
-```python
-default_timeout=30000  # 30 seconds
-```
-
-### `default_navigation_timeout`
-```python
-default_navigation_timeout: float | None = None
-```
-Default timeout for page navigation in milliseconds.
-
-### `minimum_wait_page_load_time`
-```python
-minimum_wait_page_load_time: float = 0.25
-```
-Minimum time to wait before capturing page state for AI analysis.
-
-### `wait_for_network_idle_page_load_time`
-```python
-wait_for_network_idle_page_load_time: float = 0.5
-```
-Time to wait for network activity to cease. Increase to 3-5s for slower websites.
-
-### `maximum_wait_page_load_time`
-```python
-maximum_wait_page_load_time: float = 5.0
-```
-Maximum time to wait for page load before proceeding.
-
-### `wait_between_actions`
-```python
-wait_between_actions: float = 0.5
-```
-Time to wait between agent actions.
-
-### `slow_mo`
-```python
-slow_mo: float = 0.0
-```
-Slow down actions by this many milliseconds.
-
----
-
-## AI Integration
-
-### `highlight_elements`
-```python
-highlight_elements: bool = True
-```
-Highlight interactive elements with colored bounding boxes for AI vision.
-
-### `viewport_expansion`
-```python
-viewport_expansion: int = 500
-```
-Viewport expansion in pixels for AI context:
-- `-1` - Include entire page (highest token usage)
-- `0` - Only visible viewport
-- `500` - Viewport + 500px in each direction (balanced)
-
-### `include_dynamic_attributes`
-```python
-include_dynamic_attributes: bool = True
-```
-Include dynamic attributes in selectors for better element targeting.
-
----
-
-## Downloads & Files
-
-### `accept_downloads`
-```python
-accept_downloads: bool = True
-```
-Automatically accept all downloads.
-
-### `downloads_path`
-```python
-downloads_path: str | Path | None = None
-```
-Directory for downloaded files. Auto-created if not specified.
-
-### `auto_download_pdfs`
-```python
-auto_download_pdfs: bool = True
-```
-Automatically download PDFs when navigating to PDF viewer pages.
-
----
-
-## Device Emulation
-
-### `user_agent`
-```python
-user_agent: str | None = None
-```
-Custom user agent string:
-```python
-user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 13_0 like Mac OS X)"
-```
-
-### `is_mobile`
-```python
-is_mobile: bool = False
-```
-Enable mobile viewport meta tag handling and touch events.
-
-### `has_touch`
-```python
-has_touch: bool = False
-```
-Enable touch event support.
-
-### `locale`
-```python
-locale: str | None = None
-```
-User locale (e.g., `'en-GB'`, `'de-DE'`). Affects `navigator.language` and formatting.
-
-### `timezone_id`
-```python
-timezone_id: str | None = None
-```
-Timezone identifier:
-```python
-timezone_id='America/New_York'  # or 'UTC'
-```
-
-### `color_scheme`
-```python
-color_scheme: ColorScheme = 'light'
-```
-Preferred color scheme: `'light'`, `'dark'`, `'no-preference'`
-
----
-
-## Recording Options
-
-### `record_video_dir`
-```python
-record_video_dir: str | Path | None = None
-```
-Directory to save video recordings as `.webm` files.
-
-### `record_video_size`
-```python
-record_video_size: dict | None = None
-```
-Video recording dimensions:
-```python
-record_video_size={'width': 1280, 'height': 720}
-```
-
-### `record_har_path`
-```python
-record_har_path: str | Path | None = None
-```
-Path to save network trace files as `.har` format.
-
-### `traces_dir`
-```python
-traces_dir: str | Path | None = None
-```
-Directory to save complete trace files including screenshots, DOM snapshots, and network traces.
-
----
-
-## Complete Example
-
-```python
-from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.browser.profile import ProxySettings
-
-# Comprehensive configuration example
-profile = BrowserProfile(
-    # Display
-    headless=False,
-    window_size={'width': 1920, 'height': 1080},
-    viewport={'width': 1280, 'height': 720},
-    
-    # Browser
-    stealth=True,
-    executable_path="/opt/chrome/chrome",
-    user_data_dir="./work-profile",
-    
-    # Network
-    proxy=ProxySettings(server="http://proxy:8080"),
-    allowed_domains=['*.company.com', 'https://trusted.com'],
-    
-    # Timing
-    wait_between_actions=1.0,
-    default_timeout=30000,
-    
-    # AI Integration  
-    highlight_elements=True,
-    viewport_expansion=500,
-    
-    # Downloads
-    downloads_path="./downloads",
-    auto_download_pdfs=True,
-    
-    # Recording
-    record_video_dir="./recordings"
-)
-
-# Use profile with session-specific overrides
-session = BrowserSession(
-    browser_profile=profile,
-    headless=True,  # Override profile setting
-    cdp_url="http://remote:9222"  # Session-specific connection
-)
-```
+## Available Parameters
+
+### Core Settings
+- `cdp_url`: CDP URL for connecting to existing browser instance (e.g., `http://localhost:9222`)
+- `is_local` (default: `True`): Whether this is a local browser instance. Set to `False` for remote browsers
+- `browser_profile`: BrowserProfile template for reusable configuration
+
+### Display & Appearance
+- `headless` (default: `None`): Run browser without UI. Auto-detects based on display availability
+- `window_size`: Browser window size for headful mode (e.g., `{'width': 1920, 'height': 1080}`)
+- `window_position` (default: `{'width': 0, 'height': 0}`): Window position from top-left corner
+- `viewport`: Content area size (e.g., `{'width': 1280, 'height': 720}`)
+- `device_scale_factor`: Device scale factor (DPI). Set to 2 or 3 for high-resolution screenshots
+
+### Browser Behavior
+- `stealth` (default: `False`): Use stealth techniques to avoid bot detection
+- `keep_alive` (default: `None`): Keep browser running after agent completes
+- `allowed_domains`: Restrict navigation to specific domains (e.g., `['*.google.com']`)
+- `enable_default_extensions` (default: `True`): Load automation extensions (uBlock, cookie handlers)
+
+### User Data & Profiles
+- `user_data_dir` (default: `'~/.config/browseruse/profiles/default'`): Directory for browser profile data. Set to `None` for incognito
+- `profile_directory` (default: `'Default'`): Chrome profile subdirectory name
+- `storage_state`: Browser storage state (cookies, localStorage). Can be file path or dict
+
+### Network & Security
+- `proxy`: Proxy configuration using `ProxySettings(server, username, password, bypass)`
+- `permissions` (default: `['clipboardReadWrite', 'notifications']`): Browser permissions to grant
+- `bypass_csp` (default: `False`): Bypass Content Security Policy (increases bot detection risk)
+- `ignore_https_errors` (default: `False`): Ignore HTTPS certificate errors
+- `extra_http_headers`: Additional HTTP headers sent with every request
+
+### Browser Launch
+- `executable_path`: Path to browser executable for custom installations
+- `channel`: Browser channel (`'chromium'`, `'chrome'`, `'chrome-beta'`, `'msedge'`, etc.)
+- `args`: Additional command-line arguments for the browser
+- `env`: Environment variables for browser process
+- `chromium_sandbox` (default: `True`): Enable Chromium sandboxing (auto-disabled in Docker)
+- `devtools` (default: `False`): Open DevTools panel automatically (requires `headless=False`)
+
+### Timing & Performance
+- `default_timeout`: Default timeout for browser operations in milliseconds
+- `default_navigation_timeout`: Default timeout for page navigation
+- `minimum_wait_page_load_time` (default: `0.25`): Minimum time to wait before capturing page state
+- `wait_for_network_idle_page_load_time` (default: `0.5`): Time to wait for network activity to cease
+- `maximum_wait_page_load_time` (default: `5.0`): Maximum time to wait for page load
+- `wait_between_actions` (default: `0.5`): Time to wait between agent actions
+- `slow_mo` (default: `0.0`): Slow down actions by this many milliseconds
+
+### AI Integration
+- `highlight_elements` (default: `True`): Highlight interactive elements for AI vision
+- `viewport_expansion` (default: `500`): Viewport expansion in pixels for AI context
+- `include_dynamic_attributes` (default: `True`): Include dynamic attributes in selectors
+
+### Downloads & Files
+- `accept_downloads` (default: `True`): Automatically accept all downloads
+- `downloads_path`: Directory for downloaded files
+- `auto_download_pdfs` (default: `True`): Automatically download PDFs
+
+### Device Emulation
+- `user_agent`: Custom user agent string
+- `is_mobile` (default: `False`): Enable mobile viewport and touch events
+- `locale`: User locale (e.g., `'en-GB'`, `'de-DE'`)
+- `timezone_id`: Timezone identifier (e.g., `'America/New_York'`, `'UTC'`)
+- `color_scheme` (default: `'light'`): Preferred color scheme (`'light'`, `'dark'`, `'no-preference'`)
+
+### Recording
+- `record_video_dir`: Directory to save video recordings as `.webm` files
+- `record_har_path`: Path to save network trace files as `.har` format
+- `traces_dir`: Directory to save complete trace files
+
+### Advanced Options
+- `disable_security` (default: `False`): ⚠️ NOT RECOMMENDED. Disables all browser security features
+- `deterministic_rendering` (default: `False`): ⚠️ NOT RECOMMENDED. Forces consistent rendering but reduces performance
+- `cross_origin_iframes` (default: `False`): Enable cross-origin iframe support
 
 ---
