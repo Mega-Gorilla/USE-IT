@@ -35,7 +35,6 @@ class AgentSettings(BaseModel):
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
 	max_failures: int = 3
-	retry_delay: int = 10
 	validate_output: bool = False
 	generate_gif: bool | str = False
 	override_system_message: str | None = None

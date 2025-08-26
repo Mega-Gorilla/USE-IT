@@ -156,7 +156,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
-		retry_delay: int = 10,
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
 		validate_output: bool = False,
@@ -233,7 +232,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			save_conversation_path=save_conversation_path,
 			save_conversation_path_encoding=save_conversation_path_encoding,
 			max_failures=max_failures,
-			retry_delay=retry_delay,
 			override_system_message=override_system_message,
 			extend_system_message=extend_system_message,
 			validate_output=validate_output,
@@ -796,22 +794,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			parse_hint = 'Your response could not be parsed. Return a valid JSON object with the required fields.'
 			# self._message_manager._add_context_message(UserMessage(content=parse_hint))
 		else:
-			from anthropic import RateLimitError as AnthropicRateLimitError
-			from google.api_core.exceptions import ResourceExhausted
-			from openai import RateLimitError
-
-			# Define a tuple of rate limit error types for easier maintenance
-			RATE_LIMIT_ERRORS = (
-				RateLimitError,  # OpenAI
-				ResourceExhausted,  # Google
-				AnthropicRateLimitError,  # Anthropic
-			)
-
-			if isinstance(error, RATE_LIMIT_ERRORS) or 'on tokens per minute (TPM): Limit' in error_msg:
-				logger.warning(f'{prefix}{error_msg}')
-				await asyncio.sleep(self.settings.retry_delay)
-			else:
-				self.logger.error(f'{prefix}{error_msg}')
+			self.logger.error(f'{prefix}{error_msg}')
 
 		self.state.last_result = [ActionResult(error=error_msg)]
 		return None
