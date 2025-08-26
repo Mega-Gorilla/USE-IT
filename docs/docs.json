@@ -45,8 +45,8 @@
                 "pages": [
                   "customize/agent-basic",
                   "customize/supported-models",
-                  "customize/agent-parameters",
-                  "customize/agent-output-format"
+                  "customize/agent-output-format",
+                  "customize/agent-parameters"
                 ]
               },
               {
@@ -65,9 +65,11 @@
                 "icon": "code",
                 "pages": [
                   "customize/fast-agent",
-                  "customize/sensitive-data",
                   "customize/chain-agents",
-                  "customize/parallel-browser"
+                  "customize/parallel-browser",
+                  "customize/sensitive-data",
+                  "customize/secure",
+                  "customize/more-examples"
                 ]
               },
               "customize/custom-functions"
