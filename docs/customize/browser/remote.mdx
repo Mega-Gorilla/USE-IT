@@ -5,34 +5,53 @@ icon: "cloud"
 mode: "wide"
 ---
 
-
-### CDP URL Connection
-
-Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.:
-
 ```python
-from browser_use import Browser
+from browser_use import Agent, Browser, ChatOpenAI
 
 # Connect to remote browser
 browser = Browser(
-    cdp_url="http://remote-server:9222",
-    is_local=False  # Important: don't try to launch local browser
+    cdp_url='http://remote-server:9222',
+    is_local=False,  # set to True if you want to use a local browser
 )
-agent = Agent(task="", browser=browser)
+
+
+agent = Agent(
+    task="Your task here",
+    llm=ChatOpenAI(model='gpt-4.1-mini'),
+    browser=browser,
+)
 ```
+
+
+## Get a CDP URL
+### Cloud Browser
+Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.
+
+
+
 
 ### Proxy Connection
 
 ```python
-from browser_use.browser.profile import ProxySettings
+
+from browser_use import Agent, Browser, ChatOpenAI
+from browser_use.browser import ProxySettings
 
 browser = Browser(
-    cdp_url="http://remote-server:9222",
-    proxy=ProxySettings(
-        server="http://proxy-server:8080",
-        username="proxy-user",
-        password="proxy-pass"
-    ),
-    is_local=False
+        headless=False,
+        proxy=ProxySettings(
+            server="http://proxy-server:8080",
+            username="proxy-user",
+            password="proxy-pass"
+        )
+        cdp_url="http://remote-server:9222",
+        is_local=False  # set to True if you want to use a local browser
+)
+
+
+agent = Agent(
+    task="Your task here",
+    llm=ChatOpenAI(model='gpt-4.1-mini'),
+    browser=browser,
 )
 ```
