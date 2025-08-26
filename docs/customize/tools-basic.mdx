@@ -14,6 +14,8 @@ Examples:
 - human-in-the-loop
 - browser interactions
 - calling other LLMs
+- get 2fa code
+- send emails
 ...
 
 
@@ -25,7 +27,7 @@ from browser_use import Controller, ActionResult
 
 controller = Controller()
 
-@controller.action(description='Ask human for help with a question')
+@controller.action('Ask human for help with a question')
 def ask_human(question: str) -> ActionResult:
     answer = input(f'{question} > ')
     return f'The human responded with: {answer}'
