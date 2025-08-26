@@ -1,0 +1,326 @@
+---
+title: "Remote Browser Connections"
+description: "Connect to remote browsers running in containers, VMs, or cloud environments"
+icon: "cloud"
+mode: "wide"
+---
+
+Connect Browser Use to browsers running on remote servers, containers, or cloud environments for scalable automation.
+
+---
+
+## When to Use Remote Browsers
+
+- **☁️ Cloud Environments**: Run browsers in containers or VMs
+- **🔄 Scalable Automation**: Multiple browsers across different machines  
+- **🐳 Docker Deployments**: Browsers in containerized environments
+- **🖥️ Headless Servers**: Browsers on servers without displays
+- **🌐 Distributed Testing**: Browsers in different geographic locations
+
+---
+
+## Basic Remote Connection
+
+### CDP URL Connection
+
+Connect to a browser with Chrome DevTools Protocol:
+
+```python
+from browser_use import BrowserSession
+
+# Connect to remote browser
+session = BrowserSession(
+    cdp_url="http://remote-server:9222",
+    is_local=False  # Important: don't try to launch local browser
+)
+```
+
+### With Authentication
+
+For secured remote browsers:
+
+```python
+session = BrowserSession(
+    cdp_url="http://username:password@remote-server:9222",
+    headers={'Authorization': 'Bearer your-token'},
+    is_local=False
+)
+```
+
+## Docker Setup
+
+### Launch Chrome in Docker
+
+```bash
+# Run Chrome in Docker container
+docker run -d \
+  --name chrome-remote \
+  -p 9222:9222 \
+  --shm-size=2gb \
+  browseruse/chrome:latest \
+  --remote-debugging-address=0.0.0.0 \
+  --remote-debugging-port=9222 \
+  --no-sandbox \
+  --disable-gpu
+```
+
+Connect from Browser Use:
+
+```python
+session = BrowserSession(
+    cdp_url="http://localhost:9222",
+    is_local=False
+)
+```
+
+### Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  chrome:
+    image: browseruse/chrome:latest
+    ports:
+      - "9222:9222"
+    shm_size: 2gb
+    command: >
+      --remote-debugging-address=0.0.0.0
+      --remote-debugging-port=9222
+      --no-sandbox
+      --disable-gpu
+      --headless=new
+    
+  automation:
+    build: .
+    depends_on:
+      - chrome
+    environment:
+      - CDP_URL=http://chrome:9222
+```
+
+## Cloud Browser Services
+
+### Browser Use Cloud
+
+Use managed browser infrastructure:
+
+```python
+# Browser Use Cloud handles browser management automatically
+from browser_use.cloud import CloudAgent
+
+agent = CloudAgent(
+    task="Search and extract data",
+    api_key="your-api-key"
+)
+result = await agent.run()
+```
+
+### Custom Cloud Setup
+
+Connect to your own cloud browsers:
+
+```python
+# Connect to cloud browser instances
+cloud_browsers = [
+    "http://browser-1.example.com:9222",
+    "http://browser-2.example.com:9222", 
+    "http://browser-3.example.com:9222"
+]
+
+sessions = [
+    BrowserSession(cdp_url=url, is_local=False)
+    for url in cloud_browsers
+]
+```
+
+## Advanced Remote Configuration
+
+### Proxy Through Remote Browser
+
+```python
+from browser_use.browser.profile import ProxySettings
+
+session = BrowserSession(
+    cdp_url="http://remote-server:9222",
+    proxy=ProxySettings(
+        server="http://proxy-server:8080",
+        username="proxy-user",
+        password="proxy-pass"
+    ),
+    is_local=False
+)
+```
+
+### Remote with Specific Settings
+
+```python
+session = BrowserSession(
+    cdp_url="http://remote-server:9222",
+    viewport={'width': 1920, 'height': 1080},
+    user_agent="Mozilla/5.0 Custom Agent",
+    timeout=60000,  # Longer timeout for remote connections
+    is_local=False
+)
+```
+
+## Connection Management
+
+### Connection Pooling
+
+```python
+class BrowserPool:
+    def __init__(self, remote_urls):
+        self.sessions = [
+            BrowserSession(cdp_url=url, is_local=False) 
+            for url in remote_urls
+        ]
+        self.current = 0
+    
+    def get_session(self):
+        session = self.sessions[self.current]
+        self.current = (self.current + 1) % len(self.sessions)
+        return session
+
+# Use the pool
+pool = BrowserPool([
+    "http://browser-1:9222",
+    "http://browser-2:9222", 
+    "http://browser-3:9222"
+])
+
+# Get available browser for each task
+session = pool.get_session()
+agent = Agent(task="Process data", browser_session=session)
+```
+
+### Health Checking
+
+```python
+import asyncio
+import aiohttp
+
+async def check_browser_health(cdp_url):
+    """Check if remote browser is available"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{cdp_url}/json/version", timeout=5) as resp:
+                return resp.status == 200
+    except:
+        return False
+
+# Only use healthy browsers
+remote_urls = ["http://browser-1:9222", "http://browser-2:9222"]
+healthy_urls = [
+    url for url in remote_urls 
+    if await check_browser_health(url)
+]
+
+sessions = [
+    BrowserSession(cdp_url=url, is_local=False)
+    for url in healthy_urls
+]
+```
+
+## Security Considerations
+
+### Secure Connections
+
+```python
+# Use HTTPS when possible
+session = BrowserSession(
+    cdp_url="https://secure-browser.example.com:9222",
+    headers={'X-API-Key': 'your-secure-key'},
+    is_local=False
+)
+```
+
+### Network Isolation
+
+```python
+# Restrict browser network access
+session = BrowserSession(
+    cdp_url="http://isolated-browser:9222",
+    allowed_domains=['*.trusted-domain.com'],  # Only allow specific domains
+    disable_security=False,  # Keep security features enabled
+    is_local=False
+)
+```
+
+## Performance Optimization
+
+### Batch Operations
+
+```python
+# Process multiple tasks on same remote browser
+async def batch_process(tasks, cdp_url):
+    session = BrowserSession(cdp_url=cdp_url, is_local=False, keep_alive=True)
+    
+    results = []
+    for task in tasks:
+        agent = Agent(task=task, browser_session=session)
+        result = await agent.run()
+        results.append(result)
+    
+    await session.stop()  # Clean shutdown
+    return results
+```
+
+### Resource Management
+
+```python
+# Monitor resource usage
+session = BrowserSession(
+    cdp_url="http://remote-browser:9222",
+    viewport={'width': 1280, 'height': 720},  # Smaller viewport for lower memory
+    headless=True,  # No display resources needed
+    is_local=False
+)
+```
+
+## Troubleshooting
+
+### Connection Timeouts
+
+```python
+session = BrowserSession(
+    cdp_url="http://slow-remote:9222",
+    timeout=120000,  # 2 minute timeout
+    slow_mo=100,     # Slow down actions for stability
+    is_local=False
+)
+```
+
+### Network Issues
+
+```python
+# Retry connection with backoff
+import asyncio
+
+async def connect_with_retry(cdp_url, max_attempts=3):
+    for attempt in range(max_attempts):
+        try:
+            session = BrowserSession(cdp_url=cdp_url, is_local=False)
+            await session.start()
+            return session
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                raise e
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+```
+
+### Debugging Remote Issues
+
+```python
+# Enable detailed logging for remote connections
+import logging
+logging.getLogger('browser_use').setLevel(logging.DEBUG)
+
+session = BrowserSession(
+    cdp_url="http://remote:9222", 
+    is_local=False
+)
+# Check logs for detailed connection information
+```
+
+---

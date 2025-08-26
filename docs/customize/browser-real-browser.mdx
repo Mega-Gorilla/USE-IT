@@ -1,0 +1,251 @@
+---
+title: "Connect to Real Browser"
+description: "Connect Browser Use to your existing browser instances and manage persistent profiles"
+icon: "link"
+mode: "wide"
+---
+
+Browser Use can connect to existing browser instances instead of launching new ones. This is useful for debugging, using existing authentication, or working with browsers that have specific extensions or configurations.
+
+---
+
+## Why Use Real Browsers?
+
+- **🔐 Preserve Authentication**: Keep your existing login sessions
+- **🧩 Use Extensions**: Access your installed browser extensions  
+- **🐛 Debug Easily**: See exactly what the agent is doing in real-time
+- **⚡ Faster Startup**: Skip browser launch time
+- **🔒 Enterprise Settings**: Use browsers with corporate policies
+
+---
+
+## Local Browser Connection
+
+### Method 1: Connect via CDP URL
+
+Launch Chrome with remote debugging enabled:
+
+```bash
+# macOS/Linux
+google-chrome --remote-debugging-port=9222 --user-data-dir="./chrome-profile"
+
+# Windows  
+chrome.exe --remote-debugging-port=9222 --user-data-dir="./chrome-profile"
+```
+
+Then connect Browser Use:
+
+```python
+from browser_use import BrowserSession
+
+session = BrowserSession(
+    cdp_url="http://localhost:9222",
+    is_local=False  # Don't launch new browser
+)
+```
+
+### Method 2: Using Browser Profile Path
+
+Connect to an existing Chrome profile:
+
+```python
+session = BrowserSession(
+    user_data_dir="/path/to/existing/chrome/profile",
+    executable_path="/path/to/chrome",  # Optional: specify browser location
+)
+```
+
+## Browser Profile Management
+
+### Persistent Profiles
+
+Create browsers that remember state between sessions:
+
+```python
+from browser_use.browser import BrowserProfile
+
+# Create a persistent profile
+profile = BrowserProfile(
+    user_data_dir="./work-profile",
+    profile_directory="Work",  # Chrome profile name
+    storage_state="./auth.json",  # Load authentication state
+)
+
+session = BrowserSession(browser_profile=profile)
+```
+
+### Profile Organization
+
+```python
+# Separate profiles for different purposes
+profiles = {
+    "development": BrowserProfile(
+        user_data_dir="./profiles/dev",
+        headless=False,
+        devtools=True
+    ),
+    "testing": BrowserProfile(
+        user_data_dir="./profiles/test", 
+        headless=True,
+        stealth=True
+    ),
+    "production": BrowserProfile(
+        user_data_dir="./profiles/prod",
+        headless=True,
+        allowed_domains=['*.mycompany.com']
+    )
+}
+
+# Use different profiles for different environments
+test_session = BrowserSession(browser_profile=profiles["testing"])
+```
+
+## Authentication & Cookies
+
+### Loading Saved Authentication
+
+```python
+# Method 1: Storage state (recommended)
+session = BrowserSession(
+    storage_state="./saved-auth.json",
+    user_data_dir=None  # Use temporary profile with loaded auth
+)
+
+# Method 2: Existing profile with cookies
+session = BrowserSession(
+    user_data_dir="./authenticated-profile"
+)
+```
+
+### Creating Storage State
+
+Use the browser to create authentication files:
+
+```bash
+# Open browser and login to your sites
+npx playwright open --save-storage=./auth.json https://example.com
+
+# Or use Chrome directly
+google-chrome --user-data-dir="./auth-profile" https://example.com
+# Login manually, then use the profile path in BrowserSession
+```
+
+### Saving Authentication for Reuse
+
+```python
+# Keep browser alive to maintain session
+session = BrowserSession(
+    keep_alive=True,  # Don't close browser after agent finishes
+    user_data_dir="./persistent-auth"
+)
+
+# Run multiple agents with same authentication
+agent1 = Agent(task="Check email", browser_session=session)
+await agent1.run()
+
+agent2 = Agent(task="Update profile", browser_session=session) 
+await agent2.run()
+
+# Manually close when done
+await session.stop()
+```
+
+## Browser Extensions
+
+### Using Existing Extensions
+
+```python
+# Connect to browser with your installed extensions
+session = BrowserSession(
+    user_data_dir="/path/to/chrome/profile/with/extensions",
+    # Extensions will be available automatically
+)
+```
+
+### Default Extensions
+
+Browser Use includes automation-friendly extensions:
+
+```python
+session = BrowserSession(
+    enable_default_extensions=True,  # Includes uBlock Origin, cookie handlers
+    user_data_dir="./profile-with-extensions"
+)
+```
+
+## Advanced Connection Options
+
+### Custom Browser Paths
+
+```python
+# Use specific browser installation
+session = BrowserSession(
+    executable_path="/opt/google/chrome/chrome",
+    channel="chrome",  # or "chromium", "chrome-beta", etc.
+    user_data_dir="./custom-profile"
+)
+```
+
+### Multiple Browser Instances
+
+```python
+# Run multiple browsers simultaneously
+sessions = []
+for i in range(3):
+    session = BrowserSession(
+        user_data_dir=f"./profile-{i}",
+        cdp_url=f"http://localhost:{9222 + i}",  # Different ports
+        is_local=False
+    )
+    sessions.append(session)
+```
+
+## Best Practices
+
+### 🔒 Security
+- Use separate profiles for different domains/purposes
+- Don't share profiles between trusted and untrusted automation
+- Regularly clean temporary profiles
+
+### ⚡ Performance  
+- Reuse existing browser instances when possible
+- Use `keep_alive=True` for multiple sequential tasks
+- Close browsers explicitly with `session.stop()` when done
+
+### 🐛 Debugging
+- Use `headless=False` and `devtools=True` during development
+- Check Chrome's `chrome://inspect` to see available debugging targets
+- Monitor browser console for errors
+
+---
+
+## Troubleshooting
+
+### Connection Issues
+```python
+# Check if CDP port is available
+session = BrowserSession(
+    cdp_url="http://localhost:9222",
+    timeout=5000  # Fail fast if can't connect
+)
+```
+
+### Profile Conflicts  
+```python
+# Avoid conflicts with existing browser instances
+session = BrowserSession(
+    user_data_dir="./unique-profile-name",  # Use unique directory
+    # Don't use default Chrome profile if Chrome is already running
+)
+```
+
+### Permission Issues
+```python
+# Grant required permissions
+session = BrowserSession(
+    permissions=['clipboard-read', 'clipboard-write', 'notifications'],
+    bypass_csp=True  # If needed for specific sites
+)
+```
+
+---
