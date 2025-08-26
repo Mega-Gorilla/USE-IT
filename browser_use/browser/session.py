@@ -3,7 +3,8 @@
 import asyncio
 import logging
 from functools import cached_property
-from typing import Any, Self, cast
+from pathlib import Path
+from typing import Any, Literal, Self, cast
 
 import httpx
 from bubus import EventBus
@@ -35,7 +36,7 @@ from browser_use.browser.events import (
 	TabClosedEvent,
 	TabCreatedEvent,
 )
-from browser_use.browser.profile import BrowserProfile
+from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.utils import _log_pretty_url, is_new_tab_page
@@ -191,6 +192,15 @@ class BrowserSession(BaseModel):
 	- Direct CDP/Playwright calls for browser operations
 
 	Supports both event-driven and imperative calling styles.
+
+	You can pass all browser settings directly or use a browser_profile:
+	```python
+	# Direct settings (recommended for most users)
+	session = BrowserSession(headless=True, user_data_dir='./profile')
+
+	# Or use a profile (for advanced use cases)
+	session = BrowserSession(browser_profile=BrowserProfile(...))
+	```
 	"""
 
 	model_config = ConfigDict(
@@ -200,9 +210,112 @@ class BrowserSession(BaseModel):
 		revalidate_instances='never',  # resets private attrs on every model rebuild
 	)
 
-	# Core configuration
-	id: str = Field(default_factory=lambda: str(uuid7str()))
+	def __init__(
+		self,
+		# Core configuration
+		id: str | None = None,
+		cdp_url: str | None = None,
+		is_local: bool = True,
+		browser_profile: BrowserProfile | None = None,
+		# BrowserProfile fields that can be passed directly
+		# From BrowserConnectArgs
+		headers: dict[str, str] | None = None,
+		slow_mo: float | None = None,
+		timeout: float | None = None,
+		# From BrowserLaunchArgs
+		env: dict[str, str | float | bool] | None = None,
+		executable_path: str | Path | None = None,
+		headless: bool | None = None,
+		args: list[str] | None = None,
+		ignore_default_args: list[str] | Literal[True] | None = None,
+		channel: str | None = None,
+		chromium_sandbox: bool | None = None,
+		devtools: bool | None = None,
+		downloads_path: str | Path | None = None,
+		traces_dir: str | Path | None = None,
+		handle_sighup: bool | None = None,
+		handle_sigint: bool | None = None,
+		handle_sigterm: bool | None = None,
+		# From BrowserContextArgs
+		accept_downloads: bool | None = None,
+		offline: bool | None = None,
+		strict_selectors: bool | None = None,
+		permissions: list[str] | None = None,
+		bypass_csp: bool | None = None,
+		extra_http_headers: dict[str, str] | None = None,
+		ignore_https_errors: bool | None = None,
+		java_script_enabled: bool | None = None,
+		base_url: str | None = None,
+		service_workers: str | None = None,
+		user_agent: str | None = None,
+		screen: dict | None = None,
+		viewport: dict | None = None,
+		no_viewport: bool | None = None,
+		device_scale_factor: float | None = None,
+		is_mobile: bool | None = None,
+		has_touch: bool | None = None,
+		locale: str | None = None,
+		timezone_id: str | None = None,
+		color_scheme: str | None = None,
+		contrast: str | None = None,
+		reduced_motion: str | None = None,
+		forced_colors: str | None = None,
+		record_har_content: str | None = None,
+		record_har_mode: str | None = None,
+		record_har_omit_content: bool | None = None,
+		record_har_path: str | Path | None = None,
+		record_har_url_filter: str | None = None,
+		record_video_dir: str | Path | None = None,
+		record_video_size: dict | None = None,
+		# From BrowserLaunchPersistentContextArgs
+		user_data_dir: str | Path | None = None,
+		# From BrowserNewContextArgs
+		storage_state: str | Path | dict[str, Any] | None = None,
+		# BrowserProfile specific fields
+		stealth: bool | None = None,
+		disable_security: bool | None = None,
+		deterministic_rendering: bool | None = None,
+		allowed_domains: list[str] | None = None,
+		keep_alive: bool | None = None,
+		proxy: ProxySettings | None = None,
+		enable_default_extensions: bool | None = None,
+		window_size: dict | None = None,
+		window_position: dict | None = None,
+		cross_origin_iframes: bool | None = None,
+		default_navigation_timeout: float | None = None,
+		default_timeout: float | None = None,
+		minimum_wait_page_load_time: float | None = None,
+		wait_for_network_idle_page_load_time: float | None = None,
+		maximum_wait_page_load_time: float | None = None,
+		wait_between_actions: float | None = None,
+		include_dynamic_attributes: bool | None = None,
+		highlight_elements: bool | None = None,
+		viewport_expansion: int | None = None,
+		auto_download_pdfs: bool | None = None,
+		profile_directory: str | None = None,
+		cookies_file: Path | None = None,
+	):
+		# Following the same pattern as AgentSettings in service.py
+		# Only pass non-None values to avoid validation errors
+		profile_kwargs = {
+			k: v
+			for k, v in locals().items()
+			if k not in ['self', 'browser_profile', 'id', 'cdp_url', 'is_local'] and v is not None
+		}
 
+		# Create browser profile from direct parameters or use provided one
+		resolved_browser_profile = browser_profile or BrowserProfile(**profile_kwargs)
+
+		# Initialize the Pydantic model
+		super().__init__(
+			id=id or str(uuid7str()),
+			cdp_url=cdp_url,
+			is_local=is_local,
+			browser_profile=resolved_browser_profile,
+		)
+
+	# Core configuration (read-only after init)
+	id: str = Field(default_factory=lambda: str(uuid7str()))
 	cdp_url: str | None = None
 	is_local: bool = Field(default=True)
 	browser_profile: BrowserProfile = Field(
