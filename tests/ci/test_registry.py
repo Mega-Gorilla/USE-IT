@@ -504,7 +504,7 @@ class TestRegistryEdgeCases:
 		assert 'Should execute: test' in result.extracted_content
 
 
-class TestExistingControllerActions:
+class TestExistingToolsActions:
 	"""Test that existing controller actions continue to work"""
 
 	async def test_existing_action_models(self, registry, browser_session):
@@ -665,7 +665,7 @@ class TestType2Pattern:
 		assert len(fields) == 0 or all(f in ['title'] for f in fields)
 
 	def test_no_special_params_action(self):
-		"""Test action with no special params (like wait action in Controller)"""
+		"""Test action with no special params (like wait action in Tools)"""
 		registry = Registry()
 
 		@registry.action('Wait for x seconds default 3')

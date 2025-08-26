@@ -4,10 +4,10 @@ This module provides integration between external MCP servers and browser-use's 
 MCP tools are dynamically discovered and registered as browser-use actions.
 
 Example usage:
-    from browser_use import Controller
+    from browser_use import Tools
     from browser_use.mcp.client import MCPClient
 
-    controller = Controller()
+    controller = Tools()
 
     # Connect to an MCP server
     mcp_client = MCPClient(

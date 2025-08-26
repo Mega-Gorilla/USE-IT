@@ -141,7 +141,7 @@ async def browser_session():
 
 @pytest.fixture(scope='function')
 def controller():
-	"""Create and provide a Controller instance."""
+	"""Create and provide a Tools instance."""
 	return Tools()
 
 

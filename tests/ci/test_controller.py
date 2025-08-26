@@ -86,12 +86,12 @@ async def browser_session():
 
 @pytest.fixture(scope='function')
 def controller():
-	"""Create and provide a Controller instance."""
+	"""Create and provide a Tools instance."""
 	return Tools()
 
 
-class TestControllerIntegration:
-	"""Integration tests for Controller using actual browser instances."""
+class TestToolsIntegration:
+	"""Integration tests for Tools using actual browser instances."""
 
 	async def test_registry_actions(self, controller, browser_session):
 		"""Test that the registry contains the expected default actions."""

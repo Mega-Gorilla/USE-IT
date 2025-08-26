@@ -173,9 +173,9 @@ async def debug_iframe_scrolling():
 		print('=' * 80)
 
 		# Navigate to the page first
-		from browser_use.tools.service import Controller
+		from browser_use.tools.service import Tools
 
-		controller = Controller()
+		controller = Tools()
 
 		# Create the action model for navigation
 		goto_action = ActionModel.model_validate_json(actions[0])

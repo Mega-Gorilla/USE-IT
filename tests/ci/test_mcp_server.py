@@ -590,7 +590,7 @@ class TestMCPServerExtraction:
 		server.controller = None
 
 		result = await server._extract_content('query')
-		assert result == 'Error: Controller not initialized'
+		assert result == 'Error: Tools not initialized'
 
 	async def test_extract_content_no_session(self):
 		"""Test extraction without browser session."""

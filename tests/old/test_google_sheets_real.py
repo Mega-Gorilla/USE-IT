@@ -10,7 +10,7 @@ import os
 import pytest
 
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.tools.service import Controller
+from browser_use.tools.service import Tools
 
 # Test Google Sheets URL (public read-only spreadsheet for testing)
 TEST_GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1INaIcfpYXlMRWO__de61SHFCaqt1lfHlcvtXZPItlpI/edit'
@@ -33,7 +33,7 @@ async def browser_session():
 @pytest.fixture
 def controller():
 	"""Create a controller instance (Google Sheets actions are already registered)."""
-	return Controller()
+	return Tools()
 
 
 @pytest.mark.asyncio

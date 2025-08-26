@@ -711,7 +711,7 @@ class BrowserUseServer:
 			return 'Error: No browser session active'
 
 		if not self.controller:
-			return 'Error: Controller not initialized'
+			return 'Error: Tools not initialized'
 
 		state = await self.browser_session.get_browser_state_summary()
 

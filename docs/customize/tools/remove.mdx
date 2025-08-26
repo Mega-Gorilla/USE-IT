@@ -7,9 +7,9 @@ mode: "wide"
 
 
 ```python
-from browser_use import Controller
+from browser_use import Tools
 
-controller = Controller(exclude_actions=['search_google', 'wait'])
+controller = Tools(exclude_actions=['search_google', 'wait'])
 agent = Agent(task='...', llm=llm, controller=controller)
 ```
 

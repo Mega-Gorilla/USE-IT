@@ -25,11 +25,11 @@ uv pip install "browser-use[cli]"
 
 ```python
 import os
-from browser_use import Agent, Controller
+from browser_use import Agent, Tools
 from browser_use.mcp.client import MCPClient
 
 # Create controller
-controller = Controller()
+controller = Tools()
 
 # Connect to MCP server
 mcp_client = MCPClient(

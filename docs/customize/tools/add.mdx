@@ -20,9 +20,9 @@ Examples:
 Simply add `@controller.action(...)` to your function.
 
 ```python
-from browser_use import Controller, Agent
+from browser_use import Tools, Agent
 
-controller = Controller()
+controller = Tools()
 
 @controller.action(description='Ask human for help with a question')
 def ask_human(question: str) -> ActionResult:
