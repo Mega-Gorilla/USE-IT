@@ -45,24 +45,33 @@
                 "pages": [
                   "customize/agent-basic",
                   "customize/supported-models",
-                  "customize/agent-parameters",
-                  "customize/agent-output-format"
+                  "customize/agent-output-format",
+                  "customize/agent-parameters"
                 ]
               },
               {
                 "group": "Browser",
-                "icon": "globe",
+                "icon": "window",
                 "isDefaultOpen": false,
                 "pages": [
                   "customize/browser-basic",
                   "customize/browser-real-browser",
-                  "customize/browser-keep-open",
-                  "customize/browser-multiple",
                   "customize/browser-remote",
                   "customize/browser-parameters"
                 ]
               },
-              "customize/sensitive-data",
+              {
+                "group": "Examples",
+                "icon": "folder-open",
+                "pages": [
+                  "customize/fast-agent",
+                  "customize/chain-agents",
+                  "customize/parallel-browser",
+                  "customize/sensitive-data",
+                  "customize/secure",
+                  "customize/more-examples"
+                ]
+              },
               "customize/custom-functions"
             ]
           },
@@ -71,13 +80,17 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
-              "customize/mcp-client",
-              "customize/mcp-server",
+              {
+                "group": "MCP",
+                "icon": "link",
+                "pages": [
+                  "customize/mcp-client",
+                  "customize/mcp-server"
+                ]
+              },
               "customize/hooks",
               "development/telemetry",
-              "development/observability",
-              "development/evaluations",
-              "development/roadmap"
+              "development/observability"
             ]
           }
         ]
