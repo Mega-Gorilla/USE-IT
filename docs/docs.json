@@ -61,6 +61,18 @@
                 ]
               },
               {
+                "group": "Tools",
+                "icon": "wrench",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/tools-basic",
+                  "customize/tools-available",
+                  "customize/tools-register",
+                  "customize/tools-remove",
+                  "customize/tools-response"
+                ]
+              },
+              {
                 "group": "Examples",
                 "icon": "folder-open",
                 "pages": [
@@ -71,8 +83,7 @@
                   "customize/secure",
                   "customize/more-examples"
                 ]
-              },
-              "customize/custom-functions"
+              }
             ]
           },
           {
