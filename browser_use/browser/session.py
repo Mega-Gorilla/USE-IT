@@ -304,7 +304,12 @@ class BrowserSession(BaseModel):
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
 
 		# Create browser profile from direct parameters or use provided one
-		resolved_browser_profile = browser_profile or BrowserProfile(**profile_kwargs)
+		if browser_profile is not None:
+			# Merge any direct kwargs into the provided browser_profile (direct kwargs take precedence)
+			merged_kwargs = {**browser_profile.model_dump(exclude_unset=True), **profile_kwargs}
+			resolved_browser_profile = BrowserProfile(**merged_kwargs)
+		else:
+			resolved_browser_profile = BrowserProfile(**profile_kwargs)
 
 		# Initialize the Pydantic model
 		super().__init__(
