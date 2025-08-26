@@ -75,7 +75,7 @@ _LAZY_IMPORTS = {
 	'Browser': ('browser_use.browser', 'BrowserSession'),  # Alias for BrowserSession
 	'BrowserProfile': ('browser_use.browser', 'BrowserProfile'),
 	# Controller (moderate weight)
-	'Controller': ('browser_use.controller.service', 'Controller'),
+	'Controller': ('browser_use.tools.service', 'Controller'),
 	# DOM service (moderate weight)
 	'DomService': ('browser_use.dom.service', 'DomService'),
 	# Chat models (very heavy imports)

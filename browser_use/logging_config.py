@@ -303,7 +303,7 @@ def setup_log_pipes(session_id: str, base_dir: str | None = None):
 	agent_handler = FIFOHandler(str(pipe_dir / 'agent.pipe'))
 	agent_handler.setLevel(logging.DEBUG)
 	agent_handler.setFormatter(logging.Formatter('%(levelname)-8s [%(name)s] %(message)s'))
-	for name in ['browser_use.agent', 'browser_use.controller']:
+	for name in ['browser_use.agent', 'browser_use.tools']:
 		logger = logging.getLogger(name)
 		logger.addHandler(agent_handler)
 		logger.setLevel(logging.DEBUG)
