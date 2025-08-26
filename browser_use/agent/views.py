@@ -32,7 +32,6 @@ class AgentSettings(BaseModel):
 
 	use_vision: bool = True
 	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
-	use_vision_for_planner: bool = False
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
 	max_failures: int = 3
@@ -48,10 +47,6 @@ class AgentSettings(BaseModel):
 	max_history_items: int | None = None
 
 	page_extraction_llm: BaseChatModel | None = None
-	planner_llm: BaseChatModel | None = None
-	planner_interval: int = 1  # Run planner every N steps
-	is_planner_reasoning: bool = False  # type: ignore
-	extend_planner_system_message: str | None = None
 	calculate_cost: bool = False
 	include_tool_call_examples: bool = False
 	llm_timeout: int = 60  # Timeout in seconds for LLM calls
