@@ -26,10 +26,10 @@ Connect Browser Use to browsers running on remote servers, containers, or cloud 
 Connect to a browser with Chrome DevTools Protocol:
 
 ```python
-from browser_use import BrowserSession
+from browser_use import Browser
 
 # Connect to remote browser
-session = BrowserSession(
+session = Browser(
     cdp_url="http://remote-server:9222",
     is_local=False  # Important: don't try to launch local browser
 )
@@ -40,7 +40,7 @@ session = BrowserSession(
 For secured remote browsers:
 
 ```python
-session = BrowserSession(
+session = Browser(
     cdp_url="http://username:password@remote-server:9222",
     headers={'Authorization': 'Bearer your-token'},
     is_local=False
@@ -67,7 +67,7 @@ docker run -d \
 Connect from Browser Use:
 
 ```python
-session = BrowserSession(
+session = Browser(
     cdp_url="http://localhost:9222",
     is_local=False
 )
@@ -129,7 +129,7 @@ cloud_browsers = [
 ]
 
 sessions = [
-    BrowserSession(cdp_url=url, is_local=False)
+    Browser(cdp_url=url, is_local=False)
     for url in cloud_browsers
 ]
 ```
@@ -141,7 +141,7 @@ sessions = [
 ```python
 from browser_use.browser.profile import ProxySettings
 
-session = BrowserSession(
+session = Browser(
     cdp_url="http://remote-server:9222",
     proxy=ProxySettings(
         server="http://proxy-server:8080",
@@ -155,7 +155,7 @@ session = BrowserSession(
 ### Remote with Specific Settings
 
 ```python
-session = BrowserSession(
+session = Browser(
     cdp_url="http://remote-server:9222",
     viewport={'width': 1920, 'height': 1080},
     user_agent="Mozilla/5.0 Custom Agent",
@@ -172,7 +172,7 @@ session = BrowserSession(
 class BrowserPool:
     def __init__(self, remote_urls):
         self.sessions = [
-            BrowserSession(cdp_url=url, is_local=False) 
+            Browser(cdp_url=url, is_local=False) 
             for url in remote_urls
         ]
         self.current = 0
@@ -191,7 +191,7 @@ pool = BrowserPool([
 
 # Get available browser for each task
 session = pool.get_session()
-agent = Agent(task="Process data", browser_session=session)
+agent = Agent(task="Process data", browser=session)
 ```
 
 ### Health Checking
@@ -217,7 +217,7 @@ healthy_urls = [
 ]
 
 sessions = [
-    BrowserSession(cdp_url=url, is_local=False)
+    Browser(cdp_url=url, is_local=False)
     for url in healthy_urls
 ]
 ```
@@ -228,7 +228,7 @@ sessions = [
 
 ```python
 # Use HTTPS when possible
-session = BrowserSession(
+session = Browser(
     cdp_url="https://secure-browser.example.com:9222",
     headers={'X-API-Key': 'your-secure-key'},
     is_local=False
@@ -239,7 +239,7 @@ session = BrowserSession(
 
 ```python
 # Restrict browser network access
-session = BrowserSession(
+session = Browser(
     cdp_url="http://isolated-browser:9222",
     allowed_domains=['*.trusted-domain.com'],  # Only allow specific domains
     disable_security=False,  # Keep security features enabled
@@ -254,11 +254,11 @@ session = BrowserSession(
 ```python
 # Process multiple tasks on same remote browser
 async def batch_process(tasks, cdp_url):
-    session = BrowserSession(cdp_url=cdp_url, is_local=False, keep_alive=True)
+    session = Browser(cdp_url=cdp_url, is_local=False, keep_alive=True)
     
     results = []
     for task in tasks:
-        agent = Agent(task=task, browser_session=session)
+        agent = Agent(task=task, browser=session)
         result = await agent.run()
         results.append(result)
     
@@ -270,7 +270,7 @@ async def batch_process(tasks, cdp_url):
 
 ```python
 # Monitor resource usage
-session = BrowserSession(
+session = Browser(
     cdp_url="http://remote-browser:9222",
     viewport={'width': 1280, 'height': 720},  # Smaller viewport for lower memory
     headless=True,  # No display resources needed
@@ -283,7 +283,7 @@ session = BrowserSession(
 ### Connection Timeouts
 
 ```python
-session = BrowserSession(
+session = Browser(
     cdp_url="http://slow-remote:9222",
     timeout=120000,  # 2 minute timeout
     slow_mo=100,     # Slow down actions for stability
@@ -300,7 +300,7 @@ import asyncio
 async def connect_with_retry(cdp_url, max_attempts=3):
     for attempt in range(max_attempts):
         try:
-            session = BrowserSession(cdp_url=cdp_url, is_local=False)
+            session = Browser(cdp_url=cdp_url, is_local=False)
             await session.start()
             return session
         except Exception as e:
@@ -316,7 +316,7 @@ async def connect_with_retry(cdp_url, max_attempts=3):
 import logging
 logging.getLogger('browser_use').setLevel(logging.DEBUG)
 
-session = BrowserSession(
+session = Browser(
     cdp_url="http://remote:9222", 
     is_local=False
 )

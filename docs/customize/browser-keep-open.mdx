@@ -1,5 +1,5 @@
 ---
-title: "Chain Agents in one browser"
+title: "Chain agents in one browser"
 description: ""
 icon: "window-restore"
 mode: "wide"
@@ -17,13 +17,13 @@ browser = Browser(
 
 async def main():
 	# Run multiple agents with the same browser
-	agent1 = Agent(task='Search for Browser Use', browser_session=browser)
+	agent1 = Agent(task='Search for Browser Use', browser=browser)
 	await agent1.run()
 
-	agent2 = Agent(task='Click on the first link', browser_session=browser)
+	agent2 = Agent(task='Click on the first link', browser=browser)
 	await agent2.run()
 
-	agent3 = Agent(task='Find the social media page', browser_session=browser)
+	agent3 = Agent(task='Find the social media page', browser=browser)
 	await agent3.run()
 
 	# Close browser when completely done
