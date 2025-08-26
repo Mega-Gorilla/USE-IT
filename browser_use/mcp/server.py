@@ -186,7 +186,7 @@ class BrowserUseServer:
 		self.config = load_browser_use_config()
 		self.agent: Agent | None = None
 		self.browser_session: BrowserSession | None = None
-		self.controller: Tools | None = None
+		self.tools: Tools | None = None
 		self.llm: ChatOpenAI | None = None
 		self.file_system: FileSystem | None = None
 		self._telemetry = ProductTelemetry()
@@ -487,8 +487,8 @@ class BrowserUseServer:
 		self.browser_session = BrowserSession(browser_profile=profile)
 		await self.browser_session.start()
 
-		# Create controller for direct actions
-		self.controller = Tools()
+		# Create tools for direct actions
+		self.tools = Tools()
 
 		# Initialize LLM from config
 		llm_config = get_default_llm(self.config)
@@ -710,13 +710,13 @@ class BrowserUseServer:
 		if not self.browser_session:
 			return 'Error: No browser session active'
 
-		if not self.controller:
+		if not self.tools:
 			return 'Error: Tools not initialized'
 
 		state = await self.browser_session.get_browser_state_summary()
 
 		# Use the extract_structured_data action
-		# Create a dynamic action model that matches the controller's expectations
+		# Create a dynamic action model that matches the tools's expectations
 		from pydantic import create_model
 
 		# Create action model dynamically
@@ -727,7 +727,7 @@ class BrowserUseServer:
 		)
 
 		action = ExtractAction()
-		action_result = await self.controller.act(
+		action_result = await self.tools.act(
 			action=action,
 			browser_session=self.browser_session,
 			page_extraction_llm=self.llm,
@@ -772,7 +772,7 @@ class BrowserUseServer:
 			event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
 			await event
 			self.browser_session = None
-			self.controller = None
+			self.tools = None
 			return 'Browser closed'
 		return 'No browser session to close'
 

@@ -84,7 +84,7 @@ async def browser_session(base_url):
 
 
 @pytest.fixture(scope='module')
-def controller():
+def tools():
 	"""Create and provide a Tools instance."""
 	return Tools()
 
@@ -94,8 +94,8 @@ class TestTabManagement:
 
 	# Helper methods
 
-	async def _execute_action(self, controller, browser_session: BrowserSession, action_data):
-		"""Generic helper to execute any action via the controller."""
+	async def _execute_action(self, tools, browser_session: BrowserSession, action_data):
+		"""Generic helper to execute any action via the tools."""
 		# Dynamically create an appropriate ActionModel class
 		action_type = list(action_data.keys())[0]
 		action_value = action_data[action_type]
@@ -108,7 +108,7 @@ class TestTabManagement:
 		setattr(DynamicActionModel, action_type, type(action_value) | None)
 
 		# Execute the action
-		result = await controller.act(DynamicActionModel(**action_data), browser_session)
+		result = await tools.act(DynamicActionModel(**action_data), browser_session)
 
 		# Give the browser a moment to process the action
 		await asyncio.sleep(0.5)

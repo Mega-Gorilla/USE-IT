@@ -242,7 +242,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if tools is not None:
 			self.tools = tools
 		elif controller is not None:
-			self.tools = controller
+			self.tools = tools
 		else:
 			self.tools = Tools(display_files_in_done_text=display_files_in_done_text)
 

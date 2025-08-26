@@ -121,7 +121,7 @@ class Registry(Generic[Context]):
 						param_type_name = getattr(param_type, '__name__', str(param_type))
 						raise ValueError(
 							f"Action '{func.__name__}' parameter '{param.name}: {param_type_name}' "
-							f"conflicts with special argument injected by controller: '{param.name}: {expected_type_name}'"
+							f"conflicts with special argument injected by tools: '{param.name}: {expected_type_name}'"
 						)
 				special_params.append(param)
 			else:

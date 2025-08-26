@@ -249,12 +249,12 @@ async def register_mcp_tools(registry: Registry, mcp_command: str, mcp_args: lis
 	Example:
 		```python
 	        from browser_use import Tools
-	        from browser_use.mcp.controller import register_mcp_tools
+	        from browser_use.mcp.tools import register_mcp_tools
 
-	        controller = Tools()
+	        tools = Tools()
 
 	        # Register Playwright MCP tools
-	        mcp = await register_mcp_tools(controller.registry, 'npx', ['@playwright/mcp@latest', '--headless'])
+	        mcp = await register_mcp_tools(tools.registry, 'npx', ['@playwright/mcp@latest', '--headless'])
 
 	        # Now all MCP tools are available as browser-use actions
 		```

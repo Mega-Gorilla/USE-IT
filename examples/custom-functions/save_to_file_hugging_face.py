@@ -14,8 +14,8 @@ from browser_use import ChatOpenAI
 from browser_use.agent.service import Agent
 from browser_use.tools.service import Tools
 
-# Initialize controller first
-controller = Tools()
+# Initialize tools first
+tools = Tools()
 
 
 class Model(BaseModel):
@@ -29,7 +29,7 @@ class Models(BaseModel):
 	models: list[Model]
 
 
-@controller.action('Save models', param_model=Models)
+@tools.action('Save models', param_model=Models)
 def save_models(params: Models):
 	with open('models.txt', 'a') as f:
 		for model in params.models:
@@ -41,7 +41,7 @@ async def main():
 	task = 'Look up models with a license of cc-by-sa-4.0 and sort by most likes on Hugging face, save top 5 to file.'
 
 	model = ChatOpenAI(model='gpt-4.1-mini')
-	agent = Agent(task=task, llm=model, controller=controller)
+	agent = Agent(task=task, llm=model, tools=tools)
 
 	await agent.run()
 

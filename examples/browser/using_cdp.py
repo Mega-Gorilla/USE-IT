@@ -32,14 +32,14 @@ browser_session = BrowserSession(
 	cdp_url='http://localhost:9222',
 	is_local=True,  # set to False if you want to use a remote browser
 )
-controller = Tools()
+tools = Tools()
 
 
 async def main():
 	agent = Agent(
 		task='Visit https://duckduckgo.com and search for "browser-use founders"',
 		lllm=ChatOpenAI(model='gpt-4.1-mini'),
-		controller=controller,
+		tools=tools,
 		browser_session=browser_session,
 	)
 

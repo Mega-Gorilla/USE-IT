@@ -505,7 +505,7 @@ class TestRegistryEdgeCases:
 
 
 class TestExistingToolsActions:
-	"""Test that existing controller actions continue to work"""
+	"""Test that existing tools actions continue to work"""
 
 	async def test_existing_action_models(self, registry, browser_session):
 		"""Test that existing action parameter models work correctly"""
@@ -954,7 +954,7 @@ class TestParamsModelArgsAndKwargs:
 
 		This test demonstrates the problem and our fix. The issue happens because:
 
-		1. In controller/service.py, we have:
+		1. In tools/service.py, we have:
 		```python
 		@registry.action('Google Sheets: Select a specific cell or range of cells')
 		async def select_cell_or_range(browser_session: BrowserSession, cell_or_range: str):

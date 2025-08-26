@@ -70,13 +70,13 @@ def parse_arguments():
 def initialize_agent(query: str, provider: str):
 	"""Initialize the browser agent with the given query and provider."""
 	llm = get_llm(provider)
-	controller = Tools()
+	tools = Tools()
 	browser_session = BrowserSession()
 
 	return Agent(
 		task=query,
 		llm=llm,
-		controller=controller,
+		tools=tools,
 		browser_session=browser_session,
 		use_vision=True,
 		max_actions_per_step=1,

@@ -7,7 +7,7 @@ Example usage:
     from browser_use import Tools
     from browser_use.mcp.client import MCPClient
 
-    controller = Tools()
+    tools = Tools()
 
     # Connect to an MCP server
     mcp_client = MCPClient(
@@ -17,7 +17,7 @@ Example usage:
     )
 
     # Register all MCP tools as browser-use actions
-    await mcp_client.register_to_controller(controller)
+    await mcp_client.register_to_tools(tools)
 
     # Now use with Agent as normal - MCP tools are available as actions
 """
@@ -207,23 +207,23 @@ class MCPClient:
 			)
 			self._telemetry.flush()
 
-	async def register_to_controller(
+	async def register_to_tools(
 		self,
-		controller: Tools,
+		tools: Tools,
 		tool_filter: list[str] | None = None,
 		prefix: str | None = None,
 	) -> None:
-		"""Register MCP tools as actions in the browser-use controller.
+		"""Register MCP tools as actions in the browser-use tools.
 
 		Args:
-			controller: Browser-use controller to register actions to
+			tools: Browser-use tools to register actions to
 			tool_filter: Optional list of tool names to register (None = all tools)
 			prefix: Optional prefix to add to action names (e.g., "playwright_")
 		"""
 		if not self._connected:
 			await self.connect()
 
-		registry = controller.registry
+		registry = tools.registry
 
 		for tool_name, tool in self._tools.items():
 			# Skip if not in filter

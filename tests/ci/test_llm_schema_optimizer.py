@@ -26,12 +26,12 @@ def test_optimizer_preserves_all_fields_in_structured_done_action():
 	This test specifically checks for a bug where fields were being lost
 	during the optimization process.
 	"""
-	# 1. Setup a controller with a custom output model, simulating an Agent
+	# 1. Setup a tools with a custom output model, simulating an Agent
 	#    being created with an `output_model_schema`.
-	controller = Tools(output_model=ProductInfo)
+	tools = Tools(output_model=ProductInfo)
 
 	# 2. Get the dynamically created AgentOutput model, which includes all registered actions.
-	ActionModel = controller.registry.create_action_model()
+	ActionModel = tools.registry.create_action_model()
 	agent_output_model = AgentOutput.type_with_custom_actions(ActionModel)
 
 	# 3. Run the schema optimizer on the agent's output model.

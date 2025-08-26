@@ -84,8 +84,8 @@ def create_mock_llm(actions: list[str] | None = None) -> BaseChatModel:
 	Returns:
 		Mock LLM that will return the actions in order, or just a done action if no actions provided.
 	"""
-	controller = Tools()
-	ActionModel = controller.registry.create_action_model()
+	tools = Tools()
+	ActionModel = tools.registry.create_action_model()
 	AgentOutputWithActions = AgentOutput.type_with_custom_actions(ActionModel)
 
 	llm = AsyncMock(spec=BaseChatModel)
