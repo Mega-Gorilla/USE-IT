@@ -1,0 +1,109 @@
+---
+title: "Multiple Browser Instances"
+description: "Run multiple agents in parallel with separate browser instances"
+icon: "copy"
+---
+
+Run multiple browser-use agents simultaneously, each with their own isolated browser instance.
+
+## Basic Example
+
+```python
+import asyncio
+from browser_use import Agent, Browser, ChatOpenAI
+
+async def main():
+    # Create 3 separate browser instances
+    browsers = [
+        Browser(
+            user_data_dir=f'./temp-profile-{i}',
+            headless=False,  # Set to True for production
+            keep_alive=True,
+        )
+        for i in range(3)
+    ]
+
+    # Create 3 agents with different tasks
+    agents = [
+        Agent(
+            task='Search for "browser automation" on Google',
+            browser=browsers[0],
+            llm=ChatOpenAI(model='gpt-4.1-mini'),
+        ),
+        Agent(
+            task='Search for "AI agents" on DuckDuckGo',
+            browser=browsers[1],
+            llm=ChatOpenAI(model='gpt-4.1-mini'),
+        ),
+        Agent(
+            task='Visit Wikipedia and search for "web scraping"',
+            browser=browsers[2],
+            llm=ChatOpenAI(model='gpt-4.1-mini'),
+        ),
+    ]
+
+    print('🚀 Starting 3 agents in parallel...')
+    
+    # Run all agents in parallel
+    tasks = [agent.run() for agent in agents]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Print results
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            print(f'❌ Agent {i+1} failed: {result}')
+        else:
+            print(f'✅ Agent {i+1} completed successfully')
+
+    # Clean up browsers
+    print('🧹 Cleaning up browsers...')
+    for browser in browsers:
+        await browser.stop()
+
+    print('🎉 All agents completed!')
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+## How it Works
+
+1. **Separate Profiles**: Each browser gets a unique `user_data_dir` to avoid conflicts
+2. **Parallel Execution**: `asyncio.gather()` runs all agents simultaneously  
+3. **Isolated Sessions**: Each agent operates independently
+4. **Resource Management**: Browsers are properly cleaned up after completion
+
+## Key Benefits
+
+- ✅ **True Parallelism**: Multiple tasks execute simultaneously
+- ✅ **Isolation**: Each browser has separate cookies, cache, and state
+- ✅ **Scalability**: Add more browsers/agents as needed
+- ✅ **Resource Efficiency**: Clean shutdown prevents memory leaks
+
+## Best Practices
+
+```python
+# Use headless for production
+browsers = [
+    Browser(
+        user_data_dir=f'./profile-{i}',
+        headless=True,  # Better performance
+        keep_alive=True,
+    )
+    for i in range(5)
+]
+
+# Handle errors gracefully
+results = await asyncio.gather(*tasks, return_exceptions=True)
+for i, result in enumerate(results):
+    if isinstance(result, Exception):
+        print(f'Agent {i+1} error: {result}')
+
+# Always clean up
+finally:
+    for browser in browsers:
+        try:
+            await browser.stop()
+        except Exception as e:
+            print(f'Cleanup error: {e}')
+```
