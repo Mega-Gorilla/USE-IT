@@ -765,18 +765,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 		self.state.consecutive_failures += 1
 
-		# TODO: figure out what to do here
-		if isinstance(error, (ValidationError, ValueError)):
-			self.logger.error(f'{prefix}{error_msg}')
-			# Add context message to help model fix validation errors
-			validation_hint = 'Your output format was invalid. Please follow the exact schema structure required for actions.'
-			# self._message_manager._add_context_message(UserMessage(content=validation_hint))
-
-			if 'Max token limit reached' in error_msg:
-				token_hint = 'Your response was too long. Keep your thinking and output concise.'
-				# self._message_manager._add_context_message(UserMessage(content=token_hint))
 		# Handle InterruptedError specially
-		elif isinstance(error, InterruptedError):
+		if isinstance(error, InterruptedError):
 			error_msg = 'The agent was interrupted mid-step' + (f' - {error}' if error else '')
 			self.logger.error(f'{prefix}{error_msg}')
 		elif 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
