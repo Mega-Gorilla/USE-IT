@@ -465,7 +465,6 @@ class BrowserUseServer:
 			'wait_between_actions': 0.5,
 			'keep_alive': True,
 			'user_data_dir': '~/.config/browseruse/profiles/default',
-			'is_mobile': False,
 			'device_scale_factor': 1.0,
 			'disable_security': False,
 			'headless': False,
