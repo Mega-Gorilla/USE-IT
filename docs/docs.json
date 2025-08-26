@@ -9,7 +9,10 @@
   },
   "favicon": "/favicon.ico",
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "fonts": {
     "family": "Geist"
@@ -26,22 +29,50 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "cli"]
+            "pages": [
+              "introduction",
+              "quickstart",
+              "quickstart_llm"
+            ]
           },
           {
             "group": "Customize",
             "pages": [
-              "customize/supported-models",
-              "customize/agent-settings",
-              "customize/browser-settings",
-              "customize/real-browser",
-              "customize/output-format",
-              "customize/system-prompt",
-              "customize/sensitive-data",
-              "customize/custom-functions",
-              "customize/mcp-client",
-              "customize/mcp-server",
-              "customize/hooks"
+              {
+                "group": "Agent",
+                "icon": "robot",
+                "isDefaultOpen": true,
+                "pages": [
+                  "customize/agent-basic",
+                  "customize/supported-models",
+                  "customize/agent-output-format",
+                  "customize/agent-parameters"
+                ]
+              },
+              {
+                "group": "Browser",
+                "icon": "window",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/browser-basic",
+                  "customize/browser-real-browser",
+                  "customize/browser-remote",
+                  "customize/browser-parameters"
+                ]
+              },
+              {
+                "group": "Examples",
+                "icon": "folder-open",
+                "pages": [
+                  "customize/fast-agent",
+                  "customize/chain-agents",
+                  "customize/parallel-browser",
+                  "customize/sensitive-data",
+                  "customize/secure",
+                  "customize/more-examples"
+                ]
+              },
+              "customize/custom-functions"
             ]
           },
           {
@@ -49,10 +80,17 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
+              {
+                "group": "MCP",
+                "icon": "link",
+                "pages": [
+                  "customize/mcp-client",
+                  "customize/mcp-server"
+                ]
+              },
+              "customize/hooks",
               "development/telemetry",
-              "development/observability",
-              "development/evaluations",
-              "development/roadmap"
+              "development/observability"
             ]
           }
         ]
@@ -126,7 +164,11 @@
       "display": "interactive"
     },
     "examples": {
-      "languages": ["javascript", "curl", "python"],
+      "languages": [
+        "javascript",
+        "curl",
+        "python"
+      ],
       "required": true
     }
   },

@@ -2,6 +2,7 @@
 title: "Node.js"
 description: "Get started with Browser Use Cloud API using Node.js"
 icon: "node-js"
+mode: "wide"
 ---
 
 <img src="/images/cloud-banner-js.png" alt="Browser Use Node.js" width="full" />
@@ -62,6 +63,7 @@ const TaskOutput = z.object({
 
 const result = await client.tasks.run({
   task: "Search for the top 10 Hacker News posts and return the title and url.",
+  schema: TaskOutput,
 });
 
 for (const post of result.parsedOutput.posts) {
@@ -85,6 +87,8 @@ const stream = browseruse.tasks.stream({
 for await (const msg of stream) {
   switch (msg.status) {
     case "started":
+      console.log(`started: ${msg.data.session.liveUrl}`);
+      break;
     case "paused":
     case "stopped":
       console.log(`running: ${msg}`);

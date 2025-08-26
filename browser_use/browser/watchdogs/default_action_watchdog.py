@@ -495,7 +495,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
 				# Return coordinates as dict for metadata
-				return {"click_x": center_x, "click_y": center_y}
+				return {'click_x': center_x, 'click_y': center_y}
 
 			except Exception as e:
 				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
@@ -673,7 +673,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
-			
+
 			# Track coordinates for metadata
 			input_coordinates = None
 
@@ -707,7 +707,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
 				center_x = bounds['x'] + bounds['width'] / 2
 				center_y = bounds['y'] + bounds['height'] / 2
-				input_coordinates = {"input_x": center_x, "input_y": center_y}
+				input_coordinates = {'input_x': center_x, 'input_y': center_y}
 				self.logger.debug(f'📍 Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
 
 			# Provide helpful warnings for common issues
@@ -837,7 +837,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 				# Small delay between characters
 				await asyncio.sleep(0.01)
-			
+
 			# Return coordinates metadata if available
 			return input_coordinates
 
@@ -1293,6 +1293,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def on_ScrollToTextEvent(self, event: ScrollToTextEvent) -> None:
 		"""Handle scroll to text request with CDP. Raises exception if text not found."""
+
+		# TODO: handle looking for text inside cross-origin iframes as well
+
 		# Get CDP client and session
 		cdp_client = self.browser_session.cdp_client
 		if self.browser_session.agent_focus is None:

@@ -269,9 +269,16 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.browser_session.browser_profile.downloads_path
 			or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
 		)
+
+		# Initialize variables that may be used outside try blocks
+		unique_filename = None
+		file_size = 0
+		expected_path = None
+		download_result = None
+		download_url = event.get('url', '')
+		suggested_filename = event.get('suggestedFilename', 'download')
+
 		try:
-			download_url = event.get('url', '')
-			suggested_filename = event.get('suggestedFilename', 'download')
 			guid = event.get('guid', '')
 
 			self.logger.debug(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
