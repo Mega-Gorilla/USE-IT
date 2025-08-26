@@ -43,10 +43,10 @@
                 "icon": "robot",
                 "isDefaultOpen": true,
                 "pages": [
-                  "customize/agent-basic",
-                  "customize/supported-models",
-                  "customize/agent-output-format",
-                  "customize/agent-parameters"
+                  "customize/agent/basics",
+                  "customize/agent/supported-models",
+                  "customize/agent/output-format",
+                  "customize/agent/all-parameters"
                 ]
               },
               {
@@ -54,25 +54,36 @@
                 "icon": "window",
                 "isDefaultOpen": false,
                 "pages": [
-                  "customize/browser-basic",
-                  "customize/browser-real-browser",
-                  "customize/browser-remote",
-                  "customize/browser-parameters"
+                  "customize/browser/basics",
+                  "customize/browser/real-browser",
+                  "customize/browser/remote",
+                  "customize/browser/all-parameters"
+                ]
+              },
+              {
+                "group": "Tools",
+                "icon": "wrench",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/tools/basics",
+                  "customize/tools/available",
+                  "customize/tools/add",
+                  "customize/tools/remove",
+                  "customize/tools/response"
                 ]
               },
               {
                 "group": "Examples",
                 "icon": "folder-open",
                 "pages": [
-                  "customize/fast-agent",
-                  "customize/chain-agents",
-                  "customize/parallel-browser",
-                  "customize/sensitive-data",
-                  "customize/secure",
-                  "customize/more-examples"
+                  "customize/examples/fast-agent",
+                  "customize/examples/chain-agents",
+                  "customize/examples/parallel-browser",
+                  "customize/examples/sensitive-data",
+                  "customize/examples/secure",
+                  "customize/examples/more-examples"
                 ]
-              },
-              "customize/custom-functions"
+              }
             ]
           },
           {

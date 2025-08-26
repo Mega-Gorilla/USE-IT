@@ -1675,12 +1675,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
-		self._task_end_time = time.time()
-		self._task_duration = self._task_end_time - self._task_start_time
+		# self._task_end_time = time.time()
+		# self._task_duration = self._task_end_time - self._task_start_time TODO: this is not working when using take_step
 		if self.history.is_successful():
-			self.logger.info(f'✅ Task completed successfully in {self._task_duration:.2f}s')
+			self.logger.info('✅ Task completed successfully')
 		else:
-			self.logger.info(f'❌ Task completed without success in {self._task_duration:.2f}s')
+			self.logger.info('❌ Task completed without success')
 
 	async def rerun_history(
 		self,
