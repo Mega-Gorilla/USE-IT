@@ -51,7 +51,7 @@
               },
               {
                 "group": "Browser",
-                "icon": "globe",
+                "icon": "window",
                 "isDefaultOpen": false,
                 "pages": [
                   "customize/browser-basic",
@@ -62,7 +62,7 @@
               },
               {
                 "group": "Examples",
-                "icon": "code",
+                "icon": "folder-open",
                 "pages": [
                   "customize/fast-agent",
                   "customize/chain-agents",
