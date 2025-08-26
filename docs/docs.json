@@ -9,7 +9,10 @@
   },
   "favicon": "/favicon.ico",
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "fonts": {
     "family": "Geist"
@@ -26,22 +29,41 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": ["introduction", "quickstart", "cli"]
+            "pages": [
+              "introduction",
+              "quickstart",
+              "quickstart_llm"
+            ]
           },
           {
             "group": "Customize",
             "pages": [
-              "customize/supported-models",
-              "customize/agent-settings",
-              "customize/browser-settings",
-              "customize/real-browser",
-              "customize/output-format",
-              "customize/system-prompt",
+              {
+                "group": "Agent",
+                "icon": "robot",
+                "isDefaultOpen": true,
+                "pages": [
+                  "customize/agent-basic",
+                  "customize/supported-models",
+                  "customize/agent-parameters",
+                  "customize/agent-output-format"
+                ]
+              },
+              {
+                "group": "Browser",
+                "icon": "globe",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/browser-basic",
+                  "customize/browser-real-browser",
+                  "customize/browser-keep-open",
+                  "customize/browser-multiple",
+                  "customize/browser-remote",
+                  "customize/browser-parameters"
+                ]
+              },
               "customize/sensitive-data",
-              "customize/custom-functions",
-              "customize/mcp-client",
-              "customize/mcp-server",
-              "customize/hooks"
+              "customize/custom-functions"
             ]
           },
           {
@@ -49,6 +71,9 @@
             "pages": [
               "development/contribution-guide",
               "development/local-setup",
+              "customize/mcp-client",
+              "customize/mcp-server",
+              "customize/hooks",
               "development/telemetry",
               "development/observability",
               "development/evaluations",
@@ -126,7 +151,11 @@
       "display": "interactive"
     },
     "examples": {
-      "languages": ["javascript", "curl", "python"],
+      "languages": [
+        "javascript",
+        "curl",
+        "python"
+      ],
       "required": true
     }
   },

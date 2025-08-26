@@ -9,7 +9,6 @@ from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlparse
 
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
-from uuid_extensions import uuid7str
 
 from browser_use.config import CONFIG
 from browser_use.observability import observe_debug
@@ -596,8 +595,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
 
-	# Unique identifier for this browser profile
-	id: str = Field(default_factory=uuid7str)
+	# Session/connection configuration
+	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
+	is_local: bool = Field(default=True, description='Whether this is a local browser instance')
 	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
@@ -684,10 +684,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	def __repr__(self) -> str:
 		short_dir = _log_pretty_path(self.user_data_dir) if self.user_data_dir else '<incognito>'
-		return f'BrowserProfile#{self.id[-4:]}(user_data_dir= {short_dir}, headless={self.headless})'
+		return f'BrowserProfile(user_data_dir= {short_dir}, headless={self.headless})'
 
 	def __str__(self) -> str:
-		return f'BrowserProfile#{self.id[-4:]}'
+		return 'BrowserProfile'
 
 	@model_validator(mode='after')
 	def copy_old_config_names_to_new(self) -> Self:

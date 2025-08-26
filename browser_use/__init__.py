@@ -5,7 +5,14 @@ from browser_use.logging_config import setup_logging
 
 # Only set up logging if not in MCP mode or if explicitly requested
 if os.environ.get('BROWSER_USE_SETUP_LOGGING', 'true').lower() != 'false':
-	logger = setup_logging()
+	from browser_use.config import CONFIG
+
+	# Get log file paths from config/environment
+	debug_log_file = getattr(CONFIG, 'BROWSER_USE_DEBUG_LOG_FILE', None)
+	info_log_file = getattr(CONFIG, 'BROWSER_USE_INFO_LOG_FILE', None)
+
+	# Set up logging with file handlers if specified
+	logger = setup_logging(debug_log_file=debug_log_file, info_log_file=info_log_file)
 else:
 	import logging
 
@@ -42,6 +49,7 @@ if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
 	from browser_use.agent.views import ActionModel, ActionResult, AgentHistoryList
 	from browser_use.browser import BrowserProfile, BrowserSession
+	from browser_use.browser import BrowserSession as Browser
 	from browser_use.controller.service import Controller
 	from browser_use.dom.service import DomService
 	from browser_use.llm.anthropic.chat import ChatAnthropic
@@ -64,6 +72,7 @@ _LAZY_IMPORTS = {
 	'AgentHistoryList': ('browser_use.agent.views', 'AgentHistoryList'),
 	# Browser components (heavy due to playwright/patchright)
 	'BrowserSession': ('browser_use.browser', 'BrowserSession'),
+	'Browser': ('browser_use.browser', 'BrowserSession'),  # Alias for BrowserSession
 	'BrowserProfile': ('browser_use.browser', 'BrowserProfile'),
 	# Controller (moderate weight)
 	'Controller': ('browser_use.controller.service', 'Controller'),
@@ -100,6 +109,7 @@ def __getattr__(name: str):
 __all__ = [
 	'Agent',
 	'BrowserSession',
+	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
 	'Controller',
 	'DomService',
