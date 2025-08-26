@@ -158,7 +158,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_failures: int = 3,
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
-		validate_output: bool = False,
 		generate_gif: bool | str = False,
 		available_file_paths: list[str] | None = None,
 		include_attributes: list[str] | None = None,
@@ -234,7 +233,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			max_failures=max_failures,
 			override_system_message=override_system_message,
 			extend_system_message=extend_system_message,
-			validate_output=validate_output,
 			generate_gif=generate_gif,
 			include_attributes=include_attributes,
 			max_actions_per_step=max_actions_per_step,
@@ -1109,7 +1107,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				max_steps=max_steps,
 				max_actions_per_step=self.settings.max_actions_per_step,
 				use_vision=self.settings.use_vision,
-				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
 				cdp_url=urlparse(self.browser_session.cdp_url).hostname

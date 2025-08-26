@@ -30,7 +30,6 @@ class AgentTelemetryEvent(BaseTelemetryEvent):
 	max_steps: int
 	max_actions_per_step: int
 	use_vision: bool
-	use_validation: bool
 	version: str
 	source: str
 	cdp_url: str | None
