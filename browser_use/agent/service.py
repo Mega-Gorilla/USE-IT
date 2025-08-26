@@ -177,7 +177,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 90,
 		step_timeout: int = 120,
-		preload: bool = True,
+		directly_open_url: bool = True,
 		include_recent_events: bool = False,
 		**kwargs,
 	):
@@ -208,7 +208,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Core components
 		self.task = task
 		self.llm = llm
-		self.preload = preload
+		self.directly_open_url = directly_open_url
 		self.include_recent_events = include_recent_events
 		if tools is not None:
 			self.tools = tools
@@ -635,9 +635,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		# Use caching based on preload setting - if preload is False, don't use cached state
+		# Use caching based on directly_open_url setting - if directly_open_url is False, don't use cached state
 		is_first_step = self.state.n_steps in (0, 1)
-		use_cache = is_first_step and self.preload
+		use_cache = is_first_step and self.directly_open_url
 		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
@@ -1168,9 +1168,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				found_urls.append(url)
 
 		unique_urls = list(set(found_urls))
-		# If multiple URLs found, skip preloading
+		# If multiple URLs found, skip directly_open_urling
 		if len(unique_urls) > 1:
-			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping preload to avoid ambiguity')
+			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
 			return None
 
 		# If exactly one URL found, return it
@@ -1246,8 +1246,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and add it as an initial action (only if preload is enabled)
-			if self.preload and not self.state.follow_up_task:
+			# Check if task contains a URL and add it as an initial action (only if directly_open_url is enabled)
+			if self.directly_open_url and not self.state.follow_up_task:
 				initial_url = self._extract_url_from_task(self.task)
 				if initial_url:
 					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
