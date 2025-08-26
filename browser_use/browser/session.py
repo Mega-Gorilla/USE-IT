@@ -193,13 +193,17 @@ class BrowserSession(BaseModel):
 
 	Supports both event-driven and imperative calling styles.
 
-	You can pass all browser settings directly or use a browser_profile:
+	Browser configuration is stored in the browser_profile, session identity in direct fields:
 	```python
 	# Direct settings (recommended for most users)
 	session = BrowserSession(headless=True, user_data_dir='./profile')
 
 	# Or use a profile (for advanced use cases)
 	session = BrowserSession(browser_profile=BrowserProfile(...))
+
+	# Access session fields directly, browser settings via profile or property
+	print(session.id)  # Session field
+	print(session.browser_profile.stealth)  # Direct browser_profile access
 	```
 	"""
 
@@ -297,11 +301,7 @@ class BrowserSession(BaseModel):
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
-		profile_kwargs = {
-			k: v
-			for k, v in locals().items()
-			if k not in ['self', 'browser_profile', 'id', 'cdp_url', 'is_local'] and v is not None
-		}
+		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
 
 		# Create browser profile from direct parameters or use provided one
 		resolved_browser_profile = browser_profile or BrowserProfile(**profile_kwargs)
@@ -309,19 +309,28 @@ class BrowserSession(BaseModel):
 		# Initialize the Pydantic model
 		super().__init__(
 			id=id or str(uuid7str()),
-			cdp_url=cdp_url,
-			is_local=is_local,
 			browser_profile=resolved_browser_profile,
 		)
 
-	# Core configuration (read-only after init)
-	id: str = Field(default_factory=lambda: str(uuid7str()))
-	cdp_url: str | None = None
-	is_local: bool = Field(default=True)
+	# Session configuration (session identity only)
+	id: str = Field(default_factory=lambda: str(uuid7str()), description='Unique identifier for this browser session')
+
+	# Browser configuration (reusable profile)
 	browser_profile: BrowserProfile = Field(
 		default_factory=lambda: DEFAULT_BROWSER_PROFILE,
 		description='BrowserProfile() options to use for the session, otherwise a default profile will be used',
 	)
+
+	# Convenience properties for common browser settings
+	@property
+	def cdp_url(self) -> str | None:
+		"""CDP URL from browser profile."""
+		return self.browser_profile.cdp_url
+
+	@property
+	def is_local(self) -> bool:
+		"""Whether this is a local browser instance from browser profile."""
+		return self.browser_profile.is_local
 
 	# Main shared event bus for all browser session + all watchdogs
 	event_bus: EventBus = Field(default_factory=EventBus)
@@ -401,7 +410,7 @@ class BrowserSession(BaseModel):
 
 		self.agent_focus = None
 		if self.is_local:
-			self.cdp_url = None
+			self.browser_profile.cdp_url = None
 
 		self._crash_watchdog = None
 		self._downloads_watchdog = None
@@ -506,7 +515,7 @@ class BrowserSession(BaseModel):
 					launch_result: BrowserLaunchResult = cast(
 						BrowserLaunchResult, await launch_event.event_result(raise_if_none=True, raise_if_any=True)
 					)
-					self.cdp_url = launch_result.cdp_url
+					self.browser_profile.cdp_url = launch_result.cdp_url
 				else:
 					raise ValueError('Got BrowserSession(is_local=False) but no cdp_url was provided to connect to!')
 
@@ -778,7 +787,7 @@ class BrowserSession(BaseModel):
 
 			# Reset state
 			if self.is_local:
-				self.cdp_url = None
+				self.browser_profile.cdp_url = None
 
 			# Notify stop and wait for all handlers to complete
 			# LocalBrowserWatchdog listens for BrowserStopEvent and dispatches BrowserKillEvent
@@ -1044,7 +1053,7 @@ class BrowserSession(BaseModel):
 		This MUST succeed or the browser is unusable. Fails hard on any error.
 		"""
 
-		self.cdp_url = cdp_url or self.cdp_url
+		self.browser_profile.cdp_url = cdp_url or self.cdp_url
 		if not self.cdp_url:
 			raise RuntimeError('Cannot setup CDP connection without CDP URL')
 
@@ -1057,7 +1066,7 @@ class BrowserSession(BaseModel):
 			# Run a tiny HTTP client to query for the WebSocket URL from the /json/version endpoint
 			async with httpx.AsyncClient() as client:
 				version_info = await client.get(url)
-				self.cdp_url = version_info.json()['webSocketDebuggerUrl']
+				self.browser_profile.cdp_url = version_info.json()['webSocketDebuggerUrl']
 
 		assert self.cdp_url is not None
 
