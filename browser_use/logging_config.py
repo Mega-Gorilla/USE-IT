@@ -100,8 +100,8 @@ def setup_logging(stream=None, log_level=None, force_setup=False, debug_log_file
 					record.name = 'Agent'
 				elif 'BrowserSession' in record.name:
 					record.name = 'BrowserSession'
-				elif 'controller' in record.name:
-					record.name = 'controller'
+				elif 'tools' in record.name:
+					record.name = 'tools'
 				elif 'dom' in record.name:
 					record.name = 'dom'
 				elif record.name.startswith('browser_use.'):

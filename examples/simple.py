@@ -1,11 +1,23 @@
 import asyncio
 
-from browser_use import Agent, ChatOpenAI
+from browser_use import Agent, Controller
+
+controller = Controller()
+
+
+@controller.action('Ask human for help with a question')
+def ask_human(question: str) -> str:
+	answer = input(f'{question} > ')
+	return f'The human responded with: {answer}'
+
+
+agent = Agent(
+	task='Ask human for help',
+	controller=controller,
+)
 
 
 async def main():
-	task = 'Find the founders of browser-use'
-	agent = Agent(task=task, llm=ChatOpenAI(model='gpt-4.1-mini'))
 	await agent.run()
 
 
