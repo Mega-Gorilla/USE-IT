@@ -1,12 +1,9 @@
----
-title: "Multiple Browser Instances"
-description: "Run multiple agents in parallel with separate browser instances"
-icon: "copy"
----
-
-```python
 import asyncio
+
 from browser_use import Agent, Browser, ChatOpenAI
+
+# NOTE: This is still experimental, and agents might conflict each other.
+
 
 async def main():
 	# Create 3 separate browser instances
@@ -42,6 +39,7 @@ async def main():
 	results = await asyncio.gather(*tasks, return_exceptions=True)
 
 	print('🎉 All agents completed!')
-```
 
-> **Note:** This is experimental, and agents might conflict each other.
+
+if __name__ == '__main__':
+	asyncio.run(main())
