@@ -1,0 +1,38 @@
+---
+title: "Remote Browser"
+description: ""
+icon: "cloud"
+mode: "wide"
+---
+
+
+### CDP URL Connection
+
+Get a cdp url from your favorite browser provider like AnchorBorwser, HyperBrowser, BrowserBase, Steel.dev, etc.:
+
+```python
+from browser_use import Browser
+
+# Connect to remote browser
+browser = Browser(
+    cdp_url="http://remote-server:9222",
+    is_local=False  # Important: don't try to launch local browser
+)
+agent = Agent(task="", browser=browser)
+```
+
+### Proxy Connection
+
+```python
+from browser_use.browser.profile import ProxySettings
+
+browser = Browser(
+    cdp_url="http://remote-server:9222",
+    proxy=ProxySettings(
+        server="http://proxy-server:8080",
+        username="proxy-user",
+        password="proxy-pass"
+    ),
+    is_local=False
+)
+```

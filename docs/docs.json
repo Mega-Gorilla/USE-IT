@@ -49,8 +49,19 @@
                   "customize/agent-output-format"
                 ]
               },
-              "customize/browser-settings",
-              "customize/real-browser",
+              {
+                "group": "Browser",
+                "icon": "globe",
+                "isDefaultOpen": false,
+                "pages": [
+                  "customize/browser-basic",
+                  "customize/browser-real-browser",
+                  "customize/browser-keep-open",
+                  "customize/browser-multiple",
+                  "customize/browser-remote",
+                  "customize/browser-parameters"
+                ]
+              },
               "customize/sensitive-data",
               "customize/custom-functions"
             ]

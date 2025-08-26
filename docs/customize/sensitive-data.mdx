@@ -23,7 +23,7 @@ agent = Agent(
 
 <Note>
 
-You should also configure [`BrowserSession(allowed_domains=...)`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to prevent the Agent from visiting URLs not needed for the task.
+You should also configure [`Browser(allowed_domains=...)`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to prevent the Agent from visiting URLs not needed for the task.
 
 </Note>
 
@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use.llm import ChatOpenAI
-from browser_use import Agent, BrowserSession
+from browser_use import Agent, Browser
 
 llm = ChatOpenAI(model='gpt-4.1')
 
@@ -57,13 +57,13 @@ task = """
 """
 
 # Recommended: Limit the domains available for the entire browser so the Agent can't be tricked into visiting untrusted URLs
-browser_session = BrowserSession(allowed_domains=['https://*.example.com'])
+browser = Browser(allowed_domains=['https://*.example.com'])
 
 agent = Agent(
     task=task,
     llm=llm,
     sensitive_data=sensitive_data,   # Pass the sensitive data to the agent
-    browser_session=browser_session, # Pass the restricted browser_session to limit URLs Agent can visit
+    browser=browser, # Pass the restricted browser to limit URLs Agent can visit
     use_vision=False,                # Disable vision or else the LLM might see entered values in screenshots
 )
 
@@ -88,7 +88,7 @@ This approach ensures that sensitive information remains secure while still allo
 ### Best Practices
 
 - Always restrict your sensitive data to only the exact domains that need it, `https://travel.example.com` is better than `*.example.com`
-- Always restrict [`BrowserSession(allowed_domains=[...])`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to only the domains the agent needs to visit to accomplish its task. This helps guard against prompt injection attacks, jailbreaks, and LLM mistakes.
+- Always restrict [`Browser(allowed_domains=[...])`](https://docs.browser-use.com/customize/browser-settings#allowed-domains) to only the domains the agent needs to visit to accomplish its task. This helps guard against prompt injection attacks, jailbreaks, and LLM mistakes.
 - Only use `sensitive_data` for strings that can be inputted verbatim as text. The LLM never sees the actual values, so it can't "understand" them, adapt them, or split them up for multiple input fields. For example, you can't ask the Agent to click through a datepicker UI to input the sensitive value `1990-12-31`. For these situations you can implement a [custom function](/customize/custom-functions) the LLM can call that updates the DOM using Python / JS.
 - Don't use `sensitive_data` for login credentials, it's better to use [`storage_state`](docs.browser-use.com/customize/browser-settings#storage-state) or a [`user_data_dir`](/customize/browser-settings#user-data-dir) to log into the sites the agent needs in advance & reuse the cookies:
 
@@ -100,7 +100,7 @@ $ playwright open https://accounts.google.com --save-storage auth.json
 Then use those cookies when the agent runs:
 
 ```python
-agent = Agent(..., browser_session=BrowserSession(storage_state='./auth.json'))
+agent = Agent(..., browser=Browser(storage_state='./auth.json'))
 ```
 
 <Warning>
@@ -131,7 +131,7 @@ Domain patterns in `sensitive_data` follow the same format as [`allowed_domains`
 
 The default protocol when no scheme is specified is now `https://` for enhanced security.
 
-For convenience the system will validate that all domain patterns used in `Agent(sensitive_data)` are also included in `BrowserSession(allowed_domains)`.
+For convenience the system will validate that all domain patterns used in `Agent(sensitive_data)` are also included in `Browser(allowed_domains)`.
 
 ### Missing or Empty Values
 
@@ -152,7 +152,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use.llm import ChatOpenAI
-from browser_use import Agent, BrowserSession
+from browser_use import Agent, Browser
 
 
 llm = ChatOpenAI(model='gpt-4.1')
@@ -165,7 +165,7 @@ sensitive_data = {
 }
 
 # Set browser session with allowed domains that match all domain patterns in sensitive_data
-browser_session = BrowserSession(
+browser = Browser(
     allowed_domains=[
         'https://*.google.com',
         'chrome-extension://abcd',
@@ -179,7 +179,7 @@ agent = Agent(
     task="Log into Google, then check my account information",
     llm=llm,
     sensitive_data=sensitive_data,
-    browser_session=browser_session,
+    browser=browser,
     use_vision=False,
 )
 
