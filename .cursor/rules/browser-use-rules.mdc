@@ -6,23 +6,7 @@ alwaysApply: true
 
 ## 🧠 General Guidelines for Contributing to `browser-use`
 
-**Browser-Use** is an AI agent that autonomously interacts with the web. It takes a user-defined task, navigates web pages using Chromium via CDP, processes HTML, and repeatedly queries a language model (like `gpt-4o`) to decide the next action—until the task is completed.
-
-### 🗂️ File Documentation
-
-When you create a **new file**:
-
-- **For humans**: At the top of the file, include a docstring in natural language explaining:
-
-  - What this file does.
-  - How it fits into the browser-use system.
-  - If it introduces a new abstraction or replaces an old one.
-
-- **For LLMs/AI**: Include structured metadata using standardized comments such as:
-
-  ```python
-  # @file purpose: Defines <purpose>
-  ```
+**Browser-Use** is an AI agent that autonomously interacts with the web. It takes a user-defined task, navigates web pages using Chromium via CDP, processes HTML, and repeatedly queries a language model (like `gpt-4.1-mini`) to decide the next action—until the task is completed.
 
 ---
 
@@ -48,22 +32,7 @@ uv sync
 
 ---
 
-## ⚙️ Adding New Actions
 
-To add a new action that your browser agent can execute:
-
-```python
-from playwright.async_api import Page
-from browser_use.core.tools import Tools, ActionResult
-
-tools = Tools()
-
-@tools.registry.action("Search the web for a specific query")
-async def search_web(query: str, page: Page):
-    # Implement your logic here, e.g., query a search engine and return results
-    result = ...
-    return ActionResult(extracted_content=result, include_in_memory=True)
-```
 
 ### Notes:
 

@@ -124,9 +124,6 @@ AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 
 
 class Agent(Generic[Context, AgentStructuredOutput]):
-	browser_session: BrowserSession | None = None
-	_logger: logging.Logger | None = None
-
 	@time_execution_sync('--init')
 	def __init__(
 		self,
@@ -135,9 +132,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
-		browser: Browser | None = None,  # Alias for browser_session (cleaner naming)
+		browser: Browser | None = None,  # Alias for browser_session
 		tools: Tools[Context] | None = None,
-		controller: Tools[Context] | None = None,  # alias for tools for backwards compatibility
+		controller: Tools[Context] | None = None,  # Alias for tools
 		# Initial agent run parameters
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
@@ -156,14 +153,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Agent settings
 		output_model_schema: type[AgentStructuredOutput] | None = None,
 		use_vision: bool = True,
-		use_vision_for_planner: bool = False,  # Deprecated
 		save_conversation_path: str | Path | None = None,
 		save_conversation_path_encoding: str | None = 'utf-8',
 		max_failures: int = 3,
-		retry_delay: int = 10,
 		override_system_message: str | None = None,
 		extend_system_message: str | None = None,
-		validate_output: bool = False,
 		generate_gif: bool | str = False,
 		available_file_paths: list[str] | None = None,
 		include_attributes: list[str] | None = None,
@@ -172,12 +166,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		flash_mode: bool = False,
 		max_history_items: int | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
-		planner_llm: BaseChatModel | None = None,  # Deprecated
-		planner_interval: int = 1,  # Deprecated
-		is_planner_reasoning: bool = False,  # Deprecated
-		extend_planner_system_message: str | None = None,  # Deprecated
 		injected_agent_state: AgentState | None = None,
-		context: Context | None = None,
 		source: str | None = None,
 		file_system_path: str | None = None,
 		task_id: str | None = None,
@@ -188,37 +177,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		llm_timeout: int = 90,
 		step_timeout: int = 120,
-		preload: bool = True,
+		directly_open_url: bool = True,
 		include_recent_events: bool = False,
 		**kwargs,
 	):
-		if not isinstance(llm, BaseChatModel):
-			raise ValueError('invalid llm, must be from browser_use.llm')
-		# Check for deprecated planner parameters
-		planner_params = [
-			planner_llm,
-			use_vision_for_planner,
-			is_planner_reasoning,
-			extend_planner_system_message,
-		]
-		if any(param is not None and param is not False for param in planner_params) or planner_interval != 1:
-			logger.warning(
-				'⚠️ Planner functionality has been removed in browser-use v0.3.3+. '
-				'The planner_llm, use_vision_for_planner, planner_interval, is_planner_reasoning, '
-				'and extend_planner_system_message parameters are deprecated and will be ignored. '
-				'Please remove these parameters from your Agent() initialization.'
-			)
-
-		# Check for deprecated memory parameters
-		if kwargs.get('enable_memory', False) or kwargs.get('memory_config') is not None:
-			logger.warning(
-				'Memory support has been removed as of version 0.3.2. '
-				'The agent context for memory is significantly improved and no longer requires the old memory system. '
-				"Please remove the 'enable_memory' and 'memory_config' parameters."
-			)
-			kwargs['enable_memory'] = False
-			kwargs['memory_config'] = None
-
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
@@ -228,16 +190,25 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task_id: str = self.id
 		self.session_id: str = uuid7str()
 
+		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
+
+		# Handle browser vs browser_session parameter (browser takes precedence)
+		if browser and browser_session:
+			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
+		browser_session = browser or browser_session
+
+		self.browser_session = browser_session or BrowserSession(
+			browser_profile=browser_profile,
+			id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
+		)
+
 		# Initialize available file paths as direct attribute
 		self.available_file_paths = available_file_paths
-
-		# Create instance-specific logger
-		self._logger = logging.getLogger(f'browser_use.Agent[{self.task_id[-3:]}]')
 
 		# Core components
 		self.task = task
 		self.llm = llm
-		self.preload = preload
+		self.directly_open_url = directly_open_url
 		self.include_recent_events = include_recent_events
 		if tools is not None:
 			self.tools = tools
@@ -256,14 +227,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.settings = AgentSettings(
 			use_vision=use_vision,
 			vision_detail_level=vision_detail_level,
-			use_vision_for_planner=False,  # Always False now (deprecated)
 			save_conversation_path=save_conversation_path,
 			save_conversation_path_encoding=save_conversation_path_encoding,
 			max_failures=max_failures,
-			retry_delay=retry_delay,
 			override_system_message=override_system_message,
 			extend_system_message=extend_system_message,
-			validate_output=validate_output,
 			generate_gif=generate_gif,
 			include_attributes=include_attributes,
 			max_actions_per_step=max_actions_per_step,
@@ -271,10 +239,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			flash_mode=flash_mode,
 			max_history_items=max_history_items,
 			page_extraction_llm=page_extraction_llm,
-			planner_llm=None,  # Always None now (deprecated)
-			planner_interval=1,  # Always 1 now (deprecated)
-			is_planner_reasoning=False,  # Always False now (deprecated)
-			extend_planner_system_message=None,  # Always None now (deprecated)
 			calculate_cost=calculate_cost,
 			include_tool_call_examples=include_tool_call_examples,
 			llm_timeout=llm_timeout,
@@ -285,7 +249,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.token_cost_service = TokenCost(include_cost=calculate_cost)
 		self.token_cost_service.register_llm(llm)
 		self.token_cost_service.register_llm(page_extraction_llm)
-		# Note: No longer registering planner_llm (deprecated)
 
 		# Initialize state
 		self.state = injected_agent_state or AgentState()
@@ -317,13 +280,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if 'deepseek' in self.llm.model.lower():
 			self.logger.warning('⚠️ DeepSeek models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
-		# Note: No longer checking planner_llm for DeepSeek (deprecated)
 
 		# Handle users trying to use use_vision=True with XAI models
 		if 'grok' in self.llm.model.lower():
 			self.logger.warning('⚠️ XAI models do not support use_vision=True yet. Setting use_vision=False for now...')
 			self.settings.use_vision = False
-		# Note: No longer checking planner_llm for XAI models (deprecated)
 
 		self.logger.info(f'🧠 Starting a browser-use version {self.version} with model={self.llm.model}')
 		logger.debug(
@@ -358,18 +319,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
 			include_recent_events=self.include_recent_events,
-		)
-
-		browser_profile = browser_profile or DEFAULT_BROWSER_PROFILE
-
-		# Handle browser vs browser_session parameter (browser takes precedence)
-		if browser and browser_session:
-			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
-		browser_session = browser or browser_session
-
-		self.browser_session = browser_session or BrowserSession(
-			browser_profile=browser_profile,
-			id=uuid7str()[:-4] + self.id[-4:],  # re-use the same 4-char suffix so they show up together in logs
 		)
 
 		if self.sensitive_data:
@@ -439,9 +388,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
-
-		# Context
-		self.context: Context | None = context
 
 		# Telemetry
 		self.telemetry = ProductTelemetry()
@@ -607,20 +553,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.version = version
 		self.source = source
 
-	# def _set_model_names(self) -> None:
-	# 	self.chat_model_library = self.llm.provider
-	# 	self.model_name = self.llm.model
-
-	# 	if self.settings.planner_llm:
-	# 		if hasattr(self.settings.planner_llm, 'model_name'):
-	# 			self.planner_model_name = self.settings.planner_llm.model_name  # type: ignore
-	# 		elif hasattr(self.settings.planner_llm, 'model'):
-	# 			self.planner_model_name = self.settings.planner_llm.model  # type: ignore
-	# 		else:
-	# 			self.planner_model_name = 'Unknown'
-	# 	else:
-	# 		self.planner_model_name = None
-
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from tools's registry"""
 		# Initially only include actions with no filters
@@ -703,9 +635,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		# Use caching based on preload setting - if preload is False, don't use cached state
+		# Use caching based on directly_open_url setting - if directly_open_url is False, don't use cached state
 		is_first_step = self.state.n_steps in (0, 1)
-		use_cache = is_first_step and self.preload
+		use_cache = is_first_step and self.directly_open_url
 		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
@@ -833,18 +765,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		prefix = f'❌ Result failed {self.state.consecutive_failures + 1}/{self.settings.max_failures} times:\n '
 		self.state.consecutive_failures += 1
 
-		# TODO: figure out what to do here
-		if isinstance(error, (ValidationError, ValueError)):
-			self.logger.error(f'{prefix}{error_msg}')
-			# Add context message to help model fix validation errors
-			validation_hint = 'Your output format was invalid. Please follow the exact schema structure required for actions.'
-			# self._message_manager._add_context_message(UserMessage(content=validation_hint))
-
-			if 'Max token limit reached' in error_msg:
-				token_hint = 'Your response was too long. Keep your thinking and output concise.'
-				# self._message_manager._add_context_message(UserMessage(content=token_hint))
 		# Handle InterruptedError specially
-		elif isinstance(error, InterruptedError):
+		if isinstance(error, InterruptedError):
 			error_msg = 'The agent was interrupted mid-step' + (f' - {error}' if error else '')
 			self.logger.error(f'{prefix}{error_msg}')
 		elif 'Could not parse response' in error_msg or 'tool_use_failed' in error_msg:
@@ -856,22 +778,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			parse_hint = 'Your response could not be parsed. Return a valid JSON object with the required fields.'
 			# self._message_manager._add_context_message(UserMessage(content=parse_hint))
 		else:
-			from anthropic import RateLimitError as AnthropicRateLimitError
-			from google.api_core.exceptions import ResourceExhausted
-			from openai import RateLimitError
-
-			# Define a tuple of rate limit error types for easier maintenance
-			RATE_LIMIT_ERRORS = (
-				RateLimitError,  # OpenAI
-				ResourceExhausted,  # Google
-				AnthropicRateLimitError,  # Anthropic
-			)
-
-			if isinstance(error, RATE_LIMIT_ERRORS) or 'on tokens per minute (TPM): Limit' in error_msg:
-				logger.warning(f'{prefix}{error_msg}')
-				await asyncio.sleep(self.settings.retry_delay)
-			else:
-				self.logger.error(f'{prefix}{error_msg}')
+			self.logger.error(f'{prefix}{error_msg}')
 
 		self.state.last_result = [ActionResult(error=error_msg)]
 		return None
@@ -1183,11 +1090,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				task=self.task,
 				model=self.llm.model,
 				model_provider=self.llm.provider,
-				planner_llm=self.settings.planner_llm.model if self.settings.planner_llm else None,
 				max_steps=max_steps,
 				max_actions_per_step=self.settings.max_actions_per_step,
 				use_vision=self.settings.use_vision,
-				use_validation=self.settings.validate_output,
 				version=self.version,
 				source=self.source,
 				cdp_url=urlparse(self.browser_session.cdp_url).hostname
@@ -1253,9 +1158,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				found_urls.append(url)
 
 		unique_urls = list(set(found_urls))
-		# If multiple URLs found, skip preloading
+		# If multiple URLs found, skip directly_open_urling
 		if len(unique_urls) > 1:
-			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping preload to avoid ambiguity')
+			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
 			return None
 
 		# If exactly one URL found, return it
@@ -1331,8 +1236,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and add it as an initial action (only if preload is enabled)
-			if self.preload and not self.state.follow_up_task:
+			# Check if task contains a URL and add it as an initial action (only if directly_open_url is enabled)
+			if self.directly_open_url and not self.state.follow_up_task:
 				initial_url = self._extract_url_from_task(self.task)
 				if initial_url:
 					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
@@ -1654,7 +1559,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					page_extraction_llm=self.settings.page_extraction_llm,
 					sensitive_data=self.sensitive_data,
 					available_file_paths=self.available_file_paths,
-					context=self.context,
 				)
 
 				time_end = time.time()
