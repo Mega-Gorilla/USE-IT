@@ -1,25 +1,8 @@
-import asyncio
-
-from browser_use import Agent, Controller
-
-tools = Controller()
-
-
-@tools.action('Ask human for help with a question')
-def ask_human(question: str) -> str:
-	answer = input(f'{question} > ')
-	return f'The human responded with: {answer}'
-
+from browser_use import Agent, ChatOpenAI
 
 agent = Agent(
 	task='Ask human for help',
-	tools=tools,
+	llm=ChatOpenAI(model='gpt-4.1-mini'),
 )
 
-
-async def main():
-	await agent.run()
-
-
-if __name__ == '__main__':
-	asyncio.run(main())
+agent.run_sync()
