@@ -1,6 +1,6 @@
 ---
 title: "Add Tools"
-description: "You can add your own tools!"
+description: ""
 icon: "plus"
 mode: "wide"
 ---
@@ -15,9 +15,9 @@ Examples:
 - calling LLMs
 - get 2fa codes
 - send emails
-...
+- ...
 
-To register your own custom functions (`sync` or `async`), add `@controller.action(...)`.
+Simply add `@controller.action(...)` to your function.
 
 ```python
 from browser_use import Controller, Agent
@@ -34,23 +34,15 @@ def ask_human(question: str) -> ActionResult:
 agent = Agent(task='...', llm=llm, controller=controller)
 ```
 
-
-
-## Decorator Parameters
-
-The `@controller.action()` decorator accepts these parameters:
-
-- **`description`** *(required)* - What the tool does, the LLM uses this to decide when to call it. Explain here the rules how to use the tool.
+- **`description`** *(required)* - What the tool does, the LLM uses this to decide when to call it.
 - **`allowed_domains`** - List of domains where tool can run (e.g. `['*.example.com']`), defaults to all domains
 
-<Note>
-  - The Agent chooses between tools to run solely based on the function name and description
-  - The Agent fills tool parameters based on their names, type hints, & defaults
-</Note>
+The Agent fills your function parameters based on their names, type hints, & defaults.
+
 
 ## Available Objects
 
-Your tools have access to these objects:
+Your function has access to these objects:
 
 - **`browser_session: BrowserSession`** - Current browser session for CDP access
 - **`cdp_client`** - Direct Chrome DevTools Protocol client
@@ -67,8 +59,8 @@ You can use Pydantic for the tool parameters:
 from pydantic import BaseModel
 
 class Cars(BaseModel):
-    name: str
-    price: int
+    name: str = Field(description='The name of the car, e.g. "Toyota Camry"')
+    price: int = Field(description='The price of the car as int in USD, e.g. 25000')
 
 @controller.action(description='Save cars to file')
 def save_cars(cars: list[Cars]) -> str:
