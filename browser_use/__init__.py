@@ -112,7 +112,6 @@ __all__ = [
 	'BrowserSession',
 	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
-	'Tools',
 	'Controller',
 	'DomService',
 	'SystemPrompt',
