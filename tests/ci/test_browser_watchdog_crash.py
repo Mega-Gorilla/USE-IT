@@ -279,7 +279,7 @@ async def test_infinite_loop_page_blocking():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Browser initialization timeout in test environment - timing issue")
+@pytest.mark.skip(reason='Browser initialization timeout in test environment - timing issue')
 async def test_browser_process_kill_detection():
 	"""Test that killing the browser process is detected."""
 	import os

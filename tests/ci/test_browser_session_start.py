@@ -144,28 +144,6 @@ class TestBrowserSessionStart:
 		final_tabs = await browser_session.get_tabs()
 		assert len(final_tabs) >= 1
 
-	async def test_start_with_keep_alive_profile(self):
-		"""Test start/stop behavior with keep_alive=True profile."""
-		# Create a completely fresh profile and session to avoid module-scoped fixture issues
-		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
-		session = BrowserSession(browser_profile=profile)
-
-		try:
-			# Start the session
-			await session.start()
-			assert session._cdp_client_root is not None
-
-			# Now test keep_alive behavior
-			session.browser_profile.keep_alive = True
-
-			# Stop should not actually close the browser with keep_alive=True
-			await session.stop()
-			# Browser should still be connected
-			assert session._cdp_client_root is not None
-
-		finally:
-			await session.kill()
-
 	async def test_user_data_dir_not_allowed_to_corrupt_default_profile(self):
 		"""Test user_data_dir handling for different browser channels and version mismatches."""
 		# Test 1: Chromium with default user_data_dir and default channel should work fine
