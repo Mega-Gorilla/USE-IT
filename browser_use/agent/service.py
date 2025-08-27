@@ -554,7 +554,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.source = source
 
 	def _setup_action_models(self) -> None:
-		"""Setup dynamic action models from tools's registry"""
+		"""Setup dynamic action models from tools registry"""
 		# Initially only include actions with no filters
 		self.ActionModel = self.tools.registry.create_action_model()
 		# Create output model with the dynamic actions

@@ -154,17 +154,6 @@ class TestScrollActions:
 		result = await asyncio.wait_for(event, timeout=3.0)
 		assert result is not None
 
-	async def test_scroll_event_directly(self, browser_session):
-		"""Test ScrollEvent directly through the event bus."""
-		from browser_use.browser.events import ScrollEvent
-
-		# Test scroll on about:blank (should work)
-		event = browser_session.event_bus.dispatch(ScrollEvent(direction='down', amount=100))
-		result = await asyncio.wait_for(event, timeout=2.0)
-		event_result = await result.event_result()
-		assert event_result is not None
-		assert event_result.get('success') is True
-
 	async def test_scroll_non_scrollable_page(self, browser_session, base_url, http_server):
 		"""Test scrolling a page that's only 100px tall (not scrollable)."""
 		from browser_use.browser.events import ScrollEvent
@@ -203,10 +192,9 @@ class TestScrollActions:
 
 		# Try to scroll down - should succeed but not actually move
 		event = browser_session.event_bus.dispatch(ScrollEvent(direction='down', amount=500))
-		result = await asyncio.wait_for(event, timeout=3.0)
-		event_result = await result.event_result()
-		assert event_result is not None
-		assert event_result.get('success') is True
+		await event
+		result = await event.event_result(raise_if_any=True, raise_if_none=False)
+		assert result is None
 
 		# Check scroll position didn't change (page isn't scrollable)
 		final_scroll = await browser_session.cdp_client.send.Runtime.evaluate(
@@ -264,10 +252,9 @@ class TestScrollActions:
 
 		# Scroll down by 8000px
 		event = browser_session.event_bus.dispatch(ScrollEvent(direction='down', amount=8000))
-		result = await asyncio.wait_for(event, timeout=3.0)
-		event_result = await result.event_result()
-		assert event_result is not None
-		assert event_result.get('success') is True
+		await event
+		result = await event.event_result(raise_if_any=True, raise_if_none=False)
+		assert result is None  # ScrollEvent does not return a result
 
 		# Wait a bit for scroll to take effect
 		await asyncio.sleep(0.5)

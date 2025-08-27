@@ -131,4 +131,3 @@ body:
         $ python /app/browser-use/examples/browser/real_browser.py
         DEBUG    [browser] 🌎  Initializing new browser
         DEBUG    [agent] Version: 0.1.46-9-g62760ba, Source: git
-

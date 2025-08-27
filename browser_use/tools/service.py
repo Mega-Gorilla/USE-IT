@@ -705,7 +705,7 @@ Provide the extracted information in a clear, structured format."""
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Send strings of special keys to use Playwright page.keyboard.press - examples include Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
+			'Send strings of special keys to use e.g. Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`',
 			param_model=SendKeysAction,
 		)
 		async def send_keys(params: SendKeysAction, browser_session: BrowserSession):
@@ -870,119 +870,6 @@ Provide the extracted information in a clear, structured format."""
 				long_term_memory=memory,
 				include_extracted_content_only_once=True,
 			)
-
-	# @self.registry.action('Google Sheets: Get the contents of the entire sheet', domains=['https://docs.google.com'])
-	# async def read_sheet_contents(browser_session: BrowserSession):
-	# 	# Use send keys events to select and copy all cells
-	# 	for key in ['Enter', 'Escape', 'ControlOrMeta+A', 'ControlOrMeta+C']:
-	# 		event = browser_session.event_bus.dispatch(SendKeysEvent(keys=key))
-	# 		await event
-
-	# 	# Get page to evaluate clipboard
-	# 	page = await browser_session.get_current_page()
-	# 	extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
-	# 	return ActionResult(
-	# 		extracted_content=extracted_tsv,
-	# 		include_in_memory=True,
-	# 		long_term_memory='Retrieved sheet contents',
-	# 		include_extracted_content_only_once=True,
-	# 	)
-
-	# @self.registry.action('Google Sheets: Get the contents of a cell or range of cells', domains=['https://docs.google.com'])
-	# async def read_cell_contents(cell_or_range: str, browser_session: BrowserSession):
-	# 	page = await browser_session.get_current_page()
-
-	# 	await select_cell_or_range(cell_or_range=cell_or_range, page=page)
-
-	# 	await page.keyboard.press('ControlOrMeta+C')
-	# 	await asyncio.sleep(0.1)
-	# 	extracted_tsv = await page.evaluate('() => navigator.clipboard.readText()')
-	# 	return ActionResult(
-	# 		extracted_content=extracted_tsv,
-	# 		include_in_memory=True,
-	# 		long_term_memory=f'Retrieved contents from {cell_or_range}',
-	# 		include_extracted_content_only_once=True,
-	# 	)
-
-	# @self.registry.action(
-	# 	'Google Sheets: Update the content of a cell or range of cells', domains=['https://docs.google.com']
-	# )
-	# async def update_cell_contents(cell_or_range: str, new_contents_tsv: str, browser_session: BrowserSession):
-	# 	page = await browser_session.get_current_page()
-
-	# 	await select_cell_or_range(cell_or_range=cell_or_range, page=page)
-
-	# 	# simulate paste event from clipboard with TSV content
-	# 	await page.evaluate(f"""
-	# 		const clipboardData = new DataTransfer();
-	# 		clipboardData.setData('text/plain', `{new_contents_tsv}`);
-	# 		document.activeElement.dispatchEvent(new ClipboardEvent('paste', {{clipboardData}}));
-	# 	""")
-
-	# 	return ActionResult(
-	# 		extracted_content=f'Updated cells: {cell_or_range} = {new_contents_tsv}',
-	# 		include_in_memory=False,
-	# 		long_term_memory=f'Updated cells {cell_or_range} with {new_contents_tsv}',
-	# 	)
-
-	# @self.registry.action('Google Sheets: Clear whatever cells are currently selected', domains=['https://docs.google.com'])
-	# async def clear_cell_contents(cell_or_range: str, browser_session: BrowserSession):
-	# 	page = await browser_session.get_current_page()
-
-	# 	await select_cell_or_range(cell_or_range=cell_or_range, page=page)
-
-	# 	await page.keyboard.press('Backspace')
-	# 	return ActionResult(
-	# 		extracted_content=f'Cleared cells: {cell_or_range}',
-	# 		include_in_memory=False,
-	# 		long_term_memory=f'Cleared cells {cell_or_range}',
-	# 	)
-
-	# @self.registry.action('Google Sheets: Select a specific cell or range of cells', domains=['https://docs.google.com'])
-	# async def select_cell_or_range(cell_or_range: str, browser_session: BrowserSession):
-	# 	# Use send keys events for navigation
-	# 	for key in ['Enter', 'Escape']:
-	# 		event = browser_session.event_bus.dispatch(SendKeysEvent(keys=key))
-	# 		await event
-	# 	await asyncio.sleep(0.1)
-	# 	for key in ['Home', 'ArrowUp']:
-	# 		event = browser_session.event_bus.dispatch(SendKeysEvent(keys=key))
-	# 		await event
-	# 	await asyncio.sleep(0.1)
-	# 	event = browser_session.event_bus.dispatch(SendKeysEvent(keys='Control+G'))
-	# 	await event
-	# 	await asyncio.sleep(0.2)
-	# 	# Get page to type the cell range
-	# 	page = await browser_session.get_current_page()
-	# 	await page.keyboard.type(cell_or_range, delay=0.05)
-	# 	await asyncio.sleep(0.2)
-	# 	for key in ['Enter', 'Escape']:
-	# 		event = browser_session.event_bus.dispatch(SendKeysEvent(keys=key))
-	# 		await event
-	# 		await asyncio.sleep(0.2)
-	# 	return ActionResult(
-	# 		extracted_content=f'Selected cells: {cell_or_range}',
-	# 		include_in_memory=False,
-	# 		long_term_memory=f'Selected cells {cell_or_range}',
-	# 	)
-
-	# @self.registry.action(
-	# 	'Google Sheets: Fallback method to type text into (only one) currently selected cell',
-	# 	domains=['https://docs.google.com'],
-	# )
-	# async def fallback_input_into_single_selected_cell(text: str, browser_session: BrowserSession):
-	# 	# Get page to type text
-	# 	page = await browser_session.get_current_page()
-	# 	await page.keyboard.type(text, delay=0.1)
-	# 	# Use send keys for Enter and ArrowUp
-	# 	for key in ['Enter', 'ArrowUp']:
-	# 		event = browser_session.event_bus.dispatch(SendKeysEvent(keys=key))
-	# 		await event
-	# 	return ActionResult(
-	# 		extracted_content=f'Inputted text {text}',
-	# 		include_in_memory=False,
-	# 		long_term_memory=f"Inputted text '{text}' into cell",
-	# 	)
 
 	# Custom done action for structured output
 	def _register_done_action(self, output_model: type[T] | None, display_files_in_done_text: bool = True):
