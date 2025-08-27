@@ -237,7 +237,7 @@ class MessageManager:
 		for key, value in sensitive_data.items():
 			if isinstance(value, dict):
 				# New format: {domain: {key: value}}
-				if match_url_with_domain_pattern(current_page_url, key, True):
+				if current_page_url and match_url_with_domain_pattern(current_page_url, key, True):
 					placeholders.update(value.keys())
 			else:
 				# Old format: {key: value}
@@ -271,7 +271,12 @@ class MessageManager:
 
 		# First, update the agent history items with the latest step results
 		self._update_agent_history_description(model_output, result, step_info)
-		if sensitive_data:
+
+		# Use the passed sensitive_data parameter, falling back to instance variable
+		effective_sensitive_data = sensitive_data if sensitive_data is not None else self.sensitive_data
+		if effective_sensitive_data:
+			# Update instance variable to keep it in sync
+			self.sensitive_data = effective_sensitive_data
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
 		# Use only the current screenshot
