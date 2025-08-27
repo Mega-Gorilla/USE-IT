@@ -71,7 +71,7 @@ async def test_new_tab_cdp_session_attachment(httpserver_url):
 		result = await cdp_session.cdp_client.send.Runtime.evaluate(
 			params={'expression': 'document.title'}, session_id=cdp_session.session_id
 		)
-		assert result['result']['value'] == 'Test Page'
+		assert result['result'].get('value') == 'Test Page'
 
 		# Get browser state to verify DOM can be built on new tab
 		from browser_use.browser.events import BrowserStateRequestEvent
@@ -115,7 +115,7 @@ async def test_multiple_new_tabs_cdp_session(httpserver_url):
 		result = await cdp_session.cdp_client.send.Runtime.evaluate(
 			params={'expression': 'window.location.href'}, session_id=cdp_session.session_id
 		)
-		assert 'tab=2' in result['result']['value'], 'Should be on the last created tab'
+		assert 'tab=2' in result['result'].get('value', ''), 'Should be on the last created tab'
 
 	finally:
 		await browser.stop()

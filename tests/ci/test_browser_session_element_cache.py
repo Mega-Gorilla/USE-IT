@@ -80,21 +80,22 @@ def tools():
 @pytest.mark.asyncio
 async def test_assumption_1_dom_processing_works(browser_session, httpserver):
 	"""Test assumption 1: DOM processing works and finds elements."""
-	# Go to a simple page
-	page = await browser_session.get_current_page()
-	await page.goto(httpserver.url_for('/'))
-	await page.wait_for_load_state()
+	# Go to a simple page using CDP events
+	from browser_use.browser.events import NavigateToUrlEvent
+
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing
-	state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+	state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 	print('DOM processing result:')
-	print(f'  - Elements found: {len(state.selector_map)}')
-	print(f'  - Element indices: {list(state.selector_map.keys())}')
+	print(f'  - Elements found: {len(state.dom_state.selector_map)}')
+	print(f'  - Element indices: {list(state.dom_state.selector_map.keys())}')
 
 	# Verify DOM processing works
-	assert len(state.selector_map) > 0, 'DOM processing should find elements'
-	assert 0 in state.dom_state.selector_map, 'Element index 0 should exist'
+	assert len(state.dom_state.selector_map) > 0, 'DOM processing should find interactive elements'
 
 
 @pytest.mark.asyncio

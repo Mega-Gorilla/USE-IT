@@ -67,12 +67,12 @@ class TestBrowserRecentEvents:
 
 			# Navigate to the page with the slow iframe
 			# Start navigation in background
-			async def nav_task():
+			async def nav_coroutine():
 				event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
 				await event
 				return await event.event_result(raise_if_any=True, raise_if_none=False)
 
-			nav_task = asyncio.create_task(nav_task())
+			nav_task = asyncio.create_task(nav_coroutine())
 
 			# Give navigation a moment to start loading resources
 			await asyncio.sleep(0.5)

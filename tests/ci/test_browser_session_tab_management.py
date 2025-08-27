@@ -8,7 +8,7 @@ from pytest_httpserver import HTTPServer
 load_dotenv()
 
 from browser_use.agent.views import ActionModel
-from browser_use.browser.events import NavigateToUrlEvent
+from browser_use.browser.events import CloseTabEvent, NavigateToUrlEvent, SwitchTabEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 from browser_use.tools.service import Tools
@@ -229,7 +229,6 @@ class TestTabManagement:
 		assert first_tab_id is not None, f'Could not find tab with page1 URL in {[p.url for p in tabs]}'
 
 		# Switch agent back to the first tab using correct index
-		from browser_use.browser.events import SwitchTabEvent
 
 		await browser_session.event_bus.dispatch(SwitchTabEvent(target_id=first_tab_id))
 		await asyncio.sleep(0.5)
@@ -268,27 +267,43 @@ class TestTabManagement:
 		current_url = await browser_session.get_current_page_url()
 		assert current_url == f'{base_url}/page1'
 		# The initial_tab (which was about:blank) should now show the new URL too
-		assert initial_tab.url == f'{base_url}/page1'
+		# (can't check old page object anymore, but current URL confirms navigation worked)
 
 		# Create two tabs with different URLs
-		second_tab = await browser_session.create_new_tab(f'{base_url}/page2')
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page2', new_tab=True))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
 
 		# Verify the second tab is now active
 		current_url = await browser_session.get_current_page_url()
 		assert current_url == f'{base_url}/page2'
 
-		# Close the second tab by closing the page directly
-		await second_tab.close()
+		# Close the second tab using CDP
+		tabs = await browser_session.get_tabs()
+		second_tab_id = None
+		for tab in tabs:
+			if f'{base_url}/page2' in tab.url:
+				second_tab_id = tab.target_id
+				break
+
+		if second_tab_id:
+			event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=second_tab_id))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 		await asyncio.sleep(0.5)
 
 		# Agent reference should be auto-updated to the first available tab
 		current_url = await browser_session.get_current_page_url()
 		assert current_url == f'{base_url}/page1'
-		assert initial_tab.url == f'{base_url}/page1'
-		assert not browser_session.page.is_closed()
+		# (can't check old page object anymore, but current URL confirms tab switch worked)
 
-		# close the only remaining tab by closing the page directly
-		await initial_tab.close()
+		# close the only remaining tab using CDP
+		tabs = await browser_session.get_tabs()
+		if tabs:
+			first_tab_id = tabs[0].target_id
+			event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=first_tab_id))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 		await asyncio.sleep(0.5)
 
 		# close_tab should have called get_current_page, which creates a new about:blank tab if none are left
@@ -338,7 +353,6 @@ class TestEventDrivenTabOperations:
 
 	async def test_switch_tab_event_dispatching(self, browser_session, base_url):
 		"""Test direct SwitchTabEvent dispatching."""
-		from browser_use.browser.events import SwitchTabEvent
 
 		# Create multiple tabs
 		await browser_session.navigate_to(f'{base_url}/page1')

@@ -126,7 +126,8 @@ class TestNavigateToUrlEvent:
 	async def test_go_to_url_new_tab(self, tools, browser_session, base_url):
 		"""Test that GoToUrlAction with new_tab=True opens URL in a new tab."""
 		# Get initial tab count
-		initial_tab_count = len(browser_session.tabs)
+		initial_tabs = await browser_session.get_tabs()
+		initial_tab_count = len(initial_tabs)
 
 		# Navigate to URL in new tab
 		action_data = {'go_to_url': GoToUrlAction(url=f'{base_url}/page2', new_tab=True)}
@@ -143,7 +144,8 @@ class TestNavigateToUrlEvent:
 		assert 'Navigated to' in result.extracted_content
 
 		# Verify new tab was created
-		final_tab_count = len(browser_session.tabs)
+		final_tabs = await browser_session.get_tabs()
+		final_tab_count = len(final_tabs)
 		assert final_tab_count == initial_tab_count + 1
 
 		# Verify we're on the new page
@@ -303,7 +305,8 @@ class TestNavigateToUrlEvent:
 		await tools.act(GoToUrlActionModel(**action3), browser_session)
 
 		# Should have 3 tabs now
-		assert len(browser_session.tabs) == 3
+		tabs = await browser_session.get_tabs()
+		assert len(tabs) == 3
 
 		# Current tab should be the last one opened
 		current_url = await browser_session.get_current_page_url()
@@ -356,14 +359,16 @@ class TestNavigateToUrlEvent:
 		"""Test NavigateToUrlEvent with new_tab=True and verify TabCreatedEvent is emitted."""
 		from browser_use.browser.events import NavigateToUrlEvent, TabCreatedEvent
 
-		initial_tab_count = len(browser_session.tabs)
+		initial_tabs = await browser_session.get_tabs()
+		initial_tab_count = len(initial_tabs)
 
 		# Navigate to URL in new tab via direct event
 		nav_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page2', new_tab=True))
 		await nav_event
 
 		# Verify new tab was created
-		assert len(browser_session.tabs) == initial_tab_count + 1
+		final_tabs = await browser_session.get_tabs()
+		assert len(final_tabs) == initial_tab_count + 1
 
 		# Check that current page is the new tab
 		current_url = await browser_session.get_current_page_url()
@@ -379,7 +384,8 @@ class TestNavigateToUrlEvent:
 		from browser_use.browser.events import NavigateToUrlEvent
 
 		# Get initial state
-		initial_tabs_count = len(browser_session.tabs)
+		initial_tabs = await browser_session.get_tabs()
+		initial_tabs_count = len(initial_tabs)
 		initial_url = await browser_session.get_current_page_url()
 
 		# Navigate to a URL in a new tab
@@ -393,7 +399,8 @@ class TestNavigateToUrlEvent:
 		current_url = await browser_session.get_current_page_url()
 
 		# Verify a new tab was created
-		assert len(browser_session.tabs) == initial_tabs_count + 1
+		final_tabs = await browser_session.get_tabs()
+		assert len(final_tabs) == initial_tabs_count + 1
 
 		# Verify focus switched to the new tab
 		assert 'example.com' in current_url
