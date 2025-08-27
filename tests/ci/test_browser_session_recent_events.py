@@ -57,11 +57,10 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				maximum_wait_page_load_time=1.0,  # 1 second max wait
-				wait_for_network_idle_page_load_time=0.1,  # 100ms idle time
-				minimum_wait_page_load_time=0.1,  # Don't wait extra
+							user_data_dir=None,
+			keep_alive=False,
+			wait_for_network_idle_page_load_time=0.1,  # 100ms idle time
+			minimum_wait_page_load_time=0.1,  # Don't wait extra
 			)
 		)
 
@@ -134,9 +133,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				maximum_wait_page_load_time=5.0,  # Generous timeout
+							user_data_dir=None,
+			keep_alive=False,
 			)
 		)
 
@@ -199,9 +197,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				maximum_wait_page_load_time=0.5,  # Short timeout for first page
+							user_data_dir=None,
+			keep_alive=False,
 			)
 		)
 
@@ -266,9 +263,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				maximum_wait_page_load_time=0.5,  # Short timeout
+							user_data_dir=None,
+			keep_alive=False,
 			)
 		)
 
@@ -317,11 +313,10 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				maximum_wait_page_load_time=timeout_seconds,
-				wait_for_network_idle_page_load_time=0.1,
-				minimum_wait_page_load_time=0.1,
+							user_data_dir=None,
+			keep_alive=False,
+			wait_for_network_idle_page_load_time=0.1,
+			minimum_wait_page_load_time=0.1,
 			)
 		)
 

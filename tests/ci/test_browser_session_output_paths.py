@@ -303,7 +303,7 @@ class TestBrowserProfileRecordings:
 					user_data_dir=str(user_data_dir),
 					record_video_dir=str(video_dir),  # Enable video recording
 				),
-				browser_pid=browser_session1.browser_pid,  # Connect to existing browser
+				# Connect to existing browser - browser_pid parameter removed
 			)
 
 			await browser_session2.start()

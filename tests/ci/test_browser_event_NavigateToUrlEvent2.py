@@ -89,7 +89,6 @@ async def test_navigation_events_slow_page_with_timeout(httpserver):
 	# Create profile with shorter timeout for faster testing
 	profile = BrowserProfile(
 		headless=True,
-		maximum_wait_page_load_time=2.0,  # 2 second timeout for network monitoring
 		wait_for_network_idle_page_load_time=0.5,  # 0.5 second network idle
 	)
 	session = BrowserSession(browser_profile=profile)
