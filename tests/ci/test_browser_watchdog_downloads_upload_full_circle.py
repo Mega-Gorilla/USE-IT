@@ -172,6 +172,9 @@ class TestDownloadUploadFullCircle:
 				# Get browser state to find download link
 				event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
 				state_result = await event.event_result()
+				assert state_result is not None
+				assert state_result.dom_state is not None
+				assert state_result.dom_state.selector_map is not None
 
 				# Find download link
 				download_link_index = None
@@ -241,7 +244,11 @@ class TestDownloadUploadFullCircle:
 
 				# Get browser state to find file input
 				event = browser_session.event_bus.dispatch(BrowserStateRequestEvent())
-				state_result = await event.event_result()
+				await event
+				state_result = await event.event_result(raise_if_any=True, raise_if_none=False)
+				assert state_result is not None
+				assert state_result.dom_state is not None
+				assert state_result.dom_state.selector_map is not None
 
 				# Debug: print page URL and title
 				print('\n🔍 Getting DOM state:')

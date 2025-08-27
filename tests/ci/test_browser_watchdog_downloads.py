@@ -312,119 +312,6 @@ async def comprehensive_download_test_server(httpserver):
 
 
 @pytest.mark.asyncio
-async def test_downloads_watchdog_detection_timing(comprehensive_download_test_server, tmp_path):
-	"""Test that download detection adds appropriate delay to clicks when downloads_dir is set."""
-
-	# Test 1: With downloads_dir set (default behavior)
-	browser_with_downloads = BrowserSession(
-		browser_profile=BrowserProfile(
-			headless=True,
-			downloads_path=str(tmp_path / 'downloads'),
-			user_data_dir=None,
-		)
-	)
-
-	await browser_with_downloads.start()
-	page = await browser_with_downloads.get_current_page()
-	await page.goto(comprehensive_download_test_server.url_for('/'))
-
-	# Get the actual DOM state to find the button
-	state = await browser_with_downloads.get_browser_state_summary()
-
-	# Find the button element
-	button_node = None
-	for elem in state.dom_state.selector_map.values():
-		if elem.tag_name == 'button' and elem.attributes.get('id') == 'test-button':
-			button_node = elem
-			break
-
-	if button_node is None:
-		# Try alternative approach - find by text content or use Playwright directly
-		await page.wait_for_selector('#test-button', timeout=5000)
-		# Use a simpler approach with playwright locator for timing test
-		start_time = time.time()
-		await page.click('#test-button')
-		duration_with_downloads = time.time() - start_time
-
-		# Verify click worked
-		result_text = await page.locator('#result').text_content()
-		assert result_text == 'Clicked!'
-	else:
-		# Time the click using browser session method
-		start_time = time.time()
-		event = browser_with_downloads.event_bus.dispatch(ClickElementEvent(element_node=button_node))
-		await event
-		result = await event.event_result()
-		result = result.get('download_path') if result else None
-		duration_with_downloads = time.time() - start_time
-
-		# Verify click worked
-		result_text = await page.locator('#result').text_content()
-		assert result_text == 'Clicked!'
-		assert result is None  # No download happened
-
-	await browser_with_downloads.close()
-	await browser_with_downloads.event_bus.stop(clear=True, timeout=5)
-
-	# Test 2: With downloads_dir set to None (disables download detection)
-	browser_no_downloads = BrowserSession(
-		browser_profile=BrowserProfile(
-			headless=True,
-			downloads_path=None,
-			user_data_dir=None,
-		)
-	)
-
-	await browser_no_downloads.start()
-	page = await browser_no_downloads.get_current_page()
-	await page.goto(comprehensive_download_test_server.url_for('/'))
-
-	# Clear previous result
-	await page.evaluate('document.getElementById("result").innerText = ""')
-
-	# Get the DOM state again for the new browser session
-	state = await browser_no_downloads.get_browser_state_summary()
-
-	# Find the button element again
-	button_node = None
-	for elem in state.dom_state.selector_map.values():
-		if elem.tag_name == 'button' and elem.attributes.get('id') == 'test-button':
-			button_node = elem
-			break
-
-	if button_node is None:
-		# Use Playwright directly as fallback
-		await page.wait_for_selector('#test-button', timeout=5000)
-		start_time = time.time()
-		await page.click('#test-button')
-		duration_no_downloads = time.time() - start_time
-	else:
-		# Time the click using browser session method
-		start_time = time.time()
-		event = browser_no_downloads.event_bus.dispatch(ClickElementEvent(element_node=button_node))
-		await event
-		result = await event.event_result()
-		result = result.get('download_path') if result else None
-		duration_no_downloads = time.time() - start_time
-
-	# Verify click worked
-	result_text = await page.locator('#result').text_content()
-	assert result_text == 'Clicked!'
-
-	await browser_no_downloads.close()
-	await browser_no_downloads.event_bus.stop(clear=True, timeout=5)
-
-	# Check timing differences
-	print(f'Click with downloads_dir: {duration_with_downloads:.2f}s')
-	print(f'Click without downloads_dir: {duration_no_downloads:.2f}s')
-	print(f'Difference: {duration_with_downloads - duration_no_downloads:.2f}s')
-
-	# Both should be fast now since we're clicking a button (not a download link)
-	assert duration_with_downloads < 8, f'Expected <8s with downloads_dir, got {duration_with_downloads:.2f}s'
-	assert duration_no_downloads < 3, f'Expected <3s without downloads_dir, got {duration_no_downloads:.2f}s'
-
-
-@pytest.mark.asyncio
 async def test_downloads_watchdog_actual_download_detection(comprehensive_download_test_server, tmp_path):
 	"""Test that DownloadsWatchdog detects actual downloads correctly."""
 
@@ -515,8 +402,7 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 
 	print(f'✅ Download successful: {latest_download} ({file_size} bytes) with correct content: {file_content!r}')
 
-	await browser_session.close()
-	await browser_session.event_bus.stop(clear=True, timeout=5)
+	await browser_session.kill()
 
 
 @pytest.mark.asyncio

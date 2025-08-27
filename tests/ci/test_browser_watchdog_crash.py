@@ -100,9 +100,9 @@ async def test_crash_watchdog_browser_disconnect():
 
 		# Mock browser disconnection by overriding is_connected
 		# This simulates what would happen if the browser process crashed
-		if session._browser:
-			original_is_connected = session._browser.is_connected
-			session._browser.is_connected = lambda: False
+		if session._cdp_client_root:
+			original_is_connected = session._cdp_client_root.is_connected
+			session._cdp_client_root.is_connected = lambda: False
 
 			try:
 				# Wait for watchdog to detect disconnection
@@ -117,7 +117,7 @@ async def test_crash_watchdog_browser_disconnect():
 				assert 'disconnected unexpectedly' in disconnect_error.message
 			finally:
 				# Restore original method
-				session._browser.is_connected = original_is_connected
+				session._cdp_client_root.is_connected = original_is_connected
 
 	finally:
 		# Force stop even if browser is marked as disconnected

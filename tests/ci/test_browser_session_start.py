@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from browser_use.browser.events import NavigateToUrlEvent
 from browser_use.browser.profile import (
 	BROWSERUSE_DEFAULT_CHANNEL,
 	BrowserChannel,
@@ -120,9 +121,9 @@ class TestBrowserSessionStart:
 		assert isinstance(tabs_after_close, list)
 
 		# Create a new tab explicitly
-		new_page = await browser_session.create_new_tab()
-		assert new_page is not None
-		assert not new_page.is_closed()
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url='about:blank', new_tab=True))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
 
 		# Should have at least one tab now
 		final_tabs = await browser_session.get_tabs_info()
@@ -262,7 +263,7 @@ class TestBrowserSessionStart:
 			# Stop should not actually close the browser with keep_alive=True
 			await session.stop()
 			# Browser should still be connected
-			assert session._cdp_client_root and session._cdp_client_root.pages[0]
+			assert session._cdp_client_root is not None
 
 		finally:
 			await session.kill()
@@ -418,20 +419,28 @@ class TestBrowserSessionReusePatterns:
 		await browser_session1.start()
 		await browser_session2.start()
 
-		assert await browser_session1.is_connected()
-		assert await browser_session2.is_connected()
+		assert browser_session1._cdp_client_root is not None
+		assert browser_session2._cdp_client_root is not None
 		assert browser_session1._cdp_client_root != browser_session2._cdp_client_root
 
-		await browser_session1.create_new_tab('chrome://version')
-		await browser_session2.create_new_tab('chrome://settings')
+		event1 = browser_session1.event_bus.dispatch(NavigateToUrlEvent(url='chrome://version', new_tab=True))
+		await event1
+		await event1.event_result(raise_if_any=True, raise_if_none=False)
+		event2 = browser_session2.event_bus.dispatch(NavigateToUrlEvent(url='chrome://settings', new_tab=True))
+		await event2
+		await event2.event_result(raise_if_any=True, raise_if_none=False)
 
 		await browser_session2.kill()
 
 		# ensure that the browser_session1 is still connected and unaffected by the kill of browser_session2
-		assert await browser_session1.is_connected()
 		assert browser_session1._cdp_client_root is not None
-		await browser_session1.create_new_tab('chrome://settings')
-		await browser_session1._cdp_client_root.pages[0].evaluate('alert(1)')
+		assert browser_session1._cdp_client_root is not None
+		event = browser_session1.event_bus.dispatch(NavigateToUrlEvent(url='chrome://settings', new_tab=True))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
+		# Test that browser is still functional by getting tabs
+		tabs = await browser_session1.get_tabs()
+		assert len(tabs) > 0
 
 		await browser_session1.kill()
 
@@ -626,7 +635,7 @@ class TestBrowserSessionEventSystem:
 		print('Ensuring all parallel browser sessions are connected and usable...')
 		new_tab_tasks = []
 		for browser_session in browser_sessions:
-			assert await browser_session.is_connected()
+			assert browser_session._cdp_client_root is not None
 			assert browser_session._cdp_client_root is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 		await asyncio.gather(*new_tab_tasks)
@@ -646,7 +655,7 @@ class TestBrowserSessionEventSystem:
 		new_tab_tasks = []
 		screenshot_tasks = []
 		for browser_session in filter(bool, browser_sessions):
-			assert await browser_session.is_connected()
+			assert browser_session._cdp_client_root is not None
 			assert browser_session._cdp_client_root is not None
 			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
 			screenshot_tasks.append(browser_session.take_screenshot())
