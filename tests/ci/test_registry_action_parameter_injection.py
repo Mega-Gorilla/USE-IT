@@ -83,7 +83,7 @@ class TestBrowserContext:
 		# Scenario 1: allowed_domains is None, any URL should be allowed.
 		from bubus import EventBus
 
-		from browser_use.browser.security_watchdog import SecurityWatchdog
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
 
 		config1 = BrowserProfile(allowed_domains=None, headless=True, user_data_dir=None)
 		context1 = BrowserSession(browser_profile=config1)

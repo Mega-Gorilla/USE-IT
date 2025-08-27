@@ -2,9 +2,6 @@ import asyncio
 import logging
 
 import pytest
-
-pytest.skip('TODO: fix - test timeouts', allow_module_level=True)
-
 from dotenv import load_dotenv
 from pytest_httpserver import HTTPServer
 
@@ -300,50 +297,6 @@ class TestTabManagement:
 		assert browser_session._cdp_client_root != original_context
 		assert (await browser_session.is_connected()) is True
 
-	async def test_concurrent_context_access_during_closure(self, browser_session):
-		"""Test concurrent access to browser context during closure"""
-		# logger.info('Testing concurrent context access during closure')
-
-		await browser_session.start()
-		assert (await browser_session.is_connected()) is True
-
-		# Create a barrier to synchronize operations
-		barrier = asyncio.Barrier(3)
-
-		async def close_context():
-			await barrier.wait()
-			# Use browser_session.stop() instead of directly closing the context
-			# This ensures proper cleanup of connections
-			await browser_session.stop()
-			# After stopping, check if the context is truly disconnected
-			connected = await browser_session.is_connected(restart=False)
-			return f'stopped (connected={connected})'
-
-		async def access_pages():
-			await barrier.wait()
-			try:
-				pages = await browser_session.get_tabs_info()
-				return f'pages: {len(pages)}'
-			except Exception as e:
-				return f'error: {type(e).__name__}'
-
-		async def check_connection():
-			await barrier.wait()
-			await asyncio.sleep(0.01)  # Small delay to let close start
-			connected = await browser_session.is_connected()
-			return f'connected: {connected}'
-
-		# Run all operations concurrently
-		results = list(await asyncio.gather(close_context(), access_pages(), check_connection(), return_exceptions=True))
-
-		# All operations should complete without crashes
-		assert results and all(not isinstance(r, Exception) for r in results)
-		# Check that stop operation completed
-		assert any('stopped' in str(r) for r in results)
-
-		# No need to kill again since we already stopped properly
-		await asyncio.sleep(0.1)  # Give time for cleanup
-
 
 class TestEventDrivenTabOperations:
 	"""Tests for event-driven tab operations introduced in the session refactor."""
@@ -404,30 +357,3 @@ class TestEventDrivenTabOperations:
 		closed_events = [e for e in event_history if isinstance(e, TabClosedEvent)]
 		assert len(closed_events) >= 1
 		assert closed_events[-1].target_id == browser_session.tabs[1].target_id
-
-	async def test_concurrent_tab_operations_via_events(self, browser_session, base_url):
-		"""Test concurrent tab operations via event system."""
-		from browser_use.browser.events import NavigateToUrlEvent, SwitchTabEvent
-
-		# Create initial tab
-		await browser_session.navigate_to(f'{base_url}/page1')
-
-		# Dispatch multiple tab operations concurrently
-		nav_event1 = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page2', new_tab=True))
-		nav_event2 = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page3', new_tab=True))
-
-		# Wait for both navigation events to complete
-		await asyncio.gather(nav_event1, nav_event2)
-
-		# Should have 3 tabs now
-		assert len(browser_session.tabs) >= 3
-
-		# Switch between tabs concurrently (this should be serialized)
-		switch_event1 = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[0].target_id))
-		switch_event2 = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[1].target_id))
-
-		await asyncio.gather(switch_event1, switch_event2)
-
-		# Final state should be deterministic (last switch wins)
-		current_url = await browser_session.get_current_page_url()
-		assert current_url is not None

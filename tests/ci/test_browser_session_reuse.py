@@ -41,8 +41,8 @@ class TestBrowserSessionReuse:
 	# 		assert initial_browser_pid is not None
 
 	# 		# Force disconnect the browser by closing the browser context
-	# 		assert session.browser_context is not None
-	# 		await session.browser_context.close()
+	# 		assert session._cdp_client_root is not None
+	# 		await session._cdp_client_root.close()
 
 	# 		# Try to take a screenshot - this should trigger regeneration internally
 	# 		# Thanks to the @require_initialization decorator and our fix, this should succeed
@@ -51,9 +51,9 @@ class TestBrowserSessionReuse:
 	# 		assert len(screenshot2) > 0
 
 	# 		# Check if browser was regenerated (new browser context created)
-	# 		assert session.browser_context is not None
+	# 		assert session._cdp_client_root is not None
 	# 		# Verify the context is valid by checking if we can access its pages
-	# 		assert session.browser_context.pages is not None
+	# 		assert session._cdp_client_root.pages is not None
 
 	# 		# Verify we can still interact with the browser
 	# 		assert session.page is not None
@@ -130,9 +130,9 @@ class TestBrowserSessionReuse:
 			# This simulates a browser crash during CDP operation
 			async def close_during_operation():
 				await asyncio.sleep(0.05)  # Small delay to let CDP operation start
-				if session.browser_context:
+				if session._cdp_client_root:
 					try:
-						await session.browser_context.close()
+						await session._cdp_client_root.close()
 					except Exception:
 						# Context might already be closed
 						pass

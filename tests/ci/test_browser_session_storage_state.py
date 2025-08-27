@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.skip('TODO: fix - uses removed browser_context attribute', allow_module_level=True)
+pytest.skip('TODO: fix - uses removed _cdp_client_root attribute', allow_module_level=True)
 
 from pytest_httpserver import HTTPServer
 
@@ -118,7 +118,7 @@ class TestBrowserSessionStorageState:
 			pass  # It's okay if the event doesn't fire, we'll check cookies directly
 
 		# Verify cookies were loaded by accessing browser context directly
-		context = browser_session_with_storage_state.browser_context
+		context = browser_session_with_storage_state._cdp_client_root
 		assert context is not None, 'Browser context should be available'
 
 		cookies = await context.cookies()
@@ -154,7 +154,7 @@ class TestBrowserSessionStorageState:
 		assert 'test_cookie=test_value' in page_cookies
 
 		# Verify all cookies are in the context
-		all_cookies = await browser_session_with_storage_state.browser_context.cookies()
+		all_cookies = await browser_session_with_storage_state._cdp_client_root.cookies()
 		cookie_names = {c['name'] for c in all_cookies}
 		assert 'test_cookie' in cookie_names
 		assert 'session_cookie' in cookie_names  # This one is httpOnly
@@ -199,7 +199,7 @@ class TestBrowserSessionStorageState:
 
 		# Should have no cookies from localhost (our test domain)
 		# Note: Browser may have cookies from default pages like Google's new tab page
-		context = session.browser_context
+		context = session._cdp_client_root
 		assert context is not None
 		cookies = await context.cookies()
 		localhost_cookies = [c for c in cookies if c.get('domain', '') in ['127.0.0.1', '.127.0.0.1']]
@@ -221,7 +221,7 @@ class TestBrowserSessionStorageState:
 
 		# Should have no cookies from localhost (our test domain)
 		# Note: Browser may have cookies from default pages like Google's new tab page
-		context = session.browser_context
+		context = session._cdp_client_root
 		assert context is not None
 		cookies = await context.cookies()
 		localhost_cookies = [c for c in cookies if c.get('domain', '') in ['127.0.0.1', '.127.0.0.1']]

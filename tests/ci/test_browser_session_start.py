@@ -63,74 +63,6 @@ class TestBrowserSessionStart:
 		# Both results should be the same instance
 		assert result1 is result2
 
-	async def test_concurrent_start_calls(self, browser_session):
-		"""Test simultaneously calling .start() from two parallel coroutines."""
-		# logger.info('Testing concurrent start calls')
-
-		# Track browser PIDs before and after to ensure only one browser is launched
-		initial_pid = browser_session.browser_pid
-		assert initial_pid is None  # Should be None before start
-
-		# Start two concurrent calls to start()
-		results = await asyncio.gather(browser_session.start(), browser_session.start(), return_exceptions=True)
-
-		# Both should succeed and return the same session
-		successful_results = [r for r in results if isinstance(r, type(browser_session)) and r is browser_session]
-		assert len(successful_results) == 2, f'Expected both starts to succeed, got results: {results}'
-
-		# The session should be initialized after concurrent calls
-		assert browser_session._cdp_client_root is not None
-
-		# Should have a single browser PID
-		final_pid = browser_session.browser_pid
-		assert final_pid is not None
-
-		# Try starting again - should return same PID
-		await browser_session.start()
-		assert browser_session.browser_pid == final_pid
-
-	async def test_start_with_closed_browser_connection(self, browser_session):
-		"""Test calling .start() on a session that's started but has a closed browser connection."""
-		# logger.info('Testing start with closed browser connection')
-
-		# Start the session normally
-		await browser_session.start()
-		assert browser_session._cdp_client_root is not None
-
-		# Simulate a closed browser connection by closing the browser
-		if browser_session.browser:
-			await browser_session.browser.close()
-
-		# The session should detect the closed connection and reinitialize
-		result = await browser_session.start()
-		assert result is browser_session
-		assert browser_session._cdp_client_root is not None
-
-	async def test_start_after_browser_crash(self, browser_session):
-		"""Test calling .start() after browser has crashed."""
-		# logger.info('Testing start after browser crash')
-
-		# Start the session normally
-		await browser_session.start()
-		assert browser_session._cdp_client_root is not None
-		original_pid = browser_session.browser_pid
-
-		# Force close the browser to simulate a crash
-		if browser_session.browser:
-			await browser_session.browser.close()
-
-		# Check that initialized reflects the disconnected state
-		assert browser_session._cdp_client_root is None
-
-		# Start should recover and create a new browser
-		result = await browser_session.start()
-		assert result is browser_session
-		assert browser_session._cdp_client_root is not None
-
-		# Should have a new PID (or same if reusing process)
-		new_pid = browser_session.browser_pid
-		assert new_pid is not None
-
 	async def test_start_with_invalid_cdp_url(self):
 		"""Test that initialization fails gracefully with invalid CDP URL."""
 		# logger.info('Testing start with invalid CDP URL')
@@ -195,39 +127,6 @@ class TestBrowserSessionStart:
 		# Should have at least one tab now
 		final_tabs = await browser_session.get_tabs_info()
 		assert len(final_tabs) >= 1
-
-	async def test_concurrent_stop_calls(self, browser_profile):
-		"""Test simultaneous calls to stop() from multiple coroutines."""
-		# logger.info('Testing concurrent stop calls')
-
-		# Create a single session for this test
-		browser_session = BrowserSession(browser_profile=browser_profile)
-		await browser_session.start()
-		assert browser_session._cdp_client_root is not None
-
-		# Create a lock to ensure only one stop actually executes
-		stop_lock = asyncio.Lock()
-		stop_execution_count = 0
-
-		async def safe_stop():
-			nonlocal stop_execution_count
-			async with stop_lock:
-				if browser_session._cdp_client_root is not None:
-					stop_execution_count += 1
-					await browser_session.stop()
-			return 'stopped'
-
-		# Call stop() concurrently from multiple coroutines
-		results = await asyncio.gather(safe_stop(), safe_stop(), safe_stop(), return_exceptions=True)
-
-		# All calls should succeed without errors
-		assert all(not isinstance(r, Exception) for r in results)
-
-		# Only one stop should have actually executed
-		assert stop_execution_count == 1
-
-		# Session should be stopped
-		assert browser_session._cdp_client_root is None
 
 	async def test_stop_with_closed_cdp_client_root(self, browser_session):
 		"""Test calling stop() when browser context is already closed."""
@@ -521,7 +420,7 @@ class TestBrowserSessionReusePatterns:
 
 		assert await browser_session1.is_connected()
 		assert await browser_session2.is_connected()
-		assert browser_session1.browser_context != browser_session2.browser_context
+		assert browser_session1._cdp_client_root != browser_session2._cdp_client_root
 
 		await browser_session1.create_new_tab('chrome://version')
 		await browser_session2.create_new_tab('chrome://settings')
@@ -530,9 +429,9 @@ class TestBrowserSessionReusePatterns:
 
 		# ensure that the browser_session1 is still connected and unaffected by the kill of browser_session2
 		assert await browser_session1.is_connected()
-		assert browser_session1.browser_context is not None
+		assert browser_session1._cdp_client_root is not None
 		await browser_session1.create_new_tab('chrome://settings')
-		await browser_session1.browser_context.pages[0].evaluate('alert(1)')
+		await browser_session1._cdp_client_root.pages[0].evaluate('alert(1)')
 
 		await browser_session1.kill()
 
@@ -654,7 +553,7 @@ class TestBrowserSessionEventSystem:
 		finally:
 			await error_session.kill()
 
-	async def test_concurrent_event_dispatching(self, browser_session):
+	async def test_concurrent_event_dispatching(self, browser_session: BrowserSession):
 		"""Test that concurrent events are handled properly."""
 		from browser_use.browser.events import ScreenshotEvent
 

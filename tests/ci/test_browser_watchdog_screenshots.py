@@ -130,8 +130,8 @@ class TestHeadlessScreenshots:
 			await browser_session.start()
 
 			# Close all pages to test edge case
-			assert browser_session.browser_context is not None
-			pages = browser_session.browser_context.pages
+			assert browser_session._cdp_client_root is not None
+			pages = browser_session._cdp_client_root.pages
 			for page in pages:
 				await page.close()
 
