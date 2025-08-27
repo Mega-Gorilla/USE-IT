@@ -11,6 +11,7 @@ from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Response
 
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.events import NavigateToUrlEvent, ScreenshotEvent
 
 
 class TestBrowserRecentEvents:
@@ -66,7 +67,8 @@ class TestBrowserRecentEvents:
 
 			# Navigate to the page with the slow iframe
 			# Don't await to allow navigation to start in background
-			nav_task = asyncio.create_task(browser_session.navigate(httpserver.url_for('/')))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+			nav_task = asyncio.create_task(event)
 
 			# Give navigation a moment to start loading resources
 			await asyncio.sleep(0.5)
@@ -139,7 +141,9 @@ class TestBrowserRecentEvents:
 			await browser_session.start()
 
 			# Navigate to the fast-loading page
-			await browser_session.navigate(httpserver.url_for('/fast'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/fast')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Get browser state
 			state = await browser_session.get_browser_state_summary()
@@ -203,7 +207,9 @@ class TestBrowserRecentEvents:
 			await browser_session.start()
 
 			# Navigate to slow page
-			await browser_session.navigate(httpserver.url_for('/slow'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/slow')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			state1 = await browser_session.get_browser_state_summary()
 			assert state1.recent_events is not None
 			events1 = json.loads(state1.recent_events)
@@ -211,7 +217,9 @@ class TestBrowserRecentEvents:
 			assert 'NavigationCompleteEvent' in event_types1 or 'NavigateToUrlEvent' in event_types1
 
 			# Navigate to fast page
-			await browser_session.navigate(httpserver.url_for('/fast'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/fast')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			state2 = await browser_session.get_browser_state_summary()
 
 			# Recent events should show both navigations
@@ -269,7 +277,9 @@ class TestBrowserRecentEvents:
 			await browser_session.start()
 
 			# Navigate to the malformed page
-			await browser_session.navigate(httpserver.url_for('/malformed'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/malformed')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Get browser state - this might fall back to minimal state
 			state = await browser_session.get_browser_state_summary()
@@ -321,7 +331,9 @@ class TestBrowserRecentEvents:
 			await browser_session.start()
 
 			# Navigate to the page
-			await browser_session.navigate(httpserver.url_for(f'/timeout_{timeout_seconds}'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for(f'/timeout_{timeout_seconds}')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Get browser state
 			state = await browser_session.get_browser_state_summary()
@@ -363,8 +375,12 @@ class TestEventHistoryInfrastructure:
 			)
 
 			# Perform actions that generate events
-			await browser_session.navigate(httpserver.url_for('/history-test'))
-			await browser_session.take_screenshot()
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/history-test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Verify event history has grown
 			final_history_count = len(browser_session.event_bus.event_history)
@@ -391,7 +407,9 @@ class TestEventHistoryInfrastructure:
 				'<html><body><h1>JSON Test</h1></body></html>',
 				content_type='text/html',
 			)
-			await browser_session.navigate(httpserver.url_for('/json-test'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/json-test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Test the NEW method _generate_recent_events_summary
 			recent_events_json = browser_session._generate_recent_events_summary(max_events=5)
@@ -423,8 +441,12 @@ class TestEventHistoryInfrastructure:
 			)
 
 			# Perform multiple actions to generate events
-			await browser_session.navigate(httpserver.url_for('/limit-test'))
-			await browser_session.take_screenshot()
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/limit-test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			await browser_session.get_tabs()
 
 			# Test different limits

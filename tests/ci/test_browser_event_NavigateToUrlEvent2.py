@@ -222,7 +222,8 @@ async def test_navigation_events_history_pushstate(httpserver):
 			if hasattr(element, 'attributes') and element.attributes.get('id') == 'push-btn':
 				push_button_found = True
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element))
 				break
 
 		assert push_button_found, 'Should find push state button'
@@ -241,7 +242,8 @@ async def test_navigation_events_history_pushstate(httpserver):
 			if hasattr(element, 'attributes') and element.attributes.get('id') == 'same-tab-link':
 				same_tab_link_found = True
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element))
 				break
 
 		assert same_tab_link_found, 'Should find same tab link'
@@ -271,7 +273,8 @@ async def test_navigation_events_history_pushstate(httpserver):
 				new_tab_link_found = True
 				# Use new_tab=True parameter to properly trigger new tab behavior
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element, while_holding_ctrl=True))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element, while_holding_ctrl=True))
 				break
 
 		if new_tab_link_found:
@@ -367,7 +370,8 @@ async def test_navigation_events_link_clicks(httpserver):
 			if hasattr(element, 'attributes') and element.attributes.get('id') == 'same-tab-link':
 				same_tab_link_found = True
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element))
 				break
 
 		assert same_tab_link_found, 'Should find same tab link'
@@ -396,7 +400,8 @@ async def test_navigation_events_link_clicks(httpserver):
 			if hasattr(element, 'attributes') and element.attributes.get('id') == 'new-tab-link':
 				new_tab_link_found = True
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element, while_holding_ctrl=True))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element, while_holding_ctrl=True))
 				break
 
 		if new_tab_link_found:
@@ -424,7 +429,8 @@ async def test_navigation_events_link_clicks(httpserver):
 			if hasattr(element, 'attributes') and element.attributes.get('id') == 'js-navigation':
 				js_link_found = True
 				click_element = await session.get_dom_element_by_index(idx)
-				session.event_bus.dispatch(ClickElementEvent(node=click_element))
+				if click_element is not None:
+					session.event_bus.dispatch(ClickElementEvent(node=click_element))
 				break
 
 		if js_link_found:

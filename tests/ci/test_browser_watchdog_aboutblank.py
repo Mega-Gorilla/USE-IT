@@ -200,7 +200,7 @@ async def test_aboutblank_watchdog_javascript_execution():
 		# Get the page and verify animation
 		# Get tab info instead of page
 		tabs1 = await session.get_tabs()
-		tab1 = tabs1[dvd_event1.target_id]
+		tab1 = next((tab for tab in tabs1 if tab.target_id == dvd_event1.target_id), None)
 		assert tab1 is not None, f'Could not find tab at index {dvd_event1.target_id}'
 
 		# Verify the animation was created
@@ -221,7 +221,7 @@ async def test_aboutblank_watchdog_javascript_execution():
 		# Get the new page
 		# Get tab info instead of page
 		tabs2 = await session.get_tabs()
-		tab2 = tabs2[dvd_event2.target_id]
+		tab2 = next((tab for tab in tabs2 if tab.target_id == dvd_event2.target_id), None)
 		assert tab2 is not None, f'Could not find tab # {dvd_event2.target_id}'
 		assert CrashWatchdog._is_new_tab_page(tab2.url), f'Auto-created tab should be a new tab page, but got: {tab2.url}'
 

@@ -10,6 +10,7 @@ import pytest
 
 from browser_use import Agent, AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.events import NavigateToUrlEvent
 from tests.ci.conftest import create_mock_llm
 
 
@@ -248,7 +249,9 @@ class TestBrowserProfileRecordings:
 		)
 		await browser_session.start()
 		try:
-			await browser_session.navigate(httpserver_url)
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver_url))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			await asyncio.sleep(0.5)
 		finally:
 			await browser_session.kill()
@@ -292,7 +295,9 @@ class TestBrowserProfileRecordings:
 		await browser_session1.start()
 		try:
 			# Create some activity to establish browser context
-			await browser_session1.navigate(httpserver_url)
+			event = browser_session1.event_bus.dispatch(NavigateToUrlEvent(url=httpserver_url))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			await asyncio.sleep(0.5)
 
 			# Step 2: Connect to the SAME browser but WITH video recording
@@ -309,12 +314,14 @@ class TestBrowserProfileRecordings:
 			await browser_session2.start()
 			try:
 				# Verify contexts are different (with the fix)
-				assert browser_session1.browser_context != browser_session2.browser_context, (
+				assert browser_session1._cdp_client_root != browser_session2._cdp_client_root, (
 					'Bug still exists: Same context was reused instead of creating new one for video recording'
 				)
 
 				# Test video recording functionality
-				await browser_session2.navigate(httpserver_url)
+				event = browser_session2.event_bus.dispatch(NavigateToUrlEvent(url=httpserver_url))
+				await event
+				await event.event_result(raise_if_any=True, raise_if_none=False)
 				await asyncio.sleep(1)  # Record some content
 
 			finally:
@@ -361,7 +368,9 @@ class TestBrowserProfileRecordings:
 		)
 		await browser_session.start()
 		try:
-			await browser_session.navigate(httpserver_url)
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver_url))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			await asyncio.sleep(0.5)
 		finally:
 			await browser_session.kill()

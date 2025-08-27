@@ -14,9 +14,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
-pytest.skip('TODO: fix - uses removed _cdp_client_root attribute', allow_module_level=True)
-
 from pytest_httpserver import HTTPServer
 
 from browser_use.browser.events import SaveStorageStateEvent
