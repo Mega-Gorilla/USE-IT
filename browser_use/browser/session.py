@@ -1527,6 +1527,9 @@ class BrowserSession(BaseModel):
 
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
+		if not self.browser_profile.highlight_elements:
+			return
+
 		try:
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()
