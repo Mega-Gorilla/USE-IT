@@ -7,7 +7,6 @@ mode: "wide"
 
 ## Core Settings
 - `cdp_url`: CDP URL for connecting to existing browser instance (e.g., `"http://localhost:9222"`)
-- `is_local` (default: `True`): Whether this is a local browser instance. Set to `False` for remote browsers
 
 ## Display & Appearance
 - `headless` (default: `None`): Run browser without UI. Auto-detects based on display availability (`True`/`False`/`None`)
@@ -20,7 +19,6 @@ mode: "wide"
 
 
 ## Browser Behavior
-- `stealth` (default: `False`): Use stealth techniques to avoid bot detection
 - `keep_alive` (default: `None`): Keep browser running after agent completes
 - `allowed_domains`: Restrict navigation to specific domains. Domain pattern formats:
   - `'example.com'` - Matches only `https://example.com/*`  
@@ -31,6 +29,7 @@ mode: "wide"
   - Use list like `['*.google.com', 'https://example.com', 'chrome-extension://*']`
 - `enable_default_extensions` (default: `True`): Load automation extensions (uBlock Origin, cookie handlers, ClearURLs)
 - `cross_origin_iframes` (default: `False`): Enable cross-origin iframe support (may cause complexity)
+- `is_local` (default: `True`): Whether this is a local browser instance. Set to `False` for remote browsers. If we have a `executable_path` set, it will be automatically set to `True`. This can effect your download behavior.
 
 ## User Data & Profiles
 - `user_data_dir` (default: auto-generated temp): Directory for browser profile data. Use `None` for incognito mode
@@ -90,7 +89,7 @@ mode: "wide"
 For backward compatibility, you can pass all the parameters from above to the `BrowserProfile` and then to the `Browser`.
 ```python
 from browser_use import BrowserProfile
-profile = BrowserProfile(headless=False, stealth=True)
+profile = BrowserProfile(headless=False)
 browser = Browser(browser_profile=profile)
 ```
 

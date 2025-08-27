@@ -1229,10 +1229,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Start browser session and attach watchdogs
 			assert self.browser_session is not None, 'Browser session must be initialized before starting'
 			self.logger.debug('🌐 Starting browser session...')
+
 			from browser_use.browser.events import BrowserStartEvent
 
 			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
 			await event
+			# Check if browser startup actually succeeded by getting the result
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 

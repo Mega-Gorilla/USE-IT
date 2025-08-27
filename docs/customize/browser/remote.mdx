@@ -10,8 +10,7 @@ from browser_use import Agent, Browser, ChatOpenAI
 
 # Connect to remote browser
 browser = Browser(
-    cdp_url='http://remote-server:9222',
-    is_local=False,  # set to True if you want to use a local browser
+    cdp_url='http://remote-server:9222'
 )
 
 
@@ -44,8 +43,7 @@ browser = Browser(
             username="proxy-user",
             password="proxy-pass"
         )
-        cdp_url="http://remote-server:9222",
-        is_local=False  # set to True if you want to use a local browser
+        cdp_url="http://remote-server:9222"
 )
 
 
