@@ -274,6 +274,8 @@ class BrowserSession(BaseModel):
 		# if is_local is False but executable_path is provided, set is_local to True
 		if is_local is False and executable_path is not None:
 			profile_kwargs['is_local'] = True
+		if not cdp_url:
+			profile_kwargs['is_local'] = True
 
 		# Create browser profile from direct parameters or use provided one
 		if browser_profile is not None:
