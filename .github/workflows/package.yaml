@@ -46,7 +46,7 @@ jobs:
       - name: Set up venv and test for OS/Python versions
         shell: bash
         run: |
-          uv venv /tmp/testenv --python ${{ matrix.python-version }}
+          uv venv /tmp/testenv --python ${{ matrix.python-version }} --clear
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             . /tmp/testenv/Scripts/activate
           else
