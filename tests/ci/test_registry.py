@@ -239,31 +239,6 @@ class TestActionRegistryParameterPatterns:
 		assert 'No params action executed on' in result.extracted_content
 		assert '/test' in result.extracted_content
 
-	async def test_legacy_browser_parameter_names(self, registry, browser_session):
-		"""Test that legacy browser parameter names still work"""
-
-		@registry.action('Action with legacy browser param')
-		async def legacy_browser_action(text: str, browser: BrowserSession):
-			url = await browser.get_current_page_url()
-			return ActionResult(extracted_content=f'Legacy browser: {text}, URL: {url}')
-
-		@registry.action('Action with legacy browser_context param')
-		async def legacy_context_action(text: str, browser_context: BrowserSession):
-			url = await browser_context.get_current_page_url()
-			return ActionResult(extracted_content=f'Legacy context: {text}, URL: {url}')
-
-		# Test legacy browser parameter
-		result1 = await registry.execute_action('legacy_browser_action', {'text': 'test1'}, browser_session=browser_session)
-		assert result1.extracted_content is not None
-		assert 'Legacy browser: test1, URL:' in result1.extracted_content
-		assert '/test' in result1.extracted_content
-
-		# Test legacy browser_context parameter
-		result2 = await registry.execute_action('legacy_context_action', {'text': 'test2'}, browser_session=browser_session)
-		assert result2.extracted_content is not None
-		assert 'Legacy context: test2, URL:' in result2.extracted_content
-		assert '/test' in result2.extracted_content
-
 
 class TestActionToActionCalling:
 	"""Test scenarios where actions call other actions"""

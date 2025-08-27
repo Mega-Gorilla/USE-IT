@@ -185,9 +185,8 @@ class TestNavigateToUrlEvent:
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
 
-		# Verify we can get the page title
-		page = await browser_session.get_current_page()
-		title = await page.title()
+		# Verify we can get the page title using CDP
+		title = await browser_session.get_current_page_title()
 		assert title == 'Data URL Test'
 
 	async def test_navigate_with_hash(self, tools, browser_session, base_url, http_server):

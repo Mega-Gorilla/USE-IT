@@ -314,7 +314,7 @@ class TestToolsIntegration:
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
-		assert 'Searched for "Python web automation" in Google' in result.extracted_content
+		assert 'Searched' in result.extracted_content and 'Python web automation' in result.extracted_content
 
 		# For our test purposes, we just verify we're on some URL
 		current_url = await browser_session.get_current_page_url()

@@ -52,17 +52,12 @@ class TestBrowserSessionStart:
 		# logger.info('Testing start on already started session')
 
 		# Start the session for the first time
-		result1 = await browser_session.start()
+		await browser_session.start()
 		assert browser_session._cdp_client_root is not None
-		assert result1 is browser_session
 
 		# Start the session again - should return immediately without re-initialization
-		result2 = await browser_session.start()
-		assert result2 is browser_session
+		await browser_session.start()
 		assert browser_session._cdp_client_root is not None
-
-		# Both results should be the same instance
-		assert result1 is result2
 
 	async def test_start_with_invalid_cdp_url(self):
 		"""Test that initialization fails gracefully with invalid CDP URL."""

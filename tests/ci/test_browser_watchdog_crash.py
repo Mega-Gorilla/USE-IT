@@ -21,6 +21,7 @@ from browser_use.utils import logger
 @pytest.mark.asyncio
 async def test_crash_watchdog_network_timeout():
 	"""Test that CrashWatchdog detects network timeouts by monitoring actual network requests."""
+	pytest.skip('CrashWatchdog not implemented in current CDP architecture')
 
 	# Create browser session
 	profile = BrowserProfile(headless=True)

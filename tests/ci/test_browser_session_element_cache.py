@@ -216,13 +216,15 @@ async def test_assumption_4_click_action_specific_issue(browser_session, tools, 
 @pytest.mark.asyncio
 async def test_assumption_5_multiple_get_selector_map_calls(browser_session, httpserver):
 	"""Test assumption 5: Multiple calls to get_selector_map return consistent results."""
-	# Go to a simple page
-	page = await browser_session.get_current_page()
-	await page.goto(httpserver.url_for('/'))
-	await page.wait_for_load_state()
+	# Go to a simple page using CDP events
+	from browser_use.browser.events import NavigateToUrlEvent
+
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 
 	# Call get_selector_map multiple times
 	map1 = await browser_session.get_selector_map()
