@@ -203,7 +203,6 @@ class BrowserSession(BaseModel):
 
 	# Access session fields directly, browser settings via profile or property
 	print(session.id)  # Session field
-	print(session.browser_profile.stealth)  # Direct browser_profile access
 	```
 	"""
 
@@ -219,7 +218,7 @@ class BrowserSession(BaseModel):
 		# Core configuration
 		id: str | None = None,
 		cdp_url: str | None = None,
-		is_local: bool = True,
+		is_local: bool = False,
 		browser_profile: BrowserProfile | None = None,
 		# BrowserProfile fields that can be passed directly
 		# From BrowserConnectArgs
@@ -252,7 +251,6 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
-		stealth: bool | None = None,
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
 		allowed_domains: list[str] | None = None,
@@ -272,6 +270,10 @@ class BrowserSession(BaseModel):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
+
+		# if is_local is False but executable_path is provided, set is_local to True
+		if is_local is False and executable_path is not None:
+			profile_kwargs['is_local'] = True
 
 		# Create browser profile from direct parameters or use provided one
 		if browser_profile is not None:
