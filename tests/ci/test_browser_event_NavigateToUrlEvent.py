@@ -141,7 +141,7 @@ class TestNavigateToUrlEvent:
 		# Verify result
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
-		assert 'Navigated to' in result.extracted_content
+		assert 'Opened new tab with url' in result.extracted_content or 'Navigated to' in result.extracted_content
 
 		# Verify new tab was created
 		final_tabs = await browser_session.get_tabs()

@@ -122,8 +122,8 @@ class TestToolsIntegration:
 
 		@tools.action('Test custom action', param_model=CustomParams)
 		async def custom_action(params: CustomParams, browser_session):
-			page = await browser_session.get_current_page()
-			return ActionResult(extracted_content=f'Custom action executed with: {params.text} on {page.url}')
+			current_url = await browser_session.get_current_page_url()
+			return ActionResult(extracted_content=f'Custom action executed with: {params.text} on {current_url}')
 
 		# Navigate to a page first
 		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/page1', new_tab=False)}
@@ -182,10 +182,10 @@ class TestToolsIntegration:
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
-		assert 'Waiting for' in result.extracted_content
+		assert 'Waited for' in result.extracted_content or 'Waiting for' in result.extracted_content
 
-		# Verify that less than 0.1 second has passed (because we deducted 3 seconds to account for the llm call)
-		assert end_time - start_time <= 0.1  # Allow some timing margin
+		# Verify that approximately 1 second has passed (allowing some margin)
+		assert 0.8 <= end_time - start_time <= 1.5  # Allow some timing margin for 1 second wait
 
 		# longer wait
 		# Create wait action for 1 second - fix to use a dictionary
@@ -203,10 +203,10 @@ class TestToolsIntegration:
 		# Verify the result
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
-		assert 'Waiting for' in result.extracted_content
+		assert 'Waited for' in result.extracted_content or 'Waiting for' in result.extracted_content
 
-		# Verify that we took 2 sec (5s-3s (llm call)= 2s)
-		assert end_time - start_time <= 2.1  # Allow some timing margin
+		# Verify that approximately 5 seconds have passed (allowing some margin)
+		assert 4.5 <= end_time - start_time <= 6.0  # Allow some timing margin for 5 second wait
 		assert end_time - start_time >= 1.9  # Allow some timing margin
 
 	async def test_go_back_action(self, tools, browser_session, base_url):
@@ -220,8 +220,7 @@ class TestToolsIntegration:
 		await tools.act(GoToUrlActionModel(**goto_action1), browser_session)
 
 		# Store the first page URL
-		page1 = await browser_session.get_current_page()
-		first_url = page1.url
+		first_url = await browser_session.get_current_page_url()
 		print(f'First page URL: {first_url}')
 
 		# Navigate to second page
@@ -229,8 +228,7 @@ class TestToolsIntegration:
 		await tools.act(GoToUrlActionModel(**goto_action2), browser_session)
 
 		# Verify we're on the second page
-		page2 = await browser_session.get_current_page()
-		second_url = page2.url
+		second_url = await browser_session.get_current_page_url()
 		print(f'Second page URL: {second_url}')
 		assert f'{base_url}/page2' in second_url
 
@@ -251,8 +249,7 @@ class TestToolsIntegration:
 		await asyncio.sleep(1)
 
 		# Verify we're back on a different page than before
-		page3 = await browser_session.get_current_page()
-		final_url = page3.url
+		final_url = await browser_session.get_current_page_url()
 		print(f'Final page URL after going back: {final_url}')
 
 		# Try to verify we're back on the first page, but don't fail the test if not

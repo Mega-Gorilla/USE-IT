@@ -145,7 +145,8 @@ async def test_navigation_events_slow_page_with_timeout(httpserver):
 		else:
 			# Navigation succeeded (slow but successful)
 			print('Navigation succeeded despite being slow')
-			assert nav_complete.status == 200, 'Successful navigation should have HTTP 200'
+			# CDP doesn't provide HTTP status directly, just check no error
+		assert nav_complete.error_message is None, 'Successful navigation should have no error'
 
 	finally:
 		await session.stop()

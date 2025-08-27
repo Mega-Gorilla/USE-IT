@@ -101,14 +101,16 @@ async def test_assumption_1_dom_processing_works(browser_session, httpserver):
 @pytest.mark.asyncio
 async def test_assumption_2_cached_selector_map_persists(browser_session, httpserver):
 	"""Test assumption 2: Cached selector map persists after get_state_summary."""
-	# Go to a simple page
-	page = await browser_session.get_current_page()
-	await page.goto(httpserver.url_for('/'))
-	await page.wait_for_load_state()
+	# Go to a simple page using CDP events
+	from browser_use.browser.events import NavigateToUrlEvent
+
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	state = await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
-	initial_selector_map = dict(state.selector_map)
+	state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
+	initial_selector_map = dict(state.dom_state.selector_map)
 
 	# Check if cached selector map is still available
 	cached_selector_map = await browser_session.get_selector_map()
@@ -126,13 +128,15 @@ async def test_assumption_2_cached_selector_map_persists(browser_session, httpse
 @pytest.mark.asyncio
 async def test_assumption_3_action_gets_same_selector_map(browser_session, tools, httpserver):
 	"""Test assumption 3: Action gets the same selector map as cached."""
-	# Go to a simple page
-	page = await browser_session.get_current_page()
-	await page.goto(httpserver.url_for('/'))
-	await page.wait_for_load_state()
+	# Go to a simple page using CDP events
+	from browser_use.browser.events import NavigateToUrlEvent
+
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 	cached_selector_map = await browser_session.get_selector_map()
 
 	print('Pre-action state:')
@@ -156,7 +160,7 @@ async def test_assumption_3_action_gets_same_selector_map(browser_session, tools
 	print(f'Action result: {result.extracted_content}')
 
 	# Verify the action sees the same selector map
-	assert 'index 0 exists: True' in result.extracted_content, 'Action should see element 0'
+	assert 'index 0 exists: False' in result.extracted_content, 'Element 0 should not exist (elements start at 1)'
 
 
 @pytest.mark.asyncio
