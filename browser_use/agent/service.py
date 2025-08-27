@@ -1272,6 +1272,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 					self.logger.debug(f'✅ Added navigation to {initial_url} as initial action')
 
+			# Ensure browser focus is properly established before executing initial actions
+			if self.browser_session and self.browser_session.agent_focus:
+				self.logger.debug(f'🎯 Browser focus established on target: {self.browser_session.agent_focus.target_id[-4:]}')
+			else:
+				self.logger.warning('⚠️ No browser focus established, may cause navigation issues')
+
 			# Execute initial actions if provided
 			if self.initial_actions and not self.state.follow_up_task:
 				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
