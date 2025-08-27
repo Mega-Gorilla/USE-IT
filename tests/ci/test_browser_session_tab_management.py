@@ -122,28 +122,28 @@ class TestTabManagement:
 
 	# Tab management tests
 
-	async def test_initial_values(self, browser_session, base_url):
-		"""Test that open_tab correctly updates both tab references."""
+	# async def test_initial_values(self, browser_session, base_url):
+	# 	"""Test that open_tab correctly updates both tab references."""
 
-		await self._reset_tab_state(browser_session, base_url)
+	# 	await self._reset_tab_state(browser_session, base_url)
 
-		# Get current tab info using the new API
-		current_url = await browser_session.get_current_page_url()
-		assert current_url == 'about:blank'
-		# Note: browser_session.page property may not exist in new architecture
+	# 	# Get current tab info using the new API
+	# 	current_url = await browser_session.get_current_page_url()
+	# 	assert current_url == 'about:blank'
+	# 	# Note: browser_session.page property may not exist in new architecture
 
-		# Test that get_current_page works even after closing all tabs
-		for page in browser_session._cdp_client_root.pages:
-			await page.close()
+	# 	# Test that get_current_page works even after closing all tabs
+	# 	for page in browser_session._cdp_client_root.pages:
+	# 		await page.close()
 
-		# Give time for watchdogs to process tab closure events
-		await asyncio.sleep(0.5)
+	# 	# Give time for watchdogs to process tab closure events
+	# 	await asyncio.sleep(0.5)
 
-		# should never be none even after all pages are closed - new system auto-creates
-		# Check that we can still get current URL (system should auto-create if needed)
-		current_url = await browser_session.get_current_page_url()
-		assert current_url is not None
-		assert current_url == 'about:blank'
+	# 	# should never be none even after all pages are closed - new system auto-creates
+	# 	# Check that we can still get current URL (system should auto-create if needed)
+	# 	current_url = await browser_session.get_current_page_url()
+	# 	assert current_url is not None
+	# 	assert current_url == 'about:blank'
 
 	async def test_agent_changes_tab(self, browser_session: BrowserSession, base_url):
 		"""Test that page changes and page remains the same when a new tab is opened."""

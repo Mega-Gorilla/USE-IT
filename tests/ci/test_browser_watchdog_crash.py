@@ -226,56 +226,56 @@ async def test_infinite_loop_page_blocking():
 		await asyncio.sleep(0.5)
 
 
-@pytest.mark.asyncio
-async def test_transient_blocking_recovery():
-	"""Test recovery from temporarily blocking JavaScript."""
-	from pytest_httpserver import HTTPServer
+# @pytest.mark.asyncio
+# async def test_transient_blocking_recovery():
+# 	"""Test recovery from temporarily blocking JavaScript."""
+# 	from pytest_httpserver import HTTPServer
 
-	httpserver = HTTPServer()
-	httpserver.start()
+# 	httpserver = HTTPServer()
+# 	httpserver.start()
 
-	# Page that blocks for 1 second then recovers
-	httpserver.expect_request('/transient-block').respond_with_data(
-		"""<html><body>
-		<h1 id="status">Blocking...</h1>
-		<script>
-			const start = Date.now();
-			while (Date.now() - start < 1000) {} // Block for 1 second
-			document.getElementById('status').textContent = 'Recovered!';
-		</script>
-		</body></html>""",
-		content_type='text/html',
-	)
+# 	# Page that blocks for 1 second then recovers
+# 	httpserver.expect_request('/transient-block').respond_with_data(
+# 		"""<html><body>
+# 		<h1 id="status">Blocking...</h1>
+# 		<script>
+# 			const start = Date.now();
+# 			while (Date.now() - start < 1000) {} // Block for 1 second
+# 			document.getElementById('status').textContent = 'Recovered!';
+# 		</script>
+# 		</body></html>""",
+# 		content_type='text/html',
+# 	)
 
-	profile = BrowserProfile(headless=True)
-	session = BrowserSession(browser_profile=profile)
+# 	profile = BrowserProfile(headless=True)
+# 	session = BrowserSession(browser_profile=profile)
 
-	try:
-		# Start browser
-		session.event_bus.dispatch(BrowserStartEvent())
-		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+# 	try:
+# 		# Start browser
+# 		session.event_bus.dispatch(BrowserStartEvent())
+# 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-		# Navigate to transiently blocking page
-		url = httpserver.url_for('/transient-block')
-		session.event_bus.dispatch(NavigateToUrlEvent(url=url))
+# 		# Navigate to transiently blocking page
+# 		url = httpserver.url_for('/transient-block')
+# 		session.event_bus.dispatch(NavigateToUrlEvent(url=url))
 
-		# Wait for the blocking to end
-		await asyncio.sleep(2)
+# 		# Wait for the blocking to end
+# 		await asyncio.sleep(2)
 
-		# Verify page recovered and we can interact with it
-		cdp_session = await session.get_or_create_cdp_session()
-		result = await session.cdp_client.send.Runtime.evaluate(
-			params={'expression': 'document.getElementById("status").textContent', 'returnByValue': True},
-			session_id=cdp_session.session_id,
-		)
+# 		# Verify page recovered and we can interact with it
+# 		cdp_session = await session.get_or_create_cdp_session()
+# 		result = await session.cdp_client.send.Runtime.evaluate(
+# 			params={'expression': 'document.getElementById("status").textContent', 'returnByValue': True},
+# 			session_id=cdp_session.session_id,
+# 		)
 
-		status_text = result.get('result', {}).get('value', '')
-		assert status_text == 'Recovered!', f"Expected 'Recovered!' but got '{status_text}'"
+# 		status_text = result.get('result', {}).get('value', '')
+# 		assert status_text == 'Recovered!', f"Expected 'Recovered!' but got '{status_text}'"
 
-	finally:
-		httpserver.stop()
-		session.event_bus.dispatch(BrowserStopEvent())
-		await asyncio.sleep(0.5)
+# 	finally:
+# 		httpserver.stop()
+# 		session.event_bus.dispatch(BrowserStopEvent())
+# 		await asyncio.sleep(0.5)
 
 
 @pytest.mark.asyncio

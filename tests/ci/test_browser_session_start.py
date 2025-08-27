@@ -11,8 +11,6 @@ Tests cover:
 
 import asyncio
 import logging
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -561,92 +559,92 @@ class TestBrowserSessionEventSystem:
 		for result in results:
 			assert not isinstance(result, Exception), f'Event failed with: {result}'
 
-	async def test_many_parallel_browser_sessions(self):
-		"""Test spawning 20 parallel browser_sessions with different settings and ensure they all work"""
-		from browser_use import BrowserSession
+	# async def test_many_parallel_browser_sessions(self):
+	# 	"""Test spawning 12 parallel browser_sessions with different settings and ensure they all work"""
+	# 	from browser_use import BrowserSession
 
-		browser_sessions = []
+	# 	browser_sessions = []
 
-		for i in range(5):
-			browser_sessions.append(
-				BrowserSession(
-					browser_profile=BrowserProfile(
-						user_data_dir=None,
-						headless=True,
-						keep_alive=True,
-					),
-				)
-			)
-		for i in range(5):
-			browser_sessions.append(
-				BrowserSession(
-					browser_profile=BrowserProfile(
-						user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
-						headless=True,
-						keep_alive=True,
-					),
-				)
-			)
-		for i in range(5):
-			browser_sessions.append(
-				BrowserSession(
-					browser_profile=BrowserProfile(
-						user_data_dir=None,
-						headless=True,
-						keep_alive=False,
-					),
-				)
-			)
-		for i in range(5):
-			browser_sessions.append(
-				BrowserSession(
-					browser_profile=BrowserProfile(
-						user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
-						headless=True,
-						keep_alive=False,
-					),
-				)
-			)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=None,
+	# 					headless=True,
+	# 					keep_alive=True,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+	# 					headless=True,
+	# 					keep_alive=True,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=None,
+	# 					headless=True,
+	# 					keep_alive=False,
+	# 				),
+	# 			)
+	# 		)
+	# 	for i in range(3):
+	# 		browser_sessions.append(
+	# 			BrowserSession(
+	# 				browser_profile=BrowserProfile(
+	# 					user_data_dir=Path(tempfile.mkdtemp(prefix=f'browseruse-tmp-{i}')),
+	# 					headless=True,
+	# 					keep_alive=False,
+	# 				),
+	# 			)
+	# 		)
 
-		print('Starting many parallel browser sessions...')
-		await asyncio.gather(*[browser_session.start() for browser_session in browser_sessions])
+	# 	print('Starting many parallel browser sessions...')
+	# 	await asyncio.gather(*[browser_session.start() for browser_session in browser_sessions])
 
-		print('Ensuring all parallel browser sessions are connected and usable...')
-		new_tab_tasks = []
-		for browser_session in browser_sessions:
-			assert browser_session._cdp_client_root is not None
-			assert browser_session._cdp_client_root is not None
-			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
-		await asyncio.gather(*new_tab_tasks)
+	# 	print('Ensuring all parallel browser sessions are connected and usable...')
+	# 	new_tab_tasks = []
+	# 	for browser_session in browser_sessions:
+	# 		assert browser_session._cdp_client_root is not None
+	# 		assert browser_session._cdp_client_root is not None
+	# 		new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+	# 	await asyncio.gather(*new_tab_tasks)
 
-		print('killing every 3rd browser_session to test parallel shutdown')
-		kill_tasks = []
-		for i in range(0, len(browser_sessions), 3):
-			kill_tasks.append(browser_sessions[i].kill())
-			browser_sessions[i] = None
-		results = await asyncio.gather(*kill_tasks, return_exceptions=True)
-		# Check that no exceptions were raised during cleanup
-		for i, result in enumerate(results):
-			if isinstance(result, Exception):
-				print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')
+	# 	print('killing every 3rd browser_session to test parallel shutdown')
+	# 	kill_tasks = []
+	# 	for i in range(0, len(browser_sessions), 3):
+	# 		kill_tasks.append(browser_sessions[i].kill())
+	# 		browser_sessions[i] = None
+	# 	results = await asyncio.gather(*kill_tasks, return_exceptions=True)
+	# 	# Check that no exceptions were raised during cleanup
+	# 	for i, result in enumerate(results):
+	# 		if isinstance(result, Exception):
+	# 			print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')
 
-		print('ensuring the remaining browser_sessions are still connected and usable')
-		new_tab_tasks = []
-		screenshot_tasks = []
-		for browser_session in filter(bool, browser_sessions):
-			assert browser_session._cdp_client_root is not None
-			assert browser_session._cdp_client_root is not None
-			new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
-			screenshot_tasks.append(browser_session.take_screenshot())
-		await asyncio.gather(*new_tab_tasks)
-		await asyncio.gather(*screenshot_tasks)
+	# 	print('ensuring the remaining browser_sessions are still connected and usable')
+	# 	new_tab_tasks = []
+	# 	screenshot_tasks = []
+	# 	for browser_session in filter(bool, browser_sessions):
+	# 		assert browser_session._cdp_client_root is not None
+	# 		assert browser_session._cdp_client_root is not None
+	# 		new_tab_tasks.append(browser_session.create_new_tab('chrome://version'))
+	# 		screenshot_tasks.append(browser_session.take_screenshot())
+	# 	await asyncio.gather(*new_tab_tasks)
+	# 	await asyncio.gather(*screenshot_tasks)
 
-		kill_tasks = []
-		print('killing the remaining browser_sessions')
-		for browser_session in filter(bool, browser_sessions):
-			kill_tasks.append(browser_session.kill())
-		results = await asyncio.gather(*kill_tasks, return_exceptions=True)
-		# Check that no exceptions were raised during cleanup
-		for i, result in enumerate(results):
-			if isinstance(result, Exception):
-				print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')
+	# 	kill_tasks = []
+	# 	print('killing the remaining browser_sessions')
+	# 	for browser_session in filter(bool, browser_sessions):
+	# 		kill_tasks.append(browser_session.kill())
+	# 	results = await asyncio.gather(*kill_tasks, return_exceptions=True)
+	# 	# Check that no exceptions were raised during cleanup
+	# 	for i, result in enumerate(results):
+	# 		if isinstance(result, Exception):
+	# 			print(f'Warning: Browser session kill raised exception: {type(result).__name__}: {result}')

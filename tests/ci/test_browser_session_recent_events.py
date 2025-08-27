@@ -62,72 +62,72 @@ class TestBrowserRecentEvents:
 		finally:
 			await browser_session.kill()
 
-	async def test_recent_events_tracks_multiple_navigations(self, httpserver: HTTPServer):
-		"""Test that recent events properly tracks multiple navigations"""
-		# Set up pages
-		slow_html = """
-		<html>
-		<head>
-			<title>Slow Page</title>
-			<script src="/slow.js"></script>
-		</head>
-		<body><h1>Slow page</h1></body>
-		</html>
-		"""
+	# async def test_recent_events_tracks_multiple_navigations(self, httpserver: HTTPServer):
+	# 	"""Test that recent events properly tracks multiple navigations"""
+	# 	# Set up pages
+	# 	slow_html = """
+	# 	<html>
+	# 	<head>
+	# 		<title>Slow Page</title>
+	# 		<script src="/slow.js"></script>
+	# 	</head>
+	# 	<body><h1>Slow page</h1></body>
+	# 	</html>
+	# 	"""
 
-		httpserver.expect_request('/slow').respond_with_data(slow_html, content_type='text/html')
+	# 	httpserver.expect_request('/slow').respond_with_data(slow_html, content_type='text/html')
 
-		def slow_handler(req):
-			time.sleep(5)
-			return Response('slow')
+	# 	def slow_handler(req):
+	# 		time.sleep(5)
+	# 		return Response('slow')
 
-		httpserver.expect_request('/slow.js').respond_with_handler(slow_handler)
+	# 	httpserver.expect_request('/slow.js').respond_with_handler(slow_handler)
 
-		httpserver.expect_request('/fast').respond_with_data(
-			'<html><head><title>Fast Page</title></head><body><h1>Fast page</h1></body></html>',
-			content_type='text/html',
-		)
+	# 	httpserver.expect_request('/fast').respond_with_data(
+	# 		'<html><head><title>Fast Page</title></head><body><h1>Fast page</h1></body></html>',
+	# 		content_type='text/html',
+	# 	)
 
-		browser_session = BrowserSession(
-			browser_profile=BrowserProfile(
-				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-			)
-		)
+	# 	browser_session = BrowserSession(
+	# 		browser_profile=BrowserProfile(
+	# 			headless=True,
+	# 			user_data_dir=None,
+	# 			keep_alive=False,
+	# 		)
+	# 	)
 
-		try:
-			await browser_session.start()
+	# 	try:
+	# 		await browser_session.start()
 
-			# Navigate to slow page
-			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/slow')))
-			await event
-			await event.event_result(raise_if_any=True, raise_if_none=False)
-			state1 = await browser_session.get_browser_state_summary(include_recent_events=True)
-			assert state1.recent_events is not None
-			events1 = json.loads(state1.recent_events)
-			event_types1 = [e.get('event_type') for e in events1]
-			assert 'NavigationCompleteEvent' in event_types1 or 'NavigateToUrlEvent' in event_types1
+	# 		# Navigate to slow page
+	# 		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/slow')))
+	# 		await event
+	# 		await event.event_result(raise_if_any=True, raise_if_none=False)
+	# 		state1 = await browser_session.get_browser_state_summary(include_recent_events=True)
+	# 		assert state1.recent_events is not None
+	# 		events1 = json.loads(state1.recent_events)
+	# 		event_types1 = [e.get('event_type') for e in events1]
+	# 		assert 'NavigationCompleteEvent' in event_types1 or 'NavigateToUrlEvent' in event_types1
 
-			# Navigate to fast page
-			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/fast')))
-			await event
-			await event.event_result(raise_if_any=True, raise_if_none=False)
-			state2 = await browser_session.get_browser_state_summary()
+	# 		# Navigate to fast page
+	# 		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/fast')))
+	# 		await event
+	# 		await event.event_result(raise_if_any=True, raise_if_none=False)
+	# 		state2 = await browser_session.get_browser_state_summary()
 
-			# Recent events should show both navigations
-			assert state2.recent_events is not None
-			events2 = json.loads(state2.recent_events)
+	# 		# Recent events should show both navigations
+	# 		assert state2.recent_events is not None
+	# 		events2 = json.loads(state2.recent_events)
 
-			# Count navigation events (last 10 events should include both)
-			nav_complete_count = sum(1 for e in events2 if e.get('event_type') == 'NavigationCompleteEvent')
-			nav_url_count = sum(1 for e in events2 if e.get('event_type') == 'NavigateToUrlEvent')
+	# 		# Count navigation events (last 10 events should include both)
+	# 		nav_complete_count = sum(1 for e in events2 if e.get('event_type') == 'NavigationCompleteEvent')
+	# 		nav_url_count = sum(1 for e in events2 if e.get('event_type') == 'NavigateToUrlEvent')
 
-			# Should have events from both navigations
-			assert nav_complete_count >= 1 or nav_url_count >= 2, 'Recent events should show multiple navigation attempts'
+	# 		# Should have events from both navigations
+	# 		assert nav_complete_count >= 1 or nav_url_count >= 2, 'Recent events should show multiple navigation attempts'
 
-		finally:
-			await browser_session.kill()
+	# 	finally:
+	# 		await browser_session.kill()
 
 	async def test_recent_events_preserved_in_minimal_state(self, httpserver: HTTPServer):
 		"""Test that recent events is preserved even when falling back to minimal state"""

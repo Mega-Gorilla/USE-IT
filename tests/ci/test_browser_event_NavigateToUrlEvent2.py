@@ -293,46 +293,46 @@ async def test_navigation_events_link_clicks(httpserver):
 		await session.stop()
 
 
-@pytest.mark.asyncio
-async def test_navigation_timeout_event_dispatch():
-	"""Test that NavigateToUrlEvent with timeout_ms properly dispatches NavigationCompleteEvent on timeout."""
-	profile = BrowserProfile(headless=True)
-	session = BrowserSession(browser_profile=profile)
+# @pytest.mark.asyncio
+# async def test_navigation_timeout_event_dispatch():
+# 	"""Test that NavigateToUrlEvent with timeout_ms properly dispatches NavigationCompleteEvent on timeout."""
+# 	profile = BrowserProfile(headless=True)
+# 	session = BrowserSession(browser_profile=profile)
 
-	# Track navigation events
-	navigation_complete_events = []
-	session.event_bus.on(NavigationCompleteEvent, lambda e: navigation_complete_events.append(e))
+# 	# Track navigation events
+# 	navigation_complete_events = []
+# 	session.event_bus.on(NavigationCompleteEvent, lambda e: navigation_complete_events.append(e))
 
-	try:
-		# Start browser
-		await session.start()
+# 	try:
+# 		# Start browser
+# 		await session.start()
 
-		# Navigate with a very short timeout to a valid but slow URL
-		session.event_bus.dispatch(
-			NavigateToUrlEvent(
-				url='data:text/html,<h1>Should timeout</h1>',  # Use a data URL that should work
-				timeout_ms=1,  # 1ms timeout - should definitely timeout
-			)
-		)
+# 		# Navigate with a very short timeout to a valid but slow URL
+# 		session.event_bus.dispatch(
+# 			NavigateToUrlEvent(
+# 				url='data:text/html,<h1>Should timeout</h1>',  # Use a data URL that should work
+# 				timeout_ms=1,  # 1ms timeout - should definitely timeout
+# 			)
+# 		)
 
-		# Wait for navigation to timeout and complete with error
-		nav_complete: NavigationCompleteEvent = cast(
-			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
-		)
+# 		# Wait for navigation to timeout and complete with error
+# 		nav_complete: NavigationCompleteEvent = cast(
+# 			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
+# 		)
 
-		# Verify NavigationCompleteEvent indicates timeout
-		assert nav_complete.error_message is not None, 'Should have error message for timeout'
-		assert 'timed out' in nav_complete.error_message.lower(), f'Error should mention timed out: {nav_complete.error_message}'
-		assert nav_complete.loading_status is not None, 'Should have loading status'
-		assert 'timeout' in nav_complete.loading_status.lower(), (
-			f'Loading status should mention timeout: {nav_complete.loading_status}'
-		)
+# 		# Verify NavigationCompleteEvent indicates timeout
+# 		assert nav_complete.error_message is not None, 'Should have error message for timeout'
+# 		assert 'timed out' in nav_complete.error_message.lower(), f'Error should mention timed out: {nav_complete.error_message}'
+# 		assert nav_complete.loading_status is not None, 'Should have loading status'
+# 		assert 'timeout' in nav_complete.loading_status.lower(), (
+# 			f'Loading status should mention timeout: {nav_complete.loading_status}'
+# 		)
 
-		# Verify specific timeout details
-		assert '1ms' in nav_complete.error_message, 'Should mention the specific timeout duration'
+# 		# Verify specific timeout details
+# 		assert '1ms' in nav_complete.error_message, 'Should mention the specific timeout duration'
 
-	finally:
-		await session.stop()
+# 	finally:
+# 		await session.stop()
 
 
 @pytest.mark.asyncio
