@@ -1,11 +1,8 @@
-from browser_use import Agent, Browser, ChatOpenAI, Tools
-
-browser = Browser()
-tools = Tools()
-llm = (ChatOpenAI(model='gpt-4.1-mini'),)
+from browser_use import Agent, ChatOpenAI
 
 agent = Agent(
-	task='Ask human for help',
+	task='Find founders of browser-use',
+	llm=ChatOpenAI(model='gpt-4.1-mini'),
 )
 
 agent.run_sync()
