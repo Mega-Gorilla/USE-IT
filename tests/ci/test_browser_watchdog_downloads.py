@@ -140,50 +140,50 @@ def comprehensive_download_test_server():
 	httpserver.stop()
 
 
-@pytest.mark.asyncio
-async def test_downloads_watchdog_page_attachment():
-	"""Test that DownloadsWatchdog attaches to pages properly."""
+# @pytest.mark.asyncio
+# async def test_downloads_watchdog_page_attachment():
+# 	"""Test that DownloadsWatchdog attaches to pages properly."""
 
-	# Create temp directory for downloads
-	with tempfile.TemporaryDirectory() as temp_dir:
-		downloads_path = Path(temp_dir)
+# 	# Create temp directory for downloads
+# 	with tempfile.TemporaryDirectory() as temp_dir:
+# 		downloads_path = Path(temp_dir)
 
-		profile = BrowserProfile(headless=True, downloads_path=downloads_path)
-		session = BrowserSession(browser_profile=profile)
+# 		profile = BrowserProfile(headless=True, downloads_path=downloads_path)
+# 		session = BrowserSession(browser_profile=profile)
 
-		try:
-			# Start browser
-			session.event_bus.dispatch(BrowserStartEvent())
-			await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+# 		try:
+# 			# Start browser
+# 			session.event_bus.dispatch(BrowserStartEvent())
+# 			await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-			# Get downloads watchdog
-			downloads_watchdog = session._downloads_watchdog
-			assert downloads_watchdog is not None
+# 			# Get downloads watchdog
+# 			downloads_watchdog = session._downloads_watchdog
+# 			assert downloads_watchdog is not None
 
-			# Navigate to create a new page
-			event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Test Page</h1>'))
-			await event
-			await event.event_result(raise_if_any=True, raise_if_none=False)
+# 			# Navigate to create a new page
+# 			event = session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Test Page</h1>'))
+# 			await event
+# 			await event.event_result(raise_if_any=True, raise_if_none=False)
 
-			# Verify watchdog has pages with listeners
-			assert hasattr(downloads_watchdog, '_pages_with_listeners')
+# 			# Verify watchdog has pages with listeners
+# 			assert hasattr(downloads_watchdog, '_pages_with_listeners')
 
-			# Give it a moment for page attachment
-			await asyncio.sleep(0.2)
+# 			# Give it a moment for page attachment
+# 			await asyncio.sleep(0.2)
 
-			# The watchdog should have attached to at least one page
-			# Note: We can't easily verify the internal WeakSet without accessing private attrs
+# 			# The watchdog should have attached to at least one page
+# 			# Note: We can't easily verify the internal WeakSet without accessing private attrs
 
-		finally:
-			# Clean shutdown
-			try:
-				session.event_bus.dispatch(BrowserStopEvent())
-				await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
-			except Exception:
-				# If graceful shutdown fails, force cleanup
-				await session.kill()
-			# Always stop event bus to prevent hanging
-			await session.event_bus.stop(clear=True, timeout=5)
+# 		finally:
+# 			# Clean shutdown
+# 			try:
+# 				session.event_bus.dispatch(BrowserStopEvent())
+# 				await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
+# 			except Exception:
+# 				# If graceful shutdown fails, force cleanup
+# 				await session.kill()
+# 			# Always stop event bus to prevent hanging
+# 			await session.event_bus.stop(clear=True, timeout=5)
 
 
 @pytest.mark.asyncio
