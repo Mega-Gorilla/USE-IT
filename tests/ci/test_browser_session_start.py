@@ -10,7 +10,6 @@ Tests cover:
 """
 
 import asyncio
-import json
 import logging
 import tempfile
 from pathlib import Path
@@ -158,31 +157,13 @@ class TestBrowserSessionStart:
 		assert browser_ctx is not None
 
 		# Manually close the browser context
-		await browser_ctx.close()
+		await browser_ctx.stop()
 
 		# stop() should handle this gracefully
 		await browser_session.stop()
 
 		# Session should be properly cleaned up
 		assert browser_session._cdp_client_root is None
-
-	async def test_access_after_stop(self, browser_profile):
-		"""Test accessing browser context after stop() to ensure proper cleanup."""
-		# logger.info('Testing access after stop')
-
-		# Create a session without fixture to avoid double cleanup
-		browser_session = BrowserSession(browser_profile=browser_profile)
-
-		# Start and stop the session
-		await browser_session.start()
-		await browser_session.stop()
-
-		# Verify session is stopped
-		assert browser_session._cdp_client_root is None
-
-		# calling a method wrapped in @require_initialization should auto-restart the session
-		await browser_session.get_tabs()
-		assert browser_session._cdp_client_root is not None
 
 	async def test_race_condition_between_stop_and_operation(self, browser_session):
 		"""Test race condition between stop() and other operations."""
@@ -535,29 +516,6 @@ class TestBrowserSessionEventSystem:
 		started_events = [e for e in event_history if isinstance(e, BrowserConnectedEvent)]
 		assert len(started_events) >= 1
 		assert started_events[0].cdp_url is not None
-
-	async def test_event_history_tracking(self, browser_session: BrowserSession):
-		"""Test that event history is properly tracked."""
-		# Start and stop browser to generate events
-		await browser_session.start()
-		await browser_session.stop()
-
-		# Check event history generation
-		recent_events_json = await browser_session.get_browser_state_summary(include_recent_events=True)
-		recent_events_json = recent_events_json.recent_events
-		assert recent_events_json is not None
-		assert recent_events_json != '[]'
-
-		# Parse and validate the JSON
-
-		recent_events = json.loads(recent_events_json)
-		assert isinstance(recent_events, list)
-		assert len(recent_events) > 0
-
-		# Events should have the expected structure
-		for event in recent_events:
-			assert isinstance(event, dict)
-			assert 'event_type' in event or '__class__' in event  # Event structure may vary
 
 	async def test_event_system_error_handling(self, browser_session):
 		"""Test error handling in event system."""

@@ -401,9 +401,6 @@ class TestNavigateToUrlEvent:
 		# Verify the page URL matches what we navigated to
 		assert f'{base_url}/' in current_url
 
-		# Get the actual page object
-		page = browser_session.page
-
-		# Verify the page title
-		title = await page.title()
+		# Verify the page title using the new API
+		title = await browser_session.get_current_page_title()
 		assert title == 'Test Home Page'

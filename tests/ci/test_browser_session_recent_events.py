@@ -103,7 +103,7 @@ class TestBrowserRecentEvents:
 			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/slow')))
 			await event
 			await event.event_result(raise_if_any=True, raise_if_none=False)
-			state1 = await browser_session.get_browser_state_summary()
+			state1 = await browser_session.get_browser_state_summary(include_recent_events=True)
 			assert state1.recent_events is not None
 			events1 = json.loads(state1.recent_events)
 			event_types1 = [e.get('event_type') for e in events1]
