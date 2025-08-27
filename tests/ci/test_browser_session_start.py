@@ -549,7 +549,7 @@ class TestBrowserSessionReusePatterns:
 			task='The second task...',
 			llm=mock_llm,
 			browser_profile=reused_profile,
-			  # Disable memory for tests
+			# Disable memory for tests
 		)
 		await agent2.run()
 
@@ -580,7 +580,7 @@ class TestBrowserSessionReusePatterns:
 				task='The first task...',
 				llm=mock_llm,
 				browser_session=reused_session,
-				  # Disable memory for tests
+				# Disable memory for tests
 			)
 			await agent1.run()
 
@@ -592,7 +592,7 @@ class TestBrowserSessionReusePatterns:
 				task='The second task...',
 				llm=mock_llm,
 				browser_session=reused_session,
-				  # Disable memory for tests
+				# Disable memory for tests
 			)
 			await agent2.run()
 

@@ -15,6 +15,7 @@ from browser_use.browser.events import (
 	BrowserStoppedEvent,
 	ClickElementEvent,
 	FileDownloadedEvent,
+	NavigateToUrlEvent,
 )
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession

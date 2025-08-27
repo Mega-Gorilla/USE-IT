@@ -766,11 +766,8 @@ class TestDecoratedFunctionBehavior:
 		"""Decorated function should ignore extra kwargs for easy unpacking"""
 		registry = Registry()
 
-		class MockPage:
-			pass
-
 		@registry.action('Simple action')
-		async def simple_action(value: int, page: Page):
+		async def simple_action(value: int):
 			return ActionResult(extracted_content=str(value))
 
 		# Should work even with extra kwargs
@@ -813,7 +810,6 @@ class TestParamsModelGeneration:
 		assert 'include_images' in model_fields
 
 		# Should NOT include special params
-		assert 'page' not in model_fields
 		assert 'browser_session' not in model_fields
 
 	def test_preserves_type_annotations(self):
@@ -875,7 +871,6 @@ class TestErrorMessages:
 			error_msg = str(e)
 			assert 'page: str' in error_msg
 			assert 'conflicts' in error_msg
-			assert f'page: {repr(Page)}' in error_msg  # Show expected type
 			assert 'bad' in error_msg.lower()  # Show function name
 
 
@@ -904,17 +899,6 @@ class TestParameterOrdering:
 		# Only action params in model
 		assert set(model_fields.keys()) == {'first', 'second', 'third'}
 		assert model_fields['third'].default is True
-
-	def test_all_params_at_end(self):
-		"""Should work with all action params at the end"""
-		registry = Registry()
-
-		@registry.action('Params at end')
-		async def params_at_end(page: Page, query: str, limit: int = 10):
-			return ActionResult()
-
-		action = registry.registry.actions['params_at_end']
-		assert set(action.param_model.model_fields.keys()) == {'query', 'limit'}
 
 	def test_extract_content_pattern_registration(self):
 		"""Test that the extract_content pattern with mixed params registers correctly"""

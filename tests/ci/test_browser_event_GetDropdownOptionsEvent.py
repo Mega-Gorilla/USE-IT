@@ -356,8 +356,11 @@ class TestGetDropdownOptionsEvent:
 				menu_index = idx
 				break
 
-		assert menu_index is not None, (
-			f'Could not find ARIA menu element in selector map. Available elements: {[f"{idx}: {element.tag_name} role={element.attributes.get('role', 'None')}" for idx, element in selector_map.items()]}'
+		assert menu_index is not None, 'Could not find ARIA menu element in selector map. Available elements: [%s]' % (
+			', '.join(
+				'{}: {} role={}'.format(idx, element.tag_name, element.attributes.get('role', 'None'))
+				for idx, element in selector_map.items()
+			)
 		)
 
 		# Test via tools action
@@ -410,8 +413,11 @@ class TestGetDropdownOptionsEvent:
 				dropdown_index = idx
 				break
 
-		assert dropdown_index is not None, (
-			f'Could not find custom dropdown element in selector map. Available elements: {[f"{idx}: {element.tag_name} id={element.attributes.get('id', 'None')}" for idx, element in selector_map.items()]}'
+		assert dropdown_index is not None, 'Could not find custom dropdown element in selector map. Available elements: [%s]' % (
+			', '.join(
+				'{}: {} id={}'.format(idx, element.tag_name, element.attributes.get('id', 'None'))
+				for idx, element in selector_map.items()
+			)
 		)
 
 		# Test via tools action
