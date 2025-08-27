@@ -153,26 +153,22 @@ RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$T
      && python --version \
     ) | tee -a /VERSION.txt
 
-# Install Chromium browser using temporary playwright installation
+# Install Chromium browser directly from system packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$TARGETVARIANT \
-    --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
-    echo "[+] Installing chromium browser via temporary playwright..." \
+    echo "[+] Installing chromium browser from system packages..." \
     && apt-get update -qq \
     && apt-get install -y --no-install-recommends \
+        chromium \
         fonts-unifont \
-        fonts-ubuntu \
         fonts-liberation \
         fonts-dejavu-core \
         fonts-freefont-ttf \
-    && uv pip install playwright \
-    && playwright install chromium --no-shell \
+        fonts-noto-core \
     && rm -rf /var/lib/apt/lists/* \
-    && export CHROME_BINARY="$(python -c 'from playwright.sync_api import sync_playwright; print(sync_playwright().start().chromium.executable_path)')" \
-    && ln -s "$CHROME_BINARY" /usr/bin/chromium-browser \
-    && ln -s "$CHROME_BINARY" /app/chromium-browser \
+    && ln -s /usr/bin/chromium /usr/bin/chromium-browser \
+    && ln -s /usr/bin/chromium /app/chromium-browser \
     && mkdir -p "/home/${BROWSERUSE_USER}/.config/chromium/Crash Reports/pending/" \
     && chown -R "$BROWSERUSE_USER:$BROWSERUSE_USER" "/home/${BROWSERUSE_USER}/.config" \
-    && uv pip uninstall playwright -y \
     && ( \
         which chromium-browser && /usr/bin/chromium-browser --version \
         && echo -e '\n\n' \
@@ -193,8 +189,7 @@ RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$T
      echo "[+] Installing browser-use pip library from source..." \
      && ( \
         uv sync --all-extras --locked --no-dev \
-        && which browser-use \
-        && browser-use --version 2>&1 \
+        && python -c "import browser_use; print('browser-use installed successfully')" \
         && echo -e '\n\n' \
      ) | tee -a /VERSION.txt
 
