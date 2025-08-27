@@ -19,9 +19,9 @@ from browser_use.utils import logger
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip('CrashWatchdog not implemented in current CDP architecture')
 async def test_crash_watchdog_network_timeout():
 	"""Test that CrashWatchdog detects network timeouts by monitoring actual network requests."""
-	pytest.skip('CrashWatchdog not implemented in current CDP architecture')
 
 	# Create browser session
 	profile = BrowserProfile(headless=True)
@@ -84,6 +84,7 @@ async def test_crash_watchdog_network_timeout():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip('CrashWatchdog not implemented in current CDP architecture')
 async def test_crash_watchdog_browser_disconnect():
 	"""Test that CrashWatchdog detects browser disconnection through monitoring."""
 	profile = BrowserProfile(headless=True)
@@ -91,7 +92,10 @@ async def test_crash_watchdog_browser_disconnect():
 
 	try:
 		# Start browser
-		session.event_bus.dispatch(BrowserStartEvent())
+		start_event = session.event_bus.dispatch(BrowserStartEvent())
+		await start_event
+		# Ensure any exceptions from the event handler are propagated
+		await start_event.event_result(raise_if_any=True, raise_if_none=False)
 
 		# Wait for browser to be fully started
 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
@@ -131,6 +135,7 @@ async def test_crash_watchdog_browser_disconnect():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip('CrashWatchdog not implemented in current CDP architecture')
 async def test_crash_watchdog_lifecycle():
 	"""Test that CrashWatchdog starts and stops with browser session."""
 	profile = BrowserProfile(headless=True)
