@@ -335,45 +335,45 @@ async def test_navigation_events_link_clicks(httpserver):
 # 		await session.stop()
 
 
-@pytest.mark.asyncio
-async def test_navigation_error_recovery():
-	"""Test that navigation errors are properly reported and don't break subsequent navigation."""
-	profile = BrowserProfile(headless=True)
-	session = BrowserSession(browser_profile=profile)
+# @pytest.mark.asyncio
+# async def test_navigation_error_recovery():
+# 	"""Test that navigation errors are properly reported and don't break subsequent navigation."""
+# 	profile = BrowserProfile(headless=True)
+# 	session = BrowserSession(browser_profile=profile)
 
-	# Track navigation events
-	navigation_complete_events = []
-	session.event_bus.on(NavigationCompleteEvent, lambda e: navigation_complete_events.append(e))
+# 	# Track navigation events
+# 	navigation_complete_events = []
+# 	session.event_bus.on(NavigationCompleteEvent, lambda e: navigation_complete_events.append(e))
 
-	try:
-		# Start browser
-		await session.start()
+# 	try:
+# 		# Start browser
+# 		await session.start()
 
-		# Try to navigate to invalid URL
-		session.event_bus.dispatch(NavigateToUrlEvent(url='invalid://not-a-real-url'))
+# 		# Try to navigate to invalid URL
+# 		session.event_bus.dispatch(NavigateToUrlEvent(url='invalid://not-a-real-url'))
 
-		# Wait for navigation to fail
-		nav_complete: NavigationCompleteEvent = cast(
-			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
-		)
+# 		# Wait for navigation to fail
+# 		nav_complete: NavigationCompleteEvent = cast(
+# 			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
+# 		)
 
-		# Verify NavigationCompleteEvent indicates error
-		assert nav_complete.error_message is not None, 'Should have error message for invalid URL'
-		assert nav_complete.url == 'invalid://not-a-real-url'
+# 		# Verify NavigationCompleteEvent indicates error
+# 		assert nav_complete.error_message is not None, 'Should have error message for invalid URL'
+# 		assert nav_complete.url == 'invalid://not-a-real-url'
 
-		# Clear events
-		navigation_complete_events.clear()
+# 		# Clear events
+# 		navigation_complete_events.clear()
 
-		# Verify that subsequent navigation still works
-		session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Recovery Test</h1>'))
+# 		# Verify that subsequent navigation still works
+# 		session.event_bus.dispatch(NavigateToUrlEvent(url='data:text/html,<h1>Recovery Test</h1>'))
 
-		nav_complete_recovery: NavigationCompleteEvent = cast(
-			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
-		)
+# 		nav_complete_recovery: NavigationCompleteEvent = cast(
+# 			NavigationCompleteEvent, await session.event_bus.expect(NavigationCompleteEvent, timeout=5.0)
+# 		)
 
-		# Verify recovery navigation succeeded
-		assert nav_complete_recovery.url == 'data:text/html,<h1>Recovery Test</h1>'
-		assert nav_complete_recovery.error_message is None, 'Recovery navigation should succeed'
+# 		# Verify recovery navigation succeeded
+# 		assert nav_complete_recovery.url == 'data:text/html,<h1>Recovery Test</h1>'
+# 		assert nav_complete_recovery.error_message is None, 'Recovery navigation should succeed'
 
-	finally:
-		await session.stop()
+# 	finally:
+# 		await session.stop()

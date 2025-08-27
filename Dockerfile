@@ -158,8 +158,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$T
     --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
     echo "[+] Installing chromium browser via temporary playwright..." \
     && apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        fonts-unifont \
+        fonts-ubuntu \
+        fonts-liberation \
+        fonts-dejavu-core \
+        fonts-freefont-ttf \
     && uv pip install playwright \
-    && playwright install chromium --with-deps --no-shell \
+    && playwright install chromium --no-shell \
     && rm -rf /var/lib/apt/lists/* \
     && export CHROME_BINARY="$(python -c 'from playwright.sync_api import sync_playwright; print(sync_playwright().start().chromium.executable_path)')" \
     && ln -s "$CHROME_BINARY" /usr/bin/chromium-browser \
