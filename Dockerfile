@@ -153,26 +153,20 @@ RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$T
      && python --version \
     ) | tee -a /VERSION.txt
 
-# Install playwright temporarily for browser installation only
-RUN --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
-     echo "[+] Installing playwright temporarily for browser installation..." \
-     && ( \
-        uvx --from playwright playwright --version \
-        && echo -e '\n\n' \
-     ) | tee -a /VERSION.txt
-
-# Install Chromium using uvx playwright
+# Install Chromium browser using temporary playwright installation
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-$TARGETARCH$TARGETVARIANT \
     --mount=type=cache,target=/root/.cache,sharing=locked,id=cache-$TARGETARCH$TARGETVARIANT \
-    echo "[+] Installing chromium apt pkgs and binary to /root/.cache/ms-playwright..." \
+    echo "[+] Installing chromium browser via temporary playwright..." \
     && apt-get update -qq \
-    && uvx playwright install chromium --with-deps --no-shell \
+    && uv pip install playwright \
+    && playwright install chromium --with-deps --no-shell \
     && rm -rf /var/lib/apt/lists/* \
-    && export CHROME_BINARY="$(uvx --from playwright python -c 'from playwright.sync_api import sync_playwright; print(sync_playwright().start().chromium.executable_path)')" \
+    && export CHROME_BINARY="$(python -c 'from playwright.sync_api import sync_playwright; print(sync_playwright().start().chromium.executable_path)')" \
     && ln -s "$CHROME_BINARY" /usr/bin/chromium-browser \
     && ln -s "$CHROME_BINARY" /app/chromium-browser \
     && mkdir -p "/home/${BROWSERUSE_USER}/.config/chromium/Crash Reports/pending/" \
     && chown -R "$BROWSERUSE_USER:$BROWSERUSE_USER" "/home/${BROWSERUSE_USER}/.config" \
+    && uv pip uninstall playwright -y \
     && ( \
         which chromium-browser && /usr/bin/chromium-browser --version \
         && echo -e '\n\n' \

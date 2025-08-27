@@ -70,7 +70,6 @@ _LAZY_IMPORTS = {
 	'ActionModel': ('browser_use.agent.views', 'ActionModel'),
 	'ActionResult': ('browser_use.agent.views', 'ActionResult'),
 	'AgentHistoryList': ('browser_use.agent.views', 'AgentHistoryList'),
-	# Browser components (heavy due to playwright/patchright)
 	'BrowserSession': ('browser_use.browser', 'BrowserSession'),
 	'Browser': ('browser_use.browser', 'BrowserSession'),  # Alias for BrowserSession
 	'BrowserProfile': ('browser_use.browser', 'BrowserProfile'),
