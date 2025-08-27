@@ -127,10 +127,10 @@ class TestTabManagement:
 
 		await self._reset_tab_state(browser_session, base_url)
 
-		initial_tab = await browser_session.get_current_page()
-		assert initial_tab.url == 'about:blank'
-		# page might be None with new watchdog architecture until user interaction
-		assert browser_session.page == initial_tab
+		# Get current tab info using the new API
+		current_url = await browser_session.get_current_page_url()
+		assert current_url == 'about:blank'
+		# Note: browser_session.page property may not exist in new architecture
 
 		# Test that get_current_page works even after closing all tabs
 		for page in browser_session._cdp_client_root.pages:
@@ -140,9 +140,10 @@ class TestTabManagement:
 		await asyncio.sleep(0.5)
 
 		# should never be none even after all pages are closed - new system auto-creates
-		current_tab = await browser_session.get_current_page()
-		assert current_tab is not None
-		assert current_tab.url == 'about:blank'
+		# Check that we can still get current URL (system should auto-create if needed)
+		current_url = await browser_session.get_current_page_url()
+		assert current_url is not None
+		assert current_url == 'about:blank'
 
 	async def test_agent_changes_tab(self, browser_session: BrowserSession, base_url):
 		"""Test that page changes and page remains the same when a new tab is opened."""
@@ -234,9 +235,8 @@ class TestTabManagement:
 		await asyncio.sleep(0.5)
 
 		# assert agent focus is on first tab
-		current_tab = await browser_session.get_current_page()
 		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page1' in current_tab.url == current_url
+		assert f'{base_url}/page1' in current_url
 
 		# Find the correct tab index for the second tab (page2)
 		second_tab_id = None
@@ -252,9 +252,8 @@ class TestTabManagement:
 		await asyncio.sleep(0.5)
 
 		# assert agent focus is back on second tab
-		current_tab = await browser_session.get_current_page()
 		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page2' in current_tab.url == current_url
+		assert f'{base_url}/page2' in current_url
 
 	async def test_close_tab(self, browser_session, base_url):
 		"""Test that closing a tab updates references correctly."""

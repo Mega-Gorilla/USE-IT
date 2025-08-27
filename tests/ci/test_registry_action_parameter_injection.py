@@ -158,21 +158,22 @@ class TestBrowserContext:
 		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/'))
 		await event
 
-		# Get the current page before refresh
-		page_before = await browser_session.get_current_page()
+		# Get the current page info before refresh
+		url_before = await browser_session.get_current_page_url()
+		title_before = await browser_session.get_current_page_title()
 
 		# Refresh the page
 		await browser_session.refresh()
 
-		# Get the current page after refresh
-		page_after = await browser_session.get_current_page()
+		# Get the current page info after refresh
+		url_after = await browser_session.get_current_page_url()
+		title_after = await browser_session.get_current_page_title()
 
 		# Verify it's still on the same URL
-		assert page_after.url == page_before.url
+		assert url_after == url_before
 
 		# Verify the page title is still correct
-		title = await page_after.title()
-		assert title == 'Test Home Page'
+		assert title_after == 'Test Home Page'
 
 	@pytest.mark.asyncio
 	@pytest.mark.skip(reason='TODO: fix')
@@ -199,6 +200,7 @@ class TestBrowserContext:
 
 	@pytest.mark.asyncio
 	@pytest.mark.skip(reason='TODO: fix')
+	@pytest.mark.skip(reason='get_scroll_info API changed - depends on page object that no longer exists')
 	async def test_get_scroll_info(self, browser_session, base_url):
 		"""Test that get_scroll_info returns the correct scroll position information."""
 		# Navigate to the scroll test page
@@ -266,19 +268,19 @@ class TestBrowserContext:
 		await browser_session.create_new_tab(f'{base_url}/scroll_test')
 
 		# Verify we have two tabs now
-		tabs_info = await browser_session.get_tabs_info()
+		tabs_info = await browser_session.get_tabs()
 		assert len(tabs_info) == 2, 'Should have two tabs open'
 
 		# Verify current tab is the scroll test page
-		current_page = await browser_session.get_current_page()
-		assert f'{base_url}/scroll_test' in current_page.url
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/scroll_test' in current_url
 
 		# Switch back to the first tab
 		await browser_session.switch_to_tab(0)
 
 		# Verify we're back on the home page
-		current_page = await browser_session.get_current_page()
-		assert f'{base_url}/' in current_page.url
+		current_url = await browser_session.get_current_page_url()
+		assert f'{base_url}/' in current_url
 
 		# Close the second tab
 		await browser_session.close_tab(1)
@@ -388,8 +390,8 @@ class TestBrowserContext:
 		# Test with special parameters but no regular arguments
 		@registry.action('Action with only special params')
 		async def special_params_only(browser_session):
-			page = await browser_session.get_current_page()
-			return ActionResult(extracted_content=f'Page URL: {page.url}')
+			current_url = await browser_session.get_current_page_url()
+			return ActionResult(extracted_content=f'Page URL: {current_url}')
 
 		result = await registry.execute_action('special_params_only', {}, browser_session=browser_session)
 		assert 'Page URL:' in result.extracted_content

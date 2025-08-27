@@ -71,11 +71,30 @@ class TestBrowserSessionStart:
 
 		try:
 			# Start should fail with connection error
-			with pytest.raises(Exception):  # Could be various connection errors
+			with pytest.raises((RuntimeError, ConnectionError, OSError, Exception)) as exc_info:
 				await browser_session.start()
 
+			# Verify it's a connection-related error
+			error_msg = str(exc_info.value).lower()
+			assert any(
+				keyword in error_msg
+				for keyword in [
+					'connection',
+					'refused',
+					'unreachable',
+					'timeout',
+					'failed to establish',
+					'cdp',
+					'nodename',
+					'servname',
+					'not known',
+					'errno 8',
+					'connecterror',
+				]
+			), f'Expected connection-related error, got: {exc_info.value}'
+
 			# Session should not be initialized
-			assert browser_session.cdp_client is None
+			assert browser_session._cdp_client_root is None
 		finally:
 			await browser_session.kill()
 
@@ -98,21 +117,25 @@ class TestBrowserSessionStart:
 
 		# Start the session and get initial state
 		await browser_session.start()
-		initial_tabs = await browser_session.get_tabs_info()
+		initial_tabs = await browser_session.get_tabs()
 		initial_count = len(initial_tabs)
 
-		current_page = await browser_session.get_current_page()
-		assert current_page is not None
-		assert not current_page.is_closed()
+		# Get current tab info
+		current_url = await browser_session.get_current_page_url()
+		assert current_url is not None
 
-		# Close the current page
-		await current_page.close()
+		# Get current tab ID
+		current_tab_id = browser_session.agent_focus.target_id if browser_session.agent_focus else None
+		assert current_tab_id is not None
 
-		# Verify page is closed
-		assert current_page.is_closed()
+		# Close the current tab using the event system
+		from browser_use.browser.events import CloseTabEvent
+
+		close_event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=current_tab_id))
+		await close_event
 
 		# Operations should still work - may create new page or use existing
-		tabs_after_close = await browser_session.get_tabs_info()
+		tabs_after_close = await browser_session.get_tabs()
 		assert isinstance(tabs_after_close, list)
 
 		# Create a new tab explicitly
@@ -121,7 +144,7 @@ class TestBrowserSessionStart:
 		await event.event_result(raise_if_any=True, raise_if_none=False)
 
 		# Should have at least one tab now
-		final_tabs = await browser_session.get_tabs_info()
+		final_tabs = await browser_session.get_tabs()
 		assert len(final_tabs) >= 1
 
 	async def test_stop_with_closed_cdp_client_root(self, browser_session):
@@ -458,8 +481,11 @@ class TestBrowserSessionEventSystem:
 		assert browser_session.event_bus.name.startswith('EventBus_')
 		# Event bus name format may vary, just check it exists
 
-	async def test_event_handlers_registration(self, browser_session):
+	async def test_event_handlers_registration(self, browser_session: BrowserSession):
 		"""Test that event handlers are properly registered."""
+		# Attach all watchdogs to register their handlers
+		await browser_session.attach_all_watchdogs()
+
 		# Check that handlers are registered in the event bus
 		from browser_use.browser.events import (
 			BrowserStartEvent,
