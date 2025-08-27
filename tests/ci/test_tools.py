@@ -457,7 +457,10 @@ class TestToolsIntegration:
 			assert option['text'] in result.extracted_content, f"Option '{option['text']}' not found in result content"
 
 		# Verify the instruction for using the text in select_dropdown_option is included
-		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown_option' in result.extracted_content
+		assert (
+			'Use the exact text or value string' in result.extracted_content
+			and 'select_dropdown_option' in result.extracted_content
+		)
 
 		# Verify the actual dropdown options in the DOM using CDP
 		dropdown_options_result = await cdp_session.cdp_client.send.Runtime.evaluate(

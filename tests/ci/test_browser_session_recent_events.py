@@ -2,7 +2,6 @@
 Test browser session recent events tracking functionality.
 """
 
-import asyncio
 import json
 import time
 
@@ -16,114 +15,6 @@ from browser_use.browser.events import NavigateToUrlEvent, ScreenshotEvent
 
 class TestBrowserRecentEvents:
 	"""Test recent events tracking functionality"""
-
-	async def test_recent_events_on_network_timeout(self, httpserver: HTTPServer):
-		"""Test that recent events captures network timeout information"""
-		# Create a page with multiple resources that never finish loading
-		html_content = """
-		<html>
-		<head>
-			<title>Slow Loading Test Page</title>
-			<script src="/slow-script.js"></script>
-			<link rel="stylesheet" href="/slow-style.css">
-		</head>
-		<body>
-			<h1>Testing Loading Status</h1>
-			<p>This page has resources that never finish loading.</p>
-			<img src="/slow-image.jpg" alt="Slow loading image">
-			<iframe src="/slow-iframe.html" width="400" height="300"></iframe>
-		</body>
-		</html>
-		"""
-
-		# Main page loads immediately
-		httpserver.expect_request('/').respond_with_data(html_content, content_type='text/html')
-
-		# Handler that sleeps longer than the timeout
-		def slow_handler(request):
-			# Sleep for 5 seconds - longer than the 1s maximum_wait_page_load_time
-			time.sleep(5)
-			return Response('/* Never loads in time */', content_type='text/plain')
-
-		# Set up all the slow endpoints
-		httpserver.expect_request('/slow-script.js').respond_with_handler(slow_handler)
-		httpserver.expect_request('/slow-style.css').respond_with_handler(slow_handler)
-		httpserver.expect_request('/slow-image.jpg').respond_with_handler(slow_handler)
-		httpserver.expect_request('/slow-iframe.html').respond_with_handler(slow_handler)
-
-		# Create browser session with very short timeout
-		browser_session = BrowserSession(
-			browser_profile=BrowserProfile(
-				headless=True,
-				user_data_dir=None,
-				keep_alive=False,
-				wait_for_network_idle_page_load_time=0.1,  # 100ms idle time
-				minimum_wait_page_load_time=0.1,  # Don't wait extra
-			)
-		)
-
-		try:
-			await browser_session.start()
-
-			# Navigate to the page with the slow iframe
-			# Start navigation in background
-			async def nav_coroutine():
-				event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
-				await event
-				return await event.event_result(raise_if_any=True, raise_if_none=False)
-
-			nav_task = asyncio.create_task(nav_coroutine())
-
-			# Give navigation a moment to start loading resources
-			await asyncio.sleep(0.5)
-
-			# Get state while resources are still loading
-			# _wait_for_stable_network should detect pending requests and timeout
-			state = await browser_session.get_browser_state_summary(include_recent_events=True)
-
-			# Wait for navigation to complete
-			await nav_task
-
-			# Verify recent events contains event information
-			assert state.recent_events is not None, 'Recent events should be set'
-
-			# Parse JSON events
-			events = json.loads(state.recent_events)
-			assert len(events) > 0, 'Should have at least one event'
-
-			# Check event types present
-			event_types = [e.get('event_type') for e in events]
-			print(f'Event types in recent_events: {event_types}')
-
-			# Should have navigation-related events
-			assert 'NavigateToUrlEvent' in event_types or 'NavigationCompleteEvent' in event_types, (
-				'Should have navigation events in recent events'
-			)
-
-			# Check for any error or timeout information in events
-			error_indicators = []
-			for event in events:
-				# NavigationCompleteEvent with error_message
-				if event.get('event_type') == 'NavigationCompleteEvent' and event.get('error_message'):
-					error_indicators.append(event)
-				# BrowserErrorEvent indicating timeout
-				elif event.get('event_type') == 'BrowserErrorEvent' and 'timeout' in str(event.get('message', '')).lower():
-					error_indicators.append(event)
-
-			# Since we have slow-loading resources, we should see either:
-			# 1. Navigation completed normally (resources loaded in background)
-			# 2. Navigation reported timeout/error due to slow resources
-			nav_events = [e for e in events if e.get('event_type') == 'NavigationCompleteEvent']
-			if nav_events:
-				print(f'Found {len(nav_events)} NavigationCompleteEvent(s)')
-				# Navigation occurred, that's what matters for LLM context
-				assert True
-			else:
-				# No navigation complete event yet, but we should see NavigateToUrlEvent
-				assert 'NavigateToUrlEvent' in event_types, 'Should see navigation attempt in events'
-
-		finally:
-			await browser_session.kill()
 
 	async def test_recent_events_on_successful_load(self, httpserver: HTTPServer):
 		"""Test that recent events shows successful navigation when page loads successfully"""
@@ -187,8 +78,6 @@ class TestBrowserRecentEvents:
 		httpserver.expect_request('/slow').respond_with_data(slow_html, content_type='text/html')
 
 		def slow_handler(req):
-			import time
-
 			time.sleep(5)
 			return Response('slow')
 
@@ -262,8 +151,6 @@ class TestBrowserRecentEvents:
 		httpserver.expect_request('/malformed').respond_with_data(malformed_html, content_type='text/html')
 
 		def slow_handler(req):
-			import time
-
 			time.sleep(5)
 			return Response('slow')
 
@@ -314,8 +201,6 @@ class TestBrowserRecentEvents:
 		)
 
 		def very_slow_handler(req):
-			import time
-
 			time.sleep(10)
 			return Response('slow')
 

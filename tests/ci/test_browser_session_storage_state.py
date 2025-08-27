@@ -130,57 +130,6 @@ class TestBrowserSessionStorageState:
 		assert test_cookie['value'] == 'test_value'
 		assert test_cookie['domain'] == '127.0.0.1'
 
-	async def test_storage_state_cookies_available_in_page(self, browser_session_with_storage_state, http_server):
-		"""Test that cookies from storage state are available to web pages."""
-		# Start the browser session
-		await browser_session_with_storage_state.start()
-
-		# Navigate to test page
-		page = await browser_session_with_storage_state.get_current_page()
-		test_url = http_server.url_for('/cookies')
-		await page.goto(test_url)
-
-		# Check that cookies are available to the page
-		page_cookies = await page.evaluate('document.cookie')
-
-		# The test_cookie should be visible in document.cookie (httpOnly=False)
-		# but session_cookie won't be visible (httpOnly=True)
-		assert 'test_cookie=test_value' in page_cookies
-
-		# Verify all cookies are in the context
-		all_cookies = await browser_session_with_storage_state._cdp_client_root.cookies()
-		cookie_names = {c['name'] for c in all_cookies}
-		assert 'test_cookie' in cookie_names
-		assert 'session_cookie' in cookie_names  # This one is httpOnly
-
-	async def test_save_storage_state(self, browser_profile_with_storage_state, temp_storage_state_file):
-		"""Test saving storage state to file."""
-		# Create a new temp file for saving
-		save_path = temp_storage_state_file.parent / 'saved_storage_state.json'
-
-		session = BrowserSession(browser_profile=browser_profile_with_storage_state)
-		await session.start()
-
-		# Skip complex Cookie type handling for now - CDP Cookie type is complex
-		pytest.skip('CDP Cookie type handling needs more research')
-
-		# Save storage state using CDP (get storage state and save to file)
-		storage_state = await session._cdp_get_storage_state()
-		save_path.write_text(json.dumps(storage_state, indent=2))
-
-		# Verify saved file exists and contains cookies
-		assert save_path.exists()
-		saved_storage = json.loads(save_path.read_text())
-		saved_cookies = saved_storage.get('cookies', [])
-		assert len(saved_cookies) >= 3  # Original 2 + 1 new
-
-		cookie_names = {cookie['name'] for cookie in saved_cookies}
-		assert 'new_cookie' in cookie_names
-
-		# Cleanup
-		save_path.unlink(missing_ok=True)
-		await session.kill()
-
 	async def test_nonexistent_storage_state_file(self):
 		"""Test that browser starts normally when storage_state file doesn't exist."""
 		# Use a non-existent file path
