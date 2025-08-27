@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from pytest_httpserver import HTTPServer
 
-from browser_use.browser.events import SaveStorageStateEvent
+from browser_use.browser.events import NavigateToUrlEvent, SaveStorageStateEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 
@@ -250,7 +250,9 @@ class TestStorageStateEventSystem:
 			await browser_session.start()
 
 			# Navigate to set cookies
-			await browser_session.navigate(httpserver.url_for('/cookie-test'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/cookie-test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Dispatch SaveStorageStateEvent directly
 			save_event = browser_session.event_bus.dispatch(SaveStorageStateEvent())

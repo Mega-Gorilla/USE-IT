@@ -8,6 +8,7 @@ from pytest_httpserver import HTTPServer
 load_dotenv()
 
 from browser_use.agent.views import ActionModel
+from browser_use.browser.events import NavigateToUrlEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 from browser_use.tools.service import Tools
@@ -60,7 +61,9 @@ async def browser_session(base_url):
 	await browser_session.start()
 
 	# Create an initial tab using the navigate method which is more reliable
-	await browser_session.navigate(f'{base_url}/page1', new_tab=True)
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page1', new_tab=True))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Wait for navigation to complete
 	await asyncio.sleep(1)
@@ -141,7 +144,7 @@ class TestTabManagement:
 		assert current_tab is not None
 		assert current_tab.url == 'about:blank'
 
-	async def test_agent_changes_tab(self, browser_session, base_url):
+	async def test_agent_changes_tab(self, browser_session: BrowserSession, base_url):
 		"""Test that page changes and page remains the same when a new tab is opened."""
 
 		initial_tab = await self._reset_tab_state(browser_session, base_url)
@@ -181,7 +184,9 @@ class TestTabManagement:
 		assert browser_session.page.url == new_tab.url == f'{base_url}/page2'
 
 		# test agent navigation updates agent focus
-		await browser_session.navigate(f'{base_url}/page3')
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page3'))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
 		assert browser_session.page.url == f'{base_url}/page3'  # agent should now be on the new tab
 
 	async def test_switch_tab(self, browser_session, base_url):
@@ -189,7 +194,9 @@ class TestTabManagement:
 
 		# open a new tab for the agent to start on
 		first_tab = await self._reset_tab_state(browser_session, base_url)
-		await browser_session.navigate(f'{base_url}/page1')
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page1'))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
 		assert first_tab.url == f'{base_url}/page1'
 
 		# open a new tab that the agent will switch to automatically
@@ -239,7 +246,9 @@ class TestTabManagement:
 		"""Test that closing a tab updates references correctly."""
 
 		initial_tab = await self._reset_tab_state(browser_session, base_url)
-		await browser_session.navigate(f'{base_url}/page1')
+		event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=f'{base_url}/page1'))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
 		# After navigation, browser_session.page should be the correct reference
 		assert browser_session.page.url == f'{base_url}/page1'
 		# The initial_tab (which was about:blank) should now show the new URL too

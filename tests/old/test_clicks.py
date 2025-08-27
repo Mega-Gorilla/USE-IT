@@ -64,9 +64,9 @@ async def test_highlight_elements():
 
 				# Find and print duplicate XPaths
 				xpath_counts = {}
-				if not state.selector_map:
+				if not state.dom_state.selector_map:
 					continue
-				for selector in state.selector_map.values():
+				for selector in state.dom_state.selector_map.values():
 					xpath = selector.xpath
 					if xpath in xpath_counts:
 						xpath_counts[xpath] += 1
@@ -85,7 +85,7 @@ async def test_highlight_elements():
 
 				await time_execution_sync('remove_highlight_elements')(browser_session.remove_highlights)()
 
-				node_element = state.selector_map[int(action)]
+				node_element = state.dom_state.selector_map[int(action)]
 
 				# check if index of selector map are the same as index of items in dom_items
 

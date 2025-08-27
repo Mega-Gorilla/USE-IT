@@ -412,7 +412,9 @@ class TestEventHistoryInfrastructure:
 			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Test the NEW method _generate_recent_events_summary
-			recent_events_json = browser_session._generate_recent_events_summary(max_events=5)
+			recent_events_json = await browser_session.get_browser_state_summary(include_recent_events=True)
+			recent_events_json = recent_events_json.recent_events
+			assert recent_events_json is not None
 
 			# Should return valid JSON
 			assert recent_events_json != '[]', 'Should have events'

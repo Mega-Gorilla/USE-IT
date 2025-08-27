@@ -506,14 +506,16 @@ class TestBrowserSessionEventSystem:
 		assert len(started_events) >= 1
 		assert started_events[0].cdp_url is not None
 
-	async def test_event_history_tracking(self, browser_session):
+	async def test_event_history_tracking(self, browser_session: BrowserSession):
 		"""Test that event history is properly tracked."""
 		# Start and stop browser to generate events
 		await browser_session.start()
 		await browser_session.stop()
 
 		# Check event history generation
-		recent_events_json = browser_session._generate_recent_events_summary(max_events=5)
+		recent_events_json = await browser_session.get_browser_state_summary(include_recent_events=True)
+		recent_events_json = recent_events_json.recent_events
+		assert recent_events_json is not None
 		assert recent_events_json != '[]'
 
 		# Parse and validate the JSON

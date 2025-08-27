@@ -94,7 +94,7 @@ async def test_assumption_1_dom_processing_works(browser_session, httpserver):
 
 	# Verify DOM processing works
 	assert len(state.selector_map) > 0, 'DOM processing should find elements'
-	assert 0 in state.selector_map, 'Element index 0 should exist'
+	assert 0 in state.dom_state.selector_map, 'Element index 0 should exist'
 
 
 @pytest.mark.asyncio

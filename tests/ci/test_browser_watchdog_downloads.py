@@ -333,7 +333,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 
 	# Find the button element
 	button_node = None
-	for elem in state.selector_map.values():
+	for elem in state.dom_state.selector_map.values():
 		if elem.tag_name == 'button' and elem.attributes.get('id') == 'test-button':
 			button_node = elem
 			break
@@ -387,7 +387,7 @@ async def test_downloads_watchdog_detection_timing(comprehensive_download_test_s
 
 	# Find the button element again
 	button_node = None
-	for elem in state.selector_map.values():
+	for elem in state.dom_state.selector_map.values():
 		if elem.tag_name == 'button' and elem.attributes.get('id') == 'test-button':
 			button_node = elem
 			break
@@ -449,7 +449,7 @@ async def test_downloads_watchdog_actual_download_detection(comprehensive_downlo
 
 	# Find the download link element
 	download_node = None
-	for elem in state.selector_map.values():
+	for elem in state.dom_state.selector_map.values():
 		if elem.tag_name == 'a' and 'download' in elem.attributes:
 			download_node = elem
 			break

@@ -9,6 +9,7 @@ import time
 import pytest
 
 from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser.events import NavigateToUrlEvent, ScreenshotEvent
 
 
 class TestHeadlessScreenshots:
@@ -45,10 +46,14 @@ class TestHeadlessScreenshots:
 			)
 
 			# Navigate to test page
-			await browser_session.navigate(httpserver.url_for('/'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Take screenshot
-			screenshot_b64 = await browser_session.take_screenshot()
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			screenshot_b64 = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Verify screenshot was captured
 			assert screenshot_b64 is not None
@@ -64,7 +69,9 @@ class TestHeadlessScreenshots:
 			assert len(screenshot_bytes) > 5000, f'Screenshot too small: {len(screenshot_bytes)} bytes'
 
 			# Test full page screenshot
-			full_page_screenshot = await browser_session.take_screenshot(full_page=True)
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent(full_page=True))
+			await screenshot_event
+			full_page_screenshot = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			assert full_page_screenshot is not None
 			full_page_bytes = base64.b64decode(full_page_screenshot)
 			assert full_page_bytes.startswith(b'\x89PNG\r\n\x1a\n')
@@ -92,7 +99,9 @@ class TestHeadlessScreenshots:
 				'<html><body><h1>State Summary Test</h1></body></html>',
 				content_type='text/html',
 			)
-			await browser_session.navigate(httpserver.url_for('/'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Get state summary
 			state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
@@ -142,7 +151,9 @@ class TestHeadlessScreenshots:
 			assert state.url == 'about:blank' or state.url.startswith('chrome://'), f'Expected empty page but got {state.url}'
 
 			# Now navigate to a real page and verify screenshot works
-			await browser_session.navigate(httpserver.url_for('/test'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Get state with screenshot
 			state = await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
@@ -353,19 +364,25 @@ class TestHeadlessScreenshots:
 			)
 
 			# Navigate to test page
-			await browser_session.navigate(httpserver.url_for('/scrollable'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/scrollable')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 			page = browser_session.page
 			assert page is not None
 
 			# Test 1: Screenshot at top of page (should work)
-			screenshot_top = await browser_session.take_screenshot()
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			screenshot_top = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			assert screenshot_top is not None
 			assert len(base64.b64decode(screenshot_top)) > 5000
 
 			# Test 2: Screenshot at middle of page
 			await page.evaluate('window.scrollTo(0, document.body.scrollHeight / 2)')
 			await asyncio.sleep(0.1)  # Wait for scroll
-			screenshot_middle = await browser_session.take_screenshot()
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			screenshot_middle = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			assert screenshot_middle is not None
 			assert len(base64.b64decode(screenshot_middle)) > 5000
 
@@ -374,14 +391,18 @@ class TestHeadlessScreenshots:
 			await asyncio.sleep(0.1)  # Wait for scroll
 
 			# This should not raise "Clipped area is either empty or outside the resulting image" error
-			screenshot_bottom = await browser_session.take_screenshot()
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			screenshot_bottom = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			assert screenshot_bottom is not None
 			assert len(base64.b64decode(screenshot_bottom)) > 5000
 
 			# Test 4: Screenshot when scrolled beyond page bottom (edge case)
 			await page.evaluate('window.scrollTo(0, document.body.scrollHeight + 1000)')
 			await asyncio.sleep(0.1)
-			screenshot_beyond = await browser_session.take_screenshot()
+			screenshot_event = browser_session.event_bus.dispatch(ScreenshotEvent())
+			await screenshot_event
+			screenshot_beyond = await screenshot_event.event_result(raise_if_any=True, raise_if_none=False)
 			assert screenshot_beyond is not None
 			assert len(base64.b64decode(screenshot_beyond)) > 5000
 
@@ -409,7 +430,9 @@ class TestScreenshotEventSystem:
 				'<html><body><h1>Screenshot Event Test</h1></body></html>',
 				content_type='text/html',
 			)
-			await browser_session.navigate(httpserver.url_for('/event-test'))
+			event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/event-test')))
+			await event
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			# Test the NEW event-driven path: direct event dispatching
 			event = browser_session.event_bus.dispatch(ScreenshotEvent(full_page=False))
