@@ -425,7 +425,10 @@ class BrowserSession(BaseModel):
 
 	async def start(self) -> None:
 		"""Start the browser session."""
-		await self.event_bus.dispatch(BrowserStartEvent())
+		start_event = self.event_bus.dispatch(BrowserStartEvent())
+		await start_event
+		# Ensure any exceptions from the event handler are propagated
+		await start_event.event_result(raise_if_any=True, raise_if_none=False)
 
 	async def kill(self) -> None:
 		"""Kill the browser session and reset all state."""
