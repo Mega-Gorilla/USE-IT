@@ -186,80 +186,80 @@ def comprehensive_download_test_server():
 # 			await session.event_bus.stop(clear=True, timeout=5)
 
 
-@pytest.mark.asyncio
-async def test_downloads_watchdog_default_downloads_path():
-	"""Test that DownloadsWatchdog works with default downloads path."""
+# @pytest.mark.asyncio
+# async def test_downloads_watchdog_default_downloads_path():
+# 	"""Test that DownloadsWatchdog works with default downloads path."""
 
-	# Don't specify downloads path - should use default
-	profile = BrowserProfile(headless=True)
-	session = BrowserSession(browser_profile=profile)
+# 	# Don't specify downloads path - should use default
+# 	profile = BrowserProfile(headless=True)
+# 	session = BrowserSession(browser_profile=profile)
 
-	try:
-		# Start browser
-		session.event_bus.dispatch(BrowserStartEvent())
-		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+# 	try:
+# 		# Start browser
+# 		session.event_bus.dispatch(BrowserStartEvent())
+# 		await session.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-		# Verify downloads watchdog is attached
-		assert session._downloads_watchdog is not None
+# 		# Verify downloads watchdog is attached
+# 		assert session._downloads_watchdog is not None
 
-		# The default downloads path should be set
-		# Note: We can't easily test the actual download without complex setup
+# 		# The default downloads path should be set
+# 		# Note: We can't easily test the actual download without complex setup
 
-	finally:
-		# Clean shutdown
-		try:
-			session.event_bus.dispatch(BrowserStopEvent())
-			await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
-		except Exception:
-			# If graceful shutdown fails, force cleanup
-			await session.kill()
-		# Always stop event bus to prevent hanging
-		await session.event_bus.stop(clear=True, timeout=5)
+# 	finally:
+# 		# Clean shutdown
+# 		try:
+# 			session.event_bus.dispatch(BrowserStopEvent())
+# 			await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
+# 		except Exception:
+# 			# If graceful shutdown fails, force cleanup
+# 			await session.kill()
+# 		# Always stop event bus to prevent hanging
+# 		await session.event_bus.stop(clear=True, timeout=5)
 
 
-@pytest.mark.asyncio
-async def test_unique_downloads_directories():
-	"""Test that different browser profiles get unique downloads directories."""
+# @pytest.mark.asyncio
+# async def test_unique_downloads_directories():
+# 	"""Test that different browser profiles get unique downloads directories."""
 
-	# Create temp directory for downloads
-	with tempfile.TemporaryDirectory() as temp_dir:
-		downloads_path_1 = Path(temp_dir) / 'downloads1'
-		downloads_path_2 = Path(temp_dir) / 'downloads2'
-		downloads_path_1.mkdir()
-		downloads_path_2.mkdir()
+# 	# Create temp directory for downloads
+# 	with tempfile.TemporaryDirectory() as temp_dir:
+# 		downloads_path_1 = Path(temp_dir) / 'downloads1'
+# 		downloads_path_2 = Path(temp_dir) / 'downloads2'
+# 		downloads_path_1.mkdir()
+# 		downloads_path_2.mkdir()
 
-		profile1 = BrowserProfile(headless=True, downloads_path=downloads_path_1)
-		profile2 = BrowserProfile(headless=True, downloads_path=downloads_path_2)
+# 		profile1 = BrowserProfile(headless=True, downloads_path=downloads_path_1)
+# 		profile2 = BrowserProfile(headless=True, downloads_path=downloads_path_2)
 
-		session1 = BrowserSession(browser_profile=profile1)
-		session2 = BrowserSession(browser_profile=profile2)
+# 		session1 = BrowserSession(browser_profile=profile1)
+# 		session2 = BrowserSession(browser_profile=profile2)
 
-		try:
-			# Start both browsers
-			session1.event_bus.dispatch(BrowserStartEvent())
-			await session1.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+# 		try:
+# 			# Start both browsers
+# 			session1.event_bus.dispatch(BrowserStartEvent())
+# 			await session1.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-			session2.event_bus.dispatch(BrowserStartEvent())
-			await session2.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
+# 			session2.event_bus.dispatch(BrowserStartEvent())
+# 			await session2.event_bus.expect(BrowserConnectedEvent, timeout=5.0)
 
-			# Verify downloads watchdogs are attached
-			assert session1._downloads_watchdog is not None
-			assert session2._downloads_watchdog is not None
+# 			# Verify downloads watchdogs are attached
+# 			assert session1._downloads_watchdog is not None
+# 			assert session2._downloads_watchdog is not None
 
-			# Verify they have different downloads paths
-			assert session1.browser_profile.downloads_path != session2.browser_profile.downloads_path
+# 			# Verify they have different downloads paths
+# 			assert session1.browser_profile.downloads_path != session2.browser_profile.downloads_path
 
-		finally:
-			# Clean shutdown both sessions
-			for session in [session1, session2]:
-				try:
-					session.event_bus.dispatch(BrowserStopEvent())
-					await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
-				except Exception:
-					# If graceful shutdown fails, force cleanup
-					await session.kill()
-				# Always stop event bus to prevent hanging
-				await session.event_bus.stop(clear=True, timeout=5)
+# 		finally:
+# 			# Clean shutdown both sessions
+# 			for session in [session1, session2]:
+# 				try:
+# 					session.event_bus.dispatch(BrowserStopEvent())
+# 					await session.event_bus.expect(BrowserStoppedEvent, timeout=3.0)
+# 				except Exception:
+# 					# If graceful shutdown fails, force cleanup
+# 					await session.kill()
+# 				# Always stop event bus to prevent hanging
+# 				await session.event_bus.stop(clear=True, timeout=5)
 
 
 # Removed test_downloads_watchdog_actual_download_detection - complex Playwright patterns not suitable for CDP

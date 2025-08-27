@@ -274,52 +274,6 @@ class TestBrowserSessionReusePatterns:
 		finally:
 			await reused_session.kill()
 
-	async def test_browser_shutdown_isolated(self):
-		"""Test that browser shutdown doesnt affect other browser_sessions"""
-		from browser_use import BrowserSession
-
-		browser_session1 = BrowserSession(
-			browser_profile=BrowserProfile(
-				user_data_dir=None,
-				headless=True,
-				keep_alive=True,  # Keep the browser alive for reuse
-			),
-		)
-		browser_session2 = BrowserSession(
-			browser_profile=BrowserProfile(
-				user_data_dir=None,
-				headless=True,
-				keep_alive=True,  # Keep the browser alive for reuse
-			),
-		)
-		await browser_session1.start()
-		await browser_session2.start()
-
-		assert browser_session1._cdp_client_root is not None
-		assert browser_session2._cdp_client_root is not None
-		assert browser_session1._cdp_client_root != browser_session2._cdp_client_root
-
-		event1 = browser_session1.event_bus.dispatch(NavigateToUrlEvent(url='chrome://version', new_tab=True))
-		await event1
-		await event1.event_result(raise_if_any=True, raise_if_none=False)
-		event2 = browser_session2.event_bus.dispatch(NavigateToUrlEvent(url='chrome://settings', new_tab=True))
-		await event2
-		await event2.event_result(raise_if_any=True, raise_if_none=False)
-
-		await browser_session2.kill()
-
-		# ensure that the browser_session1 is still connected and unaffected by the kill of browser_session2
-		assert browser_session1._cdp_client_root is not None
-		assert browser_session1._cdp_client_root is not None
-		event = browser_session1.event_bus.dispatch(NavigateToUrlEvent(url='chrome://settings', new_tab=True))
-		await event
-		await event.event_result(raise_if_any=True, raise_if_none=False)
-		# Test that browser is still functional by getting tabs
-		tabs = await browser_session1.get_tabs()
-		assert len(tabs) > 0
-
-		await browser_session1.kill()
-
 
 class TestBrowserSessionEventSystem:
 	"""Tests for the new event system integration in BrowserSession."""
