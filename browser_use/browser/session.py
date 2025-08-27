@@ -584,10 +584,18 @@ class BrowserSession(BaseModel):
 				# Use current tab
 				target_id = target_id or self.agent_focus.target_id
 
-			# Activate target (bring to foreground)
-			await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-			# which does this for us:
-			# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			# Only switch tab if we're not already on the target tab
+			if self.agent_focus is None or self.agent_focus.target_id != target_id:
+				self.logger.debug(
+					f'[on_NavigateToUrlEvent] Switching to target tab {target_id[-4:]} (current: {self.agent_focus.target_id[-4:] if self.agent_focus else "none"})'
+				)
+				# Activate target (bring to foreground)
+				await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
+				# which does this for us:
+				# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			else:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Already on target tab {target_id[-4:]}, skipping SwitchTabEvent')
+
 			assert self.agent_focus is not None and self.agent_focus.target_id == target_id, (
 				'Agent focus not updated to new target_id after SwitchTabEvent should have switched to it'
 			)
