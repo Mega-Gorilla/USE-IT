@@ -7,9 +7,6 @@ import json
 import time
 
 import pytest
-
-pytest.skip('TODO: fix - uses removed navigate method', allow_module_level=True)
-
 from pytest_httpserver import HTTPServer
 from werkzeug.wrappers import Response
 
@@ -57,10 +54,10 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-							user_data_dir=None,
-			keep_alive=False,
-			wait_for_network_idle_page_load_time=0.1,  # 100ms idle time
-			minimum_wait_page_load_time=0.1,  # Don't wait extra
+				user_data_dir=None,
+				keep_alive=False,
+				wait_for_network_idle_page_load_time=0.1,  # 100ms idle time
+				minimum_wait_page_load_time=0.1,  # Don't wait extra
 			)
 		)
 
@@ -133,8 +130,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-							user_data_dir=None,
-			keep_alive=False,
+				user_data_dir=None,
+				keep_alive=False,
 			)
 		)
 
@@ -197,8 +194,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-							user_data_dir=None,
-			keep_alive=False,
+				user_data_dir=None,
+				keep_alive=False,
 			)
 		)
 
@@ -263,8 +260,8 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-							user_data_dir=None,
-			keep_alive=False,
+				user_data_dir=None,
+				keep_alive=False,
 			)
 		)
 
@@ -313,10 +310,10 @@ class TestBrowserRecentEvents:
 		browser_session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-							user_data_dir=None,
-			keep_alive=False,
-			wait_for_network_idle_page_load_time=0.1,
-			minimum_wait_page_load_time=0.1,
+				user_data_dir=None,
+				keep_alive=False,
+				wait_for_network_idle_page_load_time=0.1,
+				minimum_wait_page_load_time=0.1,
 			)
 		)
 

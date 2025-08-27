@@ -133,7 +133,7 @@ class TestTabManagement:
 		assert browser_session.page == initial_tab
 
 		# Test that get_current_page works even after closing all tabs
-		for page in browser_session._browser_context.pages:
+		for page in browser_session._cdp_client_root.pages:
 			await page.close()
 
 		# Give time for watchdogs to process tab closure events
@@ -166,7 +166,7 @@ class TestTabManagement:
 
 		# test opening a new tab
 		new_tab = await browser_session.create_new_tab(f'{base_url}/page2')
-		new_tab_count = len(browser_session._browser_context.pages)
+		new_tab_count = len(browser_session._cdp_client_root.pages)
 
 		# Debug: Check tab count after new tab creation
 		print(f'DEBUG: new_tab_count = {new_tab_count}')
@@ -271,7 +271,7 @@ class TestTabManagement:
 		# close_tab should have called get_current_page, which creates a new about:blank tab if none are left
 		assert browser_session.page.url == 'about:blank'
 
-	async def test_browser_context_state_after_error(self, browser_session):
+	async def test_cdp_client_root_state_after_error(self, browser_session):
 		"""Test browser context state remains consistent after errors"""
 		# logger.info('Testing browser context state after error')
 
@@ -279,7 +279,7 @@ class TestTabManagement:
 
 		# Force an error by killing the session (stop() with keep_alive=True doesn't close context)
 		# This properly cleans up connections
-		original_context = browser_session._browser_context
+		original_context = browser_session._cdp_client_root
 
 		# Use stop with force=True to actually close the browser context
 		from browser_use.browser.events import BrowserStopEvent
@@ -288,7 +288,7 @@ class TestTabManagement:
 		await event
 
 		# Verify session is properly killed
-		assert browser_session._browser_context is None
+		assert browser_session._cdp_client_root is None
 
 		# This should trigger reinitialization
 		# Verify by getting URL
@@ -296,8 +296,8 @@ class TestTabManagement:
 
 		# Verify state is consistent with a new context
 		assert current_url is not None
-		assert browser_session._browser_context is not None
-		assert browser_session._browser_context != original_context
+		assert browser_session._cdp_client_root is not None
+		assert browser_session._cdp_client_root != original_context
 		assert (await browser_session.is_connected()) is True
 
 	async def test_concurrent_context_access_during_closure(self, browser_session):

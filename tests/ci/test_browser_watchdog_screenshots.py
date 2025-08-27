@@ -29,7 +29,7 @@ class TestHeadlessScreenshots:
 		try:
 			# Start the session
 			await browser_session.start()
-			assert browser_session._browser_context is not None
+			assert browser_session._cdp_client_root is not None
 
 			# Set up test page with visible content
 			httpserver.expect_request('/').respond_with_data(
