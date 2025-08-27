@@ -122,6 +122,8 @@ def download_upload_server():
 
 	server.expect_request('/download-page').respond_with_data(download_page_html, content_type='text/html')
 
+	# stop
+	server.stop()
 	# Skip complex HTTPServer attribute assignment - not supported
 	pytest.skip('Complex HTTPServer attribute assignment not supported')
 

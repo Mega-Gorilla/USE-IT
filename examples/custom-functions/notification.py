@@ -13,7 +13,7 @@ from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 tools = Tools()
 
 
-@tools.registry.action('Done with task ')
+@tools.registry.action('Done with task')
 async def done(text: str):
 	import yagmail  # type: ignore
 

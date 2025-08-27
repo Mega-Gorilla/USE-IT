@@ -166,7 +166,7 @@ class TestTabManagement:
 			print(f'WARNING: Expected 1 tab but found {initial_tab_count} tabs after _reset_tab_state')
 			# For now, let's adjust the test to work with the actual count
 			# TODO: fix this initial tab count issue
-			return
+			pytest.skip('Initial tab count issue')
 
 		# We expect at least 1 tab but there might be more due to event-driven architecture
 		assert initial_tab_count >= 1
