@@ -717,11 +717,10 @@ class TestClickElementEvent:
 
 		result = await tools.act(ClickActionModel(click_element_by_index=ClickElementAction(index=select_index)), browser_session)
 
-		# Should have an error about select elements
-		assert result.error is not None, 'Expected error for select element click'
-		assert 'select' in result.error.lower() and 'dropdown' in result.error.lower(), (
-			f'Error message should mention select/dropdown, got: {result.error}'
-		)
+		# Should automatically provide dropdown options instead of an error
+		assert result.error is None, 'Should not have error - should provide dropdown options automatically'
+		assert result.extracted_content is not None, 'Should have dropdown options content'
+		assert 'dropdown' in result.extracted_content.lower(), f'Should contain dropdown options, got: {result.extracted_content}'
 
 	async def test_click_triggers_alert_popup(self, browser_session, base_url, http_server):
 		"""Test that clicking a button triggers an alert dialog that is auto-accepted."""
