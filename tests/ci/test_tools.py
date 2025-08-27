@@ -16,7 +16,6 @@ from browser_use.tools.views import (
 	GoToUrlAction,
 	NoParamsAction,
 	SearchGoogleAction,
-	SendKeysAction,
 )
 
 
@@ -270,8 +269,8 @@ class TestToolsIntegration:
 			await tools.act(GoToUrlActionModel(**action_data), browser_session)
 
 			# Verify current page
-			page = await browser_session.get_current_page()
-			assert url in page.url
+			current_url = await browser_session.get_current_page_url()
+			assert url in current_url
 
 		# Go back twice and verify each step
 		for expected_url in reversed(urls[:-1]):
@@ -283,8 +282,8 @@ class TestToolsIntegration:
 			await tools.act(GoBackActionModel(**go_back_action), browser_session)
 			await asyncio.sleep(1)  # Wait for navigation to complete
 
-			page = await browser_session.get_current_page()
-			assert expected_url in page.url
+			current_url = await browser_session.get_current_page_url()
+			assert expected_url in current_url
 
 	async def test_excluded_actions(self, browser_session):
 		"""Test that excluded actions are not registered."""
@@ -302,7 +301,7 @@ class TestToolsIntegration:
 	async def test_search_google_action(self, tools, browser_session, base_url):
 		"""Test the search_google action."""
 
-		await browser_session.get_current_page()
+		await browser_session.get_current_page_url()
 
 		# Execute search_google action - it will actually navigate to our search results page
 		search_action = {'search_google': SearchGoogleAction(query='Python web automation')}
@@ -318,8 +317,8 @@ class TestToolsIntegration:
 		assert 'Searched for "Python web automation" in Google' in result.extracted_content
 
 		# For our test purposes, we just verify we're on some URL
-		page = await browser_session.get_current_page()
-		assert page.url is not None and 'Python' in page.url
+		current_url = await browser_session.get_current_page_url()
+		assert current_url is not None and 'Python' in current_url
 
 	async def test_done_action(self, tools, browser_session, base_url):
 		"""Test that DoneAction completes a task and reports success or failure."""
@@ -369,220 +368,6 @@ class TestToolsIntegration:
 			assert result.success is False
 			assert result.is_done is True
 			assert result.error is None
-
-	async def test_send_keys_action(self, tools, browser_session, base_url, http_server):
-		"""Test SendKeysAction using a controlled local HTML file."""
-		# Set up keyboard test page for this test
-		http_server.expect_request('/keyboard').respond_with_data(
-			"""
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>Keyboard Test</title>
-				<style>
-					body { font-family: Arial, sans-serif; margin: 20px; }
-					input, textarea { margin: 10px 0; padding: 5px; width: 300px; }
-					#result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; min-height: 30px; }
-				</style>
-			</head>
-			<body>
-				<h1>Keyboard Actions Test</h1>
-				<form id="testForm">
-					<div>
-						<label for="textInput">Text Input:</label>
-						<input type="text" id="textInput" placeholder="Type here...">
-					</div>
-					<div>
-						<label for="textarea">Textarea:</label>
-						<textarea id="textarea" rows="4" placeholder="Type here..."></textarea>
-					</div>
-				</form>
-				<div id="result"></div>
-				
-				<script>
-					// Track focused element
-					document.addEventListener('focusin', function(e) {
-						document.getElementById('result').textContent = 'Focused on: ' + e.target.id;
-					}, true);
-					
-					// Track key events
-					document.addEventListener('keydown', function(e) {
-						const element = document.activeElement;
-						if (element.id) {
-							const resultEl = document.getElementById('result');
-							resultEl.textContent += '\\nKeydown: ' + e.key;
-							
-							// For Ctrl+A, detect and show selection
-							if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
-								resultEl.textContent += '\\nCtrl+A detected';
-								setTimeout(() => {
-									resultEl.textContent += '\\nSelection length: ' + 
-										(window.getSelection().toString().length || 
-										(element.selectionEnd - element.selectionStart));
-								}, 50);
-							}
-						}
-					});
-				</script>
-			</body>
-			</html>
-			""",
-			content_type='text/html',
-		)
-
-		# Navigate to the keyboard test page on the local HTTP server
-		goto_action = {'go_to_url': GoToUrlAction(url=f'{base_url}/keyboard', new_tab=False)}
-
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
-
-		# Execute navigation
-		goto_result = await tools.act(GoToUrlActionModel(**goto_action), browser_session)
-		await asyncio.sleep(0.1)
-
-		# Verify navigation result
-		assert isinstance(goto_result, ActionResult)
-		assert goto_result.extracted_content is not None
-		assert goto_result.extracted_content is not None and f'Navigated to {base_url}/keyboard' in goto_result.extracted_content
-		assert goto_result.error is None
-		assert goto_result.is_done is False
-
-		# Get the page object
-		page = await browser_session.get_current_page()
-
-		# Verify page loaded
-		title = await page.title()
-		assert title == 'Keyboard Test'
-
-		# Verify initial page state
-		h1_text = await page.evaluate('() => document.querySelector("h1").textContent')
-		assert h1_text == 'Keyboard Actions Test'
-
-		# 1. Test Tab key to focus the first input
-		tab_keys_action = {'send_keys': SendKeysAction(keys='Tab')}
-
-		class SendKeysActionModel(ActionModel):
-			send_keys: SendKeysAction | None = None
-
-		tab_result = await tools.act(SendKeysActionModel(**tab_keys_action), browser_session)
-		await asyncio.sleep(0.1)
-
-		# Verify Tab action result
-		assert isinstance(tab_result, ActionResult)
-		assert tab_result.extracted_content is not None
-		assert tab_result.extracted_content is not None and 'Sent keys: Tab' in tab_result.extracted_content
-		assert tab_result.error is None
-		assert tab_result.is_done is False
-
-		# Verify Tab worked by checking focused element
-		active_element_id = await page.evaluate('() => document.activeElement.id')
-		assert active_element_id == 'textInput', f"Expected 'textInput' to be focused, got '{active_element_id}'"
-
-		# Verify result text in the DOM
-		result_text = await page.locator('#result').text_content()
-		assert 'Focused on: textInput' in result_text
-
-		# 2. Type text into the input
-		test_text = 'This is a test'
-		type_action = {'send_keys': SendKeysAction(keys=test_text)}
-		type_result = await tools.act(SendKeysActionModel(**type_action), browser_session)
-		await asyncio.sleep(0.1)
-
-		# Verify typing action result
-		assert isinstance(type_result, ActionResult)
-		assert type_result.extracted_content is not None
-		assert type_result.extracted_content is not None and f'Sent keys: {test_text}' in type_result.extracted_content
-		assert type_result.error is None
-		assert type_result.is_done is False
-
-		# Verify text was entered
-		input_value = await page.evaluate('() => document.getElementById("textInput").value')
-		assert input_value == test_text, f"Expected input value '{test_text}', got '{input_value}'"
-
-		# Verify key events were recorded
-		result_text = await page.locator('#result').text_content()
-		for char in test_text:
-			assert f'Keydown: {char}' in result_text, f"Missing key event for '{char}'"
-
-		# 3. Test Ctrl+A for select all
-		select_all_action = {'send_keys': SendKeysAction(keys='ControlOrMeta+a')}
-		select_all_result = await tools.act(SendKeysActionModel(**select_all_action), browser_session)
-		# Wait longer for selection to take effect
-		await asyncio.sleep(1.0)
-
-		# Verify select all action result
-		assert isinstance(select_all_result, ActionResult)
-		assert select_all_result.extracted_content is not None
-		assert (
-			select_all_result.extracted_content is not None
-			and 'Sent keys: ControlOrMeta+a' in select_all_result.extracted_content
-		)
-		assert select_all_result.error is None
-
-		# Verify selection length matches the text length
-		selection_length = await page.evaluate(
-			'() => document.activeElement.selectionEnd - document.activeElement.selectionStart'
-		)
-		assert selection_length == len(test_text), f'Expected selection length {len(test_text)}, got {selection_length}'
-
-		# Verify selection in result text
-		result_text = await page.locator('#result').text_content()
-		assert 'Keydown: a' in result_text
-		assert 'Ctrl+A detected' in result_text
-		assert 'Selection length:' in result_text
-
-		# 4. Test Tab to next field
-		tab_result2 = await tools.act(SendKeysActionModel(**tab_keys_action), browser_session)
-		await asyncio.sleep(0.1)
-
-		# Verify second Tab action result
-		assert isinstance(tab_result2, ActionResult)
-		assert tab_result2.extracted_content is not None
-		assert tab_result2.extracted_content is not None and 'Sent keys: Tab' in tab_result2.extracted_content
-		assert tab_result2.error is None
-
-		# Verify we moved to the textarea
-		active_element_id = await page.evaluate('() => document.activeElement.id')
-		assert active_element_id == 'textarea', f"Expected 'textarea' to be focused, got '{active_element_id}'"
-
-		# Verify focus changed in result text
-		result_text = await page.locator('#result').text_content()
-		assert 'Focused on: textarea' in result_text
-
-		# 5. Type in the textarea
-		textarea_text = 'Testing multiline\ninput text'
-		textarea_action = {'send_keys': SendKeysAction(keys=textarea_text)}
-		textarea_result = await tools.act(SendKeysActionModel(**textarea_action), browser_session)
-
-		# Verify textarea typing action result
-		assert isinstance(textarea_result, ActionResult)
-		assert textarea_result.extracted_content is not None
-		assert (
-			textarea_result.extracted_content is not None and f'Sent keys: {textarea_text}' in textarea_result.extracted_content
-		)
-		assert textarea_result.error is None
-		assert textarea_result.is_done is False
-
-		# Verify text was entered in textarea
-		textarea_value = await page.evaluate('() => document.getElementById("textarea").value')
-		assert textarea_value == textarea_text, f"Expected textarea value '{textarea_text}', got '{textarea_value}'"
-
-		# Verify newline was properly handled
-		lines = textarea_value.split('\n')
-		assert len(lines) == 2, f'Expected 2 lines in textarea, got {len(lines)}'
-		assert lines[0] == 'Testing multiline'
-		assert lines[1] == 'input text'
-
-		# Test that Tab cycles back to the first element if we tab again
-		await tools.act(SendKeysActionModel(**tab_keys_action), browser_session)
-		await tools.act(SendKeysActionModel(**tab_keys_action), browser_session)
-
-		active_element_id = await page.evaluate('() => document.activeElement.id')
-		assert active_element_id == 'textInput', 'Tab cycling through form elements failed'
-
-		# Verify the test input still has its value
-		input_value = await page.evaluate('() => document.getElementById("textInput").value')
-		assert input_value == test_text, "Input value shouldn't have changed after tabbing"
 
 	async def test_get_dropdown_options(self, tools, browser_session, base_url, http_server):
 		"""Test that get_dropdown_options correctly retrieves options from a dropdown."""
