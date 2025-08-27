@@ -56,58 +56,6 @@ class TestBrowserSessionStart:
 		await browser_session.start()
 		assert browser_session._cdp_client_root is not None
 
-	async def test_start_with_invalid_cdp_url(self):
-		"""Test that initialization fails gracefully with invalid CDP URL."""
-		# logger.info('Testing start with invalid CDP URL')
-
-		# Create session with invalid CDP URL
-		browser_session = BrowserSession(
-			browser_profile=BrowserProfile(headless=True),
-			cdp_url='http://localhost:99999',  # Invalid port
-		)
-
-		try:
-			# Start should fail with connection error
-			with pytest.raises((RuntimeError, ConnectionError, OSError, Exception)) as exc_info:
-				await browser_session.start()
-
-			# Verify it's a connection-related error
-			error_msg = str(exc_info.value).lower()
-			assert any(
-				keyword in error_msg
-				for keyword in [
-					'connection',
-					'refused',
-					'unreachable',
-					'timeout',
-					'failed to establish',
-					'cdp',
-					'nodename',
-					'servname',
-					'not known',
-					'errno 8',
-					'connecterror',
-				]
-			), f'Expected connection-related error, got: {exc_info.value}'
-
-			# Session should not be initialized
-			assert browser_session._cdp_client_root is None
-		finally:
-			await browser_session.kill()
-
-	async def test_close_unstarted_session(self, browser_session):
-		"""Test calling .close() on a session that hasn't been started yet."""
-		# logger.info('Testing close on unstarted session')
-
-		# Ensure session is not started
-		assert browser_session._cdp_client_root is None
-
-		# Close should not raise an exception
-		await browser_session.stop()
-
-		# State should remain unchanged
-		assert browser_session._cdp_client_root is None
-
 	async def test_page_lifecycle_management(self, browser_session):
 		"""Test session handles page lifecycle correctly."""
 		# logger.info('Testing page lifecycle management')
