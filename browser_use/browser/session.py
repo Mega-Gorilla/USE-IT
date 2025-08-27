@@ -613,8 +613,8 @@ class BrowserSession(BaseModel):
 				session_id=self.agent_focus.session_id,
 			)
 
-			# Wait a bit to ensure page starts loading
-			await asyncio.sleep(0.5)
+			# # Wait a bit to ensure page starts loading
+			# await asyncio.sleep(0.5)
 
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
