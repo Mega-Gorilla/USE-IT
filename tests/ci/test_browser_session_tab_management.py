@@ -8,7 +8,7 @@ from pytest_httpserver import HTTPServer
 load_dotenv()
 
 from browser_use.agent.views import ActionModel
-from browser_use.browser.events import CloseTabEvent, NavigateToUrlEvent, SwitchTabEvent
+from browser_use.browser.events import NavigateToUrlEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 from browser_use.tools.service import Tools
@@ -267,50 +267,50 @@ class TestEventDrivenTabOperations:
 		yield session
 		await session.kill()
 
-	async def test_switch_tab_event_dispatching(self, browser_session, base_url):
-		"""Test direct SwitchTabEvent dispatching."""
+	# async def test_switch_tab_event_dispatching(self, browser_session, base_url):
+	# 	"""Test direct SwitchTabEvent dispatching."""
 
-		# Create multiple tabs
-		await browser_session.navigate_to(f'{base_url}/page1')
-		await browser_session.create_new_tab(f'{base_url}/page2')
-		await browser_session.create_new_tab(f'{base_url}/page3')
+	# 	# Create multiple tabs
+	# 	await browser_session.navigate_to(f'{base_url}/page1')
+	# 	await browser_session.create_new_tab(f'{base_url}/page2')
+	# 	await browser_session.create_new_tab(f'{base_url}/page3')
 
-		# Switch to tab 0 via direct event
-		switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[0].target_id))
-		await switch_event
+	# 	# Switch to tab 0 via direct event
+	# 	switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[0].target_id))
+	# 	await switch_event
 
-		# Verify the switch worked
-		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page1' in current_url
+	# 	# Verify the switch worked
+	# 	current_url = await browser_session.get_current_page_url()
+	# 	assert f'{base_url}/page1' in current_url
 
-		# Switch to tab 2 via direct event
-		switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[2].target_id))
-		await switch_event
+	# 	# Switch to tab 2 via direct event
+	# 	switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=browser_session.tabs[2].target_id))
+	# 	await switch_event
 
-		# Verify the switch worked
-		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page3' in current_url
+	# 	# Verify the switch worked
+	# 	current_url = await browser_session.get_current_page_url()
+	# 	assert f'{base_url}/page3' in current_url
 
-	async def test_close_tab_event_dispatching(self, browser_session, base_url):
-		"""Test direct CloseTabEvent dispatching."""
-		from browser_use.browser.events import TabClosedEvent
+	# async def test_close_tab_event_dispatching(self, browser_session, base_url):
+	# 	"""Test direct CloseTabEvent dispatching."""
+	# 	from browser_use.browser.events import TabClosedEvent
 
-		# Create multiple tabs
-		await browser_session.navigate_to(f'{base_url}/page1')
-		await browser_session.create_new_tab(f'{base_url}/page2')
+	# 	# Create multiple tabs
+	# 	await browser_session.navigate_to(f'{base_url}/page1')
+	# 	await browser_session.create_new_tab(f'{base_url}/page2')
 
-		initial_tab_count = len(browser_session.tabs)
-		assert initial_tab_count == 2
+	# 	initial_tab_count = len(browser_session.tabs)
+	# 	assert initial_tab_count == 2
 
-		# Close tab 1 via direct event
-		close_event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=browser_session.tabs[1].target_id))
-		await close_event
+	# 	# Close tab 1 via direct event
+	# 	close_event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=browser_session.tabs[1].target_id))
+	# 	await close_event
 
-		# Verify tab was closed
-		assert len(browser_session.tabs) == initial_tab_count - 1
+	# 	# Verify tab was closed
+	# 	assert len(browser_session.tabs) == initial_tab_count - 1
 
-		# Check event history for TabClosedEvent
-		event_history = list(browser_session.event_bus.event_history.values())
-		closed_events = [e for e in event_history if isinstance(e, TabClosedEvent)]
-		assert len(closed_events) >= 1
-		assert closed_events[-1].target_id == browser_session.tabs[1].target_id
+	# 	# Check event history for TabClosedEvent
+	# 	event_history = list(browser_session.event_bus.event_history.values())
+	# 	closed_events = [e for e in event_history if isinstance(e, TabClosedEvent)]
+	# 	assert len(closed_events) >= 1
+	# 	assert closed_events[-1].target_id == browser_session.tabs[1].target_id

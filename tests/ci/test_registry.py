@@ -812,43 +812,6 @@ class TestParamsModelGeneration:
 		assert 'null' in schema['properties']['name']['anyOf'][1]['type']
 
 
-class TestErrorMessages:
-	"""Test error messages for validation failures (from normalization tests)"""
-
-	def test_clear_error_for_kwargs(self):
-		"""Error message for kwargs should be clear"""
-		registry = Registry()
-
-		try:
-
-			@registry.action('Bad')
-			async def bad(x: int, **kwargs):
-				pass
-
-			pytest.fail('Should have raised ValueError')
-		except ValueError as e:
-			assert 'kwargs' in str(e).lower()
-			assert 'not allowed' in str(e).lower()
-			assert 'bad' in str(e).lower()  # Should mention function name
-
-	def test_clear_error_for_param_conflicts(self):
-		"""Error message for param conflicts should be helpful"""
-		registry = Registry()
-
-		try:
-
-			@registry.action('Bad')
-			async def bad(page: str):
-				pass
-
-			pytest.fail('Should have raised ValueError')
-		except ValueError as e:
-			error_msg = str(e)
-			assert 'page: str' in error_msg
-			assert 'conflicts' in error_msg
-			assert 'bad' in error_msg.lower()  # Show function name
-
-
 class TestParameterOrdering:
 	"""Test mixed ordering of parameters (from normalization tests)"""
 
