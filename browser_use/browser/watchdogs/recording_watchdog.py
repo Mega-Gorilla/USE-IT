@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from bubus import BaseEvent
 from cdp_use.cdp.page.events import ScreencastFrameEvent
@@ -22,7 +22,7 @@ class RecordingWatchdog(BaseWatchdog):
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [BrowserConnectedEvent, BrowserStopEvent]
 	EMITS: ClassVar[list[type[BaseEvent]]] = []
 
-	_recorder: Optional[VideoRecorderService] = None
+	_recorder: VideoRecorderService | None = None
 
 	async def on_BrowserConnectedEvent(self, event: BrowserConnectedEvent) -> None:
 		"""
@@ -74,7 +74,7 @@ class RecordingWatchdog(BaseWatchdog):
 				self._recorder.stop_and_save()
 				self._recorder = None
 
-	async def _get_current_viewport_size(self) -> Optional[ViewportSize]:
+	async def _get_current_viewport_size(self) -> ViewportSize | None:
 		"""Gets the current viewport size directly from the browser via CDP."""
 		try:
 			cdp_session = await self.browser_session.get_or_create_cdp_session()
@@ -93,7 +93,7 @@ class RecordingWatchdog(BaseWatchdog):
 
 		return None
 
-	def on_screencastFrame(self, event: ScreencastFrameEvent, session_id: Optional[str]) -> None:
+	def on_screencastFrame(self, event: ScreencastFrameEvent, session_id: str | None) -> None:
 		"""
 		Synchronous handler for incoming screencast frames.
 		"""
@@ -102,7 +102,7 @@ class RecordingWatchdog(BaseWatchdog):
 		self._recorder.add_frame(event['data'])
 		asyncio.create_task(self._ack_screencast_frame(event, session_id))
 
-	async def _ack_screencast_frame(self, event: ScreencastFrameEvent, session_id: Optional[str]) -> None:
+	async def _ack_screencast_frame(self, event: ScreencastFrameEvent, session_id: str | None) -> None:
 		"""
 		Asynchronously acknowledges a screencast frame.
 		"""

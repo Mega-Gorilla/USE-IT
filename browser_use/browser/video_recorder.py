@@ -133,7 +133,7 @@ class VideoRecorderService:
 			if proc.returncode != 0:
 				err_msg = err.decode(errors='ignore').strip()
 				if 'deprecated pixel format used' not in err_msg.lower():
-					raise IOError(f'ffmpeg error during resizing/padding: {err_msg}')
+					raise OSError(f'ffmpeg error during resizing/padding: {err_msg}')
 				else:
 					logger.debug(f'ffmpeg warning during resizing/padding: {err_msg}')
 
