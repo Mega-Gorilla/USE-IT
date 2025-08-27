@@ -139,13 +139,13 @@ class TestBrowserContext:
 		await event
 
 		# Get the current page
-		page = await browser_session.get_current_page()
+		url = await browser_session.get_current_page_url()
 
 		# Verify the page URL matches what we navigated to
-		assert f'{base_url}/' in page.url
+		assert f'{base_url}/' in url
 
 		# Verify the page title
-		title = await page.title()
+		title = await browser_session.get_current_page_title()
 		assert title == 'Test Home Page'
 
 	@pytest.mark.asyncio

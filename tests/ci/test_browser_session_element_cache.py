@@ -166,13 +166,15 @@ async def test_assumption_3_action_gets_same_selector_map(browser_session, tools
 @pytest.mark.asyncio
 async def test_assumption_4_click_action_specific_issue(browser_session, tools, httpserver):
 	"""Test assumption 4: Specific issue with click_element_by_index action."""
-	# Go to a simple page
-	page = await browser_session.get_current_page()
-	await page.goto(httpserver.url_for('/'))
-	await page.wait_for_load_state()
+	# Go to a simple page using CDP events
+	from browser_use.browser.events import NavigateToUrlEvent
+
+	event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=httpserver.url_for('/')))
+	await event
+	await event.event_result(raise_if_any=True, raise_if_none=False)
 
 	# Trigger DOM processing and cache
-	await browser_session.get_state_summary(cache_clickable_elements_hashes=False)
+	await browser_session.get_browser_state_summary(cache_clickable_elements_hashes=False)
 	cached_selector_map = await browser_session.get_selector_map()
 
 	print('Pre-click state:')
@@ -201,8 +203,8 @@ async def test_assumption_4_click_action_specific_issue(browser_session, tools, 
 			extracted_content=f'Debug: Element {index} found in map of size {len(selector_map)}', include_in_memory=False
 		)
 
-	# Test with index 0
-	result = await tools.registry.execute_action('test_debug_click_logic', {'index': 0}, browser_session=browser_session)
+	# Test with index 1 (elements start at 1, not 0)
+	result = await tools.registry.execute_action('test_debug_click_logic', {'index': 1}, browser_session=browser_session)
 
 	print(f'Debug click result: {result.extracted_content or result.error}')
 

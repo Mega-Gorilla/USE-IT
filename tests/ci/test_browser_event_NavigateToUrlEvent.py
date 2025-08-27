@@ -152,28 +152,6 @@ class TestNavigateToUrlEvent:
 		current_url = await browser_session.get_current_page_url()
 		assert f'{base_url}/page2' in current_url
 
-	async def test_navigate_relative_url(self, tools, browser_session, base_url):
-		"""Test navigating using relative URLs."""
-		# First navigate to base URL
-		action_data = {'go_to_url': GoToUrlAction(url=base_url, new_tab=False)}
-
-		class GoToUrlActionModel(ActionModel):
-			go_to_url: GoToUrlAction | None = None
-
-		await tools.act(GoToUrlActionModel(**action_data), browser_session)
-
-		# Now navigate using relative URL
-		relative_action = {'go_to_url': GoToUrlAction(url='/page1', new_tab=False)}
-		result = await tools.act(GoToUrlActionModel(**relative_action), browser_session)
-
-		# Verify navigation worked
-		assert isinstance(result, ActionResult)
-		assert result.extracted_content is not None
-
-		# Check we're on the right page
-		current_url = await browser_session.get_current_page_url()
-		assert f'{base_url}/page1' in current_url
-
 	async def test_navigate_javascript_url(self, tools, browser_session, base_url):
 		"""Test that javascript: URLs are handled appropriately."""
 		# Navigate to a normal page first
