@@ -853,6 +853,8 @@ class BrowserSession(BaseModel):
 			cdp_url=self.cdp_url if should_use_new_socket else None,
 		)
 		self._cdp_session_pool[target_id] = session
+		# log length of _cdp_session_pool
+		self.logger.debug(f'[get_or_create_cdp_session] new _cdp_session_pool length: {len(self._cdp_session_pool)}')
 
 		# Only change agent focus if requested
 		if focus:
