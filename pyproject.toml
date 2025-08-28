@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.6.0"
+version = "0.7.0"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -70,7 +70,7 @@ examples = [
     "langchain-openai>=0.3.26",
 ]
 eval = [
-    "lmnr[all]>=0.6.11",
+    "lmnr[all]==0.7.6",
     "anyio>=4.9.0",
     "Pillow>=11.2.1",
     "psutil>=7.0.0",
@@ -90,9 +90,6 @@ all = [
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
 
-[project.scripts]
-browseruse = "browser_use.cli:main"
-browser-use = "browser_use.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -196,7 +193,7 @@ dev-dependencies = [
     "ty>=0.0.1a1",
     "pytest-xdist>=3.7.0",
     "pillow>=11.2.1",
-    "lmnr[all]>=0.6.13",
+    "lmnr[all]==0.7.6",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-timeout>=2.4.0",
 ]
