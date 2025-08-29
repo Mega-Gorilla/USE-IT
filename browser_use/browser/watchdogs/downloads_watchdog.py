@@ -111,7 +111,6 @@ class DownloadsWatchdog(BaseWatchdog):
 		# Check if auto-download is enabled
 		auto_download_enabled = self._is_auto_download_enabled()
 		if not auto_download_enabled:
-			self.logger.debug('[DownloadsWatchdog] Skipping PDF check - auto-download disabled')
 			return
 
 		# Note: Using network-based PDF detection that doesn't require JavaScript
