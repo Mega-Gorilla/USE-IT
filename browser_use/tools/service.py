@@ -177,7 +177,7 @@ class Tools(Generic[Context]):
 				memory = f"Searched Google for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to search Google: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -201,7 +201,7 @@ class Tools(Generic[Context]):
 					msg = f'🔗 {memory}'
 
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=msg, long_term_memory=memory)
 			except Exception as e:
 				error_msg = str(e)
 				# Always log the actual error first for debugging
@@ -336,7 +336,6 @@ class Tools(Generic[Context]):
 				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f"Input '{params.text}' into element {params.index}.",
 					metadata=input_metadata if isinstance(input_metadata, dict) else None,
 				)
@@ -486,7 +485,6 @@ class Tools(Generic[Context]):
 				logger.info(f'📁 {msg}')
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f'Uploaded file {params.path} to element {params.index}',
 				)
 			except Exception as e:
@@ -512,7 +510,7 @@ class Tools(Generic[Context]):
 				assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
 				memory = f'Switched to Tab with ID {new_target_id[-4:]}'
 				logger.info(f'🔄  {memory}')
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -535,7 +533,6 @@ class Tools(Generic[Context]):
 				logger.info(f'🗑️  {memory}')
 				return ActionResult(
 					extracted_content=memory,
-					include_in_memory=True,
 					long_term_memory=memory,
 				)
 			except Exception as e:
@@ -697,7 +694,7 @@ Provide the extracted information in a clear, structured format."""
 
 				msg = f'🔍 {long_term_memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
+				return ActionResult(extracted_content=msg, long_term_memory=long_term_memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -717,7 +714,7 @@ Provide the extracted information in a clear, structured format."""
 				memory = f'Sent keys: {params.keys}'
 				msg = f'⌨️  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
@@ -737,14 +734,13 @@ Provide the extracted information in a clear, structured format."""
 				memory = f'Scrolled to text: {text}'
 				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				# Text not found
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
@@ -776,7 +772,6 @@ Provide the extracted information in a clear, structured format."""
 
 			return ActionResult(
 				extracted_content=msg,
-				include_in_memory=True,
 				long_term_memory=f'Found {options_count} dropdown options for index {params.index}',
 				include_extracted_content_only_once=True,
 			)
@@ -806,7 +801,6 @@ Provide the extracted information in a clear, structured format."""
 
 			return ActionResult(
 				extracted_content=msg,
-				include_in_memory=True,
 				long_term_memory=f"Selected dropdown option '{params.text}' at index {params.index}",
 			)
 
@@ -831,7 +825,7 @@ Provide the extracted information in a clear, structured format."""
 			else:
 				result = await file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+			return ActionResult(extracted_content=result, long_term_memory=result)
 
 		@self.registry.action(
 			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
@@ -839,7 +833,7 @@ Provide the extracted information in a clear, structured format."""
 		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
 			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+			return ActionResult(extracted_content=result, long_term_memory=result)
 
 		@self.registry.action('Read file_name from file system')
 		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
@@ -866,7 +860,6 @@ Provide the extracted information in a clear, structured format."""
 			logger.info(f'💾 {memory}')
 			return ActionResult(
 				extracted_content=result,
-				include_in_memory=True,
 				long_term_memory=memory,
 				include_extracted_content_only_once=True,
 			)
