@@ -43,15 +43,10 @@ class StructuredOutputAction(BaseModel, Generic[T]):
 
 
 class SwitchTabAction(BaseModel):
-	url: str | None = Field(
-		default=None,
-		description='URL or URL substring of the tab to switch to, if not provided, the tab_id or most recently opened tab will be used',
-	)
-	tab_id: str | None = Field(
-		default=None,
+	tab_id: str = Field(
 		min_length=4,
 		max_length=4,
-		description='exact 4 character Tab ID to match instead of URL, prefer using this if known',
+		description='Last 4 chars of TargetID',
 	)  # last 4 chars of TargetID
 
 

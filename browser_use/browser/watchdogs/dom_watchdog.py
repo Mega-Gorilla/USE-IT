@@ -42,70 +42,7 @@ class DOMWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
-
-		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
-
-		init_script = """
-			// check to make sure we're not inside the PDF viewer
-			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
-			if (!window.isPdfViewer) {
-
-				// Permissions
-				const originalQuery = window.navigator.permissions.query;
-				window.navigator.permissions.query = (parameters) => (
-					parameters.name === 'notifications' ?
-						Promise.resolve({ state: Notification.permission }) :
-						originalQuery(parameters)
-				);
-				(() => {
-					if (window._eventListenerTrackerInitialized) return;
-					window._eventListenerTrackerInitialized = true;
-
-					const originalAddEventListener = EventTarget.prototype.addEventListener;
-					const eventListenersMap = new WeakMap();
-
-					EventTarget.prototype.addEventListener = function(type, listener, options) {
-						if (typeof listener === "function") {
-							let listeners = eventListenersMap.get(this);
-							if (!listeners) {
-								listeners = [];
-								eventListenersMap.set(this, listeners);
-							}
-
-							listeners.push({
-								type,
-								listener,
-								listenerPreview: listener.toString().slice(0, 100),
-								options
-							});
-						}
-
-						return originalAddEventListener.call(this, type, listener, options);
-					};
-
-					window.getEventListenersForNode = (node) => {
-						const listeners = eventListenersMap.get(node) || [];
-						return listeners.map(({ type, listenerPreview, options }) => ({
-							type,
-							listenerPreview,
-							options
-						}));
-					};
-				})();
-			}
-		"""
-
-		# Try to inject the script, but don't fail if the Page domain isn't ready yet
-		# This can happen when a new tab is created and the CDP session isn't fully attached
-		try:
-			await self.browser_session._cdp_add_init_script(init_script)
-		except Exception as e:
-			if "'Page.addScriptToEvaluateOnNewDocument' wasn't found" in str(e):
-				self.logger.debug(f'Page domain not ready for new tab, skipping init script injection: {e}')
-				# The script will be injected when the page actually navigates
-			else:
-				# Re-raise other errors
-				raise
+		return None
 
 	def _get_recent_events_str(self, limit: int = 10) -> str | None:
 		"""Get the most recent events from the event bus as JSON.
@@ -164,10 +101,10 @@ class DOMWatchdog(BaseWatchdog):
 		self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got page URL: {page_url}')
 		if self.browser_session.agent_focus:
 			self.logger.debug(
-				f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
+				f'Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
 			)
 		else:
-			self.logger.debug(f'📍 Current page URL: {page_url}, no cdp_session attached')
+			self.logger.debug(f'Current page URL: {page_url}, no cdp_session attached')
 
 		# check if we should skip DOM tree build for pointless pages
 		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')
@@ -451,7 +388,7 @@ class DOMWatchdog(BaseWatchdog):
 				self.browser_session.update_cached_selector_map(self.selector_map)
 			self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: ✅ Selector maps updated, {len(self.selector_map)} elements')
 
-			# Inject highlighting for visual feedback if we have elements and highlighting is enabled
+			# Inject highlighting for visual feedback if we have elements
 			if self.selector_map and self._dom_service and self.browser_session.browser_profile.highlight_elements:
 				try:
 					self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Injecting highlighting script...')
