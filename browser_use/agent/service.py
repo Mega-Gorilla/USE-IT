@@ -644,14 +644,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		# Use caching based on directly_open_url setting - if directly_open_url is False, don't use cached state
-		is_first_step = self.state.n_steps in (0, 1)
-		use_cache = is_first_step and self.directly_open_url
-		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
+		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
-			cached=use_cache,
 			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
