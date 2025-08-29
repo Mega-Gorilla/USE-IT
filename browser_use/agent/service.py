@@ -280,6 +280,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
 				initial_actions = [{'go_to_url': {'url': initial_url, 'new_tab': False}}]
 
+		self.initial_url = initial_url
+
 		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		# Verify we can connect to the model
 		self._verify_and_setup_llm()
@@ -1254,6 +1256,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if self.initial_actions and not self.state.follow_up_task:
 				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
+				# update result 1 to mention that its was automatically loaded
+				if result and self.initial_url and result[0].long_term_memory:
+					result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
 				self.state.last_result = result
 				self.logger.debug('Initial actions completed')
 
