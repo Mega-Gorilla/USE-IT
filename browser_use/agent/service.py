@@ -270,8 +270,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Action setup
 		self._setup_action_models()
 		self._set_browser_use_version_and_source(source)
-		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 
+		initial_url = None
+
+		# only load url if no initial actions are provided
+		if self.directly_open_url and not self.state.follow_up_task and not initial_actions:
+			initial_url = self._extract_url_from_task(self.task)
+			if initial_url:
+				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
+				initial_actions = [{'go_to_url': {'url': initial_url, 'new_tab': False}}]
+
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		# Verify we can connect to the model
 		self._verify_and_setup_llm()
 
@@ -1239,39 +1248,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and add it as an initial action (only if directly_open_url is enabled)
-			if self.directly_open_url and not self.state.follow_up_task:
-				initial_url = self._extract_url_from_task(self.task)
-				if initial_url:
-					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
-
-					# Create a go_to_url action for the initial URL
-					go_to_url_action = {
-						'go_to_url': {
-							'url': initial_url,
-							'new_tab': False,  # Navigate in current tab
-						}
-					}
-
-					# Add to initial_actions or create new list if none exist
-					if self.initial_actions:
-						# Convert back to dict format, prepend URL navigation, then convert back
-						initial_actions_dicts = []
-						for action in self.initial_actions:
-							action_data = action.model_dump(exclude_unset=True)
-							initial_actions_dicts.append(action_data)
-
-						# Prepend the go_to_url action
-						initial_actions_dicts = [go_to_url_action] + initial_actions_dicts
-
-						# Convert back to ActionModel instances
-						self.initial_actions = self._convert_initial_actions(initial_actions_dicts)
-					else:
-						# Create new initial_actions with just the go_to_url
-						self.initial_actions = self._convert_initial_actions([go_to_url_action])
-
-					self.logger.debug(f'✅ Added navigation to {initial_url} as initial action')
-
 			# Ensure browser focus is properly established before executing initial actions
 			if self.browser_session and self.browser_session.agent_focus:
 				self.logger.debug(f'🎯 Browser focus established on target: {self.browser_session.agent_focus.target_id[-4:]}')
@@ -1283,7 +1259,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
 				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
 				self.state.last_result = result
-				self.logger.debug('✅ Initial actions completed')
+				self.logger.debug('Initial actions completed')
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
