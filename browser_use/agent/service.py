@@ -1252,15 +1252,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			else:
 				self.logger.warning('⚠️ No browser focus established, may cause navigation issues')
 
-			# Execute initial actions if provided
-			if self.initial_actions and not self.state.follow_up_task:
-				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
-				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
-				# update result 1 to mention that its was automatically loaded
-				if result and self.initial_url and result[0].long_term_memory:
-					result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
-				self.state.last_result = result
-				self.logger.debug('Initial actions completed')
+			await self._execute_initial_actions()
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
@@ -1635,6 +1627,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						await asyncio.sleep(delay_between_actions)
 
 		return results
+
+	async def _execute_initial_actions(self) -> None:
+		# Execute initial actions if provided
+		if self.initial_actions and not self.state.follow_up_task:
+			self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
+			result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
+			# update result 1 to mention that its was automatically loaded
+			if result and self.initial_url and result[0].long_term_memory:
+				result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
+			self.state.last_result = result
+			self.logger.debug('Initial actions completed')
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""
