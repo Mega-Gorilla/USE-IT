@@ -42,70 +42,7 @@ class DOMWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
-
-		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
-
-		init_script = """
-			// check to make sure we're not inside the PDF viewer
-			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
-			if (!window.isPdfViewer) {
-
-				// Permissions
-				const originalQuery = window.navigator.permissions.query;
-				window.navigator.permissions.query = (parameters) => (
-					parameters.name === 'notifications' ?
-						Promise.resolve({ state: Notification.permission }) :
-						originalQuery(parameters)
-				);
-				(() => {
-					if (window._eventListenerTrackerInitialized) return;
-					window._eventListenerTrackerInitialized = true;
-
-					const originalAddEventListener = EventTarget.prototype.addEventListener;
-					const eventListenersMap = new WeakMap();
-
-					EventTarget.prototype.addEventListener = function(type, listener, options) {
-						if (typeof listener === "function") {
-							let listeners = eventListenersMap.get(this);
-							if (!listeners) {
-								listeners = [];
-								eventListenersMap.set(this, listeners);
-							}
-
-							listeners.push({
-								type,
-								listener,
-								listenerPreview: listener.toString().slice(0, 100),
-								options
-							});
-						}
-
-						return originalAddEventListener.call(this, type, listener, options);
-					};
-
-					window.getEventListenersForNode = (node) => {
-						const listeners = eventListenersMap.get(node) || [];
-						return listeners.map(({ type, listenerPreview, options }) => ({
-							type,
-							listenerPreview,
-							options
-						}));
-					};
-				})();
-			}
-		"""
-
-		# Try to inject the script, but don't fail if the Page domain isn't ready yet
-		# This can happen when a new tab is created and the CDP session isn't fully attached
-		try:
-			await self.browser_session._cdp_add_init_script(init_script)
-		except Exception as e:
-			if "'Page.addScriptToEvaluateOnNewDocument' wasn't found" in str(e):
-				self.logger.debug(f'Page domain not ready for new tab, skipping init script injection: {e}')
-				# The script will be injected when the page actually navigates
-			else:
-				# Re-raise other errors
-				raise
+		return None
 
 	def _get_recent_events_str(self, limit: int = 10) -> str | None:
 		"""Get the most recent events from the event bus as JSON.
