@@ -583,6 +583,57 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
 
+	def _get_key_code_for_char(self, char: str) -> str:
+		"""Get the proper key code for a character (like Playwright does)."""
+		# Key code mapping for common characters
+		key_codes = {
+			' ': 'Space',
+			'.': 'Period',
+			',': 'Comma',
+			'-': 'Minus',
+			'_': 'Underscore',
+			'@': 'At',
+			'!': 'Exclamation',
+			'?': 'Question',
+			':': 'Colon',
+			';': 'Semicolon',
+			'(': 'ParenLeft',
+			')': 'ParenRight',
+			'[': 'BracketLeft',
+			']': 'BracketRight',
+			'{': 'BraceLeft',
+			'}': 'BraceRight',
+			'/': 'Slash',
+			'\\': 'Backslash',
+			'=': 'Equal',
+			'+': 'Plus',
+			'*': 'Asterisk',
+			'&': 'Ampersand',
+			'%': 'Percent',
+			'$': 'Dollar',
+			'#': 'Hash',
+			'^': 'Caret',
+			'~': 'Tilde',
+			'`': 'Backquote',
+			"'": 'Quote',
+			'"': 'DoubleQuote',
+		}
+
+		# Numbers
+		if char.isdigit():
+			return f'Digit{char}'
+
+		# Letters
+		if char.isalpha():
+			return f'Key{char.upper()}'
+
+		# Special characters
+		if char in key_codes:
+			return key_codes[char]
+
+		# Fallback for unknown characters
+		return f'Key{char.upper()}'
+
 	async def _check_element_focusability(self, element_node, object_id: str, session_id: str) -> dict[str, Any]:
 		"""
 		Check if an element is likely to be focusable and visible.
@@ -733,7 +784,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Strategy 1: Try CDP DOM.focus (original method)
 			try:
-				await cdp_session.cdp_client.send.DOM.focus(
+				result = await cdp_session.cdp_client.send.DOM.focus(
 					params={'backendNodeId': backend_node_id},
 					session_id=cdp_session.session_id,
 				)
@@ -808,35 +859,44 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if not focused_successfully:
 				self.logger.warning('⚠️ All focus strategies failed, typing without explicit focus')
 
-			# Type the text character by character
-			for char in text:
-				# Send keydown (without text to avoid duplication)
+				# Type the text character by character using proper human-like key events
+			# This emulates exactly how a human would type, which modern websites expect
+			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
+
+			for i, char in enumerate(text):
+				# Get proper key code for the character
+				key_code = self._get_key_code_for_char(char)
+
+				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (code: {key_code})')
+
+				# Send keyDown event (this is what humans do when pressing a key)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
-						'key': char,
-					},
-					session_id=cdp_session.session_id,
-				)
-				# Send char (for actual text input)
-				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
-					params={
-						'type': 'char',
 						'text': char,
 						'key': char,
+						'code': key_code,
+						'windowsVirtualKeyCode': ord(char.upper()) if char.isalpha() else ord(char),
 					},
 					session_id=cdp_session.session_id,
 				)
-				# Send keyup (without text to avoid duplication)
+
+				# Small delay to emulate human typing speed
+				await asyncio.sleep(0.001)  # 50ms between key down and key up
+
+				# Send keyUp event (this is what humans do when releasing a key)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
 						'key': char,
+						'code': key_code,
+						'windowsVirtualKeyCode': ord(char.upper()) if char.isalpha() else ord(char),
 					},
 					session_id=cdp_session.session_id,
 				)
-				# Small delay between characters
-				await asyncio.sleep(0.01)
+
+				# Small delay between characters to look human (realistic typing speed)
+				await asyncio.sleep(0.001)  # 80ms between characters = ~150 WPM typing speed
 
 			# Return coordinates metadata if available
 			return input_coordinates
