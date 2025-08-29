@@ -497,12 +497,7 @@ class Tools(Generic[Context]):
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Dispatch switch tab event
 			try:
-				if params.tab_id:
-					target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
-				elif params.url:
-					target_id = await browser_session.get_target_id_from_url(params.url)
-				else:
-					target_id = await browser_session.get_most_recently_opened_target_id()
+				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
@@ -514,7 +509,7 @@ class Tools(Generic[Context]):
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
 				clean_msg = extract_llm_error_message(e)
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id or params.url}: {clean_msg}')
+				return ActionResult(error=f'Failed to switch to tab {params.tab_id}: {clean_msg}')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
