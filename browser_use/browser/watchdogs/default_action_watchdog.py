@@ -708,7 +708,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				center_x = bounds['x'] + bounds['width'] / 2
 				center_y = bounds['y'] + bounds['height'] / 2
 				input_coordinates = {'input_x': center_x, 'input_y': center_y}
-				self.logger.debug(f'📍 Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
+				self.logger.debug(f'Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
 
 			# Provide helpful warnings for common issues
 			if not element_info.get('visible', False):

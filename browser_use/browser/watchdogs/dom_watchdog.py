@@ -164,10 +164,10 @@ class DOMWatchdog(BaseWatchdog):
 		self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got page URL: {page_url}')
 		if self.browser_session.agent_focus:
 			self.logger.debug(
-				f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
+				f'Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
 			)
 		else:
-			self.logger.debug(f'📍 Current page URL: {page_url}, no cdp_session attached')
+			self.logger.debug(f'Current page URL: {page_url}, no cdp_session attached')
 
 		# check if we should skip DOM tree build for pointless pages
 		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')

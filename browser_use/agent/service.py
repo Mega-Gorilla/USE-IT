@@ -1160,7 +1160,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		unique_urls = list(set(found_urls))
 		# If multiple URLs found, skip directly_open_urling
 		if len(unique_urls) > 1:
-			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
+			self.logger.debug(f'Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
 			return None
 
 		# If exactly one URL found, return it
