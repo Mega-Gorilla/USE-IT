@@ -285,13 +285,13 @@ class Tools(Generic[Context]):
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
+				if params.while_holding_ctrl:
+					memory += ' and opened in new tab'
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
 
 				# Include click coordinates in metadata if available
 				return ActionResult(
-					extracted_content=memory,
-					include_in_memory=True,
 					long_term_memory=memory,
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
