@@ -203,7 +203,6 @@ class BrowserSession(BaseModel):
 
 	# Access session fields directly, browser settings via profile or property
 	print(session.id)  # Session field
-	print(session.browser_profile.stealth)  # Direct browser_profile access
 	```
 	"""
 
@@ -219,7 +218,7 @@ class BrowserSession(BaseModel):
 		# Core configuration
 		id: str | None = None,
 		cdp_url: str | None = None,
-		is_local: bool = True,
+		is_local: bool = False,
 		browser_profile: BrowserProfile | None = None,
 		# BrowserProfile fields that can be passed directly
 		# From BrowserConnectArgs
@@ -252,7 +251,6 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
-		stealth: bool | None = None,
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
 		allowed_domains: list[str] | None = None,
@@ -272,6 +270,12 @@ class BrowserSession(BaseModel):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
 		profile_kwargs = {k: v for k, v in locals().items() if k not in ['self', 'browser_profile', 'id'] and v is not None}
+
+		# if is_local is False but executable_path is provided, set is_local to True
+		if is_local is False and executable_path is not None:
+			profile_kwargs['is_local'] = True
+		if not cdp_url:
+			profile_kwargs['is_local'] = True
 
 		# Create browser profile from direct parameters or use provided one
 		if browser_profile is not None:
@@ -580,10 +584,18 @@ class BrowserSession(BaseModel):
 				# Use current tab
 				target_id = target_id or self.agent_focus.target_id
 
-			# Activate target (bring to foreground)
-			await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-			# which does this for us:
-			# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			# Only switch tab if we're not already on the target tab
+			if self.agent_focus is None or self.agent_focus.target_id != target_id:
+				self.logger.debug(
+					f'[on_NavigateToUrlEvent] Switching to target tab {target_id[-4:]} (current: {self.agent_focus.target_id[-4:] if self.agent_focus else "none"})'
+				)
+				# Activate target (bring to foreground)
+				await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
+				# which does this for us:
+				# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			else:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Already on target tab {target_id[-4:]}, skipping SwitchTabEvent')
+
 			assert self.agent_focus is not None and self.agent_focus.target_id == target_id, (
 				'Agent focus not updated to new target_id after SwitchTabEvent should have switched to it'
 			)
@@ -601,8 +613,8 @@ class BrowserSession(BaseModel):
 				session_id=self.agent_focus.session_id,
 			)
 
-			# Wait a bit to ensure page starts loading
-			await asyncio.sleep(0.5)
+			# # Wait a bit to ensure page starts loading
+			# await asyncio.sleep(0.5)
 
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
@@ -841,6 +853,8 @@ class BrowserSession(BaseModel):
 			cdp_url=self.cdp_url if should_use_new_socket else None,
 		)
 		self._cdp_session_pool[target_id] = session
+		# log length of _cdp_session_pool
+		self.logger.debug(f'[get_or_create_cdp_session] new _cdp_session_pool length: {len(self._cdp_session_pool)}')
 
 		# Only change agent focus if requested
 		if focus:
@@ -1515,6 +1529,9 @@ class BrowserSession(BaseModel):
 
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
+		if not self.browser_profile.highlight_elements:
+			return
+
 		try:
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()

@@ -452,7 +452,7 @@ class DOMWatchdog(BaseWatchdog):
 			self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: ✅ Selector maps updated, {len(self.selector_map)} elements')
 
 			# Inject highlighting for visual feedback if we have elements
-			if self.selector_map and self._dom_service:
+			if self.selector_map and self._dom_service and self.browser_session.browser_profile.highlight_elements:
 				try:
 					self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Injecting highlighting script...')
 					from browser_use.dom.debug.highlights import inject_highlighting_script
