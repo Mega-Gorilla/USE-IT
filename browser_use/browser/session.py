@@ -698,8 +698,8 @@ class BrowserSession(BaseModel):
 		"""Handle tab closure - update focus if needed."""
 
 		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
+		event = await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
 		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
-		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
 
 	async def on_TabClosedEvent(self, event: TabClosedEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
