@@ -1737,7 +1737,7 @@ class BrowserSession(BaseModel):
 		"""
 		if target_id:
 			# Set viewport for specific target
-			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
+			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False, new_socket=False)
 		elif self.agent_focus:
 			# Use current focus
 			cdp_session = self.agent_focus
