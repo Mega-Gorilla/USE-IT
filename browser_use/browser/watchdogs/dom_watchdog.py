@@ -400,6 +400,8 @@ class DOMWatchdog(BaseWatchdog):
 					)
 				except Exception as e:
 					self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to inject highlighting: {e}')
+			elif self.selector_map and self._dom_service and not self.browser_session.browser_profile.highlight_elements:
+				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Skipping highlighting injection - highlight_elements=False')
 
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ COMPLETED DOM tree build')
 			return self.current_dom_state
