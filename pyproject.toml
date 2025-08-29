@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.4.2"
+version = "0.7.0"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -12,31 +12,35 @@ classifiers = [
 ]
 dependencies = [
     "aiofiles>=24.1.0",
+    "aiohttp==3.12.15",
     "anyio>=4.9.0",
-    "bubus>=1.2.2",
+    "bubus>=1.5.4",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
     "markdownify==1.1.0",
-    "mem0ai>=0.1.106",
-    "patchright>=1.52.5",
-    "playwright>=1.52.0",
     "portalocker>=2.7.0,<3.0.0",
     "posthog>=3.7.0",
     "psutil>=7.0.0",
     "pydantic>=2.11.5",
     "pyobjc>=11.0; platform_system == 'darwin'",
-    "pyperclip>=1.9.0",
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
     "screeninfo>=0.8.1; platform_system != 'darwin'",
     "typing-extensions>=4.12.2",
     "uuid7>=0.1.0",
     "authlib>=1.6.0",
-    "google-genai>=1.21.1",
-    "openai>=1.81.0",
-    "anthropic>=0.54.0",
-    "groq>=0.28.0",
+    "google-genai==1.29.0",
+    "openai==1.99.2",
+    "anthropic==0.58.2",
+    "groq>=0.30.0",
     "ollama>=0.5.1",
+    "google-api-python-client>=2.174.0",
+    "google-auth>=2.40.3",
+    "google-auth-oauthlib>=1.2.2",
+    "mcp>=1.10.1",
+    "pypdf>=5.7.0",
+    "cdp-use>=1.4.0",
+    "markdown-pdf==1.5",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -61,16 +65,18 @@ examples = [
     # botocore: only needed for Bedrock Claude boto3 examples/models/bedrock_claude.py
     "botocore>=1.37.23",
     "imgcat>=0.6.0",
-    "stagehand-py>=0.3.6",
-    "browserbase>=0.4.0",
+    # "stagehand-py>=0.3.6",
+    # "browserbase>=0.4.0",
     "langchain-openai>=0.3.26",
 ]
 eval = [
-    "lmnr[all]>=0.6.11",
+    "lmnr[all]==0.7.6",
     "anyio>=4.9.0",
     "Pillow>=11.2.1",
     "psutil>=7.0.0",
     "datamodel-code-generator>=0.26.0",
+    "hyperbrowser==0.47.0",
+    "browserbase==1.4.0",
 ]
 all = [
     "browser-use[cli,examples,aws]",
@@ -84,9 +90,6 @@ all = [
 [project.urls]
 Repository = "https://github.com/browser-use/browser-use"
 
-[project.scripts]
-browseruse = "browser_use.cli:main"
-browser-use = "browser_use.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -116,7 +119,9 @@ skip-magic-trailing-comma = false
 
 [tool.pyright]
 typeCheckingMode = "basic"
-exclude = ["tests/old/", ".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/"]
+exclude = [".venv/", ".git/", "__pycache__/", "./test_*.py", "./debug_*.py", "private_example/", "debug/*", "tests/scripts/*", "tests/old/*", "browser_use/dom/playground/*"]
+venvPath = "."
+venv = ".venv"
 
 
 [tool.hatch.build]
@@ -126,8 +131,11 @@ include = [
     "!browser_use/**/tests.py",
     "browser_use/agent/system_prompt.md",
     "browser_use/agent/system_prompt_no_thinking.md",
-    "browser_use/dom/buildDomTree.js",
+    "browser_use/agent/system_prompt_flash.md",
+    "browser_use/py.typed",
+    "browser_use/dom/**/*.js",
     "!tests/**/*.py",
+    "!debug/*",
 ]
 
 [tool.pytest.ini_options]
@@ -181,11 +189,11 @@ dev-dependencies = [
     "ipdb>=0.13.13",
     "pre-commit>=4.2.0",
     "codespell>=2.4.1",
-    "pyright>=1.1.399",
+    "pyright>=1.1.403",
     "ty>=0.0.1a1",
     "pytest-xdist>=3.7.0",
     "pillow>=11.2.1",
-    "lmnr[all]>=0.6.13",
+    "lmnr[all]==0.7.6",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-timeout>=2.4.0",
 ]

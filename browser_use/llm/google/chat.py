@@ -74,6 +74,9 @@ class ChatGoogle(BaseChatModel):
 	# Model configuration
 	model: VerifiedGeminiModels | str
 	temperature: float | None = None
+	top_p: float | None = None
+	seed: int | None = None
+	thinking_budget: int | None = None
 	config: types.GenerateContentConfigDict | None = None
 
 	# Client initialization parameters
@@ -134,7 +137,8 @@ class ChatGoogle(BaseChatModel):
 
 			usage = ChatInvokeUsage(
 				prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-				completion_tokens=response.usage_metadata.candidates_token_count or 0,
+				completion_tokens=(response.usage_metadata.candidates_token_count or 0)
+				+ (response.usage_metadata.thoughts_token_count or 0),
 				total_tokens=response.usage_metadata.total_token_count or 0,
 				prompt_cached_tokens=response.usage_metadata.cached_content_token_count,
 				prompt_cache_creation_tokens=None,
@@ -178,6 +182,16 @@ class ChatGoogle(BaseChatModel):
 		# Add system instruction if present
 		if system_instruction:
 			config['system_instruction'] = system_instruction
+
+		if self.top_p is not None:
+			config['top_p'] = self.top_p
+
+		if self.seed is not None:
+			config['seed'] = self.seed
+
+		if self.thinking_budget is not None:
+			thinking_config_dict: types.ThinkingConfigDict = {'thinking_budget': self.thinking_budget}
+			config['thinking_config'] = thinking_config_dict
 
 		async def _make_api_call():
 			if output_format is None:
@@ -357,6 +371,7 @@ class ChatGoogle(BaseChatModel):
 							key == 'properties'
 							and isinstance(cleaned_value, dict)
 							and len(cleaned_value) == 0
+							and isinstance(obj.get('type', ''), str)
 							and obj.get('type', '').upper() == 'OBJECT'
 						):
 							# Convert empty object to have at least one property
@@ -366,7 +381,8 @@ class ChatGoogle(BaseChatModel):
 
 				# If this is an object type with empty properties, add a placeholder
 				if (
-					cleaned.get('type', '').upper() == 'OBJECT'
+					isinstance(cleaned.get('type', ''), str)
+					and cleaned.get('type', '').upper() == 'OBJECT'
 					and 'properties' in cleaned
 					and isinstance(cleaned['properties'], dict)
 					and len(cleaned['properties']) == 0

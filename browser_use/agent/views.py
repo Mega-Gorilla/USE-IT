@@ -4,7 +4,7 @@ import json
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic
+from typing import Any, Generic, Literal
 
 from openai import RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, model_validator
@@ -13,54 +13,42 @@ from uuid_extensions import uuid7str
 
 from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.browser.views import BrowserStateHistory
-from browser_use.controller.registry.views import ActionModel
-from browser_use.dom.history_tree_processor.service import (
-	DOMElementNode,
-	DOMHistoryElement,
-	HistoryTreeProcessor,
-)
-from browser_use.dom.views import SelectorMap
+from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedElement, DOMSelectorMap
+
+# from browser_use.dom.history_tree_processor.service import (
+# 	DOMElementNode,
+# 	DOMHistoryElement,
+# 	HistoryTreeProcessor,
+# )
+# from browser_use.dom.views import SelectorMap
 from browser_use.filesystem.file_system import FileSystemState
 from browser_use.llm.base import BaseChatModel
 from browser_use.tokens.views import UsageSummary
+from browser_use.tools.registry.views import ActionModel
 
 
 class AgentSettings(BaseModel):
 	"""Configuration options for the Agent"""
 
 	use_vision: bool = True
-	use_vision_for_planner: bool = False
+	vision_detail_level: Literal['auto', 'low', 'high'] = 'auto'
 	save_conversation_path: str | Path | None = None
 	save_conversation_path_encoding: str | None = 'utf-8'
 	max_failures: int = 3
-	retry_delay: int = 10
-	validate_output: bool = False
-	message_context: str | None = None
 	generate_gif: bool | str = False
-	available_file_paths: list[str] | None = None
 	override_system_message: str | None = None
 	extend_system_message: str | None = None
-	include_attributes: list[str] = [
-		'title',
-		'type',
-		'name',
-		'role',
-		'tabindex',
-		'aria-label',
-		'placeholder',
-		'value',
-		'alt',
-		'aria-expanded',
-	]
+	include_attributes: list[str] | None = DEFAULT_INCLUDE_ATTRIBUTES
 	max_actions_per_step: int = 10
 	use_thinking: bool = True
+	flash_mode: bool = False  # If enabled, disables evaluation_previous_goal and next_goal, and sets use_thinking = False
+	max_history_items: int | None = None
 
 	page_extraction_llm: BaseChatModel | None = None
-	planner_llm: BaseChatModel | None = None
-	planner_interval: int = 1  # Run planner every N steps
-	is_planner_reasoning: bool = False  # type: ignore
-	extend_planner_system_message: str | None = None
 	calculate_cost: bool = False
+	include_tool_call_examples: bool = False
+	llm_timeout: int = 60  # Timeout in seconds for LLM calls
+	step_timeout: int = 180  # Timeout in seconds for each step
 
 
 class AgentState(BaseModel):
@@ -70,11 +58,12 @@ class AgentState(BaseModel):
 	n_steps: int = 1
 	consecutive_failures: int = 0
 	last_result: list[ActionResult] | None = None
-	history: AgentHistoryList = Field(default_factory=lambda: AgentHistoryList(history=[], usage=None))
 	last_plan: str | None = None
 	last_model_output: AgentOutput | None = None
 	paused: bool = False
 	stopped: bool = False
+	session_initialized: bool = False  # Track if session events have been dispatched
+	follow_up_task: bool = False  # Track if the agent is a follow-up task
 
 	message_manager_state: MessageManagerState = Field(default_factory=MessageManagerState)
 	file_system_state: FileSystemState | None = None
@@ -113,6 +102,9 @@ class ActionResult(BaseModel):
 	# if update_only_read_state is False we add the extracted_content to the agent long term memory if no long_term_memory is provided
 	extracted_content: str | None = None
 	include_extracted_content_only_once: bool = False  # Whether the extracted content should be used to update the read_state
+
+	# Metadata for observability (e.g., click coordinates)
+	metadata: dict | None = None
 
 	# Deprecated
 	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory
@@ -153,23 +145,29 @@ class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
 	thinking: str | None = None
-	evaluation_previous_goal: str
-	memory: str
-	next_goal: str
+	evaluation_previous_goal: str | None = None
+	memory: str | None = None
+	next_goal: str | None = None
 	action: list[ActionModel] = Field(
 		...,
 		description='List of actions to execute',
 		json_schema_extra={'min_items': 1},  # Ensure at least one action is provided
 	)
 
+	@classmethod
+	def model_json_schema(cls, **kwargs):
+		schema = super().model_json_schema(**kwargs)
+		schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
+		return schema
+
 	@property
 	def current_state(self) -> AgentBrain:
 		"""For backward compatibility - returns an AgentBrain with the flattened properties"""
 		return AgentBrain(
 			thinking=self.thinking,
-			evaluation_previous_goal=self.evaluation_previous_goal,
-			memory=self.memory,
-			next_goal=self.next_goal,
+			evaluation_previous_goal=self.evaluation_previous_goal if self.evaluation_previous_goal else '',
+			memory=self.memory if self.memory else '',
+			next_goal=self.next_goal if self.next_goal else '',
 		)
 
 	@staticmethod
@@ -192,24 +190,55 @@ class AgentOutput(BaseModel):
 	def type_with_custom_actions_no_thinking(custom_actions: type[ActionModel]) -> type[AgentOutput]:
 		"""Extend actions with custom actions and exclude thinking field"""
 
-		# Create a base model without thinking, but inheriting from AgentOutput
-		# Override only the fields we need to change
-		model_ = create_model(
+		class AgentOutputNoThinking(AgentOutput):
+			@classmethod
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
+				del schema['properties']['thinking']
+				schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
+				return schema
+
+		model = create_model(
 			'AgentOutput',
-			__base__=AgentOutput,
-			thinking=(
-				type(None),  # type: ignore
-				Field(default=None, exclude=True),
-			),  # Exclude thinking from schema
+			__base__=AgentOutputNoThinking,
 			action=(
 				list[custom_actions],  # type: ignore
 				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
 			),
-			__module__=AgentOutput.__module__,
+			__module__=AgentOutputNoThinking.__module__,
 		)
 
-		model_.__doc__ = 'AgentOutput model with custom actions'
-		return model_
+		model.__doc__ = 'AgentOutput model with custom actions'
+		return model
+
+	@staticmethod
+	def type_with_custom_actions_flash_mode(custom_actions: type[ActionModel]) -> type[AgentOutput]:
+		"""Extend actions with custom actions for flash mode - memory and action fields only"""
+
+		class AgentOutputFlashMode(AgentOutput):
+			@classmethod
+			def model_json_schema(cls, **kwargs):
+				schema = super().model_json_schema(**kwargs)
+				# Remove thinking, evaluation_previous_goal, and next_goal fields
+				del schema['properties']['thinking']
+				del schema['properties']['evaluation_previous_goal']
+				del schema['properties']['next_goal']
+				# Update required fields to only include remaining properties
+				schema['required'] = ['memory', 'action']
+				return schema
+
+		model = create_model(
+			'AgentOutput',
+			__base__=AgentOutputFlashMode,
+			action=(
+				list[custom_actions],  # type: ignore
+				Field(..., description='List of actions to execute', json_schema_extra={'min_items': 1}),
+			),
+			__module__=AgentOutputFlashMode.__module__,
+		)
+
+		model.__doc__ = 'AgentOutput model with custom actions'
+		return model
 
 
 class AgentHistory(BaseModel):
@@ -223,13 +252,13 @@ class AgentHistory(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, protected_namespaces=())
 
 	@staticmethod
-	def get_interacted_element(model_output: AgentOutput, selector_map: SelectorMap) -> list[DOMHistoryElement | None]:
+	def get_interacted_element(model_output: AgentOutput, selector_map: DOMSelectorMap) -> list[DOMInteractedElement | None]:
 		elements = []
 		for action in model_output.action:
 			index = action.get_index()
 			if index is not None and index in selector_map:
-				el: DOMElementNode = selector_map[index]
-				elements.append(HistoryTreeProcessor.convert_dom_element_to_history_element(el))
+				el = selector_map[index]
+				elements.append(DOMInteractedElement.load_from_enhanced_dom_tree(el))
 			else:
 				elements.append(None)
 		return elements
@@ -285,6 +314,10 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 	def __str__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
 		return f'AgentHistoryList(all_results={self.action_results()}, all_model_outputs={self.model_actions()})'
+
+	def add_item(self, history_item: AgentHistory) -> None:
+		"""Add a history item to the list"""
+		self.history.append(history_item)
 
 	def __repr__(self) -> str:
 		"""Representation of the AgentHistoryList object"""
@@ -400,9 +433,39 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		"""Get all unique URLs from history"""
 		return [h.state.url if h.state.url is not None else None for h in self.history]
 
-	def screenshots(self) -> list[str | None]:
-		"""Get all screenshots from history"""
-		return [h.state.screenshot if h.state.screenshot is not None else None for h in self.history]
+	def screenshot_paths(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshot paths from history"""
+		if n_last == 0:
+			return []
+		if n_last is None:
+			if return_none_if_not_screenshot:
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history]
+			else:
+				return [h.state.screenshot_path for h in self.history if h.state.screenshot_path is not None]
+		else:
+			if return_none_if_not_screenshot:
+				return [h.state.screenshot_path if h.state.screenshot_path is not None else None for h in self.history[-n_last:]]
+			else:
+				return [h.state.screenshot_path for h in self.history[-n_last:] if h.state.screenshot_path is not None]
+
+	def screenshots(self, n_last: int | None = None, return_none_if_not_screenshot: bool = True) -> list[str | None]:
+		"""Get all screenshots from history as base64 strings"""
+		if n_last == 0:
+			return []
+
+		history_items = self.history if n_last is None else self.history[-n_last:]
+		screenshots = []
+
+		for item in history_items:
+			screenshot_b64 = item.state.get_screenshot()
+			if screenshot_b64:
+				screenshots.append(screenshot_b64)
+			else:
+				if return_none_if_not_screenshot:
+					screenshots.append(None)
+				# If return_none_if_not_screenshot is False, we skip None values
+
+		return screenshots
 
 	def action_names(self) -> list[str]:
 		"""Get all action names from history"""
@@ -428,11 +491,33 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 		for h in self.history:
 			if h.model_output:
-				for action, interacted_element in zip(h.model_output.action, h.state.interacted_element):
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				for action, interacted_element in zip(h.model_output.action, interacted_elements):
 					output = action.model_dump(exclude_none=True)
 					output['interacted_element'] = interacted_element
 					outputs.append(output)
 		return outputs
+
+	def action_history(self) -> list[list[dict]]:
+		"""Get truncated action history with only essential fields"""
+		step_outputs = []
+
+		for h in self.history:
+			step_actions = []
+			if h.model_output:
+				# Guard against None interacted_element before zipping
+				interacted_elements = h.state.interacted_element or [None] * len(h.model_output.action)
+				# Zip actions with interacted elements and results
+				for action, interacted_element, result in zip(h.model_output.action, interacted_elements, h.result):
+					action_output = action.model_dump(exclude_none=True)
+					action_output['interacted_element'] = interacted_element
+					# Only keep long_term_memory from result
+					action_output['result'] = result.long_term_memory if result and result.long_term_memory else None
+					step_actions.append(action_output)
+			step_outputs.append(step_actions)
+
+		return step_outputs
 
 	def action_results(self) -> list[ActionResult]:
 		"""Get all results from history"""

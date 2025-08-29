@@ -1,11 +1,13 @@
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import Any, Literal, TypeVar, overload
 
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from openai.types.chat import ChatCompletionContentPartTextParam
 from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.shared.chat_model import ChatModel
+from openai.types.shared_params.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.response_format_json_schema import JSONSchema, ResponseFormatJSONSchema
 from pydantic import BaseModel
 
@@ -18,6 +20,18 @@ from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
 
+ReasoningModels: list[ChatModel | str] = [
+	'o4-mini',
+	'o3',
+	'o3-mini',
+	'o1',
+	'o1-pro',
+	'o3-pro',
+	'gpt-5',
+	'gpt-5-mini',
+	'gpt-5-nano',
+]
+
 
 @dataclass
 class ChatOpenAI(BaseChatModel):
@@ -25,14 +39,20 @@ class ChatOpenAI(BaseChatModel):
 	A wrapper around AsyncOpenAI that implements the BaseLLM protocol.
 
 	This class accepts all AsyncOpenAI parameters while adding model
-	and temperature parameters for the LLM interface.
+	and temperature parameters for the LLM interface (if temperature it not `None`).
 	"""
 
 	# Model configuration
 	model: ChatModel | str
 
 	# Model params
-	temperature: float | None = None
+	temperature: float | None = 0.2
+	frequency_penalty: float | None = 0.3  # this avoids infinite generation of \t for models like 4.1-mini
+	reasoning_effort: ReasoningEffort = 'low'
+	seed: int | None = None
+	service_tier: Literal['auto', 'default', 'flex', 'priority', 'scale'] | None = None
+	top_p: float | None = None
+	add_schema_to_system_prompt: bool = False  # Add JSON schema to system prompt instead of using response_format
 
 	# Client initialization parameters
 	api_key: str | None = None
@@ -41,11 +61,12 @@ class ChatOpenAI(BaseChatModel):
 	base_url: str | httpx.URL | None = None
 	websocket_base_url: str | httpx.URL | None = None
 	timeout: float | httpx.Timeout | None = None
-	max_retries: int = 10  # Increase default retries for automation reliability
+	max_retries: int = 5  # Increase default retries for automation reliability
 	default_headers: Mapping[str, str] | None = None
 	default_query: Mapping[str, object] | None = None
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
+	max_completion_tokens: int | None = 4096
 
 	# Static
 	@property
@@ -92,8 +113,15 @@ class ChatOpenAI(BaseChatModel):
 		return str(self.model)
 
 	def _get_usage(self, response: ChatCompletion) -> ChatInvokeUsage | None:
-		usage = (
-			ChatInvokeUsage(
+		if response.usage is not None:
+			completion_tokens = response.usage.completion_tokens
+			completion_token_details = response.usage.completion_tokens_details
+			if completion_token_details is not None:
+				reasoning_tokens = completion_token_details.reasoning_tokens
+				if reasoning_tokens is not None:
+					completion_tokens += reasoning_tokens
+
+			usage = ChatInvokeUsage(
 				prompt_tokens=response.usage.prompt_tokens,
 				prompt_cached_tokens=response.usage.prompt_tokens_details.cached_tokens
 				if response.usage.prompt_tokens_details is not None
@@ -101,12 +129,12 @@ class ChatOpenAI(BaseChatModel):
 				prompt_cache_creation_tokens=None,
 				prompt_image_tokens=None,
 				# Completion
-				completion_tokens=response.usage.completion_tokens,
+				completion_tokens=completion_tokens,
 				total_tokens=response.usage.total_tokens,
 			)
-			if response.usage is not None
-			else None
-		)
+		else:
+			usage = None
+
 		return usage
 
 	@overload
@@ -132,10 +160,37 @@ class ChatOpenAI(BaseChatModel):
 		openai_messages = OpenAIMessageSerializer.serialize_messages(messages)
 
 		try:
+			model_params: dict[str, Any] = {}
+
+			if self.temperature is not None:
+				model_params['temperature'] = self.temperature
+
+			if self.frequency_penalty is not None:
+				model_params['frequency_penalty'] = self.frequency_penalty
+
+			if self.max_completion_tokens is not None:
+				model_params['max_completion_tokens'] = self.max_completion_tokens
+
+			if self.top_p is not None:
+				model_params['top_p'] = self.top_p
+
+			if self.seed is not None:
+				model_params['seed'] = self.seed
+
+			if self.service_tier is not None:
+				model_params['service_tier'] = self.service_tier
+
+			if any(str(m).lower() in str(self.model).lower() for m in ReasoningModels):
+				model_params['reasoning_effort'] = self.reasoning_effort
+				del model_params['temperature']
+				del model_params['frequency_penalty']
+
 			if output_format is None:
 				# Return string response
 				response = await self.get_client().chat.completions.create(
-					model=self.model, messages=openai_messages, temperature=self.temperature
+					model=self.model,
+					messages=openai_messages,
+					**model_params,
 				)
 
 				usage = self._get_usage(response)
@@ -151,12 +206,22 @@ class ChatOpenAI(BaseChatModel):
 					'schema': SchemaOptimizer.create_optimized_json_schema(output_format),
 				}
 
+				# Add JSON schema to system prompt if requested
+				if self.add_schema_to_system_prompt and openai_messages and openai_messages[0]['role'] == 'system':
+					schema_text = f'\n<json_schema>\n{response_format}\n</json_schema>'
+					if isinstance(openai_messages[0]['content'], str):
+						openai_messages[0]['content'] += schema_text
+					elif isinstance(openai_messages[0]['content'], Iterable):
+						openai_messages[0]['content'] = list(openai_messages[0]['content']) + [
+							ChatCompletionContentPartTextParam(text=schema_text, type='text')
+						]
+
 				# Return structured response
 				response = await self.get_client().chat.completions.create(
 					model=self.model,
 					messages=openai_messages,
-					temperature=self.temperature,
 					response_format=ResponseFormatJSONSchema(json_schema=response_format, type='json_schema'),
+					**model_params,
 				)
 
 				if response.choices[0].message.content is None:
