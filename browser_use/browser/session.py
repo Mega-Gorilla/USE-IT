@@ -536,6 +536,18 @@ class BrowserSession(BaseModel):
 
 		target_id = None
 
+		# If new_tab=True but we're already in a new tab, set new_tab=False
+		if event.new_tab:
+			try:
+				current_url = await self.get_current_page_url()
+				from browser_use.utils import is_new_tab_page
+
+				if is_new_tab_page(current_url):
+					self.logger.debug(f'[on_NavigateToUrlEvent] Already in new tab ({current_url}), setting new_tab=False')
+					event.new_tab = False
+			except Exception as e:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Could not check current URL: {e}')
+
 		# check if the url is already open in a tab somewhere that we're not currently on, if so, short-circuit and just switch to it
 		targets = await self._cdp_get_all_pages()
 		for target in targets:
