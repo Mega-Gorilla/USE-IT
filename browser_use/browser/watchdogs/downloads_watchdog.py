@@ -654,7 +654,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		return False
 
 	async def _check_network_headers_for_pdf(self, target_id: TargetID) -> bool:
-		"""Check network response headers for PDF content-type."""
+		"""Infer PDF via navigation history/URL; headers are not available post-navigation in this context."""
 		try:
 			import asyncio
 
