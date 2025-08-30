@@ -39,7 +39,8 @@ from browser_use.browser.events import (
 from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
-from browser_use.utils import _log_pretty_url, is_new_tab_page
+from browser_use.observability import observe_debug
+from browser_use.utils import _log_pretty_url, is_new_tab_page, time_execution_async
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -264,6 +265,7 @@ class BrowserSession(BaseModel):
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
 		highlight_elements: bool | None = None,
+		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
 	):
@@ -811,6 +813,8 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
+	@time_execution_async('get_or_create_cdp_session')
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_or_create_cdp_session')
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
 	) -> CDPSession:
@@ -892,7 +896,7 @@ class BrowserSession(BaseModel):
 		return self.agent_focus.session_id if self.agent_focus else None
 
 	# ========== Helper Methods ==========
-
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
 		cache_clickable_elements_hashes: bool = True,
@@ -1343,6 +1347,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_tabs')
 	async def get_tabs(self) -> list[TabInfo]:
 		"""Get information about all open tabs using CDP Target.getTargetInfo for speed."""
 		tabs = []
@@ -1421,6 +1426,7 @@ class BrowserSession(BaseModel):
 				return target
 		return None
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_current_page_url')
 	async def get_current_page_url(self) -> str:
 		"""Get the URL of the current page using CDP."""
 		target = await self.get_current_target_info()

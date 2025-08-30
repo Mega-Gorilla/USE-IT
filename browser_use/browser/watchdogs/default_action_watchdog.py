@@ -582,6 +582,76 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
 
+	def _get_char_modifiers_and_vk(self, char: str) -> tuple[int, int, str]:
+		"""Get modifiers, virtual key code, and base key for a character.
+
+		Returns:
+			(modifiers, windowsVirtualKeyCode, base_key)
+		"""
+		# Characters that require Shift modifier
+		shift_chars = {
+			'!': ('1', 49),
+			'@': ('2', 50),
+			'#': ('3', 51),
+			'$': ('4', 52),
+			'%': ('5', 53),
+			'^': ('6', 54),
+			'&': ('7', 55),
+			'*': ('8', 56),
+			'(': ('9', 57),
+			')': ('0', 48),
+			'_': ('-', 189),
+			'+': ('=', 187),
+			'{': ('[', 219),
+			'}': (']', 221),
+			'|': ('\\', 220),
+			':': (';', 186),
+			'"': ("'", 222),
+			'<': (',', 188),
+			'>': ('.', 190),
+			'?': ('/', 191),
+			'~': ('`', 192),
+		}
+
+		# Check if character requires Shift
+		if char in shift_chars:
+			base_key, vk_code = shift_chars[char]
+			return (8, vk_code, base_key)  # Shift=8
+
+		# Uppercase letters require Shift
+		if char.isupper():
+			return (8, ord(char), char.lower())  # Shift=8
+
+		# Lowercase letters
+		if char.islower():
+			return (0, ord(char.upper()), char)
+
+		# Numbers
+		if char.isdigit():
+			return (0, ord(char), char)
+
+		# Special characters without Shift
+		no_shift_chars = {
+			' ': 32,
+			'-': 189,
+			'=': 187,
+			'[': 219,
+			']': 221,
+			'\\': 220,
+			';': 186,
+			"'": 222,
+			',': 188,
+			'.': 190,
+			'/': 191,
+			'`': 192,
+		}
+
+		if char in no_shift_chars:
+			return (0, no_shift_chars[char], char)
+
+		# Fallback
+		return (0, ord(char.upper()) if char.isalpha() else ord(char), char)
+
 	def _get_key_code_for_char(self, char: str) -> str:
 		"""Get the proper key code for a character (like Playwright does)."""
 		# Key code mapping for common characters (using proper base keys + modifiers)
@@ -638,23 +708,23 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Strategy 1: Direct JavaScript value setting (most reliable for modern web apps)
 			self.logger.debug('🧹 Clearing text field using JavaScript value setting')
-			
+
 			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 				params={
-					'functionDeclaration': '''
+					'functionDeclaration': """
 						function() { 
 							this.value = ""; 
 							this.dispatchEvent(new Event("input", { bubbles: true })); 
 							this.dispatchEvent(new Event("change", { bubbles: true })); 
 							return this.value;
 						}
-					''',
+					""",
 					'objectId': object_id,
 					'returnByValue': True,
 				},
 				session_id=cdp_session.session_id,
 			)
-			
+
 			# Verify clearing worked by checking the value
 			verify_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 				params={
@@ -664,21 +734,21 @@ class DefaultActionWatchdog(BaseWatchdog):
 				},
 				session_id=cdp_session.session_id,
 			)
-			
+
 			current_value = verify_result.get('result', {}).get('value', '')
 			if not current_value:
 				self.logger.debug('✅ Text field cleared successfully using JavaScript')
 				return True
 			else:
 				self.logger.debug(f'⚠️ JavaScript clear partially failed, field still contains: "{current_value}"')
-		
+
 		except Exception as e:
 			self.logger.debug(f'JavaScript clear failed: {e}')
-		
+
 		# Strategy 2: Triple-click + Delete (fallback for stubborn fields)
 		try:
 			self.logger.debug('🧹 Fallback: Clearing using triple-click + Delete')
-			
+
 			# Get element center coordinates for triple-click
 			bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 				params={
@@ -688,12 +758,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 				},
 				session_id=cdp_session.session_id,
 			)
-			
+
 			if bounds_result.get('result', {}).get('value'):
 				bounds = bounds_result['result']['value']
 				center_x = bounds['x'] + bounds['width'] / 2
 				center_y = bounds['y'] + bounds['height'] / 2
-				
+
 				# Triple-click to select all text
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
@@ -715,7 +785,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=cdp_session.session_id,
 				)
-				
+
 				# Delete selected text
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
@@ -733,16 +803,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=cdp_session.session_id,
 				)
-				
+
 				self.logger.debug('✅ Text field cleared using triple-click + Delete')
 				return True
-		
+
 		except Exception as e:
 			self.logger.debug(f'Triple-click clear failed: {e}')
-		
+
 		# Strategy 3: Keyboard shortcuts (last resort)
 		try:
 			import platform
+
 			is_macos = platform.system() == 'Darwin'
 			select_all_modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
 			modifier_name = 'Cmd' if is_macos else 'Ctrl'
@@ -925,19 +996,20 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
 			for i, char in enumerate(text):
-				# Get proper key code for the character
-				key_code = self._get_key_code_for_char(char)
+				# Get proper modifiers, VK code, and base key for the character
+				modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
+				key_code = self._get_key_code_for_char(base_key)
 
-				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (code: {key_code})')
+				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (base_key: {base_key}, code: {key_code}, modifiers: {modifiers}, vk: {vk_code})')
 
-				# Send keyDown event (this is what humans do when pressing a key)
+				# Step 1: Send keyDown event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
-						'text': char,
-						'key': char,
+						'key': base_key,
 						'code': key_code,
-						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
@@ -945,13 +1017,24 @@ class DefaultActionWatchdog(BaseWatchdog):
 				# Small delay to emulate human typing speed
 				await asyncio.sleep(0.001)
 
-				# Send keyUp event (this is what humans do when releasing a key)
+				# Step 2: Send char event (WITH text parameter) - this is crucial for text input
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'char',
+						'text': char,
+						'key': char,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				# Step 3: Send keyUp event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
-						'key': char,
+						'key': base_key,
 						'code': key_code,
-						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
