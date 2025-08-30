@@ -435,7 +435,12 @@ class DOMTreeSerializer:
 			# Add element with interactive_index if clickable, scrollable, or iframe
 			is_any_scrollable = node.original_node.is_actually_scrollable or node.original_node.is_scrollable
 			should_show_scroll = node.original_node.should_show_scroll_info
-			if node.interactive_index is not None or is_any_scrollable or node.original_node.tag_name.upper() == 'IFRAME':
+			if (
+				node.interactive_index is not None
+				or is_any_scrollable
+				or node.original_node.tag_name.upper() == 'IFRAME'
+				or node.original_node.tag_name.upper() == 'FRAME'
+			):
 				next_depth += 1
 
 				# Build attributes string
@@ -453,6 +458,9 @@ class DOMTreeSerializer:
 				elif node.original_node.tag_name.upper() == 'IFRAME':
 					# Iframe element (not interactive)
 					line = f'{depth_str}|IFRAME|<{node.original_node.tag_name}'
+				elif node.original_node.tag_name.upper() == 'FRAME':
+					# Frame element (not interactive)
+					line = f'{depth_str}|FRAME|<{node.original_node.tag_name}'
 				else:
 					line = f'{depth_str}<{node.original_node.tag_name}'
 
