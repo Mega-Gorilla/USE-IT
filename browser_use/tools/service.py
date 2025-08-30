@@ -65,26 +65,19 @@ Context = TypeVar('Context')
 T = TypeVar('T', bound=BaseModel)
 
 
-def extract_llm_error_message(error: Exception) -> str:
-	"""
-	Extract the clean error message from an exception that may contain <llm_error_msg> tags.
-
-	If the tags are found, returns the content between them.
-	Otherwise, returns the original error string.
-	"""
-	import re
-
-	error_str = str(error)
-
-	# Look for content between <llm_error_msg> tags
-	pattern = r'<llm_error_msg>(.*?)</llm_error_msg>'
-	match = re.search(pattern, error_str, re.DOTALL)
-
-	if match:
-		return match.group(1).strip()
-
-	# Fallback: return the original error string
-	return error_str
+def handle_browser_error(e: BrowserError) -> ActionResult:
+	if e.long_term_memory is not None:
+		if e.short_term_memory is not None:
+			return ActionResult(
+				extracted_content=e.short_term_memory, error=e.long_term_memory, include_extracted_content_only_once=True
+			)
+		else:
+			return ActionResult(error=e.long_term_memory)
+	# Fallback to original error handling if long_term_memory is None
+	logger.warning(
+		'⚠️ A BrowserError was raised without long_term_memory - always set long_term_memory when raising BrowserError to propagate right messages to LLM.'
+	)
+	raise e
 
 
 class Tools(Generic[Context]):
@@ -177,11 +170,10 @@ class Tools(Generic[Context]):
 				memory = f"Searched Google for '{params.query}'"
 				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to search Google: {e}')
-				clean_msg = extract_llm_error_message(e)
-				return ActionResult(error=f'Failed to search Google for "{params.query}": {clean_msg}')
+				return ActionResult(error=f'Failed to search Google for "{params.query}": {str(e)}')
 
 		@self.registry.action(
 			'Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab', param_model=GoToUrlAction
@@ -201,12 +193,11 @@ class Tools(Generic[Context]):
 					msg = f'🔗 {memory}'
 
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=msg, long_term_memory=memory)
 			except Exception as e:
 				error_msg = str(e)
 				# Always log the actual error first for debugging
 				browser_session.logger.error(f'❌ Navigation failed: {error_msg}')
-				clean_msg = extract_llm_error_message(e)
 
 				# Check if it's specifically a RuntimeError about CDP client
 				if isinstance(e, RuntimeError) and 'CDP client not initialized' in error_msg:
@@ -223,12 +214,12 @@ class Tools(Generic[Context]):
 						'net::',
 					]
 				):
-					site_unavailable_msg = f'Site unavailable: {params.url} - {error_msg}'
-					browser_session.logger.warning(f'⚠️ {site_unavailable_msg}')
+					site_unavailable_msg = f'Navigation failed - site unavailable: {params.url}'
+					browser_session.logger.warning(f'⚠️ {site_unavailable_msg} - {error_msg}')
 					return ActionResult(error=site_unavailable_msg)
 				else:
 					# Return error in ActionResult instead of re-raising
-					return ActionResult(error=f'Navigation failed: {clean_msg}')
+					return ActionResult(error=f'Navigation failed: {str(e)}')
 
 		@self.registry.action('Go back', param_model=NoParamsAction)
 		async def go_back(_: NoParamsAction, browser_session: BrowserSession):
@@ -241,8 +232,7 @@ class Tools(Generic[Context]):
 				return ActionResult(extracted_content=memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch GoBackEvent: {type(e).__name__}: {e}')
-				clean_msg = extract_llm_error_message(e)
-				error_msg = f'Failed to go back: {clean_msg}'
+				error_msg = f'Failed to go back: {str(e)}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -285,23 +275,18 @@ class Tools(Generic[Context]):
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
+				if params.while_holding_ctrl:
+					memory += ' and opened in new tab'
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
 
 				# Include click coordinates in metadata if available
 				return ActionResult(
-					extracted_content=memory,
-					include_in_memory=True,
 					long_term_memory=memory,
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
-			except Exception as e:
-				logger.error(f'Failed to execute ClickElementEvent: {type(e).__name__}: {e}')
-				clean_msg = extract_llm_error_message(e)
-				error_msg = f'Failed to click element {params.index}: {clean_msg}'
-
-				# If it's a select dropdown error, automatically get the dropdown options
-				if 'dropdown' in str(e) and node:
+			except BrowserError as e:
+				if 'Cannot click on <select> elements.' in str(e):
 					try:
 						return await get_dropdown_options(
 							params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
@@ -311,6 +296,9 @@ class Tools(Generic[Context]):
 							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
 						)
 
+				return handle_browser_error(e)
+			except Exception as e:
+				error_msg = f'Failed to click element {params.index}: {str(e)}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -336,10 +324,11 @@ class Tools(Generic[Context]):
 				# Include input coordinates in metadata if available
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f"Input '{params.text}' into element {params.index}.",
 					metadata=input_metadata if isinstance(input_metadata, dict) else None,
 				)
+			except BrowserError as e:
+				return handle_browser_error(e)
 			except Exception as e:
 				# Log the full error for debugging
 				logger.error(f'Failed to dispatch TypeTextEvent: {type(e).__name__}: {e}')
@@ -370,27 +359,28 @@ class Tools(Generic[Context]):
 							if not browser_session.is_local:
 								pass
 							else:
-								raise BrowserError(
-									f'File path {params.path} is not available. Must be in available_file_paths, downloaded_files, or a file managed by file_system.'
-								)
+								msg = f'File path {params.path} is not available. Upload files must be in available_file_paths, downloaded_files, or a file managed by file_system.'
+								logger.error(f'❌ {msg}')
+								return ActionResult(error=msg)
 					else:
 						# If browser is remote, allow passing a remote-accessible absolute path
 						if not browser_session.is_local:
 							pass
 						else:
-							raise BrowserError(
-								f'File path {params.path} is not available. Must be in available_file_paths or downloaded_files.'
-							)
+							msg = f'File path {params.path} is not available. Upload files must be in available_file_paths, downloaded_files, or a file managed by file_system.'
+							raise BrowserError(message=msg, long_term_memory=msg)
 
 			# For local browsers, ensure the file exists on the local filesystem
 			if browser_session.is_local:
 				if not os.path.exists(params.path):
-					raise BrowserError(f'File {params.path} does not exist')
+					msg = f'File {params.path} does not exist'
+					return ActionResult(error=msg)
 
 			# Get the selector map to find the node
 			selector_map = await browser_session.get_selector_map()
 			if params.index not in selector_map:
-				raise BrowserError(f'Element with index {params.index} not found in selector map')
+				msg = f'Element with index {params.index} does not exist.'
+				return ActionResult(error=msg)
 
 			node = selector_map[params.index]
 
@@ -486,7 +476,6 @@ class Tools(Generic[Context]):
 				logger.info(f'📁 {msg}')
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f'Uploaded file {params.path} to element {params.index}',
 				)
 			except Exception as e:
@@ -499,12 +488,7 @@ class Tools(Generic[Context]):
 		async def switch_tab(params: SwitchTabAction, browser_session: BrowserSession):
 			# Dispatch switch tab event
 			try:
-				if params.tab_id:
-					target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
-				elif params.url:
-					target_id = await browser_session.get_target_id_from_url(params.url)
-				else:
-					target_id = await browser_session.get_most_recently_opened_target_id()
+				target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
@@ -512,11 +496,10 @@ class Tools(Generic[Context]):
 				assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
 				memory = f'Switched to Tab with ID {new_target_id[-4:]}'
 				logger.info(f'🔄  {memory}')
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
-				clean_msg = extract_llm_error_message(e)
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id or params.url}: {clean_msg}')
+				return ActionResult(error=f'Failed to switch to tab {params.tab_id}.')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
@@ -535,13 +518,11 @@ class Tools(Generic[Context]):
 				logger.info(f'🗑️  {memory}')
 				return ActionResult(
 					extracted_content=memory,
-					include_in_memory=True,
 					long_term_memory=memory,
 				)
 			except Exception as e:
 				logger.error(f'Failed to close tab: {e}')
-				clean_msg = extract_llm_error_message(e)
-				return ActionResult(error=f'Failed to close tab {params.tab_id}: {clean_msg}')
+				return ActionResult(error=f'Failed to close tab {params.tab_id}.')
 
 		# Content Actions
 
@@ -697,11 +678,10 @@ Provide the extracted information in a clear, structured format."""
 
 				msg = f'🔍 {long_term_memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=msg, include_in_memory=True, long_term_memory=long_term_memory)
+				return ActionResult(extracted_content=msg, long_term_memory=long_term_memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
-				clean_msg = extract_llm_error_message(e)
-				error_msg = f'Failed to scroll: {clean_msg}'
+				error_msg = 'Failed to execute scroll action.'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -717,11 +697,10 @@ Provide the extracted information in a clear, structured format."""
 				memory = f'Sent keys: {params.keys}'
 				msg = f'⌨️  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
-				clean_msg = extract_llm_error_message(e)
-				error_msg = f'Failed to send keys: {clean_msg}'
+				error_msg = f'Failed to send keys: {str(e)}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
@@ -737,14 +716,13 @@ Provide the extracted information in a clear, structured format."""
 				memory = f'Scrolled to text: {text}'
 				msg = f'🔍  {memory}'
 				logger.info(msg)
-				return ActionResult(extracted_content=memory, include_in_memory=True, long_term_memory=memory)
+				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				# Text not found
 				msg = f"Text '{text}' not found or not visible on page"
 				logger.info(msg)
 				return ActionResult(
 					extracted_content=msg,
-					include_in_memory=True,
 					long_term_memory=f"Tried scrolling to text '{text}' but it was not found",
 				)
 
@@ -762,7 +740,6 @@ Provide the extracted information in a clear, structured format."""
 				raise ValueError(f'Element index {params.index} not found in DOM')
 
 			# Dispatch GetDropdownOptionsEvent to the event handler
-			import json
 
 			event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 			dropdown_data = await event.event_result(timeout=3.0, raise_if_none=True, raise_if_any=True)
@@ -770,14 +747,10 @@ Provide the extracted information in a clear, structured format."""
 			if not dropdown_data:
 				raise ValueError('Failed to get dropdown options - no data returned')
 
-			# Extract the message from the returned data
-			msg = dropdown_data.get('message', '')
-			options_count = len(json.loads(dropdown_data.get('options', '[]')))  # Parse the string back to list to get count
-
+			# Use structured memory from the handler
 			return ActionResult(
-				extracted_content=msg,
-				include_in_memory=True,
-				long_term_memory=f'Found {options_count} dropdown options for index {params.index}',
+				extracted_content=dropdown_data['short_term_memory'],
+				long_term_memory=dropdown_data['long_term_memory'],
 				include_extracted_content_only_once=True,
 			)
 
@@ -801,14 +774,28 @@ Provide the extracted information in a clear, structured format."""
 			if not selection_data:
 				raise ValueError('Failed to select dropdown option - no data returned')
 
-			# Extract the message from the returned data
-			msg = selection_data.get('message', f'Selected option: {params.text}')
-
-			return ActionResult(
-				extracted_content=msg,
-				include_in_memory=True,
-				long_term_memory=f"Selected dropdown option '{params.text}' at index {params.index}",
-			)
+			# Check if the selection was successful
+			if selection_data.get('success') == 'true':
+				# Extract the message from the returned data
+				msg = selection_data.get('message', f'Selected option: {params.text}')
+				return ActionResult(
+					extracted_content=msg,
+					include_in_memory=True,
+					long_term_memory=f"Selected dropdown option '{params.text}' at index {params.index}",
+				)
+			else:
+				# Handle structured error response
+				# TODO: raise BrowserError instead of returning ActionResult
+				if 'short_term_memory' in selection_data and 'long_term_memory' in selection_data:
+					return ActionResult(
+						extracted_content=selection_data['short_term_memory'],
+						long_term_memory=selection_data['long_term_memory'],
+						include_extracted_content_only_once=True,
+					)
+				else:
+					# Fallback to regular error
+					error_msg = selection_data.get('error', f'Failed to select option: {params.text}')
+					return ActionResult(error=error_msg)
 
 		# File System Actions
 		@self.registry.action(
@@ -831,7 +818,7 @@ Provide the extracted information in a clear, structured format."""
 			else:
 				result = await file_system.write_file(file_name, content)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+			return ActionResult(extracted_content=result, long_term_memory=result)
 
 		@self.registry.action(
 			'Replace old_str with new_str in file_name. old_str must exactly match the string to replace in original text. Recommended tool to mark completed items in todo.md or change specific contents in a file.'
@@ -839,7 +826,7 @@ Provide the extracted information in a clear, structured format."""
 		async def replace_file_str(file_name: str, old_str: str, new_str: str, file_system: FileSystem):
 			result = await file_system.replace_file_str(file_name, old_str, new_str)
 			logger.info(f'💾 {result}')
-			return ActionResult(extracted_content=result, include_in_memory=True, long_term_memory=result)
+			return ActionResult(extracted_content=result, long_term_memory=result)
 
 		@self.registry.action('Read file_name from file system')
 		async def read_file(file_name: str, available_file_paths: list[str], file_system: FileSystem):
@@ -866,7 +853,6 @@ Provide the extracted information in a clear, structured format."""
 			logger.info(f'💾 {memory}')
 			return ActionResult(
 				extracted_content=result,
-				include_in_memory=True,
 				long_term_memory=memory,
 				include_extracted_content_only_once=True,
 			)
@@ -1001,12 +987,16 @@ Provide the extracted information in a clear, structured format."""
 							sensitive_data=sensitive_data,
 							available_file_paths=available_file_paths,
 						)
+					except BrowserError as e:
+						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
+						result = handle_browser_error(e)
+					except TimeoutError as e:
+						logger.error(f'❌ Action {action_name} failed with TimeoutError: {str(e)}')
+						result = ActionResult(error=f'{action_name} was not executed due to timeout.')
 					except Exception as e:
 						# Log the original exception with traceback for observability
-						logger.error(f"Action '{action_name}' failed")
-						# Extract clean error message from llm_error_msg tags if present
-						clean_msg = extract_llm_error_message(e)
-						result = ActionResult(error=clean_msg)
+						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
+						result = ActionResult(error=str(e))
 
 					if Laminar is not None:
 						Laminar.set_span_output(result)
