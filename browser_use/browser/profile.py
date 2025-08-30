@@ -583,9 +583,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# --- UI/viewport/DOM ---
 
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
-	display_highlights_on_screen: bool = Field(
-		default=True, description='Display highlights directly on the browser screen in addition to screenshots.'
-	)
 
 	# --- Downloads ---
 	auto_download_pdfs: bool = Field(

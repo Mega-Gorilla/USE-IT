@@ -94,7 +94,7 @@ def draw_enhanced_bounding_box_with_text(
 		try:
 			# Use much bigger font size for index (5x bigger base)
 			huge_font = None
-			font_size = 32  # Much bigger than the original 16
+			font_size = 35  # Much bigger than the original 16
 			try:
 				huge_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
 			except (OSError, IOError):
@@ -118,8 +118,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Much bigger padding (5x bigger)
-			padding = 20
+			# No padding - container fits exactly around the number
+			padding = 10
 			element_width = x2 - x1
 			element_height = y2 - y1
 
