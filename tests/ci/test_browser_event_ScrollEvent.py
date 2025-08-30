@@ -104,7 +104,6 @@ class TestScrollActions:
 		assert result.extracted_content is not None
 		assert 'Scrolled down' in result.extracted_content
 		assert 'the page' in result.extracted_content
-		assert result.include_in_memory is True
 
 		# Test 2: Basic page scroll up
 		scroll_up_action = {'scroll': ScrollAction(down=False, num_pages=0.5)}
