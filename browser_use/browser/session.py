@@ -813,6 +813,7 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_or_create_cdp_session')
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
 	) -> CDPSession:
@@ -1345,6 +1346,7 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_tabs')
 	async def get_tabs(self) -> list[TabInfo]:
 		"""Get information about all open tabs using CDP Target.getTargetInfo for speed."""
 		tabs = []
@@ -1423,6 +1425,7 @@ class BrowserSession(BaseModel):
 				return target
 		return None
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_current_page_url')
 	async def get_current_page_url(self) -> str:
 		"""Get the URL of the current page using CDP."""
 		target = await self.get_current_target_info()
