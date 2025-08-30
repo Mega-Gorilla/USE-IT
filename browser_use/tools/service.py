@@ -993,6 +993,9 @@ Provide the extracted information in a clear, structured format."""
 					except BrowserError as e:
 						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
 						result = handle_browser_error(e)
+					except TimeoutError as e:
+						logger.error(f'❌ Action {action_name} failed with TimeoutError: {str(e)}')
+						result = ActionResult(error=f'{action_name} was not executed due to timeout.')
 					except Exception as e:
 						# Log the original exception with traceback for observability
 						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
