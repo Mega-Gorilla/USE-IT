@@ -3,7 +3,6 @@
 import asyncio
 import json
 import platform
-from typing import Any
 
 from browser_use.browser.events import (
 	ClickElementEvent,
@@ -592,80 +591,349 @@ class DefaultActionWatchdog(BaseWatchdog):
 		except Exception as e:
 			raise Exception(f'Failed to type to page: {str(e)}')
 
-	async def _check_element_focusability(self, element_node, object_id: str, session_id: str) -> dict[str, Any]:
-		"""
-		Check if an element is likely to be focusable and visible.
+	def _get_char_modifiers_and_vk(self, char: str) -> tuple[int, int, str]:
+		"""Get modifiers, virtual key code, and base key for a character.
 
 		Returns:
-			Dict with keys: 'visible', 'focusable', 'interactive', 'disabled'
+			(modifiers, windowsVirtualKeyCode, base_key)
 		"""
-		try:
-			cdp_client = self.browser_session.cdp_client
+		# Characters that require Shift modifier
+		shift_chars = {
+			'!': ('1', 49),
+			'@': ('2', 50),
+			'#': ('3', 51),
+			'$': ('4', 52),
+			'%': ('5', 53),
+			'^': ('6', 54),
+			'&': ('7', 55),
+			'*': ('8', 56),
+			'(': ('9', 57),
+			')': ('0', 48),
+			'_': ('-', 189),
+			'+': ('=', 187),
+			'{': ('[', 219),
+			'}': (']', 221),
+			'|': ('\\', 220),
+			':': (';', 186),
+			'"': ("'", 222),
+			'<': (',', 188),
+			'>': ('.', 190),
+			'?': ('/', 191),
+			'~': ('`', 192),
+		}
 
-			# Run comprehensive element checks via JavaScript
-			check_result = await cdp_client.send.Runtime.callFunctionOn(
+		# Check if character requires Shift
+		if char in shift_chars:
+			base_key, vk_code = shift_chars[char]
+			return (8, vk_code, base_key)  # Shift=8
+
+		# Uppercase letters require Shift
+		if char.isupper():
+			return (8, ord(char), char.lower())  # Shift=8
+
+		# Lowercase letters
+		if char.islower():
+			return (0, ord(char.upper()), char)
+
+		# Numbers
+		if char.isdigit():
+			return (0, ord(char), char)
+
+		# Special characters without Shift
+		no_shift_chars = {
+			' ': 32,
+			'-': 189,
+			'=': 187,
+			'[': 219,
+			']': 221,
+			'\\': 220,
+			';': 186,
+			"'": 222,
+			',': 188,
+			'.': 190,
+			'/': 191,
+			'`': 192,
+		}
+
+		if char in no_shift_chars:
+			return (0, no_shift_chars[char], char)
+
+		# Fallback
+		return (0, ord(char.upper()) if char.isalpha() else ord(char), char)
+
+	def _get_key_code_for_char(self, char: str) -> str:
+		"""Get the proper key code for a character (like Playwright does)."""
+		# Key code mapping for common characters (using proper base keys + modifiers)
+		key_codes = {
+			' ': 'Space',
+			'.': 'Period',
+			',': 'Comma',
+			'-': 'Minus',
+			'_': 'Minus',  # Underscore uses Minus with Shift
+			'@': 'Digit2',  # @ uses Digit2 with Shift
+			'!': 'Digit1',  # ! uses Digit1 with Shift (not 'Exclamation')
+			'?': 'Slash',  # ? uses Slash with Shift
+			':': 'Semicolon',  # : uses Semicolon with Shift
+			';': 'Semicolon',
+			'(': 'Digit9',  # ( uses Digit9 with Shift
+			')': 'Digit0',  # ) uses Digit0 with Shift
+			'[': 'BracketLeft',
+			']': 'BracketRight',
+			'{': 'BracketLeft',  # { uses BracketLeft with Shift
+			'}': 'BracketRight',  # } uses BracketRight with Shift
+			'/': 'Slash',
+			'\\': 'Backslash',
+			'=': 'Equal',
+			'+': 'Equal',  # + uses Equal with Shift
+			'*': 'Digit8',  # * uses Digit8 with Shift
+			'&': 'Digit7',  # & uses Digit7 with Shift
+			'%': 'Digit5',  # % uses Digit5 with Shift
+			'$': 'Digit4',  # $ uses Digit4 with Shift
+			'#': 'Digit3',  # # uses Digit3 with Shift
+			'^': 'Digit6',  # ^ uses Digit6 with Shift
+			'~': 'Backquote',  # ~ uses Backquote with Shift
+			'`': 'Backquote',
+			"'": 'Quote',
+			'"': 'Quote',  # " uses Quote with Shift
+		}
+
+		# Numbers
+		if char.isdigit():
+			return f'Digit{char}'
+
+		# Letters
+		if char.isalpha():
+			return f'Key{char.upper()}'
+
+		# Special characters
+		if char in key_codes:
+			return key_codes[char]
+
+		# Fallback for unknown characters
+		return f'Key{char.upper()}'
+
+	async def _clear_text_field(self, object_id: str, cdp_session) -> bool:
+		"""Clear text field using multiple strategies, starting with the most reliable."""
+		try:
+			# Strategy 1: Direct JavaScript value setting (most reliable for modern web apps)
+			self.logger.debug('🧹 Clearing text field using JavaScript value setting')
+
+			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 				params={
 					'functionDeclaration': """
-						function() {
-							const element = this;
-							const computedStyle = window.getComputedStyle(element);
-							const rect = element.getBoundingClientRect();
-							
-							// Check basic visibility
-							const isVisible = rect.width > 0 && rect.height > 0 && 
-								computedStyle.visibility !== 'hidden' && 
-								computedStyle.display !== 'none' &&
-								computedStyle.opacity !== '0';
-								
-							// Check if element is disabled
-							const isDisabled = element.disabled || element.hasAttribute('disabled') ||
-								element.getAttribute('aria-disabled') === 'true';
-								
-							// Check if element is focusable by tag and attributes
-							const focusableTags = ['input', 'textarea', 'select', 'button', 'a'];
-							const hasFocusableTag = focusableTags.includes(element.tagName.toLowerCase());
-							const hasTabIndex = element.hasAttribute('tabindex') && element.tabIndex >= 0;
-							const isContentEditable = element.contentEditable === 'true';
-							
-							const isFocusable = !isDisabled && (hasFocusableTag || hasTabIndex || isContentEditable);
-							
-							// Check if element is interactive (clickable/editable)
-							const isInteractive = isFocusable || element.onclick !== null || 
-								element.getAttribute('role') === 'button' ||
-								element.classList.contains('clickable');
-								
-							return {
-								visible: isVisible,
-								focusable: isFocusable,
-								interactive: isInteractive,
-								disabled: isDisabled,
-								bounds: {
-									x: rect.left,
-									y: rect.top,
-									width: rect.width,
-									height: rect.height
-								},
-								tagName: element.tagName.toLowerCase(),
-								type: element.type || null
-							};
+						function() { 
+							this.value = ""; 
+							this.dispatchEvent(new Event("input", { bubbles: true })); 
+							this.dispatchEvent(new Event("change", { bubbles: true })); 
+							return this.value;
 						}
 					""",
 					'objectId': object_id,
 					'returnByValue': True,
 				},
-				session_id=session_id,
+				session_id=cdp_session.session_id,
 			)
 
-			if 'result' in check_result and 'value' in check_result['result']:
-				return check_result['result']['value']
-			else:
-				self.logger.debug('Element focusability check returned no results')
-				return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
-		except Exception as e:
-			self.logger.debug(f'Element focusability check failed: {e}')
-			return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
+			# Verify clearing worked by checking the value
+			verify_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.value; }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
 
-	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True) -> dict | None:
+			current_value = verify_result.get('result', {}).get('value', '')
+			if not current_value:
+				self.logger.debug('✅ Text field cleared successfully using JavaScript')
+				return True
+			else:
+				self.logger.debug(f'⚠️ JavaScript clear partially failed, field still contains: "{current_value}"')
+
+		except Exception as e:
+			self.logger.debug(f'JavaScript clear failed: {e}')
+
+		# Strategy 2: Triple-click + Delete (fallback for stubborn fields)
+		try:
+			self.logger.debug('🧹 Fallback: Clearing using triple-click + Delete')
+
+			# Get element center coordinates for triple-click
+			bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			if bounds_result.get('result', {}).get('value'):
+				bounds = bounds_result['result']['value']
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+
+				# Triple-click to select all text
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				# Delete selected text
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				self.logger.debug('✅ Text field cleared using triple-click + Delete')
+				return True
+
+		except Exception as e:
+			self.logger.debug(f'Triple-click clear failed: {e}')
+
+		# Strategy 3: Keyboard shortcuts (last resort)
+		try:
+			import platform
+
+			is_macos = platform.system() == 'Darwin'
+			select_all_modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
+			modifier_name = 'Cmd' if is_macos else 'Ctrl'
+
+			self.logger.debug(f'🧹 Last resort: Clearing using {modifier_name}+A + Backspace')
+
+			# Select all text (Ctrl/Cmd+A)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyDown',
+					'key': 'a',
+					'code': 'KeyA',
+					'modifiers': select_all_modifier,
+				},
+				session_id=cdp_session.session_id,
+			)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyUp',
+					'key': 'a',
+					'code': 'KeyA',
+					'modifiers': select_all_modifier,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			# Delete selected text (Backspace)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyDown',
+					'key': 'Backspace',
+					'code': 'Backspace',
+				},
+				session_id=cdp_session.session_id,
+			)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyUp',
+					'key': 'Backspace',
+					'code': 'Backspace',
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			self.logger.debug('✅ Text field cleared using keyboard shortcuts')
+			return True
+
+		except Exception as e:
+			self.logger.debug(f'All clearing strategies failed: {e}')
+			return False
+
+	async def _focus_element_simple(
+		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
+	) -> bool:
+		"""Simple focus strategy: CDP first, then click if failed."""
+
+		# Strategy 1: Try CDP DOM.focus first
+		try:
+			result = await cdp_session.cdp_client.send.DOM.focus(
+				params={'backendNodeId': backend_node_id},
+				session_id=cdp_session.session_id,
+			)
+			self.logger.debug(f'Element focused using CDP DOM.focus (result: {result})')
+			return True
+
+		except Exception as e:
+			self.logger.debug(f'❌ CDP DOM.focus threw exception: {type(e).__name__}: {e}')
+
+		# Strategy 2: Try click to focus if CDP failed
+		if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
+			try:
+				click_x = input_coordinates['input_x']
+				click_y = input_coordinates['input_y']
+
+				self.logger.debug(f'🎯 Attempting click-to-focus at ({click_x:.1f}, {click_y:.1f})')
+
+				# Click to focus
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': click_x,
+						'y': click_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': click_x,
+						'y': click_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				self.logger.debug('✅ Element focused using click method')
+				return True
+
+			except Exception as e:
+				self.logger.debug(f'Click focus failed: {e}')
+
+		# Both strategies failed
+		self.logger.warning('⚠️ All focus strategies failed')
+		return False
+
+	async def _input_text_element_node_impl(
+		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True
+	) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
 		"""
@@ -691,7 +959,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
 				)
-				await asyncio.sleep(0.1)
+				await asyncio.sleep(0.01)
 			except Exception as e:
 				self.logger.warning(
 					f'⚠️ Failed to focus the page {cdp_session} and scroll element {element_node} into view before typing in text: {type(e).__name__}: {e}'
@@ -707,127 +975,58 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			object_id = result['object']['objectId']
 
-			# Check element focusability before attempting focus
-			element_info = await self._check_element_focusability(element_node, object_id, cdp_session.session_id)
-			self.logger.debug(f'Element focusability check: {element_info}')
-
-			# Extract coordinates from element bounds for metadata
-			bounds = element_info.get('bounds', {})
-			if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
-				center_x = bounds['x'] + bounds['width'] / 2
-				center_y = bounds['y'] + bounds['height'] / 2
+			# Use element_node absolute_position coordinates (correct coordinates including iframe offsets)
+			if element_node.absolute_position:
+				center_x = element_node.absolute_position.x + element_node.absolute_position.width / 2
+				center_y = element_node.absolute_position.y + element_node.absolute_position.height / 2
 				input_coordinates = {'input_x': center_x, 'input_y': center_y}
-				self.logger.debug(f'📍 Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
+				self.logger.debug(f'Using absolute_position coordinates: x={center_x:.1f}, y={center_y:.1f}')
+			else:
+				input_coordinates = None
+				self.logger.warning('⚠️ No absolute_position available for element')
 
-			# Provide helpful warnings for common issues
-			if not element_info.get('visible', False):
-				self.logger.warning('⚠️ Target element appears to be invisible or has zero dimensions')
-			if element_info.get('disabled', False):
-				self.logger.warning('⚠️ Target element appears to be disabled')
-			if not element_info.get('focusable', False):
-				self.logger.warning('⚠️ Target element may not be focusable by standard criteria')
+			# Ensure we have a valid object_id before proceeding
+			if not object_id:
+				raise ValueError('Could not get object_id for element')
 
-			# Clear existing text if requested
-			if clear_existing:
-				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; if (this.textContent !== undefined) this.textContent = ""; }',
-						'objectId': object_id,
-					},
-					session_id=cdp_session.session_id,
-				)
+			# Step 1: Focus the element using simple strategy
+			focused_successfully = await self._focus_element_simple(
+				backend_node_id=backend_node_id, object_id=object_id, cdp_session=cdp_session, input_coordinates=input_coordinates
+			)
 
-			# Try multiple focus strategies
-			focused_successfully = False
+			# Step 2: Clear existing text if requested
+			if clear_existing and focused_successfully:
+				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				if not cleared_successfully:
+					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
 
-			# Strategy 1: Try CDP DOM.focus (original method)
-			try:
-				await cdp_session.cdp_client.send.DOM.focus(
-					params={'backendNodeId': backend_node_id},
-					session_id=cdp_session.session_id,
-				)
-				focused_successfully = True
-				self.logger.debug('✅ Element focused using CDP DOM.focus')
-			except Exception as e:
-				self.logger.debug(f'CDP DOM.focus failed: {e}')
+			# Step 3: Type the text character by character using proper human-like key events
+			# This emulates exactly how a human would type, which modern websites expect
+			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
-				# Strategy 2: Try JavaScript focus as fallback
-				try:
-					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-						params={
-							'functionDeclaration': 'function() { this.focus(); }',
-							'objectId': object_id,
-						},
-						session_id=cdp_session.session_id,
-					)
-					focused_successfully = True
-					self.logger.debug('✅ Element focused using JavaScript focus()')
-				except Exception as js_e:
-					self.logger.debug(f'JavaScript focus failed: {js_e}')
+			for i, char in enumerate(text):
+				# Get proper modifiers, VK code, and base key for the character
+				modifiers, vk_code, base_key = self._get_char_modifiers_and_vk(char)
+				key_code = self._get_key_code_for_char(base_key)
 
-					# Strategy 3: Try click-to-focus for stubborn elements
-					try:
-						await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-							params={
-								'functionDeclaration': 'function() { this.click(); this.focus(); }',
-								'objectId': object_id,
-							},
-							session_id=cdp_session.session_id,
-						)
-						focused_successfully = True
-						self.logger.debug('✅ Element focused using click + focus combination')
-					except Exception as click_e:
-						self.logger.debug(f'Click + focus failed: {click_e}')
+				# self.logger.debug(f'🎯 Typing character {i + 1}/{len(text)}: "{char}" (base_key: {base_key}, code: {key_code}, modifiers: {modifiers}, vk: {vk_code})')
 
-						# Strategy 4: Try simulated mouse click for maximum compatibility
-						try:
-							# Use coordinates already calculated from element bounds
-							if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
-								click_x = input_coordinates['input_x']
-								click_y = input_coordinates['input_y']
-
-								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-									params={
-										'type': 'mousePressed',
-										'x': click_x,
-										'y': click_y,
-										'button': 'left',
-										'clickCount': 1,
-									},
-									session_id=cdp_session.session_id,
-								)
-								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-									params={
-										'type': 'mouseReleased',
-										'x': click_x,
-										'y': click_y,
-										'button': 'left',
-										'clickCount': 1,
-									},
-									session_id=cdp_session.session_id,
-								)
-								focused_successfully = True
-								self.logger.debug('✅ Element focused using simulated mouse click')
-							else:
-								self.logger.debug('Element bounds not available for mouse click')
-						except Exception as mouse_e:
-							self.logger.debug(f'Simulated mouse click failed: {mouse_e}')
-
-			# Log focus result
-			if not focused_successfully:
-				self.logger.warning('⚠️ All focus strategies failed, typing without explicit focus')
-
-			# Type the text character by character
-			for char in text:
-				# Send keydown (without text to avoid duplication)
+				# Step 1: Send keyDown event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyDown',
-						'key': char,
+						'key': base_key,
+						'code': key_code,
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
-				# Send char (for actual text input)
+
+				# Small delay to emulate human typing speed
+				await asyncio.sleep(0.001)
+
+				# Step 2: Send char event (WITH text parameter) - this is crucial for text input
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'char',
@@ -836,16 +1035,21 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=cdp_session.session_id,
 				)
-				# Send keyup (without text to avoid duplication)
+
+				# Step 3: Send keyUp event (NO text parameter)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 					params={
 						'type': 'keyUp',
-						'key': char,
+						'key': base_key,
+						'code': key_code,
+						'modifiers': modifiers,
+						'windowsVirtualKeyCode': vk_code,
 					},
 					session_id=cdp_session.session_id,
 				)
-				# Small delay between characters
-				await asyncio.sleep(0.01)
+
+				# Small delay between characters to look human (realistic typing speed)
+				await asyncio.sleep(0.001)
 
 			# Return coordinates metadata if available
 			return input_coordinates

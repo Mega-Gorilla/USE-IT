@@ -12,6 +12,7 @@ from cdp_use.cdp.target.types import SessionID, TargetID, TargetInfo
 from uuid_extensions import uuid7str
 
 from browser_use.dom.utils import cap_text_length
+from browser_use.observability import observe_debug
 
 # Serializer types
 DEFAULT_INCLUDE_ATTRIBUTES = [
@@ -412,6 +413,25 @@ class EnhancedDOMTreeNode:
 
 		return f'<{self.tag_name}>{cap_text_length(self.get_all_children_text(), max_text_length) or ""}'
 
+	def get_meaningful_text_for_llm(self) -> str:
+		"""
+		Get the meaningful text content that the LLM actually sees for this element.
+		This matches exactly what goes into the DOMTreeSerializer output.
+		"""
+		meaningful_text = ''
+		if hasattr(self, 'attributes') and self.attributes:
+			# Priority order: value, aria-label, title, placeholder, alt, text content
+			for attr in ['value', 'aria-label', 'title', 'placeholder', 'alt']:
+				if attr in self.attributes and self.attributes[attr]:
+					meaningful_text = self.attributes[attr]
+					break
+
+		# Fallback to text content if no meaningful attributes
+		if not meaningful_text:
+			meaningful_text = self.get_all_children_text()
+
+		return meaningful_text.strip()
+
 	@property
 	def is_actually_scrollable(self) -> bool:
 		"""
@@ -677,6 +697,7 @@ class SerializedDOMState:
 
 	selector_map: DOMSelectorMap
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='llm_representation')
 	def llm_representation(
 		self,
 		include_attributes: list[str] | None = None,
