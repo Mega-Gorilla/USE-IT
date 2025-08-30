@@ -584,38 +584,38 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	def _get_key_code_for_char(self, char: str) -> str:
 		"""Get the proper key code for a character (like Playwright does)."""
-		# Key code mapping for common characters
+		# Key code mapping for common characters (using proper base keys + modifiers)
 		key_codes = {
 			' ': 'Space',
 			'.': 'Period',
 			',': 'Comma',
 			'-': 'Minus',
-			'_': 'Underscore',
-			'@': 'At',
-			'!': 'Exclamation',
-			'?': 'Question',
-			':': 'Colon',
+			'_': 'Minus',  # Underscore uses Minus with Shift
+			'@': 'Digit2',  # @ uses Digit2 with Shift
+			'!': 'Digit1',  # ! uses Digit1 with Shift (not 'Exclamation')
+			'?': 'Slash',  # ? uses Slash with Shift
+			':': 'Semicolon',  # : uses Semicolon with Shift
 			';': 'Semicolon',
-			'(': 'ParenLeft',
-			')': 'ParenRight',
+			'(': 'Digit9',  # ( uses Digit9 with Shift
+			')': 'Digit0',  # ) uses Digit0 with Shift
 			'[': 'BracketLeft',
 			']': 'BracketRight',
-			'{': 'BraceLeft',
-			'}': 'BraceRight',
+			'{': 'BracketLeft',  # { uses BracketLeft with Shift
+			'}': 'BracketRight',  # } uses BracketRight with Shift
 			'/': 'Slash',
 			'\\': 'Backslash',
 			'=': 'Equal',
-			'+': 'Plus',
-			'*': 'Asterisk',
-			'&': 'Ampersand',
-			'%': 'Percent',
-			'$': 'Dollar',
-			'#': 'Hash',
-			'^': 'Caret',
-			'~': 'Tilde',
+			'+': 'Equal',  # + uses Equal with Shift
+			'*': 'Digit8',  # * uses Digit8 with Shift
+			'&': 'Digit7',  # & uses Digit7 with Shift
+			'%': 'Digit5',  # % uses Digit5 with Shift
+			'$': 'Digit4',  # $ uses Digit4 with Shift
+			'#': 'Digit3',  # # uses Digit3 with Shift
+			'^': 'Digit6',  # ^ uses Digit6 with Shift
+			'~': 'Backquote',  # ~ uses Backquote with Shift
 			'`': 'Backquote',
 			"'": 'Quote',
-			'"': 'DoubleQuote',
+			'"': 'Quote',  # " uses Quote with Shift
 		}
 
 		# Numbers
@@ -636,16 +636,22 @@ class DefaultActionWatchdog(BaseWatchdog):
 	async def _clear_text_field(self, object_id: str, cdp_session) -> None:
 		"""Clear text field using human-like Ctrl+A + Backspace approach."""
 		try:
-			self.logger.debug('🧹 Clearing text field using Ctrl+A + Backspace')
+			# Use Meta (Cmd) on macOS, Ctrl on other platforms
+			import platform
 
-			# Select all text (Ctrl+A)
+			is_macos = platform.system() == 'Darwin'
+			select_all_modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
+			modifier_name = 'Cmd' if is_macos else 'Ctrl'
+
+			self.logger.debug(f'🧹 Clearing text field using {modifier_name}+A + Backspace')
+
+			# Select all text (Ctrl/Cmd+A)
 			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 				params={
 					'type': 'keyDown',
 					'key': 'a',
 					'code': 'KeyA',
-					'modifiers': 2,  # Ctrl modifier
-					'windowsVirtualKeyCode': 65,
+					'modifiers': select_all_modifier,
 				},
 				session_id=cdp_session.session_id,
 			)
@@ -654,8 +660,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'type': 'keyUp',
 					'key': 'a',
 					'code': 'KeyA',
-					'modifiers': 2,  # Ctrl modifier
-					'windowsVirtualKeyCode': 65,
+					'modifiers': select_all_modifier,
 				},
 				session_id=cdp_session.session_id,
 			)
@@ -841,7 +846,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						'text': char,
 						'key': char,
 						'code': key_code,
-						'windowsVirtualKeyCode': ord(char.upper()) if char.isalpha() else ord(char),
+						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
 					},
 					session_id=cdp_session.session_id,
 				)
@@ -855,7 +860,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						'type': 'keyUp',
 						'key': char,
 						'code': key_code,
-						'windowsVirtualKeyCode': ord(char.upper()) if char.isalpha() else ord(char),
+						# Omit windowsVirtualKeyCode for printable chars to avoid wrong VK codes
 					},
 					session_id=cdp_session.session_id,
 				)
