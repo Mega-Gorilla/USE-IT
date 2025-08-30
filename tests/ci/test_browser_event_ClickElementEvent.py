@@ -260,7 +260,11 @@ class TestClickElementEvent:
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
-		assert result.extracted_content is not None
+		result_text = result.extracted_content or result.long_term_memory
+		assert result_text is not None
+		assert f'Clicked element with index {link_index}' in result_text, (
+			f'Expected click confirmation in result content, got: {result_text}'
+		)
 
 		# Verify that a new tab was opened
 		tabs = await browser_session.get_tabs()
