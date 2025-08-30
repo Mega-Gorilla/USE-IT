@@ -585,7 +585,9 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
 
 	# --- Downloads ---
-	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
+	auto_download_pdfs: bool = Field(
+		default=False, description='Automatically download PDFs when navigating to PDF viewer pages.'
+	)
 
 	profile_directory: str = 'Default'  # e.g. 'Profile 1', 'Profile 2', 'Custom Profile', etc.
 

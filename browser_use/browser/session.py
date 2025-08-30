@@ -537,6 +537,18 @@ class BrowserSession(BaseModel):
 
 		target_id = None
 
+		# If new_tab=True but we're already in a new tab, set new_tab=False
+		if event.new_tab:
+			try:
+				current_url = await self.get_current_page_url()
+				from browser_use.utils import is_new_tab_page
+
+				if is_new_tab_page(current_url):
+					self.logger.debug(f'[on_NavigateToUrlEvent] Already in new tab ({current_url}), setting new_tab=False')
+					event.new_tab = False
+			except Exception as e:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Could not check current URL: {e}')
+
 		# check if the url is already open in a tab somewhere that we're not currently on, if so, short-circuit and just switch to it
 		targets = await self._cdp_get_all_pages()
 		for target in targets:
@@ -585,10 +597,18 @@ class BrowserSession(BaseModel):
 				# Use current tab
 				target_id = target_id or self.agent_focus.target_id
 
-			# Activate target (bring to foreground)
-			await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-			# which does this for us:
-			# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			# Only switch tab if we're not already on the target tab
+			if self.agent_focus is None or self.agent_focus.target_id != target_id:
+				self.logger.debug(
+					f'[on_NavigateToUrlEvent] Switching to target tab {target_id[-4:]} (current: {self.agent_focus.target_id[-4:] if self.agent_focus else "none"})'
+				)
+				# Activate target (bring to foreground)
+				await self.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
+				# which does this for us:
+				# self.agent_focus = await self.get_or_create_cdp_session(target_id)
+			else:
+				self.logger.debug(f'[on_NavigateToUrlEvent] Already on target tab {target_id[-4:]}, skipping SwitchTabEvent')
+
 			assert self.agent_focus is not None and self.agent_focus.target_id == target_id, (
 				'Agent focus not updated to new target_id after SwitchTabEvent should have switched to it'
 			)
@@ -606,8 +626,8 @@ class BrowserSession(BaseModel):
 				session_id=self.agent_focus.session_id,
 			)
 
-			# Wait a bit to ensure page starts loading
-			await asyncio.sleep(0.5)
+			# # Wait a bit to ensure page starts loading
+			# await asyncio.sleep(0.5)
 
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
@@ -679,8 +699,8 @@ class BrowserSession(BaseModel):
 		"""Handle tab closure - update focus if needed."""
 
 		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
-		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
 		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
+		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Handle tab creation - apply viewport settings to new tab."""
@@ -862,6 +882,8 @@ class BrowserSession(BaseModel):
 			cdp_url=self.cdp_url if should_use_new_socket else None,
 		)
 		self._cdp_session_pool[target_id] = session
+		# log length of _cdp_session_pool
+		self.logger.debug(f'[get_or_create_cdp_session] new _cdp_session_pool length: {len(self._cdp_session_pool)}')
 
 		# Only change agent focus if requested
 		if focus:
@@ -1536,6 +1558,9 @@ class BrowserSession(BaseModel):
 
 	async def remove_highlights(self) -> None:
 		"""Remove highlights from the page using CDP."""
+		if not self.browser_profile.highlight_elements:
+			return
+
 		try:
 			# Get cached session
 			cdp_session = await self.get_or_create_cdp_session()
