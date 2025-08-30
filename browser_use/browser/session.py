@@ -40,7 +40,7 @@ from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.observability import observe_debug
-from browser_use.utils import _log_pretty_url, is_new_tab_page
+from browser_use.utils import _log_pretty_url, is_new_tab_page, time_execution_async
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -813,6 +813,7 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
+	@time_execution_async('get_or_create_cdp_session')
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_or_create_cdp_session')
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
