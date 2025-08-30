@@ -94,7 +94,7 @@ def draw_enhanced_bounding_box_with_text(
 		try:
 			# Use much bigger font size for index (5x bigger base)
 			huge_font = None
-			font_size = 35  # Much bigger than the original 16
+			font_size = 40  # Much bigger than the original 16
 			try:
 				huge_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
 			except (OSError, IOError):
@@ -219,7 +219,7 @@ def draw_bounding_box_with_text(
 				text_height = bbox_text[3] - bbox_text[1]
 
 			# Smart positioning based on element size
-			padding = 3
+			padding = 5
 			element_width = x2 - x1
 			element_height = y2 - y1
 			element_area = element_width * element_height
