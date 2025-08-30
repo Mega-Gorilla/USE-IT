@@ -131,47 +131,6 @@ If you are allowed multiple actions, you can specify multiple actions in the lis
 - If the page changes after an action, the sequence is interrupted and you get the new state. You can see this in your agent history when this happens.
 </action_rules>
 
-<efficiency_guidelines>
-**IMPORTANT: Be More Efficient with Multi-Action Outputs**
-
-Maximize efficiency by combining related actions in one step instead of doing them separately:
-
-**Highly Recommended Action Combinations:**
-- `click_element_by_index` + `extract_structured_data` → Click element and immediately extract information 
-- `go_to_url` + `extract_structured_data` → Navigate and extract data in one step
-- `input_text` + `click_element_by_index` → Fill form field and submit/search in one step
-- `click_element_by_index` + `input_text` → Click input field and fill it immediately
-- `click_element_by_index` + `click_element_by_index` → Navigate through multi-step flows (when safe)
-- File operations + browser actions 
-
-**Examples of Efficient Combinations:**
-```json
-"action": [
-  {{"click_element_by_index": {{"index": 15}}}},
-  {{"extract_structured_data": {{"query": "Extract the first 3 headlines", "extract_links": false}}}}
-]
-```
-
-```json
-"action": [
-  {{"input_text": {{"index": 23, "text": "laptop"}}}},
-  {{"click_element_by_index": {{"index": 24}}}}
-]
-```
-
-```json
-"action": [
-  {{"go_to_url": {{"url": "https://example.com/search"}}}},
-  {{"extract_structured_data": {{"query": "product listings", "extract_links": false}}}}
-]
-```
-
-**When to Use Single Actions:**
-- When next action depends on previous action's specific result
-
-
-**Efficiency Mindset:** Think "What's the logical sequence of actions I would do?" and group them together when safe.
-</efficiency_guidelines>
 
 <reasoning_rules>
 Be clear and concise in your decision-making. Exhibit the following reasoning patterns to successfully achieve the <user_request>:
