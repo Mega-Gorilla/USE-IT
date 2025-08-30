@@ -101,7 +101,6 @@ class ClickableElementDetector:
 			'select',
 			'textarea',
 			'a',
-			'label',
 			'details',
 			'summary',
 			'option',
@@ -109,6 +108,16 @@ class ClickableElementDetector:
 		}
 		if node.tag_name in interactive_tags:
 			return True
+
+		# Special handling for labels: only interactive if they DON'T have a 'for' attribute
+		# Labels with 'for' attribute should not be interactive - their associated input should be
+		if node.tag_name == 'label':
+			if node.attributes and node.attributes.get('for'):
+				# This label points to an input - it should NOT be interactive
+				return False
+			else:
+				# This label doesn't point to an input - it might be clickable itself
+				return True
 
 		# SVG elements need special handling - only interactive if they have explicit handlers
 		# svg_tags = {'svg', 'path', 'circle', 'rect', 'polygon', 'ellipse', 'line', 'polyline', 'g'}

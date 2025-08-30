@@ -3,7 +3,6 @@
 import asyncio
 import json
 import platform
-from typing import Any
 
 from browser_use.browser.events import (
 	ClickElementEvent,
@@ -634,78 +633,139 @@ class DefaultActionWatchdog(BaseWatchdog):
 		# Fallback for unknown characters
 		return f'Key{char.upper()}'
 
-	async def _check_element_focusability(self, element_node, object_id: str, session_id: str) -> dict[str, Any]:
-		"""
-		Check if an element is likely to be focusable and visible.
-
-		Returns:
-			Dict with keys: 'visible', 'focusable', 'interactive', 'disabled'
-		"""
+	async def _clear_text_field(self, object_id: str, cdp_session) -> None:
+		"""Clear text field using human-like Ctrl+A + Backspace approach."""
 		try:
-			cdp_client = self.browser_session.cdp_client
+			self.logger.debug('🧹 Clearing text field using Ctrl+A + Backspace')
 
-			# Run comprehensive element checks via JavaScript
-			check_result = await cdp_client.send.Runtime.callFunctionOn(
+			# Select all text (Ctrl+A)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 				params={
-					'functionDeclaration': """
-						function() {
-							const element = this;
-							const computedStyle = window.getComputedStyle(element);
-							const rect = element.getBoundingClientRect();
-							
-							// Check basic visibility
-							const isVisible = rect.width > 0 && rect.height > 0 && 
-								computedStyle.visibility !== 'hidden' && 
-								computedStyle.display !== 'none' &&
-								computedStyle.opacity !== '0';
-								
-							// Check if element is disabled
-							const isDisabled = element.disabled || element.hasAttribute('disabled') ||
-								element.getAttribute('aria-disabled') === 'true';
-								
-							// Check if element is focusable by tag and attributes
-							const focusableTags = ['input', 'textarea', 'select', 'button', 'a'];
-							const hasFocusableTag = focusableTags.includes(element.tagName.toLowerCase());
-							const hasTabIndex = element.hasAttribute('tabindex') && element.tabIndex >= 0;
-							const isContentEditable = element.contentEditable === 'true';
-							
-							const isFocusable = !isDisabled && (hasFocusableTag || hasTabIndex || isContentEditable);
-							
-							// Check if element is interactive (clickable/editable)
-							const isInteractive = isFocusable || element.onclick !== null || 
-								element.getAttribute('role') === 'button' ||
-								element.classList.contains('clickable');
-								
-							return {
-								visible: isVisible,
-								focusable: isFocusable,
-								interactive: isInteractive,
-								disabled: isDisabled,
-								bounds: {
-									x: rect.left,
-									y: rect.top,
-									width: rect.width,
-									height: rect.height
-								},
-								tagName: element.tagName.toLowerCase(),
-								type: element.type || null
-							};
-						}
-					""",
-					'objectId': object_id,
-					'returnByValue': True,
+					'type': 'keyDown',
+					'key': 'a',
+					'code': 'KeyA',
+					'modifiers': 2,  # Ctrl modifier
+					'windowsVirtualKeyCode': 65,
 				},
-				session_id=session_id,
+				session_id=cdp_session.session_id,
+			)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyUp',
+					'key': 'a',
+					'code': 'KeyA',
+					'modifiers': 2,  # Ctrl modifier
+					'windowsVirtualKeyCode': 65,
+				},
+				session_id=cdp_session.session_id,
 			)
 
-			if 'result' in check_result and 'value' in check_result['result']:
-				return check_result['result']['value']
-			else:
-				self.logger.debug('Element focusability check returned no results')
-				return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
+			# Small delay
+			await asyncio.sleep(0.01)
+
+			# Delete selected text (Backspace)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyDown',
+					'key': 'Backspace',
+					'code': 'Backspace',
+					'windowsVirtualKeyCode': 8,
+				},
+				session_id=cdp_session.session_id,
+			)
+			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+				params={
+					'type': 'keyUp',
+					'key': 'Backspace',
+					'code': 'Backspace',
+					'windowsVirtualKeyCode': 8,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			self.logger.debug('✅ Text field cleared successfully')
+
 		except Exception as e:
-			self.logger.debug(f'Element focusability check failed: {e}')
-			return {'visible': False, 'focusable': False, 'interactive': False, 'disabled': True}
+			self.logger.debug(f'Failed to clear text field: {e}')
+			# Try JavaScript fallback
+			try:
+				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					params={
+						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; }',
+						'objectId': object_id,
+					},
+					session_id=cdp_session.session_id,
+				)
+				self.logger.debug('✅ Text field cleared using JavaScript fallback')
+			except Exception as js_e:
+				self.logger.debug(f'JavaScript clear also failed: {js_e}')
+
+	async def _focus_element_simple(
+		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
+	) -> bool:
+		"""Simple focus strategy: CDP first, then click if failed."""
+
+		# Strategy 1: Try CDP DOM.focus first
+		try:
+			result = await cdp_session.cdp_client.send.DOM.focus(
+				params={'backendNodeId': backend_node_id},
+				session_id=cdp_session.session_id,
+			)
+			self.logger.debug(f'CDP DOM.focus result: {result}')
+			self.logger.debug('✅ Element focused using CDP DOM.focus')
+			return True
+		except Exception as e:
+			# Check for specific CDP "Element is not focusable" error
+			error_str = str(e).lower()
+			if (
+				'element is not focusable' in error_str
+				or "code': -32000" in error_str
+				or '-32000' in error_str
+				or 'not focusable' in error_str
+			):
+				self.logger.debug('❌ CDP DOM.focus failed - element not focusable')
+			else:
+				self.logger.debug(f'CDP DOM.focus failed: {e}')
+
+		# Strategy 2: Try click to focus if CDP failed
+		if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
+			try:
+				click_x = input_coordinates['input_x']
+				click_y = input_coordinates['input_y']
+
+				self.logger.debug(f'🎯 Attempting click-to-focus at ({click_x:.1f}, {click_y:.1f})')
+
+				# Click to focus
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': click_x,
+						'y': click_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': click_x,
+						'y': click_y,
+						'button': 'left',
+						'clickCount': 1,
+					},
+					session_id=cdp_session.session_id,
+				)
+
+				self.logger.debug('✅ Element focused using click method')
+				return True
+
+			except Exception as e:
+				self.logger.debug(f'Click focus failed: {e}')
+
+		# Both strategies failed
+		self.logger.warning('⚠️ All focus strategies failed')
+		return False
 
 	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True) -> dict | None:
 		"""
@@ -749,117 +809,82 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			object_id = result['object']['objectId']
 
-			# Check element focusability before attempting focus
-			element_info = await self._check_element_focusability(element_node, object_id, cdp_session.session_id)
-			self.logger.debug(f'Element focusability check: {element_info}')
+			# Check if this is a label with 'for' attribute - if so, find the actual input
+			actual_element = element_node
+			if element_node.tag_name.lower() == 'label' and element_node.attributes and element_node.attributes.get('for'):
+				input_id = element_node.attributes['for']
+				self.logger.debug(f'🏷️ Label detected with for="{input_id}", searching for associated input element')
 
-			# Extract coordinates from element bounds for metadata
-			bounds = element_info.get('bounds', {})
-			if bounds.get('width', 0) > 0 and bounds.get('height', 0) > 0:
-				center_x = bounds['x'] + bounds['width'] / 2
-				center_y = bounds['y'] + bounds['height'] / 2
-				input_coordinates = {'input_x': center_x, 'input_y': center_y}
-				self.logger.debug(f'Input coordinates: x={center_x:.1f}, y={center_y:.1f}')
-
-			# Provide helpful warnings for common issues
-			if not element_info.get('visible', False):
-				self.logger.warning('⚠️ Target element appears to be invisible or has zero dimensions')
-			if element_info.get('disabled', False):
-				self.logger.warning('⚠️ Target element appears to be disabled')
-			if not element_info.get('focusable', False):
-				self.logger.warning('⚠️ Target element may not be focusable by standard criteria')
-
-			# Clear existing text if requested
-			if clear_existing:
-				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; if (this.textContent !== undefined) this.textContent = ""; }',
-						'objectId': object_id,
-					},
-					session_id=cdp_session.session_id,
-				)
-
-			# Try multiple focus strategies
-			focused_successfully = False
-
-			# Strategy 1: Try CDP DOM.focus (original method)
-			try:
-				result = await cdp_session.cdp_client.send.DOM.focus(
-					params={'backendNodeId': backend_node_id},
-					session_id=cdp_session.session_id,
-				)
-				focused_successfully = True
-				self.logger.debug('✅ Element focused using CDP DOM.focus')
-			except Exception as e:
-				self.logger.debug(f'CDP DOM.focus failed: {e}')
-
-				# Strategy 2: Try JavaScript focus as fallback
+				# Find the input element by ID using JavaScript
 				try:
-					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					input_result = await cdp_session.cdp_client.send.Runtime.evaluate(
 						params={
-							'functionDeclaration': 'function() { this.focus(); }',
-							'objectId': object_id,
+							'expression': f'document.getElementById({json.dumps(input_id)})',
+							'returnByValue': False,  # Return object reference
 						},
 						session_id=cdp_session.session_id,
 					)
-					focused_successfully = True
-					self.logger.debug('✅ Element focused using JavaScript focus()')
-				except Exception as js_e:
-					self.logger.debug(f'JavaScript focus failed: {js_e}')
 
-					# Strategy 3: Try click-to-focus for stubborn elements
-					try:
-						await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+					input_object_id = input_result.get('result', {}).get('objectId')
+					if input_object_id:
+						self.logger.debug(f'✅ Found associated input element with id="{input_id}"')
+						# Use the input element instead of the label
+						object_id = input_object_id
+
+						# Get the input element's bounding box for coordinates
+						bbox_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
 							params={
-								'functionDeclaration': 'function() { this.click(); this.focus(); }',
-								'objectId': object_id,
+								'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
+								'objectId': input_object_id,
+								'returnByValue': True,
 							},
 							session_id=cdp_session.session_id,
 						)
-						focused_successfully = True
-						self.logger.debug('✅ Element focused using click + focus combination')
-					except Exception as click_e:
-						self.logger.debug(f'Click + focus failed: {click_e}')
 
-						# Strategy 4: Try simulated mouse click for maximum compatibility
-						try:
-							# Use coordinates already calculated from element bounds
-							if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
-								click_x = input_coordinates['input_x']
-								click_y = input_coordinates['input_y']
+						bbox_value = bbox_result.get('result', {}).get('value')
+						if bbox_value:
+							center_x = bbox_value['x'] + bbox_value['width'] / 2
+							center_y = bbox_value['y'] + bbox_value['height'] / 2
+							input_coordinates = {'input_x': center_x, 'input_y': center_y}
+							self.logger.debug(f'✅ Using input coordinates: x={center_x:.1f}, y={center_y:.1f}')
+					else:
+						self.logger.warning(f'❌ Could not find input element with id="{input_id}", using label coordinates')
+				except Exception as e:
+					self.logger.warning(f'❌ Error finding input element: {e}, using label coordinates')
 
-								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-									params={
-										'type': 'mousePressed',
-										'x': click_x,
-										'y': click_y,
-										'button': 'left',
-										'clickCount': 1,
-									},
-									session_id=cdp_session.session_id,
-								)
-								await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-									params={
-										'type': 'mouseReleased',
-										'x': click_x,
-										'y': click_y,
-										'button': 'left',
-										'clickCount': 1,
-									},
-									session_id=cdp_session.session_id,
-								)
-								focused_successfully = True
-								self.logger.debug('✅ Element focused using simulated mouse click')
-							else:
-								self.logger.debug('Element bounds not available for mouse click')
-						except Exception as mouse_e:
-							self.logger.debug(f'Simulated mouse click failed: {mouse_e}')
+			# Use actual_element coordinates directly (it already has them) if not already set by label-to-input mapping
+			if input_coordinates is None:
+				if hasattr(actual_element, 'center_x') and hasattr(actual_element, 'center_y'):
+					center_x = actual_element.center_x
+					center_y = actual_element.center_y
+					input_coordinates = {'input_x': center_x, 'input_y': center_y}
+					self.logger.debug(f'Using element coordinates: x={center_x:.1f}, y={center_y:.1f}')
+				else:
+					# Fallback: calculate from bounding box if available
+					if hasattr(actual_element, 'bounding_box') and actual_element.bounding_box:
+						bbox = actual_element.bounding_box
+						center_x = bbox.x + bbox.width / 2
+						center_y = bbox.y + bbox.height / 2
+						input_coordinates = {'input_x': center_x, 'input_y': center_y}
+						self.logger.debug(f'Calculated coordinates from bbox: x={center_x:.1f}, y={center_y:.1f}')
+					else:
+						input_coordinates = None
+						self.logger.warning('⚠️ No coordinates available for element')
 
-			# Log focus result
-			if not focused_successfully:
-				self.logger.warning('⚠️ All focus strategies failed, typing without explicit focus')
+			# Ensure we have a valid object_id before proceeding
+			if not object_id:
+				raise ValueError('Could not get object_id for element')
 
-				# Type the text character by character using proper human-like key events
+			# Step 1: Focus the element using simple strategy
+			focused_successfully = await self._focus_element_simple(
+				backend_node_id=backend_node_id, object_id=object_id, cdp_session=cdp_session, input_coordinates=input_coordinates
+			)
+
+			# Step 2: Clear existing text if requested
+			if clear_existing:
+				await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+
+			# Step 3: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect
 			self.logger.debug(f'🎯 Typing text character by character: "{text}"')
 
