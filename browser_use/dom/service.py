@@ -28,10 +28,6 @@ if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
 
 
-# TODO: enable cross origin iframes -> experimental for now
-ENABLE_CROSS_ORIGIN_IFRAMES = False
-
-
 class DomService:
 	"""
 	Service for getting the DOM tree and other DOM-related information.
@@ -43,9 +39,12 @@ class DomService:
 
 	logger: logging.Logger
 
-	def __init__(self, browser_session: 'BrowserSession', logger: logging.Logger | None = None):
+	def __init__(
+		self, browser_session: 'BrowserSession', logger: logging.Logger | None = None, cross_origin_iframes: bool = False
+	):
 		self.browser_session = browser_session
 		self.logger = logger or browser_session.logger
+		self.cross_origin_iframes = cross_origin_iframes
 
 	async def __aenter__(self):
 		return self
@@ -229,24 +228,6 @@ class DomService:
 				)
 
 				if not frame_intersects:
-					# DEBUG: Log why element is not visible
-					if node and node.attributes:
-						attrs = node.attributes
-						elem_id = attrs.get('id', '')
-						elem_name = attrs.get('name', '')
-						if (
-							'city' in elem_id.lower()
-							or 'city' in elem_name.lower()
-							or 'state' in elem_id.lower()
-							or 'state' in elem_name.lower()
-							or 'zip' in elem_id.lower()
-							or 'zip' in elem_name.lower()
-						):
-							import logging
-
-							logging.info(
-								f"🔍 DEBUG: Element id='{elem_id}' name='{elem_name}' not visible - adjusted bounds: x={adjusted_x}, y={adjusted_y}, w={current_bounds.width}, h={current_bounds.height}, viewport: {viewport_right}x{viewport_bottom}, scroll: x={frame.snapshot_node.scrollRects.x}, y={frame.snapshot_node.scrollRects.y}"
-							)
 					return False
 
 				# Keep the original coordinate adjustment to maintain consistency
@@ -305,7 +286,7 @@ class DomService:
 		except Exception as e:
 			pass  # Page might not be ready yet
 		# DEBUG: Log before capturing snapshot
-		self.logger.info(f'🔍 DEBUG: Capturing DOM snapshot for target {target_id}')
+		self.logger.debug(f'🔍 DEBUG: Capturing DOM snapshot for target {target_id}')
 
 		# Get actual scroll positions for all iframes before capturing snapshot
 		iframe_scroll_positions = {}
@@ -339,7 +320,7 @@ class DomService:
 			if scroll_result and 'result' in scroll_result and 'value' in scroll_result['result']:
 				iframe_scroll_positions = scroll_result['result']['value']
 				for idx, scroll_data in iframe_scroll_positions.items():
-					self.logger.info(
+					self.logger.debug(
 						f'🔍 DEBUG: Iframe {idx} actual scroll position - scrollTop={scroll_data.get("scrollTop", 0)}, scrollLeft={scroll_data.get("scrollLeft", 0)}'
 					)
 		except Exception as e:
@@ -429,11 +410,13 @@ class DomService:
 		# DEBUG: Log snapshot info
 		if snapshot and 'documents' in snapshot:
 			total_nodes = sum(len(doc.get('nodes', [])) for doc in snapshot['documents'])
-			self.logger.info(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} documents with {total_nodes} total nodes')
+			self.logger.debug(
+				f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} documents with {total_nodes} total nodes'
+			)
 			# Log iframe-specific info
 			for doc_idx, doc in enumerate(snapshot['documents']):
 				if doc_idx > 0:  # Not the main document
-					self.logger.info(f'🔍 DEBUG: Document {doc_idx} has {len(doc.get("nodes", []))} nodes')
+					self.logger.debug(f'🔍 DEBUG: Document {doc_idx} has {len(doc.get("nodes", []))} nodes')
 
 		return TargetAllTrees(
 			snapshot=snapshot,
@@ -573,7 +556,7 @@ class DomService:
 					total_frame_offset.x -= snapshot_data.scrollRects.x
 					total_frame_offset.y -= snapshot_data.scrollRects.y
 					# DEBUG: Log iframe scroll information
-					self.logger.info(
+					self.logger.debug(
 						f'🔍 DEBUG: HTML frame scroll - scrollY={snapshot_data.scrollRects.y}, scrollX={snapshot_data.scrollRects.x}, frameId={node.get("frameId")}, nodeId={node["nodeId"]}'
 					)
 
@@ -623,7 +606,7 @@ class DomService:
 					or 'zip' in elem_id.lower()
 					or 'zip' in elem_name.lower()
 				):
-					self.logger.info(
+					self.logger.debug(
 						f"🔍 DEBUG: Form element {dom_tree_node.tag_name} id='{elem_id}' name='{elem_name}' - visible={dom_tree_node.is_visible}, bounds={dom_tree_node.snapshot_node.bounds if dom_tree_node.snapshot_node else 'NO_SNAPSHOT'}"
 					)
 
@@ -632,7 +615,7 @@ class DomService:
 
 			if (
 				# TODO: hacky way to disable cross origin iframes for now
-				ENABLE_CROSS_ORIGIN_IFRAMES and node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
+				self.cross_origin_iframes and node['nodeName'].upper() == 'IFRAME' and node.get('contentDocument', None) is None
 			):  # None meaning there is no content
 				# Use get_all_frames to find the iframe's target
 				frame_id = node.get('frameId', None)

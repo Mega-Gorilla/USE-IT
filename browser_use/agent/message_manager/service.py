@@ -212,10 +212,16 @@ class MessageManager:
 
 		# Build the history item
 		if model_output is None:
-			# Only add error history item if we have a valid step number
-			if step_number is not None and step_number > 0:
-				history_item = HistoryItem(step_number=step_number, error='Agent failed to output in the right format.')
-				self.state.agent_history_items.append(history_item)
+			# Add history item for initial actions (step 0) or errors (step > 0)
+			if step_number is not None:
+				if step_number == 0 and action_results:
+					# Step 0 with initial action results
+					history_item = HistoryItem(step_number=step_number, action_results=action_results)
+					self.state.agent_history_items.append(history_item)
+				elif step_number > 0:
+					# Error case for steps > 0
+					history_item = HistoryItem(step_number=step_number, error='Agent failed to output in the right format.')
+					self.state.agent_history_items.append(history_item)
 		else:
 			history_item = HistoryItem(
 				step_number=step_number,
@@ -237,7 +243,7 @@ class MessageManager:
 		for key, value in sensitive_data.items():
 			if isinstance(value, dict):
 				# New format: {domain: {key: value}}
-				if match_url_with_domain_pattern(current_page_url, key, True):
+				if current_page_url and match_url_with_domain_pattern(current_page_url, key, True):
 					placeholders.update(value.keys())
 			else:
 				# Old format: {key: value}
@@ -271,7 +277,12 @@ class MessageManager:
 
 		# First, update the agent history items with the latest step results
 		self._update_agent_history_description(model_output, result, step_info)
-		if sensitive_data:
+
+		# Use the passed sensitive_data parameter, falling back to instance variable
+		effective_sensitive_data = sensitive_data if sensitive_data is not None else self.sensitive_data
+		if effective_sensitive_data is not None:
+			# Update instance variable to keep it in sync
+			self.sensitive_data = effective_sensitive_data
 			self.sensitive_data_description = self._get_sensitive_data_description(browser_state_summary.url)
 
 		# Use only the current screenshot

@@ -21,9 +21,8 @@ load_dotenv()
 from pydantic import BaseModel
 from PyPDF2 import PdfReader  # type: ignore
 
-from browser_use import ActionResult, Agent, Controller
+from browser_use import ActionResult, Agent, ChatOpenAI, Tools
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.llm import ChatAzureOpenAI
 
 required_env_vars = ['AZURE_OPENAI_KEY', 'AZURE_OPENAI_ENDPOINT']
 for var in required_env_vars:
@@ -32,13 +31,15 @@ for var in required_env_vars:
 
 logger = logging.getLogger(__name__)
 # full screen mode
-controller = Controller()
+tools = Tools()
 
 # NOTE: This is the path to your cv file
-CV = Path.cwd() / 'cv_04_24.pdf'
+# create a dummy cv
+CV = Path.cwd() / 'dummy_cv.pdf'
+with open(CV, 'w') as f:
+	f.write('Hi I am a machine learning engineer with 3 years of experience in the field')
 
-if not CV.exists():
-	raise FileNotFoundError(f'You need to set the path to your cv file in the CV variable. CV file not found at {CV}')
+logger.info(f'Using dummy cv at {CV}')
 
 
 class Job(BaseModel):
@@ -50,7 +51,7 @@ class Job(BaseModel):
 	salary: str | None = None
 
 
-@controller.action('Save jobs to file - with a score how well it fits to my profile', param_model=Job)
+@tools.action('Save jobs to file - with a score how well it fits to my profile', param_model=Job)
 def save_jobs(job: Job):
 	with open('jobs.csv', 'a', newline='') as f:
 		writer = csv.writer(f)
@@ -59,13 +60,13 @@ def save_jobs(job: Job):
 	return 'Saved job to file'
 
 
-@controller.action('Read jobs from file')
+@tools.action('Read jobs from file')
 def read_jobs():
 	with open('jobs.csv') as f:
 		return f.read()
 
 
-@controller.action('Read my cv for context to fill forms')
+@tools.action('Read my cv for context to fill forms')
 def read_cv():
 	pdf = PdfReader(CV)
 	text = ''
@@ -75,7 +76,7 @@ def read_cv():
 	return ActionResult(extracted_content=text, include_in_memory=True)
 
 
-@controller.action(
+@tools.action(
 	'Upload cv to element - call this function to upload if element is not found, try with different index of the same upload element',
 )
 async def upload_cv(index: int, browser_session: BrowserSession):
@@ -142,13 +143,11 @@ async def main():
 		# + 'go to https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/Taiwan%2C-Remote/Fulfillment-Analyst---New-College-Graduate-2025_JR1988949/apply/autofillWithResume?workerSubType=0c40f6bd1d8f10adf6dae42e46d44a17&workerSubType=ab40a98049581037a3ada55b087049b7 NVIDIA',
 		# ground_task + '\n' + 'Meta',
 	]
-	model = ChatAzureOpenAI(
-		model='gpt-4.1',
-	)
+	model = ChatOpenAI(model='gpt-4.1-mini')
 
 	agents = []
 	for task in tasks:
-		agent = Agent(task=task, llm=model, controller=controller, browser_session=browser_session)
+		agent = Agent(task=task, llm=model, tools=tools, browser_session=browser_session)
 		agents.append(agent)
 
 	await asyncio.gather(*[agent.run() for agent in agents])

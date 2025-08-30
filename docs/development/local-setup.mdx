@@ -2,6 +2,7 @@
 title: "Local Setup"
 description: "Set up Browser Use development environment locally"
 icon: "laptop-code"
+mode: "wide"
 ---
 
 # Welcome to Browser Use Development!
@@ -130,7 +131,7 @@ uv run type
 
 # Run specific tests
 uv run pytest                                                                         # run everything
-uv run pytest tests/test_controller.py                                                # run a specific test file
+uv run pytest tests/test_tools.py                                                # run a specific test file
 uv run pytest tests/test_sensitive_data.py tests/test_tab_management.py               # run two test files
 uv run pytest tests/test_tab_management.py::TestTabManagement::test_user_changes_tab  # run a single test
 ```
