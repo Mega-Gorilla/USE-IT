@@ -232,7 +232,12 @@ class DOMWatchdog(BaseWatchdog):
 					# Get CDP session for viewport info
 					cdp_session = await self.browser_session.get_or_create_cdp_session()
 
-					screenshot_b64 = await create_highlighted_screenshot_async(screenshot_b64, content.selector_map, cdp_session)
+					screenshot_b64 = await create_highlighted_screenshot_async(
+						screenshot_b64,
+						content.selector_map,
+						cdp_session,
+						self.browser_session.browser_profile.filter_highlight_ids,
+					)
 					self.logger.debug(
 						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Applied highlights to {len(content.selector_map)} elements'
 					)

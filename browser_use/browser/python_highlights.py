@@ -22,7 +22,7 @@ ELEMENT_COLORS = {
 	'input': '#4ECDC4',  # Teal for inputs
 	'select': '#45B7D1',  # Blue for dropdowns
 	'a': '#96CEB4',  # Green for links
-	'textarea': '#FFEAA7',  # Yellow for text areas
+	'textarea': '#FF8C42',  # Orange for text areas (was yellow, now more visible)
 	'default': '#DDA0DD',  # Light purple for other interactive elements
 }
 
@@ -59,6 +59,7 @@ def draw_enhanced_bounding_box_with_text(
 	text: Optional[str] = None,
 	font: Optional[ImageFont.FreeTypeFont] = None,
 	element_type: str = 'div',
+	image_size: Tuple[int, int] = (2000, 1500),
 ) -> None:
 	"""Draw an enhanced bounding box with much bigger index containers and dashed borders."""
 	x1, y1, x2, y2 = bbox
@@ -137,8 +138,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_x = x1
 				text_y = max(0, y1 - min_container_height)
 
-			# Ensure text stays within image bounds (use actual image size if available)
-			img_width, img_height = draw.im.size if hasattr(draw, 'im') else (2000, 1500)  # Larger default
+			# Ensure text stays within image bounds using actual image dimensions
+			img_width, img_height = image_size
 			text_x = max(0, min(text_x, img_width - min_container_width))
 			text_y = max(0, min(text_y, img_height - min_container_height))
 
@@ -271,6 +272,7 @@ def create_highlighted_screenshot(
 	device_pixel_ratio: float = 1.0,
 	viewport_offset_x: int = 0,
 	viewport_offset_y: int = 0,
+	filter_highlight_ids: bool = True,
 ) -> str:
 	"""Create a highlighted screenshot with bounding boxes around interactive elements.
 
@@ -337,12 +339,22 @@ def create_highlighted_screenshot(
 
 				color = get_element_color(tag_name, element_type)
 
-				# Get element index for overlay
+				# Get element index for overlay and apply filtering
 				element_index = getattr(element, 'element_index', None)
-				index_text = str(element_index) if element_index is not None else None
+				index_text = None
+
+				if element_index is not None:
+					if filter_highlight_ids:
+						# Only show ID if llm_representation is less than 10 characters (elements with little text need visual ID)
+						element_text = element.get_all_children_text()
+						if len(element_text) < 5:
+							index_text = str(element_index)
+					else:
+						# Always show ID when filter is disabled
+						index_text = str(element_index)
 
 				# Draw enhanced bounding box with bigger index
-				draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name)
+				draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image.size)
 
 			except Exception as e:
 				logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
@@ -396,7 +408,9 @@ async def get_viewport_info_from_cdp(cdp_session) -> Tuple[float, int, int]:
 
 
 @observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot_async')
-async def create_highlighted_screenshot_async(screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None) -> str:
+async def create_highlighted_screenshot_async(
+	screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None, filter_highlight_ids: bool = True
+) -> str:
 	"""Async wrapper for creating highlighted screenshots.
 
 	Args:
@@ -419,4 +433,6 @@ async def create_highlighted_screenshot_async(screenshot_b64: str, selector_map:
 			logger.debug(f'Failed to get viewport info from CDP: {e}')
 
 	# Create highlighted screenshot (run in thread pool if needed for performance)
-	return create_highlighted_screenshot(screenshot_b64, selector_map, device_pixel_ratio, viewport_offset_x, viewport_offset_y)
+	return create_highlighted_screenshot(
+		screenshot_b64, selector_map, device_pixel_ratio, viewport_offset_x, viewport_offset_y, filter_highlight_ids
+	)
