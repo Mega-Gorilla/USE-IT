@@ -767,7 +767,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 		self.logger.warning('⚠️ All focus strategies failed')
 		return False
 
-	async def _input_text_element_node_impl(self, element_node, text: str, clear_existing: bool = True) -> dict | None:
+	async def _input_text_element_node_impl(
+		self, element_node: EnhancedDOMTreeNode, text: str, clear_existing: bool = True
+	) -> dict | None:
 		"""
 		Input text into an element using pure CDP with improved focus fallbacks.
 		"""
@@ -809,67 +811,15 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 			object_id = result['object']['objectId']
 
-			# Check if this is a label with 'for' attribute - if so, find the actual input
-			actual_element = element_node
-			if element_node.tag_name.lower() == 'label' and element_node.attributes and element_node.attributes.get('for'):
-				input_id = element_node.attributes['for']
-				self.logger.debug(f'🏷️ Label detected with for="{input_id}", searching for associated input element')
-
-				# Find the input element by ID using JavaScript
-				try:
-					input_result = await cdp_session.cdp_client.send.Runtime.evaluate(
-						params={
-							'expression': f'document.getElementById({json.dumps(input_id)})',
-							'returnByValue': False,  # Return object reference
-						},
-						session_id=cdp_session.session_id,
-					)
-
-					input_object_id = input_result.get('result', {}).get('objectId')
-					if input_object_id:
-						self.logger.debug(f'✅ Found associated input element with id="{input_id}"')
-						# Use the input element instead of the label
-						object_id = input_object_id
-
-						# Get the input element's bounding box for coordinates
-						bbox_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-							params={
-								'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
-								'objectId': input_object_id,
-								'returnByValue': True,
-							},
-							session_id=cdp_session.session_id,
-						)
-
-						bbox_value = bbox_result.get('result', {}).get('value')
-						if bbox_value:
-							center_x = bbox_value['x'] + bbox_value['width'] / 2
-							center_y = bbox_value['y'] + bbox_value['height'] / 2
-							input_coordinates = {'input_x': center_x, 'input_y': center_y}
-							self.logger.debug(f'✅ Using input coordinates: x={center_x:.1f}, y={center_y:.1f}')
-					else:
-						self.logger.warning(f'❌ Could not find input element with id="{input_id}", using label coordinates')
-				except Exception as e:
-					self.logger.warning(f'❌ Error finding input element: {e}, using label coordinates')
-
-			# Use actual_element coordinates directly (it already has them) if not already set by label-to-input mapping
-			if input_coordinates is None:
-				if hasattr(actual_element, 'center_x') and hasattr(actual_element, 'center_y'):
-					center_x = actual_element.center_x
-					center_y = actual_element.center_y
-					input_coordinates = {'input_x': center_x, 'input_y': center_y}
-					self.logger.debug(f'Using element coordinates: x={center_x:.1f}, y={center_y:.1f}')
-				else:
-					# Fallback: calculate from bounding box if available
-					if hasattr(actual_element, 'bounding_box') and actual_element.bounding_box:
-						bbox = actual_element.bounding_box
-						center_x = bbox.x + bbox.width / 2
-						center_y = bbox.y + bbox.height / 2
-						input_coordinates = {'input_x': center_x, 'input_y': center_y}
-						self.logger.debug(f'Calculated coordinates from bbox: x={center_x:.1f}, y={center_y:.1f}')
-					else:
-						input_coordinates = None
-						self.logger.warning('⚠️ No coordinates available for element')
+			# Use element_node absolute_position coordinates (correct coordinates including iframe offsets)
+			if element_node.absolute_position:
+				center_x = element_node.absolute_position.x + element_node.absolute_position.width / 2
+				center_y = element_node.absolute_position.y + element_node.absolute_position.height / 2
+				input_coordinates = {'input_x': center_x, 'input_y': center_y}
+				self.logger.debug(f'Using absolute_position coordinates: x={center_x:.1f}, y={center_y:.1f}')
+			else:
+				input_coordinates = None
+				self.logger.warning('⚠️ No absolute_position available for element')
 
 			# Ensure we have a valid object_id before proceeding
 			if not object_id:
