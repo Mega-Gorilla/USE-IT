@@ -158,7 +158,7 @@ class BrowserError(Exception):
 		"""
 		self.message = message
 		self.short_term_memory = short_term_memory
-		self.long_term_memory = long_term_memory or message  # Fallback to message if not provided
+		self.long_term_memory = long_term_memory
 		self.details = details
 		self.while_handling_event = event
 		super().__init__(message)
