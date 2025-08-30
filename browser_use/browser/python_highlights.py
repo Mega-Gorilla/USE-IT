@@ -7,7 +7,6 @@ to draw bounding boxes around interactive elements directly on screenshots.
 import base64
 import io
 import logging
-from typing import Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -36,7 +35,7 @@ ELEMENT_TYPE_MAP = {
 }
 
 
-def get_element_color(tag_name: str, element_type: Optional[str] = None) -> str:
+def get_element_color(tag_name: str, element_type: str | None = None) -> str:
 	"""Get color for element based on tag name and type."""
 	# Check input type first
 	if tag_name == 'input' and element_type:
@@ -47,19 +46,19 @@ def get_element_color(tag_name: str, element_type: Optional[str] = None) -> str:
 	return ELEMENT_COLORS.get(tag_name.lower(), ELEMENT_COLORS['default'])
 
 
-def should_show_index_overlay(element_index: Optional[int]) -> bool:
+def should_show_index_overlay(element_index: int | None) -> bool:
 	"""Determine if index overlay should be shown."""
 	return element_index is not None
 
 
 def draw_enhanced_bounding_box_with_text(
 	draw,  # ImageDraw.Draw - avoiding type annotation due to PIL typing issues
-	bbox: Tuple[int, int, int, int],
+	bbox: tuple[int, int, int, int],
 	color: str,
-	text: Optional[str] = None,
-	font: Optional[ImageFont.FreeTypeFont] = None,
+	text: str | None = None,
+	font: ImageFont.FreeTypeFont | None = None,
 	element_type: str = 'div',
-	image_size: Tuple[int, int] = (2000, 1500),
+	image_size: tuple[int, int] = (2000, 1500),
 ) -> None:
 	"""Draw an enhanced bounding box with much bigger index containers and dashed borders."""
 	x1, y1, x2, y2 = bbox
@@ -98,14 +97,14 @@ def draw_enhanced_bounding_box_with_text(
 			font_size = 36  # Much bigger, more visible size
 			try:
 				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
-			except (OSError, IOError):
+			except OSError:
 				try:
 					big_font = ImageFont.truetype('arial.ttf', font_size)
-				except (OSError, IOError):
+				except OSError:
 					# Try system fonts on different platforms
 					try:
 						big_font = ImageFont.truetype('Arial Bold.ttf', font_size)
-					except (OSError, IOError):
+					except OSError:
 						big_font = font  # Fallback to original font
 
 			# Get text size with bigger font
@@ -181,10 +180,10 @@ def draw_enhanced_bounding_box_with_text(
 
 def draw_bounding_box_with_text(
 	draw,  # ImageDraw.Draw - avoiding type annotation due to PIL typing issues
-	bbox: Tuple[int, int, int, int],
+	bbox: tuple[int, int, int, int],
 	color: str,
-	text: Optional[str] = None,
-	font: Optional[ImageFont.FreeTypeFont] = None,
+	text: str | None = None,
+	font: ImageFont.FreeTypeFont | None = None,
 ) -> None:
 	"""Draw a bounding box with optional text overlay."""
 	x1, y1, x2, y2 = bbox
@@ -318,10 +317,10 @@ def create_highlighted_screenshot(
 		font = None
 		try:
 			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
-		except (OSError, IOError):
+		except OSError:
 			try:
 				font = ImageFont.truetype('arial.ttf', 12)
-			except (OSError, IOError):
+			except OSError:
 				font = None  # Use default font
 
 		# Process each interactive element
@@ -397,7 +396,7 @@ def create_highlighted_screenshot(
 		return screenshot_b64
 
 
-async def get_viewport_info_from_cdp(cdp_session) -> Tuple[float, int, int]:
+async def get_viewport_info_from_cdp(cdp_session) -> tuple[float, int, int]:
 	"""Get viewport information from CDP session.
 
 	Returns:
