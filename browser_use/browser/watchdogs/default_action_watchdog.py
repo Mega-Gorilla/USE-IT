@@ -633,17 +633,121 @@ class DefaultActionWatchdog(BaseWatchdog):
 		# Fallback for unknown characters
 		return f'Key{char.upper()}'
 
-	async def _clear_text_field(self, object_id: str, cdp_session) -> None:
-		"""Clear text field using human-like Ctrl+A + Backspace approach."""
+	async def _clear_text_field(self, object_id: str, cdp_session) -> bool:
+		"""Clear text field using multiple strategies, starting with the most reliable."""
 		try:
-			# Use Meta (Cmd) on macOS, Ctrl on other platforms
+			# Strategy 1: Direct JavaScript value setting (most reliable for modern web apps)
+			self.logger.debug('🧹 Clearing text field using JavaScript value setting')
+			
+			await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': '''
+						function() { 
+							this.value = ""; 
+							this.dispatchEvent(new Event("input", { bubbles: true })); 
+							this.dispatchEvent(new Event("change", { bubbles: true })); 
+							return this.value;
+						}
+					''',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+			
+			# Verify clearing worked by checking the value
+			verify_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.value; }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+			
+			current_value = verify_result.get('result', {}).get('value', '')
+			if not current_value:
+				self.logger.debug('✅ Text field cleared successfully using JavaScript')
+				return True
+			else:
+				self.logger.debug(f'⚠️ JavaScript clear partially failed, field still contains: "{current_value}"')
+		
+		except Exception as e:
+			self.logger.debug(f'JavaScript clear failed: {e}')
+		
+		# Strategy 2: Triple-click + Delete (fallback for stubborn fields)
+		try:
+			self.logger.debug('🧹 Fallback: Clearing using triple-click + Delete')
+			
+			# Get element center coordinates for triple-click
+			bounds_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': 'function() { return this.getBoundingClientRect(); }',
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+			
+			if bounds_result.get('result', {}).get('value'):
+				bounds = bounds_result['result']['value']
+				center_x = bounds['x'] + bounds['width'] / 2
+				center_y = bounds['y'] + bounds['height'] / 2
+				
+				# Triple-click to select all text
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mousePressed',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseReleased',
+						'x': center_x,
+						'y': center_y,
+						'button': 'left',
+						'clickCount': 3,
+					},
+					session_id=cdp_session.session_id,
+				)
+				
+				# Delete selected text
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyDown',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
+					params={
+						'type': 'keyUp',
+						'key': 'Delete',
+						'code': 'Delete',
+					},
+					session_id=cdp_session.session_id,
+				)
+				
+				self.logger.debug('✅ Text field cleared using triple-click + Delete')
+				return True
+		
+		except Exception as e:
+			self.logger.debug(f'Triple-click clear failed: {e}')
+		
+		# Strategy 3: Keyboard shortcuts (last resort)
+		try:
 			import platform
-
 			is_macos = platform.system() == 'Darwin'
 			select_all_modifier = 4 if is_macos else 2  # Meta=4 (Cmd), Ctrl=2
 			modifier_name = 'Cmd' if is_macos else 'Ctrl'
 
-			self.logger.debug(f'🧹 Clearing text field using {modifier_name}+A + Backspace')
+			self.logger.debug(f'🧹 Last resort: Clearing using {modifier_name}+A + Backspace')
 
 			# Select all text (Ctrl/Cmd+A)
 			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
@@ -665,16 +769,12 @@ class DefaultActionWatchdog(BaseWatchdog):
 				session_id=cdp_session.session_id,
 			)
 
-			# Small delay
-			await asyncio.sleep(0.01)
-
 			# Delete selected text (Backspace)
 			await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
 				params={
 					'type': 'keyDown',
 					'key': 'Backspace',
 					'code': 'Backspace',
-					'windowsVirtualKeyCode': 8,
 				},
 				session_id=cdp_session.session_id,
 			)
@@ -683,27 +783,16 @@ class DefaultActionWatchdog(BaseWatchdog):
 					'type': 'keyUp',
 					'key': 'Backspace',
 					'code': 'Backspace',
-					'windowsVirtualKeyCode': 8,
 				},
 				session_id=cdp_session.session_id,
 			)
 
-			self.logger.debug('✅ Text field cleared successfully')
+			self.logger.debug('✅ Text field cleared using keyboard shortcuts')
+			return True
 
 		except Exception as e:
-			self.logger.debug(f'Failed to clear text field: {e}')
-			# Try JavaScript fallback
-			try:
-				await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': 'function() { if (this.value !== undefined) this.value = ""; }',
-						'objectId': object_id,
-					},
-					session_id=cdp_session.session_id,
-				)
-				self.logger.debug('✅ Text field cleared using JavaScript fallback')
-			except Exception as js_e:
-				self.logger.debug(f'JavaScript clear also failed: {js_e}')
+			self.logger.debug(f'All clearing strategies failed: {e}')
+			return False
 
 	async def _focus_element_simple(
 		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
@@ -827,7 +916,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Step 2: Clear existing text if requested
 			if clear_existing and focused_successfully:
-				await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
+				if not cleared_successfully:
+					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
 
 			# Step 3: Type the text character by character using proper human-like key events
 			# This emulates exactly how a human would type, which modern websites expect
