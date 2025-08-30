@@ -93,24 +93,24 @@ def draw_enhanced_bounding_box_with_text(
 	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Use much bigger font size for index (5x bigger base)
-			huge_font = None
-			font_size = 40  # Much bigger than the original 16
+			# Use much bigger font size for visible index boxes
+			big_font = None
+			font_size = 30  # Much bigger, more visible size
 			try:
-				huge_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
+				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
 			except (OSError, IOError):
 				try:
-					huge_font = ImageFont.truetype('arial.ttf', font_size)
+					big_font = ImageFont.truetype('arial.ttf', font_size)
 				except (OSError, IOError):
 					# Try system fonts on different platforms
 					try:
-						huge_font = ImageFont.truetype('Arial Bold.ttf', font_size)
+						big_font = ImageFont.truetype('Arial Bold.ttf', font_size)
 					except (OSError, IOError):
-						huge_font = font  # Fallback to original font
+						big_font = font  # Fallback to original font
 
-			# Get text size with much bigger font
-			if huge_font:
-				bbox_text = draw.textbbox((0, 0), text, font=huge_font)
+			# Get text size with bigger font
+			if big_font:
+				bbox_text = draw.textbbox((0, 0), text, font=big_font)
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 			else:
@@ -119,41 +119,60 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# No padding - container fits exactly around the number
-			padding = 10
+			# Bigger padding for more prominent index boxes
+			padding = 8
 			element_width = x2 - x1
 			element_height = y2 - y1
 
-			# Simple positioning logic: always top-left
-			# Inside if element is big enough, outside if too small
-			min_container_width = text_width + padding * 2
-			min_container_height = text_height + padding * 2
+			# Container dimensions
+			container_width = text_width + padding * 2
+			container_height = text_height + padding * 2
 
-			if element_width >= min_container_width and element_height >= min_container_height:
+			# Position in top-left corner (inside if fits, outside if too small)
+			if element_width >= container_width and element_height >= container_height:
 				# Place inside top-left corner
-				text_x = x1 + padding
-				text_y = y1 + padding
+				bg_x1 = x1 + 2  # Small offset from edge
+				bg_y1 = y1 + 2
 			else:
 				# Place outside top-left corner
-				text_x = x1
-				text_y = max(0, y1 - min_container_height)
+				bg_x1 = x1
+				bg_y1 = max(0, y1 - container_height)
 
-			# Ensure text stays within image bounds using actual image dimensions
+			bg_x2 = bg_x1 + container_width
+			bg_y2 = bg_y1 + container_height
+
+			# Center the number within the index box
+			text_x = bg_x1 + (container_width - text_width) // 2
+			text_y = bg_y1 + (container_height - text_height) // 2
+
+			# Ensure container stays within image bounds
 			img_width, img_height = image_size
-			text_x = max(0, min(text_x, img_width - min_container_width))
-			text_y = max(0, min(text_y, img_height - min_container_height))
+			if bg_x1 < 0:
+				offset = -bg_x1
+				bg_x1 += offset
+				bg_x2 += offset
+				text_x += offset
+			if bg_y1 < 0:
+				offset = -bg_y1
+				bg_y1 += offset
+				bg_y2 += offset
+				text_y += offset
+			if bg_x2 > img_width:
+				offset = bg_x2 - img_width
+				bg_x1 -= offset
+				bg_x2 -= offset
+				text_x -= offset
+			if bg_y2 > img_height:
+				offset = bg_y2 - img_height
+				bg_y1 -= offset
+				bg_y2 -= offset
+				text_y -= offset
 
-			# Draw much bigger background rectangle (5x bigger)
-			bg_x1 = text_x - padding
-			bg_y1 = text_y - padding
-			bg_x2 = text_x + text_width + padding
-			bg_y2 = text_y + text_height + padding
+			# Draw bigger background rectangle with thicker border
+			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=color, outline='white', width=2)
 
-			# Use element color as background with white text for high contrast
-			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=color, outline='white', width=3)
-
-			# Draw white text on colored background for maximum visibility
-			draw.text((text_x, text_y), text, fill='white', font=huge_font or font)
+			# Draw white text centered in the index box
+			draw.text((text_x, text_y), text, fill='white', font=big_font or font)
 
 		except Exception as e:
 			logger.debug(f'Failed to draw enhanced text overlay: {e}')
@@ -345,9 +364,10 @@ def create_highlighted_screenshot(
 
 				if element_index is not None:
 					if filter_highlight_ids:
-						# Only show ID if llm_representation is less than 10 characters (elements with little text need visual ID)
-						element_text = element.get_all_children_text()
-						if len(element_text) < 5:
+						# Use the meaningful text that matches what the LLM sees
+						meaningful_text = element.get_meaningful_text_for_llm()
+						# Show ID only if meaningful text is less than 5 characters
+						if len(meaningful_text) < 5:
 							index_text = str(element_index)
 					else:
 						# Always show ID when filter is disabled
