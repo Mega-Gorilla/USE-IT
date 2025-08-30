@@ -4,8 +4,6 @@ import asyncio
 import time
 from typing import TYPE_CHECKING
 
-from utils import time_execution_async
-
 from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
@@ -19,6 +17,7 @@ from browser_use.dom.views import (
 	SerializedDOMState,
 )
 from browser_use.observability import observe_debug
+from browser_use.utils import time_execution_async
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary, PageInfo
