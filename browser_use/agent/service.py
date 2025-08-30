@@ -270,8 +270,19 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Action setup
 		self._setup_action_models()
 		self._set_browser_use_version_and_source(source)
-		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 
+		initial_url = None
+
+		# only load url if no initial actions are provided
+		if self.directly_open_url and not self.state.follow_up_task and not initial_actions:
+			initial_url = self._extract_url_from_task(self.task)
+			if initial_url:
+				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
+				initial_actions = [{'go_to_url': {'url': initial_url, 'new_tab': False}}]
+
+		self.initial_url = initial_url
+
+		self.initial_actions = self._convert_initial_actions(initial_actions) if initial_actions else None
 		# Verify we can connect to the model
 		self._verify_and_setup_llm()
 
@@ -588,7 +599,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='_raise_if_stopped_or_paused')
 	async def _raise_if_stopped_or_paused(self) -> None:
 		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
 
@@ -635,14 +645,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
-		# Use caching based on directly_open_url setting - if directly_open_url is False, don't use cached state
-		is_first_step = self.state.n_steps in (0, 1)
-		use_cache = is_first_step and self.directly_open_url
-		self.logger.debug(f'📸 Requesting browser state with include_screenshot=True, cached={use_cache}')
+		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
 			cache_clickable_elements_hashes=True,
 			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
-			cached=use_cache,
 			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
@@ -1160,7 +1166,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		unique_urls = list(set(found_urls))
 		# If multiple URLs found, skip directly_open_urling
 		if len(unique_urls) > 1:
-			self.logger.debug(f'📍 Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
+			self.logger.debug(f'Multiple URLs found ({len(found_urls)}), skipping directly_open_url to avoid ambiguity')
 			return None
 
 		# If exactly one URL found, return it
@@ -1229,52 +1235,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Start browser session and attach watchdogs
 			assert self.browser_session is not None, 'Browser session must be initialized before starting'
 			self.logger.debug('🌐 Starting browser session...')
+
 			from browser_use.browser.events import BrowserStartEvent
 
 			event = self.browser_session.event_bus.dispatch(BrowserStartEvent())
 			await event
+			# Check if browser startup actually succeeded by getting the result
+			await event.event_result(raise_if_any=True, raise_if_none=False)
 
 			self.logger.debug('🔧 Browser session started with watchdogs attached')
 
-			# Check if task contains a URL and add it as an initial action (only if directly_open_url is enabled)
-			if self.directly_open_url and not self.state.follow_up_task:
-				initial_url = self._extract_url_from_task(self.task)
-				if initial_url:
-					self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
+			# Ensure browser focus is properly established before executing initial actions
+			if self.browser_session and self.browser_session.agent_focus:
+				self.logger.debug(f'🎯 Browser focus established on target: {self.browser_session.agent_focus.target_id[-4:]}')
+			else:
+				self.logger.warning('⚠️ No browser focus established, may cause navigation issues')
 
-					# Create a go_to_url action for the initial URL
-					go_to_url_action = {
-						'go_to_url': {
-							'url': initial_url,
-							'new_tab': False,  # Navigate in current tab
-						}
-					}
-
-					# Add to initial_actions or create new list if none exist
-					if self.initial_actions:
-						# Convert back to dict format, prepend URL navigation, then convert back
-						initial_actions_dicts = []
-						for action in self.initial_actions:
-							action_data = action.model_dump(exclude_unset=True)
-							initial_actions_dicts.append(action_data)
-
-						# Prepend the go_to_url action
-						initial_actions_dicts = [go_to_url_action] + initial_actions_dicts
-
-						# Convert back to ActionModel instances
-						self.initial_actions = self._convert_initial_actions(initial_actions_dicts)
-					else:
-						# Create new initial_actions with just the go_to_url
-						self.initial_actions = self._convert_initial_actions([go_to_url_action])
-
-					self.logger.debug(f'✅ Added navigation to {initial_url} as initial action')
-
-			# Execute initial actions if provided
-			if self.initial_actions and not self.state.follow_up_task:
-				self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
-				result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
-				self.state.last_result = result
-				self.logger.debug('✅ Initial actions completed')
+			await self._execute_initial_actions()
 
 			self.logger.debug(f'🔄 Starting main execution loop with max {max_steps} steps...')
 			for step in range(max_steps):
@@ -1516,6 +1493,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				new_element_hashes = {e.parent_branch_hash() for e in new_selector_map.values()}
 				if check_for_new_elements and not new_element_hashes.issubset(cached_element_hashes):
 					# next action requires index but there are new elements on the page
+					# log difference in len debug
+					self.logger.debug(f'New elements: {abs(len(new_element_hashes) - len(cached_element_hashes))}')
 					remaining_actions_str = get_remaining_actions_str(actions, i)
 					msg = f'Something new appeared after action {i} / {total_actions}: actions {remaining_actions_str} were not executed'
 					logger.info(msg)
@@ -1649,6 +1628,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 						await asyncio.sleep(delay_between_actions)
 
 		return results
+
+	async def _execute_initial_actions(self) -> None:
+		# Execute initial actions if provided
+		if self.initial_actions and not self.state.follow_up_task:
+			self.logger.debug(f'⚡ Executing {len(self.initial_actions)} initial actions...')
+			result = await self.multi_act(self.initial_actions, check_for_new_elements=False)
+			# update result 1 to mention that its was automatically loaded
+			if result and self.initial_url and result[0].long_term_memory:
+				result[0].long_term_memory = f'Found initial url and automatically loaded it. {result[0].long_term_memory}'
+			self.state.last_result = result
+			self.logger.debug('Initial actions completed')
 
 	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
 		"""Execute a single step from history with element validation"""

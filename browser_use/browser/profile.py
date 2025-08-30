@@ -536,11 +536,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	# Session/connection configuration
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
-	is_local: bool = Field(default=True, description='Whether this is a local browser instance')
+	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
 	# label: str = 'default'
 
 	# custom options we provide that aren't native playwright kwargs
-	stealth: bool = Field(default=False, description='Use stealth mode to avoid detection by anti-bot systems.')
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
 	deterministic_rendering: bool = Field(default=False, description='Enable deterministic rendering flags.')
 	allowed_domains: list[str] | None = Field(
@@ -584,9 +583,14 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# --- UI/viewport/DOM ---
 
 	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
+	filter_highlight_ids: bool = Field(
+		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
+	)
 
 	# --- Downloads ---
-	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
+	auto_download_pdfs: bool = Field(
+		default=False, description='Automatically download PDFs when navigating to PDF viewer pages.'
+	)
 
 	profile_directory: str = 'Default'  # e.g. 'Profile 1', 'Profile 2', 'Custom Profile', etc.
 
