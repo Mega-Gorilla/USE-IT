@@ -286,12 +286,7 @@ class Tools(Generic[Context]):
 					metadata=click_metadata if isinstance(click_metadata, dict) else None,
 				)
 			except BrowserError as e:
-				return handle_browser_error(e)
-			except Exception as e:
-				error_msg = f'Failed to click element {params.index}: {str(e)}'
-
-				# If it's a select dropdown error, automatically get the dropdown options
-				if 'dropdown' in str(e) and node:
+				if 'Cannot click on <select> elements.' in str(e):
 					try:
 						return await get_dropdown_options(
 							params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
@@ -301,6 +296,9 @@ class Tools(Generic[Context]):
 							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
 						)
 
+				return handle_browser_error(e)
+			except Exception as e:
+				error_msg = f'Failed to click element {params.index}: {str(e)}'
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
