@@ -380,7 +380,7 @@ class Registry(Generic[Context]):
 			else:
 				raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 		except TimeoutError as e:
-			raise RuntimeError(f'Error executing action {action_name} due to timeout.')
+			raise RuntimeError(f'Error executing action {action_name} due to timeout.') from e
 		except Exception as e:
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 
