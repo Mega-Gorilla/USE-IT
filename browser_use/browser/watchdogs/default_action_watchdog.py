@@ -4,8 +4,6 @@ import asyncio
 import json
 import platform
 
-from browser.session import CDPSession
-
 from browser_use.browser.events import (
 	ClickElementEvent,
 	GetDropdownOptionsEvent,
@@ -703,7 +701,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(f'JavaScript clear also failed: {js_e}')
 
 	async def _focus_element_simple(
-		self, backend_node_id: int, object_id: str, cdp_session: CDPSession, input_coordinates: dict | None = None
+		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
 	) -> bool:
 		"""Simple focus strategy: CDP first, then click if failed."""
 
