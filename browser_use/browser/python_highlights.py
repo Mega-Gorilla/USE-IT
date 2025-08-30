@@ -93,18 +93,20 @@ def draw_enhanced_bounding_box_with_text(
 	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Use much bigger font size for visible index boxes
+			# Scale font size based on image dimensions for consistent appearance across viewports
+			img_width, img_height = image_size
+			# Base font size scales with viewport width (36px for 1200px viewport)
+			base_font_size = max(16, min(48, int(img_width * 0.03)))  # 3% of viewport width
 			big_font = None
-			font_size = 36  # Much bigger, more visible size
 			try:
-				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
+				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
 			except OSError:
 				try:
-					big_font = ImageFont.truetype('arial.ttf', font_size)
+					big_font = ImageFont.truetype('arial.ttf', base_font_size)
 				except OSError:
 					# Try system fonts on different platforms
 					try:
-						big_font = ImageFont.truetype('Arial Bold.ttf', font_size)
+						big_font = ImageFont.truetype('Arial Bold.ttf', base_font_size)
 					except OSError:
 						big_font = font  # Fallback to original font
 
@@ -119,8 +121,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Bigger padding for more prominent index boxes - extra space for large font
-			padding = 6
+			# Scale padding based on viewport size for consistent appearance
+			padding = max(4, int(img_width * 0.005))  # 0.5% of viewport width
 			element_width = x2 - x1
 			element_height = y2 - y1
 
