@@ -239,6 +239,94 @@ class DOMWatchdog(BaseWatchdog):
 				except Exception as e:
 					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Python highlighting failed: {e}')
 
+			# Display highlighted screenshot overlay on screen if requested
+			if (
+				screenshot_b64
+				and content
+				and content.selector_map
+				and self.browser_session.browser_profile.display_highlights_on_screen
+			):
+				try:
+					self.logger.debug(
+						'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🖥️ Displaying highlighted screenshot overlay...'
+					)
+
+					# Use the existing screenshot (which has correct scaling) and add highlights to it
+					# Get CDP session for viewport info
+					cdp_session = await self.browser_session.get_or_create_cdp_session()
+
+					# Create highlighted version of the existing screenshot
+					from browser_use.browser.python_highlights import create_highlighted_screenshot_async
+
+					highlighted_screenshot_b64 = await create_highlighted_screenshot_async(
+						screenshot_b64, content.selector_map, cdp_session
+					)
+
+					# Get viewport dimensions and device pixel ratio for proper scaling
+					viewport_info = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=cdp_session.session_id)
+					visual_viewport = viewport_info.get('visualViewport', {})
+					css_visual_viewport = viewport_info.get('cssVisualViewport', {})
+
+					# Get CSS pixel dimensions (what the browser shows)
+					css_width = css_visual_viewport.get('clientWidth', 1280)
+					css_height = css_visual_viewport.get('clientHeight', 720)
+
+					# Get device pixel dimensions (what the screenshot is)
+					device_width = visual_viewport.get('clientWidth', css_width)
+					device_height = visual_viewport.get('clientHeight', css_height)
+
+					# Calculate device pixel ratio
+					device_pixel_ratio = device_width / css_width if css_width > 0 else 1.0
+
+					# Inject the highlighted screenshot as an overlay with correct DPR scaling
+					overlay_script = f"""
+					(function() {{
+						// Remove any existing browser-use overlay
+						const existingOverlay = document.getElementById('browser-use-highlight-overlay');
+						if (existingOverlay) {{
+							existingOverlay.remove();
+						}}
+						
+						// Get actual viewport dimensions in CSS pixels
+						const cssWidth = window.innerWidth;
+						const cssHeight = window.innerHeight;
+						const devicePixelRatio = window.devicePixelRatio || 1;
+						
+						// Create overlay container
+						const overlay = document.createElement('div');
+						overlay.id = 'browser-use-highlight-overlay';
+						overlay.style.cssText = `
+							position: fixed;
+							top: 0;
+							left: 0;
+							width: ${{cssWidth}}px;
+							height: ${{cssHeight}}px;
+							pointer-events: none;
+							z-index: 2147483647;
+							opacity: 0.4;
+							background-image: url(data:image/png;base64,{highlighted_screenshot_b64});
+							background-size: ${{cssWidth}}px ${{cssHeight}}px;
+							background-position: top left;
+							background-repeat: no-repeat;
+						`;
+						
+						document.body.appendChild(overlay);
+						console.log('Browser-use highlighted screenshot overlay injected with', '{len(content.selector_map)}', 'elements');
+						console.log('CSS viewport:', cssWidth, 'x', cssHeight, 'DPR:', devicePixelRatio);
+					}})();
+					"""
+
+					# Execute the overlay script
+					await cdp_session.cdp_client.send.Runtime.evaluate(
+						params={'expression': overlay_script, 'returnByValue': True}, session_id=cdp_session.session_id
+					)
+
+					self.logger.debug(
+						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Displayed highlighted screenshot overlay with {len(content.selector_map)} elements'
+					)
+				except Exception as e:
+					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Screenshot overlay failed: {e}')
+
 			# Ensure we have valid content
 			if not content:
 				content = SerializedDOMState(_root=None, selector_map={})

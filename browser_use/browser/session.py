@@ -265,6 +265,7 @@ class BrowserSession(BaseModel):
 		wait_for_network_idle_page_load_time: float | None = None,
 		wait_between_actions: float | None = None,
 		highlight_elements: bool | None = None,
+		display_highlights_on_screen: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
 	):

@@ -52,6 +52,114 @@ def should_show_index_overlay(element_index: Optional[int]) -> bool:
 	return element_index is not None
 
 
+def draw_enhanced_bounding_box_with_text(
+	draw,  # ImageDraw.Draw - avoiding type annotation due to PIL typing issues
+	bbox: Tuple[int, int, int, int],
+	color: str,
+	text: Optional[str] = None,
+	font: Optional[ImageFont.FreeTypeFont] = None,
+	element_type: str = 'div',
+) -> None:
+	"""Draw an enhanced bounding box with bigger index and solid borders for better visibility."""
+	x1, y1, x2, y2 = bbox
+
+	# Draw solid bounding box (not dashed) with thicker lines for better visibility
+	line_width = 3
+
+	# Draw the main bounding box
+	draw.rectangle([x1, y1, x2, y2], outline=color, width=line_width)
+
+	# Add a subtle inner highlight for better visibility
+	if x2 - x1 > 6 and y2 - y1 > 6:
+		draw.rectangle([x1 + 1, y1 + 1, x2 - 1, y2 - 1], outline=color, width=1)
+
+	# Draw bigger index overlay if we have index text
+	if text:
+		try:
+			# Use bigger font size for index
+			big_font = None
+			try:
+				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 16)
+			except (OSError, IOError):
+				try:
+					big_font = ImageFont.truetype('arial.ttf', 16)
+				except (OSError, IOError):
+					big_font = font  # Fallback to original font
+
+			# Get text size with bigger font
+			if big_font:
+				bbox_text = draw.textbbox((0, 0), text, font=big_font)
+				text_width = bbox_text[2] - bbox_text[0]
+				text_height = bbox_text[3] - bbox_text[1]
+			else:
+				# Fallback for default font
+				bbox_text = draw.textbbox((0, 0), text)
+				text_width = bbox_text[2] - bbox_text[0]
+				text_height = bbox_text[3] - bbox_text[1]
+
+			# Bigger padding for more prominent index
+			padding = 8
+			element_width = x2 - x1
+			element_height = y2 - y1
+
+			# Always try to place inside the element first, then outside if too small
+			if element_width >= text_width + padding * 2 and element_height >= text_height + padding * 2:
+				# Place in top-left corner inside the element
+				text_x = x1 + padding
+				text_y = y1 + padding
+			else:
+				# Place outside above the element
+				text_x = x1
+				text_y = max(0, y1 - text_height - padding)
+
+			# Ensure text stays within image bounds
+			img_width = 1200  # Default assumption, could be passed as parameter
+			img_height = 800
+			text_x = max(0, min(text_x, img_width - text_width - padding))
+			text_y = max(0, min(text_y, img_height - text_height - padding))
+
+			# Draw bigger background rectangle with element-type-specific styling
+			bg_x1 = text_x - padding
+			bg_y1 = text_y - padding
+			bg_x2 = text_x + text_width + padding
+			bg_y2 = text_y + text_height + padding
+
+			# Use element color as background with white text for high contrast
+			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=color, outline='white', width=2)
+
+			# Draw white text on colored background for maximum visibility
+			draw.text((text_x, text_y), text, fill='white', font=big_font or font)
+
+			# Add element type indicator if space allows
+			if element_width >= 60 and element_height >= 40:
+				type_text = element_type.upper()[:3]  # Show first 3 chars of element type
+				try:
+					small_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 10)
+				except (OSError, IOError):
+					small_font = font
+
+				if small_font:
+					type_bbox = draw.textbbox((0, 0), type_text, font=small_font)
+					type_width = type_bbox[2] - type_bbox[0]
+					type_height = type_bbox[3] - type_bbox[1]
+
+					# Place type text in bottom-right corner
+					type_x = x2 - type_width - 4
+					type_y = y2 - type_height - 4
+
+					# Small background for type text
+					draw.rectangle(
+						[type_x - 2, type_y - 1, type_x + type_width + 2, type_y + type_height + 1],
+						fill='rgba(0,0,0,128)',
+						outline=color,
+						width=1,
+					)
+					draw.text((type_x, type_y), type_text, fill='white', font=small_font)
+
+		except Exception as e:
+			logger.debug(f'Failed to draw enhanced text overlay: {e}')
+
+
 def draw_bounding_box_with_text(
 	draw,  # ImageDraw.Draw - avoiding type annotation due to PIL typing issues
 	bbox: Tuple[int, int, int, int],
@@ -199,22 +307,18 @@ def create_highlighted_screenshot(
 		# Process each interactive element
 		for element_id, element in selector_map.items():
 			try:
-				# Use snapshot bounds (document coordinates) if available, otherwise absolute_position
-				bounds = None
-				if element.snapshot_node and element.snapshot_node.bounds:
-					bounds = element.snapshot_node.bounds
-				elif element.absolute_position:
-					bounds = element.absolute_position
-
-				if not bounds:
+				# Use absolute_position coordinates directly
+				if not element.absolute_position:
 					continue
 
-				# Convert from CSS pixels to device pixels for screenshot coordinates
-				# Note: bounds are already in CSS pixels, screenshot is in device pixels
-				x1 = int((bounds.x - viewport_offset_x) * device_pixel_ratio)
-				y1 = int((bounds.y - viewport_offset_y) * device_pixel_ratio)
-				x2 = int((bounds.x + bounds.width - viewport_offset_x) * device_pixel_ratio)
-				y2 = int((bounds.y + bounds.height - viewport_offset_y) * device_pixel_ratio)
+				bounds = element.absolute_position
+
+				# Scale coordinates from CSS pixels to device pixels for screenshot
+				# The screenshot is captured at device pixel resolution, but coordinates are in CSS pixels
+				x1 = int(bounds.x * device_pixel_ratio)
+				y1 = int(bounds.y * device_pixel_ratio)
+				x2 = int((bounds.x + bounds.width) * device_pixel_ratio)
+				y2 = int((bounds.y + bounds.height) * device_pixel_ratio)
 
 				# Ensure coordinates are within image bounds
 				img_width, img_height = image.size
@@ -239,8 +343,8 @@ def create_highlighted_screenshot(
 				element_index = getattr(element, 'element_index', None)
 				index_text = str(element_index) if element_index is not None else None
 
-				# Draw bounding box with index
-				draw_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font)
+				# Draw enhanced bounding box with bigger index
+				draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name)
 
 			except Exception as e:
 				logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
