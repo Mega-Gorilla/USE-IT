@@ -993,7 +993,6 @@ Provide the extracted information in a clear, structured format."""
 					except BrowserError as e:
 						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
 						result = handle_browser_error(e)
-						return result
 					except Exception as e:
 						# Log the original exception with traceback for observability
 						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
