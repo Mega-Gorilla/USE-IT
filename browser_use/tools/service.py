@@ -502,7 +502,7 @@ class Tools(Generic[Context]):
 				return ActionResult(extracted_content=memory, long_term_memory=memory)
 			except Exception as e:
 				logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
-				return ActionResult(error=f'Failed to switch to tab {params.tab_id or params.url}.')
+				return ActionResult(error=f'Failed to switch to tab {params.tab_id}.')
 
 		@self.registry.action('Close an existing tab', param_model=CloseTabAction)
 		async def close_tab(params: CloseTabAction, browser_session: BrowserSession):
