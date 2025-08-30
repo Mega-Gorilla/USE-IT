@@ -4,6 +4,8 @@ import asyncio
 import json
 import platform
 
+from browser.session import CDPSession
+
 from browser_use.browser.events import (
 	ClickElementEvent,
 	GetDropdownOptionsEvent,
@@ -701,7 +703,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(f'JavaScript clear also failed: {js_e}')
 
 	async def _focus_element_simple(
-		self, backend_node_id: int, object_id: str, cdp_session, input_coordinates: dict | None = None
+		self, backend_node_id: int, object_id: str, cdp_session: CDPSession, input_coordinates: dict | None = None
 	) -> bool:
 		"""Simple focus strategy: CDP first, then click if failed."""
 
@@ -711,21 +713,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 				params={'backendNodeId': backend_node_id},
 				session_id=cdp_session.session_id,
 			)
-			self.logger.debug(f'CDP DOM.focus result: {result}')
-			self.logger.debug('✅ Element focused using CDP DOM.focus')
+			self.logger.debug(f'Element focused using CDP DOM.focus (result: {result})')
 			return True
+
 		except Exception as e:
-			# Check for specific CDP "Element is not focusable" error
-			error_str = str(e).lower()
-			if (
-				'element is not focusable' in error_str
-				or "code': -32000" in error_str
-				or '-32000' in error_str
-				or 'not focusable' in error_str
-			):
-				self.logger.debug('❌ CDP DOM.focus failed - element not focusable')
-			else:
-				self.logger.debug(f'CDP DOM.focus failed: {e}')
+			self.logger.debug(f'❌ CDP DOM.focus threw exception: {type(e).__name__}: {e}')
 
 		# Strategy 2: Try click to focus if CDP failed
 		if input_coordinates and 'input_x' in input_coordinates and 'input_y' in input_coordinates:
@@ -795,7 +787,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=cdp_session.session_id
 				)
-				await asyncio.sleep(0.1)
+				await asyncio.sleep(0.01)
 			except Exception as e:
 				self.logger.warning(
 					f'⚠️ Failed to focus the page {cdp_session} and scroll element {element_node} into view before typing in text: {type(e).__name__}: {e}'
@@ -831,7 +823,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			)
 
 			# Step 2: Clear existing text if requested
-			if clear_existing:
+			if clear_existing and focused_successfully:
 				await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
 
 			# Step 3: Type the text character by character using proper human-like key events
@@ -857,7 +849,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				# Small delay to emulate human typing speed
-				await asyncio.sleep(0.001)  # 50ms between key down and key up
+				await asyncio.sleep(0.001)
 
 				# Send keyUp event (this is what humans do when releasing a key)
 				await cdp_session.cdp_client.send.Input.dispatchKeyEvent(
@@ -871,7 +863,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 				# Small delay between characters to look human (realistic typing speed)
-				await asyncio.sleep(0.001)  # 80ms between characters = ~150 WPM typing speed
+				await asyncio.sleep(0.001)
 
 			# Return coordinates metadata if available
 			return input_coordinates
