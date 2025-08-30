@@ -291,16 +291,15 @@ class Tools(Generic[Context]):
 				error_msg = f'Failed to click element {params.index}: {str(e)}'
 
 				# If it's a select dropdown error, automatically get the dropdown options
-				# comment this out for now as it should be handled properly
-				# if 'dropdown' in str(e) and node:
-				# 	try:
-				# 		return await get_dropdown_options(
-				# 			params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
-				# 		)
-				# 	except Exception as dropdown_error:
-				# 		logger.error(
-				# 			f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
-				# 		)
+				if 'dropdown' in str(e) and node:
+					try:
+						return await get_dropdown_options(
+							params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
+						)
+					except Exception as dropdown_error:
+						logger.error(
+							f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
+						)
 
 				return ActionResult(error=error_msg)
 
