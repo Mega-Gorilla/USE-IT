@@ -95,7 +95,7 @@ def draw_enhanced_bounding_box_with_text(
 		try:
 			# Use much bigger font size for visible index boxes
 			big_font = None
-			font_size = 30  # Much bigger, more visible size
+			font_size = 36  # Much bigger, more visible size
 			try:
 				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
 			except (OSError, IOError):
@@ -119,8 +119,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Bigger padding for more prominent index boxes
-			padding = 8
+			# Bigger padding for more prominent index boxes - extra space for large font
+			padding = 6
 			element_width = x2 - x1
 			element_height = y2 - y1
 
@@ -141,9 +141,10 @@ def draw_enhanced_bounding_box_with_text(
 			bg_x2 = bg_x1 + container_width
 			bg_y2 = bg_y1 + container_height
 
-			# Center the number within the index box
+			# Center the number within the index box with proper baseline handling
 			text_x = bg_x1 + (container_width - text_width) // 2
-			text_y = bg_y1 + (container_height - text_height) // 2
+			# Add extra vertical space to prevent clipping
+			text_y = bg_y1 + (container_height - text_height) // 2 - bbox_text[1]  # Subtract top offset
 
 			# Ensure container stays within image bounds
 			img_width, img_height = image_size
