@@ -599,7 +599,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if hasattr(self, 'cloud_sync') and self.cloud_sync and self.enable_cloud_sync:
 			self.eventbus.on('*', self.cloud_sync.handle_event)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='_raise_if_stopped_or_paused')
 	async def _raise_if_stopped_or_paused(self) -> None:
 		"""Utility function that raises an InterruptedError if the agent is stopped or paused."""
 
