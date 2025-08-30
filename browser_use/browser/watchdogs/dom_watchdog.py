@@ -433,7 +433,11 @@ class DOMWatchdog(BaseWatchdog):
 
 			# Create or reuse DOM service
 			if self._dom_service is None:
-				self._dom_service = DomService(browser_session=self.browser_session, logger=self.logger)
+				self._dom_service = DomService(
+					browser_session=self.browser_session,
+					logger=self.logger,
+					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
+				)
 
 			# Get serialized DOM tree using the service
 			self.logger.debug('🔍 DOMWatchdog._build_dom_tree_without_highlights: Calling DomService.get_serialized_dom_tree...')
