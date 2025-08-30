@@ -4,6 +4,8 @@ import asyncio
 import time
 from typing import TYPE_CHECKING
 
+from utils import time_execution_async
+
 from browser_use.browser.events import (
 	BrowserErrorEvent,
 	BrowserStateRequestEvent,
@@ -232,7 +234,7 @@ class DOMWatchdog(BaseWatchdog):
 
 					# Get CDP session for viewport info
 					cdp_session = await self.browser_session.get_or_create_cdp_session()
-
+					start = time.time()
 					screenshot_b64 = await create_highlighted_screenshot_async(
 						screenshot_b64,
 						content.selector_map,
@@ -240,7 +242,7 @@ class DOMWatchdog(BaseWatchdog):
 						self.browser_session.browser_profile.filter_highlight_ids,
 					)
 					self.logger.debug(
-						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Applied highlights to {len(content.selector_map)} elements'
+						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Applied highlights to {len(content.selector_map)} elements in {time.time() - start:.2f}s'
 					)
 				except Exception as e:
 					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Python highlighting failed: {e}')
@@ -425,6 +427,7 @@ class DOMWatchdog(BaseWatchdog):
 			)
 			raise
 
+	@time_execution_async('build_dom_tree_without_highlights')
 	@observe_debug(ignore_input=True, ignore_output=True, name='build_dom_tree_without_highlights')
 	async def _build_dom_tree_without_highlights(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
 		"""Build DOM tree without injecting JavaScript highlights (for parallel execution)."""
@@ -477,6 +480,7 @@ class DOMWatchdog(BaseWatchdog):
 			)
 			raise
 
+	@time_execution_async('capture_clean_screenshot')
 	@observe_debug(ignore_input=True, ignore_output=True, name='capture_clean_screenshot')
 	async def _capture_clean_screenshot(self) -> str:
 		"""Capture a clean screenshot without JavaScript highlights."""

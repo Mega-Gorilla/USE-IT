@@ -4,6 +4,7 @@ This module replaces JavaScript-based highlighting with fast Python image proces
 to draw bounding boxes around interactive elements directly on screenshots.
 """
 
+import asyncio
 import base64
 import io
 import logging
@@ -12,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from browser_use.dom.views import DOMSelectorMap
 from browser_use.observability import observe_debug
+from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
 
@@ -284,8 +286,74 @@ def draw_bounding_box_with_text(
 			logger.debug(f'Failed to draw text overlay: {e}')
 
 
+async def process_element_highlight(
+	element_id: int,
+	element,
+	draw,
+	device_pixel_ratio: float,
+	font,
+	filter_highlight_ids: bool,
+	image_size: tuple[int, int],
+) -> None:
+	"""Process a single element for highlighting in parallel."""
+	try:
+		# Use absolute_position coordinates directly
+		if not element.absolute_position:
+			return
+
+		bounds = element.absolute_position
+
+		# Scale coordinates from CSS pixels to device pixels for screenshot
+		# The screenshot is captured at device pixel resolution, but coordinates are in CSS pixels
+		x1 = int(bounds.x * device_pixel_ratio)
+		y1 = int(bounds.y * device_pixel_ratio)
+		x2 = int((bounds.x + bounds.width) * device_pixel_ratio)
+		y2 = int((bounds.y + bounds.height) * device_pixel_ratio)
+
+		# Ensure coordinates are within image bounds
+		img_width, img_height = image_size
+		x1 = max(0, min(x1, img_width))
+		y1 = max(0, min(y1, img_height))
+		x2 = max(x1, min(x2, img_width))
+		y2 = max(y1, min(y2, img_height))
+
+		# Skip if bounding box is too small or invalid
+		if x2 - x1 < 2 or y2 - y1 < 2:
+			return
+
+		# Get element color based on type
+		tag_name = element.tag_name if hasattr(element, 'tag_name') else 'div'
+		element_type = None
+		if hasattr(element, 'attributes') and element.attributes:
+			element_type = element.attributes.get('type')
+
+		color = get_element_color(tag_name, element_type)
+
+		# Get element index for overlay and apply filtering
+		element_index = getattr(element, 'element_index', None)
+		index_text = None
+
+		if element_index is not None:
+			if filter_highlight_ids:
+				# Use the meaningful text that matches what the LLM sees
+				meaningful_text = element.get_meaningful_text_for_llm()
+				# Show ID only if meaningful text is less than 5 characters
+				if len(meaningful_text) < 5:
+					index_text = str(element_index)
+			else:
+				# Always show ID when filter is disabled
+				index_text = str(element_index)
+
+		# Draw enhanced bounding box with bigger index
+		draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image_size)
+
+	except Exception as e:
+		logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
+
+
 @observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot')
-def create_highlighted_screenshot(
+@time_execution_async('create_highlighted_screenshot')
+async def create_highlighted_screenshot(
 	screenshot_b64: str,
 	selector_map: DOMSelectorMap,
 	device_pixel_ratio: float = 1.0,
@@ -323,62 +391,17 @@ def create_highlighted_screenshot(
 			except OSError:
 				font = None  # Use default font
 
-		# Process each interactive element
+		# Process elements in parallel for better performance
+		tasks = []
 		for element_id, element in selector_map.items():
-			try:
-				# Use absolute_position coordinates directly
-				if not element.absolute_position:
-					continue
+			task = process_element_highlight(
+				element_id, element, draw, device_pixel_ratio, font, filter_highlight_ids, image.size
+			)
+			tasks.append(task)
 
-				bounds = element.absolute_position
-
-				# Scale coordinates from CSS pixels to device pixels for screenshot
-				# The screenshot is captured at device pixel resolution, but coordinates are in CSS pixels
-				x1 = int(bounds.x * device_pixel_ratio)
-				y1 = int(bounds.y * device_pixel_ratio)
-				x2 = int((bounds.x + bounds.width) * device_pixel_ratio)
-				y2 = int((bounds.y + bounds.height) * device_pixel_ratio)
-
-				# Ensure coordinates are within image bounds
-				img_width, img_height = image.size
-				x1 = max(0, min(x1, img_width))
-				y1 = max(0, min(y1, img_height))
-				x2 = max(x1, min(x2, img_width))
-				y2 = max(y1, min(y2, img_height))
-
-				# Skip if bounding box is too small or invalid
-				if x2 - x1 < 2 or y2 - y1 < 2:
-					continue
-
-				# Get element color based on type
-				tag_name = element.tag_name if hasattr(element, 'tag_name') else 'div'
-				element_type = None
-				if hasattr(element, 'attributes') and element.attributes:
-					element_type = element.attributes.get('type')
-
-				color = get_element_color(tag_name, element_type)
-
-				# Get element index for overlay and apply filtering
-				element_index = getattr(element, 'element_index', None)
-				index_text = None
-
-				if element_index is not None:
-					if filter_highlight_ids:
-						# Use the meaningful text that matches what the LLM sees
-						meaningful_text = element.get_meaningful_text_for_llm()
-						# Show ID only if meaningful text is less than 5 characters
-						if len(meaningful_text) < 5:
-							index_text = str(element_index)
-					else:
-						# Always show ID when filter is disabled
-						index_text = str(element_index)
-
-				# Draw enhanced bounding box with bigger index
-				draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image.size)
-
-			except Exception as e:
-				logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
-				continue
+		# Execute all element processing tasks in parallel
+		if tasks:
+			await asyncio.gather(*tasks, return_exceptions=True)
 
 		# Convert back to base64
 		output_buffer = io.BytesIO()
@@ -428,6 +451,7 @@ async def get_viewport_info_from_cdp(cdp_session) -> tuple[float, int, int]:
 
 
 @observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot_async')
+@time_execution_async('create_highlighted_screenshot_async')
 async def create_highlighted_screenshot_async(
 	screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None, filter_highlight_ids: bool = True
 ) -> str:
@@ -452,7 +476,7 @@ async def create_highlighted_screenshot_async(
 		except Exception as e:
 			logger.debug(f'Failed to get viewport info from CDP: {e}')
 
-	# Create highlighted screenshot (run in thread pool if needed for performance)
-	return create_highlighted_screenshot(
+	# Create highlighted screenshot with async processing
+	return await create_highlighted_screenshot(
 		screenshot_b64, selector_map, device_pixel_ratio, viewport_offset_x, viewport_offset_y, filter_highlight_ids
 	)
