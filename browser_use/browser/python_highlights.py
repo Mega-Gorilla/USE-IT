@@ -60,35 +60,56 @@ def draw_enhanced_bounding_box_with_text(
 	font: Optional[ImageFont.FreeTypeFont] = None,
 	element_type: str = 'div',
 ) -> None:
-	"""Draw an enhanced bounding box with bigger index and solid borders for better visibility."""
+	"""Draw an enhanced bounding box with much bigger index containers and dashed borders."""
 	x1, y1, x2, y2 = bbox
 
-	# Draw solid bounding box (not dashed) with thicker lines for better visibility
-	line_width = 3
+	# Draw dashed bounding box with pattern: 1 line, 2 spaces, 1 line, 2 spaces...
+	dash_length = 4
+	gap_length = 8
+	line_width = 2
 
-	# Draw the main bounding box
-	draw.rectangle([x1, y1, x2, y2], outline=color, width=line_width)
+	# Helper function to draw dashed line
+	def draw_dashed_line(start_x, start_y, end_x, end_y):
+		if start_x == end_x:  # Vertical line
+			y = start_y
+			while y < end_y:
+				dash_end = min(y + dash_length, end_y)
+				draw.line([(start_x, y), (start_x, dash_end)], fill=color, width=line_width)
+				y += dash_length + gap_length
+		else:  # Horizontal line
+			x = start_x
+			while x < end_x:
+				dash_end = min(x + dash_length, end_x)
+				draw.line([(x, start_y), (dash_end, start_y)], fill=color, width=line_width)
+				x += dash_length + gap_length
 
-	# Add a subtle inner highlight for better visibility
-	if x2 - x1 > 6 and y2 - y1 > 6:
-		draw.rectangle([x1 + 1, y1 + 1, x2 - 1, y2 - 1], outline=color, width=1)
+	# Draw dashed rectangle
+	draw_dashed_line(x1, y1, x2, y1)  # Top
+	draw_dashed_line(x2, y1, x2, y2)  # Right
+	draw_dashed_line(x2, y2, x1, y2)  # Bottom
+	draw_dashed_line(x1, y2, x1, y1)  # Left
 
-	# Draw bigger index overlay if we have index text
+	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Use bigger font size for index
-			big_font = None
+			# Use much bigger font size for index (5x bigger base)
+			huge_font = None
+			font_size = 32  # Much bigger than the original 16
 			try:
-				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 16)
+				huge_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', font_size)
 			except (OSError, IOError):
 				try:
-					big_font = ImageFont.truetype('arial.ttf', 16)
+					huge_font = ImageFont.truetype('arial.ttf', font_size)
 				except (OSError, IOError):
-					big_font = font  # Fallback to original font
+					# Try system fonts on different platforms
+					try:
+						huge_font = ImageFont.truetype('Arial Bold.ttf', font_size)
+					except (OSError, IOError):
+						huge_font = font  # Fallback to original font
 
-			# Get text size with bigger font
-			if big_font:
-				bbox_text = draw.textbbox((0, 0), text, font=big_font)
+			# Get text size with much bigger font
+			if huge_font:
+				bbox_text = draw.textbbox((0, 0), text, font=huge_font)
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 			else:
@@ -97,64 +118,41 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Bigger padding for more prominent index
-			padding = 8
+			# Much bigger padding (5x bigger)
+			padding = 20
 			element_width = x2 - x1
 			element_height = y2 - y1
 
-			# Always try to place inside the element first, then outside if too small
-			if element_width >= text_width + padding * 2 and element_height >= text_height + padding * 2:
-				# Place in top-left corner inside the element
+			# Simple positioning logic: always top-left
+			# Inside if element is big enough, outside if too small
+			min_container_width = text_width + padding * 2
+			min_container_height = text_height + padding * 2
+
+			if element_width >= min_container_width and element_height >= min_container_height:
+				# Place inside top-left corner
 				text_x = x1 + padding
 				text_y = y1 + padding
 			else:
-				# Place outside above the element
+				# Place outside top-left corner
 				text_x = x1
-				text_y = max(0, y1 - text_height - padding)
+				text_y = max(0, y1 - min_container_height)
 
-			# Ensure text stays within image bounds
-			img_width = 1200  # Default assumption, could be passed as parameter
-			img_height = 800
-			text_x = max(0, min(text_x, img_width - text_width - padding))
-			text_y = max(0, min(text_y, img_height - text_height - padding))
+			# Ensure text stays within image bounds (use actual image size if available)
+			img_width, img_height = draw.im.size if hasattr(draw, 'im') else (2000, 1500)  # Larger default
+			text_x = max(0, min(text_x, img_width - min_container_width))
+			text_y = max(0, min(text_y, img_height - min_container_height))
 
-			# Draw bigger background rectangle with element-type-specific styling
+			# Draw much bigger background rectangle (5x bigger)
 			bg_x1 = text_x - padding
 			bg_y1 = text_y - padding
 			bg_x2 = text_x + text_width + padding
 			bg_y2 = text_y + text_height + padding
 
 			# Use element color as background with white text for high contrast
-			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=color, outline='white', width=2)
+			draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=color, outline='white', width=3)
 
 			# Draw white text on colored background for maximum visibility
-			draw.text((text_x, text_y), text, fill='white', font=big_font or font)
-
-			# Add element type indicator if space allows
-			if element_width >= 60 and element_height >= 40:
-				type_text = element_type.upper()[:3]  # Show first 3 chars of element type
-				try:
-					small_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 10)
-				except (OSError, IOError):
-					small_font = font
-
-				if small_font:
-					type_bbox = draw.textbbox((0, 0), type_text, font=small_font)
-					type_width = type_bbox[2] - type_bbox[0]
-					type_height = type_bbox[3] - type_bbox[1]
-
-					# Place type text in bottom-right corner
-					type_x = x2 - type_width - 4
-					type_y = y2 - type_height - 4
-
-					# Small background for type text
-					draw.rectangle(
-						[type_x - 2, type_y - 1, type_x + type_width + 2, type_y + type_height + 1],
-						fill='rgba(0,0,0,128)',
-						outline=color,
-						width=1,
-					)
-					draw.text((type_x, type_y), type_text, fill='white', font=small_font)
+			draw.text((text_x, text_y), text, fill='white', font=huge_font or font)
 
 		except Exception as e:
 			logger.debug(f'Failed to draw enhanced text overlay: {e}')
