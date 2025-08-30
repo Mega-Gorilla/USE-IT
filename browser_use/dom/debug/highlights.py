@@ -100,7 +100,7 @@ async def inject_highlighting_script(dom_service: DomService, interactive_elemen
 		# Convert DOMSelectorMap to the format expected by the JavaScript
 		converted_elements = convert_dom_selector_map_to_highlight_format(interactive_elements)
 
-		logger.debug(f'📍 Creating CSP-safe highlighting for {len(converted_elements)} elements')
+		logger.debug(f'Creating CSP-safe highlighting for {len(converted_elements)} elements')
 
 		# ALWAYS remove any existing highlights first to prevent double-highlighting
 		await remove_highlighting_script(dom_service)
