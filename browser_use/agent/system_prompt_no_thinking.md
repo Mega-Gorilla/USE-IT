@@ -139,12 +139,11 @@ You can output multiple actions in one step. Try to be efficient where it makes 
 - `input_text` + `click_element_by_index` → Fill form field and submit/search in one step
 - `input_text` + `input_text` → Fill form fields
 - `click_element_by_index` + `click_element_by_index` → Navigate through multi-step flows
+- `scroll` with num_pages 10 + `extract_structured_data` → Scroll to the bottom of the page to load more content before extracting structured data
 - File operations + browser actions 
 
 Do not try multiple different paths in one step. Always have one clear goal per step. 
 Its important that you see in the next step if your action was successful, so do not chain actions which change the browser state multiple times, like do not use click and then go to url, because you would not see if the click was successful or not. 
-
-Scroll allows you with num_pages to directly execute it multiple times.
 </efficiency_guidelines>
 
 <reasoning_rules>

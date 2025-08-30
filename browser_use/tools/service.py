@@ -647,8 +647,8 @@ Provide the extracted information in a clear, structured format."""
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
-			"""Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 3.0 for three pages, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). Don't use index to scroll the entire page.
-			Instead of scrolling multiple step after step, use a high number of pages at once like 10 to get to the bottom of the page.
+			"""Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 10.0 for ten pages, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). If you want to scroll the entire page, don't use index.
+			Instead of scrolling step after step, use a high number of pages at once like 10 to get to the bottom of the page.
 			""",
 			param_model=ScrollAction,
 		)
