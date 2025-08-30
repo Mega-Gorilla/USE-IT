@@ -4,7 +4,6 @@ This module replaces JavaScript-based highlighting with fast Python image proces
 to draw bounding boxes around interactive elements directly on screenshots.
 """
 
-import asyncio
 import base64
 import io
 import logging
@@ -286,7 +285,7 @@ def draw_bounding_box_with_text(
 			logger.debug(f'Failed to draw text overlay: {e}')
 
 
-async def process_element_highlight(
+def process_element_highlight(
 	element_id: int,
 	element,
 	draw,
@@ -295,7 +294,7 @@ async def process_element_highlight(
 	filter_highlight_ids: bool,
 	image_size: tuple[int, int],
 ) -> None:
-	"""Process a single element for highlighting in parallel."""
+	"""Process a single element for highlighting."""
 	try:
 		# Use absolute_position coordinates directly
 		if not element.absolute_position:
@@ -391,17 +390,10 @@ async def create_highlighted_screenshot(
 			except OSError:
 				font = None  # Use default font
 
-		# Process elements in parallel for better performance
-		tasks = []
+		# Process elements sequentially to avoid ImageDraw thread safety issues
+		# PIL ImageDraw is not thread-safe, so we process elements one by one
 		for element_id, element in selector_map.items():
-			task = process_element_highlight(
-				element_id, element, draw, device_pixel_ratio, font, filter_highlight_ids, image.size
-			)
-			tasks.append(task)
-
-		# Execute all element processing tasks in parallel
-		if tasks:
-			await asyncio.gather(*tasks, return_exceptions=True)
+			process_element_highlight(element_id, element, draw, device_pixel_ratio, font, filter_highlight_ids, image.size)
 
 		# Convert back to base64
 		output_buffer = io.BytesIO()
