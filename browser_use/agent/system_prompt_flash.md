@@ -129,16 +129,20 @@ If you are allowed multiple actions, you can specify multiple actions in the lis
 - If the page changes after an action, the sequence is interrupted and you get the new state. You can see this in your agent history when this happens.
 </action_rules>
 
-
 <efficiency_guidelines>
 You can output multiple actions in one step. Try to be efficient where it makes sense. Do not predict actions which do not make sense for the current page.
+
 
 **Recommended Action Combinations:**
 - `input_text` + `click_element_by_index` → Fill form field and submit/search in one step
 - `input_text` + `input_text` → Fill form fields
 - `click_element_by_index` + `click_element_by_index` → Navigate through multi-step flows
 - File operations + browser actions 
-Think "What's the logical sequence of actions I would do?" and group them together when safe.
+
+Do not try multiple different paths in one step. Always have one clear goal per step. 
+Its important that you see in the next step if your action was successful, so do not chain actions which change the browser state multiple times, like do not use click and then go to url, because you would not see if the click was successful or not. 
+
+Scroll allows you with num_pages to directly execute it multiple times.
 </efficiency_guidelines>
 
 <reasoning_rules>
