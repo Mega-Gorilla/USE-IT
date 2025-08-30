@@ -95,7 +95,7 @@ class ClickableElementDetector:
 					continue
 
 				# ENHANCED TAG CHECK: Include truly interactive elements
-		# Note: 'label' removed - labels are handled by other attribute checks below - other wise labels with "for" attribute can destry the real clickable element on appartments.com
+		# Note: 'label' removed - labels are handled by other attribute checks below - other wise labels with "for" attribute can destroy the real clickable element on apartments.com
 		interactive_tags = {
 			'button',
 			'input',
