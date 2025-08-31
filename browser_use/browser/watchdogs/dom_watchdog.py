@@ -16,6 +16,8 @@ from browser_use.dom.views import (
 	EnhancedDOMTreeNode,
 	SerializedDOMState,
 )
+from browser_use.observability import observe_debug
+from browser_use.utils import time_execution_async
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary, PageInfo
@@ -42,70 +44,7 @@ class DOMWatchdog(BaseWatchdog):
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		# self.logger.debug('Setting up init scripts in browser')
-
-		self.logger.debug('💉 Injecting DOM Service init script to track event listeners added to DOM elements by JS...')
-
-		init_script = """
-			// check to make sure we're not inside the PDF viewer
-			window.isPdfViewer = !!document?.body?.querySelector('body > embed[type="application/pdf"][width="100%"]')
-			if (!window.isPdfViewer) {
-
-				// Permissions
-				const originalQuery = window.navigator.permissions.query;
-				window.navigator.permissions.query = (parameters) => (
-					parameters.name === 'notifications' ?
-						Promise.resolve({ state: Notification.permission }) :
-						originalQuery(parameters)
-				);
-				(() => {
-					if (window._eventListenerTrackerInitialized) return;
-					window._eventListenerTrackerInitialized = true;
-
-					const originalAddEventListener = EventTarget.prototype.addEventListener;
-					const eventListenersMap = new WeakMap();
-
-					EventTarget.prototype.addEventListener = function(type, listener, options) {
-						if (typeof listener === "function") {
-							let listeners = eventListenersMap.get(this);
-							if (!listeners) {
-								listeners = [];
-								eventListenersMap.set(this, listeners);
-							}
-
-							listeners.push({
-								type,
-								listener,
-								listenerPreview: listener.toString().slice(0, 100),
-								options
-							});
-						}
-
-						return originalAddEventListener.call(this, type, listener, options);
-					};
-
-					window.getEventListenersForNode = (node) => {
-						const listeners = eventListenersMap.get(node) || [];
-						return listeners.map(({ type, listenerPreview, options }) => ({
-							type,
-							listenerPreview,
-							options
-						}));
-					};
-				})();
-			}
-		"""
-
-		# Try to inject the script, but don't fail if the Page domain isn't ready yet
-		# This can happen when a new tab is created and the CDP session isn't fully attached
-		try:
-			await self.browser_session._cdp_add_init_script(init_script)
-		except Exception as e:
-			if "'Page.addScriptToEvaluateOnNewDocument' wasn't found" in str(e):
-				self.logger.debug(f'Page domain not ready for new tab, skipping init script injection: {e}')
-				# The script will be injected when the page actually navigates
-			else:
-				# Re-raise other errors
-				raise
+		return None
 
 	def _get_recent_events_str(self, limit: int = 10) -> str | None:
 		"""Get the most recent events from the event bus as JSON.
@@ -164,10 +103,10 @@ class DOMWatchdog(BaseWatchdog):
 		self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got page URL: {page_url}')
 		if self.browser_session.agent_focus:
 			self.logger.debug(
-				f'📍 Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
+				f'Current page URL: {page_url}, target_id: {self.browser_session.agent_focus.target_id}, session_id: {self.browser_session.agent_focus.session_id}'
 			)
 		else:
-			self.logger.debug(f'📍 Current page URL: {page_url}, no cdp_session attached')
+			self.logger.debug(f'Current page URL: {page_url}, no cdp_session attached')
 
 		# check if we should skip DOM tree build for pointless pages
 		not_a_meaningful_website = page_url.lower().split(':', 1)[0] not in ('http', 'https')
@@ -243,81 +182,89 @@ class DOMWatchdog(BaseWatchdog):
 					recent_events=self._get_recent_events_str() if event.include_recent_events else None,
 				)
 
-			# Normal path: Build DOM tree if requested
-			if event.include_dom:
-				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🌳 Building DOM tree...')
+			# Execute DOM building and screenshot capture in parallel
+			dom_task = None
+			screenshot_task = None
 
-				# Build the DOM directly using the internal method
+			# Start DOM building task if requested
+			if event.include_dom:
+				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🌳 Starting DOM tree build task...')
+
 				previous_state = (
 					self.browser_session._cached_browser_state_summary.dom_state
 					if self.browser_session._cached_browser_state_summary
 					else None
 				)
 
+				dom_task = asyncio.create_task(self._build_dom_tree_without_highlights(previous_state))
+
+			# Start clean screenshot task if requested (without JS highlights)
+			if event.include_screenshot:
+				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 Starting clean screenshot task...')
+				screenshot_task = asyncio.create_task(self._capture_clean_screenshot())
+
+			# Wait for both tasks to complete
+			content = None
+			screenshot_b64 = None
+
+			if dom_task:
 				try:
-					# Call the DOM building method directly
-					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: Starting _build_dom_tree...')
-					content = await self._build_dom_tree(previous_state)
-					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ _build_dom_tree completed')
+					content = await dom_task
+					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ DOM tree build completed')
 				except Exception as e:
 					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: DOM build failed: {e}, using minimal state')
 					content = SerializedDOMState(_root=None, selector_map={})
-
-				if not content:
-					# Fallback to minimal DOM state
-					self.logger.warning('DOM build returned no content, using minimal state')
-					content = SerializedDOMState(_root=None, selector_map={})
 			else:
-				# Skip DOM building if not requested
 				content = SerializedDOMState(_root=None, selector_map={})
 
-			# re-focus top-level page session context
-			assert self.browser_session.agent_focus is not None, 'No current target ID'
-			await self.browser_session.get_or_create_cdp_session(target_id=self.browser_session.agent_focus.target_id, focus=True)
-
-			# Get screenshot if requested
-			screenshot_b64 = None
-			if event.include_screenshot:
-				self.logger.debug(
-					f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: 📸 DOM watchdog requesting screenshot, include_screenshot={event.include_screenshot}'
-				)
+			if screenshot_task:
 				try:
-					# Check if handler is registered
-					handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
-					handler_names = [getattr(h, '__name__', str(h)) for h in handlers]
-					self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {handler_names}')
-
-					screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
-					self.logger.debug('📸 Dispatched ScreenshotEvent, waiting for event to complete...')
-
-					# Wait for the event itself to complete (this waits for all handlers)
-					await screenshot_event
-
-					# Get the single handler result
-					screenshot_b64 = await screenshot_event.event_result(raise_if_any=True, raise_if_none=True)
-				except TimeoutError:
-					self.logger.warning('📸 Screenshot timed out after 6 seconds - no handler registered or slow page?')
-
+					screenshot_b64 = await screenshot_task
+					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Clean screenshot captured')
 				except Exception as e:
-					self.logger.warning(f'📸 Screenshot failed: {type(e).__name__}: {e}')
-			else:
-				self.logger.debug(f'📸 Skipping screenshot, include_screenshot={event.include_screenshot}')
+					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Clean screenshot failed: {e}')
+					screenshot_b64 = None
+
+			# Apply Python-based highlighting if both DOM and screenshot are available
+			if screenshot_b64 and content and content.selector_map and self.browser_session.browser_profile.highlight_elements:
+				try:
+					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🎨 Applying Python-based highlighting...')
+					from browser_use.browser.python_highlights import create_highlighted_screenshot_async
+
+					# Get CDP session for viewport info
+					cdp_session = await self.browser_session.get_or_create_cdp_session()
+					start = time.time()
+					screenshot_b64 = await create_highlighted_screenshot_async(
+						screenshot_b64,
+						content.selector_map,
+						cdp_session,
+						self.browser_session.browser_profile.filter_highlight_ids,
+					)
+					self.logger.debug(
+						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Applied highlights to {len(content.selector_map)} elements in {time.time() - start:.2f}s'
+					)
+				except Exception as e:
+					self.logger.warning(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Python highlighting failed: {e}')
+
+			# Ensure we have valid content
+			if not content:
+				content = SerializedDOMState(_root=None, selector_map={})
 
 			# Tabs info already fetched at the beginning
 
 			# Get target title safely
 			try:
 				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: Getting page title...')
-				title = await asyncio.wait_for(self.browser_session.get_current_page_title(), timeout=2.0)
+				title = await asyncio.wait_for(self.browser_session.get_current_page_title(), timeout=1.0)
 				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got title: {title}')
 			except Exception as e:
 				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Failed to get title: {e}')
 				title = 'Page'
 
-			# Get comprehensive page info from CDP
+			# Get comprehensive page info from CDP with timeout
 			try:
 				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: Getting page info from CDP...')
-				page_info = await self._get_page_info()
+				page_info = await asyncio.wait_for(self._get_page_info(), timeout=1.0)
 				self.logger.debug(f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: Got page info from CDP: {page_info}')
 			except Exception as e:
 				self.logger.debug(
@@ -451,7 +398,7 @@ class DOMWatchdog(BaseWatchdog):
 				self.browser_session.update_cached_selector_map(self.selector_map)
 			self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: ✅ Selector maps updated, {len(self.selector_map)} elements')
 
-			# Inject highlighting for visual feedback if we have elements and highlighting is enabled
+			# Inject highlighting for visual feedback if we have elements
 			if self.selector_map and self._dom_service and self.browser_session.browser_profile.highlight_elements:
 				try:
 					self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Injecting highlighting script...')
@@ -479,6 +426,95 @@ class DOMWatchdog(BaseWatchdog):
 			)
 			raise
 
+	@time_execution_async('build_dom_tree_without_highlights')
+	@observe_debug(ignore_input=True, ignore_output=True, name='build_dom_tree_without_highlights')
+	async def _build_dom_tree_without_highlights(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
+		"""Build DOM tree without injecting JavaScript highlights (for parallel execution)."""
+		try:
+			self.logger.debug('🔍 DOMWatchdog._build_dom_tree_without_highlights: STARTING DOM tree build')
+
+			# Create or reuse DOM service
+			if self._dom_service is None:
+				self._dom_service = DomService(
+					browser_session=self.browser_session,
+					logger=self.logger,
+					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
+				)
+
+			# Get serialized DOM tree using the service
+			self.logger.debug('🔍 DOMWatchdog._build_dom_tree_without_highlights: Calling DomService.get_serialized_dom_tree...')
+			start = time.time()
+			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
+				previous_cached_state=previous_state,
+			)
+			end = time.time()
+			self.logger.debug(
+				'🔍 DOMWatchdog._build_dom_tree_without_highlights: ✅ DomService.get_serialized_dom_tree completed'
+			)
+
+			self.logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
+			self.logger.debug(f'Timing breakdown: {timing_info}')
+
+			# Update selector map for other watchdogs
+			self.logger.debug('🔍 DOMWatchdog._build_dom_tree_without_highlights: Updating selector maps...')
+			self.selector_map = self.current_dom_state.selector_map
+			# Update BrowserSession's cached selector map
+			if self.browser_session:
+				self.browser_session.update_cached_selector_map(self.selector_map)
+			self.logger.debug(
+				f'🔍 DOMWatchdog._build_dom_tree_without_highlights: ✅ Selector maps updated, {len(self.selector_map)} elements'
+			)
+
+			# Skip JavaScript highlighting injection - Python highlighting will be applied later
+			self.logger.debug('🔍 DOMWatchdog._build_dom_tree_without_highlights: ✅ COMPLETED DOM tree build (no JS highlights)')
+			return self.current_dom_state
+
+		except Exception as e:
+			self.logger.error(f'Failed to build DOM tree without highlights: {e}')
+			self.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type='DOMBuildFailed',
+					message=str(e),
+				)
+			)
+			raise
+
+	@time_execution_async('capture_clean_screenshot')
+	@observe_debug(ignore_input=True, ignore_output=True, name='capture_clean_screenshot')
+	async def _capture_clean_screenshot(self) -> str:
+		"""Capture a clean screenshot without JavaScript highlights."""
+		try:
+			self.logger.debug('🔍 DOMWatchdog._capture_clean_screenshot: Capturing clean screenshot...')
+
+			# Ensure we have a focused CDP session
+			assert self.browser_session.agent_focus is not None, 'No current target ID'
+			await self.browser_session.get_or_create_cdp_session(target_id=self.browser_session.agent_focus.target_id, focus=True)
+
+			# Check if handler is registered
+			handlers = self.event_bus.handlers.get('ScreenshotEvent', [])
+			handler_names = [getattr(h, '__name__', str(h)) for h in handlers]
+			self.logger.debug(f'📸 ScreenshotEvent handlers registered: {len(handlers)} - {handler_names}')
+
+			screenshot_event = self.event_bus.dispatch(ScreenshotEvent(full_page=False))
+			self.logger.debug('📸 Dispatched ScreenshotEvent, waiting for event to complete...')
+
+			# Wait for the event itself to complete (this waits for all handlers)
+			await screenshot_event
+
+			# Get the single handler result
+			screenshot_b64 = await screenshot_event.event_result(raise_if_any=True, raise_if_none=True)
+			if screenshot_b64 is None:
+				raise RuntimeError('Screenshot handler returned None')
+			self.logger.debug('🔍 DOMWatchdog._capture_clean_screenshot: ✅ Clean screenshot captured successfully')
+			return str(screenshot_b64)
+
+		except TimeoutError:
+			self.logger.warning('📸 Clean screenshot timed out after 6 seconds - no handler registered or slow page?')
+			raise
+		except Exception as e:
+			self.logger.warning(f'📸 Clean screenshot failed: {type(e).__name__}: {e}')
+			raise
+
 	async def _wait_for_stable_network(self):
 		"""Wait for page stability - simplified for CDP-only branch."""
 		start_time = time.time()
@@ -498,6 +534,7 @@ class DOMWatchdog(BaseWatchdog):
 		elapsed = time.time() - start_time
 		self.logger.debug(f'✅ Page stability wait completed in {elapsed:.2f}s')
 
+	@observe_debug(ignore_input=True, ignore_output=True, name='get_page_info')
 	async def _get_page_info(self) -> 'PageInfo':
 		"""Get comprehensive page information using a single CDP call.
 
