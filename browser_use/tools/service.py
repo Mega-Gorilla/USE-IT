@@ -263,7 +263,7 @@ class Tools(Generic[Context]):
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element by index. Only indices from your browser_state are allowed. Never use and index that is not inside your current browser_state. Set while_holding_ctrl=True to open any resulting navigation in a new tab.',
+			'Click element by index. Only indices from your browser_state are allowed. Never use an index that is not inside your current browser_state. Set while_holding_ctrl=True to open any resulting navigation in a new tab.',
 			param_model=ClickElementAction,
 		)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
