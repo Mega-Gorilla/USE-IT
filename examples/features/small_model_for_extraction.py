@@ -12,7 +12,7 @@ from browser_use import Agent, ChatOpenAI
 
 # This uses a bigger model for the planning
 # And a smaller model for the page content extraction
-# THink of it like a subagent which only task is to extract content from the current page
+# Think of it like a subagent which only task is to extract content from the current page
 llm = ChatOpenAI(model='gpt-4.1')
 small_llm = ChatOpenAI(model='gpt-4.1-mini')
 task = 'Find the founders of browser-use in ycombinator, extract all links and open the links one by one'

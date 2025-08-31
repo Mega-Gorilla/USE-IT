@@ -139,18 +139,18 @@ class AgentMessagePrompt:
 				if self.browser_state.page_info:
 					pi = self.browser_state.page_info
 					pages_above = pi.pixels_above / pi.viewport_height if pi.viewport_height > 0 else 0
-					elements_text = f'... {self.browser_state.pixels_above} pixels above ({pages_above:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+					elements_text = f'... {self.browser_state.pixels_above} pixels above ({pages_above:.1f} pages) - scroll to see more or extract markdown data if you are looking for specific information ...\n{elements_text}'
 				else:
-					elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract structured data if you are looking for specific information ...\n{elements_text}'
+					elements_text = f'... {self.browser_state.pixels_above} pixels above - scroll to see more or extract markdown data if you are looking for specific information ...\n{elements_text}'
 			else:
 				elements_text = f'[Start of page]\n{elements_text}'
 			if has_content_below:
 				if self.browser_state.page_info:
 					pi = self.browser_state.page_info
 					pages_below = pi.pixels_below / pi.viewport_height if pi.viewport_height > 0 else 0
-					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({pages_below:.1f} pages) - scroll to see more or extract structured data if you are looking for specific information ...'
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below ({pages_below:.1f} pages) - scroll to see more or extract markdown data if you are looking for specific information ...'
 				else:
-					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract structured data if you are looking for specific information ...'
+					elements_text = f'{elements_text}\n... {self.browser_state.pixels_below} pixels below - scroll to see more or extract markdown data if you are looking for specific information ...'
 			else:
 				elements_text = f'{elements_text}\n[End of page]'
 		else:
@@ -176,7 +176,7 @@ class AgentMessagePrompt:
 		# Check if current page is a PDF viewer and add appropriate message
 		pdf_message = ''
 		if self.browser_state.is_pdf_viewer:
-			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the extract_structured_data action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
+			pdf_message = 'PDF viewer cannot be rendered. In this page, DO NOT use the get_markdown action as PDF content cannot be rendered. Use the read_file action on the downloaded PDF in available_file_paths to read the full content.\n\n'
 
 		# Add recent events if available and requested
 		recent_events_text = ''
