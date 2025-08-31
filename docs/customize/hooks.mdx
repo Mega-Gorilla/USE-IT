@@ -60,14 +60,11 @@ async def my_step_hook(agent: Agent):
 	screenshot_event = agent.browser_session.event_bus.dispatch(ScreenshotEvent(full_page=False))
 	await screenshot_event
 
-	# Example: Add initialization script for new pages
-	await agent.browser_session._cdp_add_init_script('console.log("Hello from hook!")')
-
 	# Example: pause agent execution and resume it based on some custom code
 	if '/finished' in current_url:
 		agent.pause()
 		Path('result.txt').write_text(page_html)
-		input('Saved "completed" page content to result.txt, press [Enter] to resume...')
+		input('Saved "finished" page content to result.txt, press [Enter] to resume...')
 		agent.resume()
 
 
@@ -258,7 +255,7 @@ load_dotenv()
 def send_agent_history_step(data):
 	"""Send the agent step data to the recording API"""
 	url = 'http://127.0.0.1:9000/post_agent_history_step'
-	response = requests.post(url, json=data)
+	response = requests.post(url, json=data, timeout=10)
 	return response.json()
 
 
@@ -360,7 +357,7 @@ async def run_agent():
 if __name__ == '__main__':
 	# Check if API is running
 	try:
-		requests.get('http://127.0.0.1:9000')
+		requests.get('http://127.0.0.1:9000', timeout=5)
 		print('Recording API is available')
 	except Exception as e:
 		print('Warning: Recording API may not be running. Start api.py first.')
