@@ -850,7 +850,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			if not bg_path.exists():
 				return
 
-			with open(bg_path, 'r', encoding='utf-8') as f:
+			with open(bg_path, encoding='utf-8') as f:
 				content = f.read()
 
 			# Create the whitelisted domains object for JavaScript with proper indentation
