@@ -98,7 +98,7 @@ def draw_enhanced_bounding_box_with_text(
 		try:
 			# Scale font size for appropriate sizing across different resolutions
 			img_width, img_height = image_size
-			# Convert to CSS pixels by dividing by device pixel ratio
+
 			css_width = img_width  # / device_pixel_ratio
 			# Much smaller scaling - 1% of CSS viewport width, max 16px to prevent huge highlights
 			base_font_size = max(10, min(20, int(css_width * 0.01)))
