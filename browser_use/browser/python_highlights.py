@@ -481,10 +481,13 @@ async def create_highlighted_screenshot_async(
 	filename = os.getenv('BROWSER_USE_SCREENSHOT_FILE')
 	if filename:
 
-		async def _write_screenshot():
-			with open(filename, 'wb') as f:
-				f.write(base64.b64decode(final_screenshot))
-			logger.debug('Saved screenshot to ' + str(filename))
+		def _write_screenshot():
+			try:
+				with open(filename, 'wb') as f:
+					f.write(base64.b64decode(final_screenshot))
+				logger.debug('Saved screenshot to ' + str(filename))
+			except Exception as e:
+				logger.warning(f'Failed to save screenshot to {filename}: {e}')
 
 		await asyncio.to_thread(_write_screenshot)
 	return final_screenshot
