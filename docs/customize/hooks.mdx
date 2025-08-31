@@ -27,55 +27,65 @@ Each hook should be an `async` callable function that accepts the `agent` instan
 ### Basic Example
 
 ```python
+import asyncio
+from pathlib import Path
+
 from browser_use import Agent, ChatOpenAI
+from browser_use.browser.events import ScreenshotEvent
 
 
 async def my_step_hook(agent: Agent):
-    # inside a hook you can access all the state and methods under the Agent object:
-    #   agent.settings, agent.state, agent.task
-    #   agent.tools, agent.llm, agent.browser_session
-    #   agent.pause(), agent.resume(), agent.add_new_task(...), etc.
+	# inside a hook you can access all the state and methods under the Agent object:
+	#   agent.settings, agent.state, agent.task
+	#   agent.tools, agent.llm, agent.browser_session
+	#   agent.pause(), agent.resume(), agent.add_new_task(...), etc.
 
-    # You also have direct access to the browser state
-    state = await agent.browser_session.get_browser_state_summary()
-    
-    current_url = state.url
-    visit_log = agent.history.urls()
-    previous_url = visit_log[-2] if len(visit_log) >= 2 else None
-    print(f"Agent was last on URL: {previous_url} and is now on {current_url}")
+	# You also have direct access to the browser state
+	state = await agent.browser_session.get_browser_state_summary()
 
-    # Example: listen for events on the page, interact with the DOM, run JS directly, etc.
-    await page.on('domcontentloaded', lambda: print('page navigated to a new url...'))
-    await page.locator("css=form > input[type=submit]").click()
-    await page.evaluate('() => alert(1)')
-    await page.browser.new_tab
-    await agent.browser_session.session.context.add_init_script('/* some JS to run on every page */')
+	current_url = state.url
+	visit_log = agent.history.urls()
+	previous_url = visit_log[-2] if len(visit_log) >= 2 else None
+	print(f'Agent was last on URL: {previous_url} and is now on {current_url}')
+	cdp_session = await agent.browser_session.get_or_create_cdp_session()
 
-    # Example: monitor or intercept all network requests
-    async def handle_request(route):
-		# Print, modify, block, etc. do anything to the requests here
-        #   https://playwright.dev/python/docs/network#handle-requests
-		print(route.request, route.request.headers)
-		await route.continue_(headers=route.request.headers)
-	await page.route("**/*", handle_route)
+	# Example: Get page HTML content
+	doc = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
+	html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
+		params={'nodeId': doc['root']['nodeId']}, session_id=cdp_session.session_id
+	)
+	page_html = html_result['outerHTML']
 
-    # Example: pause agent execution and resume it based on some custom code
-    if '/completed' in current_url:
-        agent.pause()
-        Path('result.txt').write_text(await page.content())
-        input('Saved "completed" page content to result.txt, press [Enter] to resume...')
-        agent.resume()
+	# Example: Take a screenshot using the event system
+	screenshot_event = agent.browser_session.event_bus.dispatch(ScreenshotEvent(full_page=False))
+	await screenshot_event
 
-agent = Agent(
-    task="Search for the latest news about AI",
-    llm=ChatOpenAI(model="gpt-4.1-mini"),
-)
+	# Example: Add initialization script for new pages
+	await agent.browser_session._cdp_add_init_script('console.log("Hello from hook!")')
 
-await agent.run(
-    on_step_start=my_step_hook,
-    # on_step_end=...
-    max_steps=10
-)
+	# Example: pause agent execution and resume it based on some custom code
+	if '/finished' in current_url:
+		agent.pause()
+		Path('result.txt').write_text(page_html)
+		input('Saved "completed" page content to result.txt, press [Enter] to resume...')
+		agent.resume()
+
+
+async def main():
+	agent = Agent(
+		task='Search for the latest news about AI',
+		llm=ChatOpenAI(model='gpt-5-mini'),
+	)
+
+	await agent.run(
+		on_step_start=my_step_hook,
+		# on_step_end=...
+		max_steps=10,
+	)
+
+
+if __name__ == '__main__':
+	asyncio.run(main())
 ```
 
 ## Data Available in Hooks
