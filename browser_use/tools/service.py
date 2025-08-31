@@ -671,6 +671,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		@self.registry.action(
 			"""Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 10.0 for ten pages, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). If you want to scroll the entire page, don't use index.
 			Instead of scrolling step after step, use a high number of pages at once like 10 to get to the bottom of the page.
+			If you know where you want to scroll to, use scroll_to_text instead of this tool.
 			""",
 			param_model=ScrollAction,
 		)
@@ -739,7 +740,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			description='Scroll to a text in the current page',
+			description='Scroll to a text in the current page. This helps you to be efficient. Prefer this tool over scrolling step by step.',
 		)
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event

@@ -1444,13 +1444,13 @@ class BrowserSession(BaseModel):
 
 	async def navigate_to(self, url: str, new_tab: bool = False) -> None:
 		"""Navigate to a URL using the standard event system.
-		
+
 		Args:
 			url: URL to navigate to
 			new_tab: Whether to open in a new tab
 		"""
 		from browser_use.browser.events import NavigateToUrlEvent
-		
+
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=new_tab))
 		await event
 		await event.event_result(raise_if_any=True, raise_if_none=False)
