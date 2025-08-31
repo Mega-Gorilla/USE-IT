@@ -1,7 +1,7 @@
 from browser_use import Agent, ChatOpenAI
 
 agent = Agent(
-	task='Find founders of browser-use',
+	task='Give me a csv of 20 collage football games season 2025 ',
 	llm=ChatOpenAI(model='gpt-4.1-mini'),
 )
 

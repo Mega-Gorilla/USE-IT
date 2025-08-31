@@ -95,8 +95,8 @@ def draw_enhanced_bounding_box_with_text(
 		try:
 			# Scale font size based on image dimensions for consistent appearance across viewports
 			img_width, img_height = image_size
-			# Base font size scales with viewport width (36px for 1200px viewport)
-			base_font_size = max(16, min(48, int(img_width * 0.03)))  # 3% of viewport width
+			# Base font size scales with viewport width (24px for 1200px viewport) - smaller numbers
+			base_font_size = max(12, min(32, int(img_width * 0.02)))  # 2% of viewport width
 			big_font = None
 			try:
 				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
@@ -121,8 +121,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Scale padding based on viewport size for consistent appearance
-			padding = max(4, int(img_width * 0.005))  # 0.5% of viewport width
+			# Scale padding based on viewport size for consistent appearance - reduced for tighter fit
+			padding = max(2, int(img_width * 0.002))  # 0.2% of viewport width - smaller padding
 			element_width = x2 - x1
 			element_height = y2 - y1
 
