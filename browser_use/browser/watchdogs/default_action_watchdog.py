@@ -57,7 +57,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
 				self.logger.info(msg)
 				raise BrowserError(
-					'Click triggered a file input element which could not be handled, use the dedicated file upload function instead'
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			# Perform the actual click using internal implementation
@@ -226,16 +227,18 @@ class DefaultActionWatchdog(BaseWatchdog):
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
 
 			if tag_name == 'select':
-				self.logger.warning(
-					f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.'
-				)
-				raise Exception(
-					f'<llm_error_msg>Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.</llm_error_msg>'
+				msg = f'Cannot click on <select> elements. Use get_dropdown_options(index={element_node.element_index}) action instead.'
+				self.logger.warning(msg)
+				raise BrowserError(
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			if tag_name == 'input' and element_type == 'file':
-				raise Exception(
-					f'<llm_error_msg>Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action</llm_error_msg>'
+				msg = f'Cannot click on file input element (index={element_node.element_index}). File uploads must be handled using upload_file_to_element action.'
+				raise BrowserError(
+					message=msg,
+					long_term_memory=msg,
 				)
 
 			# Get CDP client
@@ -530,14 +533,17 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 		except URLNotAllowedError as e:
 			raise e
+		except BrowserError as e:
+			raise e
 		except Exception as e:
 			# Extract key element info for error message
 			element_info = f'<{element_node.tag_name or "unknown"}'
 			if element_node.element_index:
 				element_info += f' index={element_node.element_index}'
 			element_info += '>'
-			raise Exception(
-				f'<llm_error_msg>Failed to click element {element_info}. The element may not be interactable or visible. {type(e).__name__}: {e}</llm_error_msg>'
+			raise BrowserError(
+				message=f'Failed to click element: {e}',
+				long_term_memory=f'Failed to click element {element_info}. The element may not be interactable or visible.',
 			)
 
 	async def _type_to_page(self, text: str):
@@ -1473,9 +1479,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Check if it's a file input
 			if not self.browser_session.is_file_input(element_node):
-				raise Exception(
-					f'<llm_error_msg>Element {index_for_logging} is not a file input. Use click_element_by_index for non-file input elements.</llm_error_msg>'
-				)
+				msg = f'Upload failed - element {index_for_logging} is not a file input.'
+				raise BrowserError(message=msg, long_term_memory=msg)
 
 			# Get CDP client and session
 			cdp_client = self.browser_session.cdp_client
@@ -1612,191 +1617,203 @@ class DefaultActionWatchdog(BaseWatchdog):
 			except Exception as e:
 				raise ValueError(f'Failed to resolve node to object: {e}') from e
 
-			try:
-				# Use JavaScript to extract dropdown options
-				options_script = """
-				function() {
-					const startElement = this;
+			# Use JavaScript to extract dropdown options
+			options_script = """
+			function() {
+				const startElement = this;
+				
+				// Function to check if an element is a dropdown and extract options
+				function checkDropdownElement(element) {
+					// Check if it's a native select element
+					if (element.tagName.toLowerCase() === 'select') {
+						return {
+							type: 'select',
+							options: Array.from(element.options).map((opt, idx) => ({
+								text: opt.text.trim(),
+								value: opt.value,
+								index: idx,
+								selected: opt.selected
+							})),
+							id: element.id || '',
+							name: element.name || '',
+							source: 'target'
+						};
+					}
 					
-					// Function to check if an element is a dropdown and extract options
-					function checkDropdownElement(element) {
-						// Check if it's a native select element
-						if (element.tagName.toLowerCase() === 'select') {
-							return {
-								type: 'select',
-								options: Array.from(element.options).map((opt, idx) => ({
-									text: opt.text.trim(),
-									value: opt.value,
-									index: idx,
-									selected: opt.selected
-								})),
-								id: element.id || '',
-								name: element.name || '',
-								source: 'target'
-							};
-						}
+					// Check if it's an ARIA dropdown/menu
+					const role = element.getAttribute('role');
+					if (role === 'menu' || role === 'listbox' || role === 'combobox') {
+						// Find all menu items/options
+						const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
+						const options = [];
 						
-						// Check if it's an ARIA dropdown/menu
-						const role = element.getAttribute('role');
-						if (role === 'menu' || role === 'listbox' || role === 'combobox') {
-							// Find all menu items/options
-							const menuItems = element.querySelectorAll('[role="menuitem"], [role="option"]');
-							const options = [];
-							
-							menuItems.forEach((item, idx) => {
-								const text = item.textContent ? item.textContent.trim() : '';
-								if (text) {
-									options.push({
-										text: text,
-										value: item.getAttribute('data-value') || text,
-										index: idx,
-										selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
-									});
-								}
-							});
-							
+						menuItems.forEach((item, idx) => {
+							const text = item.textContent ? item.textContent.trim() : '';
+							if (text) {
+								options.push({
+									text: text,
+									value: item.getAttribute('data-value') || text,
+									index: idx,
+									selected: item.getAttribute('aria-selected') === 'true' || item.classList.contains('selected')
+								});
+							}
+						});
+						
+						return {
+							type: 'aria',
+							options: options,
+							id: element.id || '',
+							name: element.getAttribute('aria-label') || '',
+							source: 'target'
+						};
+					}
+					
+					// Check if it's a Semantic UI dropdown or similar
+					if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
+						const menuItems = element.querySelectorAll('.item, .option, [data-value]');
+						const options = [];
+						
+						menuItems.forEach((item, idx) => {
+							const text = item.textContent ? item.textContent.trim() : '';
+							if (text) {
+								options.push({
+									text: text,
+									value: item.getAttribute('data-value') || text,
+									index: idx,
+									selected: item.classList.contains('selected') || item.classList.contains('active')
+								});
+							}
+						});
+						
+						if (options.length > 0) {
 							return {
-								type: 'aria',
+								type: 'custom',
 								options: options,
 								id: element.id || '',
 								name: element.getAttribute('aria-label') || '',
 								source: 'target'
 							};
 						}
-						
-						// Check if it's a Semantic UI dropdown or similar
-						if (element.classList.contains('dropdown') || element.classList.contains('ui')) {
-							const menuItems = element.querySelectorAll('.item, .option, [data-value]');
-							const options = [];
-							
-							menuItems.forEach((item, idx) => {
-								const text = item.textContent ? item.textContent.trim() : '';
-								if (text) {
-									options.push({
-										text: text,
-										value: item.getAttribute('data-value') || text,
-										index: idx,
-										selected: item.classList.contains('selected') || item.classList.contains('active')
-									});
-								}
-							});
-							
-							if (options.length > 0) {
-								return {
-									type: 'custom',
-									options: options,
-									id: element.id || '',
-									name: element.getAttribute('aria-label') || '',
-									source: 'target'
-								};
-							}
-						}
-						
-						return null;
 					}
 					
-					// Function to recursively search children up to specified depth
-					function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
-						if (currentDepth >= maxDepth) return null;
-						
-						// Check all direct children
-						for (let child of element.children) {
-							// Check if this child is a dropdown
-							const result = checkDropdownElement(child);
-							if (result) {
-								result.source = `child-depth-${currentDepth + 1}`;
-								return result;
-							}
-							
-							// Recursively check this child's children
-							const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
-							if (childResult) {
-								return childResult;
-							}
-						}
-						
-						return null;
-					}
-					
-					// First check the target element itself
-					let dropdownResult = checkDropdownElement(startElement);
-					if (dropdownResult) {
-						return dropdownResult;
-					}
-					
-					// If target element is not a dropdown, search children up to depth 4
-					dropdownResult = searchChildrenForDropdowns(startElement, 4);
-					if (dropdownResult) {
-						return dropdownResult;
-					}
-					
-					return {
-						error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
-					};
+					return null;
 				}
-				"""
+				
+				// Function to recursively search children up to specified depth
+				function searchChildrenForDropdowns(element, maxDepth, currentDepth = 0) {
+					if (currentDepth >= maxDepth) return null;
+					
+					// Check all direct children
+					for (let child of element.children) {
+						// Check if this child is a dropdown
+						const result = checkDropdownElement(child);
+						if (result) {
+							result.source = `child-depth-${currentDepth + 1}`;
+							return result;
+						}
+						
+						// Recursively check this child's children
+						const childResult = searchChildrenForDropdowns(child, maxDepth, currentDepth + 1);
+						if (childResult) {
+							return childResult;
+						}
+					}
+					
+					return null;
+				}
+				
+				// First check the target element itself
+				let dropdownResult = checkDropdownElement(startElement);
+				if (dropdownResult) {
+					return dropdownResult;
+				}
+				
+				// If target element is not a dropdown, search children up to depth 4
+				dropdownResult = searchChildrenForDropdowns(startElement, 4);
+				if (dropdownResult) {
+					return dropdownResult;
+				}
+				
+				return {
+					error: `Element and its children (depth 4) are not recognizable dropdown types (tag: ${startElement.tagName}, role: ${startElement.getAttribute('role')}, classes: ${startElement.className})`
+				};
+			}
+			"""
 
-				result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-					params={
-						'functionDeclaration': options_script,
-						'objectId': object_id,
-						'returnByValue': True,
-					},
-					session_id=cdp_session.session_id,
+			result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+				params={
+					'functionDeclaration': options_script,
+					'objectId': object_id,
+					'returnByValue': True,
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			dropdown_data = result.get('result', {}).get('value', {})
+
+			if dropdown_data.get('error'):
+				raise BrowserError(message=dropdown_data['error'], long_term_memory=dropdown_data['error'])
+
+			if not dropdown_data.get('options'):
+				msg = f'No options found in dropdown at index {index_for_logging}'
+				raise BrowserError(message=msg, long_term_memory=msg)
+
+			# Format options for display
+			formatted_options = []
+			for opt in dropdown_data['options']:
+				# Use JSON encoding to ensure exact string matching
+				encoded_text = json.dumps(opt['text'])
+				status = ' (selected)' if opt.get('selected') else ''
+				formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
+
+			dropdown_type = dropdown_data.get('type', 'select')
+			element_info = f'Index: {index_for_logging}, Type: {dropdown_type}, ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
+			source_info = dropdown_data.get('source', 'unknown')
+
+			if source_info == 'target':
+				msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
+			else:
+				msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
+			msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown_option(index={index_for_logging}, text=...)'
+
+			if source_info == 'target':
+				self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
+			else:
+				self.logger.info(
+					f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging} in {source_info}'
 				)
 
-				dropdown_data = result.get('result', {}).get('value', {})
+			# Create structured memory for the response
+			short_term_memory = msg
+			long_term_memory = f'Got dropdown options for index {index_for_logging}'
 
-				if dropdown_data.get('error'):
-					raise ValueError(dropdown_data['error'])
+			# Return the dropdown data as a dict with structured memory
+			return {
+				'type': dropdown_type,
+				'options': json.dumps(dropdown_data['options']),  # Convert list to JSON string for dict[str, str] type
+				'element_info': element_info,
+				'source': source_info,
+				'formatted_options': '\n'.join(formatted_options),
+				'message': msg,
+				'short_term_memory': short_term_memory,
+				'long_term_memory': long_term_memory,
+				'element_index': str(index_for_logging),
+			}
 
-				if not dropdown_data.get('options'):
-					raise ValueError('No options found in dropdown')
-
-				# Format options for display
-				formatted_options = []
-				for opt in dropdown_data['options']:
-					# Use JSON encoding to ensure exact string matching
-					encoded_text = json.dumps(opt['text'])
-					status = ' (selected)' if opt.get('selected') else ''
-					formatted_options.append(f'{opt["index"]}: text={encoded_text}, value={json.dumps(opt["value"])}{status}')
-
-				dropdown_type = dropdown_data.get('type', 'select')
-				element_info = f'Index: {index_for_logging}, Type: {dropdown_type}, ID: {dropdown_data.get("id", "none")}, Name: {dropdown_data.get("name", "none")}'
-				source_info = dropdown_data.get('source', 'unknown')
-
-				if source_info == 'target':
-					msg = f'Found {dropdown_type} dropdown ({element_info}):\n' + '\n'.join(formatted_options)
-				else:
-					msg = f'Found {dropdown_type} dropdown in {source_info} ({element_info}):\n' + '\n'.join(formatted_options)
-				msg += f'\n\nUse the exact text or value string (without quotes) in select_dropdown_option(index={index_for_logging}, text=...)'
-
-				if source_info == 'target':
-					self.logger.info(f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging}')
-				else:
-					self.logger.info(
-						f'📋 Found {len(dropdown_data["options"])} dropdown options for index {index_for_logging} in {source_info}'
-					)
-
-				# Return the dropdown data as a dict
-				return {
-					'type': dropdown_type,
-					'options': json.dumps(dropdown_data['options']),  # Convert list to JSON string for dict[str, str] type
-					'element_info': element_info,
-					'source': source_info,
-					'formatted_options': '\n'.join(formatted_options),
-					'message': msg,
-				}
-
-			except Exception as e:
-				error_msg = f'Failed to get dropdown options: {str(e)}'
-				self.logger.error(error_msg)
-				raise ValueError(error_msg) from e
-
+		except BrowserError:
+			# Re-raise BrowserError as-is to preserve structured memory
+			raise
+		except TimeoutError:
+			msg = f'Failed to get dropdown options for index {index_for_logging} due to timeout.'
+			self.logger.error(msg)
+			raise BrowserError(message=msg, long_term_memory=msg)
 		except Exception as e:
-			error_msg = f'Failed to get dropdown options for element {index_for_logging}: {str(e)}'
+			msg = f'Failed to get dropdown options for element with index {index_for_logging}'
+			error_msg = f'{msg}: {str(e)}'
 			self.logger.error(error_msg)
-			raise ValueError(error_msg) from e
+			raise BrowserError(
+				message=error_msg, long_term_memory=f'Failed to get dropdown options for index {index_for_logging}.'
+			)
 
 	async def on_SelectDropdownOptionEvent(self, event: SelectDropdownOptionEvent) -> dict[str, str]:
 		"""Handle select dropdown option request with CDP."""
@@ -1855,7 +1872,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = options.map(opt => ({
 								text: opt.text.trim(),
 								value: opt.value
@@ -1863,7 +1880,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Option with text or value '${targetText}' not found in select element. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Option with text or value '${targetText}' not found in select element`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -1903,7 +1921,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = Array.from(menuItems).map(item => ({
 								text: item.textContent ? item.textContent.trim() : '',
 								value: item.getAttribute('data-value') || ''
@@ -1911,7 +1929,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Menu item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Menu item with text or value '${targetText}' not found`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -1958,7 +1977,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 								}
 							}
 							
-							// Show all available options for debugging
+							// Return available options as separate field
 							const availableOptions = Array.from(menuItems).map(item => ({
 								text: item.textContent ? item.textContent.trim() : '',
 								value: item.getAttribute('data-value') || ''
@@ -1966,7 +1985,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 							
 							return {
 								success: false,
-								error: `Custom dropdown item with text or value '${targetText}' not found. Available options: ${JSON.stringify(availableOptions, null, 2)}`
+								error: `Custom dropdown item with text or value '${targetText}' not found`,
+								availableOptions: availableOptions
 							};
 						}
 						
@@ -2041,8 +2061,46 @@ class DefaultActionWatchdog(BaseWatchdog):
 					}
 				else:
 					error_msg = selection_result.get('error', f'Failed to select option: {target_text}')
+					available_options = selection_result.get('availableOptions', [])
 					self.logger.error(f'❌ {error_msg}')
-					raise ValueError(error_msg)
+					self.logger.debug(f'Available options from JavaScript: {available_options}')
+
+					# If we have available options, return structured error data
+					if available_options:
+						# Format options for short_term_memory (simple bulleted list)
+						short_term_options = []
+						for opt in available_options:
+							if isinstance(opt, dict):
+								text = opt.get('text', '').strip()
+								value = opt.get('value', '').strip()
+								if text:
+									short_term_options.append(f'- {text}')
+								elif value:
+									short_term_options.append(f'- {value}')
+							elif isinstance(opt, str):
+								short_term_options.append(f'- {opt}')
+
+						if short_term_options:
+							short_term_memory = f'Available dropdown options at index {index_for_logging} are:\n' + '\n'.join(
+								short_term_options
+							)
+							long_term_memory = f"Couldn't select the dropdown option at index {index_for_logging} as '{target_text}' is not one of the available options."
+
+							# Return error result with structured memory instead of raising exception
+							return {
+								'success': 'false',
+								'error': error_msg,
+								'short_term_memory': short_term_memory,
+								'long_term_memory': long_term_memory,
+								'element_index': str(index_for_logging),
+							}
+
+					# Fallback to regular error result if no available options
+					return {
+						'success': 'false',
+						'error': error_msg,
+						'element_index': str(index_for_logging),
+					}
 
 			except Exception as e:
 				error_msg = f'Failed to select dropdown option: {str(e)}'

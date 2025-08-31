@@ -122,7 +122,7 @@ class TestScrollActions:
 		# This should fail with error about element not found
 		assert isinstance(result, ActionResult)
 		assert result.error is not None, 'Expected error for invalid element index'
-		assert 'Element index 999 not found' in result.error or 'Failed to scroll' in result.error
+		assert 'Element index 999 not found' in result.error or 'Failed to execute scroll' in result.error
 
 		# Test 4: Model parameter validation
 		scroll_with_index = ScrollAction(down=True, num_pages=1.0, frame_element_index=5)
