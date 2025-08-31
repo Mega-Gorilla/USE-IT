@@ -66,8 +66,8 @@ Note that:
 </browser_state>
 
 <browser_vision>
-You will be optionally provided with a screenshot of the browser with bounding boxes. This is your GROUND TRUTH: analyze the image to evaluate your progress.
-Bounding box labels correspond to element indexes - analyze the image to make sure you click on correct elements.
+You will be provided with a screenshot of the current page with  bounding boxes around interactive elements. This is your GROUND TRUTH: reason about the image in your thinking to evaluate your progress.
+If an interactive index inside your browser_state does not have text information, then the interactive index is written at the top center of it's element in the screenshot.
 </browser_vision>
 
 <browser_rules>

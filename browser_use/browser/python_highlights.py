@@ -131,15 +131,17 @@ def draw_enhanced_bounding_box_with_text(
 			container_width = text_width + padding * 2
 			container_height = text_height + padding * 2
 
-			# Position in top-left corner (inside if fits, outside if too small)
-			if element_width >= container_width and element_height >= container_height:
-				# Place inside top-left corner
-				bg_x1 = x1 + 2  # Small offset from edge
-				bg_y1 = y1 + 2
+			# Position in top center - for small elements, place further up to avoid blocking content
+			# Center horizontally within the element
+			bg_x1 = x1 + (element_width - container_width) // 2
+
+			# Simple rule: if element is small, place index further up to avoid blocking icons
+			if element_width < 60 or element_height < 30:
+				# Small element: place well above to avoid blocking content
+				bg_y1 = max(0, y1 - container_height - 5)
 			else:
-				# Place outside top-left corner
-				bg_x1 = x1
-				bg_y1 = max(0, y1 - container_height)
+				# Regular element: place inside with small offset
+				bg_y1 = y1 + 2
 
 			bg_x2 = bg_x1 + container_width
 			bg_y2 = bg_y1 + container_height
@@ -482,7 +484,7 @@ async def create_highlighted_screenshot_async(
 		async def _write_screenshot():
 			with open(filename, 'wb') as f:
 				f.write(base64.b64decode(final_screenshot))
-			logger.debug('Saved screenshot to screenshot.png')
+			logger.debug('Saved screenshot to ' + str(filename))
 
 		await asyncio.to_thread(_write_screenshot)
 	return final_screenshot
