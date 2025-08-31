@@ -4,6 +4,7 @@ This module replaces JavaScript-based highlighting with fast Python image proces
 to draw bounding boxes around interactive elements directly on screenshots.
 """
 
+import asyncio
 import base64
 import io
 import logging
@@ -479,9 +480,11 @@ async def create_highlighted_screenshot_async(
 
 	filename = os.getenv('BROWSER_USE_SCREENSHOT_FILE')
 	if filename:
-		import aiofiles
 
-		async with aiofiles.open(filename, 'wb') as f:
-			await f.write(base64.b64decode(final_screenshot))
-		logger.debug('Saved screenshot to ' + str(filename))
+		async def _write_screenshot():
+			with open(filename, 'wb') as f:
+				f.write(base64.b64decode(final_screenshot))
+			logger.debug('Saved screenshot to ' + str(filename))
+
+		await asyncio.to_thread(_write_screenshot)
 	return final_screenshot
