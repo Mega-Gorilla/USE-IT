@@ -1349,7 +1349,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_tabs')
 	async def get_tabs(self) -> list[TabInfo]:
 		"""Get information about all open tabs using CDP Target.getTargetInfo for speed."""
 		tabs = []
