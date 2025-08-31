@@ -172,11 +172,6 @@ CHROME_DEFAULT_ARGS = [
 	'--disable-extensions-http-throttling',
 	'--extensions-on-chrome-urls',
 	'--disable-default-apps',
-	'--disable-component-extensions-with-background-pages',
-	'--disable-background-networking',
-	'--disable-extensions-except-api',
-	'--disable-extension-content-verification',
-	'--allow-running-insecure-content',
 	f'--disable-features={",".join(CHROME_DISABLED_COMPONENTS)}',
 ]
 
@@ -563,6 +558,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
+	cookie_whitelist_domains: list[str] = Field(
+		default_factory=lambda: ['nature.com', 'qatarairways.com'],
+		description='List of domains to whitelist in the "I still don\'t care about cookies" extension, preventing automatic cookie banner handling on these sites.',
+	)
 
 	window_size: ViewportSize | None = Field(
 		default=None,
@@ -825,9 +824,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				logger.info(f'📂 Extracting {ext["name"]} extension...')
 				self._extract_extension(crx_file, ext_dir)
 
-				# Log extension version info
-				self._log_extension_version(ext_dir, ext['name'])
-
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 
@@ -835,10 +831,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
 				continue
 
-		# Apply minimal patch to cookie extension - hardcode nature.com whitelist
+		# Apply minimal patch to cookie extension with configurable whitelist
 		for i, path in enumerate(extension_paths):
 			if loaded_extension_names[i] == "I still don't care about cookies":
-				self._apply_minimal_extension_patch(Path(path))
+				self._apply_minimal_extension_patch(Path(path), self.cookie_whitelist_domains)
 
 		if extension_paths:
 			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
@@ -847,54 +843,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 		return extension_paths
 
-	def _log_extension_version(self, ext_dir: Path, ext_name: str) -> None:
-		"""Log extension version information from manifest."""
-		try:
-			manifest_path = ext_dir / 'manifest.json'
-			if manifest_path.exists():
-				import json
-
-				with open(manifest_path, 'r', encoding='utf-8') as f:
-					manifest = json.load(f)
-
-				version = manifest.get('version', 'unknown')
-				manifest_version = manifest.get('manifest_version', 'unknown')
-
-				logger.info(f'📦 {ext_name} v{version} (manifest v{manifest_version}) loaded')
-
-				# Special logging for uBlock Origin to show it's current
-				if ext_name == 'uBlock Origin':
-					logger.info(f'🛡️ uBlock Origin version {version} - Latest is 1.61.2+ (as of Aug 2025)')
-
-		except Exception as e:
-			logger.debug(f'Could not read version for {ext_name}: {e}')
-
-	def _get_extension_name(self, ext_dir: Path) -> str | None:
-		"""Get the actual extension name from manifest."""
-		try:
-			manifest_path = ext_dir / 'manifest.json'
-			if manifest_path.exists():
-				import json
-
-				with open(manifest_path, 'r', encoding='utf-8') as f:
-					manifest = json.load(f)
-
-				name = manifest.get('name', '')
-				if name.startswith('__MSG_'):
-					# Resolve localized name
-					locale_path = ext_dir / '_locales' / 'en' / 'messages.json'
-					if locale_path.exists():
-						with open(locale_path, 'r', encoding='utf-8') as f:
-							messages = json.load(f)
-						key = name.replace('__MSG_', '').replace('__', '')
-						return messages.get(key, {}).get('message', name)
-				return name
-		except Exception:
-			pass
-		return None
-
-	def _apply_minimal_extension_patch(self, ext_dir: Path) -> None:
-		"""Minimal patch: pre-populate chrome.storage.local with nature.com whitelist."""
+	def _apply_minimal_extension_patch(self, ext_dir: Path, whitelist_domains: list[str]) -> None:
+		"""Minimal patch: pre-populate chrome.storage.local with configurable domain whitelist."""
 		try:
 			bg_path = ext_dir / 'data' / 'background.js'
 			if not bg_path.exists():
@@ -902,6 +852,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 			with open(bg_path, 'r', encoding='utf-8') as f:
 				content = f.read()
+
+			# Create the whitelisted domains object for JavaScript with proper indentation
+			whitelist_entries = [f'        "{domain}": true' for domain in whitelist_domains]
+			whitelist_js = '{\n' + ',\n'.join(whitelist_entries) + '\n      }'
 
 			# Find the initialize() function and inject storage setup before updateSettings()
 			# The actual function uses 2-space indentation, not tabs
@@ -915,29 +869,29 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
   initialized = true;
 }"""
 
-			# New function with nature.com whitelist initialization
-			new_init = """// Pre-populate storage with nature.com whitelist if empty
-async function ensureWhitelistStorage() {
-  const result = await chrome.storage.local.get({ settings: null });
-  if (!result.settings) {
-    const defaultSettings = {
+			# New function with configurable whitelist initialization
+			new_init = f"""// Pre-populate storage with configurable domain whitelist if empty
+async function ensureWhitelistStorage() {{
+  const result = await chrome.storage.local.get({{ settings: null }});
+  if (!result.settings) {{
+    const defaultSettings = {{
       statusIndicators: true,
-      whitelistedDomains: { "nature.com": true }
-    };
-    await chrome.storage.local.set({ settings: defaultSettings });
-  }
-}
+      whitelistedDomains: {whitelist_js}
+    }};
+    await chrome.storage.local.set({{ settings: defaultSettings }});
+  }}
+}}
 
-async function initialize(checkInitialized, magic) {
-  if (checkInitialized && initialized) {
+async function initialize(checkInitialized, magic) {{
+  if (checkInitialized && initialized) {{
     return;
-  }
+  }}
   loadCachedRules();
   await ensureWhitelistStorage(); // Add storage initialization
   await updateSettings();
   await recreateTabList(magic);
   initialized = true;
-}"""
+}}"""
 
 			if old_init in content:
 				content = content.replace(old_init, new_init)
@@ -945,7 +899,8 @@ async function initialize(checkInitialized, magic) {
 				with open(bg_path, 'w', encoding='utf-8') as f:
 					f.write(content)
 
-				logger.info('[BrowserProfile] ✅ Cookie extension: nature.com pre-populated in storage')
+				domain_list = ', '.join(whitelist_domains)
+				logger.info(f'[BrowserProfile] ✅ Cookie extension: {domain_list} pre-populated in storage')
 			else:
 				logger.debug('[BrowserProfile] Initialize function not found for patching')
 

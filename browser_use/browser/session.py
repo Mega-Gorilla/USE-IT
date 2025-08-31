@@ -268,6 +268,7 @@ class BrowserSession(BaseModel):
 		filter_highlight_ids: bool | None = None,
 		auto_download_pdfs: bool | None = None,
 		profile_directory: str | None = None,
+		cookie_whitelist_domains: list[str] | None = None,
 	):
 		# Following the same pattern as AgentSettings in service.py
 		# Only pass non-None values to avoid validation errors
