@@ -77,7 +77,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
-			await asyncio.sleep(0.5)
+			await asyncio.sleep(0.25)
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
 			# by explicitly rebuilding and comparing when needed
@@ -89,6 +89,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
 			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
+			new_tab_opened = len(new_target_ids) > 0
+
 			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
@@ -106,8 +108,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
-			# Return click metadata (coordinates) if available
-			return click_metadata
+			# Return click metadata including new tab information
+			result_metadata = click_metadata if isinstance(click_metadata, dict) else {}
+			result_metadata['new_tab_opened'] = new_tab_opened
+
+			return result_metadata
 		except Exception as e:
 			raise
 
