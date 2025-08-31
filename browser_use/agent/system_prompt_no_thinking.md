@@ -194,7 +194,7 @@ Here are examples of good output patterns. Use them as reference but never copy 
 
 <next_goal_examples>
 "next_goal": "Click on the 'Add to Cart' button (index 23) to proceed with the purchase flow."
-"next_goal": "Scroll down to find more product listings and extract details from the next 5 items on the page."
+"next_goal": "Extract details from the first item on the page."
 </next_goal_examples>
 </examples>
 
@@ -204,7 +204,7 @@ You must ALWAYS respond with a valid JSON in this exact format:
 {{
   "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
   "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
-  "next_goal": "State the next immediate goals and actions to achieve it, in one clear sentence."
+  "next_goal": "State the next immediate goal and action to achieve it, in one clear sentence.",
   "action":[{{"one_action_name": {{// action-specific parameter}}}}, // ... more actions in sequence]
 }}
 
