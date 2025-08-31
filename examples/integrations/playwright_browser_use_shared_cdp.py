@@ -19,35 +19,16 @@ import tempfile
 
 from pydantic import BaseModel, Field
 
-
-# Check for required dependencies
-def check_dependencies():
-	"""Check if required packages are installed."""
-	missing_deps = []
-
-	try:
-		__import__('playwright')
-	except ImportError:
-		missing_deps.append('playwright')
-
-	try:
-		__import__('aiohttp')
-	except ImportError:
-		missing_deps.append('aiohttp')
-
-	if missing_deps:
-		print(f'❌ Missing dependencies: {", ".join(missing_deps)}')
-		print('Install with: uv add ' + ' '.join(missing_deps))
-		print('Also run: playwright install chromium')
-		sys.exit(1)
-
-	pass  # Dependencies found
-
-
-# Import after dependency check
-check_dependencies()
-import aiohttp
-from playwright.async_api import Browser, Page, async_playwright
+# Check for required dependencies first - before other imports
+try:
+	import aiohttp
+	from playwright.async_api import Browser, Page, async_playwright
+except ImportError as e:
+	print(f'❌ Missing dependencies for this example: {e}')
+	print('This example requires: playwright aiohttp')
+	print('Install with: uv add playwright aiohttp')
+	print('Also run: playwright install chromium')
+	sys.exit(1)
 
 from browser_use import Agent, BrowserSession, ChatOpenAI, Tools
 from browser_use.agent.views import ActionResult
@@ -77,7 +58,7 @@ class PlaywrightScreenshotAction(BaseModel):
 class PlaywrightGetTextAction(BaseModel):
 	"""Parameters for getting text using Playwright selectors."""
 
-	selector: str = Field(..., description='CSS selector to get text from')
+	selector: str = Field(..., description='CSS selector to get text from. Use "title" for page title.')
 
 
 async def start_chrome_with_debug_port(port: int = 9222):
@@ -187,18 +168,41 @@ async def playwright_fill_form(params: PlaywrightFillFormAction, browser_session
 
 		# Filling form with Playwright's precise selectors
 
-		# Use Playwright's robust selectors to fill the form
+		# Wait for form to be ready and fill basic fields
+		await playwright_page.wait_for_selector('input[name="custname"]', timeout=10000)
 		await playwright_page.fill('input[name="custname"]', params.customer_name)
 		await playwright_page.fill('input[name="custtel"]', params.phone_number)
 		await playwright_page.fill('input[name="custemail"]', params.email)
-		await playwright_page.select_option('select[name="size"]', params.size_option)
+
+		# Handle size selection - check if it's a select dropdown or radio buttons
+		size_select = playwright_page.locator('select[name="size"]')
+		size_radio = playwright_page.locator(f'input[name="size"][value="{params.size_option}"]')
+
+		if await size_select.count() > 0:
+			# It's a select dropdown
+			await playwright_page.select_option('select[name="size"]', params.size_option)
+		elif await size_radio.count() > 0:
+			# It's radio buttons
+			await playwright_page.check(f'input[name="size"][value="{params.size_option}"]')
+		else:
+			raise ValueError(f'Could not find size input field for value: {params.size_option}')
 
 		# Get form data to verify it was filled
 		form_data = {}
 		form_data['name'] = await playwright_page.input_value('input[name="custname"]')
 		form_data['phone'] = await playwright_page.input_value('input[name="custtel"]')
 		form_data['email'] = await playwright_page.input_value('input[name="custemail"]')
-		form_data['size'] = await playwright_page.input_value('select[name="size"]')
+
+		# Get size value based on input type
+		if await size_select.count() > 0:
+			form_data['size'] = await playwright_page.input_value('select[name="size"]')
+		else:
+			# For radio buttons, find the checked one
+			checked_radio = playwright_page.locator('input[name="size"]:checked')
+			if await checked_radio.count() > 0:
+				form_data['size'] = await checked_radio.get_attribute('value')
+			else:
+				form_data['size'] = 'none selected'
 
 		success_msg = f'✅ Form filled successfully with Playwright: {form_data}'
 
@@ -258,34 +262,46 @@ async def playwright_get_text(params: PlaywrightGetTextAction, browser_session: 
 
 		# Extracting text with Playwright selectors
 
-		# Use Playwright's robust element selection and text extraction
-		element = playwright_page.locator(params.selector).first
+		# Handle special selectors
+		if params.selector.lower() == 'title':
+			# Use page.title() for title element
+			text_content = await playwright_page.title()
+			result_data = {
+				'selector': 'title',
+				'text_content': text_content,
+				'inner_text': text_content,
+				'tag_name': 'TITLE',
+				'is_visible': True,
+			}
+		else:
+			# Use Playwright's robust element selection and text extraction
+			element = playwright_page.locator(params.selector).first
 
-		if await element.count() == 0:
-			error_msg = f'❌ No element found with selector: {params.selector}'
-			return ActionResult(error=error_msg)
+			if await element.count() == 0:
+				error_msg = f'❌ No element found with selector: {params.selector}'
+				return ActionResult(error=error_msg)
 
-		text_content = await element.text_content()
-		inner_text = await element.inner_text()
+			text_content = await element.text_content()
+			inner_text = await element.inner_text()
 
-		# Get additional element info
-		tag_name = await element.evaluate('el => el.tagName')
-		is_visible = await element.is_visible()
+			# Get additional element info
+			tag_name = await element.evaluate('el => el.tagName')
+			is_visible = await element.is_visible()
 
-		result_data = {
-			'selector': params.selector,
-			'text_content': text_content,
-			'inner_text': inner_text,
-			'tag_name': tag_name,
-			'is_visible': is_visible,
-		}
+			result_data = {
+				'selector': params.selector,
+				'text_content': text_content,
+				'inner_text': inner_text,
+				'tag_name': tag_name,
+				'is_visible': is_visible,
+			}
 
 		success_msg = f'✅ Extracted text using Playwright: {result_data}'
 
 		return ActionResult(
 			extracted_content=str(result_data),
 			include_in_memory=True,
-			long_term_memory=f'Extracted from {params.selector}: {text_content}',
+			long_term_memory=f'Extracted from {params.selector}: {result_data["text_content"]}',
 		)
 
 	except Exception as e:
