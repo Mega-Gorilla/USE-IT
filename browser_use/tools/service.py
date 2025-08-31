@@ -536,16 +536,19 @@ class Tools(Generic[Context]):
 		# This action is temporarily disabled as it needs refactoring to use events
 
 		@self.registry.action(
-			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the markdown of the current webpage based on a query.
-Recommended to be used ONLY when:
+			"""This tool sends the markdown of the current page with the query to an LLM to extract structured, semantic data (e.g. product description, price, all information about XYZ) from the markdown of the current webpage based on a query.
+Only use when:
 - You are sure that you are on the right page for the query
 - You know exactly the information you need to extract from the page
-DO NOT call this tool to:
+- You did not previously call this tool on the same page
+You can not use this tool to:
 - Get interactive elements like buttons, links, dropdowns, menus, etc.
 - If you previously asked extract_structured_data on the same page with the same query, you should not call it again.
 
-Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
+Set extract_links=True only if your query requires extracting links/URLs from the page.
 Use start_from_char to start extraction from a specific character position (use if extraction was previously truncated and you want more content).
+
+If this tool does not return the desired outcome, do not call it again, use scroll_to_text or scroll to find the desired information.
 """,
 		)
 		async def extract_structured_data(
@@ -602,7 +605,7 @@ Use start_from_char to start extraction from a specific character position (use 
 			original_html_length = content_stats['original_html_chars']
 			initial_markdown_length = content_stats['initial_markdown_chars']
 			chars_filtered = content_stats['filtered_chars_removed']
-			
+
 			stats_summary = f"""Content processed: {original_html_length:,} HTML chars → {initial_markdown_length:,} initial markdown → {final_filtered_length:,} filtered markdown"""
 			if start_from_char > 0:
 				stats_summary += f' (started from char {start_from_char:,})'
@@ -890,36 +893,37 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			)
 
 	# Custom done action for structured output
-	async def extract_clean_markdown(self, browser_session: BrowserSession, extract_links: bool = False) -> tuple[str, dict[str, Any]]:
+	async def extract_clean_markdown(
+		self, browser_session: BrowserSession, extract_links: bool = False
+	) -> tuple[str, dict[str, Any]]:
 		"""Extract clean markdown from the current page.
-		
+
 		Args:
 			browser_session: Browser session to extract content from
 			extract_links: Whether to preserve links in markdown
-			
+
 		Returns:
 			tuple: (clean_markdown_content, content_statistics)
 		"""
 		import re
-		
+
 		# Get HTML content from current page
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		try:
 			body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
 			page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
-				params={'backendNodeId': body_id['root']['backendNodeId']}, 
-				session_id=cdp_session.session_id
+				params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=cdp_session.session_id
 			)
 			page_html = page_html_result['outerHTML']
 			current_url = await browser_session.get_current_page_url()
 		except Exception as e:
 			raise RuntimeError(f"Couldn't extract page content: {e}")
-		
+
 		original_html_length = len(page_html)
-		
+
 		# Use html2text for clean markdown conversion
 		import html2text
-		
+
 		h = html2text.HTML2Text()
 		h.ignore_links = not extract_links
 		h.ignore_images = True
@@ -928,17 +932,17 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		h.unicode_snob = True
 		h.skip_internal_links = True
 		content = h.handle(page_html)
-		
+
 		initial_markdown_length = len(content)
-		
+
 		# Minimal cleanup - html2text already does most of the work
 		content = re.sub(r'%[0-9A-Fa-f]{2}', '', content)  # Remove any remaining URL encoding
-		
+
 		# Apply light preprocessing to clean up excessive whitespace
 		content, chars_filtered = self._preprocess_markdown_content(content)
-		
+
 		final_filtered_length = len(content)
-		
+
 		# Content statistics
 		stats = {
 			'url': current_url,
@@ -947,7 +951,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			'filtered_chars_removed': chars_filtered,
 			'final_filtered_chars': final_filtered_length,
 		}
-		
+
 		return content, stats
 
 	def _preprocess_markdown_content(self, content: str, max_newlines: int = 3) -> tuple[str, int]:
