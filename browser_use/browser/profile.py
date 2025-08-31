@@ -172,6 +172,11 @@ CHROME_DEFAULT_ARGS = [
 	'--disable-extensions-http-throttling',
 	'--extensions-on-chrome-urls',
 	'--disable-default-apps',
+	'--disable-component-extensions-with-background-pages',
+	'--disable-background-networking',
+	'--disable-extensions-except-api',
+	'--disable-extension-content-verification',
+	'--allow-running-insecure-content',
 	f'--disable-features={",".join(CHROME_DISABLED_COMPONENTS)}',
 ]
 
@@ -558,6 +563,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
+
 	window_size: ViewportSize | None = Field(
 		default=None,
 		description='Browser window size to use when headless=False.',
@@ -753,32 +759,34 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		# Extension definitions - optimized for automation and content extraction
+		# Combines uBlock Origin (ad blocking) + "I still don't care about cookies" (cookie banner handling)
 		extensions = [
 			{
 				'name': 'uBlock Origin',
 				'id': 'cjpalhdlnbpafiamejdnhcphjbkeiagm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
 			},
-			# {
-			# 	'name': "I still don't care about cookies",
-			# 	'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
-			# },
+			{
+				'name': "I still don't care about cookies",
+				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
+			},
 			{
 				'name': 'ClearURLs',
 				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
 			},
 			# {
 			# 	'name': 'Captcha Solver: Auto captcha solving service',
 			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
 			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
 			# },
-			{
-				'name': 'Consent-O-Matic',
-				'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dmdjildafknihdffpkfmmpnpoiajfjnjd%26uc',
-			},
+			# Consent-O-Matic disabled - using uBlock Origin's cookie lists instead for simplicity
+			# {
+			# 	'name': 'Consent-O-Matic',
+			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
+			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dmdjildafknihdffpkfmmpnpoiajfjnjd%26uc',
+			# },
 			# {
 			# 	'name': 'Privacy | Protect Your Payments',
 			# 	'id': 'hmgpakheknboplhmlicfkkgjipfabmhp',
@@ -816,6 +824,10 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				# Extract extension
 				logger.info(f'📂 Extracting {ext["name"]} extension...')
 				self._extract_extension(crx_file, ext_dir)
+
+				# Log extension version info
+				self._log_extension_version(ext_dir, ext['name'])
+
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 
@@ -823,12 +835,122 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
 				continue
 
+		# Apply minimal patch to cookie extension - hardcode nature.com whitelist
+		for i, path in enumerate(extension_paths):
+			if loaded_extension_names[i] == "I still don't care about cookies":
+				self._apply_minimal_extension_patch(Path(path))
+
 		if extension_paths:
 			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
 		else:
 			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
 
 		return extension_paths
+
+	def _log_extension_version(self, ext_dir: Path, ext_name: str) -> None:
+		"""Log extension version information from manifest."""
+		try:
+			manifest_path = ext_dir / 'manifest.json'
+			if manifest_path.exists():
+				import json
+
+				with open(manifest_path, 'r', encoding='utf-8') as f:
+					manifest = json.load(f)
+
+				version = manifest.get('version', 'unknown')
+				manifest_version = manifest.get('manifest_version', 'unknown')
+
+				logger.info(f'📦 {ext_name} v{version} (manifest v{manifest_version}) loaded')
+
+				# Special logging for uBlock Origin to show it's current
+				if ext_name == 'uBlock Origin':
+					logger.info(f'🛡️ uBlock Origin version {version} - Latest is 1.61.2+ (as of Aug 2025)')
+
+		except Exception as e:
+			logger.debug(f'Could not read version for {ext_name}: {e}')
+
+	def _get_extension_name(self, ext_dir: Path) -> str | None:
+		"""Get the actual extension name from manifest."""
+		try:
+			manifest_path = ext_dir / 'manifest.json'
+			if manifest_path.exists():
+				import json
+
+				with open(manifest_path, 'r', encoding='utf-8') as f:
+					manifest = json.load(f)
+
+				name = manifest.get('name', '')
+				if name.startswith('__MSG_'):
+					# Resolve localized name
+					locale_path = ext_dir / '_locales' / 'en' / 'messages.json'
+					if locale_path.exists():
+						with open(locale_path, 'r', encoding='utf-8') as f:
+							messages = json.load(f)
+						key = name.replace('__MSG_', '').replace('__', '')
+						return messages.get(key, {}).get('message', name)
+				return name
+		except Exception:
+			pass
+		return None
+
+	def _apply_minimal_extension_patch(self, ext_dir: Path) -> None:
+		"""Minimal patch: pre-populate chrome.storage.local with nature.com whitelist."""
+		try:
+			bg_path = ext_dir / 'data' / 'background.js'
+			if not bg_path.exists():
+				return
+
+			with open(bg_path, 'r', encoding='utf-8') as f:
+				content = f.read()
+
+			# Find the initialize() function and inject storage setup before updateSettings()
+			# The actual function uses 2-space indentation, not tabs
+			old_init = """async function initialize(checkInitialized, magic) {
+  if (checkInitialized && initialized) {
+    return;
+  }
+  loadCachedRules();
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}"""
+
+			# New function with nature.com whitelist initialization
+			new_init = """// Pre-populate storage with nature.com whitelist if empty
+async function ensureWhitelistStorage() {
+  const result = await chrome.storage.local.get({ settings: null });
+  if (!result.settings) {
+    const defaultSettings = {
+      statusIndicators: true,
+      whitelistedDomains: { "nature.com": true }
+    };
+    await chrome.storage.local.set({ settings: defaultSettings });
+  }
+}
+
+async function initialize(checkInitialized, magic) {
+  if (checkInitialized && initialized) {
+    return;
+  }
+  loadCachedRules();
+  await ensureWhitelistStorage(); // Add storage initialization
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}"""
+
+			if old_init in content:
+				content = content.replace(old_init, new_init)
+
+				with open(bg_path, 'w', encoding='utf-8') as f:
+					f.write(content)
+
+				logger.info('[BrowserProfile] ✅ Cookie extension: nature.com pre-populated in storage')
+			else:
+				logger.debug('[BrowserProfile] Initialize function not found for patching')
+
+		except Exception as e:
+			logger.debug(f'[BrowserProfile] Could not patch extension storage: {e}')
 
 	def _download_extension(self, url: str, output_path: Path) -> None:
 		"""Download extension .crx file."""

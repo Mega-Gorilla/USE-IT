@@ -630,6 +630,9 @@ class BrowserSession(BaseModel):
 			# # Wait a bit to ensure page starts loading
 			# await asyncio.sleep(0.5)
 
+			# Close any extension options pages that might have opened
+			await self._close_extension_options_pages()
+
 			# Dispatch navigation complete
 			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
 			await self.event_bus.dispatch(
@@ -1589,21 +1592,29 @@ class BrowserSession(BaseModel):
 
 		except Exception as e:
 			self.logger.warning(f'Failed to remove highlights: {e}')
-			# Try again with simpler script if the complex one fails
-			try:
-				simple_script = """
-				const highlights = document.querySelectorAll('[data-browser-use-highlight]');
-				highlights.forEach(el => el.remove());
-				const container = document.getElementById('browser-use-debug-highlights');
-				if (container) container.remove();
-				"""
-				cdp_session = await self.get_or_create_cdp_session()
-				await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': simple_script}, session_id=cdp_session.session_id
-				)
-				self.logger.debug('Fallback highlight removal completed')
-			except Exception as fallback_error:
-				self.logger.error(f'Both highlight removal attempts failed: {fallback_error}')
+
+	async def _close_extension_options_pages(self) -> None:
+		"""Close any extension options/welcome pages that have opened."""
+		try:
+			# Get all open pages
+			targets = await self._cdp_get_all_pages()
+
+			for target in targets:
+				target_url = target.get('url', '')
+				target_id = target.get('targetId', '')
+
+				# Check if this is an extension options/welcome page
+				if 'chrome-extension://' in target_url and (
+					'options.html' in target_url or 'welcome.html' in target_url or 'onboarding.html' in target_url
+				):
+					self.logger.info(f'[BrowserSession] 🚫 Closing extension options page: {target_url}')
+					try:
+						await self._cdp_close_page(target_id)
+					except Exception as e:
+						self.logger.debug(f'[BrowserSession] Could not close extension page {target_id}: {e}')
+
+		except Exception as e:
+			self.logger.debug(f'[BrowserSession] Error closing extension options pages: {e}')
 
 	@property
 	def downloaded_files(self) -> list[str]:
