@@ -266,7 +266,7 @@ class BrowserUseServer:
 				),
 				types.Tool(
 					name='browser_extract_content',
-					description='Extract markdown content from the current page based on a query',
+					description='Extract structured content from the current page based on a query',
 					inputSchema={
 						'type': 'object',
 						'properties': {
@@ -714,7 +714,7 @@ class BrowserUseServer:
 
 		state = await self.browser_session.get_browser_state_summary()
 
-		# Use the get_markdown action
+		# Use the extract_structured_data action
 		# Create a dynamic action model that matches the tools's expectations
 		from pydantic import create_model
 
@@ -722,7 +722,7 @@ class BrowserUseServer:
 		ExtractAction = create_model(
 			'ExtractAction',
 			__base__=ActionModel,
-			get_markdown=(dict[str, Any], {'query': query, 'extract_links': extract_links}),
+			extract_structured_data=(dict[str, Any], {'query': query, 'extract_links': extract_links}),
 		)
 
 		action = ExtractAction()
