@@ -545,6 +545,7 @@ DO NOT call this tool to:
 - If you previously asked extract_structured_data on the same page with the same query, you should not call it again.
 
 Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
+Use start_from_char to start extraction from a specific character position (use if extraction was previously truncated and you want more content).
 """,
 		)
 		async def extract_structured_data(
@@ -553,6 +554,7 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 			browser_session: BrowserSession,
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
+			start_from_char: int = 0,
 		):
 			# Constants
 			MAX_CHAR_LIMIT = 30000
@@ -579,11 +581,13 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 
 			page_html = page_html_result['outerHTML']
 
-			# Simple markdown conversion
+			# Enhanced markdown conversion and content filtering
 			try:
 				import re
 
 				import markdownify
+
+				original_html_length = len(page_html)
 
 				if extract_links:
 					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
@@ -595,27 +599,109 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 						r'\[([^\]]*)\]\([^)]*\)', r'\1', content, flags=re.MULTILINE | re.DOTALL
 					)  # Convert [text](url) -> text
 
-				# Remove weird positioning artifacts
-				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'!\[\]\(\)', '', content, flags=re.MULTILINE | re.DOTALL)
+				initial_markdown_length = len(content)
+
+				# Enhanced content filtering - remove low-quality patterns
+				patterns_to_remove = [
+					# Positioning artifacts and debug info
+					r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?',
+					r'Primary: UNKNOWN\n\nNo specific evidence found',
+					r'UNKNOWN CONFIDENCE',
+					r'!\[\]\(\)',
+					# Navigation breadcrumbs that are too verbose
+					r'^>.*?>.*?>.*?>.*?$',
+					# Empty or near-empty table cells
+					r'^\|\s*\|\s*\|\s*\|*\s*$',
+					# Excessive whitespace between table elements
+					r'\|\s{10,}\|',
+					# Long strings of special characters (likely formatting artifacts)
+					r'[^\w\s]{15,}',
+					# Extremely long words (likely encoded data)
+					r'\b\w{50,}\b',
+					# CSS/style artifacts that leak into content
+					r'(?:style|class|id)=["\'][^"\']*["\']',
+					# Empty list items
+					r'^-\s*$',
+				]
+
+				chars_filtered = 0
+				for pattern in patterns_to_remove:
+					before_len = len(content)
+					content = re.sub(pattern, '', content, flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
+					chars_filtered += before_len - len(content)
+
 				# Compress consecutive newlines (4+ newlines become 3 newlines)
 				content = re.sub(r'\n{4,}', '\n' * MAX_NEWLINES, content)
-				# Strip all whitespace (newlines, spaces, tabs) from beginning and end
+
+				# Remove lines that are mostly punctuation or very short
+				lines = content.split('\n')
+				filtered_lines = []
+				for line in lines:
+					stripped = line.strip()
+					# Keep line if it has substantial content
+					if len(stripped) > 3 and len(re.sub(r'[^\w\s]', '', stripped)) > len(stripped) * 0.3:
+						filtered_lines.append(line)
+
+				content = '\n'.join(filtered_lines)
 				content = content.strip()
+
+				final_filtered_length = len(content)
+
 			except Exception as e:
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
-			# Simple truncation to MAX_CHAR_LIMIT characters
-			if len(content) > MAX_CHAR_LIMIT:
-				content = content[:MAX_CHAR_LIMIT] + f'\n\n... [Content truncated at {MAX_CHAR_LIMIT} characters] ...'
+			# Apply start_from_char offset if specified
+			content_stats = {
+				'original_html_chars': original_html_length,
+				'initial_markdown_chars': initial_markdown_length,
+				'filtered_chars_removed': chars_filtered,
+				'final_filtered_chars': final_filtered_length,
+			}
 
-			system_prompt = f"""
+			if start_from_char > 0:
+				if start_from_char >= len(content):
+					return ActionResult(
+						error=f'start_from_char ({start_from_char}) exceeds content length ({len(content)}). Content has {final_filtered_length} characters after filtering.'
+					)
+				content = content[start_from_char:]
+				content_stats['started_from_char'] = start_from_char
+
+			# Smart truncation with context preservation
+			truncated = False
+			if len(content) > MAX_CHAR_LIMIT:
+				# Try to truncate at a natural break point (paragraph, sentence)
+				truncate_at = MAX_CHAR_LIMIT
+
+				# Look for paragraph break within last 500 chars of limit
+				paragraph_break = content.rfind('\n\n', MAX_CHAR_LIMIT - 500, MAX_CHAR_LIMIT)
+				if paragraph_break > 0:
+					truncate_at = paragraph_break
+				else:
+					# Look for sentence break within last 200 chars of limit
+					sentence_break = content.rfind('.', MAX_CHAR_LIMIT - 200, MAX_CHAR_LIMIT)
+					if sentence_break > 0:
+						truncate_at = sentence_break + 1
+
+				content = content[:truncate_at]
+				truncated = True
+				next_start = (start_from_char or 0) + truncate_at
+				content_stats['truncated_at_char'] = truncate_at
+				content_stats['next_start_char'] = next_start
+
+			# Add content statistics to the result
+			stats_summary = f"""Content processed: {original_html_length:,} HTML chars → {initial_markdown_length:,} initial markdown → {final_filtered_length:,} filtered markdown"""
+			if start_from_char > 0:
+				stats_summary += f' (started from char {start_from_char:,})'
+			if truncated:
+				stats_summary += f' → {len(content):,} final chars (truncated, use start_from_char={content_stats["next_start_char"]} to continue)'
+			elif chars_filtered > 0:
+				stats_summary += f' (filtered {chars_filtered:,} chars of noise)'
+
+			system_prompt = """
 You are an expert at extracting data from the markdown of a webpage.
 
 <input>
-You will be given a query and the markdown of a webpage.
+You will be given a query and the markdown of a webpage that has been filtered to remove noise and advertising content.
 </input>
 
 <instructions>
@@ -623,7 +709,7 @@ You will be given a query and the markdown of a webpage.
 - You should ONLY use the information available in the webpage to answer the query. Do not make up information or provide guess from your own knowledge. 
 - If the information relevant to the query is not available in the page, your response should mention that.
 - If the query asks for all items, products, etc., make sure to directly list all of them.
-- If the website content is truncated, at the end of the content you will see "[Content truncated at {MAX_CHAR_LIMIT} characters] ..." - if some information is not visible due to truncation, mention that.
+- If the content was truncated and you need more information, note that the user can use start_from_char parameter to continue from where truncation occurred.
 </instructions>
 
 <output>
@@ -632,7 +718,7 @@ You will be given a query and the markdown of a webpage.
 </output>
 """.strip()
 
-			prompt = f'<query>\n{query}\n</query>\n\n<webpage_content>\n{content}\n</webpage_content>'
+			prompt = f'<query>\n{query}\n</query>\n\n<content_stats>\n{stats_summary}\n</content_stats>\n\n<webpage_content>\n{content}\n</webpage_content>'
 
 			try:
 				response = await asyncio.wait_for(
