@@ -62,6 +62,7 @@ def draw_enhanced_bounding_box_with_text(
 	font: ImageFont.FreeTypeFont | None = None,
 	element_type: str = 'div',
 	image_size: tuple[int, int] = (2000, 1500),
+	device_pixel_ratio: float = 1.0,
 ) -> None:
 	"""Draw an enhanced bounding box with much bigger index containers and dashed borders."""
 	x1, y1, x2, y2 = bbox
@@ -95,9 +96,12 @@ def draw_enhanced_bounding_box_with_text(
 	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Fixed font size for consistent 12px index boxes across all screen sizes
+			# Scale font size for appropriate sizing across different resolutions
 			img_width, img_height = image_size
-			base_font_size = 20
+			# Convert to CSS pixels by dividing by device pixel ratio
+			css_width = img_width  # / device_pixel_ratio
+			# Much smaller scaling - 1% of CSS viewport width, max 16px to prevent huge highlights
+			base_font_size = max(10, min(20, int(css_width * 0.01)))
 			big_font = None
 			try:
 				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
@@ -122,8 +126,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Fixed padding for consistent 12px index boxes across all screen sizes
-			padding = 10  # Fixed 2px padding for ~12px total box height
+			# Scale padding appropriately for different resolutions
+			padding = max(4, min(10, int(css_width * 0.005)))  # 0.3% of CSS width, max 4px
 			element_width = x2 - x1
 			element_height = y2 - y1
 
@@ -349,7 +353,9 @@ def process_element_highlight(
 				index_text = str(element_index)
 
 		# Draw enhanced bounding box with bigger index
-		draw_enhanced_bounding_box_with_text(draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image_size)
+		draw_enhanced_bounding_box_with_text(
+			draw, (x1, y1, x2, y2), color, index_text, font, tag_name, image_size, device_pixel_ratio
+		)
 
 	except Exception as e:
 		logger.debug(f'Failed to draw highlight for element {element_id}: {e}')
