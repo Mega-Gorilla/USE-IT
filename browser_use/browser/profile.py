@@ -699,7 +699,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			logger.warning('BrowserProfile.proxy.bypass provided but proxy has no server; bypass will be ignored.')
 		return self
 
-	def model_post_init(self, __context: Any) -> None:  # noqa: ARG002
+	def model_post_init(self, __context: Any) -> None:
 		"""Called after model initialization to set up display configuration."""
 		self.detect_display_configuration()
 
