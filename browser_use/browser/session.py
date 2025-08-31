@@ -40,7 +40,7 @@ from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.observability import observe_debug
-from browser_use.utils import _log_pretty_url, is_new_tab_page, time_execution_async
+from browser_use.utils import _log_pretty_url, is_new_tab_page
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -817,8 +817,6 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	@time_execution_async('get_or_create_cdp_session')
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_or_create_cdp_session')
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
 	) -> CDPSession:
@@ -1138,7 +1136,7 @@ class BrowserSession(BaseModel):
 						# Update the target's URL in our list for later use
 						target['url'] = 'about:blank'
 						# Small delay to ensure navigation completes
-						await asyncio.sleep(0.1)
+						await asyncio.sleep(0.05)
 					except Exception as e:
 						self.logger.warning(f'Failed to redirect {target_url} to about:blank: {e}')
 
@@ -1430,7 +1428,6 @@ class BrowserSession(BaseModel):
 				return target
 		return None
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_current_page_url')
 	async def get_current_page_url(self) -> str:
 		"""Get the URL of the current page using CDP."""
 		target = await self.get_current_target_info()

@@ -347,85 +347,6 @@ class DOMWatchdog(BaseWatchdog):
 				recent_events=None,
 			)
 
-	async def _build_dom_tree(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
-		"""Internal method to build and serialize DOM tree.
-
-		This is the actual implementation that does the work, called by both
-		on_BrowserStateRequestEvent.
-
-		Returns:
-			SerializedDOMState with serialized DOM and selector map
-		"""
-		try:
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: STARTING DOM tree build')
-			# Remove any existing highlights before building new DOM
-			try:
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Removing existing highlights...')
-				await self.browser_session.remove_highlights()
-				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ Highlights removed')
-			except Exception as e:
-				self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to remove existing highlights: {e}')
-
-			# Create or reuse DOM service
-			if self._dom_service is None:
-				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Creating DomService...')
-				self._dom_service = DomService(
-					browser_session=self.browser_session,
-					logger=self.logger,
-					cross_origin_iframes=self.browser_session.browser_profile.cross_origin_iframes,
-				)
-				# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService created')
-			# else:
-			# self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Reusing existing DomService')
-
-			# Get serialized DOM tree using the service
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Calling DomService.get_serialized_dom_tree...')
-			start = time.time()
-			self.current_dom_state, self.enhanced_dom_tree, timing_info = await self._dom_service.get_serialized_dom_tree(
-				previous_cached_state=previous_state,
-			)
-			end = time.time()
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ DomService.get_serialized_dom_tree completed')
-
-			self.logger.debug(f'Time taken to get DOM tree: {end - start} seconds')
-			self.logger.debug(f'Timing breakdown: {timing_info}')
-
-			# Update selector map for other watchdogs
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Updating selector maps...')
-			self.selector_map = self.current_dom_state.selector_map
-			# Update BrowserSession's cached selector map
-			if self.browser_session:
-				self.browser_session.update_cached_selector_map(self.selector_map)
-			self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: ✅ Selector maps updated, {len(self.selector_map)} elements')
-
-			# Inject highlighting for visual feedback if we have elements
-			if self.selector_map and self._dom_service and self.browser_session.browser_profile.highlight_elements:
-				try:
-					self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Injecting highlighting script...')
-					from browser_use.dom.debug.highlights import inject_highlighting_script
-
-					await inject_highlighting_script(self._dom_service, self.selector_map)
-					self.logger.debug(
-						f'🔍 DOMWatchdog._build_dom_tree: ✅ Injected highlighting for {len(self.selector_map)} elements'
-					)
-				except Exception as e:
-					self.logger.debug(f'🔍 DOMWatchdog._build_dom_tree: Failed to inject highlighting: {e}')
-			elif self.selector_map and self._dom_service and not self.browser_session.browser_profile.highlight_elements:
-				self.logger.debug('🔍 DOMWatchdog._build_dom_tree: Skipping highlighting injection - highlight_elements=False')
-
-			self.logger.debug('🔍 DOMWatchdog._build_dom_tree: ✅ COMPLETED DOM tree build')
-			return self.current_dom_state
-
-		except Exception as e:
-			self.logger.error(f'Failed to build DOM tree: {e}')
-			self.event_bus.dispatch(
-				BrowserErrorEvent(
-					error_type='DOMBuildFailed',
-					message=str(e),
-				)
-			)
-			raise
-
 	@time_execution_async('build_dom_tree_without_highlights')
 	@observe_debug(ignore_input=True, ignore_output=True, name='build_dom_tree_without_highlights')
 	async def _build_dom_tree_without_highlights(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
@@ -622,7 +543,7 @@ class DOMWatchdog(BaseWatchdog):
 		"""
 		if not self.selector_map:
 			# Build DOM if not cached
-			await self._build_dom_tree()
+			await self._build_dom_tree_without_highlights()
 
 		return self.selector_map.get(index) if self.selector_map else None
 

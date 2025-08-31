@@ -1272,7 +1272,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					break
 
 				while self.state.paused:
-					await asyncio.sleep(0.2)  # Small delay to prevent CPU spinning
+					await asyncio.sleep(0.5)  # Small delay to prevent CPU spinning
 					if self.state.stopped:  # Allow stopping while paused
 						agent_run_error = 'Agent stopped programmatically while paused'
 						break
