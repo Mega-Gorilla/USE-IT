@@ -30,7 +30,7 @@ from browser_use.browser.views import BrowserError
 from browser_use.dom.service import EnhancedDOMTreeNode
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.messages import UserMessage
+from browser_use.llm.messages import SystemMessage, UserMessage
 from browser_use.observability import observe_debug
 from browser_use.tools.registry.service import Registry
 from browser_use.tools.views import (
@@ -530,13 +530,16 @@ class Tools(Generic[Context]):
 		# This action is temporarily disabled as it needs refactoring to use events
 
 		@self.registry.action(
-			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-		This tool takes the entire markdown of the page and extracts the query from it.
-		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
-		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. If you want to scrape a listing of many elements always first scroll a lot until the page end to load everything and then call this tool in the end.
-		If you called extract_structured_data in the last step and the result was not good (e.g. because of antispam protection), use the current browser state and scrolling to get the information, dont call extract_structured_data again.
-		""",
+			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the markdown of the current webpage based on a query.
+Recommended to be used ONLY when:
+- You are sure that you are on the right page for the query
+- You know exactly the information you need to extract from the page
+DO NOT call this tool to:
+- Get interactive elements like buttons, links, dropdowns, menus, etc.
+- If you previously asked extract_structured_data on the same page with the same query, you should not call it again.
+
+Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
+""",
 		)
 		async def extract_structured_data(
 			query: str,
@@ -545,6 +548,10 @@ class Tools(Generic[Context]):
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
 		):
+			# Constants
+			MAX_CHAR_LIMIT = 30000
+			MAX_NEWLINES = 3
+
 			cdp_session = await browser_session.get_or_create_cdp_session()
 
 			# Wait for the page to be ready (same pattern used in DOM service)
@@ -583,46 +590,63 @@ class Tools(Generic[Context]):
 					)  # Convert [text](url) -> text
 
 				# Remove weird positioning artifacts
-
 				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
 				content = re.sub(r'!\[\]\(\)', '', content, flags=re.MULTILINE | re.DOTALL)
+				# Compress consecutive newlines (4+ newlines become 3 newlines)
+				content = re.sub(r'\n{4,}', '\n' * MAX_NEWLINES, content)
+				# Strip all whitespace (newlines, spaces, tabs) from beginning and end
+				content = content.strip()
 			except Exception as e:
 				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
 
-			# Simple truncation to 30k characters
-			if len(content) > 30000:
-				content = content[:30000] + '\n\n... [Content truncated at 30k characters] ...'
+			# Simple truncation to MAX_CHAR_LIMIT characters
+			if len(content) > MAX_CHAR_LIMIT:
+				content = content[:MAX_CHAR_LIMIT] + f'\n\n... [Content truncated at {MAX_CHAR_LIMIT} characters] ...'
 
-			# Simple prompt
-			prompt = f"""Extract the requested information from this webpage content.
-			
-Query: {query}
+			system_prompt = f"""
+You are an expert at extracting data from the markdown of a webpage.
 
-Webpage Content:
-{content}
+<input>
+You will be given a query and the markdown of a webpage.
+</input>
 
-Provide the extracted information in a clear, structured format."""
+<instructions>
+- You are tasked to extract information from the webpage that is relevant to the query.
+- You should ONLY use the information available in the webpage to answer the query. Do not make up information or provide guess from your own knowledge. 
+- If the information relevant to the query is not available in the page, your response should mention that.
+- If the query asks for all items, products, etc., make sure to directly list all of them.
+- If the website content is truncated, at the end of the content you will see "[Content truncated at {MAX_CHAR_LIMIT} characters] ..." - if some information is not visible due to truncation, mention that.
+</instructions>
+
+<output>
+- Your output should present ALL the information relevant to the query in a concise way.
+- Do not answer in conversational format - directly output the relevant information or that the information is unavailable.
+</output>
+""".strip()
+
+			prompt = f'<query>\n{query}\n</query>\n\n<webpage_content>\n{content}\n</webpage_content>'
 
 			try:
 				response = await asyncio.wait_for(
-					page_extraction_llm.ainvoke([UserMessage(content=prompt)]),
+					page_extraction_llm.ainvoke([SystemMessage(content=system_prompt), UserMessage(content=prompt)]),
 					timeout=120.0,
 				)
 
-				extracted_content = f'Query: {query}\n Result:\n{response.completion}'
+				current_url = await browser_session.get_current_page_url()
+				extracted_content = (
+					f'<url>\n{current_url}\n</url>\n<query>\n{query}\n</query>\n<result>\n{response.completion}\n</result>'
+				)
 
 				# Simple memory handling
-				if len(extracted_content) < 1000:
+				MAX_MEMORY_LENGTH = 1000
+				if len(extracted_content) < MAX_MEMORY_LENGTH:
 					memory = extracted_content
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					current_url = await browser_session.get_current_page_url()
-					memory = (
-						f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
-					)
+					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result} and displayed in <read_state>.'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
