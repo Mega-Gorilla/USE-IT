@@ -17,7 +17,6 @@ dependencies = [
     "bubus>=1.5.6",
     "google-api-core>=2.25.0",
     "httpx>=0.28.1",
-    "markdownify==1.1.0",
     "portalocker>=2.7.0,<3.0.0",
     "posthog>=3.7.0",
     "psutil>=7.0.0",

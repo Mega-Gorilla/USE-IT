@@ -902,8 +902,6 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		"""
 		import re
 		
-		import markdownify
-		
 		# Get HTML content from current page
 		cdp_session = await browser_session.get_or_create_cdp_session()
 		try:
@@ -919,45 +917,24 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		
 		original_html_length = len(page_html)
 		
-		# Use html2text for much better markdown conversion
-		try:
-			import html2text
-			h = html2text.HTML2Text()
-			h.ignore_links = not extract_links
-			h.ignore_images = True
-			h.ignore_emphasis = False
-			h.body_width = 0  # Don't wrap lines
-			h.unicode_snob = True
-			h.skip_internal_links = True
-			content = h.handle(page_html)
-		except ImportError:
-			# Fallback to markdownify with better settings
-			if extract_links:
-				content = markdownify.markdownify(
-					page_html, 
-					heading_style='ATX', 
-					bullets='-',
-					strip=['script', 'style']
-				)
-			else:
-				content = markdownify.markdownify(
-					page_html, 
-					heading_style='ATX', 
-					bullets='-',
-					strip=['a', 'script', 'style']
-				)
-				# Remove all markdown links and images, keep only the text
-				content = re.sub(r'!\[.*?\]\([^)]*\)', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', content, flags=re.MULTILINE | re.DOTALL)
+		# Use html2text for clean markdown conversion
+		import html2text
+		
+		h = html2text.HTML2Text()
+		h.ignore_links = not extract_links
+		h.ignore_images = True
+		h.ignore_emphasis = False
+		h.body_width = 0  # Don't wrap lines
+		h.unicode_snob = True
+		h.skip_internal_links = True
+		content = h.handle(page_html)
 		
 		initial_markdown_length = len(content)
 		
-		# Light cleanup - only remove obvious artifacts
-		content = re.sub(r'%[0-9A-Fa-f]{2}', '', content)  # Remove URL encoding
-		content = re.sub(r'\bfill=[\'"][^\'\"]*[\'"]', '', content)  # Remove SVG fill attributes
-		content = re.sub(r'\bstroke=[\'"][^\'\"]*[\'"]', '', content)  # Remove SVG stroke attributes
+		# Minimal cleanup - html2text already does most of the work
+		content = re.sub(r'%[0-9A-Fa-f]{2}', '', content)  # Remove any remaining URL encoding
 		
-		# Apply comprehensive preprocessing to remove noise patterns
+		# Apply light preprocessing to clean up excessive whitespace
 		content, chars_filtered = self._preprocess_markdown_content(content)
 		
 		final_filtered_length = len(content)
@@ -975,10 +952,10 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 	def _preprocess_markdown_content(self, content: str, max_newlines: int = 3) -> tuple[str, int]:
 		"""
-		Preprocess markdown content by removing noise patterns and low-quality lines.
+		Light preprocessing of html2text output - minimal cleanup since html2text is already clean.
 
 		Args:
-			content: Raw markdown content to filter
+			content: Markdown content from html2text to lightly filter
 			max_newlines: Maximum consecutive newlines to allow
 
 		Returns:
@@ -988,49 +965,22 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 		original_length = len(content)
 
-		# Enhanced content filtering - remove low-quality patterns
-		patterns_to_remove = [
-			# Positioning artifacts and debug info
-			r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?',
-			r'Primary: UNKNOWN\n\nNo specific evidence found',
-			r'UNKNOWN CONFIDENCE',
-			r'!\[\]\(\)',
-			# Empty or near-empty table cells
-			r'^\|\s*\|\s*\|\s*\|*\s*$',
-			# Excessive whitespace between table elements
-			r'\|\s{10,}\|',
-			# Long strings of special characters (likely formatting artifacts)
-			r'[^\w\s]{15,}',
-			# Extremely long words (likely encoded data)
-			r'\b\w{50,}\b',
-			# CSS/style artifacts that leak into content
-			r'(?:style|class|id)=["\'][^"\']*["\']',
-			# Empty list items
-			r'^-\s*$',
-		]
-
-		chars_filtered = 0
-		for pattern in patterns_to_remove:
-			before_len = len(content)
-			content = re.sub(pattern, '', content, flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
-			chars_filtered += before_len - len(content)
-
 		# Compress consecutive newlines (4+ newlines become max_newlines)
 		content = re.sub(r'\n{4,}', '\n' * max_newlines, content)
 
-		# Remove lines that are mostly punctuation or very short
+		# Remove lines that are only whitespace or very short (likely artifacts)
 		lines = content.split('\n')
 		filtered_lines = []
 		for line in lines:
 			stripped = line.strip()
-			# Keep line if it has substantial content
-			if len(stripped) > 3 and len(re.sub(r'[^\w\s]', '', stripped)) > len(stripped) * 0.3:
+			# Keep lines with substantial content (html2text output is already clean)
+			if len(stripped) > 2:
 				filtered_lines.append(line)
 
 		content = '\n'.join(filtered_lines)
 		content = content.strip()
 
-		chars_filtered += original_length - len(content)
+		chars_filtered = original_length - len(content)
 		return content, chars_filtered
 
 	def _register_done_action(self, output_model: type[T] | None, display_files_in_done_text: bool = True):
