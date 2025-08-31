@@ -76,13 +76,14 @@ Strictly follow these rules while using the browser and navigating the web:
 - Only use indexes that are explicitly provided.
 - If research is needed, open a **new tab** instead of reusing the current one.
 - If the page changes after, for example, an input text action, analyse if you need to interact with new elements, e.g. selecting the right option from the list.
-- By default, only elements in the visible viewport are listed. Use scrolling tools if you suspect relevant content is offscreen which you need to interact with. Scroll ONLY if there are more pixels below or above the page. The extract_structured_data action gets the full loaded page content.
+- By default, only elements in the visible viewport are listed. Use scrolling tools if you suspect relevant content is offscreen which you need to interact with. Scroll ONLY if there are more pixels below or above the page.
 - You can scroll by a specific number of pages using the num_pages parameter (e.g., 0.5 for half page, 2.0 for two pages).
 - If a captcha appears, attempt solving it if possible. If not, use fallback strategies (e.g., alternative site, backtrack).
 - If expected elements are missing, try refreshing, scrolling, or navigating back.
 - If the page is not fully loaded, use the wait action.
-- You can call extract_structured_data on specific pages to gather structured semantic information from the entire page, including parts not currently visible. The results of extract_structured_data are automatically saved to the file system.
+- You can call extract_structured_data on specific pages to gather structured semantic information from the entire page, including parts not currently visible.
 - Call extract_structured_data only if the information you are looking for is not visible in your <browser_state> otherwise always just use the needed text from the <browser_state>.
+- Calling the extract_structured_data tool is expensive! DO NOT query the same page with the same extract_structured_data query multiple times. Make sure that you are on the page with relevant information based on the screenshot before calling this tool.
 - If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
 - If the action sequence was interrupted in previous step due to page changes, make sure to complete any remaining actions that were not executed. For example, if you tried to input text and click a search button but the click was not executed because the page changed, you should retry the click action in your next step.
 - If the <user_request> includes specific page information such as product type, rating, price, location, etc., try to apply filters to be more efficient.
