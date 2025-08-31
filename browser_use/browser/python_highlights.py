@@ -4,9 +4,11 @@ This module replaces JavaScript-based highlighting with fast Python image proces
 to draw bounding boxes around interactive elements directly on screenshots.
 """
 
+import asyncio
 import base64
 import io
 import logging
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -93,10 +95,9 @@ def draw_enhanced_bounding_box_with_text(
 	# Draw much bigger index overlay if we have index text
 	if text:
 		try:
-			# Scale font size based on image dimensions for consistent appearance across viewports
+			# Fixed font size for consistent 12px index boxes across all screen sizes
 			img_width, img_height = image_size
-			# Base font size scales with viewport width (24px for 1200px viewport) - smaller numbers
-			base_font_size = max(12, min(32, int(img_width * 0.02)))  # 2% of viewport width
+			base_font_size = 20
 			big_font = None
 			try:
 				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
@@ -121,8 +122,8 @@ def draw_enhanced_bounding_box_with_text(
 				text_width = bbox_text[2] - bbox_text[0]
 				text_height = bbox_text[3] - bbox_text[1]
 
-			# Scale padding based on viewport size for consistent appearance - reduced for tighter fit
-			padding = max(2, int(img_width * 0.002))  # 0.2% of viewport width - smaller padding
+			# Fixed padding for consistent 12px index boxes across all screen sizes
+			padding = 10  # Fixed 2px padding for ~12px total box height
 			element_width = x2 - x1
 			element_height = y2 - y1
 
@@ -471,6 +472,17 @@ async def create_highlighted_screenshot_async(
 			logger.debug(f'Failed to get viewport info from CDP: {e}')
 
 	# Create highlighted screenshot with async processing
-	return await create_highlighted_screenshot(
+	final_screenshot = await create_highlighted_screenshot(
 		screenshot_b64, selector_map, device_pixel_ratio, viewport_offset_x, viewport_offset_y, filter_highlight_ids
 	)
+
+	filename = os.getenv('BROWSER_USE_SCREENSHOT_FILE')
+	if filename:
+
+		async def _write_screenshot():
+			with open(filename, 'wb') as f:
+				f.write(base64.b64decode(final_screenshot))
+			logger.debug('Saved screenshot to screenshot.png')
+
+		await asyncio.to_thread(_write_screenshot)
+	return final_screenshot
