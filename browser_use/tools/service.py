@@ -269,14 +269,20 @@ class Tools(Generic[Context]):
 					raise ValueError(f'Element index {params.index} not found in DOM')
 
 				event = browser_session.event_bus.dispatch(
-					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl)
+					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl or False)
 				)
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
+
 				if params.while_holding_ctrl:
 					memory += ' and opened in new tab'
+
+				# Check if a new tab was opened (from watchdog metadata)
+				elif isinstance(click_metadata, dict) and click_metadata.get('new_tab_opened'):
+					memory += ' - which opened a new tab'
+
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
 
