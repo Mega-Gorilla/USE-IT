@@ -413,10 +413,19 @@ class BrowserLaunchArgs(BaseModel):
 	def set_default_downloads_path(self) -> Self:
 		"""Set a unique default downloads path if none is provided."""
 		if self.downloads_path is None:
-			import tempfile
+			import uuid
 
-			# Create unique temporary directory for downloads
-			self.downloads_path = Path(tempfile.mkdtemp(prefix='browser-use-downloads-'))
+			# Create unique directory in /tmp for downloads
+			unique_id = str(uuid.uuid4())[:8]  # 8 characters
+			downloads_path = Path(f'/tmp/browser-use-downloads-{unique_id}')
+
+			# Ensure path doesn't already exist (extremely unlikely but possible)
+			while downloads_path.exists():
+				unique_id = str(uuid.uuid4())[:8]
+				downloads_path = Path(f'/tmp/browser-use-downloads-{unique_id}')
+
+			self.downloads_path = downloads_path
+			self.downloads_path.mkdir(parents=True, exist_ok=True)
 		return self
 
 	@staticmethod
@@ -593,9 +602,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	)
 
 	# --- Downloads ---
-	auto_download_pdfs: bool = Field(
-		default=False, description='Automatically download PDFs when navigating to PDF viewer pages.'
-	)
+	auto_download_pdfs: bool = Field(default=True, description='Automatically download PDFs when navigating to PDF viewer pages.')
 
 	profile_directory: str = 'Default'  # e.g. 'Profile 1', 'Profile 2', 'Custom Profile', etc.
 
