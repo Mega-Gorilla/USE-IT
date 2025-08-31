@@ -161,9 +161,9 @@ async def connect_playwright_to_cdp(cdp_url: str):
 	playwright_browser = await playwright.chromium.connect_over_cdp(cdp_url)
 
 	# Get or create a page
-	if playwright_browser.contexts and playwright_browser.contexts[0].pages:
+	if playwright_browser and playwright_browser.contexts and playwright_browser.contexts[0].pages:
 		playwright_page = playwright_browser.contexts[0].pages[0]
-	else:
+	elif playwright_browser:
 		context = await playwright_browser.new_context()
 		playwright_page = await context.new_page()
 
