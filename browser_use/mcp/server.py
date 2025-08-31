@@ -820,7 +820,7 @@ class BrowserUseServer:
 				write_stream,
 				InitializationOptions(
 					server_name='browser-use',
-					server_version='0.1.0',
+					server_version='0.7.1',
 					capabilities=self.server.get_capabilities(
 						notification_options=NotificationOptions(),
 						experimental_capabilities={},
