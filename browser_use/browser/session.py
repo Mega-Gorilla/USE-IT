@@ -1442,6 +1442,19 @@ class BrowserSession(BaseModel):
 			return target_info.get('title', 'Unknown page title')
 		return 'Unknown page title'
 
+	async def navigate_to(self, url: str, new_tab: bool = False) -> None:
+		"""Navigate to a URL using the standard event system.
+
+		Args:
+			url: URL to navigate to
+			new_tab: Whether to open in a new tab
+		"""
+		from browser_use.browser.events import NavigateToUrlEvent
+
+		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=new_tab))
+		await event
+		await event.event_result(raise_if_any=True, raise_if_none=False)
+
 	# ========== DOM Helper Methods ==========
 
 	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
