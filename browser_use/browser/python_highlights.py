@@ -453,7 +453,6 @@ async def get_viewport_info_from_cdp(cdp_session) -> tuple[float, int, int]:
 		return 1.0, 0, 0
 
 
-@observe_debug(ignore_input=True, ignore_output=True, name='create_highlighted_screenshot_async')
 @time_execution_async('create_highlighted_screenshot_async')
 async def create_highlighted_screenshot_async(
 	screenshot_b64: str, selector_map: DOMSelectorMap, cdp_session=None, filter_highlight_ids: bool = True
