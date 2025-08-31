@@ -602,7 +602,7 @@ Set extract_links=True ONLY if your query requires extracting links/URLs from th
 
 			# Simple truncation to MAX_CHAR_LIMIT characters
 			if len(content) > MAX_CHAR_LIMIT:
-				content = content[:MAX_CHAR_LIMIT] + '\n\n... [Content truncated at 30k characters] ...'
+				content = content[:MAX_CHAR_LIMIT] + f'\n\n... [Content truncated at {MAX_CHAR_LIMIT} characters] ...'
 
 			system_prompt = f"""
 You are an expert at extracting data from the markdown of a webpage.
@@ -617,7 +617,7 @@ You will be given a query and the markdown of a webpage.
 - If the information relevant to the query is not available in the page, your response should mention that.
 - If the query asks for all items, products, etc., make sure to directly list all of them.
 - If the website content is truncated, at the end of the content you will see "[Content truncated at {MAX_CHAR_LIMIT} characters] ..." - if some information is not visible due to truncation, mention that.
-</instruction>
+</instructions>
 
 <output>
 - Your output should present ALL the information relevant to the query in a concise way.
