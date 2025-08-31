@@ -342,7 +342,7 @@ def process_element_highlight(
 				# Use the meaningful text that matches what the LLM sees
 				meaningful_text = element.get_meaningful_text_for_llm()
 				# Show ID only if meaningful text is less than 5 characters
-				if len(meaningful_text) < 5:
+				if len(meaningful_text) < 3:
 					index_text = str(element_index)
 			else:
 				# Always show ID when filter is disabled
