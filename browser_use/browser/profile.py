@@ -558,6 +558,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=True,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled.",
 	)
+	cookie_whitelist_domains: list[str] = Field(
+		default_factory=lambda: ['nature.com', 'qatarairways.com'],
+		description='List of domains to whitelist in the "I still don\'t care about cookies" extension, preventing automatic cookie banner handling on these sites.',
+	)
+
 	window_size: ViewportSize | None = Field(
 		default=None,
 		description='Browser window size to use when headless=False.',
@@ -753,27 +758,29 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		# Extension definitions - optimized for automation and content extraction
+		# Combines uBlock Origin (ad blocking) + "I still don't care about cookies" (cookie banner handling)
 		extensions = [
 			{
 				'name': 'uBlock Origin',
 				'id': 'cjpalhdlnbpafiamejdnhcphjbkeiagm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dcjpalhdlnbpafiamejdnhcphjbkeiagm%26uc',
 			},
 			{
 				'name': "I still don't care about cookies",
 				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
 			},
 			{
 				'name': 'ClearURLs',
 				'id': 'lckanjgmijmafbedllaakclkaicjfmnk',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
+				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dlckanjgmijmafbedllaakclkaicjfmnk%26uc',
 			},
 			# {
 			# 	'name': 'Captcha Solver: Auto captcha solving service',
 			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
 			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
 			# },
+			# Consent-O-Matic disabled - using uBlock Origin's cookie lists instead for simplicity
 			# {
 			# 	'name': 'Consent-O-Matic',
 			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
@@ -816,6 +823,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				# Extract extension
 				logger.info(f'📂 Extracting {ext["name"]} extension...')
 				self._extract_extension(crx_file, ext_dir)
+
 				extension_paths.append(str(ext_dir))
 				loaded_extension_names.append(ext['name'])
 
@@ -823,12 +831,81 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
 				continue
 
+		# Apply minimal patch to cookie extension with configurable whitelist
+		for i, path in enumerate(extension_paths):
+			if loaded_extension_names[i] == "I still don't care about cookies":
+				self._apply_minimal_extension_patch(Path(path), self.cookie_whitelist_domains)
+
 		if extension_paths:
 			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
 		else:
 			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
 
 		return extension_paths
+
+	def _apply_minimal_extension_patch(self, ext_dir: Path, whitelist_domains: list[str]) -> None:
+		"""Minimal patch: pre-populate chrome.storage.local with configurable domain whitelist."""
+		try:
+			bg_path = ext_dir / 'data' / 'background.js'
+			if not bg_path.exists():
+				return
+
+			with open(bg_path, encoding='utf-8') as f:
+				content = f.read()
+
+			# Create the whitelisted domains object for JavaScript with proper indentation
+			whitelist_entries = [f'        "{domain}": true' for domain in whitelist_domains]
+			whitelist_js = '{\n' + ',\n'.join(whitelist_entries) + '\n      }'
+
+			# Find the initialize() function and inject storage setup before updateSettings()
+			# The actual function uses 2-space indentation, not tabs
+			old_init = """async function initialize(checkInitialized, magic) {
+  if (checkInitialized && initialized) {
+    return;
+  }
+  loadCachedRules();
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}"""
+
+			# New function with configurable whitelist initialization
+			new_init = f"""// Pre-populate storage with configurable domain whitelist if empty
+async function ensureWhitelistStorage() {{
+  const result = await chrome.storage.local.get({{ settings: null }});
+  if (!result.settings) {{
+    const defaultSettings = {{
+      statusIndicators: true,
+      whitelistedDomains: {whitelist_js}
+    }};
+    await chrome.storage.local.set({{ settings: defaultSettings }});
+  }}
+}}
+
+async function initialize(checkInitialized, magic) {{
+  if (checkInitialized && initialized) {{
+    return;
+  }}
+  loadCachedRules();
+  await ensureWhitelistStorage(); // Add storage initialization
+  await updateSettings();
+  await recreateTabList(magic);
+  initialized = true;
+}}"""
+
+			if old_init in content:
+				content = content.replace(old_init, new_init)
+
+				with open(bg_path, 'w', encoding='utf-8') as f:
+					f.write(content)
+
+				domain_list = ', '.join(whitelist_domains)
+				logger.info(f'[BrowserProfile] ✅ Cookie extension: {domain_list} pre-populated in storage')
+			else:
+				logger.debug('[BrowserProfile] Initialize function not found for patching')
+
+		except Exception as e:
+			logger.debug(f'[BrowserProfile] Could not patch extension storage: {e}')
 
 	def _download_extension(self, url: str, output_path: Path) -> None:
 		"""Download extension .crx file."""
