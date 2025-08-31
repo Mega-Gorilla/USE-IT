@@ -596,7 +596,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	# --- UI/viewport/DOM ---
 
-	highlight_elements: bool = Field(default=True, description='Highlight interactive elements on the page.')
+	highlight_elements: bool = Field(default=False, description='Highlight interactive elements on the page.')
 	filter_highlight_ids: bool = Field(
 		default=True, description='Only show element IDs in highlights if llm_representation is less than 10 characters.'
 	)
