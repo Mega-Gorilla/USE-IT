@@ -193,7 +193,7 @@ Here are examples of good output patterns. Use them as reference but never copy 
 </memory_examples>
 
 <next_goal_examples>
-"next_goal": "Click on the 'Add to Cart' button (index 23) to proceed with the purchase flow."
+"next_goal": "Click on the 'Add to Cart' button to proceed with the purchase flow."
 "next_goal": "Extract details from the first item on the page."
 </next_goal_examples>
 </examples>
