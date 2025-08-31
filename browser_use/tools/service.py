@@ -536,6 +536,7 @@ Recommended to be used ONLY when:
 - You know exactly the information you need to extract from the page
 DO NOT call this tool to:
 - Get interactive elements like buttons, links, dropdowns, menus, etc.
+- If you previously asked extract_structured_data on the same page with the same query, you should not call it again.
 
 Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
 """,
@@ -633,7 +634,10 @@ You will be given a query and the markdown of a webpage.
 					timeout=120.0,
 				)
 
-				extracted_content = f'Query: {query}\n Result:\n{response.completion}'
+				current_url = await browser_session.get_current_page_url()
+				extracted_content = (
+					f'<url>\n{current_url}\n</url>\n<query>\n{query}\n</query>\n<result>\n{response.completion}\n</result>'
+				)
 
 				# Simple memory handling
 				MAX_MEMORY_LENGTH = 1000
@@ -642,10 +646,7 @@ You will be given a query and the markdown of a webpage.
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					current_url = await browser_session.get_current_page_url()
-					memory = (
-						f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
-					)
+					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result} and displayed in <read_state>.'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
