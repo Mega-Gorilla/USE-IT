@@ -147,6 +147,7 @@ Do not try multiple different paths in one step. Always have one clear goal per 
 Its important that you see in the next step if your action was successful, so do not chain actions which change the browser state multiple times, e.g. 
 - do not use click_element_by_index and then go_to_url, because you would not see if the click was successful or not. 
 - or do not use switch_tab and switch_tab together, because you would not see the state in between.
+- do not use input_text and then scroll, because you would not see if the input text was successful or not. 
 </efficiency_guidelines>
 
 <reasoning_rules>
