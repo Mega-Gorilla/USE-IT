@@ -9,12 +9,12 @@ icon: "rocket"
 
 <Tabs>
 <Tab title="uv">
-```bash
+```bash create environment
 uv venv --python 3.12
 ```
 </Tab>
 <Tab title="pip">
-```bash
+```bash create environment
 python -m venv .venv
 ```
 </Tab>
@@ -22,28 +22,26 @@ python -m venv .venv
 
 <Tabs>
 <Tab title="Mac/Linux">
-```bash
+```bash activate environment
 source .venv/bin/activate
 ```
 </Tab>
 <Tab title="Windows">
-```bash
+```bash activate environment
 .venv\Scripts\activate
 ```
 </Tab>
 </Tabs>
 
-Install browser-use & chromium:
-
 <Tabs>
 <Tab title="uv">
-```bash
+```bash install browser-use & chromium
 uv pip install browser-use
 uvx playwright install chromium --with-deps 
 ```
 </Tab>
 <Tab title="pip">
-```bash
+```bash install browser-use & chromium
 pip install browser-use
 playwright install chromium --with-deps
 ```
@@ -55,12 +53,12 @@ Create a `.env` file and add your API key. Don't have one? Start with a [free Ge
 
 <Tabs>
 <Tab title="Mac/Linux">
-```bash
+```bash create .env file
 touch .env
 ```
 </Tab>
 <Tab title="Windows">
-```cmd
+```cmd create .env file
 echo. > .env
 ```
 </Tab>
@@ -68,17 +66,17 @@ echo. > .env
 
 <Tabs>
 <Tab title="Google">
-```bash .env
+```bash add your key to .env file
 GEMINI_API_KEY=
 ```
 </Tab>
 <Tab title="OpenAI">
-```bash .env
+```bash add your key to .env file
 OPENAI_API_KEY=
 ```
 </Tab>
 <Tab title="Anthropic">
-```bash .env
+```bash add your key to .env file
 ANTHROPIC_API_KEY=
 ```
 </Tab>
@@ -116,7 +114,7 @@ import asyncio
 load_dotenv()
 
 async def main():
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = ChatOpenAI(model="gpt-4.1-mini")
     task = "Find the number 1 post on Show HN"
     agent = Agent(task=task, llm=llm)
     await agent.run()
@@ -134,7 +132,7 @@ import asyncio
 load_dotenv()
 
 async def main():
-    llm = ChatAnthropic(model="claude-3-5-sonnet-20241022")
+    llm = ChatAnthropic(model='claude-sonnet-4-0', temperature=0.0)
     task = "Find the number 1 post on Show HN"
     agent = Agent(task=task, llm=llm)
     await agent.run()
