@@ -193,10 +193,7 @@ Available tabs:
 		return browser_state
 
 	def _get_agent_state_description(self) -> str:
-		if self.step_info:
-			step_info_description = f'Step {self.step_info.step_number + 1} of {self.step_info.max_steps} max possible steps\n'
-		else:
-			step_info_description = ''
+		step_info_description = ''
 		time_str = datetime.now().strftime('%Y-%m-%d %H:%M')
 		step_info_description += f'Current date and time: {time_str}'
 
