@@ -132,6 +132,7 @@ class DownloadsWatchdog(BaseWatchdog):
 
 	async def attach_to_target(self, target_id: TargetID) -> None:
 		"""Set up download monitoring for a specific target."""
+
 		# Define CDP event handlers outside of try to avoid indentation/scope issues
 		async def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: SessionID | None):
 			self.logger.debug(f'[DownloadsWatchdog] Download will begin: {event}')
@@ -227,7 +228,6 @@ class DownloadsWatchdog(BaseWatchdog):
 						'eventsEnabled': True,
 					}
 				)
-
 
 				# Register the handlers with CDP
 				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)  # type: ignore[arg-type]
