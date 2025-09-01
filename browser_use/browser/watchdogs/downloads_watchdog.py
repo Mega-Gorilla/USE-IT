@@ -163,26 +163,26 @@ class DownloadsWatchdog(BaseWatchdog):
 					}
 				)
 
-				# Register download event handlers
-				async def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: SessionID | None):
-					self.logger.debug(f'[DownloadsWatchdog] Download will begin: {event}')
-					# Cache info for later completion event handling (esp. remote browsers)
-					guid = event.get('guid', '')
-					try:
-						suggested_filename = event.get('suggestedFilename')
-						assert suggested_filename, 'CDP DownloadWillBegin missing suggestedFilename'
-						self._cdp_downloads_info[guid] = {
-							'url': event.get('url', ''),
-							'suggested_filename': suggested_filename,
-							'handled': False,
-						}
-					except Exception:
-						pass
-					# Create and track the task
-					task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
-					self._cdp_event_tasks.add(task)
-					# Remove from set when done
-					task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
+					# Register download event handlers
+					async def download_will_begin_handler(event: DownloadWillBeginEvent, session_id: SessionID | None):
+						self.logger.debug(f'[DownloadsWatchdog] Download will begin: {event}')
+						# Cache info for later completion event handling (esp. remote browsers)
+						guid = event.get('guid', '')
+						try:
+							suggested_filename = event.get('suggestedFilename')
+							assert suggested_filename, 'CDP DownloadWillBegin missing suggestedFilename'
+							self._cdp_downloads_info[guid] = {
+								'url': event.get('url', ''),
+								'suggested_filename': suggested_filename,
+								'handled': False,
+							}
+						except Exception:
+							pass
+						# Create and track the task
+						task = asyncio.create_task(self._handle_cdp_download(event, target_id, session_id))
+						self._cdp_event_tasks.add(task)
+						# Remove from set when done
+						task.add_done_callback(lambda t: self._cdp_event_tasks.discard(t))
 
 					async def download_progress_handler(event: DownloadProgressEvent, session_id: SessionID | None):
 						# Check if download is complete
@@ -205,28 +205,28 @@ class DownloadsWatchdog(BaseWatchdog):
 									self.logger.debug(
 										'[DownloadsWatchdog] No filePath in progress event (local); polling will handle detection'
 									)
-						else:
-							# Remote browser: do not touch local filesystem. Fallback to downloadPath+suggestedFilename
-							info = self._cdp_downloads_info.get(guid, {})
-							try:
-								suggested_filename = info['suggested_filename']
-								downloads_path = str(self.browser_session.browser_profile.downloads_path or '')
-								effective_path = file_path or str(Path(downloads_path) / suggested_filename)
-								file_name = Path(effective_path).name
-								file_ext = Path(file_name).suffix.lower().lstrip('.')
-								self.event_bus.dispatch(
-									FileDownloadedEvent(
-										url=info.get('url', ''),
-										path=str(effective_path),
-										file_name=file_name,
-										file_size=0,
-										file_type=file_ext if file_ext else None,
+							else:
+								# Remote browser: do not touch local filesystem. Fallback to downloadPath+suggestedFilename
+								info = self._cdp_downloads_info.get(guid, {})
+								try:
+									suggested_filename = info['suggested_filename']
+									downloads_path = str(self.browser_session.browser_profile.downloads_path or '')
+									effective_path = file_path or str(Path(downloads_path) / suggested_filename)
+									file_name = Path(effective_path).name
+									file_ext = Path(file_name).suffix.lower().lstrip('.')
+									self.event_bus.dispatch(
+										FileDownloadedEvent(
+											url=info.get('url', ''),
+											path=str(effective_path),
+											file_name=file_name,
+											file_size=0,
+											file_type=file_ext if file_ext else None,
+										)
 									)
-								)
-								self.logger.debug(f'[DownloadsWatchdog] ✅ (remote) Download completed: {effective_path}')
-							finally:
-								if guid in self._cdp_downloads_info:
-									del self._cdp_downloads_info[guid]
+									self.logger.debug(f'[DownloadsWatchdog] ✅ (remote) Download completed: {effective_path}')
+								finally:
+									if guid in self._cdp_downloads_info:
+										del self._cdp_downloads_info[guid]
 
 				# Register the handlers with CDP
 				cdp_client.register.Browser.downloadWillBegin(download_will_begin_handler)  # type: ignore[arg-type]
