@@ -73,11 +73,11 @@ class ChatGoogle(BaseChatModel):
 
 	# Model configuration
 	model: VerifiedGeminiModels | str
-	temperature: float | None = 0.2  # Match OpenAI default
+	temperature: float | None = 0.2
 	top_p: float | None = None
 	seed: int | None = None
 	thinking_budget: int | None = None
-	max_output_tokens: int | None = 4096  # Match OpenAI default
+	max_output_tokens: int | None = 4096
 	config: types.GenerateContentConfigDict | None = None
 
 	# Client initialization parameters
