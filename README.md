@@ -25,7 +25,11 @@ To celebrate, we're launching **#nicehack69** — a Twitter-first hackathon with
 
 **[🚀 Join the hackathon →](https://github.com/browser-use/nicehack69)**
 
-[<img src="./static/NiceHack69.png" alt="NiceHack69 Hackathon" width="600"/>](https://github.com/browser-use/nicehack69)
+<div align="center">
+<a href="https://github.com/browser-use/nicehack69">
+<img src="./static/NiceHack69.png" alt="NiceHack69 Hackathon" width="600"/>
+</a>
+</div>
 
 # Quickstart
 
