@@ -110,7 +110,6 @@ jobs:
             pytest "$TEST_FILE"
           else
             echo "❌ Test file not found: $TEST_FILE"
-            echo "This might be due to cached test discovery or the file was removed."
             echo "Available test files:"
             ls -la tests/ci/test_*.py || echo "No test files found"
             exit 1
