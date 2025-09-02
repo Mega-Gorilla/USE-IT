@@ -109,7 +109,7 @@ class MessageManager:
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_tool_call_examples: bool = False,
 		include_recent_events: bool = False,
-		sample_images: list[UserMessage] = None,
+		sample_images: list[UserMessage] | None = None,
 	):
 		self.task = task
 		self.state = state
