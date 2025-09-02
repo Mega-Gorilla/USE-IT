@@ -19,6 +19,7 @@ from browser_use.llm.messages import (
 	BaseMessage,
 	ContentPartTextParam,
 	SystemMessage,
+	UserMessage,
 )
 from browser_use.observability import observe_debug
 from browser_use.utils import match_url_with_domain_pattern, time_execution_sync
@@ -108,6 +109,7 @@ class MessageManager:
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_tool_call_examples: bool = False,
 		include_recent_events: bool = False,
+		sample_images: list[UserMessage] = None,
 	):
 		self.task = task
 		self.state = state
@@ -119,6 +121,7 @@ class MessageManager:
 		self.vision_detail_level = vision_detail_level
 		self.include_tool_call_examples = include_tool_call_examples
 		self.include_recent_events = include_recent_events
+		self.sample_images = sample_images
 
 		assert max_history_items is None or max_history_items > 5, 'max_history_items must be None or greater than 5'
 
@@ -306,6 +309,7 @@ class MessageManager:
 			screenshots=screenshots,
 			vision_detail_level=self.vision_detail_level,
 			include_recent_events=self.include_recent_events,
+			sample_images=self.sample_images,
 		).get_user_message(use_vision)
 
 		# Set the state message with caching enabled
