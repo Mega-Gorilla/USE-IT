@@ -10,8 +10,11 @@ The serialization shows radio buttons as:
 
 Usage:
     uv run pytest tests/ci/test_radio_buttons.py -v -s
+
+Note: This test requires a real LLM API key and is skipped in CI environments.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -30,7 +33,7 @@ def http_server():
 
 	# Read the HTML file content
 	html_file = Path(__file__).parent / 'test_radio_buttons.html'
-	with open(html_file, 'r') as f:
+	with open(html_file) as f:
 		html_content = f.read()
 
 	# Add route for radio buttons test page
@@ -64,6 +67,10 @@ async def browser_session():
 	await browser_session.kill()
 
 
+@pytest.mark.skipif(
+	os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true',
+	reason='Skipped in CI: requires real LLM API key which blocks other tests',
+)
 class TestRadioButtons:
 	"""Test cases for radio button interactions."""
 
