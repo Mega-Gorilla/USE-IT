@@ -325,7 +325,7 @@ class Tools(Generic[Context]):
 				await event
 				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
-				logger.info(msg)
+				logger.debug(msg)
 
 				# Include input coordinates in metadata if available
 				return ActionResult(
