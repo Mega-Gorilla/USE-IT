@@ -9,10 +9,7 @@
   },
   "favicon": "/favicon.ico",
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "fonts": {
     "family": "Geist"
@@ -75,11 +72,7 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": [
-              "introduction",
-              "quickstart",
-              "quickstart_llm"
-            ]
+            "pages": ["introduction", "quickstart", "quickstart_llm"]
           },
           {
             "group": "Customize",
@@ -160,6 +153,7 @@
       },
       {
         "tab": "Cloud",
+        "hidden": true,
         "versions": [
           {
             "version": "v1",
@@ -187,27 +181,6 @@
                 "openapi": "https://api.browser-use.com/api/v1/openapi.json"
               }
             ]
-          },
-          {
-            "version": "v2",
-            "groups": [
-              {
-                "group": "Get Started",
-                "pages": [
-                  "cloud/v2/quickstart",
-                  "cloud/v2/python-quickstart",
-                  "cloud/v2/node-quickstart"
-                ]
-              },
-              {
-                "group": "Platform",
-                "pages": [
-                  "cloud/v1/pricing",
-                  "cloud/v1/n8n-browser-use-integration",
-                  "cloud/v1/search"
-                ]
-              }
-            ]
           }
         ]
       }
@@ -223,11 +196,7 @@
       "display": "interactive"
     },
     "examples": {
-      "languages": [
-        "javascript",
-        "curl",
-        "python"
-      ],
+      "languages": ["javascript", "curl", "python"],
       "required": true
     }
   },
