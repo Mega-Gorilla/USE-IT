@@ -16,7 +16,22 @@
 
 🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com)</b> for faster, scalable, stealth-enabled browser automation!
 
-# Quick start
+## 🎉 OSS Twitter Hackathon
+
+We just hit **69,000 GitHub ⭐**!
+To celebrate, we're launching **#nicehack69** — a Twitter-first hackathon with a **$6,900 prize pool**. Dream big and show us the future of browser-use agents that go beyond demos!
+
+**Deadline: September 6, 2025**
+
+**[🚀 Join the hackathon →](https://github.com/browser-use/nicehack69)**
+
+<div align="center">
+<a href="https://github.com/browser-use/nicehack69">
+<img src="./static/NiceHack69.png" alt="NiceHack69 Hackathon" width="600"/>
+</a>
+</div>
+
+# Quickstart
 
 With pip (Python>=3.11):
 
@@ -125,12 +140,12 @@ Browser-use agents can connect to multiple external MCP servers to extend their 
 
 ```python
 import asyncio
-from browser_use import Agent, Controller, ChatOpenAI
+from browser_use import Agent, Tools, ChatOpenAI
 from browser_use.mcp.client import MCPClient
 
 async def main():
-    # Initialize controller
-    controller = Controller()
+    # Initialize tools
+    tools = Tools()
 
     # Connect to multiple MCP servers
     filesystem_client = MCPClient(
@@ -148,16 +163,16 @@ async def main():
 
     # Connect and register tools from both servers
     await filesystem_client.connect()
-    await filesystem_client.register_to_controller(controller)
+    await filesystem_client.register_to_tools(tools)
 
     await github_client.connect()
-    await github_client.register_to_controller(controller)
+    await github_client.register_to_tools(tools)
 
-    # Create agent with MCP-enabled controller
+    # Create agent with MCP-enabled tools
     agent = Agent(
         task="Find the latest pdf report in my documents and create a GitHub issue about it",
         llm=ChatOpenAI(model="gpt-4.1-mini"),
-        controller=controller  # Controller has tools from both MCP servers
+        tools=tools  # Tools has tools from both MCP servers
     )
 
     # Run the agent
