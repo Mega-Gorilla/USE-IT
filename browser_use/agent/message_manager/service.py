@@ -17,8 +17,8 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.messages import (
 	BaseMessage,
-	ContentPartTextParam,
 	ContentPartImageParam,
+	ContentPartTextParam,
 	SystemMessage,
 )
 from browser_use.observability import observe_debug

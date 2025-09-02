@@ -24,7 +24,7 @@ from browser_use.agent.cloud_events import (
 )
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.messages import BaseMessage, UserMessage, ContentPartTextParam, ContentPartImageParam
+from browser_use.llm.messages import BaseMessage, ContentPartImageParam, ContentPartTextParam, UserMessage
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
