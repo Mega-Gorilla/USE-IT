@@ -18,8 +18,8 @@ from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.messages import (
 	BaseMessage,
 	ContentPartTextParam,
+	ContentPartImageParam,
 	SystemMessage,
-	UserMessage,
 )
 from browser_use.observability import observe_debug
 from browser_use.utils import match_url_with_domain_pattern, time_execution_sync
@@ -109,7 +109,7 @@ class MessageManager:
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_tool_call_examples: bool = False,
 		include_recent_events: bool = False,
-		sample_images: list[UserMessage] | None = None,
+		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 	):
 		self.task = task
 		self.state = state

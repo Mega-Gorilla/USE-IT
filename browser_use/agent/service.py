@@ -24,7 +24,7 @@ from browser_use.agent.cloud_events import (
 )
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.messages import BaseMessage, UserMessage
+from browser_use.llm.messages import BaseMessage, UserMessage, ContentPartTextParam, ContentPartImageParam
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
@@ -179,7 +179,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		step_timeout: int = 120,
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
-	sample_images: list[UserMessage] | None = None,
+		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		**kwargs,
 	):
 		if page_extraction_llm is None:
