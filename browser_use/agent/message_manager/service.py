@@ -193,10 +193,10 @@ class MessageManager:
 				logger.debug(f'Added extracted_content to read_state_description: {action_result.extracted_content}')
 
 			if action_result.long_term_memory:
-				action_results += f'Action {idx + 1}/{result_len}: {action_result.long_term_memory}\n'
+				action_results += f'{action_result.long_term_memory}\n'
 				logger.debug(f'Added long_term_memory to action_results: {action_result.long_term_memory}')
 			elif action_result.extracted_content and not action_result.include_extracted_content_only_once:
-				action_results += f'Action {idx + 1}/{result_len}: {action_result.extracted_content}\n'
+				action_results += f'{action_result.extracted_content}\n'
 				logger.debug(f'Added extracted_content to action_results: {action_result.extracted_content}')
 
 			if action_result.error:
@@ -204,13 +204,13 @@ class MessageManager:
 					error_text = action_result.error[:100] + '......' + action_result.error[-100:]
 				else:
 					error_text = action_result.error
-				action_results += f'Action {idx + 1}/{result_len}: {error_text}\n'
+				action_results += f'{error_text}\n'
 				logger.debug(f'Added error to action_results: {error_text}')
 
 		self.state.read_state_description = self.state.read_state_description.strip('\n')
 
 		if action_results:
-			action_results = f'Action Results:\n{action_results}'
+			action_results = f'Result:\n{action_results}'
 		action_results = action_results.strip('\n') if action_results else None
 
 		# Build the history item

@@ -1480,7 +1480,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				if orig_target_hash != new_target_hash:
 					# Get names of remaining actions that won't be executed
 					remaining_actions_str = get_remaining_actions_str(actions, i)
-					msg = f'Page changed after action {i} / {total_actions}: actions {remaining_actions_str} were not executed'
+					msg = f'Page changed after action: actions {remaining_actions_str} are not yet executed'
 					logger.info(msg)
 					results.append(
 						ActionResult(
