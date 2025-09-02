@@ -93,7 +93,7 @@ class AgentMessagePrompt:
 		screenshots: list[str] | None = None,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_recent_events: bool = False,
-		sample_images: list[dict] | None = None,
+		sample_images: list[UserMessage] | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
