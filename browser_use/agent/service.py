@@ -179,7 +179,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		step_timeout: int = 120,
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
-		sample_images: list[UserMessage] = None,
+	sample_images: list[UserMessage] | None = None,
 		**kwargs,
 	):
 		if page_extraction_llm is None:
