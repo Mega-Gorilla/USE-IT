@@ -616,9 +616,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Initialize timing first, before any exceptions can occur
 		self.step_start_time = time.time()
 
-		# Show startup message on first step
-		self._log_first_step_startup()
-
 		browser_state_summary = None
 
 		try:
