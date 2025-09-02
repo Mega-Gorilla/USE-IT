@@ -266,7 +266,7 @@ class Tools(Generic[Context]):
 				# Look up the node from the selector map
 				node = await browser_session.get_element_by_index(params.index)
 				if node is None:
-					raise ValueError(f'Element index {params.index} not found in DOM')
+					raise ValueError(f'Element index {params.index} not found in browser state')
 
 				event = browser_session.event_bus.dispatch(
 					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl or False)
@@ -315,7 +315,7 @@ class Tools(Generic[Context]):
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch type text event with node
 			try:
@@ -686,7 +686,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					node = await browser_session.get_element_by_index(params.frame_element_index)
 					if node is None:
 						# Element does not exist
-						msg = f'Element index {params.frame_element_index} not found in DOM'
+						msg = f'Element index {params.frame_element_index} not found in browser state'
 						return ActionResult(error=msg)
 
 				# Dispatch scroll event with node - the complex logic is handled in the event handler
@@ -772,7 +772,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch GetDropdownOptionsEvent to the event handler
 
@@ -798,7 +798,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch SelectDropdownOptionEvent to the event handler
 			from browser_use.browser.events import SelectDropdownOptionEvent
