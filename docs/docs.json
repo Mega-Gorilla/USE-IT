@@ -122,13 +122,13 @@
                 "group": "Examples",
                 "icon": "folder-open",
                 "pages": [
-                  "customize/examples/prompting-guide",
                   "customize/examples/fast-agent",
                   "customize/examples/chain-agents",
                   "customize/examples/parallel-browser",
                   "customize/examples/sensitive-data",
                   "customize/examples/secure",
-                  "customize/examples/more-examples"
+                  "customize/examples/more-examples",
+                  "customize/examples/prompting-guide"
                 ]
               }
             ]
