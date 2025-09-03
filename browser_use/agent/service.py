@@ -4,7 +4,6 @@ import inspect
 import json
 import logging
 import re
-import sys
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -355,23 +354,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# If no allowed_domains are configured, show a security warning
 			if not self.browser_profile.allowed_domains:
 				self.logger.error(
-					'⚠️⚠️⚠️ Agent(sensitive_data=••••••••) was provided but BrowserSession(allowed_domains=[...]) is not locked down! ⚠️⚠️⚠️\n'
+					'⚠️ Agent(sensitive_data=••••••••) was provided but Browser(allowed_domains=[...]) is not locked down! ⚠️\n'
 					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
-					'             https://docs.browser-use.com/customize/browser-settings#restrict-urls\n'
-					'Waiting 10 seconds before continuing... Press [Ctrl+C] to abort.'
-				)
-				if sys.stdin.isatty():
-					try:
-						time.sleep(10)
-					except KeyboardInterrupt:
-						print(
-							'\n\n 🛑 Exiting now... set BrowserSession(allowed_domains=["example.com", "example.org"]) to only domains you trust to see your sensitive_data.'
-						)
-						sys.exit(0)
-				else:
-					pass  # no point waiting if we're not in an interactive shell
-				self.logger.warning(
-					'‼️ Continuing with insecure settings for now... but this will become a hard error in the future!'
+					'   \n'
 				)
 
 			# If we're using domain-specific credentials, validate domain patterns
