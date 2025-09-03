@@ -48,9 +48,9 @@ class EmailController(Tools):
 		"""
 		import re
 
-		# Remove script and style elements
-		html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-		html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+		# Remove script and style elements - handle spaces in closing tags
+		html = re.sub(r'<script\b[^>]*>.*?</script\s*>', '', html, flags=re.DOTALL | re.IGNORECASE)
+		html = re.sub(r'<style\b[^>]*>.*?</style\s*>', '', html, flags=re.DOTALL | re.IGNORECASE)
 
 		# Remove HTML tags
 		html = re.sub(r'<[^>]+>', '', html)
