@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from browser_use.config import CONFIG
-from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_path, logger
 
 CHROME_DEBUG_PORT = 9242  # use a non-default port to avoid conflicts with other tools / devs using 9222
@@ -989,7 +988,6 @@ async function initialize(checkInitialized, magic) {{
 
 				os.unlink(temp_zip.name)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='detect_display_configuration')
 	def detect_display_configuration(self) -> None:
 		"""
 		Detect the system display size and initialize the display-related config defaults:
