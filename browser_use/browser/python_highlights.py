@@ -10,7 +10,6 @@ import gc
 import io
 import logging
 import os
-from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -21,7 +20,7 @@ from browser_use.utils import time_execution_async
 logger = logging.getLogger(__name__)
 
 # Font cache to prevent repeated font loading and reduce memory usage
-_FONT_CACHE: dict[tuple[str, int], Optional[ImageFont.FreeTypeFont]] = {}
+_FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont | None] = {}
 
 # Cross-platform font paths
 _FONT_PATHS = [
@@ -35,7 +34,7 @@ _FONT_PATHS = [
 ]
 
 
-def get_cross_platform_font(font_size: int) -> Optional[ImageFont.FreeTypeFont]:
+def get_cross_platform_font(font_size: int) -> ImageFont.FreeTypeFont | None:
 	"""Get a cross-platform compatible font with caching to prevent memory leaks.
 
 	Args:
