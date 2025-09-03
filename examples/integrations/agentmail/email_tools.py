@@ -125,7 +125,7 @@ class EmailController(Tools):
 			return inbox.inbox_id
 
 		@self.action(
-			'Get the latest unread email from the inbox from the last max_age_minutes (default 5 minutes). Waits 30 seconds for new emails if none found. Use for 2FA codes.'
+			'Get the latest unread email from the inbox from the last max_age_minutes (default 5 minutes). Waits some seconds for new emails if none found. Use for 2FA codes.'
 		)
 		async def get_latest_email(max_age_minutes: int = 5) -> str:
 			"""
