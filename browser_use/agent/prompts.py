@@ -93,6 +93,7 @@ class AgentMessagePrompt:
 		screenshots: list[str] | None = None,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_recent_events: bool = False,
+		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 	):
 		self.browser_state: 'BrowserStateSummary' = browser_state_summary
 		self.file_system: 'FileSystem | None' = file_system
@@ -108,6 +109,7 @@ class AgentMessagePrompt:
 		self.screenshots = screenshots or []
 		self.vision_detail_level = vision_detail_level
 		self.include_recent_events = include_recent_events
+		self.sample_images = sample_images or []
 		assert self.browser_state
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='_get_browser_state_description')
@@ -266,6 +268,9 @@ Available tabs:
 		if use_vision is True and self.screenshots:
 			# Start with text description
 			content_parts: list[ContentPartTextParam | ContentPartImageParam] = [ContentPartTextParam(text=state_description)]
+
+			# Add sample images
+			content_parts.extend(self.sample_images)
 
 			# Add screenshots with labels
 			for i, screenshot in enumerate(self.screenshots):
