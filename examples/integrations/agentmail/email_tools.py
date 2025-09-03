@@ -19,8 +19,13 @@ if not logging.getLogger().handlers:
 logger = logging.getLogger(__name__)
 
 
-class EmailController(Tools):
-	def __init__(self, email_client: AsyncAgentMail | None = None, email_timeout: int = 30):
+class EmailTools(Tools):
+	def __init__(
+		self,
+		email_client: AsyncAgentMail | None = None,
+		email_timeout: int = 30,
+		inbox: Inbox | None = None,
+	):
 		super().__init__()
 		self.email_client = email_client or AsyncAgentMail()
 
@@ -28,7 +33,7 @@ class EmailController(Tools):
 
 		self.register_email_tools()
 
-		self.inbox: Inbox | None = None
+		self.inbox: Inbox | None = inbox
 
 	def _serialize_message_for_llm(self, message: Message) -> str:
 		"""
@@ -75,12 +80,10 @@ class EmailController(Tools):
 
 		If you are not on free tier it is recommended to create 1 inbox per agent.
 		"""
-		inboxes = await self.email_client.inboxes.list()
+		if self.inbox:
+			return self.inbox
 
-		if not inboxes.inboxes:
-			return await self.create_inbox_client()
-
-		return inboxes.inboxes[0]
+		return await self.create_inbox_client()
 
 	async def create_inbox_client(self) -> Inbox:
 		"""
@@ -89,6 +92,7 @@ class EmailController(Tools):
 		If you are not on free tier it is recommended to create 1 inbox per agent.
 		"""
 		inbox = await self.email_client.inboxes.create()
+		self.inbox = inbox
 		return inbox
 
 	async def wait_for_message(self, inbox_id: InboxId) -> Message:

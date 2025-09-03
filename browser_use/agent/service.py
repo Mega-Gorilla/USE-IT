@@ -128,7 +128,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	def __init__(
 		self,
 		task: str,
-		llm: BaseChatModel = ChatOpenAI(model='gpt-4.1-mini'),
+		llm: BaseChatModel | None = None,
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
 		browser_session: BrowserSession | None = None,
@@ -182,6 +182,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		**kwargs,
 	):
+		if llm is None:
+			default_llm_name = CONFIG.DEFAULT_LLM
+			if default_llm_name:
+				try:
+					from browser_use.llm.models import get_llm_by_name
+
+					llm = get_llm_by_name(default_llm_name)
+				except (ImportError, ValueError) as e:
+					# Use the logger that's already imported at the top of the module
+					logger.warning(
+						f'Failed to create default LLM "{default_llm_name}": {e}. Falling back to ChatOpenAI(model="gpt-4.1-mini")'
+					)
+					llm = ChatOpenAI(model='gpt-4.1-mini')
+			else:
+				# No default LLM specified, use the original default
+				llm = ChatOpenAI(model='gpt-4.1-mini')
+
 		if page_extraction_llm is None:
 			page_extraction_llm = llm
 		if available_file_paths is None:
