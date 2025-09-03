@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 	from browser_use.llm.openai.chat import ChatOpenAI
 	from browser_use.llm.openrouter.chat import ChatOpenRouter
 
+# Import all models from models.py
+from browser_use.llm.models import *
+
 # Lazy imports mapping for heavy chat models
 _LAZY_IMPORTS = {
 	'ChatAnthropic': ('browser_use.llm.anthropic.chat', 'ChatAnthropic'),
