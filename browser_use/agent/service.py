@@ -23,7 +23,7 @@ from browser_use.agent.cloud_events import (
 )
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.messages import BaseMessage, UserMessage
+from browser_use.llm.messages import BaseMessage, ContentPartImageParam, ContentPartTextParam, UserMessage
 from browser_use.llm.openai.chat import ChatOpenAI
 from browser_use.tokens.service import TokenCost
 
@@ -178,6 +178,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		step_timeout: int = 120,
 		directly_open_url: bool = True,
 		include_recent_events: bool = False,
+		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		**kwargs,
 	):
 		if llm is None:
@@ -239,6 +240,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.tools.use_structured_output_action(self.output_model_schema)
 
 		self.sensitive_data = sensitive_data
+
+		self.sample_images = sample_images
 
 		self.settings = AgentSettings(
 			use_vision=use_vision,
@@ -345,6 +348,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			vision_detail_level=self.settings.vision_detail_level,
 			include_tool_call_examples=self.settings.include_tool_call_examples,
 			include_recent_events=self.include_recent_events,
+			sample_images=self.sample_images,
 		)
 
 		if self.sensitive_data:
