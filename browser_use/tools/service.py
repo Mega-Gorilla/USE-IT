@@ -3,7 +3,7 @@ import enum
 import json
 import logging
 import os
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 try:
 	from lmnr import Laminar  # type: ignore
@@ -30,7 +30,7 @@ from browser_use.browser.views import BrowserError
 from browser_use.dom.service import EnhancedDOMTreeNode
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.messages import UserMessage
+from browser_use.llm.messages import SystemMessage, UserMessage
 from browser_use.observability import observe_debug
 from browser_use.tools.registry.service import Registry
 from browser_use.tools.views import (
@@ -236,24 +236,24 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Wait for x seconds default 3 (max 10 seconds). This can be used to wait until the page is fully loaded.'
+			'Wait for x seconds (default 3) (max 30 seconds). This can be used to wait until the page is fully loaded.'
 		)
 		async def wait(seconds: int = 3):
-			# Cap wait time at maximum 10 seconds
+			# Cap wait time at maximum 30 seconds
 			# Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
 			# So if the model decides to wait for 5 seconds, the llm call took at least 3 seconds, so we only need to wait for 2 seconds
 			# Note by Mert: the above doesnt make sense because we do the LLM call right after this or this could be followed by another action after which we would like to wait
 			# so I revert this.
-			actual_seconds = min(max(seconds, 0), 10)
-			memory = f'Waited for {actual_seconds} seconds'
-			logger.info(f'🕒 {memory}')
+			actual_seconds = min(max(seconds - 3, 0), 30)
+			memory = f'Waited for {seconds} seconds'
+			logger.info(f'🕒 waited for {actual_seconds} seconds + 3 seconds for LLM call')
 			await asyncio.sleep(actual_seconds)
 			return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		# Element Interaction Actions
 
 		@self.registry.action(
-			'Click element by index, set while_holding_ctrl=True to open any resulting navigation in a new tab. Only click on indices that are inside your current browser_state. Never click or assume not existing indices.',
+			'Click element by index. Only indices from your browser_state are allowed. Never use an index that is not inside your current browser_state. Set while_holding_ctrl=True to open any resulting navigation in a new tab.',
 			param_model=ClickElementAction,
 		)
 		async def click_element_by_index(params: ClickElementAction, browser_session: BrowserSession):
@@ -266,17 +266,23 @@ class Tools(Generic[Context]):
 				# Look up the node from the selector map
 				node = await browser_session.get_element_by_index(params.index)
 				if node is None:
-					raise ValueError(f'Element index {params.index} not found in DOM')
+					raise ValueError(f'Element index {params.index} not found in browser state')
 
 				event = browser_session.event_bus.dispatch(
-					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl)
+					ClickElementEvent(node=node, while_holding_ctrl=params.while_holding_ctrl or False)
 				)
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				memory = f'Clicked element with index {params.index}'
+
 				if params.while_holding_ctrl:
 					memory += ' and opened in new tab'
+
+				# Check if a new tab was opened (from watchdog metadata)
+				elif isinstance(click_metadata, dict) and click_metadata.get('new_tab_opened'):
+					memory += ' - which opened a new tab'
+
 				msg = f'🖱️ {memory}'
 				logger.info(msg)
 
@@ -302,14 +308,14 @@ class Tools(Generic[Context]):
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			'Click and input text into a input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state.',
+			'Input text into an input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state.',
 			param_model=InputTextAction,
 		)
 		async def input_text(params: InputTextAction, browser_session: BrowserSession, has_sensitive_data: bool = False):
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch type text event with node
 			try:
@@ -319,7 +325,7 @@ class Tools(Generic[Context]):
 				await event
 				input_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
 				msg = f"Input '{params.text}' into element {params.index}."
-				logger.info(msg)
+				logger.debug(msg)
 
 				# Include input coordinates in metadata if available
 				return ActionResult(
@@ -530,13 +536,20 @@ class Tools(Generic[Context]):
 		# This action is temporarily disabled as it needs refactoring to use events
 
 		@self.registry.action(
-			"""Extract structured, semantic data (e.g. product description, price, all information about XYZ) from the current webpage based on a textual query.
-		This tool takes the entire markdown of the page and extracts the query from it.
-		Set extract_links=True ONLY if your query requires extracting links/URLs from the page.
-		Only use this for specific queries for information retrieval from the page. Don't use this to get interactive elements - the tool does not see HTML elements, only the markdown.
-		Note: Extracting from the same page will yield the same results unless more content is loaded (e.g., through scrolling for dynamic content, or new page is loaded) - so one extraction per page state is sufficient. If you want to scrape a listing of many elements always first scroll a lot until the page end to load everything and then call this tool in the end.
-		If you called extract_structured_data in the last step and the result was not good (e.g. because of antispam protection), use the current browser state and scrolling to get the information, dont call extract_structured_data again.
-		""",
+			"""This tool sends the markdown of the current page with the query to an LLM to extract structured, semantic data (e.g. product description, price, all information about XYZ) from the markdown of the current webpage based on a query.
+Only use when:
+- You are sure that you are on the right page for the query
+- You know exactly the information you need to extract from the page
+- You did not previously call this tool on the same page
+You can not use this tool to:
+- Get interactive elements like buttons, links, dropdowns, menus, etc.
+- If you previously asked extract_structured_data on the same page with the same query, you should not call it again.
+
+Set extract_links=True only if your query requires extracting links/URLs from the page.
+Use start_from_char to start extraction from a specific character position (use if extraction was previously truncated and you want more content).
+
+If this tool does not return the desired outcome, do not call it again, use scroll_to_text or scroll to find the desired information.
+""",
 		)
 		async def extract_structured_data(
 			query: str,
@@ -544,85 +557,105 @@ class Tools(Generic[Context]):
 			browser_session: BrowserSession,
 			page_extraction_llm: BaseChatModel,
 			file_system: FileSystem,
+			start_from_char: int = 0,
 		):
-			cdp_session = await browser_session.get_or_create_cdp_session()
+			# Constants
+			MAX_CHAR_LIMIT = 30000
 
-			# Wait for the page to be ready (same pattern used in DOM service)
+			# Extract clean markdown using the new method
 			try:
-				ready_state = await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': 'document.readyState'}, session_id=cdp_session.session_id
-				)
-			except Exception:
-				pass  # Page might not be ready yet
-
-			try:
-				# Get the HTML content
-				body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
-				page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
-					params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=cdp_session.session_id
-				)
+				content, content_stats = await self.extract_clean_markdown(browser_session, extract_links)
 			except Exception as e:
-				raise RuntimeError(f"Couldn't extract page content: {e}")
+				raise RuntimeError(f'Could not extract clean markdown: {type(e).__name__}')
 
-			page_html = page_html_result['outerHTML']
+			# Original content length for processing
+			final_filtered_length = content_stats['final_filtered_chars']
 
-			# Simple markdown conversion
-			try:
-				import re
+			if start_from_char > 0:
+				if start_from_char >= len(content):
+					return ActionResult(
+						error=f'start_from_char ({start_from_char}) exceeds content length ({len(content)}). Content has {final_filtered_length} characters after filtering.'
+					)
+				content = content[start_from_char:]
+				content_stats['started_from_char'] = start_from_char
 
-				import markdownify
+			# Smart truncation with context preservation
+			truncated = False
+			if len(content) > MAX_CHAR_LIMIT:
+				# Try to truncate at a natural break point (paragraph, sentence)
+				truncate_at = MAX_CHAR_LIMIT
 
-				if extract_links:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-')
+				# Look for paragraph break within last 500 chars of limit
+				paragraph_break = content.rfind('\n\n', MAX_CHAR_LIMIT - 500, MAX_CHAR_LIMIT)
+				if paragraph_break > 0:
+					truncate_at = paragraph_break
 				else:
-					content = markdownify.markdownify(page_html, heading_style='ATX', bullets='-', strip=['a'])
-					# Remove all markdown links and images, keep only the text
-					content = re.sub(r'!\[.*?\]\([^)]*\)', '', content, flags=re.MULTILINE | re.DOTALL)  # Remove images
-					content = re.sub(
-						r'\[([^\]]*)\]\([^)]*\)', r'\1', content, flags=re.MULTILINE | re.DOTALL
-					)  # Convert [text](url) -> text
+					# Look for sentence break within last 200 chars of limit
+					sentence_break = content.rfind('.', MAX_CHAR_LIMIT - 200, MAX_CHAR_LIMIT)
+					if sentence_break > 0:
+						truncate_at = sentence_break + 1
 
-				# Remove weird positioning artifacts
+				content = content[:truncate_at]
+				truncated = True
+				next_start = (start_from_char or 0) + truncate_at
+				content_stats['truncated_at_char'] = truncate_at
+				content_stats['next_start_char'] = next_start
 
-				content = re.sub(r'❓\s*\[\d+\]\s*\w+.*?Position:.*?Size:.*?\n?', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'Primary: UNKNOWN\n\nNo specific evidence found', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'UNKNOWN CONFIDENCE', '', content, flags=re.MULTILINE | re.DOTALL)
-				content = re.sub(r'!\[\]\(\)', '', content, flags=re.MULTILINE | re.DOTALL)
-			except Exception as e:
-				raise RuntimeError(f'Could not convert html to markdown: {type(e).__name__}')
+			# Add content statistics to the result
+			original_html_length = content_stats['original_html_chars']
+			initial_markdown_length = content_stats['initial_markdown_chars']
+			chars_filtered = content_stats['filtered_chars_removed']
 
-			# Simple truncation to 30k characters
-			if len(content) > 30000:
-				content = content[:30000] + '\n\n... [Content truncated at 30k characters] ...'
+			stats_summary = f"""Content processed: {original_html_length:,} HTML chars → {initial_markdown_length:,} initial markdown → {final_filtered_length:,} filtered markdown"""
+			if start_from_char > 0:
+				stats_summary += f' (started from char {start_from_char:,})'
+			if truncated:
+				stats_summary += f' → {len(content):,} final chars (truncated, use start_from_char={content_stats["next_start_char"]} to continue)'
+			elif chars_filtered > 0:
+				stats_summary += f' (filtered {chars_filtered:,} chars of noise)'
 
-			# Simple prompt
-			prompt = f"""Extract the requested information from this webpage content.
-			
-Query: {query}
+			system_prompt = """
+You are an expert at extracting data from the markdown of a webpage.
 
-Webpage Content:
-{content}
+<input>
+You will be given a query and the markdown of a webpage that has been filtered to remove noise and advertising content.
+</input>
 
-Provide the extracted information in a clear, structured format."""
+<instructions>
+- You are tasked to extract information from the webpage that is relevant to the query.
+- You should ONLY use the information available in the webpage to answer the query. Do not make up information or provide guess from your own knowledge. 
+- If the information relevant to the query is not available in the page, your response should mention that.
+- If the query asks for all items, products, etc., make sure to directly list all of them.
+- If the content was truncated and you need more information, note that the user can use start_from_char parameter to continue from where truncation occurred.
+</instructions>
+
+<output>
+- Your output should present ALL the information relevant to the query in a concise way.
+- Do not answer in conversational format - directly output the relevant information or that the information is unavailable.
+</output>
+""".strip()
+
+			prompt = f'<query>\n{query}\n</query>\n\n<content_stats>\n{stats_summary}\n</content_stats>\n\n<webpage_content>\n{content}\n</webpage_content>'
 
 			try:
 				response = await asyncio.wait_for(
-					page_extraction_llm.ainvoke([UserMessage(content=prompt)]),
+					page_extraction_llm.ainvoke([SystemMessage(content=system_prompt), UserMessage(content=prompt)]),
 					timeout=120.0,
 				)
 
-				extracted_content = f'Query: {query}\n Result:\n{response.completion}'
+				current_url = await browser_session.get_current_page_url()
+				extracted_content = (
+					f'<url>\n{current_url}\n</url>\n<query>\n{query}\n</query>\n<result>\n{response.completion}\n</result>'
+				)
 
 				# Simple memory handling
-				if len(extracted_content) < 1000:
+				MAX_MEMORY_LENGTH = 1000
+				if len(extracted_content) < MAX_MEMORY_LENGTH:
 					memory = extracted_content
 					include_extracted_content_only_once = False
 				else:
 					save_result = await file_system.save_extracted_content(extracted_content)
-					current_url = await browser_session.get_current_page_url()
-					memory = (
-						f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result}'
-					)
+					memory = f'Extracted content from {current_url} for query: {query}\nContent saved to file system: {save_result} and displayed in <read_state>.'
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
@@ -636,7 +669,12 @@ Provide the extracted information in a clear, structured format."""
 				raise RuntimeError(str(e))
 
 		@self.registry.action(
-			'Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 1.0 for one page, etc.). Optional index parameter to scroll within a specific element or its scroll container (works well for dropdowns and custom UI components). Use index=0 or omit index to scroll the entire page.',
+			"""Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 10.0 for ten pages, etc.). 
+			Default behavior is to scroll the entire page. This is enough for most cases.
+			Optional if there are multiple scroll containers, use frame_element_index parameter with an element inside the container you want to scroll in. For that you must use indices that exist in your browser_state (works well for dropdowns and custom UI components). 
+			Instead of scrolling step after step, use a high number of pages at once like 10 to get to the bottom of the page.
+			If you know where you want to scroll to, use scroll_to_text instead of this tool.
+			""",
 			param_model=ScrollAction,
 		)
 		async def scroll(params: ScrollAction, browser_session: BrowserSession):
@@ -645,18 +683,15 @@ Provide the extracted information in a clear, structured format."""
 				# Special case: index 0 means scroll the whole page (root/body element)
 				node = None
 				if params.frame_element_index is not None and params.frame_element_index != 0:
-					try:
-						node = await browser_session.get_element_by_index(params.frame_element_index)
-						if node is None:
-							# Element not found - return error
-							raise ValueError(f'Element index {params.frame_element_index} not found in DOM')
-					except Exception as e:
-						# Error getting element - return error
-						raise ValueError(f'Failed to get element {params.frame_element_index}: {e}') from e
+					node = await browser_session.get_element_by_index(params.frame_element_index)
+					if node is None:
+						# Element does not exist
+						msg = f'Element index {params.frame_element_index} not found in browser state'
+						return ActionResult(error=msg)
 
 				# Dispatch scroll event with node - the complex logic is handled in the event handler
-				# Convert pages to pixels (assuming 800px per page as standard viewport height)
-				pixels = int(params.num_pages * 800)
+				# Convert pages to pixels (assuming 1000px per page as standard viewport height)
+				pixels = int(params.num_pages * 1000)
 				event = browser_session.event_bus.dispatch(
 					ScrollEvent(direction='down' if params.down else 'up', amount=pixels, node=node)
 				)
@@ -704,7 +739,7 @@ Provide the extracted information in a clear, structured format."""
 				return ActionResult(error=error_msg)
 
 		@self.registry.action(
-			description='Scroll to a text in the current page',
+			description='Scroll to a text in the current page. This helps you to be efficient. Prefer this tool over scrolling step by step.',
 		)
 		async def scroll_to_text(text: str, browser_session: BrowserSession):  # type: ignore
 			# Dispatch scroll to text event
@@ -729,7 +764,7 @@ Provide the extracted information in a clear, structured format."""
 		# Dropdown Actions
 
 		@self.registry.action(
-			'Get list of option values exposed by a specific dropdown input field. Only works on dropdown-style form elements (<select>, Semantic UI/aria-labeled select, etc.).',
+			'Get list of values for a dropdown input field. Only works on dropdown-style form elements (<select>, Semantic UI/aria-labeled select, etc.). Do not use this tool for none dropdown elements.',
 			param_model=GetDropdownOptionsAction,
 		)
 		async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
@@ -737,7 +772,7 @@ Provide the extracted information in a clear, structured format."""
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch GetDropdownOptionsEvent to the event handler
 
@@ -763,7 +798,7 @@ Provide the extracted information in a clear, structured format."""
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
 			if node is None:
-				raise ValueError(f'Element index {params.index} not found in DOM')
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
 			# Dispatch SelectDropdownOptionEvent to the event handler
 			from browser_use.browser.events import SelectDropdownOptionEvent
@@ -858,6 +893,100 @@ Provide the extracted information in a clear, structured format."""
 			)
 
 	# Custom done action for structured output
+	async def extract_clean_markdown(
+		self, browser_session: BrowserSession, extract_links: bool = False
+	) -> tuple[str, dict[str, Any]]:
+		"""Extract clean markdown from the current page.
+
+		Args:
+			browser_session: Browser session to extract content from
+			extract_links: Whether to preserve links in markdown
+
+		Returns:
+			tuple: (clean_markdown_content, content_statistics)
+		"""
+		import re
+
+		# Get HTML content from current page
+		cdp_session = await browser_session.get_or_create_cdp_session()
+		try:
+			body_id = await cdp_session.cdp_client.send.DOM.getDocument(session_id=cdp_session.session_id)
+			page_html_result = await cdp_session.cdp_client.send.DOM.getOuterHTML(
+				params={'backendNodeId': body_id['root']['backendNodeId']}, session_id=cdp_session.session_id
+			)
+			page_html = page_html_result['outerHTML']
+			current_url = await browser_session.get_current_page_url()
+		except Exception as e:
+			raise RuntimeError(f"Couldn't extract page content: {e}")
+
+		original_html_length = len(page_html)
+
+		# Use html2text for clean markdown conversion
+		import html2text
+
+		h = html2text.HTML2Text()
+		h.ignore_links = not extract_links
+		h.ignore_images = True
+		h.ignore_emphasis = False
+		h.body_width = 0  # Don't wrap lines
+		h.unicode_snob = True
+		h.skip_internal_links = True
+		content = h.handle(page_html)
+
+		initial_markdown_length = len(content)
+
+		# Minimal cleanup - html2text already does most of the work
+		content = re.sub(r'%[0-9A-Fa-f]{2}', '', content)  # Remove any remaining URL encoding
+
+		# Apply light preprocessing to clean up excessive whitespace
+		content, chars_filtered = self._preprocess_markdown_content(content)
+
+		final_filtered_length = len(content)
+
+		# Content statistics
+		stats = {
+			'url': current_url,
+			'original_html_chars': original_html_length,
+			'initial_markdown_chars': initial_markdown_length,
+			'filtered_chars_removed': chars_filtered,
+			'final_filtered_chars': final_filtered_length,
+		}
+
+		return content, stats
+
+	def _preprocess_markdown_content(self, content: str, max_newlines: int = 3) -> tuple[str, int]:
+		"""
+		Light preprocessing of html2text output - minimal cleanup since html2text is already clean.
+
+		Args:
+			content: Markdown content from html2text to lightly filter
+			max_newlines: Maximum consecutive newlines to allow
+
+		Returns:
+			tuple: (filtered_content, chars_filtered)
+		"""
+		import re
+
+		original_length = len(content)
+
+		# Compress consecutive newlines (4+ newlines become max_newlines)
+		content = re.sub(r'\n{4,}', '\n' * max_newlines, content)
+
+		# Remove lines that are only whitespace or very short (likely artifacts)
+		lines = content.split('\n')
+		filtered_lines = []
+		for line in lines:
+			stripped = line.strip()
+			# Keep lines with substantial content (html2text output is already clean)
+			if len(stripped) > 2:
+				filtered_lines.append(line)
+
+		content = '\n'.join(filtered_lines)
+		content = content.strip()
+
+		chars_filtered = original_length - len(content)
+		return content, chars_filtered
+
 	def _register_done_action(self, output_model: type[T] | None, display_files_in_done_text: bool = True):
 		if output_model is not None:
 			self.display_files_in_done_text = display_files_in_done_text

@@ -77,7 +77,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Wait a bit for potential new tab to be created
 			# This is necessary because tab creation is async and might not be immediate
-			await asyncio.sleep(0.5)
+			await asyncio.sleep(0.1)
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
 			# by explicitly rebuilding and comparing when needed
@@ -89,6 +89,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check if a new tab was opened
 			after_target_ids = await self.browser_session._cdp_get_all_pages()
 			new_target_ids = {t['targetId'] for t in after_target_ids} - {t['targetId'] for t in initial_target_ids}
+			new_tab_opened = len(new_target_ids) > 0
+
 			if new_target_ids:
 				new_tab_msg = 'New tab opened - switching to it'
 				msg += f' - {new_tab_msg}'
@@ -106,8 +108,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 					switch_event = await self.event_bus.dispatch(SwitchTabEvent(target_id=new_target_id))
 					await switch_event
 
-			# Return click metadata (coordinates) if available
-			return click_metadata
+			# Return click metadata including new tab information
+			result_metadata = click_metadata if isinstance(click_metadata, dict) else {}
+			result_metadata['new_tab_opened'] = new_tab_opened
+
+			return result_metadata
 		except Exception as e:
 			raise
 
@@ -189,7 +194,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						# by explicitly rebuilding and comparing when needed
 
 						# Wait a bit for the scroll to settle and DOM to update
-						await asyncio.sleep(0.5)
+						await asyncio.sleep(0.2)
 
 					return None
 
@@ -365,7 +370,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
-					await asyncio.sleep(0.5)
+					await asyncio.sleep(0.05)
 					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
@@ -422,7 +427,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
 					params={'backendNodeId': backend_node_id}, session_id=session_id
 				)
-				await asyncio.sleep(0.1)  # Wait for scroll to complete
+				await asyncio.sleep(0.05)  # Wait for scroll to complete
 			except Exception as e:
 				self.logger.debug(f'Failed to scroll element into view: {e}')
 
@@ -440,7 +445,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 					},
 					session_id=session_id,
 				)
-				await asyncio.sleep(0.123)
+				await asyncio.sleep(0.05)
 
 				# Calculate modifier bitmask for CDP
 				# CDP Modifier bits: Alt=1, Control=2, Meta/Command=4, Shift=8
@@ -471,7 +476,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						),
 						timeout=1.0,  # 1 second timeout for mousePressed
 					)
-					await asyncio.sleep(0.145)
+					await asyncio.sleep(0.08)
 				except TimeoutError:
 					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 					# Don't sleep if we timed out
@@ -519,7 +524,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 						},
 						session_id=session_id,
 					)
-					await asyncio.sleep(0.5)
+					await asyncio.sleep(0.1)
 					# Navigation is handled by BrowserSession via events
 					return None
 				except Exception as js_e:
@@ -1466,7 +1471,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Note: We don't clear cached state on Enter; multi_act will detect DOM changes
 			# and rebuild explicitly. We still wait briefly for potential navigation.
 			if 'enter' in event.keys.lower() or 'return' in event.keys.lower():
-				await asyncio.sleep(0.5)
+				await asyncio.sleep(0.1)
 		except Exception as e:
 			raise
 
