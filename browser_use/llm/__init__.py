@@ -115,7 +115,7 @@ def __getattr__(name: str):
 		# Cache in our clean cache dict
 		_model_cache[name] = attr
 		return attr
-	except AttributeError:
+	except (AttributeError, ImportError):
 		pass
 
 	raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
