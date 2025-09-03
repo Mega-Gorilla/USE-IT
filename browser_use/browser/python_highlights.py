@@ -6,7 +6,6 @@ to draw bounding boxes around interactive elements directly on screenshots.
 
 import asyncio
 import base64
-import gc
 import io
 import logging
 import os
@@ -68,7 +67,6 @@ def cleanup_font_cache() -> None:
 	"""Clean up the font cache to prevent memory leaks in long-running applications."""
 	global _FONT_CACHE
 	_FONT_CACHE.clear()
-	gc.collect()  # Force garbage collection
 
 
 # Color scheme for different element types
@@ -459,15 +457,12 @@ async def create_highlighted_screenshot(
 			output_buffer.close()
 			if 'image' in locals():
 				image.close()
-			# Force garbage collection for memory-intensive operations
-			gc.collect()
 
 	except Exception as e:
 		logger.error(f'Failed to create highlighted screenshot: {e}')
 		# Clean up on error as well
 		if 'image' in locals():
 			image.close()
-		gc.collect()
 		# Return original screenshot on error
 		return screenshot_b64
 
@@ -513,6 +508,7 @@ async def create_highlighted_screenshot_async(
 	    screenshot_b64: Base64 encoded screenshot
 	    selector_map: Map of interactive elements
 	    cdp_session: CDP session for getting viewport info
+	    filter_highlight_ids: Whether to filter element IDs based on meaningful text
 
 	Returns:
 	    Base64 encoded highlighted screenshot
@@ -548,5 +544,28 @@ async def create_highlighted_screenshot_async(
 	return final_screenshot
 
 
+async def remove_screenshot_overlays(cdp_session) -> None:
+	"""Remove any existing screenshot overlays from the browser quickly."""
+	try:
+		cleanup_script = """
+		(function() {
+			const overlay = document.getElementById('browser-use-screenshot-overlay');
+			if (overlay) overlay.remove();
+		})();
+		"""
+
+		await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': cleanup_script},
+			session_id=cdp_session.session_id,
+		)
+	except Exception as e:
+		logger.debug(f'Failed to remove screenshot overlays: {e}')
+
+
 # Export the cleanup function for external use in long-running applications
-__all__ = ['create_highlighted_screenshot', 'create_highlighted_screenshot_async', 'cleanup_font_cache']
+__all__ = [
+	'create_highlighted_screenshot',
+	'create_highlighted_screenshot_async',
+	'cleanup_font_cache',
+	'remove_screenshot_overlays',
+]
