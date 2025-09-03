@@ -74,7 +74,6 @@ examples = [
 eval = [
     "lmnr[all]==0.7.6",
     "anyio>=4.9.0",
-    "Pillow>=11.2.1",
     "psutil>=7.0.0",
     "datamodel-code-generator>=0.26.0",
     "hyperbrowser==0.47.0",
