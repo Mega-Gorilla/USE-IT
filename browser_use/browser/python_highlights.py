@@ -544,28 +544,5 @@ async def create_highlighted_screenshot_async(
 	return final_screenshot
 
 
-async def remove_screenshot_overlays(cdp_session) -> None:
-	"""Remove any existing screenshot overlays from the browser quickly."""
-	try:
-		cleanup_script = """
-		(function() {
-			const overlay = document.getElementById('browser-use-screenshot-overlay');
-			if (overlay) overlay.remove();
-		})();
-		"""
-
-		await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': cleanup_script},
-			session_id=cdp_session.session_id,
-		)
-	except Exception as e:
-		logger.debug(f'Failed to remove screenshot overlays: {e}')
-
-
 # Export the cleanup function for external use in long-running applications
-__all__ = [
-	'create_highlighted_screenshot',
-	'create_highlighted_screenshot_async',
-	'cleanup_font_cache',
-	'remove_screenshot_overlays',
-]
+__all__ = ['create_highlighted_screenshot', 'create_highlighted_screenshot_async', 'cleanup_font_cache']
