@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmailController(Tools):
-	def __init__(self, email_client: AsyncAgentMail | None = None, email_timeout: int = 15):
+	def __init__(self, email_client: AsyncAgentMail | None = None, email_timeout: int = 30):
 		super().__init__()
 		self.email_client = email_client or AsyncAgentMail()
 
