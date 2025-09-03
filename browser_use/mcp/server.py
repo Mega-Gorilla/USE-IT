@@ -725,7 +725,7 @@ class BrowserUseServer:
 			extract_structured_data=dict[str, Any],
 		)
 
-		# Use model_validate because Pyright do not understand the dynamic model
+		# Use model_validate because Pyright does not understand the dynamic model
 		action = ExtractAction.model_validate(
 			{
 				'extract_structured_data': {'query': query, 'extract_links': extract_links},
