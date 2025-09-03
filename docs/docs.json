@@ -127,7 +127,8 @@
                   "customize/examples/parallel-browser",
                   "customize/examples/sensitive-data",
                   "customize/examples/secure",
-                  "customize/examples/more-examples"
+                  "customize/examples/more-examples",
+                  "customize/examples/prompting-guide"
                 ]
               }
             ]
@@ -160,6 +161,7 @@
       },
       {
         "tab": "Cloud",
+        "hidden": true,
         "versions": [
           {
             "version": "v1",
@@ -185,27 +187,6 @@
               {
                 "group": "REST API reference",
                 "openapi": "https://api.browser-use.com/api/v1/openapi.json"
-              }
-            ]
-          },
-          {
-            "version": "v2",
-            "groups": [
-              {
-                "group": "Get Started",
-                "pages": [
-                  "cloud/v2/quickstart",
-                  "cloud/v2/python-quickstart",
-                  "cloud/v2/node-quickstart"
-                ]
-              },
-              {
-                "group": "Platform",
-                "pages": [
-                  "cloud/v1/pricing",
-                  "cloud/v1/n8n-browser-use-integration",
-                  "cloud/v1/search"
-                ]
               }
             ]
           }
