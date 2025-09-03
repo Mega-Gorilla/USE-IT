@@ -4,15 +4,13 @@ import sys
 
 from agentmail import AsyncAgentMail  # type: ignore
 
-from browser_use import Agent, Browser, models
-from examples.integrations.agentmail.email_tools import EmailTools
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from browser_use import Agent, Browser, models
+from examples.integrations.agentmail.email_tools import EmailTools
 
 TASK = """
 Go to reddit.com, create a new account (use the get_email_address), make up password and all other information, confirm the 2fa with get_latest_email, and like latest post on r/elon subreddit.
