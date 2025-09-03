@@ -41,6 +41,7 @@ dependencies = [
     "cdp-use>=1.4.0",
     "markdown-pdf==1.5",
     "html2text>=2025.4.15",
+    "pillow>=11.2.1",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -196,7 +197,6 @@ dev-dependencies = [
     "pyright>=1.1.403",
     "ty>=0.0.1a1",
     "pytest-xdist>=3.7.0",
-    "pillow>=11.2.1",
     "lmnr[all]==0.7.6",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-timeout>=2.4.0",

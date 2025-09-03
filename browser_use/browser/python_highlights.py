@@ -6,9 +6,11 @@ to draw bounding boxes around interactive elements directly on screenshots.
 
 import asyncio
 import base64
+import gc
 import io
 import logging
 import os
+from typing import Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,6 +19,58 @@ from browser_use.observability import observe_debug
 from browser_use.utils import time_execution_async
 
 logger = logging.getLogger(__name__)
+
+# Font cache to prevent repeated font loading and reduce memory usage
+_FONT_CACHE: dict[tuple[str, int], Optional[ImageFont.FreeTypeFont]] = {}
+
+# Cross-platform font paths
+_FONT_PATHS = [
+	'/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',  # Linux (Debian/Ubuntu)
+	'/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',  # Linux (Arch/Fedora)
+	'/System/Library/Fonts/Arial.ttf',  # macOS
+	'C:\\Windows\\Fonts\\arial.ttf',  # Windows
+	'arial.ttf',  # Windows (system path)
+	'Arial Bold.ttf',  # macOS alternative
+	'/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',  # Linux alternative
+]
+
+
+def get_cross_platform_font(font_size: int) -> Optional[ImageFont.FreeTypeFont]:
+	"""Get a cross-platform compatible font with caching to prevent memory leaks.
+
+	Args:
+	    font_size: Size of the font to load
+
+	Returns:
+	    ImageFont object or None if no system fonts are available
+	"""
+	# Use cache key based on font size
+	cache_key = ('system_font', font_size)
+
+	# Return cached font if available
+	if cache_key in _FONT_CACHE:
+		return _FONT_CACHE[cache_key]
+
+	# Try to load a system font
+	font = None
+	for font_path in _FONT_PATHS:
+		try:
+			font = ImageFont.truetype(font_path, font_size)
+			break
+		except OSError:
+			continue
+
+	# Cache the result (even if None) to avoid repeated attempts
+	_FONT_CACHE[cache_key] = font
+	return font
+
+
+def cleanup_font_cache() -> None:
+	"""Clean up the font cache to prevent memory leaks in long-running applications."""
+	global _FONT_CACHE
+	_FONT_CACHE.clear()
+	gc.collect()  # Force garbage collection
+
 
 # Color scheme for different element types
 ELEMENT_COLORS = {
@@ -102,18 +156,10 @@ def draw_enhanced_bounding_box_with_text(
 			css_width = img_width  # / device_pixel_ratio
 			# Much smaller scaling - 1% of CSS viewport width, max 16px to prevent huge highlights
 			base_font_size = max(10, min(20, int(css_width * 0.01)))
-			big_font = None
-			try:
-				big_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', base_font_size)
-			except OSError:
-				try:
-					big_font = ImageFont.truetype('arial.ttf', base_font_size)
-				except OSError:
-					# Try system fonts on different platforms
-					try:
-						big_font = ImageFont.truetype('Arial Bold.ttf', base_font_size)
-					except OSError:
-						big_font = font  # Fallback to original font
+			# Use shared font loading function with caching
+			big_font = get_cross_platform_font(base_font_size)
+			if big_font is None:
+				big_font = font  # Fallback to original font if no system fonts found
 
 			# Get text size with bigger font
 			if big_font:
@@ -391,15 +437,9 @@ async def create_highlighted_screenshot(
 		# Create drawing context
 		draw = ImageDraw.Draw(image)
 
-		# Try to load a font, fall back to default if not available
-		font = None
-		try:
-			font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 12)
-		except OSError:
-			try:
-				font = ImageFont.truetype('arial.ttf', 12)
-			except OSError:
-				font = None  # Use default font
+		# Load font using shared function with caching
+		font = get_cross_platform_font(12)
+		# If no system fonts found, font remains None and will use default font
 
 		# Process elements sequentially to avoid ImageDraw thread safety issues
 		# PIL ImageDraw is not thread-safe, so we process elements one by one
@@ -408,16 +448,27 @@ async def create_highlighted_screenshot(
 
 		# Convert back to base64
 		output_buffer = io.BytesIO()
-		image.save(output_buffer, format='PNG')
-		output_buffer.seek(0)
+		try:
+			image.save(output_buffer, format='PNG')
+			output_buffer.seek(0)
+			highlighted_b64 = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
 
-		highlighted_b64 = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
-
-		logger.debug(f'Successfully created highlighted screenshot with {len(selector_map)} elements')
-		return highlighted_b64
+			logger.debug(f'Successfully created highlighted screenshot with {len(selector_map)} elements')
+			return highlighted_b64
+		finally:
+			# Explicit cleanup to prevent memory leaks
+			output_buffer.close()
+			if 'image' in locals():
+				image.close()
+			# Force garbage collection for memory-intensive operations
+			gc.collect()
 
 	except Exception as e:
 		logger.error(f'Failed to create highlighted screenshot: {e}')
+		# Clean up on error as well
+		if 'image' in locals():
+			image.close()
+		gc.collect()
 		# Return original screenshot on error
 		return screenshot_b64
 
@@ -496,3 +547,7 @@ async def create_highlighted_screenshot_async(
 
 		await asyncio.to_thread(_write_screenshot)
 	return final_screenshot
+
+
+# Export the cleanup function for external use in long-running applications
+__all__ = ['create_highlighted_screenshot', 'create_highlighted_screenshot_async', 'cleanup_font_cache']
