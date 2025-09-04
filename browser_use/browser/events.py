@@ -510,7 +510,7 @@ class DialogOpenedEvent(BaseEvent):
 	dialog_type: str  # 'alert', 'confirm', 'prompt', or 'beforeunload'
 	message: str
 	url: str
-	frame_id: str
+	frame_id: str | None = None  # Can be None when frameId is not provided by CDP
 	# target_id: TargetID   # TODO: add this to avoid needing target_id_from_frame() later
 
 
