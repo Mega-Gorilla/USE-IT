@@ -11,7 +11,7 @@ from browser_use.browser.watchdog_base import BaseWatchdog
 
 
 class PopupsWatchdog(BaseWatchdog):
-	"""Handles JavaScript dialogs (alert, confirm, prompt) by automatically dismissing them immediately."""
+	"""Handles JavaScript dialogs (alert, confirm, prompt) by automatically accepting them immediately."""
 
 	# Events this watchdog listens to and emits
 	LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [TabCreatedEvent]
@@ -52,9 +52,9 @@ class PopupsWatchdog(BaseWatchdog):
 					dialog_type = event_data.get('type', 'alert')
 					message = event_data.get('message', '')
 
-					self.logger.info(f"🔔 JavaScript {dialog_type} dialog: '{message[:100]}' - attempting to dismiss...")
+					self.logger.info(f"🔔 JavaScript {dialog_type} dialog: '{message[:100]}' - attempting to accept...")
 
-					self.logger.debug('Trying all approaches to dismiss dialog...')
+					self.logger.debug('Trying all approaches to accept dialog...')
 
 					# Approach 1: Use the session that detected the dialog
 					if self.browser_session._cdp_client_root and session_id:
@@ -67,11 +67,11 @@ class PopupsWatchdog(BaseWatchdog):
 								),
 								timeout=0.25,
 							)
-						except (asyncio.TimeoutError, Exception) as e:
+						except (TimeoutError, Exception) as e:
 							pass
 
 					# Approach 2: Try with current agent focus session
-					if self.browser_session.agent_focus:
+					if self.browser_session._cdp_client_root and self.browser_session.agent_focus:
 						try:
 							self.logger.debug(
 								f'🔄 Approach 2: Using agent focus session {self.browser_session.agent_focus.session_id}'
@@ -83,10 +83,8 @@ class PopupsWatchdog(BaseWatchdog):
 								),
 								timeout=0.25,
 							)
-						except (asyncio.TimeoutError, Exception) as e:
+						except (TimeoutError, Exception) as e:
 							pass
-
-					# await self._post_dialog_recovery()
 
 				except Exception as e:
 					self.logger.error(f'❌ Critical error in dialog handler: {type(e).__name__}: {e}')
@@ -111,33 +109,4 @@ class PopupsWatchdog(BaseWatchdog):
 			self.logger.debug(f'Set up JavaScript dialog handling for tab {target_id}')
 
 		except Exception as e:
-			self.logger.warning(f'Failed to set up dialog handling for tab {target_id}: {e}')
-
-	async def _post_dialog_recovery(self) -> None:
-		"""Perform post-dialog recovery to ensure browser session continues normally."""
-		try:
-			self.logger.debug('🔄 Starting post-dialog recovery...')
-
-			# Small delay to let browser process dialog dismissal
-			await asyncio.sleep(0.1)
-
-			# Ensure agent focus is still valid
-			if self.browser_session.agent_focus:
-				try:
-					# Try to reactivate the current target to ensure it's responsive
-					await self.browser_session._cdp_client_root.send.Target.activateTarget(
-						params={'targetId': self.browser_session.agent_focus.target_id}
-					)
-					self.logger.debug('✅ Reactivated agent focus target after dialog dismissal')
-				except Exception as reactivate_error:
-					self.logger.warning(f'Failed to reactivate target after dialog: {reactivate_error}')
-
-			# Clear any cached browser state that might be stale
-			if hasattr(self.browser_session, '_cached_browser_state'):
-				self.browser_session._cached_browser_state = None
-				self.logger.debug('🧹 Cleared cached browser state')
-
-			self.logger.info('✅ Post-dialog recovery completed')
-
-		except Exception as recovery_error:
-			self.logger.error(f'❌ Post-dialog recovery failed: {recovery_error}')
+			self.logger.warning(f'Failed to set up popup handling for tab {target_id}: {e}')
